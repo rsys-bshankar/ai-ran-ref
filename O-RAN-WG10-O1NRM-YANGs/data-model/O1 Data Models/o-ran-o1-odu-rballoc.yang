@@ -1,0 +1,134 @@
+module o-ran-o1-odu-rballoc {
+  yang-version 1.1;
+  namespace "urn:o-ran:o-ran-o1-odu-rballoc";
+  prefix "or-odu-rballoc";
+
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-nr-nrm-nrcelldu { prefix nrcelldu3gpp ; }
+  import _3gpp-nr-nrm-gnbdufunction { prefix gnbdu3gpp ; }
+  import _3gpp-nr-nrm-rrmpolicy { prefix rrmpolicy3gpp ; }
+
+  organization "O-RAN Alliance";
+  contact
+    "www.o-ran.org";
+  description
+    "This module defines the augmentation of the SA5 yang data model of
+    NRCellDU with specifying the starting position of resource block (RB)
+    allocation within the available frequency resource.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+  revision "2025-07-02" {
+    description
+      "version 2.0.0
+
+       1) Alignment to new YANG Conventions";
+
+    reference "O-RAN.WG10.TS.O1NRM.0-R004-v04.00";
+  }
+
+  revision 2024-07-11 {
+    description
+      "version 1.0.0
+
+       1) Initial version";
+
+    reference "O-RAN.WG10.O1NRM.0-R004-v01.00" ;
+  }
+  revision 2024-12-02 {
+    description
+      "version 2.0.0
+
+       2) Second version";
+
+    reference "O-RAN.WG10.O1NRM.0-R004-v02.00" ;
+  }
+  grouping RRMPolicyRBAllocGrp {
+    description "Grouping for RRM Policy RB Alloc";
+    leaf direction {
+      type enumeration {
+        enum BIDIRECTION {
+         description "both uplink and downlink";
+        }
+        enum UL {
+         description "uplink";
+        }
+        enum DL {
+         description "downlink";
+        }
+      }
+      default BIDIRECTION;
+      description "The direction of interest for a startCellRBAlloc.";
+    }
+    list rRMPolicyMemberList{
+      key "mcc mnc sd sst";
+      min-elements 1;
+      description "It represents the list of RRMPolicyMember (s) that the managed object
+                   is supporting. A RRMPolicyMember <<dataType>> include the PLMNId
+                   <<dataType>> and S-NSSAI <<dataType>>." ;
+      reference "TS28.541 Clause 4.3.42";
+      uses rrmpolicy3gpp:rRMPolicyMemberGrp;
+    }
+    leaf startCellRBAlloc{
+      type uint16;
+      default 0;
+      description "Specifies the starting position of common resource block (CRB)
+                   allocation within the available frequency resource for each cell.
+                   This value is the offset in common resource blocks to common
+                   resource block 0 for the applied subcarrier spacing for a cell.
+                   allowedValues:0 to N_grid_size - 1, where N_grid_size equals the number of common
+                   resource blocks for the BS channel bandwidth based on the subcarrier spacing
+                   applied to the cell.";
+      reference "TS38.211 clause 4.4.4.3";
+    }
+    leaf numberOfPRBs{
+      type uint16;
+      description "Number of physical resource blocks for a RRMPolicyRBAlloc.
+                    allowedValues:1 to N_grid_size-startCellRBAlloc.
+                    See startCellRBAlloc for definition of N_grid_size.
+                    This applies only to single numerology use case.";
+      reference "TS38.211 clause 4.4.4.4";
+    }
+  }
+  augment "/me3gpp:ManagedElement/gnbdu3gpp:GNBDUFunction/nrcelldu3gpp:NRCellDU" {
+    description
+      "Containment under NRCellDU IOC.";
+    list RRMPolicyRBAlloc {
+      key id;
+      description
+        "RRMPolicyRBAlloc IOC provides the necessary attributes to set the starting position
+         of common resource block (CRB) allocation within the available frequency resource for each cell.";
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses RRMPolicyRBAllocGrp;
+        description
+          "Attributes of RRMPolicyRBAlloc IOC";
+      }
+    }
+  }
+}

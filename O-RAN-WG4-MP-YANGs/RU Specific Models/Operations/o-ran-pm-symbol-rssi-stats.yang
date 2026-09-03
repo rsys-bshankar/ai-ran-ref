@@ -1,0 +1,411 @@
+submodule o-ran-pm-symbol-rssi-stats {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  import o-ran-uplane-conf {
+    prefix "up";
+  }
+
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation
+      2) correct max-bin-count definition";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+ typedef symbol-rssi-report-info {
+    type enumeration {
+      enum MAXIMUM {
+        description
+          "to report maximum value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum MINIMUM {
+        description
+          "to report minimum value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum AVERAGE {
+        description
+          "to report average value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum FREQUENCY_TABLE {
+        description
+          "to report frequency bin table within the
+           measurement-interval for the measurement-object.";
+      }
+    }
+    description
+      "The reporting info that might be supported/configured for
+      symbol RSSI measurement object.";
+  }
+
+  typedef symbol-rssi-meas-object-type{
+    type enumeration {
+      enum ALL-UL-SYMBOLS {
+        description
+          "Measure and report symbol-rssi separately for all UL symbols in every configured number of
+           slots (as defined by 'period' in 'symbol-rssi-measurement-objects'.
+           And the UL symbols are decided by 'configurable-tdd-pattern', 'static-srs-configuration',
+            'static-prach-configuration', and 'dataDirection' in the C-plane messages.
+            This option is recommended for static TDD case. If this option is used in dynamic TDD case,
+            then O-RU measures only the allocates UL symbols because O-RU may not know
+            'candidate UL symbols' which are not allocated. ";
+        }
+
+        enum CONFIGURED-SYMBOLS {
+          description
+            "Measure and report symbol-rssi separately for all configured symbols as defined by the
+            leaf-list 'symbol-index',This can be used for non-dynamic TDD as well as dynamic TDD cases,
+            the O-RU should measure all configured symbols, irrespective of whether the UL symbol is
+            allocated or not. If a c-plane message indicates a symbol within this 'symbol-index' list to
+            be a DL symbol,O-RU shall not measure RSSI on this symbol.";
+        }
+      }
+      description
+        "The measurement-object-type supported by
+        measurement group symbol-rssi-stats.";
+  }
+
+ grouping measurement-notification-symbol-rssi-stats {
+    description
+      "Group for measurement notification for symbol rssi";
+    list symbol-rssi-stats {
+      key "measurement-object";
+
+      description
+        "measurement result of symbol-rssi-measurement per measurement-object";
+      leaf measurement-object {
+        type leafref {
+          path "/performance-measurement-objects/symbol-rssi-measurement-objects/measurement-object";
+        }
+
+        description
+          "measurement-object for the symbol-rssi-measurement";
+      }
+
+      uses start-and-end-time;
+      uses symbol-rssi-measurement-result-grouping;
+
+      list multiple-symbol-rssi-measurement-result {
+        config false;
+        description
+          "Multiple measurement results of symbol-rssi-measurement.
+
+          The O-RU shall use this list to report one or more measurements per measurement-object in a single notification.
+
+          In addition, the O-RU shall always use one of the
+
+          measurement-result-stats/symbol-rssi-stats[measurement-object]/
+
+          schema-nodes to report a single symbol-rssi measurement for a measurement-object.
+          The O-RU should report its latest symbol-rssi measurement available.";
+
+         uses start-and-end-time;
+         uses symbol-rssi-measurement-result-grouping;
+      }
+    }
+  }
+
+ grouping symbol-rssi-measurement-objects-grouping {
+    description
+      "Group of measurement objects for symbol rssi";
+    list symbol-rssi-measurement-objects {
+      key "measurement-object";
+      description
+        "optional list used to measure and report symbol-wise time domain RSSI for all UL symbols or configured symbols";
+
+      leaf measurement-object {
+        type symbol-rssi-meas-object-type;
+        description "Target metric to measure the symbol-rssi";
+      }
+
+      leaf object-unit {
+        type enumeration {
+          enum RX-ARRAY-CARRIER {
+            description
+              "unit to measure the performance per object-id,
+               only the rx-array-carriers which are not configured with mixed numerology will be measured";
+          }
+        }
+        mandatory true;
+        description "unit to measure the performance per object-id.";
+      }
+
+      list per-rx-array-carrier-configuration {
+        key "rx-array-carrier";
+        description
+          "measurement configuration per rx-array-carrier to accommodate different Subcarrier Spacing
+           and TDD pattern per rx-array-carrier, and only the symbol-wise TD-RSSI of the rx-array-carriers
+           included in per-rx-array-carrier-configuration will be measured and reported";
+
+        leaf rx-array-carrier {
+          type leafref {
+            path "/up:user-plane-configuration/up:rx-array-carriers/up:name";
+          }
+          description "reference to the name of rx-array-carriers";
+        }
+
+        leaf period  {
+          type uint16;
+
+          description
+            "the number of slots that correspond to the period of a TDD-Configuration,
+             and the start point of the 1st period is subframe#0, slot#0 of the 1st even number radio frame after this configuration is received,
+             here even number radio frame is used because according to 3GPP TS 38.213, A UE expects that P1 + P2 divides 20 msec";
+        }
+
+        leaf-list symbol-index  {
+          type uint16;
+
+          description
+            "the index of the symbols within 'period'. The first symbol within the 'period is symbol-index=0, next symbol is symbol-index =1 etc.
+             This symbol-index is different from how symbolId is defined in CUS plane spec.
+             These symbols are configured for O-RU to measure and report symbol-wise rssi,
+             used only when 'measurement-object' = 'CONFIGURED-SYMBOLS'.
+             If a c-plane message indicates a symbol within this 'symbol-index' list to be a DL symbol,
+             O-RU shall not measure rssi on this symbol";
+        }
+
+        leaf active {
+          type boolean;
+          default false;
+          description
+            "Enable/disable the symbol-rssi measurement per Object";
+        }
+
+        leaf-list report-info {
+          type symbol-rssi-report-info;
+          description "The reporting info to the measurement object.";
+        }
+
+        leaf bin-count {
+          type uint16;
+
+          description
+            "the number of bin for the frequency table.
+             This value shall be less than or equal to max-bin-count";
+        }
+
+        leaf lower-bound {
+          type int16;
+          units dBm;
+          description
+            "the lower value of the first bin of frequency table.";
+        }
+
+        leaf upper-bound {
+          type int16;
+          units dBm;
+          description
+            "the upper value of the last bin of frequency table.";
+        }
+      }
+      uses symbol-rssi-measurement-result-grouping;
+      // configuration and measurement result for the symbol-rssi-measurement
+    }
+   }
+
+ grouping measurement-capabilities-symbol-rssi-stats-objects{
+     description
+      "Group of measurement capabilities for symbol rssi";
+      list symbol-rssi-stats-objects {
+        key measurement-object;
+        description "list of symbol-wise TD-RSSI stats objects";
+        leaf measurement-object {
+          type leafref {
+            path "/performance-measurement-objects/symbol-rssi-measurement-objects/measurement-object";
+            require-instance false;
+          }
+          description "a measurement object";
+        }
+        leaf-list report-info {
+          type symbol-rssi-report-info;
+          description "The reporting info supported for thise measurement object.";
+        }
+        leaf max-bin-count{
+          type uint16;
+          description
+            "when O-RU supports FREQUENCY_TABLE, indicates the maximum value of
+            configurable bin-count for frequency table in symbol-rssi-stats-objects.";
+        }
+      }
+   }
+
+ grouping symbol-rssi-measurement-result-grouping {
+
+    description
+      "symbol-rssi-measurement-result is the time domain RSSI per symbol,
+      the reference point for the TD-RSSI shall be the antenna connector of the O-RU.
+      The value of Received Signal Strength Indicator(RSSI) per rx-array-carrier per configured OFDM symbol is measured.
+      the RSSI shall be calculated as the linear average of the total received power observed in the configured
+      OFDM symbol in the measurement bandwidth from all sources including co-channel serving and non-serving cells,
+      adjacent channel interference, thermal noise etc., over the total number of antenna elements of the array.
+      The unit of the reported RSSI is dBm.
+      If analogue or hybrid beamforming is enabled, the beamId used for RSSI measurement is:
+        - When there is allocation of a beamId in this symbol, O-RU use that beamId for RSSI measurement;
+        - When there is no allocation of a beamId in this symbol, it is up to O-RU implementation, for example,
+          the O-RU can choose to use a common beamId or use a previous allocated beamId";
+
+    uses pm-suspect;
+    list symbol-rssi-measurement-result {
+      key "object-unit-id";
+      config false;
+      leaf object-unit-id {
+        type leafref {
+          path "/up:user-plane-configuration/up:rx-array-carriers/up:name";
+        }
+
+        description
+          "rx-array-carrier is used for the object-unit-id for the
+           symbol-rssi-measurement-result, for which object-unit is RX-ARRAY-CARRIER only.
+           this measurement is only supported by the rx-array-carriers which are configured with single numerology.
+           an O-RU shall reject any configuration for an object-unit-id that references a mixed numerology array carrier.";
+      }
+      uses pm-suspect;
+      list per-symbol-index-result {
+        key "symbol-index";
+        description
+          "the symbol index for the measurement result";
+
+        leaf symbol-index{
+          type uint16;
+
+          description
+            "symbol-index is the symbol indexes within a configured 'period', These symbols include
+               - all UL symbols within a configured number of slots if measurement-object is ALL-UL-SYMBOLS,
+                 and the UL symbols are decided by 'configurable-tdd-pattern', 'static-srs-configuration', 'static-prach-configuration',
+                 and 'dataDirection' in the C-plane messages.
+               - configured symbols by 'symbol-index' within a configured 'period' if measurement-object is CONFIGURED-SYMBOLS,
+                 If a c-plane message indicates a symbol within the 'symbol-index' list to be a DL symbol,
+                 O-RU shall not measure RSSI on this symbol";
+        }
+        uses pm-suspect;
+        uses pm-metric-suspect;
+        container min {
+          description
+            "minimum value for the
+            measurement-object";
+          leaf value {
+            type decimal64 {
+              fraction-digits 1;
+            }
+            units dBm;
+            description
+              "minimum value for the TD-RSSI measurement in dBm";
+          }
+        }
+
+        container max {
+          description
+          "maximum value for the
+           measurement-object";
+          leaf value {
+            type decimal64 {
+              fraction-digits 1;
+            }
+            units dBm;
+            description
+              "maximum value for the TD-RSSI measurement in dBm";
+          }
+        }
+
+        container avg {
+          description
+          "average value for the
+           measurement-object";
+          leaf value {
+            type decimal64 {
+              fraction-digits 1;
+            }
+            units dBm;
+            description
+              "the dBm value of the linear average of TD-RSSI [Watt] value across the symbols with same symbol-index
+               if same symbol-index occurs multiple times within a given measurement interval.";
+          }
+        }
+
+        leaf-list frequency-table {
+          type uint32;
+          status deprecated;
+          description
+          "frequency-table for the measurment-object are included per bin.
+           The configuration parameters for this frequency-table are defined
+           by bin-count, lower-bound and upper-bound";
+        }
+
+        list frequency-bin-table {
+          key bin-id;
+          leaf bin-id {
+             type uint32;
+             description "Sequence number of the bin";
+          }
+          leaf value {
+             type uint32;
+             description "count corresponding to the bin";
+           }
+          description
+            "frequency-table for the measurement-object are included per bin.
+             The configuration parameters for this frequency-table are defined
+             by bin-count, lower-bound and upper-bound";
+        }
+      }
+      description
+         "measurement-result for the symbol-wise TD-RSSI depends on the
+          configured object-unit, RX-ARRAY-CARRIER";
+    }
+  }
+
+}

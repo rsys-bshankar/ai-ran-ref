@@ -1,0 +1,352 @@
+submodule o-ran-pm-ethernet-stats {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  import iana-if-type {
+    prefix "ianaift";
+  }
+
+  // import ietf-interface
+  import ietf-interfaces {
+    prefix "if";
+  }
+
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+  typedef ethernet-report-info {
+    type enumeration {
+      enum COUNT {
+        description
+          "Unit to measure the number of events related to Ethernet.";
+      }
+    }
+    description "The object units that might be supported/configured for
+      Ethernet measurement object.";
+  }
+
+  typedef ethernet-meas-object-type{
+    type enumeration {
+      enum IN-OCTETS {
+        description
+          "The total number of octets received on the interface,
+          including framing characters.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifHCInOctets";
+      }
+      enum IN_UNICAST-PKTS {
+        description
+          "The number of packets, delivered by this sub-layer to a
+          higher (sub-)layer, that were not addressed to a
+          multicast or broadcast address at this sub-layer.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifHCInUcastPkts";
+          }
+      enum IN-BROADCAST-PKTS {
+        description
+          "The number of packets, delivered by this sub-layer to a
+          higher (sub-)layer, that were addressed to a broadcast
+          address at this sub-layer.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifHCInBroadcastPkts";
+      }
+      enum IN-MULTICAST-PKTS {
+        description
+          "The number of packets, delivered by this sub-layer to a
+          higher (sub-)layer, that were addressed to a multicast
+          address at this sub-layer. For a MAC-layer protocol,
+          this includes both Group and Functional addresses.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifHCInMulticastPkts";
+      }
+      enum IN-DISCARDS {
+        description
+          "The number of inbound packets that were chosen to be
+          discarded even though no errors had been detected to
+          prevent their being deliverable to a higher-layer
+          protocol.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifInDiscards";
+      }
+      enum IN-ERRORS {
+        description
+          "For packet-oriented interfaces, the number of inbound
+          packets that contained errors preventing them from being
+          deliverable to a higher-layer protocol.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifInErrors";
+      }
+      enum IN-UNKNOWN-PROTOS {
+        description
+          "For packet-oriented interfaces, the number of packets
+          received via the interface that were discarded because
+          of an unknown or unsupported protocol.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifInUnknownProtos";
+      }
+      enum IN-CRC-ERRORS {
+        description
+          "the number of received frames with CRC errors.";
+      }
+      enum IN-FEC-CORRECTABLE-BLOCKS {
+        description
+          "the number of received erroneous blocks
+          which were corrected with application
+          of Forward Error Correction (FEC).";
+        reference
+          "IEEE 802.3 - aFECCorrectableBlocks";
+      }
+      enum IN-FEC-UNCORRECTABLE-BLOCKS {
+        description
+          "the number of received erroneous blocks
+          which could not be corrected with application
+          of Forward Error Correction (FEC).";
+        reference
+          "IEEE 802.3 - aFECUncorrectableBlocks";
+      }
+      enum IN-PCS-STATUS-CHANGE-COUNT {
+        description
+          "the number of times PCS (Physical Coding Layer)
+          of the receiver lost its operational state.
+          PCS operational state is defined in IEEE 802.3-2022, clause 49.";
+      }
+      enum OUT-OCTETS {
+        description
+          "The total number of octets transmitted out of the
+          interface, including framing characters.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifHCOutOctets";
+      }
+      enum OUT-UNICAST-PKTS {
+        description
+          "The total number of packets that higher-level protocols
+          requested be transmitted and that were not addressed
+          to a multicast or broadcast address at this sub-layer,
+          including those that were discarded or not sent.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifHCOutUcastPkts";
+      }
+      enum OUT-BROADCAST-PKTS {
+        description
+          "The total number of packets that higher-level protocols
+          requested be transmitted and that were addressed to a
+          broadcast address at this sub-layer, including those
+          that were discarded or not sent.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifHCOutBroadcastPkts";
+      }
+      enum OUT-MULTICAST-PKTS {
+        description
+          "The total number of packets that higher-level protocols
+          requested be transmitted and that were addressed to a
+          multicast address at this sub-layer, including those
+          that were discarded or not sent.  For a MAC-layer
+          protocol, this includes both Group and Functional
+          addresses.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifHCOutMulticastPkts";
+      }
+      enum OUT-DISCARDS {
+        description
+          "The number of outbound packets that were chosen to be
+          discarded even though no errors had been detected to
+          prevent their being transmitted.  One possible reason
+          for discarding such a packet could be to free up buffer
+          space.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifOutDiscards";
+      }
+      enum OUT-ERRORS {
+        description
+          "For packet-oriented interfaces, the number of outbound
+          packets that could not be transmitted because of errors.";
+        reference
+          "RFC 2863: The Interfaces Group MIB - ifOutErrors";
+      }
+      enum IN-FRAMES {
+        description
+          "The number of frames that are successfully received (receiveOK).
+          This does not include frames received with frame-too-long, FCS,
+          length or alignment errors, or frames lost due to internal MAC
+          sublayer error.";
+        reference
+          "IEEE 802.3 - aFramesReceivedOK";
+      }
+      enum IN-UNKNOWN-VLAN-FRAMES {
+        description
+          "The number of received VLAN-tagged Ethernet frames with VLAN ID
+          not matching with the VLAN ID of any VLAN interface.";
+      }
+      enum OUT-FRAMES {
+        description
+          "The number of frames that are successfully transmitted (transmitOK).";
+        reference
+          "IEEE 802.3 - aFramesTransmittedOK";
+      }
+    }
+    description
+      "The measurement-object-type supported by
+       measurement group ethernet-stats.";
+  }
+
+  grouping measurement-capabilities-ethernet-objects {
+      description
+      "ethernet-measurement capabilities listed.";
+      list ethernet-objects {
+        key measurement-object;
+        description "list of ethernet objects";
+        leaf measurement-object {
+          type ethernet-meas-object-type;
+          description "a measurement object";
+        }
+      }
+  }
+
+  grouping ethernet-measurement-result-grouping {
+    description
+      "ethernet-measurement-result listed per port-number of Ethernet type.";
+    uses pm-suspect;
+    list ethernet-measurement-result {
+      key "object-unit-id";
+      config false;
+      leaf object-unit-id {
+        type leafref {
+          path "/if:interfaces/if:interface/if:name";
+        }
+        must "derived-from-or-self(deref(current())/../if:type, 'ianaift:ethernetCsmacd')";
+
+        description
+          "interface name is used for the object-unit-id for the
+           ethernet-measurement-result, for which object-unit is ETH_INTERFACE";
+      }
+      uses pm-suspect;
+      leaf count {
+        type uint64;
+        description
+          "the number of events are counted for the Ethernet stats.";
+      }
+      description
+        "List of Ethernet measurement results";
+    }
+  }
+
+  grouping ethernet-measurement-objects-grouping {
+    description
+      "ethernet-measurement objects listed.";
+    list ethernet-measurement-objects {
+      key "measurement-object";
+      description
+        "Optional list used to report Ethernet measurements.";
+      leaf measurement-object {
+        type ethernet-meas-object-type;
+        description "Target Ethernet metric to measure the performance";
+      }
+
+      leaf active {
+        type boolean;
+        default false;
+        description
+          "Enable/disable the performance measurement per object";
+      }
+
+      leaf-list report-info {
+        type ethernet-report-info;
+        description "The reporting info to the measurement object.";
+      }
+
+      leaf object-unit {
+        type enumeration {
+          enum ETH_INTERFACE {
+            description
+              "unit to measure the performance per object-id,
+               the Ethernet stats are counted per ETH_INTERFACE.";
+          }
+        }
+        mandatory true;
+        description "unit to measure the performance per object-id.";
+      }
+      uses ethernet-measurement-result-grouping;
+    }
+  }
+
+  grouping 	measurement-notification-ethernet-stats {
+    description
+      "ethernet-measurement notification structure.";
+    list ethernet-stats {
+      key "measurement-object";
+      description
+        "measurement result of ethernet-measurement per measurement-object";
+      leaf measurement-object {
+        type leafref {
+          path "/performance-measurement-objects/ethernet-measurement-objects/measurement-object";
+          require-instance false;
+        }
+        description
+          "measurement-object for the ethernet-measurement";
+      }
+      list ethernet-measurement-results {
+        config false;
+        description
+          "Multiple measurement results of ethernet-measurement.
+
+          The O-RU shall use this list to report one or more measurements per measurement-object in a single notification.";
+        uses start-and-end-time;
+        uses ethernet-measurement-result-grouping;
+      }
+    }
+   }
+}

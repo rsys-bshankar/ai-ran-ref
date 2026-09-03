@@ -1,0 +1,461 @@
+submodule o-ran-pm-tx-stats {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  // import identifier for O-RU
+  import ietf-hardware {
+    prefix "hw";
+  }
+
+  // import ru-mac-address, o-du-mac-address and vlan-id
+  import o-ran-processing-element {
+    prefix "o-ran-elements";
+  }
+
+  import o-ran-wg4-features {
+     prefix "feat";
+  }
+
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+    revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+  typedef tx-meas-object-type{
+    type enumeration {
+      enum TX_TOTAL {
+        description
+          "the number of outbound packets (data and control), transmitted within
+          the measurement period";
+      }
+      enum TX_TOTAL_C {
+        description
+          "the number of outbound control packets, transmitted within
+          the measurement period.
+          See CUS-Plane specification Table 9.1-1 for more details.";
+      }
+    }
+    description
+      "The measurement-object-type supported by
+      measurement group tx-stats.";
+  }
+
+  typedef tx-object-unit{
+    type enumeration {
+      enum RU {
+        description
+          "measurement is counted per O-RU module.";
+      }
+      enum TRANSPORT {
+        description
+          "stats are counted per transport flow.
+          When there are multiple transport flows between O-DU and O-RU,
+          e.g. multiple sets of o-du-mac-address, ru-mac-address and
+          vlan-id, the reception window stats per transport flow
+          are counted in this case.";
+      }
+      enum EAXC_ID {
+          description
+            "stats are counted per eAxC ID, which is
+            used in the header of received data packet.";
+      }
+      enum EAXC_ID_DATADIRECTION {
+          description
+            "the transmission stats are counted for each combination of eAxC and dataDirection,
+            which is used in the header of received data packet.";
+      }
+    }
+    description "The object units measurement group transceiver-stats .";
+  }
+
+  grouping tx-measurement-result-grouping{
+    description
+      "Group of measurement results for tx stats";
+
+    choice object-unit-id {
+      config false;
+      case RU {
+        leaf name{
+          type leafref {
+            path "/hw:hardware/hw:component/hw:name";
+          }
+
+          description
+            "the name of O-RU module or one of its child ports
+            in ietf-hardware/component is used when O-RU is selected as
+            object-unit for the reception window stats.";
+        }
+        uses pm-metric-suspect;
+        leaf count {
+          type uint64;
+          mandatory true;
+
+          description
+            "the number of data packet are counted for the tx stats per O-RU.";
+        }
+      }
+
+      case TRANSPORT {
+        list tr-measured-result{
+          leaf name{
+            type leafref{
+              path "/o-ran-elements:processing-elements/o-ran-elements:ru-elements/o-ran-elements:name";
+            }
+
+            description
+              "the name of ru-elements in o-ran-processing-elements
+               when TRANSPORT is selected as object-unit for the tx stats.";
+          }
+
+          leaf transport-session-type {
+            if-feature "feat:MULTIPLE-TRANSPORT-SESSION-TYPE";
+            type enumeration {
+              enum ETH-INTERFACE {
+                description "VLAN based CUS Transport ";
+              }
+              enum UDPIP-INTERFACE {
+                description "UDP/IP based CUS Transport ";
+              }
+              enum ALIASMAC-INTERFACE{
+                description "Alias MAC address based CUS Transport ";
+              }
+            }
+            description
+              "transport session type used when an O-RU is configured with multiple processing elements of different transport session types,
+               in which case it is used for referencing a processing element in 'transport-qualified-name'";
+          }
+
+          leaf transport-qualified-name {
+            if-feature "feat:MULTIPLE-TRANSPORT-SESSION-TYPE";
+            type leafref {
+              path "/o-ran-elements:processing-elements/o-ran-elements:additional-transport-session-type-elements[o-ran-elements:transport-session-type = current()/../transport-session-type]/o-ran-elements:ru-elements/o-ran-elements:name";
+            }
+            description
+               "the name of ru-elements in o-ran-processing-elements
+               when TRANSPORT is selected as object-unit for the tx stats.
+               Used when the processing element is configured
+               by the list 'additional-transport-session-type-elements'";
+          }
+          uses pm-suspect;
+          leaf count {
+            type uint64;
+            mandatory true;
+
+            description
+              "the number of data packet are counted for the tx stats.";
+          }
+
+          description
+            "the number of data packet are counted for the tx stats per TRANSPORT.";
+        }
+      }
+
+      case EAXC_ID {
+        list eaxc-measured-result {
+          leaf eaxc-id{
+            type uint16;
+
+            description
+              "eaxc-id is used
+               when EAXC_ID is selected as object-unit for the tx stats.
+               EAXC_ID consists of DU-Port-Id, Band-Selector, CC-id and
+               RU-Port-Id to be used in header of C/U-plane data packet.";
+          }
+          uses pm-suspect;
+          leaf count {
+            type uint64;
+            mandatory true;
+
+            description
+              "the number of data packet are counted for the tx stats.";
+          }
+          leaf transport-name {
+            type leafref{
+              path "/o-ran-elements:processing-elements/o-ran-elements:ru-elements/o-ran-elements:name";
+            }
+
+            description
+              "the name of ru-elements in o-ran-processing-elements for the
+               transport information corresponding to this eaxc-id";
+          }
+
+          leaf transport-session-type {
+            if-feature "feat:MULTIPLE-TRANSPORT-SESSION-TYPE";
+            type enumeration {
+              enum ETH-INTERFACE {
+                description "VLAN based CUS Transport ";
+              }
+              enum UDPIP-INTERFACE {
+                description "UDP/IP based CUS Transport ";
+              }
+              enum ALIASMAC-INTERFACE{
+                description "Alias MAC address based CUS Transport ";
+              }
+            }
+            description
+              "transport session type used when an O-RU is configured with multiple processing elements of different transport session types,
+               in which case it is used for referencing a processing element in 'transport-qualified-name'";
+          }
+
+          leaf transport-qualified-name {
+            if-feature "feat:MULTIPLE-TRANSPORT-SESSION-TYPE";
+            type leafref {
+              path "/o-ran-elements:processing-elements/o-ran-elements:additional-transport-session-type-elements[o-ran-elements:transport-session-type = current()/../transport-session-type]/o-ran-elements:ru-elements/o-ran-elements:name";
+            }
+            description
+               "the name of ru-elements in o-ran-processing-elements for the
+               transport information corresponding to this eaxc-id.
+               Used when the processing element is configured
+               by the list 'additional-transport-session-type-elements'";
+          }
+
+          description
+            "the number of data packet are counted for the tx stats per EAXC-ID.";
+        }
+      }
+      case EAXC_ID_DATADIRECTION {
+        list eaxc-datadirection-measured-result {
+          leaf eaxc-id{
+            type uint16;
+
+            description
+              "eaxc-id is used
+               when EAXC_ID_DATADIRECTION is selected as object-unit for the tx stats.
+               EAXC_ID consists of DU-Port-Id, Band-Selector, CC-id and
+               RU-Port-Id to be used in header of C/U-plane data packet.";
+          }
+          leaf data-direction {
+            type enumeration {
+              enum DL {
+                description
+                  "reported measurement refers to control plane messages with dataDirection bit = 1.";
+              }
+              enum UL {
+                description
+                  "reported measurement refers to control plane messages with dataDirection bit = 0.";
+              }
+            }
+            description
+              "data-direction is used when reporting tx measurement associated with
+              control plane messages. See CUS-Plane Specification for more details of the dataDirection bit.
+              Can be ignored when received in tx measurements not corresponding to control plane messages.";
+          }
+          uses pm-suspect;
+          leaf count {
+            type uint64;
+            mandatory true;
+
+            description
+              "the number of data packet are counted for the tx stats.";
+          }
+
+          leaf transport-name {
+            type leafref{
+              path "/o-ran-elements:processing-elements/o-ran-elements:ru-elements/o-ran-elements:name";
+            }
+            description
+              "the name of ru-elements in o-ran-processing-elements for the
+               transport information corresponding to this eaxc-id";
+          }
+
+          leaf transport-session-type {
+             if-feature "feat:MULTIPLE-TRANSPORT-SESSION-TYPE";
+             type enumeration {
+              enum ETH-INTERFACE {
+                description "VLAN based CUS Transport ";
+              }
+              enum UDPIP-INTERFACE {
+                description "UDP/IP based CUS Transport ";
+              }
+              enum ALIASMAC-INTERFACE{
+                description "Alias MAC address based CUS Transport ";
+              }
+            }
+            description
+              "transport session type used when an O-RU is configured with multiple processing elements of different transport session types,
+               in which case it is used for referencing a processing element in 'transport-qualified-name'";
+          }
+
+          leaf transport-qualified-name {
+             if-feature "feat:MULTIPLE-TRANSPORT-SESSION-TYPE";
+             type leafref {
+              path "/o-ran-elements:processing-elements/o-ran-elements:additional-transport-session-type-elements[o-ran-elements:transport-session-type = current()/../transport-session-type]/o-ran-elements:ru-elements/o-ran-elements:name";
+            }
+            description
+               "the name of ru-elements in o-ran-processing-elements for the
+               transport information corresponding to this eaxc-id.
+               Used when the processing element is configured
+               by the list 'additional-transport-session-type-elements'";
+          }
+
+          description
+            "the number of data packet are counted for the tx stats per EAXC-ID with data-direction.";
+        }
+      }
+      description
+        "measurement-result for the tx stats depends on the
+         configured object-unit, RU, TRANSPORT or EAXC_ID";
+    }
+  }
+
+  grouping measurement-capabilities-tx-stats-objects{
+      description
+      "Group of measurement capabilities for tx stats";
+
+      list tx-stats-objects {
+        key measurement-object;
+        description "list of tx stats objects";
+        leaf measurement-object {
+          type tx-meas-object-type;
+          description "a measurement object";
+        }
+        leaf-list object-unit {
+          type tx-object-unit;
+          description
+            "unit to measure the performance per object-id.";
+        }
+      }
+  }
+
+  grouping measurement-notification-tx-stats {
+    description
+      "Group of measurement notification for tx stats";
+
+    list tx-stats {
+      key "measurement-object";
+
+      description
+        "measurement result for the tx stats measurement per
+         measurement-object";
+      leaf measurement-object {
+        type leafref {
+          path "/performance-measurement-objects/tx-measurement-objects/measurement-object";
+        }
+
+        description
+          "measurement-object for the tx stats measurement";
+      }
+      uses start-and-end-time;
+      uses tx-measurement-result-grouping;
+
+      list multiple-tx-measurement-result {
+        config false;
+        description
+          "Multiple measurement results of tx-measurement.
+
+          The O-RU shall use this list to report one or more measurements per measurement-object in a single notification.
+
+          In addition, the O-RU shall always use one of the
+
+          measurement-result-stats/tx-stats[measurement-object]/count or
+          measurement-result-stats/tx-stats[measurement-object]/tr-measured-result/count or
+          measurement-result-stats/tx-stats[measurement-object]/eaxc-measured-result/count
+
+          schema-nodes to report a single tx-measurement. The O-RU should report its latest
+          tx-measurement available. This ensures O-DUs supporting earlier versions
+          of this specification can recover the measurement.";
+
+        uses start-and-end-time;
+        uses tx-measurement-result-grouping;
+      }
+
+    }
+  }
+
+  grouping tx-measurement-objects-grouping{
+     description
+      "Group of measurement objects for tx stats";
+
+     list tx-measurement-objects {
+      key "measurement-object";
+      description
+        "optional list used to report TX measurements
+        applicable to O-RAN WG4 define O-RU functions";
+      leaf measurement-object {
+        type tx-meas-object-type;
+        description
+          "CU-plane transmission counters";
+      }
+
+      leaf active {
+        type boolean;
+        default false;
+        description
+          "Enable/disable the measurement per measurement object.";
+      }
+
+      leaf object-unit {
+        type tx-object-unit;
+        description
+          "unit to measure the performance per object-id.";
+      }
+
+      leaf report-info {
+        type enumeration {
+          enum COUNT {
+            description
+              "the number of data packet are counted for the reception
+               window stats.";
+          }
+        }
+        description
+          "The reporting info to the measurement object.";
+      }
+
+      uses tx-measurement-result-grouping;
+    // configuration and measurement result for the tx stats
+    }
+  }
+}

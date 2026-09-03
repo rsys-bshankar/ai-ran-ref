@@ -1,0 +1,402 @@
+submodule o-ran-pm-tx-output-power-stats {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  import o-ran-uplane-conf {
+    prefix "up";
+  }
+
+  import ietf-hardware {
+    prefix "hw";
+  }
+
+  import o-ran-hardware {
+    prefix "or-hw";
+  }
+
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+  typedef tx-output-power-report-info {
+    type enumeration {
+      enum MAXIMUM {
+        description
+          "to report maximum value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum MINIMUM {
+        description
+          "to report minimum value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum AVERAGE {
+        description
+          "to report average value within the
+           measurement-interval for the measurement-object.";
+      }
+    }
+    description
+      "The reporting info that might be supported/configured for
+      tx output power measurement object.";
+  }
+
+  typedef tx-output-power-object-unit {
+    type enumeration {
+      enum TX-ARRAY-CARRIER {
+        description
+          "unit to measure the performance per object-id - tx-array-carrier";
+      }
+      enum TX-ARRAY-ELEMENT {
+        description
+          "unit to measure the performance per object-id - tx-array element";
+
+      }
+      enum ARRAY-CARRIER-ELEMENT {
+        description
+          "unit to measure the performance per object-id
+           - per tx-array-carrier per tx-array element";
+
+      }
+      enum CONNECTOR {
+        description
+          "unit to measure the performance per object-id - connector";
+
+      }
+      enum ARRAY-CARRIER-CONNECTOR {
+        description
+          "unit to measure the performance per object-id - per tx-array-carrier per connector";
+
+      }
+    }
+    description "The object units that might be supported/configured for
+      tx antenna measurement object.";
+  }
+
+  typedef tx-output-power-meas-object-type{
+    type enumeration {
+      enum TX-OUTPUT-POWER {
+        description
+          "Measured or estimated tx output power for different object units.";
+      }
+    }
+    description
+      "The measurement-object-type supported by
+      measurement group tx-output-power-stats.";
+  }
+
+  grouping measurement-capabilities-tx-output-power-stats-objects {
+      description "The grouping of tx output power measurement capabilities";
+      list tx-output-power-stats-objects {
+        key measurement-object;
+        description "list of Tx output power stats objects";
+        leaf measurement-object {
+          type tx-output-power-meas-object-type;
+          description "a measurement object";
+        }
+        leaf-list object-unit {
+          type tx-output-power-object-unit;
+          description "The object units supported for this measurement object.";
+        }
+        leaf-list report-info {
+          type tx-output-power-report-info;
+          description "The reporting info supported of this measurement object.";
+        }
+       }
+   }
+
+  grouping tx-output-power-measurement-result-grouping {
+    description
+      "tx-output-power-stats-object per tx-array-carrier, tx-array-element, connector,
+       carrier-array-element or array-carrier-connector.
+       The unit of the reported tx output power is dbm.";
+    uses pm-suspect;
+    grouping tx-output-power-measurement-values-grouping {
+      description "The grouping of tx output power measurement values";
+      uses pm-metric-suspect;
+      container avg {
+        description
+          "average value for the measurement-object";
+        leaf value {
+          type decimal64 {
+            fraction-digits 2;
+          }
+          units dBm;
+          description
+            "the dBm value of the linear average of tx output power [Watt]value.";
+        }
+      }
+      container min {
+        description
+          "minimum value for the measurement-object";
+        leaf value {
+          type decimal64 {
+            fraction-digits 2;
+          }
+          units dBm;
+          description
+            "This indicates the mininum tx output power value.";
+          }
+      }
+      container max {
+        description
+        "maximum value for the measurement-object";
+        leaf value {
+          type decimal64 {
+            fraction-digits 2;
+          }
+          units dBm;
+          description
+            "This indicates maxium tx output power value.";
+        }
+      }
+    }
+    choice object-unit-id {
+      config false;
+      case TX-ARRAY-CARRIER {
+        list tx-output-power-measurement-result-tx-array-carrier {
+          key "tx-array-carrier";
+          leaf tx-array-carrier {
+            type leafref {
+              path "/up:user-plane-configuration/up:tx-array-carriers/up:name";
+            }
+            description
+              "tx-array-carrier is used for the object-unit-id for the tx-output-power-measurement-result.";
+          }
+          uses pm-suspect;
+          uses tx-output-power-measurement-values-grouping;
+          description "list of tx output power per tx-array-carrier.";
+        }
+        description "the tx output power per tx-array-carrier.";
+      }
+      case TX-ARRAY-ELEMENT {
+        list tx-output-power-measurement-result-tx-array-element {
+          key "tx-array";
+          leaf tx-array {
+            type leafref {
+                path "/up:user-plane-configuration/up:tx-arrays/up:name";
+              }
+              description "Name of tx-array; part of the measurement object identifier.";
+          }
+          list per-tx-array-element-index-result {
+            key "tx-array-element";
+            leaf tx-array-element {
+                type uint32;
+                description
+                  "This leaf indicates the identifier of the configured Tx array element.";
+            }
+            uses pm-suspect;
+            uses tx-output-power-measurement-values-grouping;
+            description "list of tx-array elements";
+          }
+          description "list of tx output power per tx-array element";
+        }
+        description "the tx output power per tx-array element";
+      }
+      case CONNECTOR {
+        list tx-output-power-measurement-result-connector {
+          key "related-o-ru-connector";
+          leaf related-o-ru-connector {
+            type leafref {
+              path '/hw:hardware/hw:component/hw:name';
+            }
+            must "derived-from-or-self(deref(current())/../hw:class, 'or-hw:O-RU-FEEDER')";
+            description
+              "Provides information about O-RU connector related to the measurement.";
+          }
+          uses pm-suspect;
+          uses tx-output-power-measurement-values-grouping;
+          description "list of tx output power per connector";
+        }
+        description "the tx output power per each connector";
+      }
+      case CARRIER-ARRAY-ELEMENT {
+        list tx-output-power-measurement-result-carrier-array-element {
+          key "tx-array-carrier";
+          config false;
+          leaf tx-array-carrier {
+            type leafref {
+              path "/up:user-plane-configuration/up:tx-array-carriers/up:name";
+            }
+            description
+              "tx-array-carrier is used for the object-unit-id for the tx-output-power-measurement-result.";
+          }
+          list per-tx-array-element-index-result {
+            key "tx-array tx-array-element";
+            description
+              "This list indicates the status information related to the Tx array element supported by the O-RU array carrier.";
+
+            leaf tx-array {
+              type leafref {
+                  path "/up:user-plane-configuration/up:tx-arrays/up:name";
+                }
+                description "Name of tx-array, part of the measurement object identifier.";
+            }
+
+            leaf tx-array-element {
+              type uint32;
+              description
+                "This leaf indicates the identifier of the configured Tx array element.";
+            }
+            uses pm-suspect;
+            uses tx-output-power-measurement-values-grouping;
+          }
+          description "list of tx output power per tx-array carrier per tx-array element";
+        }
+        description "The tx output power per tx array element per tx-array-carrier is estimated,
+          may be based on the power per tx-array element. If mulitiple tx-array-carriers are configured
+          to the tx array element, then the power per tx-array element may be derived,
+          may be based on the gain of the tx-array-carrier configured via Mplane and tx input IQ power level
+          of each tx-array-carrier on the tx array element.";
+      }
+      case ARRAY-CARRIER-CONNECTOR {
+        list tx-output-power-measurement-result-carrier-connector {
+          key "tx-array-carrier";
+          config false;
+          leaf tx-array-carrier {
+            type leafref {
+              path "/up:user-plane-configuration/up:tx-array-carriers/up:name";
+            }
+            description
+              "tx-array-carrier is used for the object-unit-id for the tx-output-power-measurement-result.";
+          }
+          list per-tx-array-connector-index-result {
+            key "related-o-ru-connector";
+            leaf related-o-ru-connector {
+              type leafref {
+                path '/hw:hardware/hw:component/hw:name';
+              }
+              must "derived-from-or-self(deref(current())/../hw:class, 'or-hw:O-RU-FEEDER')";
+              description
+                "Provides information about O-RU connector related to the measurement.";
+            }
+            uses pm-suspect;
+            uses tx-output-power-measurement-values-grouping;
+            description "the list of connectors that are associated to the tx-array-carrier";
+          }
+          description "The tx output power per tx-array-carrier per connector is estimated,
+            may be based on power per connector. If mulitiple tx-array-carriers are configured to
+            the connector, then the output power per connector may be derived, may be based on the
+            gain of the tx-array-carrier configured via Mplane and tx input IQ power level of each
+            tx-array-carrier on the tx array element whose tx-array associated to the connector.";
+        }
+      }
+      description
+        "the tx output power for different object-unit-id.";
+    }
+  }
+
+  grouping tx-output-power-measurement-objects-grouping {
+    description "The grouping of tx output power measurement objects";
+    list tx-output-power-measurement-objects {
+      key "measurement-object";
+      description
+        "Optional list used to report tx output power measurement";
+
+      leaf measurement-object {
+        type tx-output-power-meas-object-type;
+        description "Target metric to measure the Tx output power";
+      }
+      leaf active {
+        type boolean;
+        default false;
+        description
+          "Enable/disable the tx output power measurement per object";
+      }
+      leaf object-unit {
+        type tx-output-power-object-unit;
+        mandatory true;
+        description "unit to measure the performance per object-id.";
+      }
+
+      leaf-list report-info {
+        type tx-output-power-report-info;
+        description "The reporting info to the measurement object.";
+      }
+
+      uses tx-output-power-measurement-result-grouping;
+      // configuration and measurement result for the tx-output-power-measurement
+    }
+}
+
+  grouping  measurement-notification-tx-output-power-stats {
+    description "The grouping of tx output power measurement notification";
+    list tx-output-power-stats {
+      key "measurement-object";
+      description
+        "measurement result of tx-output-power-measurement per measurement-object";
+      leaf measurement-object {
+        type leafref {
+          path "/performance-measurement-objects/tx-output-power-measurement-objects/measurement-object";
+        }
+
+        description
+          "measurement-object for the tx-output-power-measurement";
+      }
+
+      list tx-output-power-measurement-result {
+        config false;
+        description
+          "Measurement results of tx-output-power-measurement.
+
+          The O-RU shall use this list to report one or more measurements per measurement-object in a single notification.";
+
+        uses start-and-end-time;
+        uses tx-output-power-measurement-result-grouping;
+      }
+    }
+  }
+}

@@ -1,0 +1,457 @@
+submodule o-ran-pm-rx-windows-stats {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  // import identifier for O-RU
+  import ietf-hardware {
+    prefix "hw";
+  }
+
+  // import ru-mac-address, o-du-mac-address and vlan-id
+  import o-ran-processing-element {
+    prefix "o-ran-elements";
+  }
+
+  import o-ran-wg4-features {
+     prefix "feat";
+  }
+
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+  typedef rx-window-meas-object-type{
+
+    type enumeration {
+      enum RX_ON_TIME {
+        description
+          "the number of data packets, received on time within
+          the reception window.";
+      }
+      enum RX_EARLY {
+        description
+          "the number of data packets, received before
+          the reception window.";
+      }
+      enum RX_LATE {
+        description
+          "the number of data packets, received after
+          the reception window.";
+      }
+      enum RX_CORRUPT {
+        description
+          "the number of data and control packets, which are corrupt or whose header
+          is incorrect.";
+      }
+      enum RX_DUPL {
+        status deprecated;
+        description
+          "the number of data packets, which is duplicated with other packets,
+          received within the measurement period.";
+      }
+      enum RX_TOTAL {
+        description
+          "the total number of received data and control packets within the measurement period.";
+      }
+      enum RX_ON_TIME_C {
+        description
+          "the number of control packets, received on time within
+          the reception window.";
+      }
+      enum RX_EARLY_C {
+        description
+          "the number of control packets, received before
+          the reception window.";
+      }
+      enum RX_LATE_C {
+        description
+          "the number of control packets, received after
+          the reception window.";
+      }
+      enum RX_SEQID_ERR {
+        description
+          "the number of data packets, received with an erroneous sequence ID.";
+      }
+      enum RX_SEQID_ERR_C {
+        description
+          "the number of control packets, received with an erroneous sequence ID.";
+      }
+      enum RX_ERR_DROP {
+        description
+          "The total number of inbound messages which are discarded by the receiving
+          O-RAN entity for any reason.";
+      }
+    }
+    description
+      "The measurement-object-type supported by
+       measurement group rx-windown-stats.";
+  }
+
+  typedef rx-window-object-unit{
+    type enumeration {
+      enum RU {
+        description
+          "measurement is counted per O-RU module.";
+      }
+      enum TRANSPORT {
+        description
+          "stats are counted per transport flow.
+          When there are multiple transport flows between O-DU and O-RU,
+          e.g. multiple sets of o-du-mac-address, ru-mac-address and
+          vlan-id, the reception window stats per transport flow
+          are counted in this case.";
+      }
+      enum EAXC_ID {
+          description
+            "stats are counted per eAxC ID, which is
+            used in the header of received data packet.";
+      }
+    }
+    description "The object units for measurement groups .";
+  }
+
+  grouping measurement-capabilities-rx-window-objects{
+      description
+      "rx window measurement capabilities group";
+      list rx-window-objects {
+        key measurement-object;
+        description "list of rx window objects";
+        leaf measurement-object {
+          type rx-window-meas-object-type;
+          description "a measurement object";
+        }
+        leaf-list object-unit {
+          type rx-window-object-unit;
+          description
+            "unit to measure the performance per object-id.";
+        }
+      }
+  }
+
+  grouping rx-window-measurement-result-grouping{
+    description
+      "Group of measurement results for rx window measurements";
+    uses pm-suspect;
+    choice object-unit-id {
+      config false;
+      case RU {
+        leaf name{
+          type leafref {
+            path "/hw:hardware/hw:component/hw:name";
+          }
+
+          description
+            "the name of O-RU module or one of its child ports
+            in ietf-hardware/component is used when O-RU is selected as
+            object-unit for the reception window stats.";
+        }
+        uses pm-metric-suspect;
+        leaf count {
+          type uint64;
+          mandatory true;
+
+          description
+            "the number of data packet are counted for the reception
+             window stats per O-RU.";
+        }
+      }
+
+      case TRANSPORT {
+        list tr-measured-result{
+          leaf name{
+            type leafref{
+              path "/o-ran-elements:processing-elements/o-ran-elements:ru-elements/o-ran-elements:name";
+            }
+
+            description
+              "the name of ru-elements in o-ran-processing-elements
+               when TRANSPORT is selected as object-unit for the reception
+               window stats.";
+          }
+
+          leaf transport-session-type {
+            if-feature "feat:MULTIPLE-TRANSPORT-SESSION-TYPE";
+            type enumeration {
+              enum ETH-INTERFACE {
+                description "VLAN based CUS Transport ";
+              }
+              enum UDPIP-INTERFACE {
+                description "UDP/IP based CUS Transport ";
+              }
+              enum ALIASMAC-INTERFACE{
+                description "Alias MAC address based CUS Transport ";
+              }
+            }
+            description
+              "transport session type used when an O-RU is configured with multiple processing elements of different transport session types,
+               in which case it is used for referencing a processing element in 'transport-qualified-name'";
+          }
+
+          leaf transport-qualified-name {
+            if-feature "feat:MULTIPLE-TRANSPORT-SESSION-TYPE";
+            type leafref {
+              path "/o-ran-elements:processing-elements/o-ran-elements:additional-transport-session-type-elements[o-ran-elements:transport-session-type = current()/../transport-session-type]/o-ran-elements:ru-elements/o-ran-elements:name";
+            }
+            description
+               "the name of ru-elements in o-ran-processing-elements
+               when TRANSPORT is selected as object-unit for the reception
+               window stats. Used when the processing element is configured
+               by the list 'additional-transport-session-type-elements'";
+          }
+          uses pm-suspect;
+          leaf count {
+            type uint64;
+            mandatory true;
+
+            description
+              "the number of data packet are counted for the reception
+               window stats.";
+          }
+
+          description
+            "the number of data packet are counted for the reception
+             window stats per TRANSPORT.";
+        }
+      }
+
+      case EAXC_ID {
+        list eaxc-measured-result {
+          leaf eaxc-id{
+            type uint16;
+
+            description
+              "eaxc-id is used
+               when EAXC_ID is selected as object-unit for the reception
+               window stats.
+               EAXC_ID consists of DU-Port-Id, Band-Selector, CC-id and
+               RU-Port-Id to be used in header of C/U-plane data packet.";
+          }
+          uses pm-suspect;
+          leaf count {
+            type uint64;
+            mandatory true;
+
+            description
+              "the number of data packet are counted for the reception
+               window stats.";
+          }
+          leaf data-direction {
+            type enumeration {
+              enum DL {
+                description
+                  "reported measurement refers to control plane messages with dataDirection bit = 1.";
+              }
+              enum UL {
+                description
+                  "reported measurement refers to control plane messages with dataDirection bit = 0.";
+              }
+              enum DLUL {
+                description
+                  "reported measurement refers to control plane messages irrespective of dataDirection bit setting.";
+              }
+            }
+            description
+              "An optional leaf used when reporting rx window measurement associated with
+              control plane messages. See CUS-Plane Specification for more details of the dataDirection bit.
+
+              When not present and reporting rx window measurement associated with control plane messages,
+              the receiving entity can assume that the reported control plane rx window measurement refers
+              to control plane messages irrespective of dataDirection bit setting.
+
+              Can be ignored when received in rx window measurements not corresponding to control plane messages.";
+          }
+          leaf transport-name {
+            type leafref{
+              path "/o-ran-elements:processing-elements/o-ran-elements:ru-elements/o-ran-elements:name";
+            }
+
+            description
+              "the name of ru-elements in o-ran-processing-elements for the
+               transport information corresponding to this eaxc-id";
+          }
+
+          leaf transport-session-type {
+            if-feature "feat:MULTIPLE-TRANSPORT-SESSION-TYPE";
+            type enumeration {
+              enum ETH-INTERFACE {
+                description "VLAN based CUS Transport ";
+              }
+              enum UDPIP-INTERFACE {
+                description "UDP/IP based CUS Transport ";
+              }
+              enum ALIASMAC-INTERFACE{
+                description "Alias MAC address based CUS Transport ";
+              }
+            }
+            description
+              "transport session type used when an O-RU is configured with multiple processing elements of different transport session types,
+               in which case it is used for referencing a processing element in 'transport-qualified-name'";
+          }
+
+          leaf transport-qualified-name {
+          if-feature "feat:MULTIPLE-TRANSPORT-SESSION-TYPE";
+            type leafref {
+              path "/o-ran-elements:processing-elements/o-ran-elements:additional-transport-session-type-elements[o-ran-elements:transport-session-type = current()/../transport-session-type]/o-ran-elements:ru-elements/o-ran-elements:name";
+            }
+            description
+               "the name of ru-elements in o-ran-processing-elements for the
+               transport information corresponding to this eaxc-id.
+               Used when the processing element is configured
+               by the list 'additional-transport-session-type-elements'";
+          }
+
+          description
+            "the number of data packet are counted for the reception
+             window stats per EAXC-ID.";
+        }
+      }
+
+      description
+        "measurement-result for the reception window stats depends on the
+         configured object-unit, RU, TRANSPORT or EAXC_ID";
+    }
+  }
+
+  grouping rx-window-measurement-objects-grouping {
+    description
+      "rx window measurement object group";
+    list rx-window-measurement-objects {
+      key "measurement-object";
+      description
+        "optional list used to report RX Window measurements
+        applicable to O-RAN WG4 define O-RU functions";
+      leaf measurement-object {
+        type rx-window-meas-object-type;
+        description
+          "target reception window metric to measure the performance.";
+      }
+
+      leaf active {
+        type boolean;
+        default false;
+        description
+          "Enable/disable the performance measurement per reception window
+           measurement object.";
+      }
+
+      leaf object-unit {
+        type rx-window-object-unit;
+        description
+          "unit to measure the performance per object-id.";
+      }
+
+      leaf report-info {
+        type enumeration {
+          enum COUNT {
+            description
+              "the number of data packet are counted for the reception
+               window stats.";
+          }
+        }
+        description
+          "The reporting info to the measurement object.";
+      }
+
+      uses rx-window-measurement-result-grouping;
+// configuration and measurement result for the reception window stats
+    }
+   }
+
+  grouping measurement-notification-rx-window-stats{
+    description
+      "rx window notification structure group";
+    list rx-window-stats {
+      key "measurement-object";
+
+      description
+        "measurement result for the reception window measurement per
+         measurement-object";
+      leaf measurement-object {
+        type leafref {
+          path "/performance-measurement-objects/rx-window-measurement-objects/measurement-object";
+        }
+
+        description
+          "measurement-object for the reception window measurement";
+      }
+      uses start-and-end-time;
+      uses rx-window-measurement-result-grouping;
+
+      list multiple-rx-window-measurement-result {
+        config false;
+        description
+          "Multiple measurement results of rx-window-measurement.
+
+          The O-RU shall use this list to report one or more measurements per measurement-object in a single notification.
+
+          In addition, the O-RU shall always use one of the
+
+          measurement-result-stats/rx-window-stats[measurement-object]/count or
+          measurement-result-stats/rx-window-stats[measurement-object]/tr-measured-result/count or
+          measurement-result-stats/rx-window-stats[measurement-object]/eaxc-measured-result/count
+
+          schema-nodes to report a single rx-window measurement-object. The O-RU should report its latest
+          rx-window measurement available. This ensures O-DUs supporting earlier versions
+          of this specification can recover the measurement.";
+
+        uses start-and-end-time;
+        uses rx-window-measurement-result-grouping;
+      }
+
+    }
+  }
+}

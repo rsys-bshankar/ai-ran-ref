@@ -1,0 +1,148 @@
+module o-ran-pim {
+  yang-version 1.1;
+  namespace "urn:o-ran:pim:1.0";
+  prefix "o-ran-pim";
+
+  import o-ran-uplane-conf {
+    prefix "up";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the capabilities and configuration for the PIM and PIMC related functionalities.
+
+    Copyright 2026 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+  revision "2026-05-07" {
+    description
+      "version 21.0.0
+
+      1) initial version";
+
+      reference "ORAN-WG4.TS.MP.0-R005-v21.01";
+  }
+
+  typedef pimc-control-method-type {
+    type enumeration {
+      enum ARRAY-ELEMENT {
+        description "PIM cancellation internally at O-RU enabled at array element level.";
+      }
+      enum ARRAY-CARRIER {
+        description "PIM cancellation internally at O-RU enabled at array carrier level.";
+      }
+    }
+    description "Type definition for PIMC control method.";
+  }
+
+  grouping pimc-capabilities-group {
+    description
+      "Grouping for PIMC-related capabilities.";
+
+    container pimc-capabilities {
+      config false;
+      description
+        "PIM-related capabilities.";
+
+      leaf-list pimc-control-methods-supported {
+        type pimc-control-method-type;
+        description
+          "The supported PIMC control methods.
+          If the list is empty, then the O-RU doesn't support PIMC.";
+      }
+    }
+  }
+
+  grouping pimc-general-configuration-group {
+    description
+      "Grouping for PIM-related configuration.";
+
+    container pimc-general-configuration {
+      description
+        "PIM-related configuration.";
+
+      leaf pimc-control-method {
+        type pimc-control-method-type;
+        description
+          "Configured PIMC control method.
+          If the value is not set, then PIMC is disabled.
+          If the value is set to ARRAY-ELEMENT, then the rx-array elements on which PIMC shall be enabled
+          are configured with pimc-array-element-configuration list.
+          If the value is set to ARRAY-CARRIER, then the rx-array-carriers on which PIMC shall be enabled
+          are configured with pimc-enabled leaf in rx-array-carriers.";
+      }
+
+      list pimc-array-element-configuration {
+        when "../pimc-control-method = 'ARRAY-ELEMENT'";
+        key "rx-array array-element";
+        description
+          "The list of rx-array elements for which PIMC is enabled.
+          The list shall only be configured if pimc-control-method is set to ARRAY-ELEMENT.";
+
+        leaf rx-array {
+          type leafref {
+            path "/up:user-plane-configuration/up:rx-arrays/up:name";
+            require-instance false;
+          }
+          description
+            "Name of an rx-array.";
+        }
+
+        leaf array-element {
+          type uint16;
+          description
+            "Array element identifier.
+            Allowed values and semantic - as per CUS-Plane spec, clause 'Identification and Ordering of Array Elements'.";
+        }
+      }
+    }
+  }
+
+  container pim {
+    description "Top-level tree for PIM-related functionalities.";
+
+    uses pimc-capabilities-group;
+    uses pimc-general-configuration-group;
+  }
+
+  augment "/up:user-plane-configuration/up:rx-array-carriers" {
+    description
+      "Augment the rx-array-carriers with the parameter to enable PIMC.";
+
+    leaf pimc-enabled {
+      when "/pim/pimc-general-configuration/pimc-control-method = 'ARRAY-CARRIER'";
+      type boolean;
+      default false;
+      description
+        "This parameter enables PIMC on the rx-array-carrier.
+        The parameter shall only be configured if pimc-control-method is set to ARRAY-CARRIER.";
+    }
+  }
+}

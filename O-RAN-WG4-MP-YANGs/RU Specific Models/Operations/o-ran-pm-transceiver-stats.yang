@@ -1,0 +1,449 @@
+submodule o-ran-pm-transceiver-stats {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  import ietf-yang-types {
+    prefix "yang-types";
+  }
+
+  // import ietf-interface
+  import ietf-interfaces {
+    prefix "if";
+  }
+
+  // import port-number
+  import o-ran-interfaces {
+    prefix "o-ran-int";
+  }
+
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation.
+      2) correct max-bin-count definition.
+      3) added Self-tunable transceiver diagnostics.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+  typedef transceiver-report-info {
+    type enumeration {
+      enum MAXIMUM {
+        description
+          "to report maximum value and its recorded time within the
+           measurement-interval for the measurement-object.";
+      }
+      enum MINIMUM {
+        description
+          "to report minimum value and its recorded time within the
+           measurement-interval for the measurement-object.";
+      }
+      enum FIRST {
+        description
+          "to report first value and its recorded time within the
+           measurement-interval for the measurement-object.";
+      }
+      enum LATEST {
+        description
+          "to report latest value and its recorded time within the
+           measurement-interval for the measurement-object.";
+      }
+      enum FREQUENCY_TABLE {
+        description
+          "to report frequency bin table within the
+           measurement-interval for the measurement-object.";
+      }
+    }
+    description
+      "The reporting info that might be supported/configured for
+      transceiver measurement object.";
+  }
+
+  typedef transceiver-function {
+    type enumeration {
+      enum RAW {
+        description
+          "the value is expressed by real value.";
+      }
+      enum LOG_10 {
+        description
+          "the value is expressed by logarithm with base 10.";
+      }
+    }
+
+    description
+      "The function that might be supported/configured for
+      transceiver measurement object.";
+  }
+
+  typedef transceiver-meas-object-type{
+
+    type enumeration {
+      enum RX_POWER {
+        description
+          "Measured Rx input power in mW for SFP or lane 1 of QSFP";
+      }
+      enum RX_POWER_LANE_2 {
+        description
+          "Measured Rx input power in mW for lane 2 of QSFP";
+      }
+      enum RX_POWER_LANE_3 {
+        description
+          "Measured Rx input power in mW for lane 3 of QSFP";
+      }
+      enum RX_POWER_LANE_4 {
+        description
+          "Measured Rx input power in mW for lane 4 of QSFP";
+      }
+      enum TX_POPWER {
+        status deprecated;
+        description
+          "Measured Tx input power in mW.";
+      }
+      enum TX_POWER {
+        description
+          "Measured Tx input power in mW.";
+      }
+      enum TX_POWER_LANE_2 {
+        description
+          "Measured Tx input power in mW for lane 2 of QSFP";
+      }
+      enum TX_POWER_LANE_3 {
+        description
+          "Measured Tx input power in mW for lane 3 of QSFP";
+      }
+      enum TX_POWER_LANE_4 {
+        description
+          "Measured Tx input power in mW for lane 4 of QSFP";
+      }
+      enum TX_BIAS_COUNT {
+        description
+          "Internally measured Tx Bias Current in mA for SFP or lane 1 of QSFP";
+      }
+      enum TX_BIAS_COUNT_LANE_2 {
+        description
+          "Internally measured Tx Bias Current in mA for lane 2 of QSFP";
+      }
+      enum TX_BIAS_COUNT_LANE_3 {
+        description
+          "Internally measured Tx Bias Current in mA for lane 3 of QSFP";
+      }
+      enum TX_BIAS_COUNT_LANE_4 {
+        description
+          "Internally measured Tx Bias Current in mA for lane 4 of QSFP";
+      }
+      enum VOLTAGE {
+        description
+          "Internally measured transceiver supply voltage in mV";
+      }
+      enum TEMPERATURE {
+        description
+          "Internally measured optional module temperature in degrees Celsius.";
+      }
+      enum LASER_TEMPERATURE {
+        description
+          "Internally measured optional laser temperature in degrees Celsius.";
+      }
+      enum TEC_CURRENT {
+        description
+          "Internally measured thermo-electric cooler (TEC) current per transceiver module in mA.
+          TEC current is a positive number for cooling and a negative number for heating.";
+      }
+      enum TUNED_DWDM_CHANNEL_FREQUENCY_ERROR {
+        description
+          "Frequency error reported in 0.1 GHz";
+      }
+      enum TUNED_DWDM_CHANNEL_WAVELENGTH_ERROR {
+        description
+          "Wavelength error reported in 0.005 nm.";
+      }
+    }
+    description
+      "The measurement-object-type supported by
+       measurement group transceiver-stats";
+  }
+
+  grouping report-info-value-time64-4 {
+    description
+      "value that is decimal64 with 4 fraction digits with recorded time are included for the
+      measurement-object.";
+
+    leaf value {
+      type decimal64 {
+      fraction-digits 4;
+      }
+      description
+        "value for the measurement-object and report-info is provided";
+    }
+    leaf time {
+      type yang-types:date-and-time;
+
+      description
+        "Recorded time for the value is provided";
+    }
+  }
+  grouping measurement-capabilities-transceiver-objects {
+  description
+      "transceiver measurement capabilities objects.";
+      list transceiver-objects {
+        key measurement-object;
+        description "list of transceiver objects";
+        leaf measurement-object {
+          type transceiver-meas-object-type;
+          description "a measurement object";
+        }
+        leaf-list report-info {
+          type transceiver-report-info;
+          description "The reporting info supported by this measurement object.";
+        }
+        leaf-list function {
+          type transceiver-function;
+          description "The function supported by this measurement object.";
+        }
+        leaf max-bin-count{
+          type uint16;
+          description
+            "when O-RU supports FREQUENCY_TABLE, indicates the maximum value of
+            configurable bin-count for frequency table in transceiver-measurement-objects.";
+        }
+      }
+  }
+
+  grouping measurement-notification-transceiver-stats {
+    description
+      "transceiver measurement notification group.";
+    list transceiver-stats {
+      key "measurement-object";
+
+      description
+        "measurement result of transceiver-measurement per measurement-object";
+      leaf measurement-object {
+        type leafref {
+          path "/performance-measurement-objects/transceiver-measurement-objects/measurement-object";
+        }
+
+        description
+          "measurement-object for the transceiver-measurement";
+      }
+
+      uses start-and-end-time;
+      uses transceiver-measurement-result-grouping;
+
+      list multiple-transceiver-measurement-result {
+        config false;
+        description
+          "Multiple measurement results of transceiver-measurement.
+
+          The O-RU shall use this list to report one or more measurements per measurement-object in a single notification.
+
+          In addition, the O-RU shall always use the
+
+          measurement-result-stats/transceiver-stats[measurement-object]/transceiver-measurement-result
+
+          schema-node to report a single transceiver measurement-object. The O-RU should report its latest
+          transceiver measurements available. This ensures O-DUs supporting earlier versions
+          of this specification can recover the measurement.";
+
+        uses start-and-end-time;
+        uses transceiver-measurement-result-grouping;
+      }
+
+    }
+   }
+
+  grouping transceiver-measurement-result-grouping {
+    description
+      "transceiver-measurement-result are listed per port-number";
+    uses pm-suspect;
+    list transceiver-measurement-result {
+      key "object-unit-id";
+      config false;
+      leaf object-unit-id {
+        type leafref {
+          path "/if:interfaces/if:interface/o-ran-int:port-reference/o-ran-int:port-number";
+        }
+
+        description
+          "port-number is used for the object-unit-id for the
+           transceiver-measurement-result, for which object-unit is
+           PORT_NUMBER only";
+      }
+      uses pm-suspect;
+      uses pm-metric-suspect;
+      container min {
+        description
+          "minimum value with recorded time are included for the
+           measurement-object";
+
+        uses report-info-value-time64-4 ;
+      }
+      container max {
+        description
+        "maximum value with recorded time are included for the
+         measurement-object";
+        uses report-info-value-time64-4 ;
+      }
+      container first {
+        description
+          "first value with the recorded time are included for the
+           measurement-object";
+        uses report-info-value-time64-4  ;
+      }
+      container latest {
+        description
+          "latest value with the recorded time are included for the
+           measurement-object";
+        uses report-info-value-time64-4  ;
+      }
+      leaf-list frequeny-table {
+        type uint32;
+        status deprecated;
+        description
+          "frequency-table for the measurement-object are included per bin.
+           The configuration parameters for this frequency-table are defined
+           by bin-count, lower-bound and upper-bound";
+      }
+      list frequency-bin-table {
+        key bin-id;
+        leaf bin-id {
+           type uint32;
+           description "Sequence number of the bin";
+        }
+        leaf value {
+           type uint32;
+           description "count corresponding to the bin";
+         }
+        description
+          "frequency-table for the measurement-object are included per bin.
+           The configuration parameters for this frequency-table are defined
+           by bin-count, lower-bound and upper-bound";
+      }
+      description
+        "List of transceiver measurement results";
+    }
+  }
+
+  grouping transceiver-measurement-objects-grouping {
+    description
+      "transceiver measurement objects group";
+    list transceiver-measurement-objects {
+      key "measurement-object";
+      description
+        "optional list used to report transceiver measurements
+        applicable to any O-RAN defined hardware function";
+      leaf measurement-object {
+        type transceiver-meas-object-type;
+        description "Target metric to measure the performance";
+      }
+
+      leaf active {
+        type boolean;
+        default false;
+        description
+          "Enable/disable the performance measurement per Object";
+      }
+
+      leaf-list report-info {
+        type transceiver-report-info;
+        description "The reporting info to the measurement object.";
+      }
+
+      leaf object-unit {
+        type enumeration {
+          enum PORT_NUMBER {
+            description
+              "unit to measure the performance per object-id";
+          }
+        }
+        mandatory true;
+        description "unit to measure the performance per object-id.";
+      }
+
+      leaf function {
+        type transceiver-function;
+
+        description
+          "the value to be recorded for transceiver-measurement
+           by real value or log 10.";
+      }
+
+      leaf bin-count {
+        type uint16;
+
+        description
+          "the number of bin for the frequency table.
+           This value shall be less than or equal to max-bin-count";
+      }
+
+      leaf lower-bound {
+        type decimal64 {
+          fraction-digits 4;
+        }
+
+        description
+          "the lower value of the first bin of frequency table.";
+      }
+
+      leaf upper-bound {
+        type decimal64 {
+          fraction-digits 4;
+        }
+
+        description
+          "the upper value of the last bin of frequency table.";
+      }
+      uses transceiver-measurement-result-grouping;
+// configuration and measurement result for the transceiver-measurement
+
+    }
+   }
+}

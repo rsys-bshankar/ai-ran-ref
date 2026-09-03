@@ -1,0 +1,388 @@
+submodule o-ran-pm-epe-statistics {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  import iana-hardware {
+    prefix ianahw;
+  }
+
+  import ietf-hardware {
+    prefix "hw";
+  }
+
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation.
+      2) correct max-bin-count definition";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+ typedef epe-report-info {
+    type enumeration {
+      enum MAXIMUM {
+        description
+          "to report maximum value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum MINIMUM {
+        description
+          "to report minimum value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum AVERAGE {
+        description
+          "to report average value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum FREQUENCY_TABLE {
+        description
+          "to report frequency bin table within the
+          measurement-interval for the measurement-object.";
+      }
+    }
+    description
+      "The reporting info that might be supported/configured for
+      EPE measurement object.";
+  }
+
+  typedef epe-meas-object-type{
+    type enumeration {
+      enum TEMPERATURE {
+        description
+          "Measured temperature in degrees Celsius";
+    }
+    enum POWER  {
+      description
+        "Measured power consumed, in watts (W)";
+    }
+    enum VOLTAGE  {
+      description
+        "Measured voltage, in volts (V)";
+    }
+    enum CURRENT  {
+      description
+        "Measured current consumption, in amperes (A)";
+    }
+  }
+  description
+    "The measurement-object-type supported by
+    measurement group epe-statistics.";
+  }
+
+  grouping report-info-min64-4 {
+    description
+      "min value that is decimal64 with 4 fraction digits included for the measurement-object.";
+    leaf min {
+      type decimal64 {
+        fraction-digits 4;
+      }
+      description
+        "minimum value for the measurement-object";
+    }
+  }
+
+  grouping report-info-max64-4 {
+    description
+      "max value that is decimal64 with 4 fraction digits included for the measurement-object.";
+    leaf max {
+      type decimal64 {
+        fraction-digits 4;
+      }
+      description
+        "maximum value for the measurement-object";
+    }
+  }
+
+  grouping report-info-average64-4 {
+    description
+      "average value with decimal64 with 4 fraction digits included for the
+           measurement-object.";
+    leaf average {
+      type decimal64 {
+        fraction-digits 4;
+      }
+      description
+        "average value for the measurement-object";
+    }
+  }
+
+ grouping measurement-capabilities-epe-stats-objects {
+    description
+      "energy, power and environmental measurement-capabilities are listed for O-RU";
+      list epe-stats-objects {
+        key "measurement-object";
+        description
+          "An optional list describing the energy, power and environmental measurements supported
+          by the O-RU. Measurements are defined per hardware component.";
+        leaf measurement-object {
+          type epe-meas-object-type;
+          description "a measurement object";
+        }
+        leaf-list component-class {
+          type identityref {
+            base ianahw:hardware-class;
+          }
+          description
+            "An indication of the general hardware type of the
+             component for which EPE measurements are supported.";
+
+        }
+        leaf-list report-info {
+          type epe-report-info;
+          description "The reporting info supported of this measurement object.";
+        }
+        leaf max-bin-count{
+          type uint16;
+          description
+            "when O-RU supports FREQUENCY_TABLE, indicates the maximum value of
+            configurable bin-count for frequency table in epe-measurement-objects.";
+        }
+      }
+  }
+
+ grouping measurement-notification-epe-stats{
+    description
+      "energy, power and environmental measurement stats are listed for O-RU";
+    container epe-stats {
+      status deprecated;
+      description
+        "container for the EPE stats measurement - deprecated because measurement object
+        isn't included";
+
+      uses start-and-end-time;
+      uses epe-measurement-result-grouping;
+    }
+
+    list epe-statistics {
+      key "measurement-object";
+
+      description
+        "measurement result for the EPE stats measurement per
+         measurement-object";
+      leaf measurement-object {
+        type leafref {
+          path "/performance-measurement-objects/epe-measurement-objects/measurement-object";
+        }
+
+        description
+          "measurement-object for the EPE stats measurement";
+      }
+      uses start-and-end-time;
+      uses epe-measurement-result-grouping;
+
+      list multiple-epe-measurement-result {
+        config false;
+        description
+          "Multiple measurement results of epe-measurement.
+
+          The O-RU shall use this list to report one or more measurements per measurement-object in a single notification.
+
+          In addition, the O-RU shall use the
+
+          measurement-result-stats/epe-statistics[measurement-object]/epe-measurement-resultv2/
+
+          schema-nodes to report a single epe-measurement for a measurement-object. The O-RU
+          should report its latest epe-measurement available. This ensures O-DUs supporting earlier
+          versions of this specification can recover the measurement.";
+
+        uses start-and-end-time;
+        uses epe-measurement-result-grouping;
+      }
+
+    }
+   }
+
+  grouping epe-measurement-result-grouping {
+    description
+      "energy, power and environmental measurement-result are listed for O-RU";
+    uses pm-suspect;
+    list epe-measurement-result {
+      key "object-unit-id";
+      config false;
+      status deprecated;
+      description
+        "energy power and environmental measurement results
+
+        this list is deprecated as the leaf object-unit-id actually
+        refers to an object-unit. It is replaced with
+        the new list epe-measurement-resultv2";
+      leaf object-unit-id {
+        type leafref {
+          path "/hw:hardware/hw:component/hw:class";
+        }
+
+        description
+          "the hardware component type is used for the object-unit-id for the
+           EPE measurements. For example, the object-unit-id will be set to
+           or-hw:O-RAN-RADIO if the measurement applies to the complete O-RU
+           self-contained sub-system.
+
+           Other hardware-classes include: or-hw:O-RU-POWER-AMPLIFIER,
+           ianahw:power-supply, ianahw:fan, ianahw:cpu";
+      }
+      uses pm-suspect;
+      uses pm-metric-suspect;
+      uses report-info-min64-4;
+      uses report-info-max64-4;
+      uses report-info-average64-4;
+    }
+
+    list epe-measurement-resultv2 {
+      key "object-unit-id";
+
+      config false;
+      description
+        "energy power and environmental measurement results
+
+        this list replaces the deprecated list epe-measurement-result";
+      leaf object-unit-id {
+        type leafref {
+          path "/hw:hardware/hw:component/hw:name";
+        }
+
+        description
+          "the hardware component name is used for the object-unit-id for the
+           EPE measurements. For example, the object-unit-id will be set to
+           the name of the component with class or-hw:O-RU-POWER-AMPLIFIER
+           to refer to a particular power amplifer instance.";
+      }
+      uses pm-suspect;
+      uses pm-metric-suspect;
+      uses report-info-min64-4;
+      uses report-info-max64-4;
+      uses report-info-average64-4;
+      list frequency-bin-table {
+        key bin-id;
+        leaf bin-id {
+           type uint32;
+           description "Sequence number of the bin";
+        }
+        leaf value {
+           type uint32;
+           description "count corresponding to the bin";
+         }
+        description
+          "frequency-table for the measurement-object are included per bin.
+           The configuration parameters for this frequency-table are defined
+           by bin-count, lower-bound and upper-bound";
+      }
+    }
+
+
+  }
+
+ grouping epe-measurement-objects-grouping {
+    description
+      "energy, power and environmental measurements applicable to any O-RAN defined hardware function";
+    list epe-measurement-objects {
+      key "measurement-object";
+      description
+        "optional list used to report energy, power and environmental
+        measurements applicable to any O-RAN defined hardware function";
+      leaf measurement-object {
+        type epe-meas-object-type;
+        description "Target metric to measure the performance";
+      }
+
+      leaf active {
+        type boolean;
+        default false;
+        description
+          "Enable/disable the performance measurement per Object";
+      }
+
+      leaf object-unit {
+        type leafref {
+          path "/hw:hardware/hw:component/hw:class";
+        }
+        description
+          "the hardware component type is used for the object-unit for the
+           EPE measurements. For example, the object-unit will be set to
+           or-hw:O-RU-POWER-AMPLIFIER if the measurement relates to
+           O-RU power amplifiers.
+
+           Other hardware-classes include:
+           ianahw:power-supply, ianahw:fan, ianahw:cpu";
+      }
+
+      leaf-list report-info {
+        type epe-report-info;
+        description "The reporting info to the measurement object.";
+      }
+
+      leaf bin-count {
+        type uint16;
+        description
+          "the number of bin for the frequency table.
+          This value shall be less than or equal to max-bin-count";
+      }
+      leaf lower-bound {
+        type decimal64 {
+          fraction-digits 4;
+        }
+        description
+          "the lower value of the first bin of frequency table.";
+      }
+      leaf upper-bound {
+        type decimal64 {
+          fraction-digits 4;
+        }
+        description
+          "the upper value of the last bin of frequency table.";
+      }
+      uses epe-measurement-result-grouping;
+    // configuration and measurement result for the epe-measurement
+    }
+   }
+}

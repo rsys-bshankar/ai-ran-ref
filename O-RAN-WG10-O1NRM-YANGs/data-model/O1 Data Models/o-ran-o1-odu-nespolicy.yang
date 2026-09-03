@@ -1,0 +1,129 @@
+module o-ran-o1-odu-nespolicy {
+  yang-version 1.1;
+  namespace "urn:o-ran:o-ran-o1-odu-nespolicy";
+  prefix or-odu-nesp;
+
+  import _3gpp-common-managed-element {
+    prefix me3gpp;
+  }
+  import _3gpp-common-top {
+    prefix top3gpp;
+  }
+  import _3gpp-nr-nrm-gnbdufunction {
+    prefix gnbdu3gpp;
+  }
+  import o-ran-common-yang-types {
+    prefix or-types;
+  }
+
+  organization
+    "O-RAN Alliance";
+  contact
+    "www.o-ran.org";
+  description
+    "This module defines the augmentation of the SA5 yang data model of GNBDUFunction with NESPolicy attributes
+
+     Copyright 2025 the O-RAN Alliance.
+
+     THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+     AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+     IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+     ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+     LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+     CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+     SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+     INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+     CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+     POSSIBILITY OF SUCH DAMAGE.
+
+     Redistribution and use in source and binary forms, with or without
+     modification, are permitted provided that the following conditions are met:
+
+     * Redistributions of source code must retain the above copyright notice,
+     this list of conditions and the above disclaimer.
+     * Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the above disclaimer in the documentation
+     and/or other materials provided with the distribution.
+     * Neither the Members of the O-RAN Alliance nor the names of its
+     contributors may be used to endorse or promote products derived from
+     this software without specific prior written permission.";
+
+  revision "2025-07-02" {
+    description
+      "version 2.0.0
+
+       1) Alignment to new YANG Conventions";
+
+    reference "O-RAN.WG10.TS.O1NRM.0-R004-v04.00";
+  }
+
+  revision 2024-07-11 {
+    description
+      "version 1.0.0
+
+       1) Initial version";
+
+    reference "O-RAN.WG10.O1NRM.0-R004-v01.00" ;
+  }
+
+  grouping NESPolicyGrp {
+    description
+      "Grouping for Network energy saving policy related parameters";
+    leaf policyId {
+      type string;
+      config false;
+      mandatory true;
+      description
+        "Defines the unique identifier of the policy, corresponding to the policy file.";
+    }
+    leaf policyType {
+      type or-types:NESPolicyType;
+      config false;
+      mandatory true;
+      description
+        "Represents the type of energy saving for which the policy is applicable.";
+    }
+    list applicableTimeWindows {
+      key "startTime endTime";
+      min-elements 1;
+      uses or-types:TimeWindow;
+      description
+        "Represents the list of time windows at which the NES policy is applicable.";
+    }
+    leaf antennaMask {
+      type binary;
+      config false;
+      description
+        "Represents the recommended antenna mask for network energy saving.
+         Antenna mask values supported by O-RU";
+    }
+    leaf sleepMode {
+      type uint8 {
+        range "0..3";
+      }
+      config false;
+      description
+        "Represents the recommended sleep mode for network energy saving.
+         Allowed values are the sleep modes supported by the O-RU
+         (defined in ORAN-WG4.CUS specification [z], clause 16.1).";
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gnbdu3gpp:GNBDUFunction" {
+    description
+      "Augmentation containing possible configuration for O-DU to host the NESPolicy";
+    list NESPolicy {
+      key id;
+      description
+        "This IOC represents a policy, or a set of policies, or a list of configurations for O-DU.
+         These enable or disable energy-saving use cases such as
+         TRx Control (RF Channel Reconfiguration) and Advanced Sleep Mode in O-RU.";
+      uses top3gpp:Top_Grp;
+      container attributes {
+        description "Attributes defined by NESPolicy IOC";
+        uses NESPolicyGrp;
+      }
+    }
+  }
+}

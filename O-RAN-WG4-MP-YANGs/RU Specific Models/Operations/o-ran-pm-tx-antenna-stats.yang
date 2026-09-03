@@ -1,0 +1,444 @@
+submodule o-ran-pm-tx-antenna-stats {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  import ietf-yang-types {
+    prefix "yang-types";
+  }
+
+  import o-ran-uplane-conf {
+    prefix "up";
+  }
+
+  import ietf-hardware {
+    prefix "hw";
+  }
+
+  import o-ran-module-cap {
+    prefix "mcap";
+  }
+
+  import o-ran-hardware {
+    prefix "or-hw";
+  }
+
+
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation.
+      2) correct max-bin-count definition.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+  typedef tx-antenna-report-info {
+    type enumeration {
+      enum AVERAGE {
+        description
+          "To report average value within the measurement-interval
+          for the measurement-object.";
+      }
+      enum STD_DEVIATION {
+        description
+          "To report standard deviation value within the measurement-interval
+          for the measurement-object.";
+      }
+      enum MAXIMUM {
+        description
+          "To report maximum value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum MAXIMUM_AND_TIME {
+        description
+          "To report maximum value and its recorded time within the
+           measurement-interval for the measurement-object.";
+      }
+      enum MINIMUM {
+        description
+          "To report minimum value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum MINIMUM_AND_TIME {
+        description
+          "To report minimum value and its recorded time within the
+           measurement-interval for the measurement-object.";
+      }
+      enum FIRST {
+        description
+          "To report first value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum FIRST_AND_TIME {
+        description
+          "To report first value and its recorded time within the
+           measurement-interval for the measurement-object.";
+      }
+      enum LATEST {
+        description
+          "To report latest value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum LATEST_AND_TIME {
+        description
+          "To report latest value and its recorded time within the
+           measurement-interval for the measurement-object.";
+      }
+      enum FREQUENCY_TABLE {
+        description
+          "To report frequency bin table within the
+           measurement-interval for the measurement-object.";
+      }
+    }
+    description "The reporting info that might be supported/configured for
+      tx antenna measurement object.";
+  }
+
+  typedef tx-antenna-object-unit {
+    type enumeration {
+      enum ARRAY_ELEMENT {
+        description
+          "Unit to measure the performance per object-id - array element";
+      }
+      enum CONNECTOR_BAND {
+        description
+          "Unit to measure the performance per object-id - connector and band";
+      }
+    }
+    description "The object units that might be supported/configured for
+      tx antenna measurement object.";
+  }
+
+  typedef tx-antenna-meas-object-type{
+    type enumeration {
+      enum VSWR {
+        description
+          "Measure and report values of VSWR.";
+        }
+      }
+      description
+        "The measurement-object-type supported by
+        shared cell measurement group.";
+  }
+
+
+  grouping measurement-capabilities-tx-antenna-stats-objects {
+      description
+        "tx-antenna measurement capabilities group.";
+      list tx-antenna-stats-objects {
+        key measurement-object;
+        description "list of tx antenna objects";
+        leaf measurement-object {
+          type tx-antenna-meas-object-type;
+          description "a measurement object";
+        }
+
+        leaf-list object-unit {
+          type tx-antenna-object-unit;
+          description "The object units supported for this measurement object.";
+        }
+
+        leaf-list report-info {
+          type tx-antenna-report-info;
+          description "The reporting info supported for this measurement object.";
+        }
+
+        leaf max-bin-count{
+          type uint16;
+          description
+            "when O-RU supports FREQUENCY_TABLE, indicates the maximum value of
+            configurable bin-count for frequency table in tx-antenna-stats-objects.";
+        }
+      }
+   }
+
+  grouping tx-antenna-measurement-result-grouping {
+    description
+      "tx-antenna-measurement-result listed per array element or connector and band.";
+    uses pm-suspect;
+    grouping tx-antenna-measurement-values-grouping {
+      description
+        "The grouping of tx antenna measurement values";
+      uses pm-metric-suspect;
+      container avg {
+        description
+          "Average value is included for the measurement-object.";
+        uses report-info-value64-4;
+ 
+      }
+      container std-deviation {
+        description
+          "Standard deviation value is included for the measurement-object.";
+         uses report-info-value64-4;
+      }
+      container min {
+        description
+          "Minimum value for the measurement-object is provided";
+
+        uses report-info-value64-4;
+        leaf time {
+          type yang-types:date-and-time;
+
+          description
+            "Recorded time for the minimum value is provided
+            if MINIMUM_AND_TIME report-info is selected.";
+        }
+      }
+      container max {
+        description
+        "Maximum value with optionally recorded time are included for the
+         measurement-object.";
+         uses report-info-value64-4;
+
+        leaf time {
+          type yang-types:date-and-time;
+
+          description
+            "Recorded time for the maximum value is provided
+            if MAXIMUM_AND_TIME report-info is selected.";
+        }
+      }
+      container first {
+        description
+          "First value with optinally the recorded time are included for the
+           measurement-object.";
+          uses report-info-value64-4;
+        leaf time {
+          type yang-types:date-and-time;
+
+          description
+            "Recorded time for the first value is provided
+            if FIRST_AND_TIME report-info is selected.";
+        }
+      }
+      container latest {
+        description
+          "Latest value with optionally the recorded time are included for the
+           measurement-object.";
+        uses report-info-value64-4;
+        leaf time {
+          type yang-types:date-and-time;
+
+          description
+            "Recorded time for the latest value is provided
+            if LATEST_AND_TIME report-info is selected.";
+        }
+      }
+
+      list frequency-bin-table {
+        key bin-id;
+        leaf bin-id {
+           type uint32;
+           description "Sequence number of the bin";
+        }
+        leaf value {
+           type uint32;
+           description "count corresponding to the bin";
+         }
+        description
+          "Frequency-table for the measurement-object are included per bin.
+           The configuration parameters for this frequency-table are defined
+           by bin-count, lower-bound and upper-bound.";
+      }
+    }
+
+    choice object-unit-id {
+      config false;
+      case ARRAY_ELEMENT {
+        list tx-antenna-measurement-result-array-element {
+          key "tx-array tx-array-element";
+          config false;
+          leaf tx-array {
+            type leafref {
+                path "/up:user-plane-configuration/up:tx-arrays/up:name";
+              }
+              description "Name of tx-array; part of the measurement object identifier.";
+          }
+
+          leaf tx-array-element {
+            type uint32;
+
+            description
+              "Array element number within the tx-array identified by object-unit-id-array; part of the measurement object identifier.
+              Allowed values and semantic - as per CUS-Plane spec, clause 'Identification and Ordering of Array Elements'.";
+          }
+          uses pm-suspect;
+          uses tx-antenna-measurement-values-grouping;
+
+          description
+            "List of tx antenna measurement results";
+        }
+      }
+      case CONNECTOR_BAND {
+        list tx-antenna-measurement-result-connector-band {
+          key "related-o-ru-connector band-number";
+          config false;
+
+          leaf related-o-ru-connector {
+            type leafref {
+              path '/hw:hardware/hw:component/hw:name';
+            }
+            must "derived-from-or-self(deref(current())/../hw:class, 'or-hw:O-RU-FEEDER')";
+            description
+              "Provides information about O-RU connector related to the measurement.";
+          }
+
+          leaf band-number {
+            type leafref {
+              path "/mcap:module-capability/mcap:band-capabilities/mcap:band-number";
+            }
+            description
+              "Provides information about frequency band related to the measurement.";
+          }
+          uses pm-suspect;
+          uses tx-antenna-measurement-values-grouping;
+
+          description
+            "List of tx antenna measurement results";
+        }
+      }
+      description
+        "measurement-result for tx-antenna stats depends on the configured object-unit,
+        ARRAY_ELEMENT or CONNECTOR_BAND.";
+    }
+  }
+
+  grouping tx-antenna-measurement-objects-grouping {
+    description
+        "tx-antenna measurement objects group.";
+    list tx-antenna-measurement-objects {
+      key "measurement-object";
+      description
+        "Optional list used to report tx-antenna measurements.";
+      leaf measurement-object {
+        type tx-antenna-meas-object-type;
+        description "Target metric to measure the tx-antenna measurements.";
+      }
+
+      leaf active {
+        type boolean;
+        default false;
+        description
+          "Enable/disable the performance measurement per Object";
+      }
+
+      leaf-list report-info {
+        type tx-antenna-report-info;
+        description "The reporting info to the measurement object.";
+      }
+
+      leaf object-unit {
+        type tx-antenna-object-unit;
+        mandatory true;
+        description "Unit to measure the performance per object-id.";
+      }
+
+      leaf bin-count {
+        type uint16;
+
+        description
+          "The number of bin for the frequency table.
+           This value shall be less than or equal to max-bin-count";
+      }
+
+      leaf lower-bound {
+        type decimal64 {
+          fraction-digits 4;
+        }
+
+        description
+          "The lower value of the first bin of frequency table.";
+      }
+
+      leaf upper-bound {
+        type decimal64 {
+          fraction-digits 4;
+        }
+
+        description
+          "The upper value of the last bin of frequency table.";
+      }
+      uses tx-antenna-measurement-result-grouping;
+      // configuration and measurement result for the tx-antenna-measurement
+    }
+   }
+
+  grouping measurement-notification-tx-antenna-stats {
+    description
+        "tx-antenna measurement notification group.";
+    list tx-antenna-stats {
+      key "measurement-object";
+
+      description
+        "Measurement result of tx-antenna-measurement per measurement-object";
+      leaf measurement-object {
+        type leafref {
+          path "/performance-measurement-objects/tx-antenna-measurement-objects/measurement-object";
+        }
+
+        description
+          "measurement-object for the tx-antenna-measurement";
+      }
+
+      list tx-antenna-measurement-result {
+        config false;
+        description
+          "Multiple measurement results of tx-antenna-measurement.
+
+          The O-RU shall use this list to report one or more measurements per measurement-object in a single notification.";
+
+        uses start-and-end-time;
+        uses tx-antenna-measurement-result-grouping;
+      }
+    }
+   }
+}

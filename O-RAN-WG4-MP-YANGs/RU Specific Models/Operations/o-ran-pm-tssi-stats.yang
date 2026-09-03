@@ -1,0 +1,266 @@
+submodule o-ran-pm-tssi-stats {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  import o-ran-uplane-conf {
+    prefix "up";
+  }
+
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+  typedef tssi-report-info {
+    type enumeration {
+      enum MAXIMUM {
+        description
+          "to report maximum value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum MINIMUM {
+        description
+          "to report minimum value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum AVERAGE {
+        description
+          "to report average value within the
+           measurement-interval for the measurement-object.";
+      }
+    }
+    description
+      "The reporting info that might be supported/configured for
+      TSSI measurement object.";
+  }
+
+  typedef tssi-meas-object-type{
+    type enumeration {
+      enum TSSI-IQ-POWER-LEVEL {
+        description
+          "Measured TSSI (Transmit Signal Strength Indicator) digital IQ Power level for each Tx array
+           carrier on the specific array element";
+      }
+    }
+    description
+      "The measurement-object-type supported by
+      measurement group tssi-stats.";
+  }
+
+  grouping measurement-capabilities-tssi-stats-objects {
+    description
+      "Group of tssi measurement capabilities";
+      list tssi-stats-objects {
+        key measurement-object;
+        description "list of TSSI stats objects";
+        leaf measurement-object {
+          type tssi-meas-object-type;
+          description "a measurement object";
+        }
+        leaf-list report-info {
+          type tssi-report-info;
+          description "The reporting info supported for thise measurement object.";
+        }
+      }
+   }
+
+  grouping tssi-measurement-result-grouping {
+    description
+      "The status information are listed for each O-RU's Tx array carrier";
+    uses pm-suspect;
+    list tssi-measurement-result {
+      key "object-unit-id";
+      config false;
+      description
+        "Measurement result of tssi per measurement-object";
+
+      leaf object-unit-id {
+        type leafref {
+          path "/up:user-plane-configuration/up:tx-array-carriers/up:name";
+        }
+        description
+          "tx-array-carrier is used for the object-unit-id for the tssi-measurement-result.";
+      }
+      uses pm-suspect;
+      list per-tx-array-element-index-result {
+        key "tx-array tx-array-element";
+        description
+          "This list indicates the status information related to the Tx array element supported by the O-RU array carrier.";
+
+        leaf tx-array {
+          type leafref {
+              path "/up:user-plane-configuration/up:tx-arrays/up:name";
+            }
+            description "Name of tx-array; part of the measurement object identifier.";
+        }
+
+        leaf tx-array-element {
+          type uint32;
+          description
+            "This leaf indicates the identifier of the configured Tx array element in tx-array.";
+        }
+        uses pm-suspect;
+        uses pm-metric-suspect;
+        container avg {
+          description
+            "average value for the measurement-object";
+          leaf value {
+            type decimal64 {
+              fraction-digits 2;
+            }
+            units dBFS;
+            description
+              "the dBFS value of the linear average of the measured Transmission Signal Strength Indicator (TSSI) during DL symbol
+              as the digital IQ power level of the Tx array carrier on the specific array element";
+          }
+        }
+
+       container min {
+         description
+            "minimum value for the measurement-object";
+          leaf value {
+            type decimal64 {
+              fraction-digits 2;
+            }
+            units dBFS;
+            description
+              "Min value of the measured Transmission Signal Strength Indicator (TSSI) during DL symbol
+              as the digital IQ power level of the Tx array carrier on the specific array element.";
+          }
+        }
+
+        container max {
+          description
+          "maximum value for the measurement-object";
+          leaf value {
+            type decimal64 {
+              fraction-digits 2;
+            }
+            units dBFS;
+            description
+              "Max value of the measured Transmission Signal Strength Indicator (TSSI) during DL symbol
+              as the digital IQ power level of the Tx array carrier on the specific array element.";
+          }
+       }
+     }
+    }
+  }
+
+  grouping tssi-measurement-objects-grouping {
+    description
+      "Group of tssi measurement objects";
+    list tssi-measurement-objects {
+      key "measurement-object";
+      description
+        "optional list used to measure and report time domain TSSI for per tx-array-carrier on specific tx-array-element.";
+      leaf measurement-object {
+        type tssi-meas-object-type;
+        description "Target metric to measure the tssi";
+      }
+
+      leaf active {
+        type boolean;
+        default false;
+        description
+          "Enable/disable the TSSI measurement per object";
+      }
+
+      leaf object-unit {
+        type enumeration {
+          enum CARRIER_ARRAY_ELEMENT {
+            description
+              "Unit to measure the performance per object-id.";
+          }
+        }
+        mandatory true;
+        description "unit to measure the performance per object-id.";
+      }
+
+      leaf-list report-info {
+        type tssi-report-info;
+        description "The reporting info to the measurement object.";
+       }
+      uses tssi-measurement-result-grouping;
+      // configuration and measurement result for the tssi-measurement
+    }
+   }
+
+  grouping measurement-notification-tssi-stats {
+    description
+      "Group for measurement notification for tssi";
+    list tssi-stats {
+      key "measurement-object";
+      description
+        "Measurement result of tssi per measurement-object";
+      leaf measurement-object {
+        type leafref {
+          path "/performance-measurement-objects/tssi-measurement-objects/measurement-object";
+        }
+        description
+          "measurement-object for the tx-array-carriers";
+      }
+
+      list tssi-measurement-result {
+        config false;
+        description
+          "Multiple measurement results of tssi-measurement.
+          The O-RU shall use this list to report one or more measurements per measurement-object in a single notification.";
+        uses start-and-end-time;
+        uses tssi-measurement-result-grouping;
+      }
+    }
+   }
+
+}

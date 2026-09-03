@@ -1,0 +1,102 @@
+module o-ran-o1-odu-nespolicyrelation {
+  yang-version 1.1;
+  namespace "urn:o-ran:o-ran-o1-odu-nespolicyrelation";
+  prefix or-odu-nespr;
+
+  import _3gpp-common-managed-element {
+    prefix me3gpp;
+  }
+  import _3gpp-common-top {
+    prefix top3gpp;
+  }
+  import _3gpp-nr-nrm-gnbdufunction {
+    prefix gnbdu3gpp;
+  }
+  import _3gpp-nr-nrm-nrcelldu {
+    prefix nrcelldu3gpp;
+  }
+  import _3gpp-common-yang-types {
+    prefix types3gpp;
+  }
+
+  organization
+    "O-RAN Alliance";
+  contact
+    "www.o-ran.org";
+  description
+    "This module defines the augmentation of the SA5 yang data model of GNBDuFunction with NESPolicyRelation attributes
+
+     Copyright 2025 the O-RAN Alliance.
+
+     THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+     AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+     IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+     ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+     LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+     CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+     SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+     INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+     CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+     POSSIBILITY OF SUCH DAMAGE.
+
+     Redistribution and use in source and binary forms, with or without
+     modification, are permitted provided that the following conditions are met:
+
+     * Redistributions of source code must retain the above copyright notice,
+     this list of conditions and the above disclaimer.
+     * Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the above disclaimer in the documentation
+     and/or other materials provided with the distribution.
+     * Neither the Members of the O-RAN Alliance nor the names of its
+     contributors may be used to endorse or promote products derived from
+     this software without specific prior written permission.";
+
+  revision "2025-07-02" {
+    description
+      "version 2.0.0
+
+       1) Alignment to new YANG Conventions";
+
+    reference "O-RAN.WG10.TS.O1NRM.0-R004-v04.00";
+  }
+
+  revision 2024-07-11 {
+    description
+      "version 1.0.0
+
+       1) Initial version";
+
+    reference "O-RAN.WG10.O1NRM.0-R004-v01.00" ;
+  }
+
+  grouping NESPolicyRelationGrp {
+    description
+      "Grouping for Network energy saving policy relation related parameters";
+    leaf-list configuredNesPolicyList {
+      type types3gpp:DistinguishedName;
+      min-elements 1;
+      description
+        "Holds an ordered list of DNs of the NESPolicies that are configured for a given NRCellDU.
+         The evaluation of the NES policy is performed by the O-DU in increasing order of their precedence in the list.
+         The order represents the policy priorities, i.e., the policy whose DN appears first has higher priority than the policies that follow.";
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gnbdu3gpp:GNBDUFunction/nrcelldu3gpp:NRCellDU" {
+    description
+      "Augmentation containing possible configuration for O-DU to host the NESPolicyRelation";
+    list NESPolicyRelation {
+      key id;
+      description
+        "This IOC represents the list of NES policies configured for the NRCellDU.
+         It is not mandatory for an NRCellDU MOI to be associated with any NESPolicy MOIs,
+         in this scenario there shall be no NESPolicy name assosiatd with the NRCellDU MOI.";
+      uses top3gpp:Top_Grp;
+      container attributes {
+        description "Attributes defined by NESPolicyRelation IOC";
+        uses NESPolicyRelationGrp;
+      }
+    }
+  }
+}

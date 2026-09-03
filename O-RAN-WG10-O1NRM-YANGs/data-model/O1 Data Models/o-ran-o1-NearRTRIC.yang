@@ -1,0 +1,96 @@
+module o-ran-o1-NearRTRIC {
+  yang-version 1.1;
+
+  namespace "urn:o-ran:o-ran-o1-NearRTRIC";
+  prefix "or-o1-NearRTRIC";
+
+  import _3gpp-common-top {
+    prefix top3gpp;
+  }
+
+  import _3gpp-common-managed-element {
+    prefix me3gpp;
+  }
+
+  import _3gpp-common-yang-types {
+    prefix types3gpp;
+  }
+
+  import _3gpp-common-managed-function {
+     prefix mf3gpp;
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module is for O-RAN Work Group 3 O1 Interface Specification for Near Real Time RAN Intelligent Controller
+
+    Copyright 2024 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+  revision 2024-07-11 {
+    description
+      "version 1.0.0
+
+       1) Initial version";
+
+    reference "O-RAN.WG10.O1NRM.0-R004-v01.00" ;
+  }
+
+  grouping NearRTRICFunctionGrp {
+    description "The NearRTRICFunction IOC represents the Management aspects of the aggregated functions making up the Near-Rt RIC";
+
+    uses mf3gpp:ManagedFunctionGrp;
+
+    container nearRTRICPLMNID{
+      uses types3gpp:PLMNId;
+      description "RIC PLMN identifier which is as part of the global RIC ID";
+    }
+
+    leaf nearRTRICId{
+      type uint16;
+      description "Id for near real time RIC";
+    }
+  }
+  augment "/me3gpp:ManagedElement" {
+    description
+      "NearRTRICFunction is name contained by ManagedElement";
+    list NearRTRICFunction {
+      key id;
+      description
+        "The NearRTRICFunction IOC represents the Management aspects of the aggregated functions
+         making up the Near-RT RIC (defined in O-RAN Architecture Description [9], clause 5.3.2).";
+      uses top3gpp:Top_Grp;
+      container attributes {
+        description "Attributes of the Near-RT RIC";
+        uses NearRTRICFunctionGrp;
+      }
+    }
+  }
+}

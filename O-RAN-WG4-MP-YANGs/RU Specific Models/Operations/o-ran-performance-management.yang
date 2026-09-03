@@ -1,0 +1,443 @@
+module o-ran-performance-management {
+  yang-version 1.1;
+  namespace "urn:o-ran:performance-management:1.0";
+  prefix "o-ran-pm";
+
+  import o-ran-wg4-features {
+    prefix "feat";
+  }
+  import o-ran-hardware{
+    prefix "or-hw";
+  }
+  import ietf-hardware {
+    prefix "hw";
+  }
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+  include o-ran-pm-transceiver-stats {
+   description "O-RAN performance management tranceiver objects statements";
+  }
+
+  include o-ran-pm-rx-windows-stats {
+   description "O-RAN performance management rx windows objects statements";
+  }
+
+  include o-ran-pm-tx-stats {
+   description "O-RAN performance management tx objects statements";
+  }
+
+ include o-ran-pm-epe-statistics {
+   description "O-RAN performance management epe objects statements";
+  }
+
+ include o-ran-pm-symbol-rssi-stats {
+   description "O-RAN performance management rssi objects statements";
+  }
+
+ include o-ran-pm-shared-cell-stats {
+   description "O-RAN performance management shared cell objects statements";
+  }
+
+ include o-ran-pm-tssi-stats {
+   description "O-RAN performance management tssi objects statements";
+  }
+
+ include o-ran-pm-tx-antenna-stats {
+   description "O-RAN performance management tx antenna objects statements";
+  }
+
+ include o-ran-pm-rssi-stats {
+   description "O-RAN performance management rssi objects statements";
+  }
+
+ include o-ran-pm-tx-output-power-stats {
+   description "O-RAN performance management tx output objects statements";
+  }
+
+ include o-ran-pm-ethernet-stats {
+   description "O-RAN performance management ethernet objects statements";
+  }
+
+ include o-ran-pm-pim-stats {
+   description "O-RAN performance management pim objects statements";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2026 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2026-05-07 {
+    description
+      "version 21.0.0
+      1) Addition of PIM stats and notifications in new submodule o-ran-pm-pim-stats.yang.
+      2) PIM related changes in sub-module o-ran-pm-general.yang.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v21.01";
+   }
+
+   revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+   revision 2025-08-11 {
+    description
+      "version 19.0.0
+
+      1) adding object-unit to tx-output-power capability.
+      2) adding Ethernet counters: IN-FRAMES, IN-UNKNOWN-VLAN-FRAMES, OUT-FRAMES.
+      3) deprecating feature SHARED-CELL-STATS.
+      4) deprecating feature GRANULARITY-TRANSPORT-MEASUREMENT.
+      5) deprecating feature GRANULARITY-EAXC-ID-MEASUREMENT.
+      6) adding support for EAXC_ID_DATADIRECTION.
+      7) introducing measurement object type for each measurement group.
+      8) modify the description of the parameter indicating the corrected spelling.
+      9) fix of the RX_CORRUPT description.";
+
+    reference "ORAN-WG4.TS.MP.0-R004-v19.00";
+  }
+
+
+  revision 2025-04-14 {
+    description
+      "version 17.1.0
+
+      1) removed redundant config false from max-bin-count.
+      2) Adding missing units that align with descriptions.
+      3) Correct description of TX_TOTAL_C";
+
+    reference "ORAN-WG4.TS.MP.0-R004-v17.00";
+  }
+
+  revision 2024-12-23 {
+    description
+      "version 17.0.0
+
+      1) add Tx output power measurement
+      2) add thermo-electric cooler (TEC) current measurement
+      3) add Ethernet counters";
+
+    reference "ORAN-WG4.TS.MP.0-R004-v17.00";
+  }
+
+  revision 2024-08-12 {
+    description
+      "version 16.0.0
+
+       1) add TSSI measurements.
+       2) add RSSI measurements.";
+
+    reference "ORAN-WG4.MP.0-v16.00";
+  }
+
+  revision 2024-04-15 {
+    description
+      "version 15.0.0
+
+       1) add fequency bin as optional report for EPE statistics.
+       2) added new VSWR measurments.
+       3) new report-info capabilities.
+       4) remove import by revision date for ietf-yang-types.";
+
+    reference "ORAN-WG4.MP.0-v15.00";
+  }
+
+  revision 2023-12-11 {
+    description
+      "version 14.0.0
+
+       1) Make the leafref refering a measurement-object optional using
+          statement 'require-instance false'.
+       2) Align YANG model descriptions with schema.
+       3) Added shared cell performance counters";
+
+    reference "ORAN-WG4.MP.0-v14.00";
+  }
+
+  revision 2023-08-14 {
+    description
+      "version 8.2.0
+
+       1) EPE measurement report correction.";
+
+    reference "ORAN-WG4.MP.0-v07.00";
+  }
+
+  revision 2022-08-15 {
+    description
+      "version 8.1.0
+
+       1) style guide corrections.
+       2) changed import prefix for o-ran-file-management.";
+
+    reference "ORAN-WG4.MP.0-v07.00";
+  }
+
+  revision 2021-12-01 {
+    description
+      "version 8.0.0
+
+       1) typographical corrections in descriptions.
+       2) deprecating leaf-list frequency-table and replacing with frequency-bin-table
+       3) Add support for multiple transport-session-type per O-RU";
+
+    reference "ORAN-WG4.MP.0-v07.00";
+  }
+
+  revision 2021-07-26 {
+    description
+      "version 7.0.0
+
+       1) added new EPE measurements - VOLTAGE and CURRENT
+       2) added data-direction to rx-window measurements
+       3) added ability to report multiple measurements in notifications
+       4) added new symbol TD-RSSI measurements
+       5) added FTPES file upload support ";
+
+    reference "ORAN-WG4.MP.0-v07.00";
+  }
+
+  revision 2021-03-22 {
+    description
+      "version 5.1.0
+
+       1) typographical corrections in descriptions";
+
+    reference "ORAN-WG4.MP.0-v05.00";
+  }
+
+  revision 2020-12-10 {
+    description
+      "version 5.0.0
+
+       1) container epe-stats is changed deprecated
+       2) New list epe-statistics and measurement-object is added as key
+       3) bug fix by pyang --lint";
+
+    reference "ORAN-WG4.MP.0-v05.00";
+  }
+
+  revision "2020-04-17" {
+    description
+      "version 3.0.0
+
+      1) updated top-level model description concerning optionality of measurements
+      2) added new rx window counters
+      3) added new TX stats measurements
+      4) added new EPE measurements
+      5) fixed typo in enumeration - TX_POPWER
+      6) introduced config false data indicating which type of measurements are supported";
+
+    reference "ORAN-WG4.MP.0-v03.00";
+  }
+
+  revision "2019-07-03" {
+    description
+      "version 2.0.0
+
+      1) added new measurement objects for QSFP
+      2) backward compatible changes to correct sFTP Server Authentication.
+      3) simplifying file management and authentication to reuse from o-ran-file-management module
+      4) minor fixes according to lack of descriptions and reference
+      5) added to descriptions to indicate applicability of leafs and Containers
+      to separate O-RAN use cases
+      6) backward compatible changes to introduce groupings.";
+
+    reference "ORAN-WG4.MP.0-v02.00";
+  }
+
+  revision "2019-02-04" {
+    description
+      "version 1.0.0
+
+      1) imported model from xRAN
+      2) changed namespace and reference from xran to o-ran";
+
+    reference "ORAN-WG4.MP.0-v01.00";
+  }
+
+  grouping measurement-capabilities {
+   description "a measurement capabilities grouping";
+    container measurement-capabilitites {
+      config false;
+      description "measurement groups supported by the O-RU and capability for each measurement group";
+      uses measurement-capabilities-transceiver-objects;
+      uses measurement-capabilities-rx-window-objects;
+      uses measurement-capabilities-tx-stats-objects;
+      uses measurement-capabilities-epe-stats-objects;
+      uses measurement-capabilities-symbol-rssi-stats-objects;
+      uses measurement-capabilities-shared-cell-stats-objects;
+      uses measurement-capabilities-tssi-stats-objects;
+      uses measurement-capabilities-rssi-stats-objects;
+      uses measurement-capabilities-tx-antenna-stats-objects;
+      uses measurement-capabilities-tx-output-power-stats-objects;
+      uses measurement-capabilities-ethernet-objects;
+      uses measurement-capabilities-pim-stats-objects;
+    }
+   }
+
+  grouping measurement-group {
+    description
+      "Group of measurement results";
+    uses measurement-capabilities{
+      description " this grouping implements the following top-level statements :
+        - list transceiver-objects
+        - list rx-window-objects
+        - list tx-stats-objects
+        - list epe-stats-objects
+        - list symbol-rssi-stats-objects
+        - list shared-cell-stats-objects
+        - list tssi-stats-objects
+        - list rssi-stats-objects
+        - list tx-antenna-stats-objects
+        - list tx-output-power-stats-objects
+        - list ethernet-objects
+        - list pim-stats-objects";}
+    uses upload-config-grouping;
+    uses measurement-intervals-config-grouping;
+    uses transceiver-measurement-objects-grouping{
+      description " this grouping implements the following top-level statement :
+        - list transceiver-measurement-objects";}
+    uses rx-window-measurement-objects-grouping{
+      description " this grouping implements the following top-level statement :
+        - list rx-window-measurement-objects";}
+    uses tx-measurement-objects-grouping{
+      description " this grouping implements the following top-level statement :
+        - list tx-measurement-objects";}
+    uses shared-cell-measurement-objects-grouping{
+      description " this grouping implements the following top-level statement :
+        - list shared-cell-measurement-objects";}
+    uses epe-measurement-objects-grouping{
+      description " this grouping implements the following top-level statement :
+        - list epe-measurement-objects";}
+    uses symbol-rssi-measurement-objects-grouping{
+      description " this grouping implements the following top-level statement :
+        - list symbol-rssi-measurement-objects";}
+    uses tssi-measurement-objects-grouping{
+      description " this grouping implements the following top-level statement :
+        - list tssi-measurement-objects";}
+    uses rssi-measurement-objects-grouping{
+      description " this grouping implements the following top-level statement :
+        - list rssi-measurement-objects";}
+    uses tx-antenna-measurement-objects-grouping{
+      description " this grouping implements the following top-level statement :
+        - list tx-antenna-measurement-objects";}
+    uses tx-output-power-measurement-objects-grouping{
+      description " this grouping implements the following top-level statement :
+        - list tx-output-measurement-objects";}
+    uses ethernet-measurement-objects-grouping{
+      description " this grouping implements the following top-level statement :
+        - list ethernet-measurement-objects";}
+    uses pim-measurement-objects-grouping{
+      description " this grouping implements the following top-level statement :
+        - list pim-measurement-objects";}
+   }
+
+  grouping measurement-notification {
+
+    description
+      "notification may contain measurement result from different objects";
+    uses measurement-notification-transceiver-stats;
+    uses measurement-notification-rx-window-stats;
+    uses measurement-notification-tx-stats;
+    uses measurement-notification-epe-stats;
+    uses measurement-notification-symbol-rssi-stats;
+    uses measurement-notification-shared-cell-stats;
+    uses measurement-notification-tssi-stats;
+    uses measurement-notification-rssi-stats;
+    uses measurement-notification-tx-antenna-stats;
+    uses measurement-notification-tx-output-power-stats;
+    uses measurement-notification-ethernet-stats;
+    uses measurement-notification-pim-stats;
+  }
+
+  // Top level container
+  container performance-measurement-objects {
+    description
+      "configuration for performance management and measurement-result are
+       included";
+    uses measurement-group;
+    leaf pm-suspect-reporting {
+      if-feature feat:PM-SUSPECT-REPORTING;
+      type boolean;
+      default false;
+      description
+        "Enable/disable the PM-SUSPECT-REPORTING feature.When the value is set to true by the NETCONF client, O-RU are going to use 'suspect' flag and 'report-info-suspect' flag in the file and the notification output.When the value is false, the feature is not enabled and 'suspect' flag and 'report-info-suspect' flag will be be used";
+    }
+  }
+
+// Notifications
+  notification measurement-result-stats {
+    description
+      "Notification may contain measurement results for measurement groups.
+      For example,transceiver-stats
+       and/or rx-window-stats";
+    uses measurement-notification;
+  }
+  notification pm-reporting-failure {
+    if-feature feat:PM-SUSPECT-REPORTING;
+    must "../performance-measurement-objects/pm-suspect-reporting = 'true'";
+
+    description
+      "Notification indicates the pm reporting for this reporting interval failed for the O-RU that supports feature PM-SUSPECT-REPORTING and when the feature is enabled.";
+    uses start-and-end-time;
+    leaf o-ran-name {
+      type leafref {
+        path "/hw:hardware/hw:component/hw:name";
+      }
+      must "derived-from-or-self(deref(current())/../hw:class, 'or-hw:O-RAN-RADIO')";
+      description
+        "O-RAN-RADIO identifier";
+    }
+
+    leaf expected-pm-file-name {
+      type string;
+      description
+        "This parameter shows the expected performance measurement file name of the file-upload-interval if it was created and uploaded. This notification indicates that performance measurement file with the file name as the value of expected-pm-file-name is not created and uploaded. Refer to M-Plane specification clause 10.3.2 for naming convention of performance measurement file for a file-upload-interval.";
+    }
+  }
+}

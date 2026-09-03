@@ -1,0 +1,432 @@
+submodule o-ran-pm-general {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  import ietf-yang-types {
+    prefix "yang-types";
+  }
+
+  // import ietf-inet-type
+  import ietf-inet-types {
+    prefix "inet";
+  }
+
+  import o-ran-file-management {
+    prefix "o-ran-file-mgmt";
+  }
+
+  import o-ran-wg4-features {
+     prefix "feat";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2026 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2026-05-07 {
+    description
+      "version 21.0.0
+      1) Addition of PIM meas interval for PIM meas objects.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v21.01";
+   }
+
+   revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+  feature GRANULARITY-TRANSPORT-MEASUREMENT {
+    status deprecated;
+    description
+      "This feature indicates that the O-RU supports an optional object-unit TRANSPORT in rx-window-measurement or in tx-measurement.
+      Feature is deprecated because it uses object-unit in tx-stats-objects or rx-window-objects to indicate the support for TRANSPORT.";
+  }
+
+  feature GRANULARITY-EAXC-ID-MEASUREMENT {
+    status deprecated;
+    description
+      "This feature indicates that the O-RU supports an optional object-unit EAXC_ID in rx-window-measurement or in tx-measurement.
+      Feature is deprecated because it uses object-unit in tx-stats-objects or rx-window-objects to indicate the support for EAXC_ID.";
+  }
+
+
+
+  grouping report-info-value64-4 {
+    description
+      "value that is decimal64 with 4 fraction digits included for the measurement-object.";
+    leaf value {
+      type decimal64 {
+        fraction-digits 4;
+      }
+      description
+        " value for the measurement-object and the report-info is provided";
+    }
+  }
+
+  typedef transceiver-object-unit{
+    type enumeration {
+      enum PORT_NUMBER {
+        description
+          "unit to measure the performance per object-id";
+      }
+    }
+    description "The object units measurement group transceiver-stats .";
+  }
+
+  typedef report-info-name-type{
+    type enumeration {
+      enum min {
+        description
+          "It is used as name for report-info MINIMUM";
+      }
+      enum min-and-time {
+        description
+          "It is used as name for report-info MINIMUM_AND_TIME";
+      }
+      enum max {
+        description
+          "It is used as name for report-info MAXIMUM";
+      }
+      enum max-and-time {
+        description
+          "It is used as name for report-info MAXIMUM_AND_TIME";
+      }
+      enum avg {
+        description
+          "It is used as name for report-info AVERAGE";
+      }
+      enum average {
+        description
+          "It is used as name for report-info AVERAGE";
+      }
+      enum first {
+        description
+          "It is used as name for report-info FIRST";
+      }
+      enum first-and-time {
+        description
+          "It is used as name for report-info FIRST_AND_TIME";
+      }
+      enum latest {
+        description
+          "It is used as name for report-info LATEST";
+      }
+      enum latest-and-time {
+        description
+          "It is used as name for report-info LATEST_AND_TIME";
+      }
+      enum count {
+        description
+          "It is used as name for report-info COUNT";
+      }
+      enum std-deviation {
+        description
+          "It is used as name for report-info STD_DEVIATION";
+      }
+      enum frequency-table {
+        description
+          "It is used as name for report-info FREQUENCY_TABLE";
+      }
+      enum frequency-bin-table {
+        description
+          "It is used as name for report-info FREQUENCY_TABLE";
+      }
+    }
+    description "The report-info names used in suspect reporting.";
+  }
+  
+  grouping pm-suspect {
+    description
+      "Definition of the suspect flag.";
+
+    leaf suspect {
+      if-feature feat:PM-SUSPECT-REPORTING;
+      type empty;
+
+      description
+        "If provided, it indicates a invalid measurement result i.e., a measurement that may not be reliable.";
+    }
+  }
+  grouping pm-metric-suspect {
+    description
+      "Definition of the suspect flag for report-info.";
+    leaf report-info-suspect {
+      if-feature feat:PM-SUSPECT-REPORTING;
+      type empty;
+
+      description
+        "If provided, it indicates a invalid measurement result of single metric level.";
+    }
+    leaf-list suspected-report-info-name{
+        type report-info-name-type;
+        description
+          "name of the report-info from which the metric has invalid measurement result.";
+    }
+  }
+
+  grouping start-and-end-time {
+    description
+      "Definition for start and end time for an event";
+
+    leaf start-time {
+      type yang-types:date-and-time;
+      description
+        "Start time for measurement of object stats";
+    }
+    leaf end-time {
+      type yang-types:date-and-time;
+      description
+        "End time for measurement of object stats";
+    }
+  }
+
+  grouping measurement-intervals-config-grouping {
+    description
+      "measurement intervals configuration.";
+
+// transceiver measurements applicable to all O-RAN HW functions
+
+    leaf transceiver-measurement-interval {
+      type uint16;
+      units seconds;
+      description
+        "measurement interval to measure the performance of transceiver
+         measurement objects periodically.";
+    }
+
+// EPE measurements applicable to all O-RAN HW functions
+
+    leaf epe-measurement-interval {
+      type uint16;
+      units seconds;
+      description
+        "measurement interval to measure the energy, power and environmental
+         measurement objects periodically.";
+    }
+
+// RX Window measurements applicable to O-RAN WG4 defined functions
+
+    leaf rx-window-measurement-interval {
+      type uint16;
+      units seconds;
+      description
+        "measurement interval to measure the performance of reception
+         window measurement objects periodically.";
+    }
+
+    leaf tx-measurement-interval {
+      type uint16;
+      units seconds;
+      description
+        "measurement interval to measure the tx (outbound)
+         window measurement objects periodically.";
+    }
+
+    leaf shared-cell-measurement-interval {
+      if-feature feat:SHARED-CELL-STATS;
+      type uint16;
+      units seconds;
+      description
+        "measurement interval to measure the shared-cell measurement objects periodically.";
+    }
+
+    leaf symbol-rssi-measurement-interval {
+      type uint16;
+      units seconds;
+      description
+        "measurement interval to measure the symbol-wise TD-RSSI measurement objects periodically.";
+    }
+
+    leaf tssi-measurement-interval {
+      type uint16;
+      units seconds;
+      description
+        "Measurement interval to measure the tx TSSI measurement objects periodically.";
+    }
+
+    leaf rssi-measurement-interval {
+      type uint16;
+      units seconds;
+      description
+        "Measurement interval to measure the RSSI measurement objects periodically.";
+    }
+
+    leaf tx-antenna-measurement-interval {
+      type uint16;
+      units seconds;
+      description
+        "Measurement interval to measure the tx antenna measurement objects periodically.";
+    }
+
+    leaf tx-output-power-measurement-interval {
+      type uint16;
+      units seconds;
+      description
+        "measurement interval to measure the tx output power measurement objects periodically.";
+    }
+
+    leaf ethernet-measurement-interval {
+      type uint16;
+      units seconds;
+      description
+        "Measurement interval to measure the Ethernet measurement objects periodically.";
+    }
+
+    leaf pim-measurement-interval {
+      type uint16;
+      units seconds;
+      description
+        "Measurement interval to measure the pim measurement objects periodically.";
+    }
+
+    leaf notification-interval {
+      type uint16;
+      units seconds;
+      description
+        "notification interval for the measurement result to be notified
+         periodically.";
+    }
+
+    leaf file-upload-interval {
+      type uint16;
+      units seconds;
+      description
+        "file upload interval for the measurement result file to be
+         uploaded periodically.";
+    }
+
+    leaf max-bin-count{
+      type uint16;
+      config false;
+      status deprecated;
+      description
+        "indicates the maximum value of configurable bin-count for frequency
+         table in transceiver-measurement-objects as one of module
+         capabilities.
+
+         This leaf is deprecated and replaced with the max-bin-count in the
+         transceiver-objects list.";
+    }
+  }
+
+  grouping upload-config-grouping {
+    description
+      "Upload configuration.";
+    leaf enable-SFTP-upload {
+      type boolean;
+      default false;
+      status deprecated;
+      description
+        "Flag to enable upload of performance measurement result files.";
+    }
+
+    leaf enable-file-upload {
+      type boolean;
+      default false;
+      description
+        "Flag to enable upload of performance measurement result files.
+        A single schema node is used to enable/disable file uploads
+        over either SFTP or FTPES with the format of the upload
+        path being used to signal which protocol to use.
+
+        An O-RU receiving this schema node should ignore the deprecated
+        enable-SFTP-upload schema node, if received.";
+    }
+
+    leaf enable-random-file-upload {
+      type boolean;
+      default false;
+      description
+        "Flag to enable upload of performance measurement result files at
+         random within file-upload-interval.";
+    }
+
+    list remote-SFTP-uploads {
+      key remote-SFTP-upload-path;
+      status deprecated;
+      description
+        "SFTP upload can be done to one or more than one SFTP servers";
+
+      leaf remote-SFTP-upload-path {
+        type inet:uri;
+        description
+          "URI specifying the remote location where the files are to be uploaded.
+          The following format is possible:
+          sftp://<username>@<host>[:<port>]/path";
+      }
+
+      uses o-ran-file-mgmt:credential-information;
+    }
+
+    list remote-file-uploads {
+      key remote-file-upload-path;
+      description
+        "file upload can be done to one or more than one file servers
+
+        An O-RU receiving this list should ignore the deprecated
+        remote-SFTP-uploads list, if received";
+
+      leaf remote-file-upload-path {
+        type inet:uri;
+        description
+          "URI specifying the remote location where the files are to be uploaded.
+
+          When upload is via SFTP, the format shall be of the form
+          sftp://<username>@<host>[:port]/path
+          When upload is via FTPES, the format shall be of the form
+          ftpes://<username>@<host>[:port]/path
+
+          Note, ftpes is not an IANA registered URI scheme, but used here to signal
+          that a file transfer should be performed over FTPES";
+      }
+
+      uses o-ran-file-mgmt:credential-information;
+    }
+    }
+
+}

@@ -1,0 +1,118 @@
+module o-ran-o1-EPE2 {
+  yang-version 1.1;
+
+  namespace "urn:o-ran:o-ran-o1-EPE2";
+  prefix "or-o1-EPE2";
+
+  import _3gpp-common-top {
+    prefix top3gpp;
+  }
+
+  import _3gpp-common-managed-element {
+    prefix me3gpp;
+  }
+
+  import o-ran-o1-NearRTRIC {
+    prefix or-o1-NearRTRIC;
+  }
+
+  import _3gpp-common-ep-rp {
+    prefix "eprp3gpp";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module is for O-RAN Work Group 10 O1 Interface Specification for Near Real Time RAN Intelligent Controller
+
+    Copyright 2024 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+  revision 2024-07-11 {
+    description
+      "version 1.0.0
+
+       1) Initial version";
+
+    reference "O-RAN.WG10.O1NRM.0-R004-v01.00" ;
+  }
+
+  typedef allowedTimerValues {
+    type uint16 {
+    range 0..65535;
+    }
+    description "Allowed values for the defined attributes";
+  }
+
+  grouping EP_E2Grp {
+    description "A Information object class for grouping managment aspects of E2T.";
+
+    uses eprp3gpp:EP_RPGrp;
+
+    leaf tRICEventCreate {
+      type allowedTimerValues;
+      description "Specifies the maximum time for the RIC Subscription Request event creation procedure in the E2 Node.";
+    }
+    leaf tRICEventDelete {
+      type allowedTimerValues;
+      description "Specifies the maximum time for the RIC Subscription Request event deletion procedure in the E2 Node";
+    }
+
+    leaf tRICControl {
+      type allowedTimerValues;
+      description "Specifies the maximum time for the RIC Control Request event request procedure in the E2 Node";
+    }
+
+    leaf tRICEventModify  {
+      type allowedTimerValues;
+      description "Specifies the maximum time for the RIC Subscription Modification procedure in the Near-RT RIC";
+    }
+
+    leaf tRICQuery {
+      type allowedTimerValues;
+      description "Specifies the maximum time for the RIC Query procedure in the Near-RT RIC";
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/or-o1-NearRTRIC:NearRTRICFunction" {
+    description
+      "EP_E2 is name contained by NearRTRICFunction";
+    list EP_E2 {
+      key id;
+      description
+        "The EP_E2 IOC represents the management aspects of the E2 Termination
+         (defined in O-RAN Near-RT RIC Architecture [6] clause 6.2.7.1).";
+      uses top3gpp:Top_Grp;
+      container attributes {
+        description "Attributes for managment aspects of E2T.";
+        uses EP_E2Grp;
+      }
+    }
+  }
+}

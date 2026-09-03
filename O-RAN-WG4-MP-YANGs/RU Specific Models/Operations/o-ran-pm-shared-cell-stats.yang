@@ -1,0 +1,215 @@
+submodule o-ran-pm-shared-cell-stats {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  import o-ran-wg4-features {
+     prefix "feat";
+  }
+
+  // import ru-mac-address, o-du-mac-address and vlan-id
+  import o-ran-processing-element {
+    prefix "o-ran-elements";
+  }
+
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+  typedef shared-cell-meas-object-type{
+    type enumeration {
+      enum RX_UP_UL {
+        description
+          "the number of received U-Plane data packets in UL direction, corresponds to
+           shared-cell-combine-entity. Refer to WG4 CUS secification clause 9.1.";
+      }
+      enum RX_UP_UL_COMBINED {
+        description
+          "the number of U-Plane data packets, which is processed by combine functional block.
+          Refer to WG4 CUS secification clause 9.1.";
+      }
+    }
+    description
+      "The measurement-object-type supported by
+       measurement group shared-cell-stats";
+  }
+
+  grouping measurement-capabilities-shared-cell-stats-objects {
+     description
+      "Group of measurement capabilities for shared-cell measurements";
+
+      list shared-cell-stats-objects {
+        if-feature feat:SHARED-CELL-STATS;
+        key measurement-object;
+          description "list of shared-cell stats objects";
+        leaf measurement-object {
+          type shared-cell-meas-object-type;
+          description "a measurement object";
+        }
+      }
+   }
+
+  grouping shared-cell-measurement-result-grouping {
+    description
+      "Group of measurement results for shared-cell measurements";
+    uses pm-suspect;
+    choice object-unit-id {
+      config false;
+      case TRANSPORT{
+        list pe-measured-result {
+          key "processing-elements";
+            description
+              "the measurement results are counted per processing-element.";
+           leaf processing-elements {
+                type leafref {
+                    path "/o-ran-elements:processing-elements/o-ran-elements:ru-elements/o-ran-elements:name";
+                  }
+                description
+                  "Procesing elements are used to count for shared-cell stats,
+                  where the processing element name refers to a list entry
+                  containing a south-eth-flow container.";
+            }
+            uses pm-suspect;
+            leaf count {
+              type uint64;
+              mandatory true;
+              description
+                "the number of packets are counted for shared-cell stats.";
+            }
+        }
+          description
+            "the number of packets are counted for shared-cell stats per TRANSPORT.";
+      }
+        description
+          "measurement-result for shared-cell stats depnds on the configured object-unit,
+          TRANSPORT or other one for the future purpose.";
+    }
+  }
+
+  grouping shared-cell-measurement-objects-grouping {
+   description
+      "Group of measurement objects for shared-cell measurements";
+
+    list shared-cell-measurement-objects {
+      if-feature feat:SHARED-CELL-STATS;
+      key "measurement-object";
+      description
+        "optional list used to report shared-cell measurements.";
+      leaf measurement-object {
+        type shared-cell-meas-object-type;
+        description
+          "target metric to measure shared-cell operation.";
+      }
+      leaf active {
+        type boolean;
+        default false;
+        description
+          "Enable/disable the performance measurement per port
+           measurement object.";
+      }
+      leaf object-unit {
+        type enumeration {
+          enum TRANSPORT {
+            description
+              "unit to measure the performance per object-id,
+               the shared-cell stats are counted per TRANSPORT.";
+          }
+        }
+        description "unit to measure the performance per object-id.";
+      }
+      leaf report-info {
+        type enumeration {
+          enum COUNT {
+            description
+              "the number of data packet are counted for shared-cell stats.";
+          }
+        }
+        description
+          "The reporting info to the measurement object.";
+      }
+      uses  shared-cell-measurement-result-grouping;
+// configuration and measurement result for the shared-cell stats
+    }
+   }
+
+  grouping measurement-notification-shared-cell-stats {
+    description
+      "Group of measurement notification strcuture for shared-cell measurements";
+
+    list shared-cell-stats {
+        if-feature feat:SHARED-CELL-STATS;
+        key "measurement-object";
+
+        description
+          "measurement result for the shared-cell measurement per measurement-object";
+        leaf measurement-object {
+          type leafref {
+            path "/performance-measurement-objects/shared-cell-measurement-objects/measurement-object";
+          }
+          description
+            "measurement-object for the shared-cell measurement";
+        }
+        list multiple-shared-cell-measurement-result {
+          config false;
+          description
+            "Multiple measurement results of shared-cell-measurement.";
+
+          uses start-and-end-time;
+          uses shared-cell-measurement-result-grouping;
+
+        }
+      }
+   }
+}

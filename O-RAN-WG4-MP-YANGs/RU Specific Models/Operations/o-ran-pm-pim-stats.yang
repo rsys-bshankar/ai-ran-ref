@@ -1,0 +1,376 @@
+submodule o-ran-pm-pim-stats {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  import o-ran-uplane-conf {
+    prefix "up";
+  }
+
+
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    pim measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2026 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2026-05-07 {
+    description
+      "version 21.0.0
+      1) initial version";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v21.01";
+   }
+
+  typedef pim-report-info {
+    type enumeration {
+      enum AVERAGE {
+        description
+          "To report average value within the measurement-interval
+          for the measurement-object.";
+      }
+      enum MAXIMUM {
+        description
+          "To report maximum value within the
+          measurement-interval for the measurement-object.";
+      }
+      enum MINIMUM {
+        description
+          "To report minimum value within the
+          measurement-interval for the measurement-object.";
+      }
+      enum FREQUENCY_TABLE {
+        description
+          "To report frequency bin table within the
+          measurement-interval for the measurement-object.";
+      }
+    }
+    description "The reporting info that might be supported/configured for
+      pim measurement object.";
+  }
+
+  typedef pim-object-unit {
+    type enumeration {
+      enum ARRAY_ELEMENT {
+        description
+          "Unit to measure the performance per object-id - array element";
+      }
+      enum CARRIER_ARRAY_ELEMENT {
+        description
+          "Unit to measure the performance per object-id - carrier array element";
+      }
+    }
+    description "The object units that might be supported/configured for
+      pim measurement object.";
+  }
+
+  typedef pim-meas-object-type{
+    type enumeration {
+      enum PIM_LEVEL {
+        description
+          "Measure and report values of PIM level.
+          Measurements are provided in the dBm unit.";
+      }
+      enum PIM_CANCELLED {
+        description
+          "Measure and report values of cancelled PIM.
+          Measurements are provided in the dB unit.";
+      }
+    }
+    description
+      "The measurement-object-type supported by
+      pim measurement group.";
+  }
+
+
+  grouping measurement-capabilities-pim-stats-objects {
+      description
+        "pim measurement capabilities group.";
+      list pim-stats-objects {
+        key measurement-object;
+        description "list of pim objects";
+        leaf measurement-object {
+          type pim-meas-object-type;
+          description "a measurement object";
+        }
+
+        leaf-list object-unit {
+          type pim-object-unit;
+          description "The object units supported for this measurement object.";
+        }
+
+        leaf-list report-info {
+          type pim-report-info;
+          description "The reporting info supported for this measurement object.";
+        }
+        leaf max-bin-count{
+          type uint16;
+          description
+            "when O-RU supports FREQUENCY_TABLE, indicates the maximum value of
+            configurable bin-count for frequency table in pim-measurement-objects.";
+        }
+      }
+   }
+
+  grouping pim-measurement-result-grouping {
+    description
+      "pim-measurement-result listed per array element or connector and band.";
+
+    grouping pim-measurement-values-grouping {
+    description
+      "The grouping of pim measurement values";
+
+      container avg {
+        description
+          "Average value is included for the measurement-object.";
+
+        leaf value {
+          type decimal64 {
+            fraction-digits 4;
+          }
+
+          description
+            "Average value of the measurement-object.";
+        }
+      }
+      container min {
+        description
+          "Minimum value is included for the measurement-object.";
+
+        leaf value {
+          type decimal64 {
+            fraction-digits 4;
+          }
+
+          description
+            "Minimum value for the measurement-object.";
+        }
+      }
+      container max {
+        description
+        "Maximum value is included for the measurement-object.";
+
+        leaf value {
+          type decimal64 {
+            fraction-digits 4;
+          }
+
+          description
+            "Maximum value for the measurement-object.";
+        }
+      }
+      list frequency-bin-table {
+        key bin-id;
+        leaf bin-id {
+           type uint32;
+           description "Sequence number of the bin";
+        }
+        leaf value {
+           type uint32;
+           description "count corresponding to the bin";
+         }
+        description
+          "frequency-table for the measurement-object are included per bin.
+           The configuration parameters for this frequency-table are defined
+           by bin-count, lower-bound and upper-bound";
+      }
+    }
+
+    choice object-unit-id {
+      config false;
+      case ARRAY_ELEMENT {
+        list pim-measurement-result-array-element {
+          key "rx-array rx-array-element";
+          config false;
+          leaf rx-array {
+            type leafref {
+                path "/up:user-plane-configuration/up:rx-arrays/up:name";
+              }
+              description "Name of rx-array; part of the measurement object identifier.";
+          }
+
+          leaf rx-array-element {
+            type uint32;
+
+            description
+              "Array element number within the rx-array identified by object-unit-id-array; part of the measurement object identifier.
+              Allowed values and semantic - as per CUS-Plane spec, clause 'Identification and Ordering of Array Elements'.";
+          }
+
+          uses pim-measurement-values-grouping;
+
+          description
+            "List of pim measurement results per rx-array element";
+        }
+      }
+      case CARRIER_ARRAY_ELEMENT {
+        list pim-measurement-result-carrier-array-element {
+          key "rx-array-carrier";
+          config false;
+          leaf rx-array-carrier {
+            type leafref {
+              path "/up:user-plane-configuration/up:rx-array-carriers/up:name";
+            }
+            description "Name of rx-array-carrier; part of the measurement object identifier.";
+          }
+          list per-rx-array-element-index-result {
+            key "rx-array rx-array-element";
+            description
+              "This list indicates the status information related to the rx array element supported by the O-RU array carrier.";
+
+            leaf rx-array {
+              type leafref {
+                  path "/up:user-plane-configuration/up:rx-arrays/up:name";
+                }
+                description "Name of rx-array, part of the measurement object identifier.";
+            }
+
+            leaf rx-array-element {
+              type uint32;
+              description
+                "This leaf indicates the identifier of the configured rx array element.";
+            }
+            uses pim-measurement-values-grouping;
+          }
+          description "List of pim measurement results per rx-array carrier per rx-array element";
+        }
+      }
+      description
+        "measurement-result for pim stats depends on the configured object-unit,
+        ARRAY_ELEMENT or CARRIER_ARRAY_ELEMENT.";
+    }
+  }
+
+  grouping pim-measurement-objects-grouping {
+    description
+        "pim measurement objects group.";
+    list pim-measurement-objects {
+      key "measurement-object";
+      description
+        "Optional list used to report pim measurements.";
+      leaf measurement-object {
+        type pim-meas-object-type;
+        description "Target metric to measure the pim measurements.";
+      }
+
+      leaf active {
+        type boolean;
+        default false;
+        description
+          "Enable/disable the performance measurement per Object";
+      }
+
+      leaf-list report-info {
+        type pim-report-info;
+        description "The reporting info to the measurement object.";
+      }
+
+      leaf object-unit {
+        type pim-object-unit;
+        mandatory true;
+        description "Unit to measure the performance per object-id.";
+      }
+
+      leaf bin-count {
+        type uint16;
+
+        description
+          "the number of bin for the frequency table.
+           This value shall be less than or equal to max-bin-count";
+      }
+
+      leaf lower-bound {
+        type decimal64 {
+          fraction-digits 4;
+        }
+
+        description
+          "the lower value of the first bin of frequency table.";
+      }
+
+      leaf upper-bound {
+        type decimal64 {
+          fraction-digits 4;
+        }
+
+        description
+          "the upper value of the last bin of frequency table.";
+      }
+
+      uses pim-measurement-result-grouping;
+      // configuration and measurement result for the pim-measurement
+    }
+   }
+
+  grouping measurement-notification-pim-stats {
+    description
+        "pim measurement notification group.";
+    list pim-stats {
+      key "measurement-object";
+
+      description
+        "Measurement result of pim-measurement per measurement-object";
+      leaf measurement-object {
+        type leafref {
+          path "/performance-measurement-objects/pim-measurement-objects/measurement-object";
+        }
+
+        description
+          "measurement-object for the pim-measurement";
+      }
+
+      list pim-measurement-result {
+        config false;
+        description
+          "Multiple measurement results of pim-measurement.
+
+          The O-RU shall use this list to report one or more measurements per measurement-object in a single notification.";
+
+        uses start-and-end-time;
+        uses pim-measurement-result-grouping;
+      }
+    }
+   }
+}

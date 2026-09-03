@@ -1,0 +1,208 @@
+module o-ran-troubleshooting {
+  yang-version 1.1;
+  namespace "urn:o-ran:troubleshooting:1.0";
+  prefix "o-ran-trblsht";
+
+  import o-ran-wg4-features {
+    prefix "feat";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the operations for the troubleshooting logs.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+  revision 2025-04-14 {
+    description
+      "version 18.0.0
+
+      1) Added new troubleshooting log filtering.";
+
+    reference "ORAN-WG4.TS.M.0-R004-v18.00";
+  }
+
+  revision "2022-08-15" {
+    description
+      "version 1.2.0
+
+      1) clarified path/folder description.";
+
+    reference "ORAN-WG4.M.0-v01.00";
+  }
+
+  revision "2021-12-01" {
+    description
+      "version 1.1.0
+
+      1) typographical corrections";
+
+    reference "ORAN-WG4.M.0-v01.00";
+  }
+
+  revision "2019-02-04" {
+    description
+      "version 1.0.0
+
+      1) imported model from xRAN
+      2) changed namespace and reference from xran to o-ran";
+
+    reference "ORAN-WG4.M.0-v01.00";
+  }
+
+  identity o-ran-log-filter {
+    description
+      "Base identity for O-RAN defined log filtering types.
+
+      This identity is abstract and MUST NOT be used as a value.";
+  }
+
+  identity filename-pattern {
+    base "o-ran-log-filter";
+    description
+      "An identity corresponding to a log filter based on filename pattern.";
+  }
+
+  identity bitmask-filter {
+    base "o-ran-log-filter";
+    description
+      "An identity corresponding to a log filter based on bitmasks.";
+  }
+
+  identity group-filter {
+    base "o-ran-log-filter";
+    description
+      "An identity corresponding to a log filter based on a grouping of objects.";
+  }
+
+  identity level-filter {
+    base "o-ran-log-filter";
+    description
+      "An identity corresponding to a log filter based on a level.";
+  }
+
+
+  grouping filter-grouping {
+    description "a grouping to filter logs";
+
+    list filter {
+      key "filter-type";
+
+      leaf filter-type {
+        type identityref {
+          base "o-ran-log-filter";
+        }
+        description
+          "multi-vendor identityrefs for log filtering";
+      }
+      leaf-list value {
+        type string;
+        description
+          "the value of a filter-type.
+
+          An example of a value for filter-type filename-pattern is:
+            '/sub-system1/'
+          An exmaple of a value of filter-type bitmask-filter is:
+            '000111000101000110000110'
+          An example of a value of filter-type group-filter is:
+            'transport'
+          An example of a value of filter-type level-filter is:
+            'medium'";
+      }
+
+      description
+        "An optional list of filter-types used for log filtering.
+
+        The supported filter-types and values can be included in the
+        vendor provided O-RU documentation.
+
+        If the filter-type is not supported by the O-RU, or the value of
+        a supported filter-type is not supported by the O-RU, the O-RU can
+        either i) ignore the filter-type/value, or ii) reply with a status
+        of FAILURE that indicates the failure reason being the non-support
+        of the filter-type/value.";
+    }
+  }
+
+  grouping troubleshooting-status-grouping {
+    description "grouping used for troubleshooting RPCs";
+    leaf status {
+      type enumeration {
+        enum SUCCESS {
+          description "RPC completed correctly";
+        }
+        enum FAILURE {
+          description "RPC failed";
+        }
+      }
+      description "result of RPC operation";
+    }
+    leaf failure-reason {
+      when "../status = 'FAILURE'";
+      type string;
+      description "free-form text description why error occurred";
+    }
+  }
+
+  rpc start-troubleshooting-logs {
+    description
+      "Management plane triggered to start collecting the troubleshooting logs files of O-RU.";
+      input {
+        uses filter-grouping {
+          if-feature feat:LOG-FILTER;
+        }
+      }
+      output {
+        uses troubleshooting-status-grouping;
+      }
+  }
+
+  rpc stop-troubleshooting-logs {
+    description
+      "Management plane triggered to stop collecting the troubleshooting logs files of O-RU.";
+      output {
+        uses troubleshooting-status-grouping;
+      }
+  }
+
+  notification troubleshooting-log-generated {
+    description
+      "When new log file generated, send this notification.";
+    leaf-list log-file-name {
+      type string;
+      description
+        "The list of troubleshooting log file names on the O-RU. Each record in this list is expected to
+        contain location of the file (e.g. 'o-ran/log/') and the name of file (e.g.'my_troubleshooting_log_file.zip',
+        where 'my_troubleshooting_log_file' is example file name and 'zip' is expected file name extension).
+        Example complete expected content of this node is 'o-ran/log/my_troubleshooting_log_file.zip'.";
+    }
+  }
+}

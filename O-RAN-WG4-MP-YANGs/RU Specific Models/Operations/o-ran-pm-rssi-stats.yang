@@ -1,0 +1,252 @@
+submodule o-ran-pm-rssi-stats {
+   yang-version 1.1;
+   belongs-to "o-ran-performance-management" {
+	 prefix "o-ran-pm";
+  }
+
+  import o-ran-uplane-conf {
+    prefix "up";
+  }
+
+  include o-ran-pm-general {
+   description "O-RAN performance management general statements";
+  }
+
+  organization "O-RAN Alliance";
+
+  contact
+    "www.o-ran.org";
+
+  description
+    "This module defines the configuration for performance measurement for
+    transceiver and rx-window measurement objects.
+
+    NOTE, whereas this YANG model may define support of schema nodes associated
+    with O-RU measurements as optional, the CU-Plane specification may further
+    specify whether, according to a particular version of the CU plane
+    specification, which specific measurements are mandatory to support
+    from an O-RU perspective. In such a situation, the definition of mandatory
+    performance counters in sub-section 9.1 of the CU-plane specification shall
+    take precedence.
+
+    Copyright 2025 the O-RAN Alliance.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the above disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the above disclaimer in the documentation
+    and/or other materials provided with the distribution.
+    * Neither the Members of the O-RAN Alliance nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.";
+
+   revision 2025-12-22 {
+    description
+      "version 20.0.0
+      1) submodules creation.";
+
+    reference "ORAN-WG4.TS.MP.0-R005-v20.00";
+   }
+
+  typedef rssi-report-info {
+    type enumeration {
+      enum MAXIMUM {
+        description
+          "to report maximum value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum MINIMUM {
+        description
+          "to report minimum value within the
+           measurement-interval for the measurement-object.";
+      }
+      enum AVERAGE {
+        description
+          "to report average value within the
+           measurement-interval for the measurement-object.";
+      }
+    }
+    description
+      "The reporting info that might be supported/configured for
+      RSSI measurement object.";
+  }
+
+  typedef rssi-meas-object-type{
+    type enumeration {
+      enum RSSI {
+        description
+          "Measured RSSI (Received Signal Strength Indicator) for each Rx array carrier on the specific
+           array element in dbm";
+      }
+    }
+    description
+      "The measurement-object-type supported by
+      measurement group rssi-stats.";
+  }
+
+  grouping measurement-capabilities-rssi-stats-objects {
+     description
+      "Rssi stats objects group";
+      list rssi-stats-objects {
+        key measurement-object;
+        description "list of RSSI stats objects";
+        leaf measurement-object {
+          type rssi-meas-object-type;
+          description "a measurement object";
+        }
+        leaf-list report-info {
+          type rssi-report-info;
+          description "The reporting info supported for thise measurement object.";
+        }
+      }
+   }
+
+  grouping rssi-measurement-result-grouping {
+    description
+      "Rssi measurement result group";
+    uses pm-suspect;
+    list rssi-measurement-result {
+      key "object-unit-id";
+      config false;
+      description
+        "Measurement result of rssi per measurement-object";
+      leaf object-unit-id {
+        type leafref {
+          path "/up:user-plane-configuration/up:rx-array-carriers/up:name";
+        }
+        description
+          "rx-array-carrier is used for the object-unit-id for the rssi-measurement-result.";
+     }
+     uses pm-suspect;
+     list per-rx-array-element-index-result {
+        key "rx-array rx-array-element";
+        description
+          "This list indicates the status information related to the Rx carriers supported by the O-RU array element.";
+        leaf rx-array {
+          type leafref {
+              path "/up:user-plane-configuration/up:rx-arrays/up:name";
+            }
+            description "Name of rx-array; part of the measurement object identifier.";
+        }
+        leaf rx-array-element {
+          type uint32;
+          description
+            "This leaf indicates the identifier of the configured Rx array element.";
+        }
+        uses pm-metric-suspect;
+        container avg {
+          description
+            "average value for the measurement-object";
+          leaf value {
+            type decimal64 {
+              fraction-digits 1;
+            }
+            units dBm;
+            description
+              "This leaf indicates the measured RSSI (Received Signal Strength Indicator) of the Rx array carrier on the speific antenna path in decibel-milliwatts (dBm).";
+          }
+        }
+       container min {
+         description
+            "minimum value for the measurement-object";
+          leaf value {
+            type decimal64 {
+              fraction-digits 1;
+            }
+            units dBm;
+            description
+              "This leaf indicates the measured RSSI (Received Signal Strength Indicator) of the Rx array carrier on the speific antenna path in decibel-milliwatts (dBm).";
+          }
+        }
+        container max {
+          description
+          "maximum value for the measurement-object";
+          leaf value {
+            type decimal64 {
+              fraction-digits 1;
+            }
+            units dBm;
+            description
+              "This leaf indicates the measured RSSI (Received Signal Strength Indicator) of the Rx array carrier on the speific antenna path in decibel-milliwatts (dBm).";
+          }
+       }
+     }
+    }
+  }
+
+  grouping rssi-measurement-objects-grouping {
+     description
+      "Rssi measurement objects group";
+    list rssi-measurement-objects {
+      key "measurement-object";
+      description
+        "optional list used to measure and report time domain RSSI for per rx-array-carrier on specific rx-array-element.";
+      leaf measurement-object {
+        type rssi-meas-object-type;
+        description "Target metric to measure the rssi";
+      }
+      leaf active {
+        type boolean;
+        default false;
+        description
+          "Enable/disable the RSSI measurement per object";
+      }
+      leaf object-unit {
+        type enumeration {
+          enum CARRIER_ARRAY_ELEMENT {
+            description
+              "Unit to measure the performance per object-id.";
+          }
+        }
+        mandatory true;
+        description "unit to measure the performance per object-id.";
+      }
+      leaf-list report-info {
+        type rssi-report-info;
+        description "The reporting info to the measurement object.";
+      }
+      uses rssi-measurement-result-grouping;
+      // configuration and measurement result for the rssi-measurement
+    }
+   }
+
+  grouping  measurement-notification-rssi-stats {
+    description
+      "Rssi notification structure";
+    list rssi-stats {
+      key "measurement-object";
+      description
+        "Measurement result of rssi per measurement-object";
+      leaf measurement-object {
+        type leafref {
+          path "/performance-measurement-objects/rssi-measurement-objects/measurement-object";
+        }
+        description
+          "measurement-object for the rx-array-carrier";
+      }
+      list rssi-measurement-result {
+        config false;
+        description
+          "Multiple measurement results of rssi-measurement.
+          The O-RU shall use this list to report one or more measurements per measurement-object in a single notification.";
+        uses start-and-end-time;
+        uses rssi-measurement-result-grouping;
+      }
+    }
+   }
+}
