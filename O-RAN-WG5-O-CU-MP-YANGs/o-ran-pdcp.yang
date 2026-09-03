@@ -1,0 +1,183 @@
+module o-ran-pdcp{
+  yang-version 1.1;
+  namespace "urn:o-ran:pdcp:1.0";
+  prefix "o-ran-pdcp";
+  
+  import _3gpp-common-top { 
+    prefix top3gpp;
+  } 
+  import _3gpp-common-managed-element { 
+    prefix me3gpp; 
+  } 
+  import _3gpp-nr-nrm-gnbcucpfunction { 
+    prefix gnbcucp3gpp; 
+  }
+
+  organization 
+  "O-RAN Alliance";
+
+contact
+  "www.o-ran.org";
+
+description 
+  "This module defines the YANG definitions for configuring PDCP parameters. 
+   This module is to be used to augment 3GPP SA5 data models.
+
+   Copyright 2023 the O-RAN Alliance.
+
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+   POSSIBILITY OF SUCH DAMAGE.
+
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions are met:
+
+   * Redistributions of source code must retain the above copyright notice,
+     this list of conditions and the above disclaimer.
+   * Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the above disclaimer in the documentation
+     and/or other materials provided with the distribution.
+   * Neither the Members of the o-RAN Alliance nor the names of its
+     contributors may be used to endorse or promote products derived from
+     this software without specific prior written permission.";
+
+  revision 2023-11-14 {
+    description 
+      "version 1.0.0 
+       Initial version of PDCP config";
+
+    reference "O-RAN.WG5.O-CU-O1.0-R003-v07.00.docx";
+  }
+  
+  typedef pdcpSNSize {
+    type enumeration {
+      enum LEN-12-BITS {
+        description "SN length of 12 bits";
+      }
+      enum LEN-18-BITS {
+        description "SN length of 18 bits";
+      }        
+    }
+    description " type definition for PDCP SN Length";
+  }
+  
+  typedef rlcModeType {
+    type enumeration {
+      enum RLC-TM {
+        description "RLC-TM mode";
+      }
+      enum RLC-AM {
+        description "RLC-AM mode";
+      }
+      enum RLC-UM-BIDIRECTIONAL {
+        description "RLC-UMBidirectional mode";
+      }
+      enum RLC-UM-BIDIRECTIONAL-UL {
+        description "RLC-UMUnidirectional-UL mode";
+      }
+      enum RLC-UM-UNIDIRECTIONAL-DL {
+        description "RLC-UMUnidirectional-DL mode";
+      }  
+    }
+    description "type definition for RLC mode";
+  }
+    
+  grouping more-than-one-rlc {
+    description "Configuration related to split-bearer. moreThanOneRLC. TS 38.331";
+    leaf ul-data-split-threshold {      
+      type uint32 {
+	    range "0 | 100 | 200 | 400 | 800 | 1600 | 3200 | 6400 | 12800 | 25600 | 51200 | 102400 | 
+		204800 | 409600 | 819200 | 1228800 | 1638400 | 2457600 | 3276800 | 4096000 | 4915200 | 5734400 | 6553600";
+	  }    
+      description "ul-DataSplitThreshold in bytes. PDCP-Config. TS 38.331.If no value set, implies infinity.";
+    }
+  } 
+  
+  grouping drb-parameters {
+    description "grouping for drb configuration";
+    leaf discard-timer {
+      type uint16 {
+	    range "10 | 20 | 30 | 40 | 50 | 60 | 75 | 100 | 150 | 200 | 250 | 300 | 500 | 750 | 1500";
+	  }
+      description "discardTimer from PDCP-Config, in milliseconds. TS 38.331. If no value set, implies infinity.";
+    }
+    leaf pdcp-sn-size-ul {
+      type pdcpSNSize;
+      description "pdcp-SN-SizeUL, PDCP-Config. TS 38.331";
+    }
+    leaf pdcp-sn-size-dl {
+      type pdcpSNSize;
+      description "pdcp-SN-SizeDL, PDCP-Config. TS 38.331";
+    }
+    leaf t-reordering {
+      type uint16 {
+	    range "0 | 1 | 2 | 4 | 5 | 8 | 10 | 15 | 20 | 30 | 40 | 50 | 60 |  
+		80 | 100 | 120 | 140 | 160 | 180 |  200 | 220 | 240 | 260 | 280 | 300 | 500 | 750 | 
+		1000 | 1250 | 1500 | 1750 | 2000 | 2250 | 2500 | 2750 | 3000";
+	  }
+      description "t-Reordering, PDCP-Config, in milliseconds. TS 38.331.If no value set, implies infinity.";
+    }
+    leaf t-reordering-ul {
+      type uint16 {
+	    range "0 | 1 | 2 | 4 | 5 | 8 | 10 | 15 | 20 | 30 | 40 | 50 | 60 |  
+		80 | 100 | 120 | 140 | 160 | 180 |  200 | 220 | 240 | 260 | 280 | 300 | 500 | 750 | 
+		1000 | 1250 | 1500 | 1750 | 2000 | 2250 | 2500 | 2750 | 3000";
+	  }
+      description "T-Reordering Timer, in milliseconds. Used at CU-UP for Uplink. TS 38.463.If no value set, implies infinity.";
+    }
+    leaf rlc-mode {
+      type rlcModeType;
+      description "rlc-mode, PDCP-Configuration. TS 38.463";
+    }
+    leaf header-compression-enabled {
+      type boolean;
+      description "specifies whether ROHC should be enabled. PDCP-Config. TS 38.331";
+    }
+  }
+  
+  grouping PDCPConfigGrp {
+    description "grouping for PDCP configuration per QoS";
+    uses drb-parameters;
+    uses more-than-one-rlc;
+  }      
+ 
+  grouping qosGrp {
+    description "list of QCIs and/or 5QIs for a PDCP configuration";
+    leaf-list qci {
+      type uint16 {
+        range 0..255;
+      }
+      description "list of QCIs for PDCP configuration";
+    }
+    leaf-list fiveQI {
+      type uint16  {
+        range 0..255;
+      }
+      description "list of 5QIs for PDCP configuration";
+    }
+  }  
+   
+  augment "/me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction" {  
+    list PDCPConfig { 
+      key id;
+      max-elements 32;
+      description "Represents PDCP Configurations";
+      reference "3GPP TS 38.331";
+      uses top3gpp:Top_Grp; 
+      container attributes {
+        description "attributes of pdcpConfig";
+        uses qosGrp;
+        uses PDCPConfigGrp;               
+      }      
+    }
+    description "O-RAN augmentation of GNBCUCPFunction for PDCP configurations";
+  }
+}

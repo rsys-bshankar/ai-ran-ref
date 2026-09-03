@@ -1,0 +1,132 @@
+module o-ran-cu-security-handling{
+  yang-version 1.1;
+  namespace "urn:o-ran:cu-security-handling:1.0";
+  prefix "o-ran-cusec";
+  
+  import _3gpp-common-top { 
+    prefix top3gpp;
+  } 
+  import _3gpp-common-managed-element { 
+    prefix me3gpp; 
+  } 
+  import _3gpp-nr-nrm-gnbcucpfunction { 
+    prefix gnbcucp3gpp; 
+  }
+  
+  organization 
+  "O-RAN Alliance";
+
+contact
+  "www.o-ran.org";
+
+description 
+  "This module defines the YANG definitions for Transport Network Layer (TNL)
+   configuration for C-plane end-points at O-DU and O-CU. This module is to be 
+   used to augment 3GPP SA5 data models.
+
+   Copyright 2020 the O-RAN Alliance.
+
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+   POSSIBILITY OF SUCH DAMAGE.
+
+   Redistribution and use in source and binary forms, with or without
+   modification, are permitted provided that the following conditions are met:
+
+   * Redistributions of source code must retain the above copyright notice,
+     this list of conditions and the above disclaimer.
+   * Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the above disclaimer in the documentation
+     and/or other materials provided with the distribution.
+   * Neither the Members of the o-RAN Alliance nor the names of its
+     contributors may be used to endorse or promote products derived from
+     this software without specific prior written permission.";
+
+  revision "2021-07-04" {
+    description 
+      "version 0.0.1 - first release of O-RAN O1 for O-CU YANG models";
+
+    reference "ORAN-WG5.O-CU-O1-v00.00.01.docx";
+  }
+  
+  typedef CipheringAlgorithmID {
+    type enumeration {
+      enum NEA0 {
+        description "NEA0";
+      }
+      enum NEA1 {
+        description "NEA1";
+      }
+      enum NEA2 {
+        description "NEA2";
+      }
+      enum NEA3 {
+        description "NEA3";
+      }
+    }
+    description "type definition for ciphering algorithms";
+  }    
+  
+  typedef IntegrityAlgorithmID {
+    type enumeration {
+      enum N1A1 {
+        description "NIA1";
+      }
+      enum N1A2 {
+        description "NIA2";
+      }
+      enum N1A3 {
+        description "NIA3";
+      }
+    }  
+    description "type definition for integrity protection algorithms";
+  }  
+    
+  grouping SecurityHandlingGrp {
+    description 
+      "represents the CU-CP security handling function";
+      
+    leaf-list cipheringAlgoPrio {
+      type CipheringAlgorithmID;    
+      max-elements 4;
+      ordered-by user;
+      description 
+        "The attribute provides allowed ciphering algorithms with priority order.   
+        Minimum length of 1, maximum length of 4. Algorithm in index zero has highest priority. 
+        Each algorithm written only once in array.";
+    }
+    leaf-list integrityProtectAlgoPrio {
+      type IntegrityAlgorithmID;    
+      max-elements 3;
+      ordered-by user;
+      description 
+        "The attribute provides allowed integrity algorithms with priority order. 
+         Minimum length of 1, maximum length of 3. Algorithm in index zero has highest priority.
+         Each algorithm written only once in array.";   
+    }  
+  }
+  
+  augment "/me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction" {
+  
+    list SecurityHandling { 
+      key id;
+      description "Represents the O-RAN extension information of the CU-CP security related handling function."; 
+      reference "3GPP TS 38.331, 3GPP TS 28.541";
+      uses top3gpp:Top_Grp; 
+      container attributes {
+        uses SecurityHandlingGrp;
+        description "container for attributes";        
+      }  
+    }
+    description "augmentation of gnbcucpfunction with security handling configuration";
+  }
+
+}
