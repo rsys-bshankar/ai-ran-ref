@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3gpp:metadata:2011:MBMS:filterDescription" version="2"
+	xmlns="urn:3gpp:metadata:2011:MBMS:filterDescription"
+	xmlns:r12="urn:3gpp:metadata:2013:MBMS:filterDescription"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	xmlns:sv="urn:3gpp:metadata:2009:MBMS:schemaVersion"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>Extended MBMS Filter Description schema</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 11.2B.4</xs:documentation>
+		<xs:documentation>Copyright © 2013, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:import schemaLocation="TS26346_FilterDescription_Extensions_Rel-12.xsd" 
+namespace="urn:3gpp:metadata:2013:MBMS:filterDescription"/>
+	<xs:import schemaLocation="TS26346_SchemaVersion.xsd" 
+namespace="urn:3gpp:metadata:2009:MBMS:schemaVersion"/>
+
+	<xs:element name="filterDescription" type="filterDescriptionType"/>
+	<xs:complexType name="filterDescriptionType">
+		<xs:sequence>
+			<xs:element ref="sv:schemaVersion"/>
+			<xs:element name="filterData" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="locationFilter" type="locationFilterType" minOccurs="0"/>
+						<xs:element ref="r12:groupFilter" minOccurs="0"/>
+						<xs:element ref="sv:delimiter"/>
+						<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+					<xs:attribute name="id" type="xs:anyURI" use="required"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+
+	<xs:complexType name="locationFilterType">
+		<xs:sequence>
+			<xs:element name="locationFilter1" type="locationFilterType" minOccurs="0"/>
+			<xs:element name="logicalOperation" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+					<xs:enumeration value="AND"/>
+						<xs:enumeration value="OR"/>
+						<xs:enumeration value="NOT"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:choice>
+				<xs:element name="locationRule" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="targetArea" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="cellID" type="xs:unsignedLong" minOccurs="0" maxOccurs="unbounded"/>
+										<xs:element name="shape" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Polygon" minOccurs="0" maxOccurs="unbounded">
+														<xs:annotation>
+															<xs:documentation>See [OMA MLP].</xs:documentation>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="CircularArea" minOccurs="0" maxOccurs="unbounded">
+														<xs:annotation>
+															<xs:documentation>See [OMA MLP].</xs:documentation>
+														</xs:annotation>
+													</xs:element>
+													<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+										<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="startTime" type="xs:unsignedInt" minOccurs="0"/>
+							<xs:element name="endTime" type="xs:unsignedInt" minOccurs="0"/>
+							<xs:element name="duration" type="xs:unsignedInt" minOccurs="0"/>
+							<xs:element name="confidenceLevel" minOccurs="0">
+								<xs:simpleType>
+									<xs:restriction base="xs:decimal">
+										<xs:minInclusive value="0"/>
+										<xs:maxInclusive value="1"/>
+									</xs:restriction>
+								</xs:simpleType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="locationFilter2" type="locationFilterType" minOccurs="0"/>
+			</xs:choice>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="locationRuleType">
+		<xs:sequence>
+			<xs:element name="targetArea" type="targetAreaType" maxOccurs="unbounded"/>
+			<xs:element name="startTime" type="xs:unsignedInt" minOccurs="0"/>
+			<xs:element name="endTime" type="xs:unsignedInt" minOccurs="0"/>
+			<xs:element name="duration" type="xs:unsignedInt" minOccurs="0"/>
+			<xs:element name="confidenceLevel" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:decimal">
+						<xs:minInclusive value="0"/>
+						<xs:maxInclusive value="1"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="targetAreaType">
+		<xs:sequence>
+			<xs:element name="cellID" type="xs:unsignedLong" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="shape">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Polygon" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>See [OMA MLP].</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="CircularArea" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>See [OMA MLP].</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+</xs:schema>

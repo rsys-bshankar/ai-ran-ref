@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3GPP:metadata:2005:MBMS:FLUTE:FDT"
+	xmlns="urn:3GPP:metadata:2005:MBMS:FLUTE:FDT" 
+	xmlns:xs="http://www.w3.org/2001/XMLSchema" 
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>MBMS FLUTE FDT schema extensions (Release 6)</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 7.2.10.2</xs:documentation>
+		<xs:documentation>Copyright © 2005, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:complexType name="MBMS-Session-Identity-Expiry-Type">
+		<xs:simpleContent>
+			<xs:extension base="MBMS-Session-Identity-Type">
+				<xs:attribute name="value" type="xs:unsignedInt" use="required"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+
+	<xs:simpleType name="MBMS-Session-Identity-Type">
+		<xs:restriction base="xs:unsignedByte"/>
+	</xs:simpleType>
+
+	<xs:simpleType name="groupIdType">
+		<xs:restriction base="xs:string"/>
+	</xs:simpleType>
+</xs:schema>

@@ -1,0 +1,530 @@
+openapi: 3.0.0
+
+info:
+  title: SM Server Spatial Map Data Source Subscription Service
+  version: 1.0.0-alpha.1
+  description: |
+    API for Spatial Map Data Source Subscription Service.
+    ©2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC).
+    All rights reserved.
+
+externalDocs:
+  description: >
+    3GPP TS 29.437 V20.0.0; Service Enabler Architecture Layer for Verticals (SEAL);
+    Metaverse Enablement Services; Stage 3.
+  url: https://www.3gpp.org/ftp/Specs/archive/29_series/29.437/
+
+servers:
+  - url: "{apiRoot}/ssm-smdss/v1"
+    variables:
+      apiRoot:
+        default: https://example.com
+        description: apiRoot as defined in clause 6.5 of 3GPP TS 29.549.
+
+security:
+  - {}
+  - oAuth2ClientCredentials: []
+
+paths:
+  /subscriptions:
+    post:
+      summary: Create a new Spatial Map Data Source Subscription.
+      operationId: CreateSpatialMapDataSourceSubs
+      tags:
+        - Spatial Map Data Source Subscriptions (Collection)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SmDataSourceSub'
+      responses:
+        '201':
+          description: >
+            Created. The Spatial Map Data Source Subscription is successfully created and a
+            representation of the created Individual Spatial Map Data Source Subscription
+            resource shall be returned in the response body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmDataSourceSub'
+          headers:
+            Location:
+              description: Contains the URI of the newly created resource.
+              required: true
+              schema:
+                type: string
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '411':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/411'
+        '413':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/413'
+        '415':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/415'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+      callbacks:
+        SpatialMapDataSourceNotif:
+          '{$request.body#/notifUri}': 
+            post:
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/SmDataSourceNotif'
+              responses:
+                '204':
+                  description: >
+                    No Content. The Spatial Map Data Source Notification is successfully
+                    received and acknowledged.
+                '307':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+                '308':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+                '400':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+                '401':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+                '403':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+                '404':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+                '411':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/411'
+                '413':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/413'
+                '415':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/415'
+                '429':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+                '500':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+                '503':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+                default:
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+  /subscriptions/{subscriptionId}:
+    parameters:
+      - name: subscriptionId
+        in: path
+        description: >
+          Represents the identifier of the Spatial Map Data Source Subscription.
+        required: true
+        schema:
+          type: string
+
+    get:
+      summary: Retrieve an existing Individual Spatial Map Data Source Subscription resource.
+      operationId: GetIndSpatialMapDataSourceSubs
+      tags:
+        - Individual Spatial Map Data Source Subscription (Document)
+      responses:
+        '200':
+          description: >
+            OK. The requested Individual Spatial Map Data Source Subscription
+            resource is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmDataSourceSub'
+        '307':  
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '406':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/406'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+    put:
+      summary: >
+        Request the update of an existing Individual Spatial Map Data Source Subscription resource.
+      operationId: UpdateIndSpatialMapDataSourceSubs
+      tags:
+        - Individual Spatial Map Data Source Subscription (Document)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SmDataSourceSub'
+      responses:
+        '200':
+          description: >
+            OK. The Individual Spatial Map Data Source Subscription resource is successfully
+            updated and a representation of the updated resource shall be returned in the
+            response
+            body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmDataSourceSub'
+        '204':
+          description: >
+            No Content. The Individual Spatial Map Data Source Subscription resource is
+            successfully updated and no content is returned in the response body.
+        '307':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '411':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/411'
+        '413':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/413'
+        '415':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/415'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+    patch:
+      summary: >
+        Request the modification of an existing Individual Spatial Map Data Source Subscription
+        resource.
+      operationId: ModifyIndSpatialMapDataSourceSubs
+      tags:
+        - Individual Spatial Map Data Source Subscription (Document)
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/SmDataSourceSubPatch'
+      responses:
+        '200':
+          description: >
+            OK. The Individual Spatial Map Data Source Subscription resource is successfully
+            modified and a representation of the updated resource shall be returned in the
+            response
+            body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmDataSourceSub'
+        '204':
+          description: >
+            No Content. The Individual Spatial Map Data Source Subscription resource is
+            successfully modified and no content is returned in the response body.
+        '307':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '411':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/411'
+        '413':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/413'
+        '415':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/415'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+    delete:
+      summary: >
+        Request the deletion of an existing Individual Spatial Map Data Source Subscription
+        resource.
+      operationId: DeleteIndSpatialMapDataSourceSubs
+      tags:
+        - Individual Spatial Map Data Source Subscription (Document)
+      responses:
+        '204':
+          description: >
+            The Individual Spatial Map Data Source Subscription resource
+            is successfully deleted.
+        '307':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+components:
+  securitySchemes:
+    oAuth2ClientCredentials:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: "{tokenUrl}"
+          scopes: {}
+
+  schemas:
+
+#
+# STRUCTURED DATA TYPES
+#
+    SmDataSourceSub:
+      description: >
+        Represents the Spatial Map Data Source Subscription request.
+      type: object
+      properties:
+        svcId:
+          type: string
+        notifUri:
+          $ref: 'TS29122_CommonData.yaml#/components/schemas/Uri'
+        expTime:
+          $ref: 'TS29122_CommonData.yaml#/components/schemas/DateTime'
+        smDsIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        areaInt:
+          $ref: 'TS29558_Eecs_EESRegistration.yaml#/components/schemas/ServiceArea'
+        triggerCriteria:
+          $ref: '#/components/schemas/TriggerCriteria'
+        suppFeat:
+          $ref: 'TS29571_CommonData.yaml#/components/schemas/SupportedFeatures'
+      required:
+        - svcId
+        - notifUri
+        - triggerCriteria
+      anyOf:
+        - required: [smDsIds]
+        - required: [areaInt]
+
+    SmDataSourceSubPatch:
+      description: >
+        Represents the Spatial Map Data Source Subscription modification.
+      type: object
+      properties:
+        notifUri:
+          $ref: 'TS29122_CommonData.yaml#/components/schemas/Uri'
+        expTime:
+          $ref: 'TS29122_CommonData.yaml#/components/schemas/DateTime'
+        smDsIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        areaInt:
+          $ref: 'TS29558_Eecs_EESRegistration.yaml#/components/schemas/ServiceArea'
+        triggerCriteria:
+          $ref: '#/components/schemas/TriggerCriteria'
+
+    SmDataSourceNotif:
+      description: >
+        Represents the Spatial Map Data Source Subscription notification.
+      type: object
+      properties:
+        subId:
+          type: string
+        notifInfo:
+          $ref: '#/components/schemas/NotifInfo'
+        smDsProfiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmDsProfile'
+          minItems: 0
+      required:
+        - subId
+        - notifInfo
+        - smDsProfiles
+
+    TriggerCriteria:
+      description: >
+        Represents the trigger criteria for sending notifications.
+      type: object
+      properties:
+        notifTrigger:
+           type: array
+           items:
+             $ref: '#/components/schemas/NotifTrigger'
+           minItems: 1
+        notifType:
+          $ref: '#/components/schemas/NotifType'
+        timeInterval:
+          $ref: 'TS29122_CommonData.yaml#/components/schemas/DurationSec'
+      required:
+        - notifType
+
+    NotifInfo:
+      description: >
+        Represents the notification information that triggered the notification.
+      type: object
+      properties:
+        notifTrigger:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotifTrigger'
+          minItems: 1
+        notifType:
+          $ref: '#/components/schemas/NotifType'
+      required:
+        - notifType
+
+    SmDsProfile:
+      description: >
+        Represents the Spatial Map Data Source Profile changed.
+      type: object
+      properties:
+        change:
+          $ref: '#/components/schemas/SmDsChange'
+        smDataSourceId:
+          type: string
+        smDataSourceProfile:
+          $ref: 'TS24550_SS_SmDataSourceRegistration.yaml#/components/schemas/DataSourceProfile'
+      required:
+        - smDataSourceId
+
+# SIMPLE DATA TYPES
+#
+#
+# ENUMERATIONS
+#
+    NotifTrigger:
+      anyOf:
+      - type: string
+        enum:
+        - SM_DATA_TYPE
+        - SM_FORMAT
+        - SM_DATA_AREA
+        - SM_POSITION
+        - AVAILABILITY_INFORMATION
+        - DATA_SOURCE_UPDATE_INTERVAL_INFORMATION
+        - MOBILITY_INFORMATION
+        - SM_DATA_SOURCE_PROFILE_CREATION
+        - SM_DATA_SOURCE_PROFILE_UPDATE
+        - SM_DATA_SOURCE_PROFILE_DELETION
+      - type: string
+        description: >
+          This string provides forward-compatibility with future extensions to the
+          enumeration but is not used to encode content defined in the present version of
+          this API.
+      description: |
+        Represents the triggers to notify consumer about subscribed Spatial Map Data Source
+        Profile(s).  
+        Possible values are:  
+          - SM_DATA_TYPE: Indicates that changes in Spatial Map data type triggers notification.
+          - SM_FORMAT: Indicates that changes in Spatial Map format triggers notification.
+          - SM_DATA_AREA: Indicates that changes in Spatial Map coverage area triggers notification.
+          - SM_POSITION: Indicates that changes in Spatial Map position information triggers
+            notification.
+          - AVAILABILITY_INFORMATION: Indicates that changes in Spatial Map availability information
+            triggers notification.
+          - DATA_SOURCE_UPDATE_INTERVAL_INFORMATION: Indicates that changes in Spatial Map update
+            information triggers notification.
+          - MOBILITY_INFORMATION: Indicates that changes in Spatial Map mobility information
+            triggers notification.
+          - SM_DATA_SOURCE_PROFILE_CREATION: Indicates that Spatial Map Data Source Profile Creation
+            triggers notification.
+          - SM_DATA_SOURCE_PROFILE_UPDATE: Indicates that Spatial Map Data Source Profile Update
+            triggers notification.
+          - SM_DATA_SOURCE_PROFILE_DELETION: Indicates that changes in Spatial Map Data Source
+            Profile Deletion triggers notification.
+
+    NotifType:
+      anyOf:
+      - type: string
+        enum:
+        - ON_EVENT_DETECTION
+        - PERIODIC
+        - INTERVAL
+      - type: string
+        description: >
+          This string provides forward-compatibility with future extensions to the
+          enumeration but is not used to encode content defined in the present version of
+          this API.
+      description: |
+        Represents the notification type used to notify service consumer on changes in
+        subscribed Spatial Map Data Source(s).  
+        Possible values are:
+          - ON_EVENT_DETECTION: Indicates that the notification is immediate when an event that
+            triggers notification is detected.
+          - PERIODIC: Indicates that the notification is sent periodically.
+          - INTERVAL: Indicates that exists a minimum time interval between consecutive
+            notifications, if minimum time interval as passed since last notification, service
+            consumer should be notified immediately of any change that triggers notification.
+
+    SmDsChange:
+      anyOf:
+      - type: string
+        enum:
+        - SM_DATA_SOURCE_PROFILE_CREATED
+        - SM_DATA_SOURCE_PROFILE_UPDATED
+        - SM_DATA_SOURCE_PROFILE_DELETED
+      - type: string
+        description: >
+          This string provides forward-compatibility with future extensions to the
+          enumeration but is not used to encode content defined in the present version of
+          this API.
+      description: |
+        Represents the Spatial Map Data Source Profile impact that triggered the notification.  
+        Possible values are:
+          - SM_DATA_SOURCE_PROFILE_CREATED: Indicates that a Spatial Map Data Source Profile was
+            created.
+          - SM_DATA_SOURCE_PROFILE_UPDATED: Indicates that a Spatial Map Data Source Profile was
+            updated.
+          - SM_DATA_SOURCE_PROFILE_DELETED: Indicates that a Spatial Map Data Source Profile was
+            deleted.
+
+# Data types describing alternative data types or combinations of data types:
+#

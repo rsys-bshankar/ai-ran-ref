@@ -1,0 +1,545 @@
+openapi: 3.0.0
+
+info:
+  title: SS_DAUsageReport 
+  description: |
+    API for Digital Asset Usage Report service.  
+    © 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC).  
+    All rights reserved.
+  version: 1.0.0-alpha.1
+
+externalDocs:
+  description: >
+    3GPP TS 29.549 V20.0.0 Service Enabler Architecture Layer for Verticals (SEAL);
+    Application Programming Interface (API) specification; Stage 3.
+  url: https://www.3gpp.org/ftp/Specs/archive/29_series/29.549/
+
+servers:
+  - url: '{apiRoot}/ss-da-urpt/v1'
+    variables:
+      apiRoot:
+        default: https://example.com
+        description: apiRoot as defined in clause 6.5 of 3GPP TS 29.549
+
+security:
+  - {}
+  - oAuth2ClientCredentials: []
+
+paths:
+  /subscriptions:
+    post:
+      description: >
+        Creates a new individual digital asset usage report subscription.
+      operationId: DaUsageReportSub
+      tags:
+        - Digital Asset Usage Report subscriptions (Collection)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DaUsageReportSub'
+      responses:
+        '200':
+          description: Contains the one-time DA usage report response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DaUsageReportResp'
+        '201':
+          description: DA Usage Report subscription resource created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DaUsageReportSub'
+          headers:
+            Location:
+              description: Contains the URI of the newly created resource.
+              required: true
+              schema:
+                type: string
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '411':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/411'
+        '413':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/413'
+        '415':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/415'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+      callbacks:
+        DaUsageReportNotif:
+          '{$request.body#/notifUri}':
+            post:
+              requestBody:  # contents of the callback message
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/DaUsageReportNotif'
+              responses:
+                '204':
+                  description: No Content (successful notification)
+                '307':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+                '308':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+                '400':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+                '401':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+                '403':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+                '404':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+                '411':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/411'
+                '413':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/413'
+                '415':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/415'
+                '429':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+                '500':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+                '503':
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+                default:
+                  $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+  /subscriptions/{subscriptionId}:
+    parameters:
+      - name: subscriptionId
+        in: path
+        description: >
+          Represents the identifier of the Individual DA Usage Report Subscription
+          resource.
+        required: true
+        schema:
+          type: string
+
+    get:
+      summary: Retrieve an existing Individual DA Usage Report Subscription resource.
+      operationId: GetIndDaUsageReportSub
+      tags:
+        - Individual Digital Asset Usage Report Subscription (Document)
+      responses:
+        '200':
+          description: >
+            OK. The requested Individual DA Usage Report Subscription is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DaUsageReportSub'
+        '307':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '406':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/406'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+  
+    put:
+      summary: Update an existing Individual DA Usage Report Subscription resource.
+      operationId: UpdateIndDaUsageReportSub
+      tags:
+        - Individual Digital Asset Usage Report Subscription (Document)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DaUsageReportSub'
+      responses:
+        '200':
+          description: >
+            OK. The Individual DA Usage Report Subscription resource is successfully updated and
+            a representation of the updated resource is returned in the response body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DaUsageReportSub'
+        '204':
+          description: >
+            No Content. The Individual DA Usage Report Subscription resource is
+            successfully updated and no content is returned in the response body.
+        '307':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '411':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/411'
+        '413':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/413'
+        '415':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/415'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+    patch:
+      summary: Modify an existing Individual DA Usage Report Subscription resource.
+      operationId: ModifyIndDaUsageReportSub
+      tags:
+        - Individual Digital Asset Usage Report Subscription (Document)
+      requestBody:
+        required: true
+        content:
+          application/json:
+           schema:
+             $ref: '#/components/schemas/DaUsageReportSubPatch'
+      responses:
+        '200':
+          description: >
+            OK. The Individual DA Usage Report Subscription resource is successfully modified and
+            a representation of the updated resource shall be returned in the response body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DaUsageReportSub'
+        '204':
+          description: >
+            No Content. The Individual DA Usage Report Subscription resource is
+            successfully modified and no content is returned in the response body.
+        '307':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '411':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/411'
+        '413':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/413'
+        '415':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/415'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+          
+    delete:
+      description: Deletes an individual digital asset usage report subscription.
+      operationId: DeleteIndDaUsageReportSub
+      tags:
+        - Individual Digital Asset Usage Report Subscription (Document)
+      responses:
+        '204':
+          description: >
+            The individual DA usage report subscription matching 
+            the subscriptionId is deleted.
+        '307':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+components:
+  securitySchemes:
+    oAuth2ClientCredentials:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: '{tokenUrl}'
+          scopes: {}
+
+  schemas:
+    DaUsageReportSub:
+      description: >
+        Represents an individual digital asset usage report subscription resource.
+      type: object
+      properties:
+        daUsgRptFilter:
+          $ref: '#/components/schemas/DaUsageReportFilter'
+        notifUri:
+          $ref: 'TS29122_CommonData.yaml#/components/schemas/Uri'
+        daUsgRptSubId:
+          type: string
+        repReqs:
+          $ref: 'TS29523_Npcf_EventExposure.yaml#/components/schemas/ReportingInformation'
+        suppFeat:
+          $ref: 'TS29571_CommonData.yaml#/components/schemas/SupportedFeatures'
+      required:
+        - daUsgRptFilter
+        - notifUri
+
+    DaUsageReportSubPatch:
+      description: >
+        Represents an individual digital asset usage report subscription resource.
+      type: object
+      properties:
+        daUsgRptFilter:
+          $ref: '#/components/schemas/DaUsageReportFilter'
+        notifUri:
+          $ref: 'TS29122_CommonData.yaml#/components/schemas/Uri'
+        repReqs:
+          $ref: 'TS29523_Npcf_EventExposure.yaml#/components/schemas/ReportingInformation'
+
+    DaUsageReportFilter:
+      description: >
+        Represents a digital asset usage report filter.
+      type: object
+      properties:
+        appIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppId'
+          minItems: 1
+          description: >
+            Indicates the digital assets usage of a particular application (e.g., application
+            identifier)
+        daConsumerIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/DaConsumerId'
+          minItems: 1
+          description: >
+            Identifiers of the consumers of whose digital asset usage report is required.
+        daIds:
+          type: array
+          items:
+            $ref: 'TS29549_SS_DAProfileManagement.yaml#/components/schemas/DaId'
+          minItems: 1
+          description: Indicates the digital assets identities.
+        locationInfos:
+          type: array
+          items:
+            $ref: 'TS29122_CommonData.yaml#/components/schemas/LocationArea5G'
+          minItems: 1
+          description: >
+            Indicates the location information of a particular geographical area for identifying the
+            digital assets usage in that area
+        unUtilDas:
+          type: array
+          items:
+            $ref: 'TS29549_SS_DAProfileManagement.yaml#/components/schemas/DaId'
+          minItems: 1
+          description: >
+            Indication to include the list of digital assets identities which are discovered but not
+            accessed/downloaded
+        unDiscDas:
+          type: array
+          items:
+            $ref: 'TS29549_SS_DAProfileManagement.yaml#/components/schemas/DaId'
+          minItems: 1
+          description: >
+            Indication to include the list of digital assets identities which are not discovered by
+            the consumers.
+      anyOf:
+         - required: [daIds]
+         - required: [locationInfos]
+         - required: [appIds]
+         - required: [daConsumerIds]
+         - required: [unUtilDas]
+         - required: [unDiscDas]
+
+    DaConsumerIdInfo:
+      description: > 
+        Represents a digital asset usage report filter based on DA consumer ID.
+      type: object
+      properties:
+        daIds:
+          type: array
+          items:
+            $ref: 'TS29549_SS_DAProfileManagement.yaml#/components/schemas/DaId'
+          minItems: 1
+        daConsumerId:
+          $ref: '#/components/schemas/DaConsumerId'
+      required:
+        - daIds
+        - daConsumerId
+
+    DaUsageReportResp:
+      description: >
+        Represents the one-time DA usage report response.
+      type: object
+      properties:
+        daUsgRptDetail:
+          $ref: '#/components/schemas/DaUsgRptDetail'
+        suppFeat:
+          $ref: 'TS29571_CommonData.yaml#/components/schemas/SupportedFeatures'
+      required:
+        - daUsgRptDetail
+
+    DaUsageReportNotif:
+      description: Represents notification of the DA Usage Report.
+      type: object
+      properties:
+        daUsgRptsubId:
+          type: string
+        daUsgRptDetail:
+          $ref: '#/components/schemas/DaUsgRptDetail'
+      required:
+        - daUsgRptsubId
+        - daUsgRptDetail
+
+    DaUsgRptDetail:
+      description: >
+        Represents a digital asset usage report details in the notification.
+      type: object
+      properties:
+        das:
+          type: array
+          items:
+            $ref: '#/components/schemas/DigitalAsset'
+          minItems: 0
+          description: >
+             Indicates the list of digital assets.
+        locationInfos:
+          type: array
+          items:
+            $ref: '#/components/schemas/DaLocationInfo'
+          minItems: 0
+        daConsumerIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/DaConsumerIdInfo'
+          minItems: 0
+        unUtilDas:
+           type: array
+           items:
+             $ref: 'TS29549_SS_DAProfileManagement.yaml#/components/schemas/DaId'
+           minItems: 1
+        unDiscDas:
+           type: array
+           items:
+             $ref: 'TS29549_SS_DAProfileManagement.yaml#/components/schemas/DaId'
+           minItems: 1
+      anyOf:
+        - required: [das]
+        - required: [locationInfos]
+        - required: [daConsumerIds]
+
+    DigitalAsset:
+      description: > 
+        Represents a digital asset for the DA usage.
+      type: object
+      properties:
+        daId:
+          $ref: 'TS29549_SS_DAProfileManagement.yaml#/components/schemas/DaId'
+        daConsumerIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/DaConsumerId'
+          minItems: 1
+          description: Represents the list of DA consumer IDs
+        locationInfo:
+          $ref: 'TS29122_CommonData.yaml#/components/schemas/LocationArea5G'
+      required:
+        - daId
+        - locationInfo
+
+    DaLocationInfo:
+      description: > 
+        Represents a digital asset usage report filter based on the location information.
+      type: object
+      properties:
+        locationInfo:
+          $ref: 'TS29122_CommonData.yaml#/components/schemas/LocationArea5G'
+        daNumAccesses:
+          type: array
+          items:
+            $ref: '#/components/schemas/DaNumAccess'
+          minItems: 1
+          description: >
+            Indicates the number of times a particular digital asset
+            is accessed/used in the given geographical area
+      required:
+        - daNumAccesses
+        - locationInfo
+
+    DaNumAccess:
+      description: > 
+        Represents a digital asset usage report filter based on the location information.
+      type: object
+      properties:
+        daId:
+          $ref: 'TS29549_SS_DAProfileManagement.yaml#/components/schemas/DaId'
+        numAccess:
+          $ref: 'TS29571_CommonData.yaml#/components/schemas/Uint32'
+      required:
+        - daId
+        - numAccess
+
+# SIMPLE DATA TYPES
+#
+
+    AppId:
+      description: Represents the Application Identifier
+      type: string
+
+    DaConsumerId:
+      description: Represent the Digital Asset consumer Identifier
+      type: string
+
+#
+# ENUMERATIONS
+#
+
+
+# Data types describing alternative data types or combinations of data types:

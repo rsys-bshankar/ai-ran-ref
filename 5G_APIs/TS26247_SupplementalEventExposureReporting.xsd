@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns="urn:3gpp:metadata:2024:PSS:SupplementalEventExposureReportingFields" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:3gpp:metadata:2024:PSS:SupplementalEventExposureReportingFields" elementFormDefault="qualified" version="TSG104-Rel18">
+	<!-- Slice identification -->
+	<xs:simpleType name="SliceDifferentiatorType">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="[A-Fa-f0-9]{6}"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="SliceInfoType">
+		<xs:annotation>
+			<xs:documentation>Information about a network slice.</xs:documentation>
+		</xs:annotation>
+		<xs:attribute name="sst" type="xs:unsignedByte" use="required">
+			<xs:annotation>
+				<xs:documentation>Slice/Service Type, expressed as an integer between 0 and 255 inclusive.</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="sd" type="SliceDifferentiatorType" use="optional">
+			<xs:annotation>
+				<xs:documentation>Slice Differentiator, expressed as a 6-digit hexadecimal string.</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+	<xs:element name="SliceInfo" type="SliceInfoType"/>
+	<!-- Data Network naming -->
+	<xs:element name="DNN" type="xs:string" nillable="false"/>
+	<!-- Location identification -->
+	<xs:simpleType name="CGIType">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="\d{2,3}-^\d{3}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="ECGIType">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="\d{2,3}-^\d{3}$-[A-Fa-f0-9]{7}(-[A-Fa-f0-9]{11})+"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="NCGIType">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="\d{2,3}-^\d{3}-[A-Fa-f0-9]{9}(-[A-Fa-f0-9]{11})+"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="UserLocationsType">
+		<xs:annotation>
+			<xs:documentation>A set of UE locations.</xs:documentation>
+		</xs:annotation>
+		<xs:sequence maxOccurs="unbounded">
+			<xs:choice>
+				<xs:element name="CGI" type="CGIType">
+					<xs:annotation>
+						<xs:documentation>A string of four numeric codes separated by hyphen characters that encode a Cell Global Identification per clause 4.3.1 of 3GPP TS 23.003:
+-- Mobile Country Code (MCC) part of the PLMN ID, as defined in clause 9.3.3.5 of 3GPP TS 38.413, encoded using a string of 2 or 3 decimal digits.
+- Mobile Network Code (MNC) part of the PLMN ID, as defined in clause 9.3.3.5 of 3GPP TS 38.413, encoded using a string of exactly 3 decimal digits.
+- A Location Area Code (LAC) encoded using a string of 4 hexadecimal digits with the most significant nybble appearing first, and padded with leading zeroes as necessary.
+- A Cell Identification (CI) encoded using a string of 4 hexadecimal digits with the most significant nybble appearing first, and padded with leading zeroes as necessary.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ECGI" type="ECGIType">
+					<xs:annotation>
+						<xs:documentation>A string of four numeric codes separated by hyphen characters that encode a E-UTRAN Cell Global Identification per clause 19.6 of 3GPP TS 23.003:
+- Mobile Country Code (MCC) part of the PLMN ID, as defined in clause 9.3.3.5 of 3GPP TS 38.413, encoded using a string of 2 or 3 decimal digits.
+- Mobile Network Code (MNC) part of the PLMN ID, as defined in clause 9.3.3.5 of 3GPP TS 38.413, encoded using a string of exactly 3 decimal digits.
+- E-UTRAN Cell Identity (ECI), as specified in clause 9.3.1.9 of 3GPP TS 38.413, encoded as a string of 7 hexadecimal digits with the most significant nybble appearing first, and padded with leading zeroes as necessary.
+- Optional Network Identifier (NID), as specified in 3GPP TS 23.003 and clause 5.30.2.1 3GPP TS 23.501, encoded as a string of 11 hexadecimal digits with the most significant nybble appearing first, and padded with leading zeroes as necessary.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="NCGI" type="NCGIType">
+					<xs:annotation>
+						<xs:documentation>A string of four numeric codes separated by hyphen characters that encode a E-UTRAN Cell Global Identification per clause 19.6 of 3GPP TS 23.003:
+- Mobile Country Code (MCC) part of the PLMN ID, as defined in clause 9.3.3.5 of 3GPP TS 38.413, encoded using a string of 2 or 3 decimal digits.
+- Mobile Network Code (MNC) part of the PLMN ID, as defined in clause 9.3.3.5 of 3GPP TS 38.413, encoded using a string of exactly 3 decimal digits.
+- NR Cell Identity (NCI), as specified in clause 9.3.1.7 of 3GPP TS 38.413, encoded as a string of 9 hexadecimal digits with the most significant nybble appearing first, and padded with leading zeroes as necessary.
+- Optional Network Identifier (NID), as specified in 3GPP TS 23.003 and clause 5.30.2.1 of 3GPP TS 23.501, encoded as a string of 11 hexadecimal digits with the most significant nybble appearing first, and padded with leading zeroes as necessary.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+			<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+	<xs:element name="Locations" type="UserLocationsType"/>
+</xs:schema>

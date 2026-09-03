@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<xs:schema version="TSG104-Rel18" xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    targetNamespace="urn:3gpp:metadata:2024:RTC:SR_MSEQoEMetrics"
+    xmlns:sv="urn:3gpp:metadata:2016:PSS:schemaVersion"
+    xmlns="urn:3gpp:metadata:2024:RTC:SR_MSEQoEMetrics" elementFormDefault="qualified">
+
+    <xs:import namespace="urn:3gpp:metadata:2016:PSS:schemaVersion" schemaLocation="TS26247_SchemaVersion.xsd"/>
+ 
+    <xs:element name="QoeMetric" type="QoeMetricType"/>
+    
+    <xs:complexType name="QoeMetricType">
+        <xs:sequence>
+            <xs:choice>
+                <xs:element name="poseToRenderToPhoton" type="PoseToRenderToPhotonType"/>
+                <xs:element name="renderToPhoton" type="RenderToPhotonType"/>
+                <xs:element name="roundTripInteractionDelay" type="RoundTripInteractionDelayType"/>
+                <xs:element name="userInteractionDelay" type="UserInteractionDelayType"/>
+                <xs:element name="ageOfContent" type="AgeOfContentType"/>
+                <xs:element name="sceneUpdateDelay" type="SceneUpdateDelayType"/>
+                <xs:element name="metadataDelay" type="MetadataDelayType"/>
+                <xs:element name="dataFrameDelay" type="DataFrameDelayType"/>
+            </xs:choice>
+            <xs:element ref="sv:delimiter"/>
+            <xs:any namespace="##other" processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType>
+
+    <xs:complexType name="PoseToRenderToPhotonType">
+        <xs:attribute name="avgPoseToRenderToPhoton" type="doubleVectorType" use="required"/>
+        <xs:attribute name="minPoseToRenderToPhoton" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="maxPoseToRenderToPhoton" type="unsignedIntVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType> 
+
+    <xs:complexType name="RenderToPhotonType">
+        <xs:attribute name="avgPoseToRenderToPhoton" type="doubleVectorType" use="required"/>
+        <xs:attribute name="minRenderToPhoton" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="maxRenderToPhoton" type="unsignedIntVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType> 
+
+    <xs:complexType name="RoundTripInteractionDelayType">
+        <xs:attribute name="avgRoundTripInteractionDelay" type="doubleVectorType" use="required"/>
+        <xs:attribute name="numberOfUserActions" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="minRoundTripInteractionDelay" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="minActionIds" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="maxRoundTripInteractionDelay" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="maxActionIds" type="unsignedIntVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType> 
+
+    <xs:complexType name="UserInteractionDelayType">
+        <xs:attribute name="avgUserInetractionDelay" type="doubleVectorType" use="required"/>
+        <xs:attribute name="numberOfUserActions" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="minUserInetractionDelay" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="minActionIds" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="maxUserInteractionDelay" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="maxActionIds" type="unsignedIntVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType> 
+
+    <xs:complexType name="AgeOfContentType">
+        <xs:attribute name="avgAgeOfContent" type="doubleVectorType" use="required"/>
+        <xs:attribute name="mumberOfSceneEvents" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="minageOfContent" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="maxAgeOfContent" type="unsignedIntVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType> 
+
+    <xs:complexType name="SceneUpdateDelayType">
+        <xs:attribute name="avgSceneUpdateDelay" type="doubleVectorType" use="required"/>
+        <xs:attribute name="numberOfSceneUpdates" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="minsceneUpdateDelay" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="maxsceneUpdateDelay" type="unsignedIntVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType> 
+
+    <xs:complexType name="MetadataDelayType">
+        <xs:attribute name="avgMetadataDelay" type="doubleVectorType" use="required"/>
+        <xs:attribute name="numberOfMetadataMessages" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="minMetadataDelay" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="maxMetadataDelay" type="unsignedIntVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType> 
+
+    <xs:complexType name="DataFrameDelayType">
+        <xs:attribute name="avgDataFrameDelay" type="doubleVectorType" use="required"/>
+        <xs:attribute name="numberOfDataFrames" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="minDataFrameDelay" type="unsignedIntVectorType" use="required"/>
+        <xs:attribute name="maxDataFrameDelay" type="unsignedIntVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType> 
+
+	<xs:simpleType name="doubleVectorType">
+        <xs:list itemType="xs:double"/>
+	</xs:simpleType>
+
+    <xs:simpleType name="unsignedIntVectorType">
+        <xs:list itemType="xs:unsignedInt"/>
+    </xs:simpleType>
+
+</xs:schema>

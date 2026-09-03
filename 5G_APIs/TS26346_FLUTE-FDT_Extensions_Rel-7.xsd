@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3GPP:metadata:2007:MBMS:FLUTE:FDT"
+	xmlns="urn:3GPP:metadata:2007:MBMS:FLUTE:FDT"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>MBMS FLUTE FDT schema extensions (Release 7)</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 7.2.10.2</xs:documentation>
+		<xs:documentation>Copyright © 2007, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+	
+	<xs:element name="Cache-Control">
+		<xs:complexType>
+			<xs:choice>
+				<xs:element name="no-cache" type="xs:boolean" fixed="true"/>
+				<xs:element name="max-stale" type="xs:boolean" fixed="true"/>
+				<xs:element name="Expires" type="xs:unsignedInt"/>
+			</xs:choice>
+			<xs:anyAttribute processContents="skip"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

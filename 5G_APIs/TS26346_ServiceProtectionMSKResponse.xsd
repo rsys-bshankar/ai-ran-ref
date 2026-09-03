@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3GPP:metadata:2005:MBMS:mskResponse"
+	xmlns="urn:3GPP:metadata:2005:MBMS:mskResponse"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:annotation>
+		<xs:documentation>MBMS Service Protection MSK response schema</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 11.8.1</xs:documentation>
+		<xs:documentation>Copyright © 2005, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:element name="mbmsMSKResponse">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="Response" type="ResponseType" maxOccurs="unbounded"/>
+				<xs:any namespace="##other" minOccurs="0" maxOccurs="unbounded"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+
+	<xs:complexType name="MSKType">
+		<xs:sequence>
+			<xs:element name="keyDomainID" type="xs:base64Binary"/>
+			<xs:element name="MSKID" type="MSKIDType"/>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:simpleType name="MSKIDType">
+		<xs:restriction base="xs:base64Binary">
+			<xs:length value="4"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<xs:complexType name="ResponseType">
+		<xs:sequence>
+			<xs:element name="MSK" type="MSKType"/>
+			<xs:element name="ResponseCode" type="xs:string"/>
+			<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+</xs:schema>

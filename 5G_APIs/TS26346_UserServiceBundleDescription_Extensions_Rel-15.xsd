@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3GPP:metadata:2018:r15:MBMS:userServiceDescription" version="3"
+	xmlns="urn:3GPP:metadata:2018:r15:MBMS:userServiceDescription"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>MBMS User Service Bundle Description schema extensions (Release 15)</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 11.2.1.2</xs:documentation>
+		<xs:documentation>Copyright © 2018, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:element name="supplementaryUnicastAppService">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="basePattern" type="xs:anyURI" maxOccurs="unbounded"/>
+				<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+			</xs:sequence>
+			<xs:anyAttribute processContents="skip"/>
+		</xs:complexType>
+	</xs:element>
+
+	<xs:element name="ROMSvcRfParams">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="Frequency" maxOccurs="unbounded">
+					<xs:annotation>
+						<xs:documentation>Coded as EARFCN per 3GPP TS 36.101.</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:attribute name="subcarrierSpacing" use="required">
+							<xs:annotation>
+								<xs:documentation>Restricted to one of the following values in kHz: [1.25, 7.5, 15].</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+						<xs:attribute name="bandwidth" use="required">
+							<xs:annotation>
+								<xs:documentation>Restricted to one of the following values in MHz: [1.4, 3, 5, 10, 15, 20].</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

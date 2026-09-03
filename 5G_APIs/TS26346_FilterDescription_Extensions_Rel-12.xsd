@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3gpp:metadata:2013:MBMS:filterDescription"
+	xmlns="urn:3gpp:metadata:2013:MBMS:filterDescription"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>MBMS Filter Description schema extensions (Release 12)</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 11.2B.4</xs:documentation>
+		<xs:documentation>Copyright © 2013, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:element name="groupFilter" type="groupFilterType"/>
+	<xs:complexType name="groupFilterType">
+		<xs:sequence>
+			<xs:element name="groupID" type="xs:string" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+</xs:schema>

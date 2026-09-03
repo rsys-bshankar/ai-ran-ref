@@ -1,0 +1,258 @@
+openapi: 3.0.0
+
+info:
+  title: AIMLE Server Federated Member Service
+  version: 1.0.0-alpha.1
+  description: |
+    AIMLE Server provides a service consumer to register, query, update, deregister FL members.  
+    © 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC).   
+    All rights reserved.
+
+externalDocs:
+  description: >
+    3GPP TS 29.482 v20.0.0; Service Enabler Architecture Layer for Verticals (SEAL); Artificial
+    Intelligence Machine Learning Enablement (AIMLE) Services; Stage 3.
+  url: https://www.3gpp.org/ftp/Specs/archive/29_series/29.482/
+
+servers:
+  - url: '{apiRoot}/aimles-flreg/v1'
+    variables:
+      apiRoot:
+        default: https://example.com
+        description: apiRoot as defined in clause 6.5 of 3GPP TS 29.549
+
+security:
+  - {}
+  - oAuth2ClientCredentials: []
+
+paths:
+  /configurations:
+    post:
+      summary: Register a new Individual FL Member resource.
+      operationId: RegisterFLMember
+      tags:
+        - FL Member(Collection)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'TS29482_MLR_FLMember.yaml#/components/schemas/FlMbr'
+      responses:
+        '201':
+          description: >
+            The registration of the new Individual FL Member is confirmed.
+          content:
+            application/json:
+              schema:
+                $ref: 'TS29482_MLR_FLMember.yaml#/components/schemas/FlMbr'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '411':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/411'
+        '413':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/413'
+        '415':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/415'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+  /configurations/{configurationId}:
+    parameters:
+      - name: configurationId
+        in: path
+        description: String identifying an individual FL member resource.
+        required: true
+        schema:
+          type: string
+
+    get:
+      summary: Query an Individual Registered FL Member resource.
+      operationId: QueryFLMember
+      tags:
+        - Individual FL Member(Document)
+      responses:
+        '200':
+          description: The requested "Individual FL member” is retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: 'TS29482_MLR_FLMember.yaml#/components/schemas/FlMbr'
+        '307':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '406':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/406'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+    put:
+      summary: Update completely an Individual Registered FL Member resource.
+      operationId: UpdateFLMember
+      tags:
+        - Individual FL Member(Document)
+      requestBody:
+        description: Configuration information to be completely updated.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'TS29482_MLR_FLMember.yaml#/components/schemas/FlMbr'
+      responses:
+        '200':
+          description: OK. The configuration is updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: 'TS29482_MLR_FLMember.yaml#/components/schemas/FlMbr'
+        '204':
+          description: No Content. Successful case but without any Content
+        '307':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '411':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/411'
+        '413':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/413'
+        '415':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/415'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+    patch:
+      summary: Modify partially an Individual Registered FL Member resource.
+      operationId: ModifyPartiallyFLMember
+      tags:
+        - Individual FL Member (Document)
+      requestBody:
+        description: Configuration information to be partially modified.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'TS29482_MLR_FLMember.yaml#/components/schemas/FlMbrPatch'
+      responses:
+        '200':
+          description: >
+            OK. The individual FL member is partially modified successfully.
+          content:
+            application/json:
+              schema:
+                $ref: 'TS29482_MLR_FLMember.yaml#/components/schemas/FlMbr'
+        '204':
+          description: successful case but without any Content
+        '307':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '411':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/411'
+        '413':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/413'
+        '415':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/415'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+    delete:
+      summary: Deletes an individual registered FL member.
+      operationId: DeleteFLMember
+      tags:
+        - Individual FL Member (Document)
+      responses:
+        '204':
+          description: The individual configuration matching configuration Id is deleted.
+        '307':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+components:
+  securitySchemes:
+    oAuth2ClientCredentials:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: '{tokenUrl}'
+          scopes: {}
+
+# Structured data types
+#
+
+# Simple data types
+#
+
+# Enumerations
+#

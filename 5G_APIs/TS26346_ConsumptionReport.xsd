@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3gpp:metadata:2014:MBMS:consumptionreport"
+	xmlns="urn:3gpp:metadata:2014:MBMS:consumptionreport"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	xmlns:sv="urn:3gpp:metadata:2009:MBMS:schemaVersion"
+
+	elementFormDefault="qualified" attributeFormDefault="unqualified" version="1">
+	<xs:annotation>
+		<xs:documentation>MBMS Consumption Report schema</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 9.5.4.0</xs:documentation>
+		<xs:documentation>Copyright © 2014, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:import namespace="urn:3gpp:metadata:2009:MBMS:schemaVersion" schemaLocation="TS26346_SchemaVersion.xsd"/>
+
+	<xs:element name="consumptionReport" type="consumptionReportType"/>
+	<xs:complexType name="consumptionReportType">
+		<xs:sequence>
+			<xs:choice>
+				<xs:element name="locationCGI" type="xs:string"/>
+				<xs:element name="locationECGI" type="xs:string"/>
+				<xs:element name="locationSAI" type="locationSAIType"/>
+			</xs:choice>
+			<xs:element ref="sv:schemaVersion"/>
+			<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="serviceId" type="xs:string" use="required"/>
+		<xs:attribute name="consumptionType" type="xs:unsignedByte" use="required">
+			<xs:annotation>
+				<xs:documentation>
+1 - start of consumption of the MBMS User Service on the MBMS bearer; 
+2 - transition of UE consumption of the Service from unicast to MBMS bearer; 
+3 - stop of consumption of the MBMS User Service on the MBMS bearer; 
+4 - transition of UE consumption of the MBMS User Service from MBMS bearer to unicast; 
+5 - ongoing consumption of the MBMS User Service on the MBMS bearer upon the expiration of the 'report interval' timer;
+6 - location change while consuming the MBMS User Service on the MBMS bearer; 
+7 - start of consumption of the MBMS User Service on the unicast; 
+8 - stop of consumption of the MBMS User Service on the unicast; 
+9 - ongoing consumption of the MBMS User Service on the unicast, upon the expiration of the 'report interval' timer;
+10 - location change while consuming the MBMS User Service on the unicast
+				</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="reportTime" type="xs:dateTime"/>
+		<xs:attribute name="clientId" type="xs:string">
+			<xs:annotation>
+				<xs:documentation>Presence depends on the value of the 'reportClientId' attribute of the 'r12:consumptionReport' element in Associated Delivery Procedures Description.</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+
+	<xs:complexType name="locationSAIType">
+		<xs:sequence>
+			<xs:element name="intraFreq-SAI" type="MBMS-SAI-List" minOccurs="0"/>
+			<xs:element name="interFreq-SAI" type="MBMS-SAI-List" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="intersection-SAI" type="MBMS-SAI-List" minOccurs="0"/>
+			<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="MBMS-SAI-List">
+		<xs:sequence>
+			<xs:element name="MBMS-SAI" type="xs:unsignedInt" maxOccurs="64"/>
+		</xs:sequence>
+	</xs:complexType>
+</xs:schema>

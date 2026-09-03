@@ -1,0 +1,72 @@
+<?xml version="1.0"?>
+<xs:schema version="TSG104-Rel18" xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    targetNamespace="urn:3gpp:metadata:2023:RTC:QoEMetrics"
+xmlns:sv="urn:3gpp:metadata:2016:PSS:schemaVersion"
+    xmlns="urn:3gpp:metadata:2023:RTC:QoEMetrics" elementFormDefault="qualified">
+
+	<xs:import namespace="urn:3gpp:metadata:2016:PSS:schemaVersion" schemaLocation="TS26247_SchemaVersion.xsd"/>
+
+    <xs:element name="QoeMetric" type="QoeMetricType"/>
+    
+    <xs:complexType name="QoeMetricType">
+        <xs:sequence>
+            <xs:choice>
+                <xs:element name="Corruption_Duration" type="CorruptionDurationType"/>
+                <xs:element name="Successive_Loss" type="SuccessiveLossType"/>
+                <xs:element name="Frame_Rate" type="doubleVectorType"/>
+                <xs:element name="Jitter_Duration" type="JitterDurationType"/>
+                <xs:element name="SyncLoss_Duration" type="SyncLossType"/>
+                <xs:element name="Round_Trip_Time" type="RoundTripTimeType"/>
+                <xs:element name="Average_Codec_Bitrate" type="AverageBitRateType"/>
+            </xs:choice>
+            <xs:element ref="sv:delimiter"/>
+            <xs:any namespace="##other" processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType>
+
+    <xs:complexType name="CorruptionDurationType">
+        <xs:attribute name="totalCorruptionDuration" type="unsignedLongVectorType" use="required"/>
+        <xs:attribute name="numberOfCorruptionEvents" type="unsignedLongVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType>
+
+    <xs:complexType name="SuccessiveLossType">
+        <xs:attribute name="totalNumberOfSuccessivePacketLosses" type="unsignedLongVectorType" use="required"/>
+        <xs:attribute name="numberOfSuccessiveLossEvents" type="unsignedLongVectorType" use="required"/>
+        <xs:attribute name="numberOfReceivedPackets" type="unsignedLongVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType> 
+
+    <xs:complexType name="JitterDurationType">
+        <xs:attribute name="totalJitterDuration" type="doubleVectorType" use="required"/>
+        <xs:attribute name="numberOfJitterEvents" type="unsignedLongVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType>
+
+    <xs:complexType name="SyncLossType">
+        <xs:attribute name="totalSyncLossDuration" type="doubleVectorType" use="required"/>
+        <xs:attribute name="numberOfSyncLossEvents" type="unsignedLongVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType>
+
+    <xs:complexType name="RoundTripTimeType">
+        <xs:attribute name="networkRTT" type="unsignedLongVectorType" use="required"/>
+        <xs:attribute name="internalRTT" type="unsignedLongVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType>
+
+    <xs:complexType name="AverageBitRateType">
+        <xs:attribute name="averageCodecBitRate" type="doubleVectorType" use="required"/>
+        <xs:anyAttribute processContents="skip"/>
+    </xs:complexType>
+
+    <xs:simpleType name="unsignedLongVectorType">
+        <xs:list itemType="xs:unsignedLong"/>
+	</xs:simpleType>
+
+	<xs:simpleType name="doubleVectorType">
+        <xs:list itemType="xs:double"/>
+	</xs:simpleType>
+
+</xs:schema>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3GPP:metadata:2007:MBMS:downloadHeader"
+	xmlns="urn:3GPP:metadata:2007:MBMS:downloadHeader"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:annotation>
+		<xs:documentation>MBMS Keep Updated Registration schema</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 7.7.1</xs:documentation>
+		<xs:documentation>Copyright © 2007, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:element name="KeepUpdated" type="KeepUpdatedType"/>
+	<xs:complexType name="KeepUpdatedType">
+		<xs:sequence>
+			<xs:element name="fileURL" type="xs:anyURI" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="request" type="RequestType" use="optional" default="Register"/>
+		<xs:attribute name="MSISDN" type="xs:string" use="optional"/>
+	</xs:complexType>
+	
+	<xs:simpleType name="RequestType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Register"/>
+			<xs:enumeration value="Deregister"/>
+		</xs:restriction>
+	</xs:simpleType>
+</xs:schema>

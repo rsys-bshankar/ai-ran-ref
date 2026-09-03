@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3gpp:metadata:2012:MBMS:scheduleDescription"
+	xmlns="urn:3gpp:metadata:2012:MBMS:scheduleDescription"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>MBMS Schedule Description schema extensions (Release 11)</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 11.2A.2.2</xs:documentation>
+		<xs:documentation>Copyright © 2012, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:attribute name="sessionId" type="xs:string"/>
+
+	<xs:attribute name="fileMD5" type="xs:base64Binary"/>
+
+	<xs:attribute name="filterDescriptionReference" type="xs:anyURI"/>
+
+	<xs:element name="receptionFiltering">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="data" maxOccurs="unbounded">
+					<xs:complexType>
+						<xs:attribute name="filterID" type="xs:anyURI" use="required"/>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

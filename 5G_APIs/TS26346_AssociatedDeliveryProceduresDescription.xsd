@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3gpp:metadata:2005:MBMS:associatedProcedure" version="3"
+	xmlns="urn:3gpp:metadata:2005:MBMS:associatedProcedure"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	xmlns:r12="urn:3gpp:metadata:2005:MBMS:associatedProcedure-rel-12-extension"
+	xmlns:r13="urn:3gpp:metadata:2005:MBMS:associatedProcedure-rel-13-extension"
+	xmlns:r14="urn:3gpp:metadata:2005:MBMS:associatedProcedure-rel-14-extension"
+	xmlns:r19="urn:3gpp:metadata:2005:MBMS:associatedProcedure-rel-19-extension"
+	xmlns:sv="urn:3gpp:metadata:2009:MBMS:schemaVersion"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>MBMS Associated Delivery Procedures Description schema</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 9.5.1</xs:documentation>
+		<xs:documentation>Copyright © 2005-2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:import namespace="urn:3gpp:metadata:2009:MBMS:schemaVersion" schemaLocation="TS26346_SchemaVersion.xsd"/>
+	<xs:import namespace="urn:3gpp:metadata:2005:MBMS:associatedProcedure-rel-12-extension" schemaLocation="TS26346_AssociatedDeliveryProceduresDescription_Extensions_Rel-12.xsd"/>
+	<xs:import namespace="urn:3gpp:metadata:2005:MBMS:associatedProcedure-rel-13-extension" schemaLocation="TS26346_AssociatedDeliveryProceduresDescription_Extensions_Rel-13.xsd"/>
+	<xs:import namespace="urn:3gpp:metadata:2005:MBMS:associatedProcedure-rel-14-extension" schemaLocation="TS26346_AssociatedDeliveryProceduresDescription_Extensions_Rel-14.xsd"/>
+	<xs:import namespace="urn:3gpp:metadata:2005:MBMS:associatedProcedure-rel-19-extension" schemaLocation="TS26346_AssociatedDeliveryProceduresDescription_Extensions_Rel-19.xsd"/>
+
+	<xs:element name="associatedProcedureDescription" type="associatedProcedureType"/>
+	<xs:complexType name="associatedProcedureType">
+		<xs:sequence>
+			<xs:element name="postFileRepair" type="basicProcedureType" minOccurs="0"/>
+			<xs:element name="bmFileRepair" type="bmFileRepairType" minOccurs="0"/>
+			<xs:element name="postReceptionReport" type="reportProcedureType" minOccurs="0"/>
+			<xs:element ref="r12:consumptionReport" minOccurs="0"/>
+			<xs:element ref="sv:schemaVersion"/>
+			<xs:element ref="r13:DASHQoEProcedure" minOccurs="0"/>
+			<xs:element ref="sv:delimiter"/>
+			<xs:element ref="r19:inSessionRepair" minOccurs="0"/>
+			<xs:element ref="sv:delimiter"/>
+			<xs:any namespace="##other" processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="basicProcedureType">
+		<xs:sequence>
+			<xs:element name="serviceURI" type="xs:anyURI" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="offsetTime" type="xs:unsignedLong" use="optional"/>
+		<xs:attribute name="randomTimePeriod" type="xs:unsignedLong" use="required"/>
+	</xs:complexType>
+
+	<xs:complexType name="bmFileRepairType">
+		<xs:attribute name="sessionDescriptionURI" type="xs:anyURI" use="required"/>
+	</xs:complexType>
+
+	<xs:complexType name="reportProcedureType">
+		<xs:complexContent>
+			<xs:extension base="basicProcedureType">
+				<xs:attribute name="samplePercentage" type="xs:decimal" use="optional" default="100"/>
+				<xs:attribute name="forceTimeIndependence" type="xs:boolean" use="optional" default="false"/>
+				<xs:attribute name="reportType" use="optional" default="RAck">
+					<xs:simpleType>
+						<xs:union memberTypes="knownReportType xs:string"/>
+					</xs:simpleType>
+				</xs:attribute>
+				<xs:attribute ref="r14:reportInterval" use="optional"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+
+	<xs:simpleType name="knownReportType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="RAck"/>
+			<xs:enumeration value="StaR"/>
+			<xs:enumeration value="StaR-all"/>
+			<xs:enumeration value="StaR-only"/>		
+		</xs:restriction>
+	</xs:simpleType>
+</xs:schema>

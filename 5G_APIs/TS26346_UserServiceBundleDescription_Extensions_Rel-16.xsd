@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3GPP:metadata:2020:MBMS:userServiceDescription" version="4"
+	xmlns="urn:3GPP:metadata:2020:MBMS:userServiceDescription"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+ 	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>MBMS User Service Bundle Description schema extensions (Release 16)</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 11.2.1.2</xs:documentation>
+		<xs:documentation>Copyright © 2020, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:element name="ROMSvcRfParams">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="Frequency" maxOccurs="unbounded">
+					<xs:annotation>
+						<xs:documentation>Coded as EARFCN per 3GPP TS 36.101.</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:attribute name="subcarrierSpacing" type="xs:decimal" use="required">
+							<xs:annotation>
+								<xs:documentation>Restricted to one of the subcarrier spacing values as specified in 3GPP TS 36.211.</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+						<xs:attribute name="bandwidth" type="xs:decimal" use="required">
+							<xs:annotation>
+								<xs:documentation>Restricted to one of the channel bandwidth values as specified in 3GPP TS 36.104.</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3GPP:metadata:2008:MBMS:userServiceDescription"
+	xmlns="urn:3GPP:metadata:2008:MBMS:userServiceDescription"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>MBMS User Service Bundle Description schema extensions (Release 8)</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 11.2.1.2</xs:documentation>
+		<xs:documentation>Copyright © 2008, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:element name="alternativeAccessDelivery">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="unicastAccessURI" type="xs:anyURI" minOccurs="0" maxOccurs="unbounded"/>
+			</xs:sequence>
+			<xs:attribute name="timeShiftingBuffer" type="xs:unsignedInt" use="optional" default="0"/>
+		</xs:complexType>
+	</xs:element>
+
+	<xs:element name="Registration">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="registrationURI" type="xs:anyURI" minOccurs="1" maxOccurs="unbounded"/>
+			</xs:sequence>
+			<xs:attribute name="registrationThreshold" type="xs:unsignedInt" use="optional" default="100"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

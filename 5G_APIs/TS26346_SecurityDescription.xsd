@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3GPP:metadata:2005:MBMS:securityDescription"
+	xmlns="urn:3GPP:metadata:2005:MBMS:securityDescription"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>MBMS Security Description schema</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 11.3.1</xs:documentation>
+		<xs:documentation>Copyright © 2005, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:element name="securityDescription" type="securityDescriptionType"/>
+	<xs:complexType name="securityDescriptionType">
+		<xs:sequence>
+			<xs:element name="keyManagement" type="keyManagementType" minOccurs="0"/>
+			<xs:element name="keyId" type="keyIdType" maxOccurs="unbounded"/>
+			<xs:element name="fecProtection" type="fecProtectionType" minOccurs="0"/>
+			<xs:any namespace="##other" minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+		</xs:sequence>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+
+	<xs:complexType name="keyManagementType">
+		<xs:sequence>
+			<xs:element name="serverURI" type="xs:anyURI" maxOccurs="unbounded"/>
+			<xs:any namespace="##other" minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+		</xs:sequence>
+		<xs:attribute name="offsetTime" type="xs:unsignedLong" use="optional" default="0"/>
+		<xs:attribute name="randomTimePeriod" type="xs:unsignedLong" use="optional" default="0"/>
+		<xs:attribute name="uiccKeyManagement" type="xs:boolean" use="optional" default="true"/>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+
+	<xs:complexType name="keyIdType">
+		<xs:sequence>
+			<xs:element name="mediaFlow" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="MSK" type="MSKType" maxOccurs="1"/>
+					</xs:sequence>
+					<xs:attribute name="flowID" type="xs:string" use="required"/>
+					<xs:anyAttribute processContents="skip"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="fecProtectionType">
+		<xs:attribute name="fecEncodingId" type="xs:unsignedLong" use="optional" default="0"/>
+		<xs:attribute name="fecInstanceId" type="xs:unsignedLong" use="optional"/>
+		<xs:attribute name="fecOtiExtension" type="xs:string" use="optional"/>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+
+	<xs:complexType name="MSKType">
+		<xs:sequence>
+			<xs:element name="keyDomainID" type="xs:base64Binary" minOccurs="1" maxOccurs="1"/>
+			<xs:element name="MSKID" type="MSKIDType" minOccurs="1" maxOccurs="1"/>	
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:simpleType name="MSKIDType">
+		<xs:restriction base="xs:base64Binary">
+			<xs:length value="4"/>
+		</xs:restriction>
+	</xs:simpleType>
+</xs:schema>

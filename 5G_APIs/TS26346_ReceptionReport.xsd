@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3gpp:metadata:2008:MBMS:receptionreport"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	xmlns="urn:3gpp:metadata:2008:MBMS:receptionreport"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>MBMS Reception Report schema</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 9.5.3.0</xs:documentation>
+		<xs:documentation>Copyright © 2008, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:element name="receptionReport" type="receptionReportType"/>
+	<xs:complexType name="receptionReportType">
+		<xs:choice>
+			<xs:element name="receptionAcknowledgement" type="rackType"/>
+			<xs:element name="statisticalReport" type="starType" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:any namespace="##other" processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:choice>
+	</xs:complexType>
+
+	<xs:complexType name="rackType">
+		<xs:sequence>
+			<xs:element name="fileURI" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="fileUriType">
+							<xs:attribute name="clientId" type="xs:string" use="optional"/>
+							<xs:attribute name="sessionId" type="xs:string" use="optional"/>
+							<xs:attribute name="deviceId" type="xs:string" use="optional"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="starType">
+		<xs:sequence>
+			<xs:element name="fileURI" type="fileUriType" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="qoeMetrics" type="qoeMetricsType" minOccurs="0" maxOccurs="1"/>
+			<xs:any namespace="##other" processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="sessionType" type="sessionTypeType" use="optional"/>
+		<xs:attribute name="serviceId" type="xs:string" use="optional"/>
+		<xs:attribute name="clientId" type="xs:string" use="optional"/>
+		<xs:attribute name="deviceId" type="xs:string" use="optional"/>
+		<xs:attribute name="serviceURI" type="xs:anyURI" use="optional"/>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+
+	<xs:simpleType name="sessionTypeType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="download"/>
+			<xs:enumeration value="streaming"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<xs:complexType name="fileUriType">
+		<xs:simpleContent>
+			<xs:extension base="xs:anyURI">
+				<xs:attribute name="receptionSuccess" type="xs:boolean" use="optional" default="true"/>
+				<xs:attribute name="Content-MD5" type="xs:base64Binary" use="optional"/>
+				<xs:attribute name="receivedSymbolsForFailedBlocks" type="unsignedLongVectorType" use="optional"/>
+				<xs:attribute name="totalSymbolsForFailedBlocks" type="unsignedLongVectorType" use="optional"/>
+				<xs:anyAttribute processContents="skip"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+
+	<xs:complexType name="qoeMetricsType">
+		<xs:sequence>
+			<xs:element name="medialevel_qoeMetrics" type="medialevel_qoeMetricsType" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:any namespace="##other" processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="totalRebufferingDuration" type="doubleVectorType" use="optional"/>
+		<xs:attribute name="numberOfRebufferingEvents" type="unsignedLongVectorType" use="optional"/>
+		<xs:attribute name="initialBufferingDuration" type="xs:double" use="optional"/>
+		<xs:attribute name="contentAccessTime" type="xs:double" use="optional"/>
+		<xs:attribute name="sessionStartTime" type="xs:unsignedLong"/>
+		<xs:attribute name="sessionStopTime" type="xs:unsignedLong"/>
+		<xs:attribute name="networkResourceCellId" type="stringVectorType" use="optional"/>
+		<xs:attribute name="numberOfLostObjects" type="unsignedLongVectorType" use="optional"/>
+		<xs:attribute name="symbolCountUnderrun" type="stringVectorType" use="optional"/>
+		<xs:attribute name="numberOfReceivedObjects" type="unsignedLongVectorType" use="optional"/>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+
+	<xs:complexType name="medialevel_qoeMetricsType">
+		<xs:attribute name="sessionId" type="xs:string"/>
+		<xs:attribute name="totalCorruptionDuration" type="unsignedLongVectorType" use="optional"/>
+		<xs:attribute name="numberOfCorruptionEvents" type="unsignedLongVectorType" use="optional"/>
+		<xs:attribute name="t" type="xs:boolean" use="optional"/>
+		<xs:attribute name="totalNumberofSuccessivePacketLoss" type="unsignedLongVectorType" use="optional"/>
+		<xs:attribute name="numberOfSuccessiveLossEvents" type="unsignedLongVectorType" use="optional"/>
+		<xs:attribute name="numberOfReceivedPackets" type="unsignedLongVectorType" use="optional"/>
+		<xs:attribute name="framerateDeviation" type="doubleVectorType" use="optional"/>
+		<xs:attribute name="totalJitterDuration" type="doubleVectorType" use="optional"/>
+		<xs:attribute name="numberOfJitterEvents" type="unsignedLongVectorType" use="optional"/>
+		<xs:attribute name="framerate" type="doubleVectorType" use="optional"/>
+		<xs:attribute name="codecInfo" type="stringVectorType" use="optional"/>
+		<xs:attribute name="codecProfileLevel" type="stringVectorType" use="optional"/>
+		<xs:attribute name="codecImageSize" type="stringVectorType" use="optional"/>
+		<xs:attribute name="averageCodecBitrate" type="doubleVectorType" use="optional"/>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+
+	<xs:simpleType name="doubleVectorType">
+		<xs:list itemType="xs:double"/>
+	</xs:simpleType>
+
+	<xs:simpleType name="unsignedLongVectorType">
+		<xs:list itemType="xs:unsignedLong"/>
+	</xs:simpleType>
+
+	<xs:simpleType name="stringVectorType">
+		<xs:list itemType="xs:string"/>
+	</xs:simpleType>
+</xs:schema>

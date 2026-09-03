@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3gpp:metadata:2011:MBMS:scheduleDescription" version="3"
+	xmlns="urn:3gpp:metadata:2011:MBMS:scheduleDescription"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	xmlns:r11="urn:3gpp:metadata:2012:MBMS:scheduleDescription"
+	xmlns:r12="urn:3gpp:metadata:2013:MBMS:scheduleDescription"
+	xmlns:sv="urn:3gpp:metadata:2009:MBMS:schemaVersion"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>Extended MBMS Schedule Description schema</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 11.2A.2.1</xs:documentation>
+		<xs:documentation>Copyright © 2013, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:import schemaLocation="TS26346_ScheduleDescription_Extensions_Rel-11.xsd" 
+namespace="urn:3gpp:metadata:2012:MBMS:scheduleDescription"/>
+	<xs:import schemaLocation="TS26346_ScheduleDescription_Extensions_Rel-12.xsd" 
+namespace="urn:3gpp:metadata:2013:MBMS:scheduleDescription"/>
+	<xs:import schemaLocation="TS26346_SchemaVersion.xsd" 
+namespace="urn:3gpp:metadata:2009:MBMS:schemaVersion"/>
+
+	<xs:element name="scheduleDescription" type="scheduleDescriptionType"/>
+	<xs:complexType name="scheduleDescriptionType">
+		<xs:sequence>
+			<xs:element ref="sv:schemaVersion"/>
+			<xs:element name="serviceSchedule" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="sessionSchedule" type="reoccurenceStartStopType" minOccurs="0" maxOccurs="unbounded"/>
+						<xs:element name="sessionScheduleOverride" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:sequence minOccurs="0">
+								<xs:element name="start" type="xs:dateTime"/>
+								<xs:element name="stop" type="xs:dateTime"/>
+								</xs:sequence>
+								<xs:attribute name="index" type="xs:unsignedInt" use="required"/>
+								<xs:attribute name="cancelled" type="xs:boolean"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="fileSchedule" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="fileURI">
+										<xs:complexType>
+											<xs:simpleContent>
+												<xs:extension base="xs:anyURI">
+													<xs:attribute name="cancelled" type="xs:boolean"/>
+												</xs:extension>
+											</xs:simpleContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="deliveryInfo" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:attribute name="start" type="xs:dateTime"/>
+											<xs:attribute name="end" type="xs:dateTime"/>
+											<xs:anyAttribute processContents="skip"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element ref="r11:receptionFiltering" minOccurs="0"/>
+									<xs:element ref="sv:delimiter"/>
+									<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+								<xs:attribute ref="r11:sessionId" use="optional"/>
+								<xs:attribute ref="r11:fileMD5" use="optional"/>
+								<xs:attribute ref="r12:unicastOnly"/>
+								<xs:anyAttribute processContents="skip"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+					<xs:attribute name="serviceId" type="xs:anyURI"/>
+					<xs:attribute name="serviceClass" type="xs:string" use="optional"/>
+					<xs:anyAttribute processContents="skip"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="scheduleUpdate" type="xs:dateTime"/>
+		<xs:attribute ref="r11:filterDescriptionReference"/>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+
+	<xs:complexType name="reoccurenceStartStopType">
+		<xs:sequence>
+			<xs:element name="start" type="xs:dateTime"/>
+			<xs:element name="stop" type="xs:dateTime"/>
+			<xs:element name="reoccurencePattern" type="xs:string" minOccurs="0"/>
+			<xs:element name="numberOfTimes" type="xs:unsignedInt" minOccurs="0"/>
+			<xs:element name="reoccurenceStopTime" type="xs:dateTime" minOccurs="0"/>
+			<xs:element name="index" type="xs:unsignedInt" minOccurs="0"/>
+			<xs:element ref="r11:receptionFiltering" minOccurs="0"/>
+			<xs:element ref="sv:delimiter"/>
+			<xs:element ref="r12:FDTInstanceURI" minOccurs="0"/>
+			<xs:element ref="r12:recurrenceAndMonitoring" minOccurs="0"/>
+			<xs:element ref="sv:delimiter"/>
+			<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute ref="r12:sessionDescriptionURI"/>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+</xs:schema>

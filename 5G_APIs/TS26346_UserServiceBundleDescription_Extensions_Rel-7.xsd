@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3GPP:metadata:2007:MBMS:userServiceDescription"
+	xmlns="urn:3GPP:metadata:2007:MBMS:userServiceDescription"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>MBMS User Service Bundle Description schema extensions (Release 7)</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 11.2.1.2</xs:documentation>
+		<xs:documentation>Copyright © 2007, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:element name="initiationRandomization">
+		<xs:complexType>
+			<xs:attribute name="initiationStartTime" type="xs:unsignedInt" use="optional"/>
+			<xs:attribute name="protectionPeriod" type="xs:unsignedInt" use="required"/>
+			<xs:attribute name="randomTimePeriod" type="xs:unsignedInt" use="required"/>
+		</xs:complexType>
+	</xs:element>
+
+	<xs:element name="terminationRandomization">
+		<xs:complexType>
+			<xs:attribute name="protectionPeriod" type="xs:unsignedInt" use="required"/>
+			<xs:attribute name="randomTimePeriod" type="xs:unsignedInt" use="required"/>
+		</xs:complexType>
+		</xs:element>
+	<xs:element name="serviceGroup" type="serviceGroupType"/>
+
+	<xs:complexType name="serviceGroupType">
+		<xs:attribute name="groupID" type="xs:anyURI" use="required"/>
+	</xs:complexType>
+
+	<xs:element name="unicastAccessURI" type="xs:anyURI"/>
+
+	<xs:attribute name="serviceClass" type="xs:string"/>
+</xs:schema>

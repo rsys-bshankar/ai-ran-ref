@@ -1,0 +1,46 @@
+TS28111_FaultNrm.yaml:        - notifyNewAlarm
+TS28111_FaultNrm.yaml:        - notifyChangedAlarmGeneral
+TS28111_FaultNrm.yaml:        - notifyAckStateChanged
+TS28111_FaultNrm.yaml:        - notifyCorrelatedNotificationChanged
+TS28111_FaultNrm.yaml:        - notifyComments
+TS28111_FaultNrm.yaml:        - notifyClearedAlarm
+TS28111_FaultNrm.yaml:        - notifyAlarmListRebuilt
+TS28111_FaultNrm.yaml:        - notifyPotentialFaultyAlarmList
+
+
+TS28532_FileDataReportingMnS.yaml:        notifyFileReady:
+TS28532_FileDataReportingMnS.yaml:        notifyFilePreparationError:
+TS28532_FileDataReportingMnS.yaml:        - notifyFileReady
+TS28532_FileDataReportingMnS.yaml:        - notifyFilePreparationError
+
+
+TS28532_HeartbeatNtf.yaml:        - notifyHeartbeat
+
+
+TS28532_PerfMnS.yaml:      description: To send a notifyThresholdCrossing notification
+TS28532_PerfMnS.yaml:        - notifyThresholdCrossing
+
+
+TS28532_ProvMnS.yaml:        notifyMOICreation:
+TS28532_ProvMnS.yaml:        notifyMOIDeletion:
+TS28532_ProvMnS.yaml:        notifyMOIAttributeValueChanges:
+TS28532_ProvMnS.yaml:        notifyEvent:
+TS28532_ProvMnS.yaml:        notifyMOIChanges:
+TS28532_ProvMnS.yaml:        notifyPotentialFaultyDataNodeTree:
+TS28532_ProvMnS.yaml:        notifyDataNodeTreeSyncRecommended:
+TS28532_ProvMnS.yaml:        - notifyMOICreation
+TS28532_ProvMnS.yaml:        - notifyMOIDeletion
+TS28532_ProvMnS.yaml:        - notifyMOIAttributeValueChanges
+TS28532_ProvMnS.yaml:        - notifyEvent
+TS28532_ProvMnS.yaml:        - notifyMOIChanges
+TS28532_ProvMnS.yaml:        - notifyPotentialFaultyDataNodeTree
+TS28532_ProvMnS.yaml:        - notifyDataNodeTreeSyncRecommended
+
+
+TS29122_MonitoringEvent.yaml:            "false"  indicate no need to notify. Default value is "false" if omitted.
+
+
+TS29505_Subscription_Data.yaml:  /subscription-data/subs-to-notify:
+TS29505_Subscription_Data.yaml:              description: 'Contains the URI of the newly created resource, according to the structure: {apiRoot}/nudr-dr/<apiVersion>/subscription-data/subs-to-notify/{subsId}'
+TS29505_Subscription_Data.yaml:  /subscription-data/subs-to-notify/{subsId}:
+TS29505_Subscription_Data.yaml:        notifyItems:

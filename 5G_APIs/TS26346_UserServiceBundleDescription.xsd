@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3GPP:metadata:2005:MBMS:userServiceDescription" version="6"
+	xmlns="urn:3GPP:metadata:2005:MBMS:userServiceDescription"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	xmlns:r7="urn:3GPP:metadata:2007:MBMS:userServiceDescription"
+	xmlns:r8="urn:3GPP:metadata:2008:MBMS:userServiceDescription"
+	xmlns:r9="urn:3GPP:metadata:2009:MBMS:userServiceDescription"
+	xmlns:r12="urn:3GPP:metadata:2013:MBMS:userServiceDescription"
+	xmlns:r14="urn:3GPP:metadata:2017:MBMS:userServiceDescription"
+	xmlns:r15="urn:3GPP:metadata:2018:r15:MBMS:userServiceDescription"
+	xmlns:r16="urn:3GPP:metadata:2020:MBMS:userServiceDescription"
+	xmlns:sv="urn:3gpp:metadata:2009:MBMS:schemaVersion"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>Extended MBMS User Service Bundle Description schema</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause J.1</xs:documentation>
+		<xs:documentation>Copyright © 2020, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:import namespace="urn:3GPP:metadata:2007:MBMS:userServiceDescription" schemaLocation="TS26346_UserServiceBundleDescription_Extensions_Rel-7.xsd"/>
+	<xs:import namespace="urn:3GPP:metadata:2008:MBMS:userServiceDescription" schemaLocation="TS26346_UserServiceBundleDescription_Extensions_Rel-8.xsd"/>
+	<xs:import namespace="urn:3GPP:metadata:2009:MBMS:userServiceDescription" schemaLocation="TS26346_UserServiceBundleDescription_Extensions_Rel-9.xsd"/>
+	<xs:import namespace="urn:3GPP:metadata:2013:MBMS:userServiceDescription" schemaLocation="TS26346_UserServiceBundleDescription_Extensions_Rel-12.xsd"/>
+	<xs:import namespace="urn:3GPP:metadata:2017:MBMS:userServiceDescription" schemaLocation="TS26346_UserServiceBundleDescription_Extensions_Rel-14.xsd"/>
+	<xs:import namespace="urn:3GPP:metadata:2018:r15:MBMS:userServiceDescription" schemaLocation="TS26346_UserServiceBundleDescription_Extensions_Rel-15.xsd"/>
+	<xs:import namespace="urn:3GPP:metadata:2020:MBMS:userServiceDescription" schemaLocation="TS26346_UserServiceBundleDescription_Extensions_Rel-16.xsd"/>
+	<xs:import namespace="urn:3gpp:metadata:2009:MBMS:schemaVersion" schemaLocation="TS26346_SchemaVersion.xsd"/>
+
+	<xs:element name="bundleDescription" type="bundleDescriptionType"/>
+	<xs:complexType name="bundleDescriptionType">
+		<xs:sequence>
+			<xs:element name="userServiceDescription" type="userServiceDescriptionType" maxOccurs="unbounded"/>
+			<xs:element ref="r7:initiationRandomization" minOccurs="0"/>
+			<xs:element ref="r7:terminationRandomization" minOccurs="0"/>
+			<xs:element ref="sv:schemaVersion"/>
+			<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="fecDescriptionURI" type="xs:anyURI" use="optional"/>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+
+	<xs:complexType name="userServiceDescriptionType">
+		<xs:sequence>
+			<xs:element name="name" type="nameType" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="serviceLanguage" type="xs:language" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="requiredCapabilities" type="requirementsType" minOccurs="0"/>
+			<xs:element name="deliveryMethod" type="deliveryMethodType" maxOccurs="unbounded"/>
+			<xs:element name="accessGroup" type="accessGroupType" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element ref="r7:serviceGroup" minOccurs="0"/>
+			<xs:element ref="r7:initiationRandomization" minOccurs="0"/>
+			<xs:element ref="r7:terminationRandomization" minOccurs="0"/>
+			<xs:element ref="r8:Registration" minOccurs="0"/>
+			<xs:element ref="r9:mediaPresentationDescription" minOccurs="0"/>
+			<xs:element ref="r9:schedule" minOccurs="0"/>
+			<xs:element ref="r9:availabilityInfo" minOccurs="0"/>
+			<xs:element ref="sv:delimiter"/>
+			<xs:element ref="r12:appService" minOccurs="0"/>
+			<xs:element ref="r12:KeepUpdatedService" minOccurs="0"/>
+			<xs:element ref="r12:mooDConfiguration" minOccurs="0" maxOccurs="1"/>
+			<xs:element ref="r12:consumptionReporting" minOccurs="0" maxOccurs="1"/>
+			<xs:element ref="sv:delimiter"/>
+			<xs:element ref="r15:ROMSvcRfParams" minOccurs="0"/>
+			<xs:element ref="sv:delimiter"/>
+			<xs:element ref="r16:ROMSvcRfParams" minOccurs="0"/>
+			<xs:element ref="sv:delimiter"/>
+			<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="serviceId" type="xs:anyURI" use="required"/>
+		<xs:attribute ref="r7:serviceClass"/>
+		<xs:attribute ref="r14:romService" use="optional"/>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+
+	<xs:complexType name="accessGroupType">
+		<xs:sequence>
+			<xs:element name="accessBearer" type="xs:string" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="id" type="accessGroupIdType" use="required"/>
+	</xs:complexType>
+
+	<xs:complexType name="deliveryMethodType">
+		<xs:sequence>
+			<xs:element ref="r7:unicastAccessURI" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element ref="r8:alternativeAccessDelivery" minOccurs="0"/>
+			<xs:element ref="sv:delimiter"/>
+			<xs:element ref="r12:broadcastAppService" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element ref="r12:unicastAppService" minOccurs="0"/>
+			<xs:element ref="r12:appComponent" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element ref="r12:serviceArea" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element ref="sv:delimiter"/>
+			<xs:element ref="r15:supplementaryUnicastAppService" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element ref="sv:delimiter"/>
+			<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="accessGroupId" type="accessGroupIdType" use="optional"/>
+		<xs:attribute name="associatedProcedureDescriptionURI" type="xs:anyURI" use="optional"/>
+		<xs:attribute name="protectionDescriptionURI" type="xs:anyURI" use="optional"/>
+		<xs:attribute name="sessionDescriptionURI" type="xs:anyURI" use="required"/>
+		<xs:attribute name="accessPointName" type="xs:anyURI" use="optional"/>
+		<xs:attribute name="group" type="xs:unsignedByte" use="optional"/>
+		<xs:attribute name="PLMN" type="xs:string" use="optional"/>
+		 <xs:attribute name="p-serviceArea" type="p-serviceAreaType" use="optional"/>
+		<xs:attribute ref="r12:inbandMetadata"/>
+		<xs:anyAttribute processContents="skip"/>
+	</xs:complexType>
+
+	<xs:simpleType name="p-serviceAreaType">
+		<xs:list itemType="xs:unsignedShort"/>
+	</xs:simpleType>
+
+	<xs:complexType name="nameType">
+		<xs:simpleContent>
+			<xs:extension base="xs:string">
+				<xs:attribute name="lang" type="xs:language" use="optional"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+
+	<xs:simpleType name="accessGroupIdType">
+		<xs:restriction base="xs:nonNegativeInteger"/>
+	</xs:simpleType>
+
+	<xs:complexType name="requirementsType">
+		<xs:sequence>
+			<xs:element name="feature" type="xs:unsignedInt" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+</xs:schema>

@@ -1,0 +1,113 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "3GPP.SWAP",
+  "type": "object",
+  "description": "The description of the SWAP messages",
+  "definitions": {
+    "matching_criteria_object": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["ipv4", "ipv6", "fqdn", "service", "user", "eas", "app", "location", "qos", "processing"]
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "value": {
+          "description": "The value associated with the matching criteria type"
+        }
+      }
+    }
+  },
+  "properties": {
+    "version": {
+      "description": "the version of the SWAP protocol",
+      "type": "integer"
+    },
+    "source_id": {
+      "description": "A unique identifier of the source",
+      "type": "string"
+    },
+    "message_id": {
+      "description": "the sequence number of the message",
+      "type": "integer"
+    },
+    "message_type": {
+      "description": "the type of the SWAP message",
+      "type": "string",
+      "enum": ["register", "connect", "response", "accept", "reject", "update", "close", "application"]
+    },
+    "payload": {
+      "oneOf": [
+        {
+          "description": "Register payload",
+          "type": "object",
+          "properties": {
+            "matching_criteria": {
+              "$ref": "#/definitions/matching_criteria_object"
+            }
+          }
+        },
+        {
+          "description": "Response payload",
+          "type": "object",
+          "properties": {
+            "type": {"type": "string", "enum": ["ack", "error"]},
+            "source": {"type": "string"},
+            "request": {"type": "integer"},
+            "description": {"type": "string"}
+          }
+        },
+        {
+          "description": "Connect payload",
+          "type": "object",
+          "properties": {
+            "offer": {"type": "string"},
+            "matching_criteria": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/matching_criteria_object"
+              }
+            }
+          }
+        },
+        {
+          "description": "Accept payload",
+          "type": "object",
+          "properties": {
+            "answer": {"type": "string"}
+          }
+        },
+        {
+          "description": "Reject/error payload",
+          "type": "object",
+          "properties": {
+            "source": {"type": "string"},
+            "request": {"type": "integer"},
+            "error_id": {"type": "string"},
+            "description": {"type": "string"}
+          }
+        },
+        {
+          "description": "Application payload",
+          "type": "object",
+          "properties": {
+            "type": {"type": "string"},
+            "value": {"type": "object"}
+          }
+        }
+      ]
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Extension object for additional properties"
+    }
+  },
+  "required": ["version", "source_id", "message_id"]
+}

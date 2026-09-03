@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3GPP:ns:PSS:DASH:QMC14" 
+    elementFormDefault="qualified"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:sv="urn:3gpp:metadata:2016:PSS:schemaVersion"
+    xmlns="urn:3GPP:ns:PSS:DASH:QMC14">
+
+    <xs:element name="QmcConfiguration" type="QmcConfigurationType"/>
+    
+    <xs:complexType name="QmcConfigurationType">
+        <xs:sequence>
+            <xs:element name="Range" type="RangeType" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="LocationFilter" type="LocationFilterType" minOccurs="0"/>
+            <xs:element name="StreamingSourceFilter" type="StreamingSourceFilterType" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="metrics" type="xs:string" use="required"/>
+        <xs:attribute name="samplePercentage" type="xs:double" use="optional"/>
+        <xs:attribute name="reportingInterval" type="xs:unsignedInt" use="optional"/>
+        <xs:attribute name="sliceScope" type="UnsignedIntVectorType" use="optional"/>
+        <xs:attribute name="communicationServiceType" type="CommunicationServiceTypeType" use="optional"/>
+        <xs:attribute name="qoeReferenceId" type="xs:hexBinary" use="optional"/>
+        <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+
+    <xs:complexType name="RangeType">
+        <xs:sequence>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="startTime" type="xs:unsignedInt" use="optional"/>
+        <xs:attribute name="duration" type="xs:duration" use="required"/>
+        <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+
+    <xs:simpleType name="UnsignedIntVectorType">
+        <xs:list itemType="xs:unsignedInt"/>
+    </xs:simpleType>
+
+    <xs:simpleType name="CommunicationServiceTypeType">
+        <xs:restriction base="xs:NMTOKEN">
+            <xs:enumeration value="unicast"/> 
+            <xs:enumeration value="mbsBroadcast"/>
+            <xs:enumeration value="mbsMulticast"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+<xs:complexType name="LocationFilterType">
+        <xs:sequence>
+            <xs:element name="cellID" type="xs:unsignedLong" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="shape" type="ShapeType" minOccurs="0"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+
+    <xs:complexType name="ShapeType">
+        <xs:sequence>
+            <xs:element name="PolygonList" type="PolygonListType" minOccurs="0"/>
+            <xs:element name="CircularAreaList" type="CircularAreaListType" minOccurs="0"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+
+    <xs:complexType name="PolygonListType">
+        <xs:annotation>
+            <xs:documentation> see [OMA MLP] </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="Polygon" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="ConfLevel" type="xs:unsignedInt" use="optional"/>
+        <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+
+    <xs:complexType name="CircularAreaListType">
+        <xs:annotation>
+            <xs:documentation> see [OMA MLP] </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="CircularArea" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="ConfLevel" type="xs:unsignedInt" use="optional"/>
+        <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+
+    <xs:complexType name="StreamingSourceFilterType">
+        <xs:sequence>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="streamingSource" type="xs:string" use="required"/>
+        <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+</xs:schema>

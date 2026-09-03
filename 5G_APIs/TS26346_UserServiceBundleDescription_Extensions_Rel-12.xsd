@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns="urn:3GPP:metadata:2013:MBMS:userServiceDescription" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:3GPP:metadata:2013:MBMS:userServiceDescription" elementFormDefault="qualified" version="1">
+	<xs:annotation>
+		<xs:documentation>MBMS User Service Bundle Description schema extensions (Release 12)</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause 11.2.1.2</xs:documentation>
+		<xs:documentation>Copyright © 2013, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:element name="broadcastAppService">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="basePattern" type="xs:anyURI" maxOccurs="unbounded"/>
+				<xs:element name="serviceArea" type="xs:unsignedShort" minOccurs="0" maxOccurs="unbounded"/>
+				<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+			</xs:sequence>
+			<xs:anyAttribute processContents="skip"/>
+		</xs:complexType>
+	</xs:element>
+
+	<xs:element name="unicastAppService">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="basePattern" type="xs:anyURI" maxOccurs="unbounded"/>
+				<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+			</xs:sequence>
+			<xs:anyAttribute processContents="skip"/>
+		</xs:complexType>
+	</xs:element>
+
+	<xs:element name="appService" type="appServiceType"/>
+		<xs:complexType name="appServiceType">
+			<xs:sequence>
+				<xs:element name="identicalContent" minOccurs="0" maxOccurs="unbounded">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="basePattern" type="xs:anyURI" minOccurs="2" maxOccurs="unbounded"/>
+							<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+						<xs:anyAttribute processContents="skip"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="alternativeContent" minOccurs="0" maxOccurs="unbounded">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="basePattern" type="xs:anyURI" minOccurs="2" maxOccurs="unbounded"/>
+							<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+						<xs:anyAttribute processContents="skip"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+			</xs:sequence>
+			<xs:attribute name="appServiceDescriptionURI" type="xs:anyURI" use="required"/>
+			<xs:attribute name="mimeType" type="xs:string" use="required"/>
+			<xs:anyAttribute processContents="skip"/>
+		</xs:complexType>
+		<xs:attribute name="inbandMetadata" type="xs:boolean"/>
+		<xs:element name="appComponent" type="xs:string"/>
+		<xs:element name="serviceArea" type="xs:unsignedShort"/>
+		<xs:element name="KeepUpdatedService">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="registrationServer" type="xs:anyURI" maxOccurs="unbounded"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+
+	<xs:element name="consumptionReporting">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:any namespace="##other" minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+			</xs:sequence>			<xs:attribute name="consumptionReportingURI" type="xs:anyURI" use="required"/>
+			<xs:anyAttribute processContents="skip"/>
+		</xs:complexType>
+	</xs:element>
+
+	<xs:element name="mooDConfiguration">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="proxyServer" type="xs:anyURI" minOccurs="0" maxOccurs="unbounded"/>
+				<xs:element name="mooDHeaderAttachment">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="dASHContent" minOccurs="0">
+								<xs:complexType>
+									<xs:attribute name="rule" type="xs:unsignedByte" use="required">
+										<xs:annotation>
+											<xs:documentation>0: not used
+1: Media Segment requests
+2: MPD requests
+3-255: reserved for future use	</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:anyAttribute processContents="skip"/>
+								</xs:complexType>
+							</xs:element>
+							<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+			</xs:sequence>
+			<xs:attribute name="locationType" type="xs:string" use="required"/>
+			<xs:anyAttribute processContents="skip"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

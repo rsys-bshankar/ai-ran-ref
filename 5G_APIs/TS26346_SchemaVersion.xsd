@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:3gpp:metadata:2009:MBMS:schemaVersion"
+	xmlns="urn:3gpp:metadata:2009:MBMS:schemaVersion" 
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>MBMS Version and Delimiter schema</xs:documentation>
+		<xs:documentation>3GPP TS 26.346 clause J.2</xs:documentation>
+		<xs:documentation>Copyright © 2009, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.</xs:documentation>
+	</xs:annotation>
+
+	<xs:element name="schemaVersion" type="xs:unsignedInt"/>
+	<xs:element name="delimiter" type="xs:byte"/>
+</xs:schema>

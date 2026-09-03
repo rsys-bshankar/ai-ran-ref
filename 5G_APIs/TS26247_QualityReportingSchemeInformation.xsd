@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<xs:schema targetNamespace="urn:3GPP:ns:PSS:AdaptiveHTTPStreaming:2009:qm" 
+    attributeFormDefault="unqualified" 
+    elementFormDefault="qualified"  
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+    xmlns="urn:3GPP:ns:PSS:AdaptiveHTTPStreaming:2009:qm">
+    
+    <xs:annotation>
+        <xs:appinfo>3GPP DASH Quality Reporting</xs:appinfo>
+        <xs:documentation xml:lang="en">
+            This Schema defines the quality reporting scheme information for 3GPP DASH.
+        </xs:documentation>
+    </xs:annotation>
+    
+    <xs:element name="ThreeGPQualityReporting" type="SimpleQualityReportingType"/>
+    
+    <xs:complexType name="SimpleQualityReportingType">
+        <xs:sequence>
+            <xs:element name="LocationFilter" type="LocationFilterType" minOccurs="0"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="apn" type="xs:string" use="optional"/>
+        <xs:attribute name="format" type="FormatType" use="optional"/>
+        <xs:attribute name="samplePercentage" type="xs:double" use="optional"/>
+        <xs:attribute name="reportingServer" type="xs:anyURI" use="required"/>
+        <xs:attribute name="reportingInterval" type="xs:unsignedInt" use="optional"/>
+        <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+    
+    <xs:simpleType name="FormatType">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="uncompressed" />
+            <xs:enumeration value="gzip" />
+        </xs:restriction>
+    </xs:simpleType>
+
+
+    <xs:complexType name="LocationFilterType">
+        <xs:sequence>
+            <xs:element name="cellID" type="xs:unsignedLong" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="shape" type="ShapeType" minOccurs="0"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+
+    <xs:complexType name="ShapeType">
+        <xs:sequence>
+            <xs:element name="PolygonList" type="PolygonListType" minOccurs="0"/>
+            <xs:element name="CircularAreaList" type="CircularAreaListType" minOccurs="0"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+
+    <xs:complexType name="PolygonListType">
+        <xs:annotation>
+            <xs:documentation> see [OMA MLP] </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="Polygon" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="ConfLevel" type="xs:unsignedInt" use="optional"/>
+        <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+
+    <xs:complexType name="CircularAreaListType">
+        <xs:annotation>
+            <xs:documentation> see [OMA MLP] </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="CircularArea" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="ConfLevel" type="xs:unsignedInt" use="optional"/>
+        <xs:anyAttribute namespace="##other" processContents="lax"/>
+    </xs:complexType>
+</xs:schema>

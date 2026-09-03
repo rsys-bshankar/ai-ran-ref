@@ -1,0 +1,167 @@
+openapi: 3.0.0
+info:
+  version: 1.0.0-alpha.1
+  title: SS_ValUeConfiguration
+  description: |
+    SS VAL UE Configuration Service.  
+    © 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC).  
+    All rights reserved.
+
+externalDocs:
+  description: >
+    3GPP TS 29.549 V20.0.0; Service Enabler Architecture Layer for Verticals (SEAL);
+    Application Programming Interface (API) specification; Stage 3.
+  url: https://www.3gpp.org/ftp/Specs/archive/29_series/29.549/
+
+security:
+  - {}
+  - oAuth2ClientCredentials: []
+
+servers:
+  - url: '{apiRoot}/ss-vuec/v1'
+    variables:
+      apiRoot:
+        default: https://example.com
+        description: apiRoot as defined in clause 6.5 of 3GPP TS 29.549
+
+paths:
+  /request:
+    post:
+      summary: >
+        Enables a service consumer to send a Power Saving assistance request to the NRM Server.
+      operationId: PowerSavingAssistRequest
+      tags:
+        - Power Saving Assist Request Service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PowSavAssistReq'
+      responses:
+        '200':
+          description: >
+            Successful Case. The requested Power Saving Assist service is successfully received and
+            processed, and the result is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PowSavAssistResp'
+        '307':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/307'
+        '308':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/308'
+        '400':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/400'
+        '401':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/401'
+        '403':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/403'
+        '404':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/404'
+        '411':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/411'
+        '413':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/413'
+        '415':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/415'
+        '429':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/429'
+        '500':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/500'
+        '503':
+          $ref: 'TS29122_CommonData.yaml#/components/responses/503'
+        default:
+          $ref: 'TS29122_CommonData.yaml#/components/responses/default'
+
+components:
+  securitySchemes:
+    oAuth2ClientCredentials:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: '{tokenUrl}'
+          scopes: {}
+
+  schemas:
+    PowSavAssistReq:
+      description: Contains the Power Saving Assist Request.
+      type: object
+      properties:
+        valUeIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        valUser:
+          type: string
+        valServId:
+          type: string
+        powSavReqs:
+          $ref: '#/components/schemas/PowSavReqs'
+        suppFeat:
+          $ref: 'TS29571_CommonData.yaml#/components/schemas/SupportedFeatures'
+      required:
+        - valServId
+        - powSavConf
+      oneOf:
+        - required: [valUeIds]
+        - required: [valUser]
+
+    PowSavAssistResp:
+      description: Contains the Power Saving Assist Response.
+      type: object
+      properties:
+        valUeIds:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        valUser:
+          type: string
+        powSavConf:
+          $ref: '#/components/schemas/PowSavConf'
+        suppFeat:
+          $ref: 'TS29571_CommonData.yaml#/components/schemas/SupportedFeatures'
+      oneOf:
+        - required: [valUeIds]
+        - required: [valUser]
+
+    PowSavReqs:
+      description: Contains the Power Saving Requirements.
+      type: object
+      properties:
+        powSavMode:
+          $ref: '#/components/schemas/PowSavMode'
+      required:
+        - powSavMode
+
+    PowSavConf:
+      description: Contains the Power Saving Configuration.
+      type: object
+      properties:
+        powSavMode:
+          $ref: '#/components/schemas/PowSavMode'
+      required:
+        - powSavMode
+
+# Simple data types and Enumerations
+
+    PowSavMode:
+      anyOf:
+      - type: string
+        enum:
+          - POWER_SAVING
+          - BALANCE
+          - PERFORMANCE
+      - type: string
+        description: >
+          This string provides forward-compatibility with future
+          extensions to the enumeration but is not used to encode
+          content defined in the present version of this API.
+      description: |
+        Indicates the VAL UE(s) power saving mode.  
+        Possible values are:
+        - POWER_SAVING: Indicates that the power saving mode is power saving.
+        - BALANCE: Indicates that the power saving mode is balance.
+        - PERFORMANCE: Indicates that the power saving mode is performance.

@@ -1,0 +1,195 @@
+openapi: 3.0.1
+info:
+  title: Scenario specific Intent Expectations - NetworkMaintenanceExpectation
+  version: 20.0.0
+  description: >-
+    OAS 3.0.1 definition of scenario specific Intent Expectations - NetworkMaintenanceExpectation
+    © 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC).
+    All rights reserved.
+externalDocs:
+  description: 3GPP TS 28.312; Intent driven management services for mobile networks
+  url: http://www.3gpp.org/ftp/Specs/archive/28_series/28.312/
+paths: {}
+components:
+  schemas:
+
+  #-------Definition of the Scenario specific IntentExpectation dataType ----------#  
+    NetworkMaintenanceExpectation:
+      description: >-
+        This data type is the "IntentExpectation" data type with specialisations to represent MnS consumer's expectations for Network Maintenance
+      type: object
+      properties:
+        expectationId:
+          type: string
+        expectationVerb:
+          $ref: 'TS28312_IntentNrm.yaml#/components/schemas/ExpectationVerb'
+        expectationObject:
+          $ref: '#/components/schemas/NetworkMaintenanceExpectationObject'
+        expectationTargets:
+          type: array
+          uniqueItems: true 
+          items:
+            type: object
+            oneOf:
+              - $ref: '#/components/schemas/MaintenanceVersionTarget'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/WeakRSRPRatioTarget'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/LowSINRRatioTarget'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/AveULRANUEThptTarget'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/AveDLRANUEThptTarget'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/LowULRANUEThptRatioTarget'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/LowDLRANUEThptRatioTarget' 
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/HighULPrbLoadRatioTarget'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/HighDLPrbLoadRatioTarget'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/AveULPrbLoadTarget'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/AveDLPrbLoadTarget'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/RANEnergyConsumptionTarget'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/RANEnergyEfficiencyTarget'
+              - $ref: 'TS28312_5GCNetworkExpectation.yaml#/components/schemas/MaxNumberofPDUsessionsTarget'
+              - $ref: 'TS28312_5GCNetworkExpectation.yaml#/components/schemas/MaxNumberofRegisteredsubscribersTarget'
+              - $ref: 'TS28312_5GCNetworkExpectation.yaml#/components/schemas/IncomingDataTarget'
+              - $ref: 'TS28312_5GCNetworkExpectation.yaml#/components/schemas/OutgoingDataTarget'
+              - $ref: 'TS28312_IntentNrm.yaml#/components/schemas/ExpectationTarget'
+        expectationContexts:
+          type: array
+          uniqueItems: true 
+          items:
+            type: object
+            oneOf:
+              - $ref: '#/components/schemas/MaintenanceTimeContext'
+              - $ref: 'TS28312_IntentNrm.yaml#/components/schemas/DecompositionAssistingContext'              
+              - $ref: 'TS28312_IntentNrm.yaml#/components/schemas/Context'
+      required:
+        - expectationId
+        - expectationObject
+        - expectationTargets
+
+  #-------Definition of the Scenario specific IntentExpectation dataType ----------# 
+
+
+  #-------Definition of the scenario specific ExpectationObject dataType ----------#
+    NetworkMaintenanceExpectationObject:
+      description: >-
+        This data type is the "ExpectationObject" data type with specialisations for NetworkMaintenanceExpectation
+      type: object
+      properties:
+        objectInstance:
+          $ref: "TS28623_ComDefs.yaml#/components/schemas/Dn"
+        objectContexts:
+          type: array
+          uniqueItems: true 
+          items:
+            type: object
+            oneOf:
+              - $ref: '#/components/schemas/MaintenanceVersionContext'
+              - $ref: '#/components/schemas/MaintenanceOrderContext'
+              - $ref: '#/components/schemas/MaintenanceTypeContext'
+              - $ref: 'TS28312_5GCNetworkExpectation.yaml#/components/schemas/NfTypeContext'
+              - $ref: 'TS28312_5GCNetworkExpectation.yaml#/components/schemas/NfInstanceLocationContext'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/PLMNContext'
+              - $ref: 'TS28312_5GCNetworkExpectation.yaml#/components/schemas/TaiContext'
+              - $ref: 'TS28312_5GCNetworkExpectation.yaml#/components/schemas/ServingScopeContext'
+              - $ref: 'TS28312_5GCNetworkExpectation.yaml#/components/schemas/DnnContext'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/CoverageAreaPolygonContext'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/CoverageTACContext'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/PLMNContext'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/DlFrequencyContext'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/UlFrequencyContext'
+              - $ref: 'TS28312_RadioNetworkExpectation.yaml#/components/schemas/RATContext'
+              - $ref: 'TS28312_IntentNrm.yaml#/components/schemas/Context'
+  #-------Definition of the scenario specific ExpectationObject dataType ----------# 
+
+
+  #-------Definition of the Scenario specific ExpectationTarget dataType----------#     
+    MaintenanceVersionTarget:
+      description: >-
+        This data type is the "ExpectationTarget" data type with specialisations for Maintenance Version Target. It describes the maintenance version target for the network maintenance, such as target version of the maintenance object after maintenance.
+      type: object
+      properties:
+        targetName:
+          type: string
+          enum:
+            - MaintenanceVersion
+        targetCondition:
+          type: string
+          enum:
+            - IS_EQUAL_TO
+        targetValueRange:
+          type: string
+  #-------Definition of the Scenario specific ExpectationTarget dataType----------# 
+
+
+  #-------Definition of the concrete ObjectContext dataType----------------#
+    MaintenanceVersionContext:
+      description: >-
+        This data type is the "ObjectContext" data type with specialisations for MaintenanceVersionContext. It describes the scope of the maintenance objects based on software version.
+      type: object
+      properties:
+        contextAttribute:
+          type: string
+          enum:
+            - swVersion
+        contextCondition:
+          type: string
+          enum:
+            - IS_ALL_OF
+        contextValueRange:
+          type: array
+          items:
+            type: string
+    MaintenanceOrderContext:
+      description: >-
+        This data type is the "ObjectContext" data type with specialisations for MaintenanceOrderContext. It describes describes the list of DNs for NFs/NEs based on their order for maintenance.
+      type: object
+      properties:
+        contextAttribute:
+          type: string
+          enum:
+            - maintenanceOrder
+        contextCondition:
+          type: string
+          enum:
+            - IS_ALL_OF
+        contextValueRange:
+          type: array
+          items:
+            type: string
+    MaintenanceTypeContext:
+      description: >-
+        This data type is the "ObjectContext" data type with specialisations for MaintenanceTypeContext. It describes the type of maintenance expected for the maintenance object.
+      type: object
+      properties:
+        contextAttribute:
+          type: string
+          enum:
+            - maintenanceType
+        contextCondition:
+          type: string
+          enum:
+            - IS_EQUAL_TO
+        contextValueRange:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - UPGRADE
+              - DOWNGRADE
+  #-------Definition of the concrete ObjectContext dataType----------------# 
+
+  #-------Definition of the concrete ExpectationContext dataType----------------#
+    MaintenanceTimeContext:
+      description: >-
+        This data type is the "ExpectationContext" data type with specialisations for MaintenanceTimeContext
+      type: object
+      properties:
+        contextAttribute:
+          type: string
+          enum:
+            - MaintenanceTime
+        contextCondition:
+          type: string
+          enum:
+            - IS_EQUAL_TO
+        contextValueRange:
+          $ref: 'TS28623_ComDefs.yaml#/components/schemas/TimeWindow'
+  #-------Definition of the concrete ExpectationContext dataType----------------#            

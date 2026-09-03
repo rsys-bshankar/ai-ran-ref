@@ -1,0 +1,1654 @@
+# OpenAPI Specification Files for 3GPP 5G Core Network (Release 20)
+
+© 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC). All rights reserved.
+
+API version: **June 2026**  
+Release status: **{+ Open +}**  
+Other releases: [Rel-19 (Frozen)](https://forge.3gpp.org/rep/all/5G_APIs/tree/REL-20), [Rel-18 (Frozen)](https://forge.3gpp.org/rep/all/5G_APIs/tree/REL-18), [Rel-17 (Frozen)](https://forge.3gpp.org/rep/all/5G_APIs/tree/REL-17), [Rel-16 (Frozen)](https://forge.3gpp.org/rep/all/5G_APIs/tree/REL-16), [Rel-15 (Frozen)](https://forge.3gpp.org/rep/all/5G_APIs/tree/REL-15)
+
+OpenAPI validation status:
+[![pipeline status](https://forge.3gpp.org/rep/all/5G_APIs/badges/REL-20/pipeline.svg)](https://forge.3gpp.org/rep/all/5G_APIs/commits/REL-20)
+
+#### Tools
+* <a href="https://forge.3gpp.org/swagger/tools/parser.html">API Parser/Linter</a> to parse OpenAPI files with APIDevTools Swagger Parser/Validator and run a number of <a href="https://en.wikipedia.org/wiki/Lint_(software)" target="_blank">lint</a> rules to improve API quality
+* <a href="https://forge.3gpp.org/swagger/tools/types.html">Data Type Finder</a> to find the impacted APIs due to a change on a given data type
+* <a href="https://forge.3gpp.org/swagger/tools/versions.html">API Versions Overview</a> to show a comprehensive report of the versions of all APIs in the repository
+* <a href="https://forge.3gpp.org/swagger/tools/headers.html?abnf=TS29500_CustomHeaders.abnf">ABNF</a> checker of 3GPP HTTP headers
+
+The links below will open the Swagger Editor/UI and auto-load the OpenAPI YAML file of each Network Function (NF) API:
+
+<!-- APIs -->
+<!-- SWAGGER_EDITOR_VERSION = 3.18.0 -->
+
+## NRF (NF Repository Function)
+* NF Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29510_Nnrf_NFManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29510_Nnrf_NFManagement.yaml))
+* NF Discovery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29510_Nnrf_NFDiscovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29510_Nnrf_NFDiscovery.yaml))
+* Oauth2 Access Token Request
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29510_Nnrf_AccessToken.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29510_Nnrf_AccessToken.yaml))
+* Bootstrapping
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29510_Nnrf_Bootstrapping.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29510_Nnrf_Bootstrapping.yaml))
+
+## LMF (Location Management Function)
+* Location
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29572_Nlmf_Location.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29572_Nlmf_Location.yaml))
+* Broadcast
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29572_Nlmf_Broadcast.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29572_Nlmf_Broadcast.yaml))
+* Data Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29572_Nlmf_DataExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29572_Nlmf_DataExposure.yaml))
+
+## SCP (Service Communication Proxy)
+* Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29570_Nscp_EventExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29570_Nscp_EventExposure.yaml))
+
+## AMF (Access and Mobility Management Function)
+* Communication
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29518_Namf_Communication.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29518_Namf_Communication.yaml))
+* Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29518_Namf_EventExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29518_Namf_EventExposure.yaml))
+* Location
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29518_Namf_Location.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29518_Namf_Location.yaml))
+* MT (Mobile-Terminated)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29518_Namf_MT.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29518_Namf_MT.yaml))
+* MBS Communication
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29518_Namf_MBSCommunication.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29518_Namf_MBSCommunication.yaml))
+* MBS Broadcast
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29518_Namf_MBSBroadcast.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29518_Namf_MBSBroadcast.yaml))
+* Ambient IoT
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29518_Namf_AIoT.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29518_Namf_AIoT.yaml))
+
+## SMF (Session Management Function)
+* PDU Session
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29502_Nsmf_PDUSession.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29502_Nsmf_PDUSession.yaml))
+([ABNF](https://forge.3gpp.org/swagger/tools/headers.html?abnf=TS29502_CustomHeaders.abnf))
+* Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29508_Nsmf_EventExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29508_Nsmf_EventExposure.yaml))
+* NIDD (Non-IP Data Delivery)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29542_Nsmf_NIDD.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29542_Nsmf_NIDD.yaml))
+
+## MB-SMF (Multicast/Broadcast Session Management Function)
+* MBS Session
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29532_Nmbsmf_MBSSession.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29532_Nsmf_MBSSession.yaml))
+* MBS TMGI
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29532_Nmbsmf_TMGI.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29532_Nsmf_TMG.yaml))
+
+## MBSF (Multicast/Broadcast Service Function)
+* MBS User Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29580_Nmbsf_MBSUserService.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29580_Nmbsf_MBSUserService.yaml))
+* MBS User Data Ingest Session
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29580_Nmbsf_MBSUserDataIngestSession.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29580_Nmbsf_MBSUserDataIngestSession.yaml))
+
+## MBSTF (Multicast/Broadcast Service Transport Function)
+* MBS Distribution Session
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29581_Nmbstf_DistSession.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29581_Nmbstf_DistSession.yaml))
+
+## MB (Multicast/Broadcast) User Services
+* MBS User Service Announcement
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26517_MBSUserServiceAnnouncement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26517_MBSUserServiceAnnouncement.yaml))
+* MBS Object Manifest
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26517_MBSObjectManifest.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26517_MBSObjectManifest.yaml))
+
+## UDM (Unified Data Management)
+* Subscriber Data Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29503_Nudm_SDM.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29503_Nudm_SDM.yaml))
+* UE Context Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29503_Nudm_UECM.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29503_Nudm_UECM.yaml))
+* UE Authentication
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29503_Nudm_UEAU.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29503_Nudm_UEAU.yaml))
+* Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29503_Nudm_EE.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29503_Nudm_EE.yaml))
+* Parameter Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29503_Nudm_PP.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29503_Nudm_PP.yaml))
+* NIDD (Non-IP Data Delivery) Authorization
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29503_Nudm_NIDDAU.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29503_Nudm_NIDDAU.yaml))
+* MT (Mobile-Terminated)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29503_Nudm_MT.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29503_Nudm_MT.yaml))
+* SSAU (Service Specific Authorization)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29503_Nudm_SSAU.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29503_Nudm_SSAU.yaml))
+* RSDS (Report SM Delivery Status)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29503_Nudm_RSDS.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29503_Nudm_RSDS.yaml))
+* UEID (UE Identifier)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29503_Nudm_UEID.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29503_Nudm_UEID.yaml))
+
+## UDR (Unified Data Repository)
+* Data Repository
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29504_Nudr_DR.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29504_Nudr_DR.yaml))
+([ABNF](https://forge.3gpp.org/swagger/tools/headers.html?abnf=TS29504_CustomHeaders.abnf))
+  * Subscription Data
+    ([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29505_Subscription_Data.yaml))
+    ([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29505_Subscription_Data.yaml))
+  * Policy Data
+    ([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29519_Policy_Data.yaml))
+    ([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29519_Policy_Data.yaml))
+  * Exposure Data
+    ([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29519_Exposure_Data.yaml))
+    ([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29519_Exposure_Data.yaml))
+  * Application Data
+    ([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29519_Application_Data.yaml))
+    ([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29519_Application_Data.yaml))
+  * AIoT Data
+    ([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29506_Aiot_Data.yaml))
+    ([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29506_Aiot_Data.yaml))
+* Group ID Map
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29504_Nudr_GroupIDmap.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29504_Nudr_GroupIDmap.yaml))
+
+## UDSF (Unstructured Data Storage Function)
+* Data Repository
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29598_Nudsf_DataRepository.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29598_Nudsf_DataRepository.yaml))
+* Timer
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29598_Nudsf_Timer.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29598_Nudsf_Timer.yaml))
+
+## AUSF (Authentication Server Function)
+* UE Authentication
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29509_Nausf_UEAuthentication.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29509_Nausf_UEAuthentication.yaml))
+* SoR (Steering of Roaming) Protection
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29509_Nausf_SoRProtection.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29509_Nausf_SoRProtection.yaml))
+* UPU (UE Parameter Update) Protection
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29509_Nausf_UPUProtection.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29509_Nausf_UPUProtection.yaml))
+
+## NSSAAF (Network Slice-Specific and SNPN Authentication and Authorization Function)
+* NSSAA
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29526_Nnssaaf_NSSAA.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29526_Nnssaaf_NSSAA.yaml))
+* AIW
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29526_Nnssaaf_AIW.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29526_Nnssaaf_AIW.yaml))
+
+## NSACF (Network Slice Admission Control)
+* NSAC
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29536_Nnsacf_NSAC.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29536_Nnsacf_NSAC.yaml))
+* SliceEventExposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29536_Nnsacf_SliceEventExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29536_Nnsacf_SliceEventExposure.yaml))
+
+## NSSF (Network Slice Selection Function)
+* NSSAI Availability
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29531_Nnssf_NSSAIAvailability.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29531_Nnssf_NSSAIAvailability.yaml))
+* NS Selection
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29531_Nnssf_NSSelection.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29531_Nnssf_NSSelection.yaml))
+
+## SMSF (SMS Function)
+* SM Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29540_Nsmsf_SMService.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29540_Nsmsf_SMService.yaml))
+
+## 5G-EIR (5G Equipment Identity Register)
+* Equipment Identity Check
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29511_N5g-eir_EquipmentIdentityCheck.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29511_N5g-eir_EquipmentIdentityCheck.yaml))
+
+## NEF (Network Exposure Function)
+* Packet Flow Description (PFD) Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29551_Nnef_PFDmanagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29551_Nnef_PFDmanagement.yaml))
+* Session Management (SM) Context
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29541_Nnef_SMContext.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29541_Nnef_SMContext.yaml))
+* Short Message (SM) Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29541_Nnef_SMService.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29541_Nnef_SMService.yaml))
+* Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29591_Nnef_EventExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29591_Nnef_EventExposure.yaml))
+* Authentication
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29256_Nnef_Authentication.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29256_Nnef_Authentication.yaml))
+* EAS Deployment
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29591_Nnef_EASDeployment.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29591_Nnef_EASDeployment.yaml))
+* Traffic Influence Data
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29591_Nnef_TrafficInfluenceData.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29591_Nnef_TrafficInfluenceData.yaml))
+* ECS Address
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29591_Nnef_ECSAddress.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29591_Nnef_ECSAddress.yaml))
+* DNAI Mapping
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29591_Nnef_DNAIMapping.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29591_Nnef_DNAIMapping.yaml))
+* UE ID
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29591_Nnef_UEId.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29591_Nnef_UEId.yaml))
+* Inference
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29591_Nnef_Inference.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29591_TS29591_Nnef_Inference.yaml))
+* VFL Inference
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29591_Nnef_VFLInference.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29591_Nnef_VFLInference.yaml))
+* Training
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29591_Nnef_Training.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29591_TS29591_Nnef_Training.yaml))
+* VFL Training
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29591_Nnef_VFLTraining.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29591_Nnef_VFLTraining.yaml))
+
+## PCF (Policy Control Function)
+* Policy Authorization
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29514_Npcf_PolicyAuthorization.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29514_Npcf_PolicyAuthorization.yaml))
+* Access and Mobility (AM) Policy Authorization
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29534_Npcf_AMPolicyAuthorization.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29534_Npcf_AMPolicyAuthorization.yaml))
+* Access and Mobility (AM) Policy Control
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29507_Npcf_AMPolicyControl.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29507_Npcf_AMPolicyControl.yaml))
+* Session Management (SM) Policy Control
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29512_Npcf_SMPolicyControl.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29512_Npcf_SMPolicyControl.yaml))
+* Background Data Transfer (BDT) Policy Control
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29554_Npcf_BDTPolicyControl.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29554_Npcf_BDTPolicyControl.yaml))
+* Policy Control Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29523_Npcf_EventExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29523_Npcf_EventExposure.yaml))
+* UE Policy Control
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29525_Npcf_UEPolicyControl.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29525_Npcf_UEPolicyControl.yaml))
+* Multicast/Broadcast Policy Control
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29537_Npcf_MBSPolicyControl.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29537_Npcf_MBSPolicyControl.yaml))
+* Multicast/Broadcast Policy Authorization
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29537_Npcf_MBSPolicyAuthorization.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29537_Npcf_MBSPolicyAuthorization.yaml))
+* Planned Data Transfer with QoS (PDTQ) Policy Control
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29543_Npcf_PDTQPolicyControl.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&&yaml=TS29543_Npcf_PDTQPolicyControl.yaml))
+
+## BSF (Binding Support Function)
+* Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29521_Nbsf_Management.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29521_Nbsf_Management.yaml))
+
+## NWDAF (Network Data Analytics Function)
+* Events Subscription
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29520_Nnwdaf_EventsSubscription.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29520_Nnwdaf_EventsSubscription.yaml))
+* Analytics Info
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29520_Nnwdaf_AnalyticsInfo.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29520_Nnwdaf_AnalyticsInfo.yaml))
+* Data Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29520_Nnwdaf_DataManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29520_Nnwdaf_DataManagement.yaml))
+* MLModel Provision
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29520_Nnwdaf_MLModelProvision.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29520_Nnwdaf_MLModelProvision.yaml))
+* MLModel Training
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29520_Nnwdaf_MLModelTraining.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29520_Nnwdaf_MLModelTraining.yaml))
+* MLModel Monitor
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29520_Nnwdaf_MLModelMonitor.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29520_Nnwdaf_MLModelMonitor.yaml))
+* Roaming Data
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29520_Nnwdaf_RoamingData.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29520_Nnwdaf_RoamingData.yaml))
+* Roaming Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29520_Nnwdaf_RoamingAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29520_Nnwdaf_RoamingAnalytics.yaml))
+* VFL Training
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29520_Nnwdaf_VFLTraining.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29520_Nnwdaf_VFLTraining.yaml))
+* VFL Inference
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29520_Nnwdaf_VFLInference.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29520_Nnwdaf_VFLInference.yaml))
+
+## UPF (User Plane Function)
+* Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29564_Nupf_EventExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29564_Nupf_EventExposure.yaml))
+* Get UE Private IP Address and Identifiers
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29564_Nupf_GetUEPrivateIPaddrAndIdentifiers.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29564_Nupf_GetUEPrivateIPaddrAndIdentifiers.yaml))
+
+## HSS (Home Subscriber Server)
+* UE Authentication
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29563_Nhss_UEAU.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29563_Nhss_UEAU.yaml))
+* Subscriber Data Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29563_Nhss_SDM.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29563_Nhss_SDM.yaml))
+* UE Context Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29563_Nhss_UECM.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29563_Nhss_UECM.yaml))
+* Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29563_Nhss_EE.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29563_Nhss_EE.yaml))
+* Parameter Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29563_Nhss_PP.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29563_Nhss_PP.yaml))
+* IMS UE Authentication
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29562_Nhss_imsUEAU.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29562_Nhss_imsUEAU.yaml))
+* IMS Subscriber Data Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29562_Nhss_imsSDM.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29562_Nhss_imsSDM.yaml))
+* IMS UE Context Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29562_Nhss_imsUECM.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29562_Nhss_imsUECM.yaml))
+* IMS Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29562_Nhss_imsEE.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29562_Nhss_imsEE.yaml))
+* GBA Subscriber Data Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29562_Nhss_gbaSDM.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29562_Nhss_gbaSDM.yaml))
+* GBA UE Authentication
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29562_Nhss_gbaUEAU.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29562_Nhss_gbaUEAU.yaml))
+
+## GBA BSF (GBA Bootstrapping Server Function)
+* GBA Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29309_Nbsp_GBA.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29309_Nbsp_GBA.yaml))
+
+## SOR-AF (Steering of Roaming Application Function)
+* Steering of Roaming
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29550_Nsoraf_SOR.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29550_Nsoraf_SOR.yaml))
+
+## SP-AF (Secured Packet Application Function)
+* Secured Packet
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29544_Nspaf_SecuredPacket.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29544_Nspaf_SecuredPacket.yaml))
+
+## AF (Application Function)
+* Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29517_Naf_EventExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29517_Naf_EventExposure.yaml))
+* ProSe
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29557_Naf_ProSe.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29557_Naf_ProSe.yaml))
+* Authentication
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29255_Naf_Authentication.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29255_Naf_Authentication.yaml))
+* Inference
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29530_Naf_Inference.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29530_Naf_Inference.yaml))
+* Training
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29530_Naf_Training.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29530_Naf_Training.yaml))
+* VFL Inference
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29530_Naf_VFLInference.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29530_Naf_VFLInference.yaml))
+* VFL Training
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29530_Naf_VFLTraining.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29530_Naf_VFLTraining.yaml))
+
+## CHF (Charging Function)
+* Spending Limit Control
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29594_Nchf_SpendingLimitControl.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29594_Nchf_SpendingLimitControl.yaml))
+* Converged Charging
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS32291_Nchf_ConvergedCharging.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS32291_Nchf_ConvergedCharging.yaml))
+* Offline-Only Charging
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS32291_Nchf_OfflineOnlyCharging.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS32291_Nchf_OfflineOnlyCharging.yaml))
+
+## Common Data Types
+* Common Data
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29571_CommonData.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29571_CommonData.yaml))
+
+## SEPP N32 APIs
+* Handshake (N32-c)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29573_N32_Handshake.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29573_N32_Handshake.yaml))
+([ABNF](https://forge.3gpp.org/swagger/tools/headers.html?abnf=TS29573_CustomHeaders.abnf))
+* Forwarding (N32-f)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29573_JOSEProtectedMessageForwarding.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29573_JOSEProtectedMessageForwarding.yaml))
+* Telescopic FQDN Mapping
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29573_SeppTelescopicFqdnMapping.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29573_SeppTelescopicFqdnMapping.yaml))
+
+## UCMF (UE Radio Capability Management Function)
+* UE Radio Capability Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29673_Nucmf_UERCM.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29673_Nucmf_UERCM.yaml))
+* Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29675_Nucmf_Provisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29675_Nucmf_Provisioning.yaml))
+
+## MNPF (Mobile Number Portability Function)
+* Number Portability Status
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29578_Nmnpf_NPStatus.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29578_Nmnpf_NPStatus.yaml))
+
+## GMLC (Gateway Mobile Location Center)
+* Location
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29515_Ngmlc_Location.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29515_Ngmlc_Location.yaml))
+
+## EASDF (Edge Application Server Discovery Function)
+* DNS Context
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29556_Neasdf_DNSContext.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29556_Neasdf_DNSContext.yaml))
+* Baseline DNS Pattern
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29556_Neasdf_BaselineDNSPattern.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29556_Neasdf_BaselineDNSPattern.yaml))
+
+## AAnF (AKMA Anchor Function)
+* AKMA Anchor Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29535_Naanf_AKMA.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29535_Naanf_AKMA.yaml))
+
+## 5G DDNMF (Inter-5G Direct Discovery Name Management Function)
+* Discovery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29555_N5g-ddnmf_Discovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29555_N5g-ddnmf_Discovery.yaml))
+
+## TSCTSF (Time Sensitive Communication and Time Synchronization Function)
+* Time Synchronization
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29565_Ntsctsf_TimeSynchronization.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29565_Ntsctsf_TimeSynchronization.yaml))
+* QoS and TSC Assistance
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29565_Ntsctsf_QoSandTSCAssistance.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29565_Ntsctsf_QoSandTSCAssistance.yaml))
+* ASTI
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29565_Ntsctsf_ASTI.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29565_Ntsctsf_ASTI.yaml))
+
+## ADRF (Analytics Data Repository Function)
+* Data Management 
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29575_Nadrf_DataManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29575_Nadrf_DataManagement.yaml))
+* ML Model Management 
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29575_Nadrf_MLModelManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29575_Nadrf_MLModelManagement.yaml))
+
+## MFAF (Messaging Framework Adaptor Function)
+* 3GPP DCCF Adaptor (3DA) Data Management 
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29576_Nmfaf_3daDataManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29576_Nmfaf_3daDataManagement.yaml))
+* 3GPP Consumer Adaptor (3CA) Data Management 
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29576_Nmfaf_3caDataManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29576_Nmfaf_3caDataManagement.yaml))
+* MFAF Context Management 
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29576_Nmfaf_ContextManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29576_Nmfaf_ContextManagement.yaml))
+
+## Data Collection Application Function
+* Common Data Types
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26532_CommonData.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26532_CommonData.yaml))
+* Application Service Provider provisioning (R1)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26532_Ndcaf_DataReportingProvisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26532_Ndcaf_DataReportingProvisioning.yaml))
+* Data collection client configuration and reporting (R2, R3, R4)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26532_Ndcaf_DataReporting.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26532_Ndcaf_DataReporting.yaml))
+
+## Data Collection Coordination Function (DCCF)
+* Data Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29574_Ndccf_DataManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29574_Ndccf_DataManagement.yaml))
+* Context Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29574_Ndccf_ContextManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29574_Ndccf_ContextManagement.yaml))
+
+## IP-SM-GW (IP Short Message Gateway)
+* SM Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29577_Nipsmgw_SMService.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29577_Nipsmgw_SMService.yaml))
+
+## SMS Router
+* SM Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29577_Nrouter_SMService.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29577_Nrouter_SMService.yaml))
+
+## SMS-IWMSC (Interworking MSC for Short Message Service)
+* SM Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29579_Niwmsc_SMService.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29579_Niwmsc_SMService.yaml))
+
+## PKMF (ProSe Key Management Service)
+* Key Request Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29559_Npkmf_PKMFKeyRequest.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29559_Npkmf_PKMFKeyRequest.yaml))
+* Resolve Remote User Id
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29559_Npkmf_UserId.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29559_Npkmf_UserId.yaml))
+* Discovery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29559_Npkmf_Discovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29559_Npkmf_Discovery.yaml))
+
+## SLPKMF (SideLink Positioning Key Management Service)
+* Key Request Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29586_Nslpkmf_SLPKMFKeyRequest.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29586_Nslpkmf_SLPKMFKeyRequest.yaml))
+* Discovery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29586_Nslpkmf_Discovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29586_Nslpkmf_Discovery.yaml))
+
+## PANF (ProSe Anchor Function)
+* Prose Key Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29553_Npanf_ProseKey.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29553_Npanf_ProseKey.yaml))
+* Resolve Remote User Id
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29553_Npanf_ResolveRemoteUserId.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29553_Npanf_ResolveRemoteUserId.yaml))
+
+## IMS AS (IP Multimedia Subsystem Application Server)
+* Session Event Control
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29175_Nimsas_SessionEventControl.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29175_Nimsas_SessionEventControl.yaml))
+* Media Control
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29175_Nimsas_MediaControl.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29175_Nimsas_MediaControl.yaml))
+* IMS Session Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29175_Nimsas_ImsSessionManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29175_Nimsas_ImsSessionManagement.yaml))
+* IMS Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29175_Nimsas_ImsEE.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29175_Nimsas_ImsEE.yaml))
+* IMS Parameter Provision
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29175_Nimsas_ImsParameterProvision.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29175_Nimsas_ImsParameterProvision.yaml))
+
+## MF (Media Function)
+* Media Resource Management Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29176_Nmf_MRM.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29176_Nmf_MRM.yaml))
+
+## AIOTF (Ambient IoT Function)
+* Ambient IoT Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29569_Naiotf_AIoT.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29569_Naiotf_AIoT.yaml))
+
+## ADM (Ambient IoT Data Management Function)
+* Ambient IoT Data Management Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29369_Nadm_DM.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29369_Nadm_DM.yaml))
+* Ambient IoT Security Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29369_Nadm_Sec.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29369_Nadm_Sec.yaml))
+
+## EIF (Energy Information Function)
+* EIF Event Exposure Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29566_Neif_EventExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29566_Neif_EventExposure.yaml))
+
+# Northbound and Application Layer APIs
+## CAPIF (Common API Framework)
+* Discover Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29222_CAPIF_Discover_Service_API.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29222_CAPIF_Discover_Service_API.yaml))
+* Open Discover Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29222_CAPIF_Open_Discover_Service_API.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29222_CAPIF_Open_Discover_Service_API.yaml))
+* Publish Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29222_CAPIF_Publish_Service_API.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29222_CAPIF_Publish_Service_API.yaml))
+* Events
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29222_CAPIF_Events_API.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29222_CAPIF_Events_API.yaml))
+* API Invoker Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29222_CAPIF_API_Invoker_Management_API.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29222_CAPIF_API_Invoker_Management_API.yaml))
+* Security
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29222_CAPIF_Security_API.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29222_CAPIF_Security_API.yaml))
+* Access Control Policy
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29222_CAPIF_Access_Control_Policy_API.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29222_CAPIF_Access_Control_Policy_API.yaml))
+* Logging API Invocation
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29222_CAPIF_Logging_API_Invocation_API.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29222_CAPIF_Logging_API_Invocation_API.yaml))
+* Auditing
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29222_CAPIF_Auditing_API.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29222_CAPIF_Auditing_API.yaml))
+* AEF Authentication
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29222_AEF_Security_API.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29222_AEF_Security_API.yaml))
+* API Provider Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29222_CAPIF_API_Provider_Management_API.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29222_CAPIF_API_Provider_Management_API.yaml))
+* Routing Information
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29222_CAPIF_Routing_Info_API.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29222_CAPIF_Routing_Info_API.yaml))
+
+## SCEF (Service Capability Exposure Function)
+>**Note:**
+These APIs are not part of the 5G Core Network; these APIs are exposed by the 4G SCEF to the SCS/AS
+* Event Monitoring
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_MonitoringEvent.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_MonitoringEvent.yaml))
+* Resource Management of Background Data Transfer (BDT)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_ResourceManagementOfBdt.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_ResourceManagementOfBdt.yaml))
+* Chargeable Party
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_ChargeableParty.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_ChargeableParty.yaml))
+* Non-IP Data Delivery (NIDD)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_NIDD.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_NIDD.yaml))
+* Device Triggering
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_DeviceTriggering.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_DeviceTriggering.yaml))
+* Group Message Delivery via MBMS by MB2
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_GMDviaMBMSbyMB2.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_GMDviaMBMSbyMB2.yaml))
+* Group Message Delivery via MBMS by xMB
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_GMDviaMBMSbyxMB.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_GMDviaMBMSbyxMB.yaml))
+* Network Status Reporting
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_ReportingNetworkStatus.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_ReportingNetworkStatus.yaml))
+* Communication Patterns (CP) Parameters Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_CpProvisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_CpProvisioning.yaml))
+* Packet Flow Description (PFD) Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_PfdManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_PfdManagement.yaml))
+* Enhanced Coverage Restriction Control
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_ECRControl.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_ECRControl.yaml))
+* Network Parameter Configuration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_NpConfiguration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_NpConfiguration.yaml))
+* Application Server (AS) Session with QoS
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_AsSessionWithQoS.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_AsSessionWithQoS.yaml))
+* MSISDN-less Mobile-Originated SMS
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_MsisdnLessMoSms.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_MsisdnLessMoSms.yaml))
+* RACS (Radio Capability Signaling) Parameter Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_RacsParameterProvisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_RacsParameterProvisioning.yaml))
+* Common Data
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29122_CommonData.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29122_CommonData.yaml))
+
+## NEF (Network Exposure Function)
+* Traffic Influence
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_TrafficInfluence.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_TrafficInfluence.yaml))
+* NIDD (Non-IP Data Delivery) Configuration Trigger
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_NIDDConfigurationTrigger.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_NIDDConfigurationTrigger.yaml))
+* 5G LAN Parameter Provision
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_5GLANParameterProvision.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_5GLANParameterProvision.yaml))
+* Applying BDT Policy
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_ApplyingBdtPolicy.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_ApplyingBdtPolicy.yaml))
+* IPTV Configuration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_IPTVConfiguration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_IPTVConfiguration.yaml))
+* Analytics Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_AnalyticsExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_AnalyticsExposure.yaml))
+* LPI (Location Privacy Indicator) Parameter Provision
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_LpiParameterProvision.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_LpiParameterProvision.yaml))
+* Service Parameter
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_ServiceParameter.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_ServiceParameter.yaml))
+* ACS Parameter Provision
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_ACSParameterProvision.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_ACSParameterProvision.yaml))
+* MO LCS Notify
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_MoLcsNotify.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_MoLcsNotify.yaml))
+* AKMA
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_AKMA.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_AKMA.yaml))
+* Time Sync Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_TimeSyncExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_TimeSyncExposure.yaml))
+* ECS Address Provision
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_EcsAddressProvision.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_EcsAddressProvision.yaml))
+* AM Policy Authorization
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_AMPolicyAuthorization.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_AMPolicyAuthorization.yaml))
+* AM Influence
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_AMInfluence.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_AMInfluence.yaml))
+* MBS TMGI
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_MBSTMGI.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_MBSTMGI.yaml))
+* MBS Session
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_MBSSession.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_MBSSession.yaml))
+* EAS Deployment
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_EASDeployment.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_EASDeployment.yaml))
+* ASTI
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_ASTI.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_ASTI.yaml))
+* Data Reporting
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_DataReporting.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_DataReporting.yaml))
+* Data Reporing Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_DataReportingProvisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_DataReportingProvisioning.yaml))
+* UE Identifier
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_UEId.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_UEId.yaml))
+* MBS User Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_MBSUserService.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_MBSUserService.yaml))
+* MBS User Data Ingest Session
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_MBSUserDataIngestSession.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_MBSUserDataIngestSession.yaml))
+* Media Streaming Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_MSEventExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_MSEventExposure.yaml))
+* MBS Group Message Delivery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_MBSGroupMsgDelivery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_MBSGroupMsgDelivery.yaml))
+* DNAI Mapping
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_DNAIMapping.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_DNAIMapping.yaml))
+* PDTQ Policy Negotiation
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_PDTQPolicyNegotiation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_PDTQPolicyNegotiation.yaml))
+* Member UE Selection Assistance
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_MemberUESelectionAssistance.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_MemberUESelectionAssistance.yaml))
+* Group Parameters Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_GroupParametersProvisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_GroupParametersProvisioning.yaml))
+* Slice Parameters Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_SliceParamProvision.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_SliceParamProvision.yaml))
+* UE Address
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_UEAddress.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_UEAddress.yaml))
+* ECS Address
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_ECSAddress.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_ECSAddress.yaml))
+* RSLPPI Parameters Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_RSLPPIParametersProvisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_RSLPPIParametersProvisioning.yaml))
+* Addressing Parameters Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_AddressingParamProvision.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_AddressingParamProvision.yaml))
+* UAV Flight Assistance
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_UAVFlightAssistance.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_UAVFlightAssistance.yaml))
+* CAG Information Parameters Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_CagInfoParamProvision.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_CagInfoParamProvision.yaml))
+* IMS Session Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_ImsSessionManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_ImsSessionManagement.yaml))
+* IMS Event Exposure
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_ImsEventExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_ImsEventExposure.yaml))
+* IMS Parameters Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_ImsParamProvision.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_ImsParamProvision.yaml))
+* Ambient IoT
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_AIoT.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_AIoT.yaml))
+* VFL NF Discovery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_VFLNFDiscovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_VFLNFDiscovery.yaml))
+* VFL Inference
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_VFLInference.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_VFLInference.yaml))
+* VFL Training
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29522_VFLTraining.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29522_VFLTraining.yaml))
+
+## VAE (V2X Application Enabler)
+* V2X Message Delivery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29486_VAE_MessageDelivery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29486_VAE_MessageDelivery.yaml))
+* File Distribution
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29486_VAE_FileDistribution.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29486_VAE_FileDistribution.yaml))
+* Application Requirement
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29486_VAE_ApplicationRequirement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29486_VAE_ApplicationRequirement.yaml))
+* Dynamic Group
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29486_VAE_DynamicGroup.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29486_VAE_DynamicGroup.yaml))
+* Service Continuity
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29486_VAE_ServiceContinuity.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29486_VAE_ServiceContinuity.yaml))
+* HD Map Dynamic Information
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29486_VAE_HDMapDynamicInfo.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29486_VAE_HDMapDynamicInfo.yaml))
+* Session Oriented Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29486_VAE_SessionOrientedService.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29486_VAE_SessionOrientedService.yaml))
+* V2V Config Requirement
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29486_VAE_V2VConfigRequirement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29486_VAE_V2VConfigRequirement.yaml))
+* PC5 Provisioning Requirement
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29486_VAE_PC5ProvisioningRequirement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29486_VAE_PC5ProvisioningRequirement.yaml))
+* Service And QoS Control Info
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29486_VAE_ServiceAndQoSControlInfo.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29486_VAE_ServiceAndQoSControlInfo.yaml))
+* VRU Zone Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29486_VAE_VRUZoneManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29486_VAE_VRUZoneManagement.yaml))
+* V2P Application Requirement
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29486_VAE_V2PApplicationRequirement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29486_VAE_V2PApplicationRequirement.yaml))
+
+## SEAL (Service Enabler Architecture Layer)
+* Network Resource Adaptation
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_NetworkResourceAdaptation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_NetworkResourceAdaptation.yaml))
+* Network Resource Monitoring
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_NetworkResourceMonitoring.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_NetworkResourceMonitoring.yaml))
+* User Profile Retrieval
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_UserProfileRetrieval.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_UserProfileRetrieval.yaml))
+* ASCAI Information Retrieval
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ASCAIInfoRetrieval.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ASCAIInfoRetrieval.yaml))
+* Events
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_Events.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_Events.yaml))
+* Group Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_GroupManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_GroupManagement.yaml))
+* Location Reporting
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_LocationReporting.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_LocationReporting.yaml))
+* Location Area Information Retrieval
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_LocationAreaInfoRetrieval.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_LocationAreaInfoRetrieval.yaml))
+* Key Information Retrieval
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_KeyInfoRetrieval.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_KeyInfoRetrieval.yaml))
+* Key Parameters Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_KMParametersProvisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_KMParametersProvisioning.yaml))
+* VAL Service Data Retrieval
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_VALServiceData.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_VALServiceData.yaml))
+* VAL Service Area Configuration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_VALServiceAreaConfiguration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_VALServiceAreaConfiguration.yaml))
+* VAL UE Configuration Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ValUeConfiguration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ValUeConfiguration.yaml))
+* VAL service Parameter Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_IdmParameterProvisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_IdmParameterProvisioning.yaml))
+* LM Server Location tracing configuration management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_LocationHistoryInfoEvent.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_LocationHistoryInfoEvent.yaml))
+* LM Server Location confirmation management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ConfirmLocation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ConfirmLocation.yaml))
+* Sidelink positioning management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_SLPositioningManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_SLPositioningManagement.yaml))
+* SEALDD Data Transmission
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29548_SDD_Transmission.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29548_SDD_Transmission.yaml))
+* SEALDD Data Storage
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29548_SDD_DataStorage.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29548_SDD_DataStorage.yaml))
+* SEALDD Context Relocation
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29548_SDD_DDContext.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29548_SDD_DDContext.yaml))
+* SEALDD Transmission Quality Measurement
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29548_SDD_TransmissionQualityMeasurement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29548_SDD_TransmissionQualityMeasurement.yaml))
+* SEALDD Policy Configuration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29548_SDD_PolicyConfiguration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29548_SDD_PolicyConfiguration.yaml))
+* SEALDD Background Data Transfer
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29548_SDD_BDT.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29548_SDD_BDT.yaml))
+* SEALDD Multicast/Broadcast Delivery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29548_SDD_BroadcastMulticastDelivery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29548_SDD_BroadcastMulticastDelivery.yaml))
+* NSCE Slice API Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_SliceApiManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_SliceApiManagement.yaml))
+* NSCE Network Slice LifeCycle Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_NetSliceLifeCycleMngt.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_NetSliceLifeCycleMngt.yaml))
+* NSCE Policy Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_PolicyManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_PolicyManagement.yaml))
+* NSCE Network Slice Optimization Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_NSOptimization.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_NSOptimization.yaml))
+* NSCE Management Service Discovery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_ManagementServiceDiscovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_ManagementServiceDiscovery.yaml))
+* NSCE Network Slice Performance and Analytics Monitoring Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_PerfMonitoring.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_PerfMonitoring.yaml))
+* NSCE Information Collection Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_InfoCollection.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_InfoCollection.yaml))
+* NSCE Server Edge Service Continuity Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_ServiceContinuity.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_ServiceContinuity.yaml))
+* NSCE Multiple Slices Optimization Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_MultiSlicesOptimization.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_MultiSlicesOptimization.yaml))
+* NSCE Network Slice Adaptation Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_NetworkSliceAdaptation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_NetworkSliceAdaptation.yaml))
+* NSCE Network Slice Communication Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_SliceCommService.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_SliceCommService.yaml))
+* NSCE Inter-PLMN Service Continuity Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_InterPLMNContinuity.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_InterPLMNContinuity.yaml))
+* NSCE Network Slice Diagnostics Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_NSDiagnostics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_NSDiagnostics.yaml))
+* NSCE Network Slice Fault Diagnosis Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_FaultDiagnosis.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_FaultDiagnosis.yaml))
+* NSCE Network Slice Requirements Verification And Alignment Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_SliceReqVerifyAndAlign.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_SliceReqVerifyAndAlign.yaml))
+* NSCE Network Slice Information Delivery Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_NSInfoDelivery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_NSInfoDelivery.yaml))
+* NSCE Network Slice Allocation Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29435_NSCE_NSAllocation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29435_NSCE_NSAllocation.yaml))
+* NCSE Slice Information
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24549_NSCE_SliceInfo.yaml.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24549_NSCE_SliceInfo.yaml.yaml))
+* ADAE VAL Performance Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_VALPerformanceAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_VALPerformanceAnalytics.yaml))
+* ADAE Slice Performance Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_SlicePerformanceAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_SlicePerformanceAnalytics.yaml))
+* ADAE UE to UE Performance Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_Ue2UePerformanceAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_Ue2UePerformanceAnalytics.yaml))
+* ADAE Location Accuracy Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_LocationAccuracyAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_LocationAccuracyAnalytics.yaml))
+* ADAE Service API Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_ServiceApiAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_ServiceApiAnalytics.yaml))
+* ADAE Slice Usage Pattern Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_SliceUsagePatternAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_SliceUsagePatternAnalytics.yaml))
+* ADAE Edge Load Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_EdgeLoadAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_EdgeLoadAnalytics.yaml))
+* ADAE Service Configuration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24559_ADAE_ServiceConfiguration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24559_ADAE_ServiceConfiguration.yaml))
+* ADAE Location-Related UE group Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_LocationRelatedUeGroupAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_LocationRelatedUeGroupAnalytics.yaml))
+* ADAE Collision Detection Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_CollisionDetectionAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_CollisionDetectionAnalytics.yaml))
+* ADAE AIML Member Capability Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_AIMLMemberCapabilityAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_AIMLMemberCapabilityAnalytics.yaml))
+* ADAE Server to Server Performance Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_ServerToServerPerformanceAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_ServerToServerPerformanceAnalytics.yaml))
+* ADAE UE RAT Connectivity Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_UeRatConnectivityAnalytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_UeRatConnectivityAnalytics.yaml))
+* ADAE Data Network Energy Analytics
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADAE_DN_energy_analytics.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADAE_DN_energy_analytics.yaml))
+* AADRF Data Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_AADRF_DataManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_AADRF_DataManagement.yaml))
+* ADCCF Data Collection
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_ADCCF_DataCollection.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_ADCCF_DataCollection.yaml))
+* ETC Configuration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24549_ETC_Configuration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24549_ETC_Configuration.yaml))
+* SAn Server Spatial Anchors Management Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29437_SS_SAnManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29437_SS_SAnManagement.yaml))
+* SAn Server Spatial Anchors Discovery Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29437_SS_SAnDiscovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29437_SS_SAnDiscovery.yaml))
+* SAn Server Spatial Anchors Usage Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29437_SS_SAnUsage.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29437_SS_SAnUsage.yaml))
+* SAn Server Spatial Anchor Group Management Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29437_SS_SAnGroupManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29437_SS_SAnGroupManagement.yaml))
+* SM Server Data Source Registration Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24550_SS_SmDataSourceRegistration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24550_SS_SmDataSourceRegistration.yaml))
+* SM Server Spatial Maps Management Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29437_SS_SmManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29437_SS_SmManagement.yaml))
+* SM Server Spatial Maps Discovery Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29437_SS_SmDiscovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29437_SS_SmDiscovery.yaml))
+* SM Server Spatial Maps Localization Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29437_SS_SmLocalization.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29437_SS_SmLocalization.yaml))
+* SM Server Data Source Discovery Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29437_SS_SmDataSourceDiscovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29437_SS_SmDataSourceDiscovery.yaml))
+* SM Server SMAS registration Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29437_SS_SmSmasRegistration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29437_SS_SmSmasRegistration.yaml))
+* SM Server Data Source Subscription Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29437_SS_SmDataSourceSubscription.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29437_SS_SmDataSourceSubscription.yaml))
+* DA Server Digital Assets Profile Management Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_DAProfileManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_DAProfileManagement.yaml))
+* DA Server Digital Assets Discovery Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_DADiscovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_DADiscovery.yaml))
+* DA Server Digital Assets Media Management Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_DAMediaManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_DAMediaManagement.yaml))
+* DA Server Digital Asset Usage Report Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29549_SS_DAUsageReport.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29549_SS_DAUsageReport.yaml))
+
+## EDGEAPP (Enabling Edge Applications)
+* EAS Registration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eees_EASRegistration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eees_EASRegistration.yaml))
+* UE Location
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eees_UELocation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eees_UELocation.yaml))
+* UE Identifier
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eees_UEIdentifier.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eees_UEIdentifier.yaml))
+* Application Client Information
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eees_AppClientInformation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eees_AppClientInformation.yaml))
+* ACR Management Event
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eees_ACRManagementEvent.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eees_ACRManagementEvent.yaml))
+* Session with QoS
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eees_SessionWithQoS.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eees_SessionWithQoS.yaml))
+* EEC Context Relocation
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eees_EECContextRelocation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eees_EECContextRelocation.yaml))
+* EEL Managed ACR
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eees_EELManagedACR.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eees_EELManagedACR.yaml))
+* ACR Status Update
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eees_ACRStatusUpdate.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eees_ACRStatusUpdate.yaml))
+* EES Registration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eecs_EESRegistration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eecs_EESRegistration.yaml))
+* Target EES Discovery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eecs_TargetEESDiscovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eecs_TargetEESDiscovery.yaml))
+* EEC Registration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24558_Eees_EECRegistration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24558_Eees_EECRegistration.yaml))
+* ECS Service Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24558_Eecs_ServiceProvisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24558_Eecs_ServiceProvisioning.yaml))
+* EAS Discovery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24558_Eees_EASDiscovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24558_Eees_EASDiscovery.yaml))
+* EES ACR Events
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24558_Eees_ACREvents.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24558_Eees_ACREvents.yaml))
+* EES App Context Relocation
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24558_Eees_AppContextRelocation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24558_Eees_AppContextRelocation.yaml))
+* EAS Information Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24558_Eees_EASInformationProvisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24558_Eees_EASInformationProvisioning.yaml))
+* EES ACR Parameters Information
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eees_ACRParameterInformation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eees_ACRParameterInformation.yaml))
+* EES Common EAS Announcement
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eees_CommonEASAnnouncement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eees_CommonEASAnnouncement.yaml))
+* CAS Selected EES
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Ecas_SelectedEES.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Ecas_SelectedEES.yaml))
+* EES Application Traffic Influence
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eees_TrafficInfluenceEAS.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eees_TrafficInfluenceEAS.yaml))
+* EAS Information Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eecs_EASInfoManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eecs_EASInfoManagement.yaml))
+* ECS Service Provisioning Information Retrieval
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eecs_ECSServiceProvisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eecs_ECSServiceProvisioning.yaml))
+* ECS Service for ECS Discovery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eecs_ECSDiscovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eecs_ECSDiscovery.yaml))
+* ECS ACR Events
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29558_Eecs_ACREvents.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29558_Eecs_ACREvents.yaml))
+
+## UAS Application Enabler (UAE) Server
+* C2 Operation Mode Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29257_UAE_C2OperationModeManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29257_UAE_C2OperationModeManagement.yaml))
+* Real-time UAV Status
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29257_UAE_RealtimeUAVStatus.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29257_UAE_RealtimeUAVStatus.yaml))
+* USS Change Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29257_UAE_ChangeUSSManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29257_UAE_ChangeUSSManagement.yaml))
+* DAA Support
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29257_UAE_DAASupport.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29257_UAE_DAASupport.yaml))
+* UAV Dynamic Information
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29257_UAE_UAVDynamicInfo.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29257_UAE_UAVDynamicInfo.yaml))
+* Flight Path Monitoring
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29257_UAE_FlightPathMonitoring.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29257_UAE_FlightPathMonitoring.yaml))
+* Flight Route Support
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29257_UAE_FlightRouteSupport.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29257_UAE_FlightRouteSupport.yaml))
+* NTZ Management
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29257_UAE_NTZManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29257_UAE_NTZManagement.yaml))
+
+## 5GMARCH (Enabling MSGin5G Service)
+* AS Registration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29538_MSGS_ASRegistration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29538_MSGS_ASRegistration.yaml))
+* MSGin5G Server Message Delivery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29538_MSGS_MSGDelivery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29538_MSGS_MSGDelivery.yaml))
+* L3G Message Delivery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29538_MSGG_L3GDelivery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29538_MSGG_L3GDelivery.yaml))
+* N3G Message Delivery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29538_MSGG_N3GDelivery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29538_MSGG_N3GDelivery.yaml))
+* Broadcast Message Delivery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29538_MSGG_BGDelivery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29538_MSGG_BGDelivery.yaml))
+* Topic List Event
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29538_MSGS_TopiclistEvent.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29538_MSGS_TopiclistEvent.yaml))
+
+## PINAPP (Personal IoT Network Application)
+* PINServer PAS Registration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29583_PIN_ASRegistration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29583_PIN_ASRegistration.yaml))
+* PINServer Service Switch Information
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29583_PIN_ASServiceSwitch.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29583_PIN_ASServiceSwitch.yaml))
+* PINServer Service Continuity Information
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29583_PIN_ASServiceContinuity.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29583_PIN_ASServiceContinuity.yaml))
+
+## AIML App (Artificial Intelligence Machine Learning Application)
+* AIMLE transfer learning (TL) enablement service (server)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24560_Aimles_UeTLModelSelectionAssistance.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24560_Aimles_UeTLModelSelectionAssistance.yaml))
+* AIMLE transfer learning (TL) enablement service (client)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24560_Aimlec_ClientDataProcessing.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24560_Aimlec_ClientDataProcessing.yaml))
+* AIMLE client participation service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24560_Aimlec_AIMLEClientParticipation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24560_Aimlec_AIMLEClientParticipation.yaml))
+* AIMLE client registration service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24560_Aimles_AIMLEClientRegistration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24560_Aimles_AIMLEClientRegistration.yaml))
+* AIMLE server AIML task transfer service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24560_Aimles_AimlTaskTransfer.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24560_Aimles_AimlTaskTransfer.yaml))
+* AIMLE client AIML task transfer service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24560_Aimlec_AimlTaskTransfer.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24560_Aimlec_AimlTaskTransfer.yaml))
+* AIMLE client service operations service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24560_Aimlec_AIMLEClientServiceOperations.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24560_Aimlec_AIMLEClientServiceOperations.yaml))
+* FL group indication service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24560_Aimlec_FLGroupIndication.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24560_Aimlec_FLGroupIndication.yaml))
+* ML model training capability evaluation service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24560_Aimlec_MLModTngCapEva.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24560_Aimlec_MLModTngCapEva.yaml))
+* AIMLE client HFL training service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24560_Aimlec_HFLTraining.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24560_Aimlec_HFLTraining.yaml))
+* AIMLE server split operation pipeline service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24560_Aimles_SplitOpPipeline.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24560_Aimles_SplitOpPipeline.yaml))
+* AIMLE Client Discovery Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_AIMLEClientDiscovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_AIMLEClientDiscovery.yaml))
+* AIMLE Client Selection
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_AIMLEClientSelection.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_AIMLEClientSelection.yaml))
+* AIMLE Service Operations Management Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_AIMLEServiceOperationsManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_AIMLEServiceOperationsManagement.yaml))
+* AIMLE Assisted ML Model Selection Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_AssistedMLModelSelection.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_AssistedMLModelSelection.yaml))
+* AIMLE Context Transfer Information Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_ContextTransfer.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_ContextTransfer.yaml))
+* AIMLE Data Management Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_DataManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_DataManagement.yaml))
+* AIMLE Federated Learning Member Group Support Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_FLMemberGroupSupport.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_FLMemberGroupSupport.yaml))
+* AIMLE Hierarchical Computing Assist Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_HierarchicalComputingAssist.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_HierarchicalComputingAssist.yaml))
+* AIMLE Machine Learning Model Performance Monitor Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_MLModelPerfMonitor.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_MLModelPerfMonitor.yaml))
+* AIMLE ML Model Retrieval Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_MLModelRetrieval.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_MLModelRetrieval.yaml))
+* AIMLE ML Model Training Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_MLModelTraining.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_MLModelTraining.yaml))
+* AIMLES_ML Model Update Request Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_MLModelUpdate.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_MLModelUpdate.yaml))
+* AIMLE Split Operation Event Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_SplitOpEvent.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_SplitOpEvent.yaml))
+* AIMLE Split Operation Node Registration Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_SplitOpNodeRegistration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_SplitOpNodeRegistration.yaml))
+* AIMLE Transfer Learning Model Selection Assistance Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_TLModelSelectionAssistance.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_TLModelSelectionAssistance.yaml))
+* Machine Learning Federated Learning Events Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_MLR_FLEvents.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_MLR_FLEvents.yaml))
+* AIMLE Repository Federated Member Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_MLR_FLMember.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_MLR_FLMember.yaml))
+* MLR ML Model Management Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_MLR_MLModelManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_MLR_MLModelManagement.yaml))
+* MLR Model Information Discovery Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_MLR_ModelInformationDiscovery.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_MLR_ModelInformationDiscovery.yaml))
+* AIMLES ML Model Maintenance Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_MLModelMaintenance.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_MLModelMaintenance.yaml))
+* AIMLES ML Model Performance Evaluation Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_MLModelPerfEvaluation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_MLModelPerfEvaluation.yaml))
+* AIMLE Server Federated Member Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29482_AIMLES_FLMember.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29482_AIMLES_FLMember.yaml))
+
+## MMTel (Multimedia Telephony)
+* MMTel DC Application Management Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29392_MMTel_DCAppManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29392_MMTel_DCAppManagement.yaml))
+* MMTel Enabler Server DC Application Call Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29392_MMTel_DCAppCall.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29392_MMTel_DCAppCall.yaml))
+* MMTel Enabler Server Call Event Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29392_MMTel_CallEvent.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29392_MMTel_CallEvent.yaml))
+* MMTel Enabler Server Call Control Service
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS29392_MMTel_CallControl.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS29392_MMTel_CallControl.yaml))
+
+# Media Delivery TS 26.510
+* Common Data Types
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_CommonData.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_CommonData.yaml))
+* Notifications
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Notifications.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Notifications.yaml))
+
+## Media AF Provisioning
+* Provisioning Sessions
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_Provisioning_ProvisioningSessions.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_Provisioning_ProvisioningSessions.yaml))
+* Content Protocols Discovery
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_Provisioning_ContentProtocols.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_Provisioning_ContentProtocols.yaml))
+* Server Certificates Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_Provisioning_ServerCertificates.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_Provisioning_ServerCertificates.yaml))
+* Content Preparation Templates Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_Provisioning_ContentPreparationTemplates.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_Provisioning_ContentPreparationTemplates.yaml))
+* Edge Resources Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_Provisioning_EdgeResources.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_Provisioning_EdgeResources.yaml))
+* Policy Templates Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_Provisioning_PolicyTemplates.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_Provisioning_PolicyTemplates.yaml))
+* Content Hosting Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_Provisioning_ContentHosting.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_Provisioning_ContentHosting.yaml))
+* Content Publishing Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_Provisioning_ContentPublishing.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_Provisioning_ContentPublishing.yaml))
+* Metrics Reporting Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_Provisioning_MetricsReporting.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_Provisioning_MetricsReporting.yaml))
+* Consumption Reporting Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_Provisioning_ConsumptionReporting.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_Provisioning_ConsumptionReporting.yaml))
+* Event Data Processing Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_Provisioning_EventDataProcessing.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_Provisioning_EventDataProcessing.yaml))
+* Real-Time Media Communication Provisioning
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_Provisioning_RealTimeCommunication.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_Provisioning_RealTimeCommunication.yaml))
+
+## Media AF Session Handling
+* Service Access Information
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_SessionHandling_ServiceAccessInformation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_SessionHandling_ServiceAccessInformation.yaml))
+* Dynamic Policies
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_SessionHandling_DynamicPolicy.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_SessionHandling_DynamicPolicy.yaml))
+* Network Assistance
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_SessionHandling_NetworkAssistance.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_SessionHandling_NetworkAssistance.yaml))
+* Metrics Reporting
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_SessionHandling_MetricsReporting.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_SessionHandling_MetricsReporting.yaml))
+* Consumption Reporting
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26510_Maf_SessionHandling_ConsumptionReporting.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26510_Maf_SessionHandling_ConsumptionReporting.yaml))
+
+
+# Real-Time media Communication (RTC) TS 26.113
+
+## RTC AF Provisioning
+* Top-level Provisioning API for Real-Time media Communication (M1)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26113_Maf_Provisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26113_Maf_Provisioning.yaml))
+
+## RTC AF Session Handling
+* Top-level Media Session Handling API for Real-Time media Communication (M3, M5)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26113_Maf_SessionHandling.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26113_Maf_SessionHandling.yaml))
+
+
+# 5G Media Streaming (5GMS) TS 26.512
+* Common Data Types
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_CommonData.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_CommonData.yaml))
+* Client Data
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_ClientData.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_ClientData.yaml))
+
+## 5GMS AF Provisioning
+* Top-level Provisioning API for 5G Media Streaming (M1)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_Maf_Provisioning.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_Maf_Provisioning.yaml))
+
+## 5GMS AF Session Handling
+* Top-level Media Session Handling API for 5G Media Streaming (M3, M5)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_Maf_SessionHandling.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_Maf_SessionHandling.yaml))
+
+## 5GMS AS Configuration
+* Top-level Application Server Configuration API for 5G Media Streaming (M3)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_Mas_Configuration.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_Mas_Configuration.yaml))
+* Server Certificates Configuration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_Mas_Configuration_ServerCertificates.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_Mas_Configuration_ServerCertificates.yaml))
+* Content Preparation Templates Configuration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_Mas_Configuration_ContentPreparationTemplates.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_Mas_Configuration_ContentPreparationTemplates.yaml))
+* Content Hosting Configuration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_Mas_Configuration_ContentHosting.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_Mas_Configuration_ContentHosting.yaml))
+* Content Publishing Configuration
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_Mas_Configuration_ContentPublishing.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_Mas_Configuration_ContentPublishing.yaml))
+
+## 5GMS AF Data Reporting data types depended on by Ndcaf_DataReporting API
+* 5GMS Client (R2)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_R2_DataReporting.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_R2_DataReporting.yaml))
+* 5GMS AS (R4)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_R4_DataReporting.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_R4_DataReporting.yaml))
+
+## 5GMS AF Event Exposure data types depended on by Naf_EventExposure API
+* Data Collection AF (R5, R6)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_EventExposure.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_EventExposure.yaml))
+
+## 5GMS AF Event Exposure data types deprecated in this release
+* Dynamic Policies *(Rel-17 only; deprecated)*
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_M5_DynamicPolicies.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_M5_DynamicPolicies.yaml))
+* Network Assistance *(Rel-17 only; deprecated)*
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26512_M5_NetworkAssistance.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26512_M5_NetworkAssistance.yaml))
+
+
+# IMS-based AR Real-Time Communication ("Avatar Call") TS 26.264
+
+* Common Data Types
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26264_CommonData.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26264_CommonData.yaml))
+
+## Base Avatar Repository (BAR) management APIs
+
+* Mbar Management Avatars
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26264_Mbar_Management_Avatars.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26264_Mbar_Management_Avatars.yaml))
+* Mbar Management Assets
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26264_Mbar_Management_Assets.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26264_Mbar_Management_Assets.yaml))
+* Mbar Management Associated Information
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26264_Mbar_Management_AssociatedInformation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26264_Mbar_Management_AssociatedInformation.yaml))
+* Mbar Management Avatar Representations
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26264_Mbar_Management_AvatarRepresentations.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26264_Mbar_Management_AvatarRepresentations.yaml))
+* Mbar Management Sessions
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS26264_Mbar_Management_Sessions.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS26264_Mbar_Management_Sessions.yaml))
+
+
+# 3GPP SA5 models and MnS OpenAPI definitions
+
+## Network Resource Models (NRM)
+* Generic NRM (TS 28.623)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28623_GenericNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28623_GenericNrm.yaml))
+* Common NRM definitions (TS 28.623)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28623_ComDefs.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28623_ComDefs.yaml))
+* NRM Features (TS 28.623)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28623_FeatureNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28623_FeatureNrm.yaml))
+* Management Data Collection NRM (TS 28.623)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28623_ManagementDataCollectionNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28623_ManagementDataCollectionNrm.yaml))
+* MnS Registry NRM (TS 28.623)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28623_MnSRegistryNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28623_MnSRegistryNrm.yaml))
+* PM control NRM (TS 28.623)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28623_PmControlNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28623_PmControlNrm.yaml))
+* QoE Measurement Collection NRM (TS 28.623)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28623_QoEMeasurementCollectionNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28623_QoEMeasurementCollectionNrm.yaml))
+* Subscription Control NRM NRM (TS 28.623)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28623_SubscriptionControlNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28623_SubscriptionControlNrm.yaml))
+* Threshold Monitor NRM(TS 28.623)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28623_ThresholdMonitorNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28623_ThresholdMonitorNrm.yaml))
+* File Management NRM (TS 28.623)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28623_FileManagementNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28623_FileManagementNrm.yaml))
+* Trace Control (TS 28.623)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28623_TraceControlNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28623_TraceControlNrm.yaml))
+* External Management Data Management NRM (TS 28.623)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28623_ExternalDataMgmtNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28623_ExternalDataMgmtNrm.yaml))
+* Fault Management NRM(TS 28.111)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28111_FaultNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28111_FaultNrm.yaml))
+* NR NRM (TS 28.541)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28541_NrNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28541_NrNrm.yaml))
+* 5GC NRM (TS 28.541)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28541_5GcNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28541_5GcNrm.yaml))
+* Slice NRM (TS 28.541)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28541_SliceNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28541_SliceNrm.yaml))
+* Communication Service Assurance NRM (TS 28.536)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28536_CoslaNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28536_CoslaNrm.yaml))
+* CCL NRM (TS 28.567)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28567_CclNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28567_CclNrm.yaml))
+* MDA NRM (TS 28.104)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28104_MdaNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28104_MdaNrn.yaml))
+* MDA Report NRM (TS 28.104)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28104_MdaReport.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28104_MdaReport.yaml))
+* AI/ML NRM (TS 28.105)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28105_AiMlNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28105_AiMlNrm.yaml))
+* Intent NRM (TS 28.312)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28312_IntentNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28312_IntentNrm.yaml))
+* RadioNetworkExpectation NRM (TS 28.312)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28312_RadioNetworkExpectation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28312_RadioNetworkExpectation.yaml))
+* RadioServiceExpectation NRM (TS 28.312)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28312_RadioServiceExpectation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28312_RadioServiceExpectation.yaml))
+* NetworkMaintenanceExpectation NRM (TS 28.312)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28312_NetworkMaintenanceExpectation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28312_NetworkMaintenanceExpectation.yaml))
+* 5GCNetworkExpectation NRM (TS 28.312)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28312_5GCNetworkExpectation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28312_5GCNetworkExpectation.yaml))
+* EdgeServiceSupportExpectation NRM (TS 28.312)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28312_EdgeServiceSupportExpectation.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28312_EdgeServiceSupportExpectation.yaml))
+* Edge NRM (TS 28.538)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28538_EdgeNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28538_EdgeNrm.yaml))
+* Self-configuration of RAN entities (TS 28.317)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28317_RanScNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28317_RanScNrm.yaml))
+* OutageAndRecoveryInfo NRM (TS 28.318)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28318_DsoNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28318_DsoNrm.yaml))
+* MSAC NRM (TS 28.319)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28319_MsacNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28319_MsacNrm.yaml))
+* Energy Information NRM (TS 28.310)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28310_EnergyInformationNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28310_EnergyInformationNrm.yaml))
+* NDT NRM (TS 28.561)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28561_NdtNrm.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28561_NdtNrm.yaml))
+
+## Management Services (MnS)
+* Provisioning MnS (TS 28.532)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28532_ProvMnS.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28532_ProvMnS.yaml))
+* Fault Management Notifications (TS 28.111)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28111_FaultNotifications.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28111_FaultNotifications.yaml))
+* Performance Measurement Job Control MnS (28.550)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28550_PerfMeasJobCtrlMnS.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28550_PerfMeasJobCtrlMnS.yaml))
+* File Data Reporting MnS (TS 28.532)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28532_FileDataReportingMnS.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28532_FileDataReportingMnS.yaml))
+* Performance Threshold Monitoring MnS (TS 28.532)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28532_PerfMnS.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28532_PerfMnS.yaml))
+* Heartbeat Notifications (TS 28.532)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28532_HeartbeatNtf.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28532_HeartbeatNtf.yaml))
+* Streaming Data Reporting MnS (TS 28.532)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28532_StreamingDataMnS.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28532_StreamingDataMnS.yaml))
+* Network Slice Provisioning MnS (TS 28.531)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28531_NSProvMnS.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28531_NSProvMnS.yaml))
+* Network Slice Subnet Provisioning MnS (TS 28.531)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28531_NSSProvMnS.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28531_NSSProvMnS.yaml))
+* Plan Provisioning Management (TS 28.572)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS28572_PlanManagement.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS28572_PlanManagement.yaml))
+
+
+# Mission Critical Services
+
+## Location Management Services (LMS)
+* LMS Reporting (TS 24.283)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24283_Lms_Reporting.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24283_Lms_Reporting.yaml))
+* LMS Information (TS 24.283)
+([Editor](https://forge.3gpp.org/swagger/tools/loader.html?yaml=TS24283_Lms_Information.yaml))
+([UI](https://forge.3gpp.org/swagger/tools/loader.html?action=ui&yaml=TS24283_Lms_Information.yaml))
