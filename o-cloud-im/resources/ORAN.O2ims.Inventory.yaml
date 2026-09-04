@@ -1,0 +1,2435 @@
+openapi: 3.0.1
+info:
+  title: ORAN.O2ims.Inventory Data Model
+  version: 4.0.0
+  description: >-
+    OAS 3.0.1 definition of the O-RAN.O2ims.Inventory Namespace
+  
+    Copyright 2026 O-RAN ALLIANCE e.V.
+    Licensed under the Standards Collaboration
+    Copyright License Version 1.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+    https://www.o-ran.org/sccl
+  license:
+    name: SCCL
+    url: https://www.o-ran.org/sccl
+externalDocs:
+  description: O-RAN.WG6.TS.O-CLOUD-IM; O2 Information Model Specification
+  url: https://specifications.o-ran.org/download?id=963
+paths: {}
+components: 
+  schemas:
+    OCloud:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            oCloudId:
+              type: string
+              description: Identifier of the O-Cloud instance. Internally generated within an O-Cloud instance.
+              x-support-qualifier: M
+              readOnly: true
+              x-isInvariant: true
+              x-inventoryNotification: false
+              x-stateChangeNotification: false
+              format: uuid
+            globalCloudId:
+              type: string
+              description: Identifier of the O-Cloud instance assigned by the SMO. This identifier is globally unique across O-Cloud instances known to the SMO. This value was provided by the SMO at cloud genesis and is stored in the O-Cloud IMS Inventory.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uuid
+            name:
+              type: string
+              description: Human readable name of the O-Cloud as identified by the SMO at cloud genesis.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            description:
+              type: string
+              description: Human readable description of the O-Cloud as provided by the SMO at cloud genesis.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            infrastructureManagementServicesEndPoint:
+              type: string
+              description: The URI root to all services provided by the O2ims interface. Inventory is one of these services.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            resourceTypes:
+              type: array
+              description: List of Resource types.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-isOrdered:        false
+              minItems:          1
+              uniqueItems:        true
+              items:
+                $ref: '#/components/schemas/ResourceType'
+            locations:
+              type: array
+              description: List of locations where O-Cloud Sites are deployed or can be deployed.
+              x-support-qualifier:    M
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              x-isOrdered:        false
+              minItems:          1
+              uniqueItems:        true
+              items:
+                $ref: '#/components/schemas/Location'
+            oCloudSites:
+              type: array
+              description: List of O-Cloud Sites that are known by the IMS and need to be exposed to the SMO for Homing.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              x-isOrdered:        false
+              minItems:          1
+              uniqueItems:        true
+              items:
+                $ref: '#/components/schemas/OCloudSite'
+            deploymentManagers:
+              type: array
+              description: List of Deployment managers
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-isOrdered:        false
+              minItems:          1
+              uniqueItems:        true
+              items:
+                $ref: '#/components/schemas/DeploymentManager'
+            smoRegistrationService:
+              type: string
+              description: IP address endpoint or the URL of the SMO.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              format:            uri
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored by the vendor to extend the information provided about the O-Cloud.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+          required:
+          - oCloudId
+          - globalCloudId
+          - name
+          - description
+          - infrastructureManagementServicesEndPoint
+          - resourceTypes
+          - locations
+          - oCloudSites
+          - deploymentManagers
+          - smoRegistrationService
+    ResourceType:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            resourceTypeId:
+              type: string
+              description: Identifier of the resource type. 
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uuid
+            name:
+              type: string
+              description: Name of the resource type as identified by the cloud provider.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            description:
+              type: string
+              description: Human readable description of the resource type.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            vendor:
+              type: string
+              description: Name of the provider of the resource type.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            model:
+              type: string
+              description: Information about the model of the resource type.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            version:
+              type: string
+              description: Version or generation of the resource type.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            alarmDictionaryId:
+              type: string
+              description: Identifier of the associated dictionary of alarms that can be generated by the resource type. If no alarms are reported against a resource of this resourceType then the alarmDictionaryId is set to null. 
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uuid
+            performanceDictionaryId:
+              type: string
+              description: Identifier of the associated dictionary of performance measurements that can be collected for the resource type. If the resource of this resourceType does not provide any measurements then the performanceDictionaryId is set to null. 
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uuid
+            resourceKind:
+              type: string
+              description: 'A value describing the "physicality" of the resource type.'
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              enum:
+               - UNDEFINED
+               - PHYSICAL
+               - LOGICAL
+            resourceClass:
+              type: string
+              description: A value describing the functional role within the cloud for the resource type.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              enum:
+               - UNDEFINED
+               - COMPUTE
+               - NETWORKING
+               - STORAGE
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored by the vendor to extend the information provided about the Resource Type.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: "ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair"
+          required:
+          - resourceTypeId
+          - name
+          - description
+          - vendor
+          - model
+          - version
+    ResourcePool:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            resourcePoolId:
+              type: string
+              description: Identifier of the resource pool. Locally unique within the scope of an O-Cloud instance.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uuid
+            name:
+              type: string
+              description: Human readable name of the resource pool.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            oCloudSiteId:
+              type: string
+              description: Identifier of the O-Cloud site the resource pool is a part of. 
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uuid
+            description:
+              type: string
+              description: Human readable description of the resource pool.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            resources:
+              type: array
+              description: List of resource IDs that are part of the resource pool.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              x-isOrdered:        false
+              minItems:          1
+              uniqueItems:        true
+              items:
+                type: string
+                format: uuid
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored by the vendor to extend the information provided about the Resource Pool.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: "ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair"
+          required:
+          - resourcePoolId
+          - name
+          - oCloudSiteId
+          - description
+          - resources
+    Resource:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            resourceId:
+              type: string
+              description: Identifier of the resource. Locally unique within the scope of an O-Cloud instance.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uuid
+            description:
+              type: string
+              description: Human readable description of the resource.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            resourceTypeId:
+              type: string
+              description: Reference to the resource type of the resource.
+              x-support-qualifier:    M
+              readOnly:           true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:             uuid
+            globalAssetId:
+              type: string
+              description: Identifier or serial number of the resource, if available. It is required only if the resource has been identified during its addition to the cloud as a reportable asset in the SMO inventory.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+            resourcePoolId:
+              type: string
+              description: Reference to the resource pool that the resource is part of.
+              x-support-qualifier:      M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uuid
+            elements:
+              type: array
+              description: The resource might be composed of smaller resources or other resource instances of a different type.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:           true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: "#/components/schemas/Resource"
+            tags:
+              type: array
+              description: Keywords describing or classifying the resource instance.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                type: string
+            groups:
+              type: array
+              description: Keywords denoting groups a resource belongs to.
+              x-support-qualifier: M
+              x-isAlwaysPresent: false
+              x-isInvariant: false
+              x-inventoryNotification: false
+              x-stateChangeNotification: false
+              x-nullable: true
+              x-isOrdered: false
+              minItems: 0
+              uniqueItems: true
+              items:
+                type: string
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored by the vendor to extend the information provided about the Resource.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: "ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair"
+          required:
+          - resourceId
+          - description
+          - resourceTypeId
+          - resourcePoolId
+    DeploymentManager:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            deploymentManagerId:
+              type: string
+              description: Identifier of the deployment manager. Locally unique within the scope of an O-Cloud instance.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uuid
+            name:
+              type: string
+              description: Human readable name of the deployment manager as identified by the cloud provider.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            description:
+              type: string
+              description: Human readable description of the deployment manageras populated by the cloud provider.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            oCloudId:
+              type: string
+              description: Reference to the O-Cloud associated to the deployment manager.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              format:             uuid
+            deploymentManagementServicesEndpoint:
+              type: string
+              description: Endpoint to access the management services of the deployment manager.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              format:            uri
+            supportedLocations:
+              type: array
+              description: List of globalLocationIds that were assigned to resource pools that resources allocated to the service instance belong to.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              x-isOrdered:        false
+              minItems:          1
+              uniqueItems:        true
+              items:
+                type: string
+                format: uuid
+            capabilities:
+              type: array
+              description: Information about the capabilities supported by this set of deployment management services based on the resources allocated to the service instance.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+            capacity:
+              type: array
+              description: Information about the available, allocated and reserved O-Cloud resources capacity allocated to the deployment manager.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                 $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored by the vendor to extend the information provided about the Resource Type.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+          required:
+          - deploymentManagerId
+          - name
+          - description
+          - oCloudId
+          - deploymentManagementServicesEndpoint
+          - supportedLocations
+          - capabilities
+          - capacity
+    InventorySubscription:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            subscriptionId:
+              type: string
+              description: Identifier of the subscription. Locally unique within the scope of an O-Cloud instance.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uuid
+            callback:
+              type: string
+              description: The URL of the callback to which notifications are delivered to.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uri
+            consumerSubscriptionId:
+              type: string
+              description: The consumer may provide its identifier for tracking, routing, or identifying the subscription used to report the event.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              format:            uuid
+            filter:
+              type: string
+              description: Criteria for events which do not need to be reported or will be filtered by the subscription notification service. Therefore, if a filter is not provided then all events are reported.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+          required:
+          - subscriptionId
+          - callback
+    InfrastructureInventoryObject_:
+      oneOf:
+        - $ref: '#/components/schemas/OCloud'
+        - $ref: '#/components/schemas/ResourceType'
+        - $ref: '#/components/schemas/ResourcePool'
+        - $ref: '#/components/schemas/Resource'
+        - $ref: '#/components/schemas/DeploymentManager'
+        - $ref: '#/components/schemas/Location'
+        - $ref: '#/components/schemas/OCloudSite'
+        - $ref: 'ORAN.O2ims.Artifacts.yaml#/components/schemas/ArtifactResourceType'
+        - $ref: 'ORAN.O2ims.Artifacts.yaml#/components/schemas/ArtifactResource'
+        - $ref: 'ORAN.O2ims.Cluster.yaml#/components/schemas/NodeClusterType'
+        - $ref: 'ORAN.O2ims.Cluster.yaml#/components/schemas/NodeCluster'
+        - $ref: 'ORAN.O2ims.Cluster.yaml#/components/schemas/ClusterResourceType'
+        - $ref: 'ORAN.O2ims.Cluster.yaml#/components/schemas/ClusterResource'
+        - $ref: 'ORAN.O2ims.Cluster.yaml#/components/schemas/ClusterResourceGroup'
+        - $ref: 'ORAN.O2ims.Provisioning.yaml#/components/schemas/ProvisioningRequest'
+        - $ref: 'ORAN.O2ims.Infrastructure.yaml#/components/schemas/InfrastructureResourceType'
+        - $ref: 'ORAN.O2ims.Infrastructure.yaml#/components/schemas/InfrastructureResource'
+        - $ref: 'ORAN.O2ims.Infrastructure.yaml#/components/schemas/Gateway'
+        - $ref: 'ORAN.O2ims.Infrastructure.yaml#/components/schemas/SiteNetwork'
+        - $ref: 'ORAN.O2ims.Infrastructure.yaml#/components/schemas/AttachmentCircuit'
+        - $ref: 'ORAN.O2ims.Provisioning.yaml#/components/schemas/ProvisioningRequest'
+      discriminator:
+        propertyName: objectClass
+    InfrastructureInventoryEvent:
+      type: object
+      required:
+      - consumerSubscriptionId
+      - notificationEventType
+      - objectRef
+      properties:
+        consumerSubscriptionId:
+          type: string
+          description: The consumer may provide its identifier for tracking, routing, or identifying the subscription used to report the event.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uuid      
+        notificationEventType:
+          type: string
+          description: The type (CREATE, MODIFY, DELETE) of event being reported.  
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            enum
+          enum:
+            - CREATE
+            - MODIFY
+            - DELETE
+        objectRef:
+          type: string
+          description: The resultant reference to the object on which the action occured.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          readOnly:          true
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:          true
+          format:            url
+        priorObjectState:
+          allOf:
+            - $ref: '#/components/schemas/InfrastructureInventoryObject_'
+            - type: object
+              description: If the Event type is 'MODIFY' or 'DELETE' this this field will be populated with a copy of the object prior to the event.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+        postObjectState:
+          allOf:
+            - $ref: '#/components/schemas/InfrastructureInventoryObject_'
+            - type: object
+              description: If the Event type is 'CREATE' or 'MODIFY' this this field will be populated with a copy of the object after the event.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+    OCloudAvailableNotification:
+      type: object
+      properties:
+        globalCloudId:
+          type: string
+          description: Identifier of the O-Cloud instance assigned by the SMO. This identifier is globally unique across O-Cloud instances known to the SMO. This value was provided by the SMO at cloud genesis and is stored in the O-Cloud IMS Inventory.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uuid
+        oCloudId:
+          type: string
+          description: Identifier of the O-Cloud instance. Unique within an O-Cloud instance.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uuid
+        IMS_EP:
+          type: string
+          description: URL to the resource within the O-Cloud for other attributes.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uri
+      required:
+      - globalCloudId
+      - oCloudId
+      - IMS_EP
+    AlarmEventRecord:
+      type: object
+      properties:
+        alarmEventRecordId:
+          type: string
+          description: Identifier of an entry in the AlarmEventRecord. Locally unique within the scope of an O-Cloud instance.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uuid
+        resourceTypeId:
+          type: string
+          description: A reference to the type of resource which caused the alarm.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uuid    
+        resourceId:
+          type: string
+          description: A reference to the resource instance which caused the alarm.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uuid
+        alarmDefinitionId:
+          type: string
+          description: A reference to the Alarm Definition record in the Alarm Dictionary associated with the referenced Resource Type.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+        probableCauseId:
+          type: string
+          description: A reference to the ProbableCause of the Alarm.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+        eventType:
+          type: string
+          description: Type of event of the Alarm. Values are defined as an enumeration, and their meanings are as defined in ITU-T X.733 [i.4] and ITU-T X.736 [i.5].
+          x-support-qualifier: M
+          readOnly:  true
+          x-isInvariant: true
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+          enum:
+          - COMMUNICATIONS_ALARM
+          - PROCESSING_ERROR_ALARM
+          - ENVIRONMENTAL_ALARM
+          - QOS_ALARM
+          - EQUIPMENT_ALARM
+          - INTEGRITY_VIOLATION
+          - OPERATIONAL_VIOLATION
+          - PHYSICAL_VIOLATION
+          - SECURITY_SERVICE_OR_MECHANISM_VIOLATION
+          - TIME_DOMAIN_VIOLATION
+          - OTHER
+        alarmRaisedTime:
+          type: string
+          description: This field is populated with a Date/Time stamp value when the AlarmEventRecord is created.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  date-time
+        alarmChangedTime:
+          type: string
+          description: This field is populated with a Date/Time stamp value when any value of the AlarmEventRecord is modified.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  true
+          x-stateChangeNotification:  false
+          format:            date-time
+        alarmClearedTime:
+          type: string
+          description: This field is populated with a Date/Time stamp value when the alarm condition is cleared.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  true
+          x-nullable:          true
+          format:            date-time
+        alarmAcknowledgeTime:
+          type: string
+          description: This field is populated with a Date/Time stamp value when the alarm condition is acknowledged..
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  true
+          x-nullable:          true
+          format:            date-time
+        alarmAcknowledged:
+          type: boolean
+          description: This is a Boolean value defaulted to false. When a system acknowledges an alarm, it is then set to true.
+          x-support-qualifier:    M
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  true
+          default:          false
+        perceivedSeverity:
+          type: string
+          description: This is an enumerated set of values which identify the perceived severity of the alarm.
+          x-support-qualifier:        M
+          x-isInvariant:              false
+          x-inventoryNotification:    true
+          x-stateChangeNotification:  false
+          enum:
+            - CRITICAL
+            - MAJOR
+            - MINOR
+            - WARNING
+            - INDETERMINATE
+            - CLEARED
+        extensions:
+          type: array
+          description: Unspecified (not standardized) properties (keys) which are tailored by the vendor or operator to extend the information provided about the O-Cloud Alarm.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:          true
+          x-isOrdered:        false
+          minItems:          0
+          uniqueItems:        true
+          items:             
+             $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+      required:
+      - alarmEventRecordId
+      - resourceTypeId
+      - resourceId
+      - alarmDefinitionId
+      - probableCauseId
+      - eventType
+      - alarmRaisedTime
+      - alarmAcknowledged
+      - perceivedSeverity
+    AlarmEvent:
+      type: object
+      properties:
+        globalCloudId:
+          type: string
+          description: Identifier of the O-Cloud instance assigned by the SMO. This identifier is globally unique across O-Cloud instances known to the SMO. This value was provided by the SMO at cloud genesis and is stored in the O-Cloud IMS Inventory.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uuid
+        consumerSubscriptionId:
+          type: string
+          description: Identifier provided by the subscriber for event to subscription traceability within the consumer realm.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+        alarmNotificationType:
+          type: string
+          description: This is an enumerated set of values which identify the type of notification being sent to the subscriber.
+          x-support-qualifier:    M
+          readOnly:            true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          enum:
+            - NEW
+            - CHANGE
+            - CLEAR
+            - ACKNOWLEDGE
+        objectRef:
+          type: string
+          description: This is a URL entry to the AlarmEventRecord for this notification within the AlarmList.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            url
+        alarmEventRecord:
+          allOf:
+          - $ref: '#/components/schemas/AlarmEventRecord'
+          - type: object
+            description: This is a copy of the AlarmEventRecord associated with this event preventing the need for the alarm consumer to do a read after the notification is received.
+            x-support-qualifier:    M
+            readOnly:          true
+            x-isInvariant:        true
+            x-inventoryNotification:  false
+            x-stateChangeNotification:  false
+      required:
+      - globalCloudId
+      - alarmNotificationType
+      - objectRef
+      - alarmEventRecord
+    AlarmSubscription:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            alarmSubscriptionId:
+              type: string
+              description: Identifier of the subscription. Locally unique within the scope of an O-Cloud instance.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uuid
+            consumerSubscriptionId:
+              type: string
+              description: The consumer may provide its identifier for tracking, routing, or identifying the subscription used to report the event if a value was provided in the SubscriptionRequest.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+            filter:
+              type: string
+              description: Criteria for events which do not need to be reported or will be filtered by the subscription Criteria for events which do not need to be reported or will be filtered by the subscription notification service. Therefore, if a filter is not provided then all events are reported.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              enum:
+                - NEW
+                - CHANGE
+                - CLEAR
+                - ACKNOWLEDGE
+            callback:
+              type: string
+              description: The URI of the callback to which notifications are delivered to.
+              x-support-qualifier:    M
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            url
+          required:
+          - alarmSubscriptionId
+          - callback
+    AlarmList:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            retentionPeriod:
+              type: integer
+              description: Specifies the number of days to retain cleared/acknowledge alarms in the AlarmList. Entries in the alarmEventRecords will be at least as long as the retentionPeriod but can be longer depending on the implementation of the purge feature.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-units:          Days
+              minimum:          0
+            alarmEventRecords:
+              type: array
+              description: The alarmEventRecords provides the storage array for AlarmEventRecords that are active or have been cleared but not purged according to the implementation of the purge feature.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  true
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: '#/components/schemas/AlarmEventRecord'
+            extensions:
+              type: array
+              description: These are unspecified properties (keys and values) which can be tailored to control the behaviour of the Alarm List.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+          required:
+            - retentionPeriod
+            - alarmEventRecords
+    PerformanceMeasurementStore:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            retentionPeriod:
+              type: integer
+              description: The number in days (24 hours) that measurements will be retained. The exact timing of when measurements are deleted are implementation dependent.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uInteger
+              x-units:          days
+              minimum:          0
+            measurements:
+              type: array
+              description: List of PerformanceMeasurementRecord(s) collected and stored in the performance measurement store.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: '#/components/schemas/PerformanceMeasurementRecord'
+            extensions:
+              type: array
+              description: These are unspecified properties (keys and values) which can be tailored to control the behaviour of the Performance Service.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:  
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+          required:
+          - retentionPeriod
+          - measurements
+    PerformanceMeasurementRecord:
+      type: object
+      required:
+      - performanceMeasurementId
+      - resourceId
+      - performanceMeasurementDefinitionId
+      - timeStamp
+      - measurementValue
+      properties:
+        performanceMeasurementJobId:
+          type: string
+          description: The job identifier assigned by the O-Cloud when a performance measurement job is created.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uuid
+        resourceId:
+          type: string
+          description: The resource identifier for the resource for which the collected measurement is against.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uuid
+        performanceMeasurementDefinitionId:
+          type: string
+          description: The Performance Dictionary definition identifier for the collected measurement.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+        timeStamp:
+          type: string
+          description: The date and time in which the measurement was collected.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            date-time
+        measurementValue:
+          type: object
+          description: The value of the measurement collected. The ValueType represents a variety of types depending on the measurement type.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+        isSuspect:
+          type: boolean
+          description: This flag is set to true if anomalous behaviour was detected on the resource during the last collection interval.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          readOnly:          true
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:          true
+    PerformanceMeasurementJob:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            performanceMeasurementJobId:
+              type: string
+              description: Identifier of the performance job instance within the IMS. This value is assigned by the IMS when the job is created.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:            uuid
+            consumerPerformanceJobId:
+              type: string
+              description: Identifier provided by the consumer for its purpose of managing performance jobs. This value could be the same across multiple instances of IMS performance job instances.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+            state:
+              type: string
+              description: The current state of the PerformanceMeasurementJob.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  true
+              enum:
+                - ACTIVE
+                - SUSPENDED
+                - DEPRECATED
+            collectionInterval:
+              type: integer
+              description: The interval at which performance measures will be collected and stored.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  true
+              x-units:          Seconds
+              minimum:          1
+              default:          300
+            resourceScopeCriteria:
+              type: array
+              description: Key value pairs of resource attributes which are used to select resources from which measures are   to be collected. 
+              example: ['{"resourceTypeId","[7c491f8f-7207-4c00-9b67-3d2ee8b008f0, 31040dec-8106-44db-83bc-62e1d618ea17]"}']
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable: true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:  
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+            measurementSelectionCriteria:
+              type: array
+              description: Key value pairs that identify the distinct set of measurements within the scope of a PerformanceMeasurementJob. 
+              example: ['{"measurementGroup","MemoryUsage"}, {"measurementName","cpuAverageUtilization"}']
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-isOrdered:        false
+              minItems:          1
+              uniqueItems:        true
+              items:  
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+            status:
+              type: string
+              description: The current status within the state.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  true
+              enum:
+                - RUNNING
+                - FAILED
+                - DEGRADED
+                - IDLE
+                - PENDING_DELETE
+            preInstalledJob:
+              type: boolean
+              description: This is an indicator if the performance job was created for the IMS (true) or as the result of an IMS consumer request (false).
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              default: false
+            qualifiedResourceTypes:
+              type: array
+              description: This list is computed from evaluation of the resourceScopeCriteria. The resulting qualifiedResourceTypes are the distinct set of ResourceTypes among those measuredResources. 
+              example: ['"7c491f8f-7207-4c00-9b67-3d2ee8b008f0", "31040dec-8106-44db-83bc-62e1d618ea17"']
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items: 
+                type: string
+            measuredResources:
+              type: array
+              description: This is the historical list of resources measured by this job. Resources added and deleted are kept track of for the life of the job.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:  
+                $ref: '#/components/schemas/MeasuredResource'
+            collectedMeasurements:
+              type: array
+              description: The historical list of measurements that are or have been collected by this job based on its resourceScopeCriteria and measurementSelectionCriteria over the life of the job.
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: '#/components/schemas/CollectedMeasurement'
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (key/value) which extend the information about the Performance Measurement Job.
+              x-support-qualifier:  M
+              x-isAlwaysPresent: false
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+          required:
+          - performanceMeasurementJobId
+          - consumerPerformanceJobId
+          - state
+          - collectionInterval
+          - resourceScopeCriteria
+          - measurementSelectionCriteria
+          - status
+          - preInstalledJob
+          - qualifiedResourceTypes
+          - collectedMeasurements
+    MeasuredResource:
+      type: object
+      properties:
+        resourceTypeId:
+          type: string
+          description: The resource identifier assigned by the O-Cloud when a performance measurement job is created.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uuid
+        resourceId:
+          type: string
+          description: The resource identifier for the resource for which the collected measurement is against.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uuid
+        timeAdded:
+          type: array
+          description: List of timestamps when the resource was added to the job. All resources shall have at least one timeAdded value. It could have multiple if changes caused a deletion and subsequent reinstatement to occur.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          minItems:          1
+          uniqueItems:        true
+          items:
+             type: string
+        timeDeleted:
+          type: array
+          description: List of timestamps when the resource was deleted from a job. Multiple values may be present if deletion occurred at different times. The effective period of the measurement would be the times between a timeAdded and timeDeleted values.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          readOnly:          true
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:          true
+          minItems:          0
+          uniqueItems:        true
+          items:            
+            type: string
+        isCurrentlyMeasured:
+          type: boolean
+          description: Indicates if the resource is currently being measured by the contained performance job.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          readOnly:          true
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          default: true
+      required:
+      - resourceTypeId
+      - resourceId
+      - timeAdded
+      - timeDeleted
+      - isCurrentlyMeasured
+    CollectedMeasurement:
+      type: object
+      properties:
+        resourceTypeId:
+          type: string
+          description: The resource identifier assigned by the O-Cloud when a performance measurement job is created.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:            uuid
+        performanceMeasurementDefinitionId:
+          type: string
+          description: Identifier of the measurement definition with the PM Dictionary for the specific device type identified by the resourceTypeId.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+        timeAdded:
+          type: array
+          description: List of timestamps when the measurement was added to the job. All measurements shall have at least one timeAdded value. It could have multiple if changes caused a deletion and subsequent reinstatement to occur.
+          x-support-qualifier:    M
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          minItems:          1
+          uniqueItems:        true
+          items:            
+            type: string
+        timeDeleted:
+          type: array
+          description: List of timestamps when the measurement was deleted from a job. Multiple values may be present if deletion occurred at different times. The effective period of the measurement would be the times between a timeAdded and timeDeleted values.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          readOnly:          true
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:          true
+          minItems:          0
+          uniqueItems:        true
+          items:            
+            type: string
+        isCurrentlyMeasured:
+          type: boolean
+          description: Indicates if the measurement is currently being measured by the contained performance job.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          readOnly:          true
+          x-isInvariant:        true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          default: true
+      required:
+      - resourceTypeId
+      - performanceMeasurementDefnitionId
+      - timeAdded
+      - timeDeleted
+      - isCurrentlyMeasured
+    PerformanceMeasurementJobChangeSubscription:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            performanceMeasurementJobChangeSubscriptionId:
+              type: string
+              description: Identifier of the PerformanceMeasurementJobChangeSubscription which will generate this notification.
+              x-support-qualifier:  M
+              readOnly:  true
+              x-isInvariant:  true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:  uuid
+            consumerPerformanceMeasurementJobChangeId:
+              type: string
+              description: The consumer identification value if provided on the PerformanceMeasurementJobChangeSubscription which will generate this notification.
+              x-support-qualifier:  M
+              x-isAlwaysPresent: false
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:  true
+              format:  uuid
+            performanceChangesToNotify:
+              type: string
+              description: The enumerated set of values representing the type(s) of changes desired to be notified about (ADD, DELETE, BOTH).
+              x-support-qualifier:  M
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              enum:
+                - ADD
+                - DELETE
+                - BOTH
+            detailsToInclude:
+              type: string
+              description: The enumerated set of values representing how much detail about the change to include in the notification (NONE, DELTA, COMPLETE).
+              x-support-qualifier:  M
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              enum:
+                - NONE
+                - DELTA
+                - COMPLETE
+            subscriptionJobFilter:
+              type: array
+              description:  A key value set of criteria to select which jobs shall be reported on.
+              x-support-qualifier:  M
+              x-isAlwaysPresent: false
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-isOrdered:  true
+              minItems:  0
+              uniqueItems:  true
+              items:  
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+            callback:
+              type: string
+              description:  A key value set of criteria to select which jobs shall be reported on.
+              x-support-qualifier:  M
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:  uri
+          required:
+          - performanceMeasurementJobChangeSubscriptionId
+          - performanceChangesToNotify
+          - detailsToInclude
+          - subscriptionJobFilter
+          - callback
+    PerformanceMeasurementJobChangeNotification:
+      type: object
+      properties:
+        performanceMeasurementJobChangeSubscriptionId:
+          type: string
+          description: Identifier of the PerformanceMeasurementJobChangeSubscription.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  uuid
+        consumerPerformanceMeasurementJobChangeId:
+          type: string
+          description: The consumer identification value if provided on the PerformancJobChangeSubscription.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          readOnly:  true
+          x-isInvariant:  true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+        performanceMeasurementJobId:
+          type: string
+          description: The UUID of the PerformanceMeasurementJob that incurred a change either due to a change in scope criteria or as the result of a change to O-Cloud Infrastructure Inventory.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  uuid
+        objectRef:
+          type: string
+          description: The URL of the service object which was modified.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  uri
+        typeOfChange:
+          type: string
+          description: The enumerated set of values representing the type(s) of changes desired to be notified about (ADD, DELETE, BOTH).
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          enum:
+            - ADD
+            - DELETE
+            - BOTH
+        resourceChangeDetails:
+          type: array
+          description: If the subscription criteria indicates DELTA or COMPLETE extended information then all relevant added and/or deleted resources to the job are listed.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+          minItems:  0
+          uniqueItems:  true
+          x-isOrdered:  true
+          items:  
+            $ref: '#/components/schemas/MeasuredResource'
+        measurementChangeDetails:
+          type: array
+          description: If the subscription criteria indicates DELTA or COMPLETE extended information then all relevant added and/or deleted measurements of the performance measurement job are listed.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+          minItems:  0
+          uniqueItems:  true
+          x-isOrdered:  true
+          items:  
+             $ref: '#/components/schemas/CollectedMeasurement'
+        consumerPerformanceJobId:
+          type: string
+          description: Identifier provided by the consumer for its purpose of managing performance jobs. This value could be the same across multiple instances of IMS performance job instances.
+          x-support-qualifier: M
+          x-isAlwaysPresent: false
+          readOnly: true
+          x-isInvariant: false
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+        collectionInterval:
+          type: integer
+          description: The interval at which performance measurement will be collected and stored.
+          x-support-qualifier: M
+          x-isAlwaysPresent: false
+          readOnly: true
+          x-isInvariant: false
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+          x-nullable: true
+          x-units: Seconds
+          minimum: 0
+          default: 300
+        state:
+          type: string
+          description: The current state of the PerformanceMeasurementJob.
+          x-support-qualifier: M
+          x-isAlwaysPresent: false
+          readOnly: true
+          x-isInvariant: false
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+          enum:
+            - ACTIVE
+            - SUSPENDED
+            - DEPRECATED
+        status:
+          type: string
+          description: The current status within the state.
+          x-support-qualifier: M
+          x-isAlwaysPresent: false
+          readOnly: true
+          x-isInvariant: false
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+          enum:
+            - RUNNING
+            - FAILED
+            - DEGRADED
+            - IDLE
+            - PENDING_DELETE
+        extensions:
+          type: array
+          description: These are unspecified (not standardized) properties (key/value) which extend the information about the Performance Measurement Job
+          x-support-qualifier: M
+          x-isAlwaysPresent: false
+          readOnly: true
+          x-isInvariant: false
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+          x-isOrdered: false
+          minItems: 0
+          uniqueItems: true
+          items:
+            $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+      required:
+      - performanceMeasurementJobChangeSubscriptionId
+      - performanceMeasurementJobId
+      - objectRef
+      - typeOfChange
+    PerformanceSubscription:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            performanceSubscriptionId:
+              type: string
+              description: Identifier of the performance subscription instance within the IMS. This value is assigned by the IMS when the subscription is created.
+              x-support-qualifier:  M
+              readOnly:  true
+              x-isInvariant:  true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:  uuid
+            consumerPerformanceSubscriptionId:
+              type: string
+              description: Identifier optionally provided by the consumer for its purpose of managing performance data. This value could be the same across multiple instances of IMS subscription instances.
+              x-support-qualifier:  M
+              x-isAlwaysPresent: false
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:  true
+            globalSubscriptionCriteria:
+              type: array
+              description: This is subscription criteria which will apply to each contained subscription.
+              x-support-qualifier:  M
+              x-isAlwaysPresent: false
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:  true
+              x-isOrdered:  false
+              minItems:  0
+              uniqueItems:  true
+              items: 
+                $ref: '#/components/schemas/PerformanceSubscriptionCriteria'
+            reportFormat:
+              type: string
+              description: Enumerated set of reporting mechanism for delivery of the data identified by the PerformanceSubscription.
+              x-support-qualifier:  M
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              enum:
+                - NOTIFICATION
+                - FILE
+                - STREAM
+            remoteFileLocation:
+              type: string
+              description: When the reportFormat is FILE this field is populated with the URL to the remote directory where the service is expected to push the requested performance files to a remote files system. If the reportFormat is not FILE, the field is empty or not present.
+              x-support-qualifier:  M
+              x-isAlwaysPresent: false
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:  true
+              format:  uri
+            callback:
+              type: string
+              description: The callback to send responses for modes NOTIFICATION, or the file notification for FILE. The field is not required if mode is STREAM.
+              x-support-qualifier:  M
+              x-isAlwaysPresent: false
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:  true
+              format:  uri
+            measurementReportingFrequencies:
+              type: array
+              description: The frequency that specified measurements are to be reported.
+              x-support-qualifier:  M
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-isOrdered:  false
+              minItems:  1
+              uniqueItems:  true
+              items:  
+                $ref: '#/components/schemas/PerformanceReportingFrequency'
+          required:
+          - performanceSubscriptionId
+          - globalSubscriptionCriteria
+          - reportFormat
+          - measurementReportingFrequencies
+    PerformanceReportingFrequency:
+      type: object
+      required:
+      - subscriptionMode
+      properties:
+        subscriptionCriteria:
+          type: array
+          items:
+             $ref: '#/components/schemas/PerformanceSubscriptionCriteria'
+          minItems: 0
+          maxItems: 1
+          description: This is subscription criteria which will apply to this subscription.
+          x-support-qualifier: M
+          x-isAlwaysPresent: false
+          x-isInvariant: false
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+          x-nullable: true
+        subscriptionMode:
+          type: string
+          description: An enumerated set of values which will identify the mode in which data is reported.
+          x-support-qualifier:  M
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          enum:
+            - TARGET_DEFINED
+            - ON_CHANGE
+            - SAMPLE
+        reportInterval:
+          type: integer
+          description: This is the reporting interval for the data, it is an unsigned integer representing the number of milliseconds between reports. If the reportInterval is lower than the service can provide the subscription shall return an error indicating such. If the value is set to zero (0) then the service will use its lowest supported value for the reportInterval.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+          minimum:  0
+          default:  0
+          x-units:  milliseconds
+        suppressRedundant:
+          type: boolean
+          description: This flag identifying if SAMPLE values that have not changed shall (false) or shall Not (true) be transmitted.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+          default:  false
+        heartbeatInterval:
+          type: integer
+          description: When the suppressRedundant is set to (true), if heartbeatInterval is a non-zero value then a duplicate value will be sent at least once per heatbeatInterval. The value shall be zero (0) or a value greater than or equal to the reportInterval.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+          minimum:  0
+          default:  0
+          x-units:  milliseconds
+    PerformanceSubscriptionCriteria:
+      type: object
+      properties:
+        jobCriteria:
+          type: array
+          description: Key/Value list of criteria compared to Job data.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification: false
+          x-nullable:  true
+          minItems:  0
+          uniqueItems:  true
+          items:  
+            $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+        resourceTypeCriteria:
+          type: array
+          description: Key/Value list of criteria compared to Resource Type data.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+          minItems:  0
+          uniqueItems:  true
+          items:
+            $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+        resourceCriteria:
+          type: array
+          description:  Key/Value list of criteria compared to Resource data.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+          minItems:  0
+          uniqueItems:  true
+          items:  
+            $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+        measurementCriteria:
+          type: array
+          description: Key/Value list of criteria compared to Measurement Definition data.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification: false
+          x-nullable:  true
+          minItems:  0
+          uniqueItems:  true
+          items:
+            $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+    PerformanceMeasurementReport:
+      type: object
+      required:
+      - globalCloudId
+      - notificationTime
+      - performanceSubscriptionId
+      - jobReports
+      properties:
+        globalCloudId:
+          type: string
+          description: Identifier of the O-Cloud instance assigned by the SMO. This identifier is globally unique across O-Cloud instances known to the SMO. This value was provided by the SMO at cloud genesis and is stored in the O-Cloud IMS Inventory.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  uuid
+        notificationTime:
+          type: string
+          description: The date and time that the notification was sent.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  date-time
+        performanceSubscriptionId:
+          type: string
+          description: Identifier of the performance subscription instance within the IMS. This value is assigned by the IMS when the job is created.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  uuid
+        consumerPerformanceSubscriptionId:
+          type: string
+          description: Identifier optionally provided by the consumer for its purpose of managing performance data. This value could be the same across multiple instances of IMS subscription instances.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+        jobReports:
+          type: array
+          description: The list of performance reports by jobId. A single subscription can subscribe to measurements collected by multiple jobs.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-isOrdered:  false
+          minItems:  1
+          uniqueItems:  true
+          items:  
+            $ref: '#/components/schemas/JobReport'
+    JobReport:
+      type: object
+      required:
+      - performanceJobId
+      - measuredResources
+      properties:
+        performanceJobId:
+          type: string
+          description: The UUID of the PerformanceMeasurementJob from which collected measurements are reported.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  uuid
+        consumerJobId:
+          type: string
+          description: Identifier provided by the consumer for its purpose of managing performance jobs. This value could be the same across multiple instances of IMS performance job instances.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+        measuredResources:
+          type: array
+          description: The list of collected measurements for each Resource within the scope of the subscription to be included in this PerformanceMeasurementReport.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          minItems:  1
+          items:
+            $ref: '#/components/schemas/ResourceReport'
+    ResourceReport:
+      type: object
+      required:
+      - resourceId
+      - measurementValues
+      properties:
+        resourceId:
+          type: string
+          description: The UUID of the Resource as specified in Infrastructure Inventory.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  uuid
+        measurementValues:
+          type: array
+          description: The list of collected measurements for the Resource within the subscription included in this PerformanceMeasurementReport.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          minItems:  1
+          uniqueItems:  true
+          items:
+            $ref: '#/components/schemas/MeasurementValue'
+    MeasurementValue:
+      type: object
+      required:
+      - performanceMeasurementId
+      - measurementValue
+      properties:
+        performanceMeasurementId:
+          type: string
+          description: Based on encoding this value can be either a string consisting of the performanceMeasureName of the MeasurementDefinition in the Performance Dictionary for the Resource Type or an unsigned integer consisting of the performanceMeasurementId of the MeasurementDefinition.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+        measurementCollectionTime:
+          type: string
+          description: If present, this is the value that is added to the PerformanceMeasurementStore. When omitted then the notificationTime is assumed to the time the value was added to the PerformanceMeasurementStore as would be the case if the subscriptionMode equated to ON_CHANGE.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  date-time
+        measurementValue:
+          type: object
+          description: This is the actual value of the measurement which varies in type from measurement to measurement.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+        isSuspect:
+          type: boolean
+          description: This flag is set to true if anomalous behavior was detected on the resource between this measurement value and a prior measurement value.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+          default:  false
+    NotifyFileReady:
+      type: object
+      required:
+      - globalCloudId
+      - eventTime
+      - fileInfoList
+      properties:
+        globalCloudId:
+          type: string
+          description: Identifier of the O-Cloud instance assigned by the SMO. This identifier is globally unique across O-Cloud instances known to the SMO. This value was provided by the SMO at cloud genesis and is stored in the O-Cloud IMS Inventory.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  uuid
+        subscriptionId:
+          type: string
+          description: When the notification is created due to a PerformanceSubscription this attribute will contain the identifier of the performanceSubscriptionId for this notification.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          readOnly:  true
+          x-isInvariant:  true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+          format:  uuid
+        consumerSubscriptionId:
+          type: string
+          description: When the notification is created due to a PerformanceSubscription this attribute will contain the identifier provided by the consumer for its purpose of managing performance data and may be included in the PerformanceSubscription. If the notification is due to a logQuery request this attribute shall provide the consumerLogRequestId when provided on the request to allow the consumer to correlate it to the original request.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+        eventTime:
+          type: string
+          description: The date and time that the notification was issued.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  date-time
+        fileInfoList:
+          type: array
+          description: The list of one or more files included in this notification.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          minItems:  1
+          uniqueItems:  true
+          items:
+            $ref: '#/components/schemas/FileInfo'
+    FileInfo:
+      type: object
+      required:
+      - fileLocation
+      - fileSize
+      - fileReadyTime
+      - fileExpirationTime
+      - fileDataType
+      properties:
+        fileLocation:
+          type: string
+          description: Location of the file.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  uri
+        fileSize:
+          type: integer
+          description: Size of the file, unit is byte
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  int32
+          minimum:  0
+          x-units:  bytes
+        fileReadyTime:
+          type: string
+          description: Date and time when the file was last closed and made available by the producer. The file content will not be changed any more.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  date-time
+        fileExpirationTime:
+          type: string
+          description: Date and time after which the file may be deleted.
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          format:  date-time
+        fileCompression:
+          type: string
+          description: If compression is applied to the file, the name of the compression algorithm used for compressing the file.
+          x-support-qualifier:  M
+          x-isAlwaysPresent: false
+          readOnly:  true
+          x-isInvariant:  true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:  true
+        fileDataType:
+          type: string
+          description: An enumerated set of values identifying the type of data contained in the file. 
+          x-support-qualifier:  M
+          readOnly:  true
+          x-isInvariant:  true
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          enum:
+            - PERFORMANCE
+            - ANALYTIC
+            - LOG
+    Location:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties: 
+            globalLocationId:
+              type: string
+              description: Identifier of the location as defined by the SMO.
+              x-support-qualifier: M
+              readOnly: true
+              x-isInvariant: true
+              x-inventoryNotification: false
+              x-stateChangeNotification: false
+            name:
+              type: string
+              description: Human readable name of the location as defined by the SMO. 
+              x-support-qualifier:  M
+              readOnly:   true
+              x-isInvariant:  false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            description:
+              type: string
+              description: Human readable description of the location as defined by the SMO.
+              x-support-qualifier:  M
+              readOnly:  true
+              x-isInvariant:  false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            oCloudId:
+              type: string
+              description: Reference to the O-Cloud available at the location.
+              x-support-qualifier:  M
+              readOnly:  true
+              x-isInvariant:  true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:  uuid
+            oCloudSiteIds:
+              type: array
+              description: List of O-Cloud Site identifiers referencing the O-Cloud Sites available at the location.
+              x-support-qualifier:  M
+              x-isAlwaysPresent: false
+              readOnly:   true
+              x-isInvariant:  false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              x-nullable:  true
+              x-isOrdered:  false
+              minItems:  0
+              uniqueItems:  true
+              items:
+                type: string
+            coordinate:
+              type: string
+              description: The latitude and longitude of the location (shall be supplied if a postal address not provided).
+              x-support-qualifier:  M
+              x-isAlwaysPresent: false
+              readOnly:  true
+              x-isInvariant:  true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:  true
+            address:
+              type: string
+              description: Postal address of the facility (shall be supplied if a coordinate is not provided).
+              x-support-qualifier:  M
+              x-isAlwaysPresent: false
+              readOnly:  true
+              x-isInvariant:  true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:  true
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored by the vendor to extend the information provided about the location.
+              x-support-qualifier:  M
+              x-isAlwaysPresent: false
+              readOnly:  true
+              x-isInvariant:  false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:  true
+              x-isOrdered:  false
+              minItems:  0
+              uniqueItems:  true
+              items:
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+          required:
+          - globalLocationId
+          - name
+          - description
+          - OCloudId
+    OCloudSite:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            oCloudSiteId:
+              type: string
+              description: Identifier of the O-Cloud site. Locally unique within the scope of an O-Cloud instance.
+              x-support-qualifier:  M
+              readOnly:  true
+              x-isInvariant:  true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:  uuid
+            locationId:
+              type: string
+              description: Reference to location where the O-Cloud site is deployed at. 
+              x-support-qualifier:  M
+              readOnly:  true
+              x-isInvariant:  true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:  uuid
+            name:
+              type: string
+              description: Human readable name of the O-Cloud site as identified by the cloud provider.
+              x-support-qualifier:  M
+              readOnly:   true
+              x-isInvariant:  false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            description:
+              type: string
+              description: Human readable description of the O-Cloud site as provided by the cloud provider.
+              x-support-qualifier:  M
+              readOnly:  true
+              x-isInvariant:  false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            oCloudId:
+              type: string
+              description: Reference to the O-Cloud of which the O-Cloud site is part.
+              x-support-qualifier:  M
+              readOnly:  true
+              x-isInvariant:  true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              format:  uuid
+            resourcePools:
+              type: array
+              description: List of resource pools that are part of the O-Cloud site.
+              x-support-qualifier:  M
+              readOnly:  true
+              x-isInvariant:  false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              x-isOrdered:  false
+              minItems:  1
+              uniqueItems:  true
+              items:
+                $ref: '#/components/schemas/ResourcePool'
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored by the vendor to extend the information provided about the O-Cloud site.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:           true
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:  
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+          required:
+          - oCloudSiteId
+          - locationId
+          - name
+          - description
+          - OCloudId
+          - resourcePools
+    LogQuery:
+      type: object
+      properties:
+        logType:
+          type: string
+          description: This identifies the type of log(s) to be collected. The exact list of valid log types to be discovered via a log capability discovery.
+          x-support-qualifier:    M
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+        dateRanges:
+          type: array
+          description: list of date ranges that log data is to be extracted and placed into the log file for collection. 
+          x-support-qualifier:    M
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          minItems:          1
+          items:  
+            $ref: '#/components/schemas/DateRange'
+        eventTypes:
+          type: array
+          description: List of event types that are to be extracted and placed in the log file for collection. The exact list of valid event types are to be discovered via a log capability discovery.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          x-isInvariant:        false
+          x-inventoryNotification:  true
+          x-stateChangeNotification:  false
+          x-nullable:          true
+          minItems:          0
+          items:            
+            type: string
+        resources:
+          type: array
+          description: List of resource selection criteria to identify which resources are in scope for the query.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:          true
+          minItems:          0
+          items:  
+            $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+        resourceTypes:
+          type: array
+          description: list of resourceType selection criteria to identify which resources matching the resourceTypes are in scope for the query.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:          true
+          minItems:          0
+          items:  
+            $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+        logLevels:
+          type: array
+          description: List of logging levels that are to be extracted and placed in the log file for collection. The log levels specified in Clause 6.2.1, Table 2 of IETF RFC 5424 [5] shall be supported by the O-Cloud instance.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          x-isInvariant:        false
+          x-inventoryNotification:  true
+          x-stateChangeNotification:  false
+          x-nullable:          true
+          minItems:          0
+          items:
+            type: string
+        remoteFileLocation:
+          type: string
+          description: When the service is expected to push to a remote file system, this field is populated with the URL to the remote directory, otherwise the field is empty or not present.
+          x-support-qualifier:      M
+          x-isAlwaysPresent: false
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:          true
+          format:            uri
+        callback:
+          type: string
+          description: The URL of the callback to which asynchronous notifications are delivered to. If this attribute is an empty string or is not present, then the request is a synchronous request, and the query result will be supplied in the response.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:          true
+          format:            uri
+        consumerLogRequestId:
+          type: string
+          description: Identifier optionally provided by the consumer for its purpose of tracking a request for log data.
+          x-support-qualifier:    M
+          x-isAlwaysPresent: false
+          x-isInvariant:        false
+          x-inventoryNotification:  false
+          x-stateChangeNotification:  false
+          x-nullable:          true
+      required:
+      - logType
+      - dateRanges
+    DateRange:
+      type: object
+      properties:
+        startDateTime:
+          type: string
+          description: This identifies the start of a time range.
+          x-support-qualifier:    M
+          x-isInvariant: false
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+          format: date-time
+        endDateTime:
+          type: string
+          description: This identifies the end of a time range.
+          x-support-qualifier:    M
+          x-isInvariant: false
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+          format: date-time

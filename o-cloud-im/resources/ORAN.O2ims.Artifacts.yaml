@@ -1,0 +1,122 @@
+openapi: 3.0.1
+info:
+  title: ORAN.O2ims.Artifacts Data Model
+  version: 4.0.0
+  description: >-
+    OAS 3.0.1 definition of the O-RAN.O2ims.Artifacts Namespace
+    
+    Copyright 2026 O-RAN ALLIANCE e.V.
+    Licensed under the Standards Collaboration
+    Copyright License Version 1.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+    https://www.o-ran.org/sccl
+  license:
+    name: SCCL
+    url: https://www.o-ran.org/sccl
+externalDocs:
+  description: O-RAN.WG6.TS.O-CLOUD-IM; O2 Information Model Specification
+  url: https://specifications.o-ran.org/download?id=963
+paths: {}
+components: 
+  schemas:    
+    ArtifactResourceType:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          required:
+          - artifactResourceTypeId
+          - name
+          - description
+          properties:
+            artifactResourceTypeId:
+              type: string
+              description: Cloud unique identifier for the artifact type. 
+              x-support-qualifier:    M
+              readOnly:          true
+              x-isInvariant:        true
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              format:            uuid
+            name:
+              type: string
+              description: Human readable name for the artifact type.
+              x-support-qualifier:    M
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+            description:
+              type: string
+              description: Description of the artifact type.
+              x-support-qualifier:    M
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored by the vendor to extend the information provided about the artifact resource type.
+              x-support-qualifier:    M
+              x-isAlwaysPresent:    false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: "ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair"
+    ArtifactResource:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          required:
+          - artifactResourceId
+          - name
+          - version
+          - description
+          properties:
+            artifactResourceId:
+              type: string
+              description: O-Cloud unique identifier for the artifact.
+              x-support-qualifier:    M
+              x-isInvariant:        true
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              format:            uuid
+            name:
+              type: string
+              description: Human readable name of the artifact. 
+              x-support-qualifier:  M
+              x-isInvariant:  true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+            version:
+              type: string
+              description: Version of the artifact. 
+              x-support-qualifier:  M
+              x-isInvariant:  true
+              x-inventoryNotification:  false
+              x-stateChangeNotification: false
+            description:
+              type: string
+              description: Description of the artifact.
+              x-support-qualifier:    M
+              x-isInvariant:        true
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+            parameterSchema:
+              type: array
+              description: Properties (keys) which are tailored by the artifact composition when it is to be used as a parameterized template. 
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              readOnly:          true
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: "ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair"

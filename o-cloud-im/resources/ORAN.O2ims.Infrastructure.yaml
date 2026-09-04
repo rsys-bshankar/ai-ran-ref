@@ -1,0 +1,470 @@
+openapi: 3.0.1
+info:
+  title: ORAN.O2ims.Infrastructure Data Model
+  version: 4.0.0
+  description: >-
+     OAS 3.0.1 definition of the O-RAN.O2ims.Infrastructure Namespace
+     
+     Copyright 2026 O-RAN ALLIANCE e.V.
+     Licensed under the Standards Collaboration
+     Copyright License Version 1.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+     https://www.o-ran.org/sccl 
+  license:
+    name: SCCL
+    url: https://www.o-ran.org/sccl
+externalDocs:
+  description: O-RAN.WG6.TS.O-CLOUD-IM; O2 Information Model Specification
+  url: https://specifications.o-ran.org/download?id=963
+paths: {}
+components: 
+  schemas:
+
+    InfrastructureResourceType:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          required:
+            - infrastructureResourceTypeId
+            - name
+            - description
+          properties:
+             infrastructureResourceTypeId:
+               type: string
+               description: Identifier of the infrastructure resource type. 
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: true
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               format: uuid
+             name:
+               type: string
+               description: Name of the infrastructure resource type as identified by the cloud provider.
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+             description:
+               type: string
+               description: Human readable description of the infrastructure resource type.
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+             extensions:
+               type: array
+               description: These are unspecified (not standardized) properties (keys) which are tailored by the vendor to extend the information provided about the Infrastructure Resource Type.
+               x-support-qualifier: M
+               x-isAlwaysPresent: false
+               readOnly: true
+               x-isInvariant: true
+               x-inventoryNotification: false
+               x-stateChangeNotification: false
+               x-nullable: true
+               x-isOrdered: false
+               minItems: 0
+               uniqueItems: true
+               items:
+                 $ref: "ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair"
+    InfrastructureResource:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          required:
+          - infrastructureResourceId
+          - name
+          - description
+          - infrastructureResourceTypeId
+          - inventoryResourceIds
+          - artifactResourceId
+          properties:
+            infrastructureResourceId:
+              type: string
+              description: Identifier of the resource. Locally unique within the scope of an O-Cloud instance.
+              x-support-qualifier: M
+              readOnly: true
+              x-isInvariant: true
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              format: uuid
+            name:
+              type: string
+              description: Human readable name of the infrastructure resource instance. 
+              x-support-qualifier: M
+              readOnly: true
+              x-isInvariant: false
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+            description:
+              type: string
+              description: Human readable description of the infrastructure resource.
+              x-support-qualifier: M
+              readOnly: true
+              x-isInvariant: false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            infrastructureResourceTypeId:
+              type: string
+              description: Identifier of infrastructure resource type that this instance is a type of.
+              x-support-qualifier: M
+              readOnly: true
+              x-isInvariant: true
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              format: uuid
+            linkedInfrastructureResourceIds:
+              type: array
+              description: List of infrastructure resource IDs that are used to realize this infrastructure resource instance.
+              x-support-qualifier: M
+              x-isAlwaysPresent: false
+              readOnly: true
+              x-isInvariant: false
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              x-nullable: true
+              x-isOrdered: false
+              minItems: 0
+              uniqueItems: true
+              items:
+                type: string
+            inventoryResourceIds:
+              type: array
+              description: List of inventory resource IDs that are used to realize this infrastructure resource instance.
+              x-support-qualifier:  M
+              readOnly: true
+              x-isInvariant: false
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              x-isOrdered: false
+              minItems: 1
+              uniqueItems: true
+              items:
+                type: string
+            artifactResourceId:
+              type: string
+              description: Identifier of artifact resource Id that the instance was configured with.
+              x-support-qualifier: M
+              readOnly: true
+              x-isInvariant: true
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              format: uuid
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored by the vendor to extend the information provided about the Resource Pool.
+              x-support-qualifier: M
+              x-isAlwaysPresent: false
+              readOnly: true
+              x-isInvariant: false
+              x-inventoryNotification: false
+              x-stateChangeNotification: false
+              x-nullable: true
+              x-isOrdered: false
+              minItems: 0
+              uniqueItems: true
+              items:
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+    Gateway:
+      allOf:
+         - $ref: '#/components/schemas/InfrastructureResource'
+         - type: object
+           required:
+           - gatewayType
+           - status
+           - realizedBy
+           properties:
+             gatewayType:
+               type: string
+               description: Type of gateway regarding its protocol layering handling.
+               x-support-qualifier: M
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               enum:
+                 - L2
+                 - L3
+             tags:
+               type: array
+               description: The list of tags/labels on the Gateway resource.
+               x-support-qualifier: M
+               x-isAlwaysPresent: false
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               x-nullable: true
+               minItems: 0
+               items:
+                 $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+             status:
+               type: string
+               description: The Gateway status. For instance, ACTIVE, DOWN, BUILD or ERROR.
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: false
+               x-stateChangeNotification: true
+             connectedNetworks:
+               type: array
+               description: The list of port(s) to support one or multiple Site Networks termination. A port is a list of Gateway interfaceIPs e.g. IPv4 and IPv6 for a Site Network.
+               x-support-qualifier: M
+               x-isAlwaysPresent: false
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               x-nullable: true
+               minItems: 0
+               items:
+                 $ref: '#/components/schemas/Port'
+             realizedBy:
+               type: string
+               description: Where this gateway is implemented/realized (e.g. SiteGW).
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: true
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               format: uuid
+             attachedTo:
+               type: array
+               description: The list of port(s) to support one or multiple Attachment Circuits.
+               x-support-qualifier: M
+               x-isAlwaysPresent: false
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               x-nullable: true
+               minItems: 0
+               items:
+                 $ref: '#/components/schemas/Port'
+    SiteNetwork:
+      allOf:
+         - $ref: '#/components/schemas/InfrastructureResource'
+         - type: object
+           required:
+           - segmentation
+           - realizedBy
+           - shared
+           - status
+           - subnets
+           properties:
+             tags:
+               type: array
+               description: The list of tags/labels on the SiteNetwork resource.
+               x-support-qualifier: M
+               x-isAlwaysPresent: false
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               x-nullable: true
+               minItems: 0
+               items:
+                 $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+             mtu:
+               type: integer
+               description: The maximum transmission unit (MTU) value to address fragmentation. Minimum value is 68 for IPv4, and 1280 for IPv6
+               x-support-qualifier: M
+               x-isAlwaysPresent: false
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               x-nullable: true
+             segmentation:
+               type: array
+               description: The list of segmentationElement(s) to support one or multiple segments where, a segmentationElement is a list of segmentationID (e.g. 100, 200) and segmentationType (e.g. flat, vlan, vxlan, or gre)
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               minItems: 1
+               items:
+                 $ref: '#/components/schemas/SegmentationElement'
+             realizedBy:
+               type: string
+               description: Where this network/segment is implemented/realized (e.g. SiteNWFabric).
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+             shared:
+               type: boolean
+               description: Indicates if the network is shared (True).
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+             status:
+               type: string
+               description: The SiteNetwork status. For instance, ACTIVE, DOWN, BUILD or ERROR.
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: false
+               x-stateChangeNotification: true
+             subnets:
+               type: array
+               description: The list of associated subnets.
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               minItems: 1
+               items:
+                 $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+             externalSiteNW:
+               type: boolean
+               description: Indicates if the network is also external (True) or not (False) to the O-Cloud Site.
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               default: false
+             attachedTo:
+               type: array
+               description: The list of port(s) to support one or multiple Attachment Circuits.
+               x-support-qualifier: M
+               x-isAlwaysPresent: false
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               x-nullable: true
+               minItems: 0
+               items:
+                 $ref: '#/components/schemas/Port'
+    AttachmentCircuit:
+      allOf:
+         - $ref: '#/components/schemas/InfrastructureResource'
+         - type: object
+           required:
+           - segmentation
+           - bearer
+           properties:
+             tags:
+               type: array
+               description: The list of tags/labels on the SiteNetwork resource.
+               x-support-qualifier: M
+               x-isAlwaysPresent: false
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               x-nullable: true
+               minItems: 0
+               items:
+                 $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+             segmentation:
+               type: array
+               description: The list of segmentationElement(s) to support one or multiple segments where, a segmentationElement is a list of segmentationID (e.g. 100, 200) and segmentationType (e.g. flat, vlan, vxlan, or gre)
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               minItems: 1
+               items:
+                 $ref: '#/components/schemas/SegmentationElement'
+             bearer:
+               type: string
+               description: A physical or logical link that establishes connectivity between the O-Cloud Site and external networks.
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+             isFronthaul:
+               type: boolean
+               description: Indicates if the attachment circuit is for fronthaul connectivity (True).
+               x-support-qualifier: M
+               readOnly: true
+               x-isInvariant: false
+               x-inventoryNotification: true
+               x-stateChangeNotification: false
+               default: false
+
+               
+    Port:
+      type: object
+      required:
+      - endPoints
+      properties:
+        endPoints:
+          type: array
+          description: The list of addresses to support one or multiple network connections
+          x-support-qualifier: M
+          readOnly: true
+          x-isInvariant: false
+          x-inventoryNotification: true
+          x-stateChangeNotification: false
+          minItems: 1
+          items: 
+            $ref: '#/components/schemas/NetworkAddress'
+        macAddress:
+          type: string
+          description: The MAC address of the port. Representation is a string that consists of groups of two hexadecimal digits, separated by hyphens or colons.
+          x-support-qualifier: M
+          x-isAlwaysPresent: false
+          readOnly: true
+          x-isInvariant: false
+          x-inventoryNotification: true
+          x-stateChangeNotification: false
+        segmentation:
+          type: array
+          description: The list of segmentation identifiers on this port. Multiple segments can be supported by a Port when considering the setting of trunk and sub-ports.
+          x-support-qualifier: M
+          readOnly: true
+          x-isInvariant: false
+          x-inventoryNotification: true
+          x-stateChangeNotification: false
+          minItems: 0
+          items:
+            $ref: '#/components/schemas/SegmentationElement'
+        AttachmentCircuit:
+          type: string
+          description: Reference to the attachment circuit (through its identifier) the port connects to.
+          x-support-qualifier: M
+          x-isAlwaysPresent: false
+          readOnly: true
+          x-isInvariant: false
+          x-inventoryNotification: true
+          x-stateChangeNotification: false
+    SegmentationElement:
+      type: object
+      required:
+      - segmentationType
+      - segments
+      properties:
+        segmentationType:
+          type: string
+          description: The description of the type of segmentation.
+          x-support-qualifier: M
+          x-isInvariant: false
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+        segments:
+          type: array
+          description: list of segmentIds for a given SiteNetwork segment.
+          x-support-qualifier: M
+          x-isInvariant: false
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+          minItems: 1
+          items:
+            type: string
+    NetworkAddress:
+      anyOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/Ipv4Addr'
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/Ipv6Addr'

@@ -1,0 +1,66 @@
+openapi: 3.0.1
+info:
+  title: ORAN.O2ims.Common Data Model
+  version: 4.0.0
+  description: >-
+    OAS 3.0.1 definition of the O-RAN.O2ims.common types
+    
+    Copyright 2026 O-RAN ALLIANCE e.V.
+    Licensed under the Standards Collaboration
+    Copyright License Version 1.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+    https://www.o-ran.org/sccl
+  license:
+    name: SCCL
+    url: https://www.o-ran.org/sccl
+externalDocs:
+  description: O-RAN.WG6.TS.O-CLOUD-IM; O2 Information Model Specification
+  url: https://specifications.o-ran.org/download?id=963
+paths: {}
+components: 
+  schemas:
+    AttributeValuePair:
+      type: object
+      required:
+      - key
+      - value
+      properties:
+        key:
+          type: string
+        value:
+          type: object
+          properties: {}  
+          
+    InformationObjectClass: # Copied from TS28623_GenericNrm.yaml
+      type: object
+      properties:
+        objectClass:
+          type: string
+        objectInstance:
+          type: string
+          format: url
+      required:
+       - objectClass
+       - objectInstance
+    Ipv4Addr:
+      type: object
+      required:
+      - ipv4Addr
+      properties:
+        ipv4Addr:
+          type: string
+          pattern: '^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$'
+          example: '198.51.100.1'
+    Ipv6Addr:
+      type: object
+      required:
+      - ipv6Addr
+      properties:
+        ipv6Addr:
+          type: string
+          allOf:
+            - pattern: '^((:|(0?|([1-9a-f][0-9a-f]{0,3}))):)((0?|([1-9a-f][0-9a-f]{0,3})):){0,6}(:|(0?|([1-9a-f][0-9a-f]{0,3})))$'
+            - pattern: '^((([^:]+:){7}([^:]+))|((([^:]+:)*[^:]+)?::(([^:]+:)*[^:]+)?))$'
+          example: '2001:db8:85a3::8a2e:370:7334'
+          

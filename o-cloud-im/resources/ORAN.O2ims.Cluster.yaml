@@ -1,0 +1,380 @@
+openapi: 3.0.1
+info:
+  title: ORAN.O2ims.Cluster Data Model
+  version: 4.0.0
+  description: >-
+     OAS 3.0.1 definition of the O-RAN.O2ims.Cluster Namespace
+ 
+     Copyright 2026 O-RAN ALLIANCE e.V.
+     Licensed under the Standards Collaboration
+     Copyright License Version 1.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+     https://www.o-ran.org/sccl 
+  license:
+    name: SCCL
+    url: https://www.o-ran.org/sccl
+externalDocs:
+  description: O-RAN.WG6.TS.O-CLOUD-IM; O2 Information Model Specification
+  url: https://specifications.o-ran.org/download?id=963
+
+paths: {}
+components: 
+  schemas:
+    NodeClusterType:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            nodeClusterTypeId:
+              type: string
+              description: Unique identifier for the NodeClusterType instance. 
+              x-support-qualifier:    M
+              x-isInvariant:        true
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              format:            uuid
+            name:
+              type: string
+              description: Name of the Node Cluster Type.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            description:
+              type: string
+              description: Human readable description of the Node Cluster.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored extend the information provided about the Node Cluster Type.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: "ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair"
+          required:
+          - nodeClusterTypeId
+          - name
+          - description
+    NodeCluster:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            nodeClusterId:
+              type: string
+              description: Unique identifier for the NodeCluster instance assigned by the O-Cloud.
+              x-support-qualifier:    M
+              readOnly: true
+              x-isInvariant:        true
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              format:            uuid
+            clientNodeClusterId:
+              type: string
+              description: Unique identifier for the NodeCluster instance assigned by the consumer who requested its creation.
+              x-support-qualifier:    M
+              x-isInvariant:        true
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              format:            uuid
+            name:
+              type: string
+              description: Name of the NodeCluster.
+              x-support-qualifier:  M
+              x-isInvariant: true
+              x-inventoryNotification: false
+              x-stateChangeNotification: false
+            description:
+              type: string
+              description: Human readable description of the NodeCluster.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored extend the information provided about the NodeCluster.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: "ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair"
+            clusterDistributionDescription:
+              type: string
+              description: Identifier for the NodeClusterType that this NodeCluster is.
+              x-support-qualifier: M
+              x-isInvariant: true
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              format: uuid
+            nodeClusterTypeId:
+              type: string
+              description: Identifier for the NodeClusterType that this NodeCluster is.
+              x-support-qualifier: M
+              x-isInvariant: true
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              format: uuid
+            artifactResourceId:
+              type: string
+              description: Identifier for the template artifact which this NodeCluster is based on.
+              x-support-qualifier: M
+              readOnly: true
+              x-isInvariant: true
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              format: uuid
+            clusterResourceIds:
+              type: array
+              description: The list of cluster resource identifiers that are used to construct this NodeCluster.
+              x-support-qualifier: M
+              x-isInvariant: false
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              x-isOrdered: false
+              minItems: 1
+              uniqueItems: true
+              items:
+                type: string
+                format:  uuid
+            clusterResourceGroups:
+              type: array
+              description: Optional list node groups that comprise the cluster resources which compose the NodeCluster.
+              x-support-qualifier: M
+              x-isAlwaysPresent: false
+              x-isInvariant: false
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              x-isOrdered: false
+              minItems: 0
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+          required:
+          - nodeClusterId
+          - clientNodeClusterId
+          - name
+          - description
+          - clusterDistributionDescription
+          - nodeClusterTypeId
+          - artifactResourceId
+    ClusterResourceType:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            clusterResourceTypeId:
+              type: string
+              description: Unique identifier for the ClusterResourceType instance
+              x-support-qualifier:    M
+              x-isInvariant:        true
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              format:            uuid
+            name:
+              type: string
+              description: Name of the Cluster Resource Type.
+              x-support-qualifier:  M
+              x-isInvariant:  false
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+            description:
+              type: string
+              description: Human readable description of the Cluster Resource Type.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored extend the information provided about the Cluster Resource Type.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: "ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair"
+          required:
+          - clusterResourceTypeId
+          - name
+          - description
+    ClusterResource:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            clusterResourceId:
+              type: string
+              description: Unique identifier for the ClusterResource instance.
+              x-support-qualifier:    M
+              x-isInvariant:        true
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              format:            uuid
+            name:
+              type: string
+              description: Name of the cluster resource.
+              x-support-qualifier:  M
+              x-isInvariant:  false
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+            description:
+              type: string
+              description: Human readable description of the cluster resource.
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored extend the information provided about the Cluster Resource.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: "ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair"
+            clusterResourceTypeId:
+              type: string
+              description: Identifier for the ClusterResourceType for this resource.
+              x-support-qualifier: M
+              readOnly: true
+              x-isInvariant: true
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              format: uuid
+            memberOf:
+              type: array
+              description: list of other ClusterResources which are linked together.
+              x-support-qualifier: M
+              x-isAlwaysPresent: false
+              readOnly: true
+              x-isInvariant: false
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              x-nullable: true
+              x-isOrdered: false
+              minItems: 0
+              uniqueItems: true
+              items:
+                type: string              
+            artifactResourceIds:
+              type: array
+              description:  Identifiers for the artifact(s) which this resource is based on.
+              x-support-qualifier: M
+              x-isAlwaysPresent: false
+              x-isInvariant: false
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              x-nullable: true
+              x-isOrdered: false
+              minItems: 0
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+            resourceId:
+              type: string
+              description: Identifier for the inventory resource which this resource is mapped to.
+              x-support-qualifier: M
+              readOnly: true
+              x-isInvariant: true
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              format: uuid              
+          required:
+          - clusterResourceId
+          - name
+          - description
+          - clusterResourceTypeId
+          - resourceId
+    ClusterResourceGroup:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          properties:
+            clusterResourceGroupId:
+              type: string
+              description: Unique identifier for the ClusterResourceGroup.
+              x-support-qualifier:    M
+              x-isInvariant:        true
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+              format:            uuid
+            name:
+              type: string
+              description: Name of the Node Group.
+              x-support-qualifier:  M
+              x-isInvariant:  false
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+            description:
+              type: string
+              description: Human readable description of the ClusterResourceGroup
+              x-support-qualifier:    M
+              x-isInvariant:        false
+              x-inventoryNotification:  true
+              x-stateChangeNotification:  false
+            extensions:
+              type: array
+              description: These are unspecified (not standardized) properties (keys) which are tailored extend the information provided about the ClusterResourceGroup.
+              x-support-qualifier:    M
+              x-isAlwaysPresent: false
+              x-isInvariant:        false
+              x-inventoryNotification:  false
+              x-stateChangeNotification:  false
+              x-nullable:          true
+              x-isOrdered:        false
+              minItems:          0
+              uniqueItems:        true
+              items:
+                $ref: "ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair"
+            clusterResources:
+              type: array
+              description: The list of Cluster Resources belonging to this ClusterResourceGroup.
+              x-support-qualifier: M
+              x-isAlwaysPresent: false
+              readOnly: true
+              x-isInvariant: false
+              x-inventoryNotification: true
+              x-stateChangeNotification: false
+              x-isOrdered: false
+              minItems: 1
+              uniqueItems: true
+              items:
+                type: string
+                format: uuid
+          required:
+          - clusterResourceGroupId
+          - name
+          - description
+          - clusterResources
+          

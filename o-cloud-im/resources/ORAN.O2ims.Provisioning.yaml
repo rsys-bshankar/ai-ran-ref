@@ -1,0 +1,238 @@
+openapi: 3.0.1
+info:
+  title: ORAN.O2ims.Provisioning Data Model
+  version: 4.0.0
+  description: >-
+     OAS 3.0.1 definition of the O-RAN.O2ims.Provisioning Namespace
+
+     Copyright 2026 O-RAN ALLIANCE e.V.
+     Licensed under the Standards Collaboration
+     Copyright License Version 1.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+     https://www.o-ran.org/sccl
+  license:
+    name: SCCL
+    url: https://www.o-ran.org/sccl
+externalDocs:
+  description: O-RAN.WG6.TS.O-CLOUD-IM; O2 Information Model Specification
+  url: https://specifications.o-ran.org/download?id=963
+
+paths: {}
+components:
+  schemas:
+    ProvisioningRequest:
+      allOf:
+        - $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/InformationObjectClass'
+        - type: object
+          required:
+          - provisioningRequestId
+          - name
+          - description
+          - templateName
+          - templateVersion
+          - status
+          properties:
+            provisioningRequestId:
+              type: string
+              description: Identifier of the provisioning request instance assigned by the SMO.
+              x-support-qualifier: M
+              x-isInvariant: true
+              x-inventoryNotification: false
+              x-stateChangeNotification: false
+              format: uuid
+            name:
+              type: string
+              description: Human readable name of the provisioning request instance as assigned by the SMO.
+              x-support-qualifier: M
+              x-isInvariant: false
+              x-inventoryNotification: false
+              x-stateChangeNotification: false
+            description:
+              type: string
+              description: Human readable description of the provisioning request instance as assigned by the SMO.
+              x-support-qualifier: M
+              x-isInvariant: false
+              x-inventoryNotification: false
+              x-stateChangeNotification: false
+            templateName:
+              type: string
+              description: Name of the template to be used as the basis for the declarative model for the provisioning request instance. When combined with the templateVersion it shall resolve to a templateId.
+              x-support-qualifier: M
+              x-isInvariant: false
+              x-inventoryNotification: false
+              x-stateChangeNotification: false
+            templateVersion:
+              type: string
+              description: Version of the template used as the basis for the declarative model for the provisioning request instance. When combined with the templateName it shall resolve to a templateId.
+              x-support-qualifier: M
+              x-isInvariant: false
+              x-inventoryNotification: false
+              x-stateChangeNotification: false
+            templateParameters:
+              type: array
+              description: List of variables/value pairs used within the template to tailor the template to this request instance.
+              x-support-qualifier: M
+              x-isAlwaysPresent: false
+              x-isInvariant: false
+              x-inventoryNotification: false
+              x-stateChangeNotification: false
+              x-isOrdered: false
+              minItems: 0
+              uniqueItems: true
+              items:
+                $ref: 'ORAN.O2ims.Common.yaml#/components/schemas/AttributeValuePair'
+            provisioningRequestReference:
+              type: string
+              description: A unique reference of this ProvisioningRequest assigned by the service producer at the time of request creation.
+              x-support-qualifier: M
+              readOnly: true
+              x-isInvariant: true
+              x-inventoryNotification: false
+              x-stateChangeNotification: false
+            status:
+              allOf:
+                - $ref: '#/components/schemas/ProvisioningStatus'
+                - type: object
+                  description: The time of the last message and the current provisioningPhase of the ProvisioningRequest.
+                  x-support-qualifier: M
+                  readOnly: true
+                  x-isInvariant: false
+                  x-inventoryNotification: false
+                  x-stateChangeNotification: true
+            provisionedResourceSet:
+              allOf:
+                - $ref: '#/components/schemas/ProvisionedResourceSet'
+                - type: object
+                  description: The resources that have been successfully provisioned as part of the provisioningRequest.
+                  x-support-qualifier: M
+                  x-isAlwaysPresent: false
+                  readOnly: true
+                  x-isInvariant: false
+                  x-inventoryNotification: true
+                  x-stateChangeNotification: false
+    ProvisioningStatus:
+        type: object
+        required:
+        - updateTime
+        - message
+        - provisioningPhase
+        properties:
+          updateTime:
+            type: string
+            description: The last date and time that the provisioningPhase attribute was modified.
+            x-support-qualifier: M
+            readOnly: true
+            x-isInvariant: false
+            x-inventoryNotification: false
+            x-stateChangeNotification: true
+            format: date-time
+          message:
+            type: string
+            description: Human readable text about the provisioningPhase at the last updateTime.
+            x-support-qualifier: M
+            readOnly: true
+            x-isInvariant: false
+            x-inventoryNotification: false
+            x-stateChangeNotification: true
+          provisioningPhase:
+            type: string
+            description: This is an enumerated set of values which reflects the current phase of the provisioning request.
+            x-support-qualifier: M
+            readOnly: true
+            x-isInvariant: false
+            x-inventoryNotification: false
+            x-stateChangeNotification: true
+            enum:
+              - PENDING
+              - PROGRESSING
+              - FULFILLED
+              - FAILED
+              - DELETING
+          nodeClusterProvisioningStatus:
+            allOf:
+              - $ref: '#/components/schemas/ResourceProvisioningStatus'
+              - type: object
+                description: The current provisioning status of the NodeCluster
+                x-support-qualifier: M
+                x-isAlwaysPresent: false
+                readOnly: true
+                x-isInvariant: false
+                x-inventoryNotification: false
+                x-stateChangeNotification: true
+          infrastructureResourceProvisioningStatus:
+            type: array
+            description: The current provisioning status of individual infrastructure Resource(s)
+            x-support-qualifier: M
+            x-isAlwaysPresent: false
+            readOnly: true
+            x-isInvariant: false
+            x-inventoryNotification: false
+            x-stateChangeNotification: true
+            x-isOrdered: false
+            minItems: 0
+            items:
+              $ref: '#/components/schemas/ResourceProvisioningStatus'
+    ProvisionedResourceSet:
+      type: object
+      properties:
+        nodeClusterId:
+          type: string
+          description: If the request is fulfilled by a NodeCluster this field will contain its Id.
+          x-support-qualifier: M
+          x-isAlwaysPresent: false
+          readOnly: true
+          x-isInvariant: false
+          x-inventoryNotification: true
+          x-stateChangeNotification: false
+          x-nullable: true
+          format: uuid
+        infrastructureResourceIds:
+          type: array
+          description: If the request is fulfilled by InfrastructureResource(s) this list will contain the Id(s) of all resources used to fulfil it.
+          x-support-qualifier: M
+          x-isAlwaysPresent: false
+          readOnly: true
+          x-isInvariant: false
+          x-inventoryNotification: true
+          x-stateChangeNotification: false
+          x-nullable: true
+          x-isOrdered: false
+          minItems: 0
+          uniqueItems: true
+          items:
+            type: string
+    ResourceProvisioningStatus:
+      type: object
+      properties:
+        resourceName:
+          type: string
+          description: Name of the resource as given in the ProvisioningRequest paramters
+          x-support-qualifier: M
+          readOnly: true
+          x-isInvariant: true
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+        resourceId:
+          type: string
+          description: Indentifier of the resource, as assigned by the O-Cloud
+          x-support-qualifier: M
+          x-isAlwaysPresent: false
+          readOnly: true
+          x-isInvariant: true
+          x-inventoryNotification: false
+          x-stateChangeNotification: false
+          format: uuid
+        resourceProvisioningPhase:
+          type: string
+          description: Current provisioning phase of the resource
+          x-support-qualifier: M
+          readOnly: true
+          x-isInvariant: false
+          x-inventoryNotification: false
+          x-stateChangeNotification: true
+          enum:
+            - PROCESSING
+            - PROVISIONED
+            - AWAITING_FREE_RESOURCES
+            - FAILED
