@@ -139,7 +139,7 @@ CREATE TABLE rapp_instance (
   -- ORM-generated tables the unit tests use.
   oauth_client_id                     TEXT,            -- == rAppId, identity.py, until revoked
   created_at                            TIMESTAMPTZ NOT NULL DEFAULT now(),
-  upgrade_timeout_seconds                 INTEGER NOT NULL DEFAULT 300,  -- NEW section 6: UNGROUNDED default, flagged
+  upgrade_timeout_seconds                 INTEGER NOT NULL DEFAULT 300,  -- section 6: confirmed default (OPEN_ITEMS.md section 1)
   -- Also missing from this table until this pass, for the same reason:
   -- both are read/written by rapp-mgmt/app/upgrade.py and main.py but
   -- SQLite's unit tests build their schema from the ORM models

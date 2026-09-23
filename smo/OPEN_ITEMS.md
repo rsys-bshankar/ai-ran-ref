@@ -12,24 +12,14 @@ These need a call from whoever owns the relevant module's requirements
 before they can be implemented — inventing an answer now would just move
 the ambiguity into code.
 
-- **rApp-as-producer reconsideration trigger** (`dme/` / `rapp-mgmt/`) —
-  when a `RAppInstance` itself acts as a DME producer, what re-evaluates
-  its registration on state change. Flagged, not decided.
-- **`MLModelCoordinationGroup` × SA SMOS convergence** (`ai-ml-workflow/`
-  / `sa-smos/`) — how a coordination group's retrain propagation and SA
-  SMOS's remedial-action dispatch are meant to interact. Deferred.
 - **`WEIGHTED_TRIGGERS`** (`ai-ml-workflow/`) — currently raises
   `NotImplementedError`. Needs real noise-floor data to design the
   weighting function; the value would be fabricated without it.
-- **Shape B / `JOINT_TRAINING`** (`ai-ml-workflow/`) — declared out of
-  scope for this build; never revisited to confirm that's still correct.
 - **Alarm-storm correlation algorithm** (`ran-nf-oam/`) — flagged as
   needing a real algorithm; nothing implemented.
 - **A1-ML operations** (`a1-related/`) — categorically out of scope per
   the A1 Related LLD section 0; schema-dormant. Revisit only if that scope
   decision changes.
-- **`upgradeTimeoutSeconds` default (300s)** (`rapp-mgmt/`) — a
-  placeholder, not a researched value.
 
 ## 2. Repo code / lifecycle gaps
 
@@ -302,15 +292,69 @@ before this pass despite being a real route.
   largest module by test count after `ran-nf-oam`.
   `onboarding`/`sme`/`rapp-mgmt`/`nfo`/`ran-analytics` (9 tests each) are
   now the shallowest-covered tier. 187 tests total, up from 177.
+- **Four more §1 design-level decisions, resolved by the stakeholder and
+  implemented:**
+  - **rApp-as-producer reconsideration trigger** (`dme/` / `rapp-mgmt/`)
+    — resolved as a push: `rapp-mgmt`'s `RAppInstance` FSM now calls a
+    new `DELETE /production-capabilities` DME route (keyed by
+    `producer_id`, which is the instance's own `oauth_client_id` —
+    bootstrap registers with SME/DME under that same identity) whenever
+    an instance crashes or terminates, deregistering every DME type it
+    produced. Best-effort, same "unreachable callback never fails the
+    primary operation" precedent as Policy Mgmt's `CreateIntent`
+    dispatch — a DME outage never blocks CRASH/TERMINATE themselves.
+    `UPGRADE_COMMIT` is deliberately untouched: the replacement
+    instance's own `oauth_client_id` is never set by `start_upgrade` in
+    the first place, a separate, pre-existing gap out of this decision's
+    scope.
+  - **`MLModelCoordinationGroup` × SA SMOS convergence**
+    (`ai-ml-workflow/` / `sa-smos/`) — resolved as: retrain is the only
+    meaningful remedial action for a coordination group, wired on both
+    sides. `report_performance` used to compute `groupRetrainTriggered`
+    and stop — nothing ever fired `RETRAIN` on a member model; it now
+    fires the same `ACTIVE -> TRAINING` transition `RequestTraining`'s
+    own `modelId`-targeted path uses for every currently-`ACTIVE`
+    member, creating a per-model `TrainingJob` each. On the SA SMOS
+    side, a coordination-group-scoped `AssuranceMonitor`
+    (`target_coordination_group_id`) now bypasses `CONFIG_CHANGE`/
+    `SCALE`/`RECONNECT`/`ROLLBACK` entirely — those are NF-deployment
+    concepts that don't map onto a model group — and always dispatches
+    a group retrain via AI/ML Workflow's `RequestTraining` instead,
+    regardless of the requested `actionType`.
+  - **Shape B / `JOINT_TRAINING`** (`ai-ml-workflow/`) — the original
+    v1.3 scope decision (out of scope for this build) is confirmed
+    still correct, not just left unrevisited. The schema still permits
+    `group_type='JOINT_TRAINING'` for forward compatibility, but no
+    code branches on it and none is expected to this phase.
+  - **`upgradeTimeoutSeconds` default (300s)** (`rapp-mgmt/`) —
+    confirmed as the actual intended default, not a placeholder standing
+    in for missing data. The "ungrounded"/"placeholder" language is
+    removed from the model column comment and the migration; the value
+    itself (300) is unchanged.
+
+  Implementing the second item's test coverage surfaced two more real,
+  previously-latent bugs in `report_performance`'s group lookup, neither
+  ever caught because no test had exercised that code path before:
+  `MLModelCoordinationGroup.member_model_ids.any(model.model_id)` is real
+  Postgres `ANY(array)` SQL with no SQLite equivalent under
+  `member_model_ids`' JSON fallback (`no such function: ANY`) — replaced
+  with an in-Python membership filter; and that filter itself needed a
+  string comparison, not `model.model_id in group.member_model_ids`
+  directly, since SQLite's JSON fallback has no UUID item type and reads
+  `member_model_ids` back as plain strings where Postgres's native
+  `ARRAY(Uuid)` round-trips real `uuid.UUID` objects. New tests: `dme`
+  (+2), `rapp-mgmt` (+3), `ai-ml-workflow` (+3), `sa-smos` (+2). 197
+  tests total, up from 187.
 
 ## Suggested next pass (priority order)
 
-1. The remaining §1 design-level decisions — the `MLModelCoordinationGroup`
-   × SA SMOS convergence (bundled with coordination-group-scoped
-   RECONNECT/ROLLBACK), rApp-as-producer reconsideration trigger,
-   `WEIGHTED_TRIGGERS`, Shape B/`JOINT_TRAINING`, the alarm-storm
-   correlation algorithm, and `upgradeTimeoutSeconds`'s default — still
-   need a stakeholder call, not an invented answer.
+1. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
+   the alarm-storm correlation algorithm, and A1-ML operations — are not
+   stakeholder-answerable the way the rest of this section was: the
+   first two genuinely need real data (noise-floor data; a real
+   correlation algorithm) that would otherwise be fabricated, and the
+   third only needs revisiting if A1-ML's out-of-scope decision itself
+   changes. Not blocked on a call, blocked on data or a scope change.
 2. `onboarding`, `sme`, `rapp-mgmt`, `nfo`, and `ran-analytics` are now
    tied as the shallowest-covered tier (9 tests each) — the next natural
    coverage target if another pass like this one is wanted; no single

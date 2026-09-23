@@ -167,6 +167,27 @@ def test_data_job_unaffected_by_offer_check_when_no_offer_exists(client):
     assert resp.status_code == 202
 
 
+def test_deregister_producer_removes_all_its_types(client):
+    """The DME half of rApp Management's producer-reconsideration trigger
+    (OPEN_ITEMS.md section 1) — deregistering a producer must remove
+    every DMEType it registered, not just one.
+    """
+    client.post("/production-capabilities", json=register_type_body(name="TypeA", producerId="rapp-1"))
+    client.post("/production-capabilities", json=register_type_body(name="TypeB", producerId="rapp-1"))
+    client.post("/production-capabilities", json=register_type_body(name="TypeC", producerId="rapp-2"))
+
+    resp = client.delete("/production-capabilities", params={"producer_id": "rapp-1"})
+    assert resp.status_code == 204
+
+    remaining = client.get("/dme-types").json()
+    assert {t["producerId"] for t in remaining} == {"rapp-2"}
+
+
+def test_deregister_unknown_producer_is_idempotent(client):
+    resp = client.delete("/production-capabilities", params={"producer_id": "never-registered"})
+    assert resp.status_code == 204
+
+
 def test_terminate_data_offer_fires_termination_notification(client, monkeypatch):
     """Section 3.5: normal-direction notification on termination —
     framework -> Producer, distinct from the reversed availability

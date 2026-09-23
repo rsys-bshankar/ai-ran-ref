@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+import httpx
+
+from smo_shared.r1_client import R1Client
 from smo_shared.statemachine import StateMachine
 
 from .models import RAppInstance
@@ -44,6 +47,32 @@ def _revoke_credential(instance: RAppInstance, **_) -> None:
     instance.oauth_client_id = None
 
 
+def _reconsider_dme_registration(instance: RAppInstance, **_) -> None:
+    """rApp-as-producer reconsideration trigger (OPEN_ITEMS.md section 1):
+    when this instance crashes or terminates it can no longer be trusted
+    as a live DME producer, so its own DME registrations — keyed by
+    producer_id, which is this instance's oauth_client_id (bootstrap
+    registers with SME/DME using that same identity) — are deregistered
+    here. Best-effort: a DME outage must never block CRASH/TERMINATE
+    themselves, the same "unreachable callback never fails the primary
+    operation" precedent Policy Mgmt's CreateIntent dispatch uses.
+    """
+    if instance.oauth_client_id is None:
+        return
+    try:
+        R1Client().delete("/dme/production-capabilities", params={"producer_id": instance.oauth_client_id})
+    except httpx.HTTPError:
+        pass
+
+
+def _terminate_side_effects(instance: RAppInstance, **_) -> None:
+    # DME reconsideration must run BEFORE credential revocation — it reads
+    # instance.oauth_client_id as the DME producer_id, which
+    # _revoke_credential clears to None.
+    _reconsider_dme_registration(instance)
+    _revoke_credential(instance)
+
+
 def build_rapp_instance_fsm() -> StateMachine[InstanceState, InstanceEvent]:
     fsm: StateMachine[InstanceState, InstanceEvent] = StateMachine()
     fsm.add(InstanceState.DEPLOYING, InstanceEvent.BOOTSTRAP_OK, InstanceState.RUNNING)
@@ -51,8 +80,8 @@ def build_rapp_instance_fsm() -> StateMachine[InstanceState, InstanceEvent]:
     fsm.add(InstanceState.RUNNING, InstanceEvent.START_UPGRADE, InstanceState.UPGRADING)
     fsm.add(InstanceState.UPGRADING, InstanceEvent.UPGRADE_COMMIT, InstanceState.TERMINATING, action=_revoke_credential)
     fsm.add(InstanceState.UPGRADING, InstanceEvent.UPGRADE_ROLLBACK, InstanceState.RUNNING)
-    fsm.add(InstanceState.RUNNING, InstanceEvent.TERMINATE, InstanceState.TERMINATING, action=_revoke_credential)
-    fsm.add(InstanceState.RUNNING, InstanceEvent.CRASH, InstanceState.FAULTED)
+    fsm.add(InstanceState.RUNNING, InstanceEvent.TERMINATE, InstanceState.TERMINATING, action=_terminate_side_effects)
+    fsm.add(InstanceState.RUNNING, InstanceEvent.CRASH, InstanceState.FAULTED, action=_reconsider_dme_registration)
     fsm.add(InstanceState.FAULTED, InstanceEvent.RECOVER, InstanceState.DEPLOYING)
     return fsm
 

@@ -155,6 +155,39 @@ def test_reconnect_escalates_when_order_has_no_completed_deploy_step(client, mon
     assert resp.json()["outcome"] == "ESCALATED"
 
 
+def test_group_scoped_monitor_dispatches_retrain_regardless_of_action_type(client, monkeypatch):
+    """MLModelCoordinationGroup x SA SMOS convergence (OPEN_ITEMS.md
+    section 1): a coordination-group-scoped monitor bypasses
+    CONFIG_CHANGE/SCALE/RECONNECT/ROLLBACK entirely — those are
+    NF-deployment concepts that don't map onto a model group — and
+    always dispatches a group retrain via AI/ML Workflow instead,
+    whatever actionType was requested.
+    """
+    group_id = uuid.uuid4()
+    calls = []
+
+    def fake_post(self, path, json=None, **kw):
+        calls.append((path, json))
+        return FakeR1Response(200)
+
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    monitor = client.post("/monitors", params={"target_coordination_group_id": str(group_id)}, json={}).json()
+    resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "CONFIG_CHANGE"})
+    assert resp.status_code == 201
+    assert resp.json()["outcome"] == "RESOLVED"
+    assert calls == [("/ai-ml-workflow/training-jobs", {"modelCoordinationGroupId": str(group_id), "producerId": "sa-smos"})]
+
+
+def test_group_scoped_monitor_escalates_when_ai_ml_workflow_rejects(client, monkeypatch):
+    group_id = uuid.uuid4()
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(409))
+
+    monitor = client.post("/monitors", params={"target_coordination_group_id": str(group_id)}, json={}).json()
+    resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "RECONNECT"})
+    assert resp.json()["outcome"] == "ESCALATED"
+
+
 def test_escalate_to_operator(client):
     monitor = client.post("/monitors", params={}, json={}).json()
     resp = client.post(f"/monitors/{monitor['monitorId']}/escalate", params={"reason": "no auto-remediation available"})

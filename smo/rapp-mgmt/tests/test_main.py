@@ -157,6 +157,73 @@ def test_terminate_instance_skips_usage_stop_when_never_registered(client, monke
     assert resp.status_code == 200
 
 
+def test_terminate_instance_deregisters_dme_producer(client, monkeypatch):
+    """rApp-as-producer reconsideration trigger (OPEN_ITEMS.md section 1):
+    TERMINATE must reach DME too, deregistering every DMEType this
+    instance's own oauth_client_id (== its DME producerId) registered —
+    not just revoke the local credential.
+    """
+    fake_get, fake_post = _route_r1_get_post()
+    calls = []
+
+    def recording_delete(self, path, params=None, **kw):
+        calls.append((path, params))
+        return FakeR1Response(204, {})
+
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    monkeypatch.setattr("app.statemachine.R1Client.delete", recording_delete)
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+
+    resp = client.post(f"/instances/{created['instanceId']}/terminate")
+    assert resp.status_code == 200
+    assert len(calls) == 1
+    path, params = calls[0]
+    assert path == "/dme/production-capabilities"
+    assert params == {"producer_id": created["oauthClientId"]}
+
+
+def test_crash_via_critical_fault_deregisters_dme_producer(client, monkeypatch):
+    fake_get, fake_post = _route_r1_get_post()
+    calls = []
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    monkeypatch.setattr("app.statemachine.R1Client.delete", lambda self, path, params=None, **kw: calls.append(params))
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+
+    resp = client.post(f"/instances/{created['instanceId']}/fault", params={"severity": "critical"})
+    assert resp.status_code == 200
+    assert resp.json()["instanceState"] == "FAULTED"
+    assert calls == [{"producer_id": created["oauthClientId"]}]
+
+
+def test_terminate_instance_survives_unreachable_dme(client, monkeypatch):
+    """Best-effort — a DME outage must never block TERMINATE itself, same
+    "unreachable callback never fails the primary operation" precedent
+    Policy Mgmt's CreateIntent dispatch uses.
+    """
+    import httpx as httpx_module
+
+    fake_get, fake_post = _route_r1_get_post()
+
+    def raise_error(self, path, params=None, **kw):
+        raise httpx_module.ConnectError("dme unreachable")
+
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    monkeypatch.setattr("app.statemachine.R1Client.delete", raise_error)
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+
+    resp = client.post(f"/instances/{created['instanceId']}/terminate")
+    assert resp.status_code == 200
+
+
 def test_recover_route_fires_recover_transition(client, db_session_factory):
     """RECOVER — previously unreachable via any route at all (the FSM
     transition existed, nothing called it).

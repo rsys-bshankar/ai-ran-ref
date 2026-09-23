@@ -213,12 +213,56 @@ def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = 
         model = db.get(AIMLModel, sub.model_id)
         # if this model belongs to a coordination group, decide group-scoped
         # propagation per LLD section 4.3-4.4; otherwise it's a standalone retrain trigger.
-        group = db.scalar(select(MLModelCoordinationGroup).where(MLModelCoordinationGroup.member_model_ids.any(model.model_id)))
+        # Filtered in Python, not a `.any()` array-membership WHERE clause —
+        # that's real Postgres ARRAY syntax with no SQLite equivalent under
+        # member_model_ids' JSON fallback (`.with_variant(JSON(...), "sqlite")`),
+        # so it silently never worked under any test until this group-retrain
+        # path finally got route-level coverage. Compared as strings, not
+        # `model.model_id in g.member_model_ids` directly — Postgres's native
+        # ARRAY(Uuid) round-trips real uuid.UUID objects, but SQLite's JSON
+        # fallback has no UUID item type at all, so member_model_ids reads
+        # back as plain strings there.
+        group = next((g for g in db.scalars(select(MLModelCoordinationGroup)).all()
+                       if str(model.model_id) in {str(m) for m in g.member_model_ids}), None)
         if group is not None:
-            result["groupRetrainTriggered"] = should_trigger_group_retrain(
+            triggered = should_trigger_group_retrain(
                 group.retrain_propagation, member_count=len(group.member_model_ids), breached_count=1
             )
+            result["groupRetrainTriggered"] = triggered
+            if triggered:
+                # The actual fix (OPEN_ITEMS.md section 1's MLModelCoordinationGroup
+                # x SA SMOS convergence item): this used to compute the bool and
+                # stop — nothing ever fired RETRAIN on a single member model.
+                result["retrainedModelIds"] = [str(mid) for mid in _trigger_group_retrain(db, group)]
     return result
+
+
+def _trigger_group_retrain(db: Session, group: MLModelCoordinationGroup) -> list[uuid.UUID]:
+    """Fires RETRAIN (the same ACTIVE -> TRAINING transition RequestTraining's
+    own modelId-targeted path uses) and creates a per-model TrainingJob for
+    every currently ACTIVE member. A member not in ACTIVE (already TRAINING
+    from an earlier trigger, or never certified) is skipped rather than
+    forced — RETRAIN is only a legal transition from ACTIVE, and this
+    mirrors RequestTraining's own already-TRAINING handling instead of
+    reimplementing it here.
+    """
+    retrained_model_ids: list[uuid.UUID] = []
+    for raw_member_id in group.member_model_ids:
+        # Real uuid.UUID objects on Postgres, plain strings under SQLite's
+        # JSON fallback (see the group-lookup comment above) — normalized
+        # once here so db.get()/TrainingJob.model_id see a real UUID either way.
+        member_id = raw_member_id if isinstance(raw_member_id, uuid.UUID) else uuid.UUID(raw_member_id)
+        member = db.get(AIMLModel, member_id)
+        if member is None or member.state != ModelState.ACTIVE:
+            continue
+        job = TrainingJob(model_id=member_id, producer_id="ai-ml-workflow:group-retrain", status="RUNNING")
+        db.add(job)
+        db.flush()
+        member.state = AIML_MODEL_FSM.fire(ModelState.ACTIVE, ModelEvent.RETRAIN)
+        member.training_job_id = job.training_job_id
+        retrained_model_ids.append(member_id)
+    db.commit()
+    return retrained_model_ids
 
 
 def _model_view(m: AIMLModel) -> dict:
