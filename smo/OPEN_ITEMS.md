@@ -140,8 +140,8 @@ Per-module unit test counts:
 | sa-smos | 12 |
 | so-smos | 13 |
 | mock-near-rt-ric | 16 |
-| ran-analytics | 17 |
 | sme | 22 |
+| ran-analytics | 22 |
 | nfo | 23 |
 | onboarding | 26 |
 | ran-nf-oam | 29 |
@@ -166,7 +166,9 @@ non-200 upstream passthrough (previously only GET and the URL-stripping
 fix were exercised); `mock-near-rt-ric` gained coverage for
 `UpdatePolicy` (`PUT /a1-p/policies/{id}`), which had zero tests at all
 before this pass despite being a real route. A later pass added
-`ai-ml-workflow`'s `PUT`/`DELETE /models/{id}` coverage (+6, see §5).
+`ai-ml-workflow`'s `PUT`/`DELETE /models/{id}` coverage (+6, see §5),
+then `ran-analytics`'s real subscriber-notification delivery in
+`publish_report` (+5, see §5).
 
 ## 5. O-RAN-SC completeness gaps (repo-audited)
 
@@ -632,12 +634,24 @@ own §1/§2 items stand as-is.
   `analytics_type` and (`producer_id`/`requested_by` respectively) —
   unlike the reference's stubs, ours actually reads real, persisted
   rows.
-- The dead subscriber-notification loop in `publish_report`
+- ~~The dead subscriber-notification loop in `publish_report`
   (`for sub in subs: pass`) is real, but not a regression behind the
-  reference: `aiml-fw-apm-monitoring-server`'s own `Subscribe`
-  executor is equally an empty stub that doesn't even persist a
-  subscription — ours is one step ahead (real DB persistence) with the
-  same missing last-mile delivery.
+  reference: `aiml-fw-apm-monitoring-server`'s own `Subscribe` executor
+  is equally an empty stub that doesn't even persist a subscription —
+  ours was one step ahead (real DB persistence) with the same missing
+  last-mile delivery.~~ — **closed.** Added an optional
+  `notificationDestination` to `SubscribeAnalytics`/`MDASubscription`
+  (same shape as A1 Related's `notification_destination` and Policy
+  Mgmt's `notificationCallbackUri`), and `publish_report` now actually
+  POSTs the new report to every matching subscriber that registered
+  one — best-effort, same pattern as those two: an unreachable
+  subscriber never fails the publish that triggered it. A subscription
+  that never registered a destination (a purely poll-based consumer,
+  the only kind this build had before this pass) is left alone rather
+  than guessing a delivery target — the previous docstring's claim
+  that `requestedBy` already served as one was never actually true (it
+  is a plain identifier used for filtering, e.g. `"sa-smos"`/`"nfo"` in
+  this module's own tests, not a callback URL or host).
 - **Confirms the Blueprint's "BUILD" verdict directly**: of the three
   repos checked, `aiml-fw-apm-influx-wrapper` and
   `aiml-fw-apm-monitoring-agent` are both genuinely empty (only

@@ -50,16 +50,38 @@ def publish_report(analytics_type: str, output: dict, input_sources: list[uuid.U
     report = MDAFReport(analytics_type=analytics_type, output=output, input_sources=input_sources, scope=scope)
     db.add(report)
     db.commit()
-
-    subs = db.scalars(select(MDASubscription).where(MDASubscription.analytics_type == analytics_type)).all()
-    for sub in subs:
-        pass  # Phase 1: notification callback elided; SubscribeAnalytics's requested_by is the delivery target
+    _notify_report_subscribers(db, report)
     return {"reportId": str(report.report_id)}
 
 
+def _notify_report_subscribers(db: Session, report: MDAFReport) -> None:
+    """OPEN_ITEMS.md section 5: PublishAnalyticsReport's subscriber loop
+    was a deliberate no-op (`for sub in subs: pass`) — a matching
+    MDASubscription was looked up but never actually notified, so every
+    consumer had to poll QueryAnalyticsReport instead. Same shape fix as
+    A1 Related's `_notify_policy_status_subscribers`/Policy Mgmt's
+    CreateIntent notification: best-effort, an unreachable subscriber
+    never fails the publish that triggered it. Only subscriptions that
+    registered a real `notificationDestination` are ever POSTed to — one
+    that didn't (e.g. a purely poll-based consumer) is left alone rather
+    than guessing a delivery target from `requestedBy`.
+    """
+    subs = db.scalars(select(MDASubscription).where(MDASubscription.analytics_type == report.analytics_type)).all()
+    for sub in subs:
+        if not sub.notification_destination:
+            continue
+        try:
+            httpx.post(sub.notification_destination, json={
+                "reportId": str(report.report_id), "analyticsType": report.analytics_type,
+                "output": report.output, "inputSources": [str(s) for s in report.input_sources],
+            }, timeout=2.0)
+        except httpx.HTTPError:
+            pass
+
+
 @app.post("/subscriptions", status_code=201)
-def subscribe_analytics(analytics_type: str, requested_by: str, scope: dict | None = None, db: Session = Depends(get_session)):
-    sub = MDASubscription(analytics_type=analytics_type, requested_by=requested_by, scope=scope)
+def subscribe_analytics(analytics_type: str, requested_by: str, notification_destination: str | None = None, scope: dict | None = None, db: Session = Depends(get_session)):
+    sub = MDASubscription(analytics_type=analytics_type, requested_by=requested_by, notification_destination=notification_destination, scope=scope)
     db.add(sub)
     db.commit()
     return {"subscriptionId": str(sub.subscription_id)}
@@ -116,4 +138,4 @@ def _producer_view(p: MDAFProducer) -> dict:
 
 def _subscription_view(s: MDASubscription) -> dict:
     return {"subscriptionId": str(s.subscription_id), "analyticsType": s.analytics_type,
-            "requestedBy": s.requested_by, "scope": s.scope}
+            "requestedBy": s.requested_by, "notificationDestination": s.notification_destination, "scope": s.scope}

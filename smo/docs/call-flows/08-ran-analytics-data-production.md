@@ -20,7 +20,7 @@ sequenceDiagram
     SME-->>RanA: serviceId
     RanA-->>Producer: {status: registered}
 
-    Consumer->>R1: POST /ran-analytics/subscriptions (analyticsType, requestedBy)
+    Consumer->>R1: POST /ran-analytics/subscriptions (analyticsType, requestedBy, notificationDestination?)
     R1->>RanA: (proxied) SubscribeAnalytics
     RanA-->>Consumer: subscriptionId
 
@@ -28,7 +28,8 @@ sequenceDiagram
         Producer->>R1: POST /ran-analytics/reports (analyticsType, output, inputSources, scope?)
         R1->>RanA: (proxied) PublishAnalyticsReport
         RanA->>RanA: persist MDAFReport
-        Note over RanA,Consumer: GAP: matching MDASubscriptions are looked up but never<br/>notified — publish_report's subscriber loop is an explicit no-op<br/>(ran-analytics/app/main.py) — delivery is pull-only in this build.
+        RanA->>Consumer: best-effort POST notificationDestination (reportId, analyticsType, output, inputSources)
+        Note over RanA,Consumer: A subscription with no notificationDestination stays pull-only —<br/>delivery is never guessed from requestedBy.
         RanA-->>Producer: {reportId}
     end
 
@@ -43,5 +44,5 @@ sequenceDiagram
 **Key decisions this flow depends on:**
 - `MDAFProducer`'s primary key is `(producer_id, analytics_type)` — the same producer registering a second `analyticsType` is a distinct row, not an update; re-registering the *same* pair (e.g. on restart) upserts in place rather than crashing on the composite-key conflict (fixed this pass — see `smo/README.md`'s "Real bugs this pass found").
 - RAN Analytics registers its producer's capability through SME (`RegisterService`), making it independently discoverable via `service-apis` like any other R1 service — not a private RAN-Analytics-only registry.
-- **Existing, code-documented gap, restated here for visibility**: `PublishAnalyticsReport`'s subscriber-notification loop is a deliberate no-op (`for sub in subs: pass`) — a `MDASubscription`'s `requestedBy` is recorded but never actually called back. Every consumer in this build must poll `QueryAnalyticsReport`; a push-based delivery mechanism is unbuilt, not merely undocumented.
+- **Closed since this flow was first written**: `PublishAnalyticsReport`'s subscriber-notification loop used to be a deliberate no-op (`for sub in subs: pass`) — a `MDASubscription`'s `requestedBy` was recorded but never actually called back. `SubscribeAnalytics` now also accepts an optional `notificationDestination` (same shape as A1 Related's/Policy Mgmt's own subscription callbacks), and a published report is best-effort POSTed to every matching subscriber that registered one, same delivery guarantees as those two (an unreachable subscriber never fails the publish). A subscriber that never registers a destination stays pull-only via `QueryAnalyticsReport`.
 - This is architecturally distinct from AI/ML Workflow's MLMF (call flow 02) even though both look like "metrics in, subscribers out" — RAN Analytics' `analyticsType` describes RAN *behavior* (coverage, interference, resource utilization), never a model's own performance, which stays MLMF's domain exclusively (RAN Analytics LLD section 2).
