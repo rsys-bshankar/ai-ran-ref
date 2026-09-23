@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**357 tests total, all passing** as of this build: 347 unit tests across
+**362 tests total, all passing** as of this build: 352 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -329,7 +329,14 @@ whenever any type is registered or removed (ICS's own
 `ConsumerCallbacks.notifyTypeRegistered`/`notifyTypeRemoved`),
 unfiltered — matching the reference's own lack of per-type scoping on
 this particular subscription (unlike, say, A1 Related's policy-status
-subscriptions, which do filter).
+subscriptions, which do filter). `dme` went from 50 tests to 55 in the
+next pass: closed the missing job-definition schema validation gap by
+adopting the `jsonschema` library (a new dependency, matching ICS's
+own real JSON Schema validation via `org.everit.json.schema`) in
+`create_data_job`/`update_data_job` — a `productionJobDefinition` that
+doesn't validate against its `DmeType`'s registered
+`dataProductionSchema` is now rejected instead of accepted as an
+arbitrary dict.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

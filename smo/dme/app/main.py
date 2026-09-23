@@ -10,6 +10,7 @@ import datetime
 import uuid
 
 import httpx
+import jsonschema
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -224,9 +225,33 @@ def _validate_delivery_method(db: Session, dme_type_id: uuid.UUID, method: str) 
         raise framework_error(FrameworkError.DELIVERY_METHOD_NOT_OFFERED, detail=f"{method} not committed by any DataOffer for this dmeTypeId")
 
 
+def _validate_job_definition_schema(db: Session, dme_type_id: uuid.UUID, definition: dict) -> None:
+    """OPEN_ITEMS.md section 5: ICS's own InfoJobs.validateJsonObjectAgainstSchema
+    (org.everit.json.schema, called from validatePutInfoJob) — productionJobDefinition
+    was accepted as an arbitrary dict, never checked against the DmeType's own
+    dataProductionSchema (R1AP's actual contract for what a valid job
+    definition looks like). A dmeTypeId with no registered DmeType at all
+    skips this, same permissive shape as _validate_delivery_method's own
+    offer check — nothing else in create_data_job enforces the type's
+    existence either.
+    """
+    dme_type = db.get(DMEType, dme_type_id)
+    if dme_type is None:
+        return
+    try:
+        jsonschema.validate(instance=definition, schema=dme_type.data_production_schema)
+    except jsonschema.ValidationError as e:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=e.message)
+    except jsonschema.SchemaError as e:
+        # The registered dataProductionSchema itself is malformed — not the
+        # caller's fault, but there's no meaningful way to validate against it.
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"registered dataProductionSchema is invalid: {e.message}")
+
+
 @app.post("/data-jobs", status_code=202)
 def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
     _validate_delivery_method(db, body.dmeTypeId, body.dataDeliveryMethod)
+    _validate_job_definition_schema(db, body.dmeTypeId, body.productionJobDefinition)
     job = DataJob(
         data_delivery_mode=body.dataDeliveryMode,
         dme_type_id=body.dmeTypeId,
@@ -273,6 +298,7 @@ def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, db: Session = 
     if job.dme_type_id != body.dmeTypeId or job.consumer_id != body.consumerId or job.data_delivery_mode != body.dataDeliveryMode:
         raise framework_error(FrameworkError.DATA_JOB_TARGET_IMMUTABLE, detail="dmeTypeId/consumerId/dataDeliveryMode cannot change on update")
     _validate_delivery_method(db, body.dmeTypeId, body.dataDeliveryMethod)
+    _validate_job_definition_schema(db, body.dmeTypeId, body.productionJobDefinition)
     job.production_job_definition = body.productionJobDefinition
     job.data_delivery_method = body.dataDeliveryMethod
     job.delivery_details = body.deliveryDetails
