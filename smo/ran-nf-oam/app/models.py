@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, DateTime, ForeignKey, JSON, String, Uuid
+from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -37,10 +37,18 @@ class Alarm(Base):
     source_alarm_id: Mapped[str] = mapped_column(String, nullable=False)
     managed_element_ref: Mapped[str] = mapped_column(String, ForeignKey("managed_entity.managed_element_ref"))
     managed_function_ref: Mapped[str | None] = mapped_column(String)
-    severity: Mapped[str] = mapped_column(String, nullable=False)
+    severity: Mapped[str] = mapped_column(String, nullable=False)  # this build's own wire name for 3GPP's perceivedSeverity
     ack_state: Mapped[str] = mapped_column(String, nullable=False, default="UNACKNOWLEDGED")
     correlation_group: Mapped[str | None] = mapped_column(String)
     raised_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+    # OPEN_ITEMS.md section 5: standard 3GPP TS 28.532 FaultMnS NotifyNewAlarm
+    # fields (per oam's own stndDefined-r16-notify-new-alarm.json VES template)
+    # this alarm model was missing entirely.
+    probable_cause: Mapped[str | None] = mapped_column(String)
+    specific_problem: Mapped[str | None] = mapped_column(String)
+    root_cause_indicator: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    correlated_notifications: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False, default=list)
+    proposed_repair_actions: Mapped[str | None] = mapped_column(String)
 
 
 class CMSchemaCache(Base):

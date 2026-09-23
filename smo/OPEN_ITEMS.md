@@ -144,9 +144,9 @@ Per-module unit test counts:
 | ran-analytics | 17 |
 | onboarding | 18 |
 | ai-ml-workflow | 20 |
-| ran-nf-oam | 21 |
 | sme | 22 |
 | dme | 23 |
+| ran-nf-oam | 25 |
 | a1-related | 29 |
 | focom | 34 |
 
@@ -305,11 +305,23 @@ own §1/§2 items stand as-is.
   identical `producerHealthCallbackUrl` pattern
   (`http://a1-related:8000/health`) with DME and had the same missing
   route — same bug class, fixed the same way, see below.
-- Alarm model is missing standard fault fields the wire format
+- ~~Alarm model is missing standard fault fields the wire format
   (VES/3GPP alarm IRP, per `oam`'s notification templates) carries:
   `probableCause`, `specificProblem`, `perceivedSeverity`,
   `rootCauseIndicator`, `correlatedNotifications` (a real list of
-  related-alarm refs, not just a grouping string), `proposedRepairActions`.
+  related-alarm refs, not just a grouping string),
+  `proposedRepairActions`.~~ — **closed.** Added `probableCause`,
+  `specificProblem`, `rootCauseIndicator`, `correlatedNotifications`
+  (a real `UUID[]` of related-alarm refs, alongside the existing
+  `correlationGroup` grouping string, not replacing it), and
+  `proposedRepairActions` to `Alarm`, all wired through
+  `ingest_alarm` and exposed on `GET /alarms`. Verified against a
+  real local Postgres 16 instance (field shapes match `oam`'s own
+  `stndDefined-r16-notify-new-alarm.json` VES template).
+  `perceivedSeverity` is not a separate new field — this build's
+  existing `severity` column already carries that exact semantic
+  content under its own wire name, so adding a second, duplicate
+  field for it would be pure churn, not a real gap.
 - **No alarm-cleared lifecycle at all** — `/alarms/{id}/ack` only toggles
   `ack_state`; there's no CLEARED state or clear-alarm endpoint, so an
   alarm that stops recurring on the NF has no way to ever be marked
@@ -775,6 +787,11 @@ own §1/§2 items stand as-is.
   implementations of the same two routes. This was §5's last
   GET-by-id/list/query item across every audited module. 270 tests
   total, up from 262 (`ran-analytics` alone: 9 -> 17).
+- `ran-nf-oam`'s missing standard alarm fault fields (§5) closed:
+  added `probableCause`/`specificProblem`/`rootCauseIndicator`/
+  `correlatedNotifications`/`proposedRepairActions` to `Alarm`, wired
+  through `ingest_alarm`, verified against a real local Postgres 16
+  instance. 274 tests total, up from 270 (`ran-nf-oam` alone: 21 -> 25).
 
 ## Suggested next pass (priority order)
 

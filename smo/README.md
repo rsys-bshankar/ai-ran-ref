@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**270 tests total, all passing** as of this build: 260 unit tests across
+**274 tests total, all passing** as of this build: 264 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -190,6 +190,13 @@ final pass of this theme: added `GET /producers` and
 only ever defines the routes as no-op stubs — this build's versions
 actually read real, persisted rows. That closes every module's
 missing GET-by-id/list/query endpoint gap found by the O-RAN-SC audit.
+`ran-nf-oam` went from 21 tests to 25 in the next pass: `Alarm` gained
+the standard 3GPP TS 28.532 FaultMnS fault fields (`probableCause`,
+`specificProblem`, `rootCauseIndicator`, `correlatedNotifications` —
+a real `UUID[]` of related-alarm refs alongside the existing
+`correlationGroup` grouping string, `proposedRepairActions`), wired
+through `ingest_alarm` and `GET /alarms`, verified against a real
+local Postgres 16 instance.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
