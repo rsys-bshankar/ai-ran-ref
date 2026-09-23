@@ -53,6 +53,10 @@ def create_instance(body: CreateInstanceRequest, db: Session = Depends(get_sessi
         "requiredResourceTypeId": body.config.get("requiredResourceTypeId"),
     })
     inst.workload_ref = nfo_resp.json().get("nfDeploymentId") if nfo_resp.status_code == 200 else None
+
+    usage_resp = r1.post(f"/onboarding/packages/{body.packageId}/usage/start", params={"consumer_id": str(inst.instance_id)})
+    if usage_resp.status_code == 200:
+        inst.package_usage_registration_id = uuid.UUID(usage_resp.json()["registrationId"])
     db.commit()
     return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id}
 
@@ -64,6 +68,22 @@ def bootstrap_complete(instance_id: uuid.UUID, db: Session = Depends(get_session
     """
     inst = db.get(RAppInstance, instance_id)
     inst.state = RAPP_INSTANCE_FSM.fire(InstanceState(inst.state), InstanceEvent.BOOTSTRAP_OK, instance=inst)
+    db.commit()
+    return {"instanceId": str(inst.instance_id), "state": inst.state}
+
+
+@app.post("/instances/{instance_id}/recover")
+def recover_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """RECOVER — v1.3's own FAULTED exit, concretized: the FSM transition
+    (FAULTED -> DEPLOYING) existed but no route ever fired it, so a
+    critically-faulted instance had no API path back to RUNNING at all.
+    Re-enters at the same point CreateInstance does — the container must
+    re-bootstrap and call bootstrap-complete again, matching the "no
+    lightweight update path" principle this build applies everywhere
+    else (e.g. AI/ML Workflow's retraining re-entry).
+    """
+    inst = db.get(RAppInstance, instance_id)
+    inst.state = RAPP_INSTANCE_FSM.fire(InstanceState(inst.state), InstanceEvent.RECOVER, instance=inst)
     db.commit()
     return {"instanceId": str(inst.instance_id), "state": inst.state}
 
@@ -97,13 +117,19 @@ def resolve_upgrade_outcome(instance_id: uuid.UUID, succeeded: bool, db: Session
 def terminate_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """TerminateInstance — Annex A.1.2.3. Credential revocation is part of
     this transition itself (statemachine.py's _revoke_credential action),
-    not a separate step (closes RT-3).
+    not a separate step (closes RT-3). Also stops this instance's
+    PackageUsageRegistration — the actual fix for Onboarding's
+    cascade-delete guard, previously unreachable from ordinary rApp
+    deployment since nothing called usage/stop.
     """
     inst = db.get(RAppInstance, instance_id)
+    package_id, registration_id = inst.package_id, inst.package_usage_registration_id
     inst.state = RAPP_INSTANCE_FSM.fire(InstanceState(inst.state), InstanceEvent.TERMINATE, instance=inst)
     db.commit()
     db.delete(inst)
     db.commit()
+    if registration_id is not None:
+        R1Client().post(f"/onboarding/packages/{package_id}/usage/{registration_id}/stop")
     return {"status": "terminated"}
 
 

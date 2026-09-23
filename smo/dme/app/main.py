@@ -83,6 +83,14 @@ def discover_dme_types(data_category: str | None = None, db: Session = Depends(g
 def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
     if body.dataDeliveryMethod not in DELIVERY_METHODS:
         raise framework_error(FrameworkError.DELIVERY_METHOD_NOT_OFFERED, detail=f"unknown method {body.dataDeliveryMethod}")
+    # Cross-check against the actual DataOffer(s) for this dmeTypeId, not just
+    # the global wire-value set — a consumer requesting a method no offer for
+    # this type ever committed to was previously accepted without complaint.
+    # A type with no DataOffer at all skips this (not every DmeType requires
+    # one in this build), so this only tightens the case where an offer exists.
+    offers = db.scalars(select(DataOffer).where(DataOffer.dme_type_id == body.dmeTypeId)).all()
+    if offers and not any(o.data_delivery_method_committed == body.dataDeliveryMethod for o in offers):
+        raise framework_error(FrameworkError.DELIVERY_METHOD_NOT_OFFERED, detail=f"{body.dataDeliveryMethod} not committed by any DataOffer for this dmeTypeId")
     job = DataJob(
         data_delivery_mode=body.dataDeliveryMode,
         dme_type_id=body.dmeTypeId,

@@ -117,6 +117,56 @@ def test_data_offer_commits_to_first_offered_method(client):
     assert resp.json()["committedMethod"] == "PUSH_HTTP"
 
 
+def test_data_job_rejects_a_method_the_offer_never_committed_to(client):
+    """The actual fix: CreateDataJob previously only checked the requested
+    method against the global wire-value set, never against what the
+    specific DataOffer for this dmeTypeId actually committed to (section
+    3.5's own "framework commits to one" decision) — a consumer could
+    request STREAMING_KAFKA against a type whose offer only committed to
+    PULL_HTTP, and DME accepted it without complaint.
+    """
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    client.post("/offers", json={
+        "dmeTypeId": reg["registrationId"], "dataDeliveryMode": "CONTINUOUS",
+        "dataDeliveryMethods": ["PULL_HTTP"],
+        "dataOfferTerminationNotificationUri": "http://producer/terminate",
+    })
+
+    resp = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "STREAMING_KAFKA", "consumerId": "rapp-1",
+    })
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "DELIVERY_METHOD_NOT_OFFERED"
+
+
+def test_data_job_accepts_the_offers_committed_method(client):
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    client.post("/offers", json={
+        "dmeTypeId": reg["registrationId"], "dataDeliveryMode": "CONTINUOUS",
+        "dataDeliveryMethods": ["PULL_HTTP"],
+        "dataOfferTerminationNotificationUri": "http://producer/terminate",
+    })
+
+    resp = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    })
+    assert resp.status_code == 202
+
+
+def test_data_job_unaffected_by_offer_check_when_no_offer_exists(client):
+    """Not every DmeType in this build has a DataOffer — the check must
+    not regress the existing PULL-only-no-offer case.
+    """
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    resp = client.post("/data-jobs", json={
+        "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    })
+    assert resp.status_code == 202
+
+
 def test_terminate_data_offer_fires_termination_notification(client, monkeypatch):
     """Section 3.5: normal-direction notification on termination —
     framework -> Producer, distinct from the reversed availability
