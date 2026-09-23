@@ -96,20 +96,22 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**127 tests total, all passing** as of this build: 117 unit tests across
+**134 tests total, all passing** as of this build: 124 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
-cross-service wiring. Notably including: the cascade-delete guard, upgrade
-auto-rollback, the `PARTIAL_SUCCESS` decomposed-PATCH aggregation, the O1
-Adaptor endpoint health lifecycle, the full AI/ML certification pipeline
-plus retraining re-entry, SO SMOS's fail-fast dispatch semantics, A1
-Related's real round trip to the mock Near-RT RIC (both `ENFORCED` and
-`REJECTED` paths), a three-hop chain (SO SMOS → A1 Related → mock
-Near-RT RIC) proving the dispatch table isn't calling into a stub, and a
-full onboard-to-deploy chain (Onboarding → NFO → rApp Management) proving
-NFO's real `NFDeploymentDescriptor` row — not `packageId` — makes it all
-the way through. so-smos, ran-analytics, and focom — previously the
-thinnest-covered modules — now have route-level coverage too, not just
-dispatch-logic coverage, closing OPEN_ITEMS.md's test-coverage-parity item.
+cross-service wiring. Notably including: the cascade-delete guard (now
+actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
+below), upgrade auto-rollback, the `PARTIAL_SUCCESS` decomposed-PATCH
+aggregation, the O1 Adaptor endpoint health lifecycle, the full AI/ML
+certification pipeline plus retraining re-entry, SO SMOS's fail-fast
+dispatch semantics, A1 Related's real round trip to the mock Near-RT RIC
+(both `ENFORCED` and `REJECTED` paths), a three-hop chain (SO SMOS → A1
+Related → mock Near-RT RIC) proving the dispatch table isn't calling
+into a stub, and a full onboard-to-deploy chain (Onboarding → NFO →
+rApp Management) proving NFO's real `NFDeploymentDescriptor` row — not
+`packageId` — makes it all the way through. so-smos, ran-analytics,
+focom, rapp-mgmt, and dme — previously among the thinnest-covered
+modules — now have route-level coverage too, not just dispatch-logic
+coverage, closing OPEN_ITEMS.md's test-coverage-parity item.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
@@ -184,6 +186,34 @@ Writing the tests, not just the code, is what surfaced these:
   `IntegrityError` on the `(producer_id, analytics_type)` composite
   primary key, the same shape of bug as SME's `RegisterService` had.
   Fixed with the same update-in-place upsert.
+- **`RAppInstance.RECOVER` had no HTTP route at all** — the FSM
+  transition (`FAULTED -> DEPLOYING`) existed and was unit-tested
+  directly against the FSM, but nothing in `rapp-mgmt/app/main.py` ever
+  fired it; a critically faulted rApp instance had no API path back to
+  `RUNNING`. Fixed with `POST /instances/{id}/recover`.
+- **Onboarding's cascade-delete guard was unreachable from ordinary rApp
+  deployment** — `PackageUsageRegistration` rows are only ever
+  created/stopped via Onboarding's `usage/start`/`usage/stop`, and
+  nothing in `rApp Management`'s `CreateInstance`/`TerminateInstance`
+  ever called them, so the guard's active-usage condition could never
+  fire from a real deployment. Fixed by wiring both calls in.
+- **DME's `CreateDataJob` never validated against the actual
+  `DataOffer`** — only against the global set of known wire-value
+  methods, so a consumer could request a delivery method the specific
+  `dmeTypeId`'s producer never actually offered. Fixed with a real
+  cross-check.
+- **Two more real Postgres-schema bugs, both in `rapp_instance`,
+  found while fixing the above**: `pending_upgrade_instance_id` — read
+  and written throughout `rapp-mgmt/app/upgrade.py` and `main.py` — was
+  **entirely missing** from `migrations/001_init.sql` (only present in
+  the SQLAlchemy model), and `oauth_client_id` was `NOT NULL` in the
+  migration even though `_revoke_credential` explicitly sets it to
+  `NULL` on termination (closing v1.3's RT-3 finding). Both would have
+  crashed against real Postgres on first use; neither was ever caught
+  because SQLite's unit tests build their schema straight from the ORM
+  models, never from this file, and the migration-Postgres CI job only
+  checks table *count*, not columns. Verified fixed against a real local
+  Postgres 16 instance, not just SQLite.
 
 ## What's deliberately incomplete
 

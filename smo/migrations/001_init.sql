@@ -131,9 +131,21 @@ CREATE TABLE rapp_instance (
                                  CHECK (state IN ('DEPLOYING','RUNNING','UPGRADING','TERMINATING','FAULTED')),
   configuration                   JSONB,
   workload_ref                      TEXT,
-  oauth_client_id                     TEXT NOT NULL,   -- == rAppId, identity.py
+  -- Nullable, not NOT NULL as originally written: _revoke_credential
+  -- (statemachine.py) explicitly sets this to NULL on TERMINATE and
+  -- UPGRADE_COMMIT, closing v1.3's RT-3 red-team finding — a NOT NULL
+  -- constraint here would reject that commit outright on real Postgres.
+  -- Only caught by running this schema for real, not just SQLite's
+  -- ORM-generated tables the unit tests use.
+  oauth_client_id                     TEXT,            -- == rAppId, identity.py, until revoked
   created_at                            TIMESTAMPTZ NOT NULL DEFAULT now(),
-  upgrade_timeout_seconds                 INTEGER NOT NULL DEFAULT 300   -- NEW section 6: UNGROUNDED default, flagged
+  upgrade_timeout_seconds                 INTEGER NOT NULL DEFAULT 300,  -- NEW section 6: UNGROUNDED default, flagged
+  -- Also missing from this table until this pass, for the same reason:
+  -- both are read/written by rapp-mgmt/app/upgrade.py and main.py but
+  -- SQLite's unit tests build their schema from the ORM models
+  -- directly, never from this file, so the gap went uncaught.
+  pending_upgrade_instance_id             UUID REFERENCES rapp_instance(instance_id),
+  package_usage_registration_id             UUID REFERENCES package_usage_registration(id)
 );
 
 CREATE TABLE rapp_fault_report (

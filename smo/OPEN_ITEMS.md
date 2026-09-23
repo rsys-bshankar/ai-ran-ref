@@ -38,6 +38,13 @@ the ambiguity into code.
   meanings. Needs the intended semantics defined.
 - **`upgradeTimeoutSeconds` default (300s)** (`rapp-mgmt/`) — a
   placeholder, not a researched value.
+- **Intent-to-RMIH matching semantics** (`policy-mgmt/`) — `CreateIntent`
+  and `RegisterIntentHandlingFunction` both exist, but nothing decides
+  which RMIH a new Intent should be dispatched to; needs a definition of
+  "matching" (by `intent_handling_scope`? capability equality? push
+  notification or RMIH-side polling?) before it can be built. Surfaced
+  writing call flow 09 (a sibling branch — see `smo/docs/call-flows/09-*`
+  once merged).
 
 ## 2. Repo code / lifecycle gaps
 
@@ -50,6 +57,39 @@ the ambiguity into code.
   rejects an invalid descriptor ID) and end to end via
   `tests_integration/test_cross_service.py`'s
   `test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_descriptor`.
+- ~~`RAppInstance.RECOVER` had no HTTP route~~ — **closed.** The FSM
+  transition (`FAULTED -> DEPLOYING`) existed and was unit-tested
+  directly against the FSM, but no route in `rapp-mgmt/app/main.py`
+  fired it — a critically faulted rApp instance had no API path back to
+  `RUNNING`. Added `POST /instances/{id}/recover`, mirroring
+  `bootstrap-complete`'s shape.
+- ~~Onboarding's cascade-delete guard was unreachable from ordinary rApp
+  deployment~~ — **closed.** `PackageUsageRegistration` rows were only
+  ever created/stopped via Onboarding's `usage/start`/`usage/stop`,
+  which nothing in `rApp Management`'s `CreateInstance`/`TerminateInstance`
+  called. `CreateInstance` now calls `usage/start` and stores the real
+  `registrationId` (new `RAppInstance.package_usage_registration_id`
+  column); `TerminateInstance` now calls `usage/stop` before the row is
+  deleted.
+- ~~DME's `CreateDataJob` didn't validate against the actual
+  `DataOffer`~~ — **closed.** It checked `dataDeliveryMethod` against the
+  global `DELIVERY_METHODS` set only, never against what the
+  `dmeTypeId`'s own `DataOffer` actually committed to. Now cross-checked
+  (skipped when no offer exists for that type, so types without one are
+  unaffected).
+- **Two more real Postgres-schema bugs found fixing the above, same
+  table** (`migrations/001_init.sql`'s `rapp_instance`), both fixed:
+  `pending_upgrade_instance_id` was read/written throughout
+  `rapp-mgmt/app/upgrade.py` and `main.py` but was **entirely missing**
+  from the migration (only present in the SQLAlchemy model) — would
+  crash on first use against real Postgres; and `oauth_client_id` was
+  `NOT NULL` in the migration even though `_revoke_credential`
+  explicitly sets it to `NULL` on `TERMINATE`/`UPGRADE_COMMIT` (closing
+  v1.3's RT-3 finding) — would reject that commit outright. Neither was
+  ever caught because SQLite's unit tests build their schema from the
+  ORM models directly, never from this file, and the migration-Postgres
+  CI job only checks table *count*, not columns. Verified fixed against
+  a real local Postgres 16 instance.
 - **No real southbound integrations beyond the A1 mock** — O1 Adaptor
   `PATCH` calls, actual `docker run` invocations, etc. are all elided in
   favor of recording the correct state transition.
@@ -74,28 +114,6 @@ the ambiguity into code.
   against each service in isolation have been validated. The RT-7
   network-isolation claim is structurally correct in the compose file but
   functionally unverified.
-- **`RAppInstance.RECOVER` has no HTTP route** (`rapp-mgmt/`) — the FSM
-  transition (`FAULTED -> DEPLOYING`) exists and is unit-tested directly
-  against the FSM, but no route in `app/main.py` fires it; a critically
-  faulted rApp instance has no API path back to `RUNNING`. Fix: a
-  `POST /instances/{id}/recover` route mirroring `bootstrap-complete`'s
-  shape. Surfaced writing call flow 07.
-- **Onboarding's cascade-delete guard is unreachable from ordinary rApp
-  deployment** (`onboarding/` + `rapp-mgmt/`) — `PackageUsageRegistration`
-  rows are only ever created/stopped via Onboarding's `usage/start`/
-  `usage/stop`, which nothing in `rApp Management`'s `CreateInstance`/
-  `TerminateInstance` calls. Fix: wire those two calls into the
-  respective rApp Management routes. Surfaced writing call flow 06.
-- **DME's `CreateDataJob` doesn't validate against the actual `DataOffer`**
-  (`dme/`) — it checks `dataDeliveryMethod` against the global
-  `DELIVERY_METHODS` set only, not against what the `dmeTypeId`'s own
-  `DataOffer` actually committed to; a consumer can request a method the
-  producer never offered. Surfaced writing call flow 05.
-- **Policy Mgmt has no Intent-to-RMIH matching/dispatch step**
-  (`policy-mgmt/`) — `CreateIntent` and `RegisterIntentHandlingFunction`
-  both exist, but nothing notifies an RMIH of a new Intent it could
-  fulfil; `IntentHandlingFunction.intent_handling_scope` is modeled but
-  no code path sets or reads it. Surfaced writing call flow 09.
 
 ## 3. Call-flow gaps — closed
 
@@ -107,24 +125,28 @@ reporting, RAN Analytics' own data-production flow, the Policy Mgmt
 Intent-driven flow, and a multi-step SO SMOS order combining
 INFRA + TRAINING + DEPLOY.
 
-Writing them surfaced four real, previously-undocumented gaps (now each
-its own item in section 2 below, not fixed here — these are doc-writing
-findings, not doc-writing fixes):
+Writing them surfaced four real, previously-undocumented gaps. Three
+are closed above (§2: `RAppInstance.RECOVER`'s missing route, the
+cascade-delete guard's dead usage-registration wiring, DME's unchecked
+`DataOffer`/`DataJob` method mismatch); the fourth (Policy Mgmt's
+Intent-to-RMIH matching) turned out to need its own design decision and
+moved to §1 instead:
 
-- `RAppInstance`'s `RECOVER` transition (`FAULTED -> DEPLOYING`) has no
-  HTTP route — a critically-faulted rApp instance has no API path back
-  to `RUNNING` at all (call flow 07).
-- Onboarding's cascade-delete guard depends on `PackageUsageRegistration`
+- `RAppInstance`'s `RECOVER` transition (`FAULTED -> DEPLOYING`) had no
+  HTTP route — a critically-faulted rApp instance had no API path back
+  to `RUNNING` at all (call flow 07). Closed.
+- Onboarding's cascade-delete guard depended on `PackageUsageRegistration`
   rows that rApp Management's `CreateInstance`/`TerminateInstance` never
-  actually creates or stops — `usage/start`/`usage/stop` are reachable
-  only out-of-band, not from ordinary rApp deployment (call flow 06).
-- DME's `CreateDataJob` validates `dataDeliveryMethod` against the
+  actually created or stopped — `usage/start`/`usage/stop` were reachable
+  only out-of-band, not from ordinary rApp deployment (call flow 06). Closed.
+- DME's `CreateDataJob` validated `dataDeliveryMethod` against the
   global known-methods set only, never against the specific `DataOffer`
-  the `dmeTypeId` is actually associated with (call flow 05).
+  the `dmeTypeId` is actually associated with (call flow 05). Closed.
 - Policy Mgmt has no matching/dispatch step between `CreateIntent` and
   `RegisterIntentHandlingFunction` — an RMIH is never notified of a new
   Intent it could fulfil; `IntentHandlingFunction.intent_handling_scope`
-  is modeled but no code path ever sets or reads it (call flow 09).
+  is modeled but no code path ever sets or reads it (call flow 09). Needs
+  a design decision — see §1.
 
 ## 4. Test coverage is uneven
 
@@ -132,10 +154,9 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| nfo | 5 |
 | mock-near-rt-ric | 5 |
 | r1-termination | 5 |
-| rapp-mgmt | 5 |
+| nfo | 5 |
 | ran-analytics | 5 |
 | focom | 7 |
 | policy-mgmt | 7 |
@@ -143,14 +164,16 @@ Per-module unit test counts:
 | a1-related | 8 |
 | onboarding | 9 |
 | sme | 9 |
-| dme | 10 |
+| rapp-mgmt | 9 |
 | ran-nf-oam | 10 |
 | ai-ml-workflow | 11 |
+| dme | 13 |
 | so-smos | 13 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
-`rapp-mgmt` and `r1-termination` are now the shallowest-covered
-modules — both still near their original baseline.
+`r1-termination` and `mock-near-rt-ric` are now the shallowest-covered
+modules; `rapp-mgmt` and `dme` moved out of the shallow tier this pass
+(both gained route-level tests — `rapp-mgmt` had none at all before).
 
 ## Closed
 
@@ -165,21 +188,18 @@ modules — both still near their original baseline.
   re-registration (same shape as the SME bug from the original pass).
   See `smo/README.md`'s "Real bugs this pass found" section. `nfo` was
   separately brought to 5 by the `NFDeploymentDescriptor` fix.
+- **Fill the call-flow gaps** (§3, was priority 3) — all six missing
+  journeys are now in `smo/docs/call-flows/` (05 through 10); writing
+  them is what surfaced the `RECOVER`/cascade-delete-guard/DME-validation
+  items closed above, plus the Intent-to-RMIH matching item now in §1.
 
 ## Suggested next pass (priority order)
 
-1. ~~`NFDeploymentDescriptor` population (§2)~~ — done.
-2. ~~Bring up the shallow-coverage modules (§4: so-smos, ran-analytics,
-   focom) to parity with the rest~~ — done.
-3. ~~Fill the call-flow gaps (§3)~~ — done; see §3.
-4. The four small, self-contained gaps §3 surfaced while writing those
-   flows (§2: `RAppInstance.RECOVER`'s missing route, the cascade-delete
-   guard's dead usage-registration wiring, DME's unchecked
-   `DataOffer`/`DataJob` method mismatch, Policy Mgmt's missing
-   Intent-to-RMIH dispatch) — each is independent, no open design
-   question blocking any of them, same shape as item 1 above.
-5. Resolve the design-level decisions (§1) that block further code — SA
-   SMOS `RECONNECT`/`ROLLBACK` and RAN NF OAM's CM sync method are the two
-   most likely to unblock near-term code changes once decided.
-6. Deepen `rapp-mgmt`'s and `r1-termination`'s coverage — both are now
-   the shallowest tier remaining.
+1. Resolve the design-level decisions (§1) that block further code — SA
+   SMOS `RECONNECT`/`ROLLBACK`, RAN NF OAM's CM sync method, and the
+   newly-added Intent-to-RMIH matching semantics are the most likely to
+   unblock near-term code changes once decided; these genuinely need a
+   stakeholder call, not an invented answer.
+2. Deepen `r1-termination`'s and `mock-near-rt-ric`'s coverage — the
+   shallowest tier remaining now that `rapp-mgmt` and `dme` have moved
+   out of it.

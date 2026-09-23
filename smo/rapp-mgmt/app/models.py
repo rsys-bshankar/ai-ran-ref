@@ -19,6 +19,7 @@ class RAppInstance(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
     upgrade_timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=300)  # ungrounded placeholder, LLD section 6
     pending_upgrade_instance_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # links old row to its in-flight replacement
+    package_usage_registration_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("package_usage_registration.id"))
 
 
 class RAppFaultReport(Base):
