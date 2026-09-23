@@ -79,6 +79,20 @@ def discover_dme_types(data_category: str | None = None, db: Session = Depends(g
     return [_type_view(db, r) for r in rows]
 
 
+@app.delete("/production-capabilities", status_code=204)
+def deregister_producer(producer_id: str, db: Session = Depends(get_session)):
+    """The DME half of rApp Management's producer-reconsideration trigger
+    (OPEN_ITEMS.md section 1): when a RAppInstance crashes or terminates,
+    its own DME registrations (keyed by producer_id == the rApp's
+    oauth_client_id) are no longer trustworthy and are torn down here,
+    same as terminate_data_job's shape. Idempotent — a producer_id with
+    nothing registered is a no-op, not an error.
+    """
+    for t in db.scalars(select(DMEType).where(DMEType.producer_id == producer_id)).all():
+        db.delete(t)
+    db.commit()
+
+
 @app.post("/data-jobs", status_code=202)
 def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
     if body.dataDeliveryMethod not in DELIVERY_METHODS:

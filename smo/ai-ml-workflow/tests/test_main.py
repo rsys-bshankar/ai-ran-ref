@@ -9,21 +9,27 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from smo_shared.db import Base, get_session
+from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import AIMLModel, MLModelCoordinationGroup, TrainingJob
+from app.models import AIMLModel, MLMFSubscription, MLModelCoordinationGroup, PerformanceReport, TrainingJob
 from app.statemachine import ModelState
 
 
 @pytest.fixture
 def db_session_factory():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[AIMLModel.__table__, TrainingJob.__table__, MLModelCoordinationGroup.__table__])
+    # make_test_engine(), not a plain create_engine("sqlite://", ...) —
+    # MLModelCoordinationGroup.member_model_ids is an ARRAY(Uuid), whose
+    # SQLite JSON fallback needs the UUID-aware serializer make_test_engine
+    # provides (see smo_shared/testing.py's own docstring).
+    engine = make_test_engine()
+    Base.metadata.create_all(engine, tables=[
+        AIMLModel.__table__, TrainingJob.__table__, MLModelCoordinationGroup.__table__,
+        MLMFSubscription.__table__, PerformanceReport.__table__,
+    ])
     return sessionmaker(bind=engine)
 
 
@@ -107,3 +113,67 @@ def test_request_training_rejected_mid_certification_pipeline(client, db_session
     model_id = _make_model(db_session_factory, ModelState.CERTIFIED)
     resp = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
     assert resp.status_code == 409
+
+
+def _make_group_with_subscription(db_session_factory, member_states, retrain_propagation="ANY_MEMBER_TRIGGERS"):
+    """Builds a coordination group with one member per state in
+    member_states, plus an MLMFSubscription (with a guard_kpi_floor, so a
+    low metric breaches) on the first member — the one whose report
+    triggers group evaluation.
+    """
+    member_ids = [uuid.uuid4() for _ in member_states]
+    sub_id = uuid.uuid4()
+    with db_session_factory() as session:
+        for member_id, state in zip(member_ids, member_states):
+            session.add(AIMLModel(model_id=member_id, registration_id=str(uuid.uuid4()), model_type="t", version="1.0", state=state))
+        session.add(MLModelCoordinationGroup(member_model_ids=member_ids, retrain_propagation=retrain_propagation))
+        session.add(MLMFSubscription(subscription_id=sub_id, model_id=member_ids[0], metric_types=["accuracy"],
+                                      dme_type_id=uuid.uuid4(), guard_kpi_floor={"accuracy": 0.9}))
+        session.commit()
+    return member_ids, sub_id
+
+
+def test_group_retrain_trigger_fires_retrain_on_active_members(client, db_session_factory):
+    """The actual fix (OPEN_ITEMS.md section 1's MLModelCoordinationGroup
+    x SA SMOS convergence item): report_performance used to compute
+    groupRetrainTriggered and stop — nothing ever fired RETRAIN on a
+    member model.
+    """
+    member_ids, sub_id = _make_group_with_subscription(db_session_factory, [ModelState.ACTIVE, ModelState.ACTIVE])
+
+    resp = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["groupRetrainTriggered"] is True
+    assert set(body["retrainedModelIds"]) == {str(m) for m in member_ids}
+
+    with db_session_factory() as session:
+        for member_id in member_ids:
+            model = session.get(AIMLModel, member_id)
+            assert model.state == ModelState.TRAINING
+            assert model.training_job_id is not None
+
+
+def test_group_retrain_trigger_skips_non_active_members(client, db_session_factory):
+    """RETRAIN is only a legal transition from ACTIVE — a member already
+    TRAINING (or never certified) must be skipped, not forced.
+    """
+    member_ids, sub_id = _make_group_with_subscription(db_session_factory, [ModelState.ACTIVE, ModelState.REGISTERED])
+
+    resp = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5})
+    body = resp.json()
+    assert body["retrainedModelIds"] == [str(member_ids[0])]
+
+    with db_session_factory() as session:
+        untouched = session.get(AIMLModel, member_ids[1])
+        assert untouched.state == ModelState.REGISTERED
+        assert untouched.training_job_id is None
+
+
+def test_no_group_retrain_when_not_breached(client, db_session_factory):
+    member_ids, sub_id = _make_group_with_subscription(db_session_factory, [ModelState.ACTIVE])
+
+    resp = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.99})
+    body = resp.json()
+    assert body["breachedFloor"] is False
+    assert "groupRetrainTriggered" not in body

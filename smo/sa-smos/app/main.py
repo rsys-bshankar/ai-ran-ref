@@ -1,15 +1,25 @@
 """SA SMOS.
 
 SMO Design v1.3 section 3.14, extended by SO/SA SMOS LLD section 2:
-CONFIG_CHANGE, SCALE, and (this pass) RECONNECT are resolved.
-RECONNECT means restoring connectivity/health for the order's deployed
-workload — dispatched to NFO's Heal, resolving the concrete
+CONFIG_CHANGE, SCALE, and RECONNECT are resolved for an order-scoped
+monitor. RECONNECT means restoring connectivity/health for the order's
+deployed workload — dispatched to NFO's Heal, resolving the concrete
 nfDeploymentId via SO SMOS's own order record (the AssuranceMonitor
 itself only carries target_order_id, not a resource ID directly).
 ROLLBACK stays honestly unsupported, but for a concrete, checked reason
 now rather than a generic "ambiguous" refusal: rApp Management deletes
 the previous RAppInstance row on a successful upgrade, so no version
 history survives to roll back to at all (see ROLLBACK_HISTORY_UNAVAILABLE).
+
+A coordination-group-scoped monitor (target_coordination_group_id) is a
+different case entirely, resolved this pass too: it watches model
+performance, not an NF deployment, so CONFIG_CHANGE/SCALE/RECONNECT/
+ROLLBACK's NF-oriented meanings don't map onto a model group at all.
+Remedial action for one always means the same thing regardless of the
+requested actionType — trigger a retrain of the group via AI/ML
+Workflow's RequestTraining, converging with that module's own
+groupRetrainTriggered fix (OPEN_ITEMS.md section 1's
+MLModelCoordinationGroup x SA SMOS convergence item).
 """
 
 import uuid
@@ -55,12 +65,20 @@ def execute_remedial_action(monitor_id: uuid.UUID, action_type: str, requester_i
     to change (REQ-CNFG-ADM pattern, unchanged). Dispatch per SO/SA SMOS
     LLD section 2.1: CONFIG_CHANGE, SCALE, and RECONNECT are resolved;
     ROLLBACK stays unsupported for a concrete, checked reason (see the
-    module docstring), not a generic "ambiguous" refusal.
+    module docstring), not a generic "ambiguous" refusal. A
+    coordination-group-scoped monitor bypasses all four actionType
+    branches below — see the module docstring's MLModelCoordinationGroup
+    convergence note.
     """
     monitor = db.get(AssuranceMonitor, monitor_id)
     r1 = R1Client()
 
-    if action_type == "CONFIG_CHANGE":
+    if monitor.target_coordination_group_id is not None:
+        resp = r1.post("/ai-ml-workflow/training-jobs", json={
+            "modelCoordinationGroupId": str(monitor.target_coordination_group_id), "producerId": "sa-smos",
+        })
+        outcome = "RESOLVED" if resp.status_code < 300 else "ESCALATED"
+    elif action_type == "CONFIG_CHANGE":
         result = r1.post("/ran-nf-oam/config-jobs", json={"requestedBy": "sa-smos", "scope": "cell", "changes": []})
         outcome = "RESOLVED" if result.status_code < 300 else "ESCALATED"
     elif action_type == "SCALE":

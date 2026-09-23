@@ -57,16 +57,16 @@ smo/
 | DME | `dme/` | — |
 | R1 Termination | `r1-termination/` | — (gateway, no domain schema) |
 | Software Package Onboarding | `onboarding/` | `ApplicationPackage` FSM |
-| rApp Management | `rapp-mgmt/` | `RAppInstance` FSM + upgrade auto-rollback |
+| rApp Management | `rapp-mgmt/` | `RAppInstance` FSM + upgrade auto-rollback; CRASH/TERMINATE now push a DME deregistration for the instance's own producer registrations |
 | RAN NF OAM | `ran-nf-oam/` | `WriteConfigJob`, `SoftwareManagementJob`, `O1AdaptorEndpoint` health — 3 FSMs; CM writes dispatch as real NETCONF `<edit-config>` RPCs (RESTCONF-provisioned MEs rejected, not implemented) |
 | A1 Related | `a1-related/` | — (A1-ML dormant, out of scope — see the module's LLD section 0). Its real southbound dependency is `mock-near-rt-ric/`, on an isolated network segment. |
 | NFO | `nfo/` | `NFDeployment` |
 | FOCOM | `focom/` | — |
-| AI/ML Workflow | `ai-ml-workflow/` | `AIMLModel` FSM, `InferenceJob` FSM, retrain propagation |
+| AI/ML Workflow | `ai-ml-workflow/` | `AIMLModel` FSM, `InferenceJob` FSM, individual + coordination-group retrain propagation (a guard-KPI breach now actually fires `RETRAIN` on every `ACTIVE` group member, not just computes a bool) |
 | RAN Analytics | `ran-analytics/` | — |
 | Policy Mgmt & Info | `policy-mgmt/` | — |
 | SO SMOS | `so-smos/` | dispatch table, fail-fast execution |
-| SA SMOS | `sa-smos/` | remedial-action dispatch (`RECONNECT` resolved via SO SMOS order lookup + NFO Heal; `ROLLBACK` honestly unresolved — see below) |
+| SA SMOS | `sa-smos/` | remedial-action dispatch (`RECONNECT` resolved via SO SMOS order lookup + NFO Heal; a coordination-group-scoped monitor always dispatches a group retrain via AI/ML Workflow instead; `ROLLBACK` honestly unresolved — see below) |
 
 ## Running it
 
@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**187 tests total, all passing** as of this build: 177 unit tests across
+**197 tests total, all passing** as of this build: 187 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -241,6 +241,19 @@ Writing the tests, not just the code, is what surfaced these:
   explicitly cancelling an orphaned in-flight `TrainingJob` rather than
   silently overwriting `model.training_job_id` when a second
   `RequestTraining` call arrives mid-flight.
+- **`AI/ML Workflow`'s coordination-group lookup never actually worked
+  under any test until this pass gave it route-level coverage** —
+  `report_performance` located a model's coordination group with
+  `MLModelCoordinationGroup.member_model_ids.any(model.model_id)`, real
+  Postgres `ANY(array)` SQL with no SQLite equivalent under
+  `member_model_ids`' JSON fallback (`sqlite3.OperationalError: no such
+  function: ANY`). Replaced with an in-Python membership filter — and
+  that filter itself needed a string comparison, not
+  `model.model_id in group.member_model_ids` directly, since SQLite's
+  JSON fallback has no UUID item type and reads `member_model_ids` back
+  as plain strings where Postgres's native `ARRAY(Uuid)` round-trips
+  real `uuid.UUID` objects. Both were caught by writing the first tests
+  ever to exercise this code path, not found by inspection.
 
 ## What's deliberately incomplete
 
@@ -263,8 +276,6 @@ them:
   itself is still sent as XML over plain HTTP, not real SSH/ncclient
   transport, matching this build's all-HTTP-JSON pragmatism everywhere
   else.
-- **`upgradeTimeoutSeconds` default (300s)** (`rapp-mgmt/`) — not a
-  researched value, flagged as a placeholder in both the LLD and the code.
 - **`WEIGHTED_TRIGGERS`** (`ai-ml-workflow/`) — raises `NotImplementedError`;
   needs real noise-floor data before it can be designed, not invented now.
 - Every module's actual southbound integration beyond A1 Related's mock
