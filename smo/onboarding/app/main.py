@@ -12,12 +12,19 @@ from io import BytesIO
 
 import httpx
 
+class DescriptorCreationFailed(Exception):
+    """NFO's CreateDescriptor call (NFO+FOCOM LLD section 2) didn't return
+    201 — treated the same as any other onboarding validation failure.
+    """
+
+
 # What counts as "this package fails to validate" — broadened beyond
 # malformed-zip/missing-entry to include the location being unreachable
 # at all (caught while integration-testing: an unreachable location
 # previously crashed OnboardPackage with an unhandled 500 instead of
-# routing to FAILED, which is itself a real, expected outcome here).
-ONBOARD_VALIDATION_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, httpx.HTTPError)
+# routing to FAILED, which is itself a real, expected outcome here), and
+# now DescriptorCreationFailed alongside it.
+ONBOARD_VALIDATION_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, httpx.HTTPError, DescriptorCreationFailed)
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -25,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
 from smo_shared.errors import framework_error, FrameworkError
+from smo_shared.r1_client import R1Client
 from smo_shared.statemachine import IllegalTransition
 
 from .models import ApplicationPackage, Artifact, PackageUsageRegistration
@@ -62,6 +70,7 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
         pkg.signature_verified = True
         for path, access_url in artifacts:
             db.add(Artifact(package_id=pkg.package_id, path=path, access_url=access_url))
+        pkg.nf_deployment_descriptor_id = _create_nf_deployment_descriptor(pkg, entry_definitions)
         new_state = ONBOARDING_FSM.fire(PackageState.ONBOARDING, PackageEvent.VALIDATE_OK, db=db, package=pkg)
     except ONBOARD_VALIDATION_FAILURES:
         new_state = ONBOARDING_FSM.fire(PackageState.ONBOARDING, PackageEvent.VALIDATE_FAILED, db=db, package=pkg)
@@ -69,6 +78,24 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
     pkg.state = new_state
     db.commit()
     return {"packageId": str(pkg.package_id), "trackingId": str(pkg.package_id)}
+
+
+def _create_nf_deployment_descriptor(pkg: ApplicationPackage, entry_definitions: str) -> uuid.UUID:
+    """NFO+FOCOM LLD section 2: NFDeploymentDescriptor is derived from the
+    onboarded package's TOSCA Definitions/ at onboarding time — the actual
+    fix for the gap where nfDeploymentDescriptorId referenced nothing
+    concrete and rApp Management passed packageId directly where NFO
+    expected a real descriptor. Phase 1: workloadTemplate is a thin
+    reference to the entry definitions rather than a fully parsed TOSCA
+    node template.
+    """
+    resp = R1Client().post("/nfo/descriptors", json={
+        "packageId": str(pkg.package_id), "name": entry_definitions,
+        "workloadTemplate": {"toscaEntryDefinitions": entry_definitions},
+    })
+    if resp.status_code != 201:
+        raise DescriptorCreationFailed(f"NFO CreateDescriptor returned {resp.status_code}")
+    return uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
 
 
 def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str]:
@@ -91,7 +118,10 @@ def query_onboarding_status(package_id: uuid.UUID, db: Session = Depends(get_ses
     pkg = db.get(ApplicationPackage, package_id)
     if pkg is None:
         raise framework_error(FrameworkError.DME_TYPE_VERSION_CONFLICT, detail="no such package")  # 404-shaped reuse; Phase 1
-    return {"packageId": str(pkg.package_id), "state": pkg.state}
+    return {
+        "packageId": str(pkg.package_id), "state": pkg.state,
+        "nfDeploymentDescriptorId": str(pkg.nf_deployment_descriptor_id) if pkg.nf_deployment_descriptor_id else None,
+    }
 
 
 @app.get("/packages")

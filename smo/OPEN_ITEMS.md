@@ -41,15 +41,15 @@ the ambiguity into code.
 
 ## 2. Repo code / lifecycle gaps
 
-- **`NFDeploymentDescriptor` is never populated** (`nfo/` + `onboarding/`)
-  — the NFO+FOCOM LLD's own design says it should be derived from an
-  onboarded package's TOSCA `Definitions/` at onboarding time; nothing in
-  this build creates one. `rApp Management` currently passes `packageId`
-  directly where NFO expects a real descriptor ID. Only surfaces against
-  real Postgres FK enforcement (SQLite's test engine doesn't catch it) —
-  flagged explicitly in `tests_integration/test_cross_service.py`. Fix:
-  new NFO endpoint to create the descriptor, called from Onboarding's
-  `OnboardPackage` flow.
+- ~~**`NFDeploymentDescriptor` is never populated**~~ — **closed.** NFO
+  now has a `CreateDescriptor` endpoint (`POST /descriptors`), called
+  from Onboarding's `OnboardPackage` flow once validation succeeds;
+  `rApp Management` consumes the real `nfDeploymentDescriptorId` via
+  Onboarding's `onboarding-status` response instead of passing
+  `packageId`. Verified against real Postgres (the FK now correctly
+  rejects an invalid descriptor ID) and end to end via
+  `tests_integration/test_cross_service.py`'s
+  `test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_descriptor`.
 - **No real southbound integrations beyond the A1 mock** — O1 Adaptor
   `PATCH` calls, actual `docker run` invocations, etc. are all elided in
   favor of recording the correct state transition.
@@ -135,31 +135,34 @@ Per-module unit test counts:
 | so-smos | 3 |
 | ran-analytics | 3 |
 | focom | 4 |
-| nfo | 4 |
 | mock-near-rt-ric | 5 |
+| nfo | 5 |
 | r1-termination | 5 |
 | rapp-mgmt | 5 |
-| onboarding | 7 |
 | policy-mgmt | 7 |
 | sa-smos | 7 |
 | a1-related | 8 |
+| onboarding | 9 |
 | sme | 9 |
 | dme | 10 |
 | ran-nf-oam | 10 |
 | ai-ml-workflow | 11 |
 
-Plus 9 cross-service integration tests in `tests_integration/`. The
-shallower modules (so-smos, ran-analytics, focom, nfo) have basic
+Plus 10 cross-service integration tests in `tests_integration/`. The
+shallower modules (so-smos, ran-analytics, focom) have basic
 CRUD/validation coverage but not the same depth of edge-case and
 failure-path testing the FSM-heavy modules got.
 
+## Closed
+
+- **`NFDeploymentDescriptor` population** (§2, was priority 1) — see
+  `smo/README.md`'s "Real bugs this pass found" section.
+
 ## Suggested next pass (priority order)
 
-1. `NFDeploymentDescriptor` population (§2) — closes a real cross-module
-   correctness gap already caught by an integration test, self-contained,
-   no open design question blocking it.
-2. Bring up the shallow-coverage modules (§4: so-smos, ran-analytics,
-   focom, nfo) to parity with the rest.
+1. ~~`NFDeploymentDescriptor` population (§2)~~ — done.
+2. ~~Bring up the shallow-coverage modules (§4: so-smos, ran-analytics,
+   focom) to parity with the rest~~ — done.
 3. ~~Fill the call-flow gaps (§3)~~ — done; see §3.
 4. The four small, self-contained gaps §3 surfaced while writing those
    flows (§2: `RAppInstance.RECOVER`'s missing route, the cascade-delete

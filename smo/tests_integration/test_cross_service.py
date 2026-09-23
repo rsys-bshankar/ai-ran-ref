@@ -144,20 +144,9 @@ def test_onboarding_to_rapp_management_status_check(mesh):
     real onboarding-status before proceeding — proven by onboarding a
     package with a deliberately-broken location (a 404, not a real
     .csar), which OnboardPackage's own validation routes to FAILED, and
-    confirming CreateInstance refuses to deploy it.
-
-    KNOWN GAP, flagged rather than silently worked around: this test
-    stops short of a full deploy, because nothing in this reference
-    build creates a real NFDeploymentDescriptor row from an onboarded
-    package's TOSCA Definitions (NFO+FOCOM LLD section 2's own stated
-    design) — rApp Management currently passes packageId directly where
-    NFO expects a genuine nfDeploymentDescriptorId, with no service
-    actually populating that table. SQLite's default test engine doesn't
-    enforce the FK, so a happy-path deploy test would pass here without
-    proving anything real; a Postgres-backed run would reject it outright
-    on the FK. Worth a real fix (an NFO endpoint to create the
-    descriptor, called from Onboarding at OnboardPackage time), not
-    papered over in this test.
+    confirming CreateInstance refuses to deploy it. The full happy-path
+    deploy (a real NFDeploymentDescriptor created and consumed) is
+    covered separately below.
     """
     # Points at a real, mesh-reachable endpoint that returns 200 JSON —
     # reachable, but not valid zip bytes, so OnboardPackage's own
@@ -174,3 +163,50 @@ def test_onboarding_to_rapp_management_status_check(mesh):
 
     create = mesh["rapp-mgmt"].post("/instances", json={"packageId": package_id, "config": {}})
     assert create.status_code == 409  # rApp Mgmt correctly refuses — the package never reached AVAILABLE
+
+
+def test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_descriptor(mesh, loaded_apps, shared_engine, monkeypatch):
+    """The actual fix for OPEN_ITEMS.md's top item: NFO's CreateDescriptor
+    (NFO+FOCOM LLD section 2) is now called from OnboardPackage once
+    validation succeeds, and rApp Management's CreateInstance now passes
+    that REAL nfDeploymentDescriptorId to NFO instead of packageId. Proven
+    end to end — not just per module — by reaching into both modules'
+    real DB rows through the shared engine, not just trusting the HTTP
+    responses.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    # _validate_package's own zip-parsing is exercised by onboarding's unit
+    # tests; stubbing it here keeps this test's focus on the cross-module
+    # wiring this pass actually changed, not TOSCA zip mechanics.
+    monkeypatch.setattr(
+        loaded_apps["onboarding"], "_validate_package",
+        lambda location: ("Definitions/main.yaml", [], "deadbeef"),
+    )
+
+    onboard = mesh["onboarding"].post("/packages", json={"location": "http://example/pkg.csar"})
+    package_id = onboard.json()["packageId"]
+
+    status = mesh["onboarding"].get(f"/packages/{package_id}/onboarding-status")
+    assert status.json()["state"] == "AVAILABLE"
+    nf_deployment_descriptor_id = status.json()["nfDeploymentDescriptorId"]
+    assert nf_deployment_descriptor_id is not None
+    assert nf_deployment_descriptor_id != package_id  # a real, distinct descriptor row — not packageId reused
+
+    NFDeploymentDescriptor = loaded_apps["nfo"].NFDeploymentDescriptor
+    NFDeployment = loaded_apps["nfo"].NFDeployment
+    with Session(shared_engine) as session:
+        descriptor = session.get(NFDeploymentDescriptor, uuid.UUID(nf_deployment_descriptor_id))
+        assert descriptor is not None
+        assert str(descriptor.package_id) == package_id
+
+    create = mesh["rapp-mgmt"].post("/instances", json={"packageId": package_id, "config": {}})
+    assert create.status_code == 202
+
+    with Session(shared_engine) as session:
+        deployment = session.scalar(
+            select(NFDeployment).where(NFDeployment.nf_deployment_descriptor_id == uuid.UUID(nf_deployment_descriptor_id))
+        )
+        assert deployment is not None
+        assert deployment.state == "RUNNING"
