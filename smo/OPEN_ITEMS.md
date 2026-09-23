@@ -140,9 +140,9 @@ Per-module unit test counts:
 | sa-smos | 12 |
 | so-smos | 13 |
 | mock-near-rt-ric | 16 |
-| sme | 22 |
 | ran-analytics | 22 |
 | nfo | 23 |
+| sme | 24 |
 | ran-nf-oam | 29 |
 | onboarding | 30 |
 | a1-related | 30 |
@@ -170,8 +170,9 @@ before this pass despite being a real route. A later pass added
 then `ran-analytics`'s real subscriber-notification delivery in
 `publish_report` (+5, see §5), then `dme`'s `PUT /data-jobs/{id}`
 (+5), its `/type-subscriptions` mechanism (+9), and real
-job-definition JSON Schema validation (+5, see §5), and finally
-`onboarding`'s package-validation hardening (+4, see §5).
+job-definition JSON Schema validation (+5, see §5), then
+`onboarding`'s package-validation hardening (+4), and finally `sme`'s
+`apiIds` event-subscription filter (+2, see §5).
 
 ## 5. O-RAN-SC completeness gaps (repo-audited)
 
@@ -219,9 +220,23 @@ own §1/§2 items stand as-is.
   authz gate `discover_services` uses, but the code never enforced
   it — an unauthorized subscriber would have been notified about a
   service it isn't even allowed to discover. Now enforced.
-- Event subscription filtering is type-only — no per-`apiId`,
+- ~~Event subscription filtering is type-only — no per-`apiId`,
   `apiInvokerId`, or `aefId` filter, which the reference's
-  `EventFilters` supports.
+  `EventFilters` supports.~~ — **closed, partially.** Added `apiIds`
+  to `SubscribeEvents`/`ServiceEventSubscription` (the reference's own
+  `CAPIFEventFilter.apiIds`, `eventservice.go`'s
+  `getMatchingSubs`/`matchesFilters`) — a subscription scoped to one or
+  more `apiId`s (this build's `serviceId`) is no longer notified about
+  a different service's events. `apiInvokerId` and `aefId` stay
+  unimplemented for a concrete reason, not dropped silently: the
+  reference's own `apiInvokerId` filter matches against an *event's*
+  own `ApiInvokerIds`, which only `API_INVOKER_ONBOARDED`-class events
+  carry — a real CAPIF Invoker-onboarding subsystem this build doesn't
+  have (this module's own structurally-out-of-scope note below); this
+  build's `SERVICE_API_*` notifications have no invoker id in their
+  payload to filter on at all. `aefId` needs `aefProfiles`, which
+  `ServiceProfile` doesn't model — the separate "flattened
+  `ServiceProfile`" gap immediately below.
 - `discover_services` only filters on `api_name`/`api_version` — the
   reference also filters on category, `aefId`, protocol, data format,
   and comm type, against a nested `AefProfiles → Versions → Resources`
@@ -1165,6 +1180,14 @@ own §1/§2 items stand as-is.
   real ASD descriptor parsing stays out of scope — the same elision
   already documented for `RappInstance`'s nested ACM/SME/DME resource
   records. 366 tests total, up from 362 (`onboarding` alone: 26 -> 30).
+- SME's type-only event subscription filtering (§5) closed, partially:
+  added `apiIds` to `SubscribeEvents`/`ServiceEventSubscription` (the
+  reference's own `CAPIFEventFilter.apiIds`) — a subscription scoped to
+  specific `apiId`s is no longer notified about other services'
+  events. `apiInvokerId`/`aefId` filters stay unimplemented for a
+  concrete reason (no invoker-onboarding events, no `aefProfiles`
+  concept), not dropped silently. 368 tests total, up from 366 (`sme`
+  alone: 22 -> 24).
 
 ## Suggested next pass (priority order)
 

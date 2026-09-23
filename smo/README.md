@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**366 tests total, all passing** as of this build: 356 unit tests across
+**368 tests total, all passing** as of this build: 358 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -345,7 +345,16 @@ duplicate-package detection keyed on this build's own already-computed
 uniqueness check, since this build has no ASD descriptor concept to
 check against). All three route the package to `FAILED`, matching
 `OnboardPackage`'s existing async-contract shape rather than a
-synchronous HTTP rejection.
+synchronous HTTP rejection. `sme` went from 22 tests to 24 in the next
+pass: closed its type-only event subscription filtering gap,
+partially — added `apiIds` to `SubscribeEvents`/
+`ServiceEventSubscription` (the reference's own
+`CAPIFEventFilter.apiIds`), so a subscription scoped to specific
+`apiId`s is no longer notified about other services' events.
+`apiInvokerId`/`aefId` filters stay unimplemented for a concrete
+reason — no invoker-onboarding events exist in this build to filter
+on, and no `aefProfiles` concept exists on `ServiceProfile` — not
+dropped silently.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

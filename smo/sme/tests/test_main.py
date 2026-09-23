@@ -255,6 +255,48 @@ def test_deregister_by_wrong_producer_does_not_notify(client, monkeypatch):
     assert calls == []
 
 
+def test_subscription_with_api_ids_filter_only_notifies_for_a_matching_service(client, monkeypatch):
+    """OPEN_ITEMS.md section 5: event subscription filtering was
+    type-only — the reference's own CAPIFEventFilter also filters by
+    apiId (eventservice.go's getMatchingSubs/matchesFilters). A
+    subscription scoped to one service's apiId must not be notified
+    about a different service's events.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    watched = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(service_name="watched-service")).json()
+    client.post("/capif-events/v1/rapp-2/subscriptions", json={
+        "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_UPDATE"], "callbackUri": "http://rapp-2/cb",
+        "apiIds": [watched["serviceId"]],
+    })
+
+    client.post("/published-apis/v1/rapp-3/service-apis", json=register_body(service_name="other-service"))  # AVAILABLE, wrong event type anyway
+    client.post("/published-apis/v1/rapp-3/service-apis", json=register_body(service_name="other-service", version="2.0"))  # UPDATE, wrong apiId
+    assert calls == []
+
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(service_name="watched-service", version="2.0"))  # UPDATE, matching apiId
+    assert len(calls) == 1
+    assert calls[0][1]["serviceId"] == watched["serviceId"]
+
+
+def test_subscription_without_api_ids_filter_notifies_for_every_matching_service(client, monkeypatch):
+    """A subscription with no apiIds filter (the only kind this build had
+    before this pass) keeps its existing unscoped behavior.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/capif-events/v1/rapp-2/subscriptions", json={
+        "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-2/cb",
+    })
+
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(service_name="service-a"))
+    client.post("/published-apis/v1/rapp-3/service-apis", json=register_body(service_name="service-b"))
+
+    assert len(calls) == 2
+
+
 def test_notify_service_change_does_not_notify_a_subscriber_the_service_is_not_visible_to(client, monkeypatch):
     """notify_service_change's own docstring claims the same authz gate
     discover_services uses, but nothing ever enforced it — an
