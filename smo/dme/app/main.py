@@ -9,7 +9,7 @@ never had a schema OR endpoints in v1.3 at all.
 import uuid
 
 import httpx
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -75,7 +75,16 @@ def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_sessi
 
 @app.get("/dme-types")
 def discover_dme_types(data_category: str | None = None, db: Session = Depends(get_session)):
-    rows = db.scalars(select(DMEType)).all()
+    """OPEN_ITEMS.md section 5: data_category was declared but silently
+    never applied to the query. DMEType has no dedicated category
+    column — namespace (the grouping half of R1AP's typeName convention,
+    e.g. "RAN" in "RAN.CoverageIssue") is the closest concept it does
+    have, so that's what this filters on.
+    """
+    stmt = select(DMEType)
+    if data_category:
+        stmt = stmt.where(DMEType.namespace == data_category)
+    rows = db.scalars(stmt).all()
     return [_type_view(db, r) for r in rows]
 
 
@@ -119,6 +128,22 @@ def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
     return {"dataJobId": str(job.data_job_id)}
 
 
+@app.get("/data-jobs/{data_job_id}")
+def get_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    job = db.get(DataJob, data_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such data job")
+    return _job_view(job)
+
+
+@app.get("/data-jobs/{data_job_id}/status")
+def query_data_job_status(data_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    job = db.get(DataJob, data_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such data job")
+    return {"dataJobId": str(job.data_job_id), "status": job.status}
+
+
 @app.delete("/data-jobs/{data_job_id}", status_code=204)
 def terminate_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session)):
     """Handles both directions per section 3.7: a Consumer rApp cancelling
@@ -145,6 +170,14 @@ def create_data_offer(body: DataOfferRequest, db: Session = Depends(get_session)
     db.add(offer)
     db.commit()
     return {"offerId": str(offer.offer_id), "committedMethod": offer.data_delivery_method_committed}
+
+
+@app.get("/offers/{offer_id}")
+def get_data_offer(offer_id: uuid.UUID, db: Session = Depends(get_session)):
+    offer = db.get(DataOffer, offer_id)
+    if offer is None:
+        raise HTTPException(status_code=404, detail="no such data offer")
+    return _offer_view(offer)
 
 
 @app.delete("/offers/{offer_id}", status_code=204)
@@ -177,6 +210,30 @@ def offer_data_availability(offer_id: uuid.UUID, body: dict, db: Session = Depen
         raise framework_error(FrameworkError.DME_TYPE_VERSION_CONFLICT, detail="no such offer")
     # Phase 1: framework pulls/receives here — deferred to the actual pull/push
     # transport handler (dme-pull/dme-push routes), this endpoint just acks.
+
+
+def _job_view(j: DataJob) -> dict:
+    return {
+        "dataJobId": str(j.data_job_id),
+        "dataDeliveryMode": j.data_delivery_mode,
+        "dmeTypeId": str(j.dme_type_id),
+        "productionJobDefinition": j.production_job_definition or {},
+        "dataDeliveryMethod": j.data_delivery_method,
+        "deliveryDetails": j.delivery_details or {},
+        "consumerId": j.consumer_id,
+        "status": j.status,
+    }
+
+
+def _offer_view(o: DataOffer) -> dict:
+    return {
+        "offerId": str(o.offer_id),
+        "dmeTypeId": str(o.dme_type_id),
+        "dataDeliveryMethodsOffered": o.data_delivery_methods_offered,
+        "committedMethod": o.data_delivery_method_committed,
+        "dataAvailabilityNotificationUri": o.data_availability_notification_uri,
+        "dataOfferTerminationNotificationUri": o.data_offer_termination_notification_uri,
+    }
 
 
 def _type_view(db: Session, t: DMEType) -> dict:

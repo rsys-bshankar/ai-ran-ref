@@ -206,3 +206,98 @@ def test_terminate_data_offer_fires_termination_notification(client, monkeypatch
     client.delete(f"/offers/{offer['offerId']}")
     assert len(calls) == 1
     assert calls[0][0] == "http://producer/terminate"
+
+
+def test_get_data_job_by_id_returns_its_fields(client):
+    """OPEN_ITEMS.md section 5: no GET-by-id for DataJob existed at all."""
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    created = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    }).json()
+
+    resp = client.get(f"/data-jobs/{created['dataJobId']}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dataJobId"] == created["dataJobId"]
+    assert body["dmeTypeId"] == reg["registrationId"]
+    assert body["dataDeliveryMethod"] == "PULL_HTTP"
+    assert body["consumerId"] == "rapp-1"
+    assert body["status"] == "ACTIVE"
+
+
+def test_get_unknown_data_job_is_404(client):
+    resp = client.get("/data-jobs/11111111-1111-1111-1111-111111111111")
+    assert resp.status_code == 404
+
+
+def test_query_data_job_status_returns_status(client):
+    """No job-level status endpoint existed — only the list/GET-by-id
+    view, which this build didn't even have until this pass.
+    """
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    created = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    }).json()
+
+    resp = client.get(f"/data-jobs/{created['dataJobId']}/status")
+    assert resp.status_code == 200
+    assert resp.json() == {"dataJobId": created["dataJobId"], "status": "ACTIVE"}
+
+
+def test_query_unknown_data_job_status_is_404(client):
+    resp = client.get("/data-jobs/11111111-1111-1111-1111-111111111111/status")
+    assert resp.status_code == 404
+
+
+def test_get_data_offer_by_id_returns_its_fields(client):
+    """OPEN_ITEMS.md section 5: no GET-by-id for DataOffer existed at all."""
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    created = client.post("/offers", json={
+        "dmeTypeId": reg["registrationId"], "dataDeliveryMode": "CONTINUOUS",
+        "dataDeliveryMethods": ["PUSH_HTTP", "STREAMING_KAFKA"],
+        "dataOfferTerminationNotificationUri": "http://producer/terminate",
+    }).json()
+
+    resp = client.get(f"/offers/{created['offerId']}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["offerId"] == created["offerId"]
+    assert body["dmeTypeId"] == reg["registrationId"]
+    assert body["committedMethod"] == "PUSH_HTTP"
+    assert body["dataDeliveryMethodsOffered"] == ["PUSH_HTTP", "STREAMING_KAFKA"]
+
+
+def test_get_unknown_data_offer_is_404(client):
+    resp = client.get("/offers/11111111-1111-1111-1111-111111111111")
+    assert resp.status_code == 404
+
+
+def test_discover_filters_by_data_category(client):
+    """OPEN_ITEMS.md section 5: data_category was declared as a query
+    param but silently never applied — every call returned every type
+    regardless of the filter.
+    """
+    client.post("/production-capabilities", json=register_type_body(name="CoverageIssue"))
+    client.post("/production-capabilities", json={
+        "namespace": "AIML", "name": "ModelHealth", "version": "1.0.0", "typeName": "AIML.ModelHealth",
+        "producerId": "ai-ml-workflow", "dataProductionSchema": {"type": "object"},
+        "producerHealthCallbackUrl": "http://ai-ml-workflow:8000/health",
+    })
+
+    resp = client.get("/dme-types", params={"data_category": "AIML"})
+    names = [t["typeName"] for t in resp.json()]
+    assert names == ["AIML.ModelHealth"]
+
+
+def test_discover_without_data_category_returns_every_type(client):
+    client.post("/production-capabilities", json=register_type_body(name="CoverageIssue"))
+    client.post("/production-capabilities", json={
+        "namespace": "AIML", "name": "ModelHealth", "version": "1.0.0", "typeName": "AIML.ModelHealth",
+        "producerId": "ai-ml-workflow", "dataProductionSchema": {"type": "object"},
+        "producerHealthCallbackUrl": "http://ai-ml-workflow:8000/health",
+    })
+
+    resp = client.get("/dme-types")
+    assert len(resp.json()) == 2

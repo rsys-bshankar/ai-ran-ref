@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**237 tests total, all passing** as of this build: 227 unit tests across
+**245 tests total, all passing** as of this build: 235 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -159,10 +159,16 @@ written — is now actually fired from `register_service`
 (`SERVICE_API_AVAILABLE`/`SERVICE_API_UPDATE`) and
 `deregister_service` (`SERVICE_API_UNAVAILABLE`); wiring it in also
 surfaced that its own claimed authz gate (the same one
-`discover_services` uses) was never enforced, now fixed. `a1-related`
-went from 24 tests to 29 in the next pass: added `GET /policies`
-(filterable by `policy_type_id`/`near_rt_ric_id`/`creator_id`), the
-only real gap left against the module's mapping-store role now that
+`discover_services` uses) was never enforced, now fixed. `dme` went
+from 15 tests to 23 in the next pass: added `GET /data-jobs/{id}`,
+`GET /data-jobs/{id}/status`, and `GET /offers/{id}` (none existed
+before), and fixed `discover_dme_types`' `data_category` query param,
+which was declared but silently never applied — it now filters
+against `namespace`, the closest concept `DMEType` has to a category.
+`a1-related` went from 24 tests to 29 in the next pass: added
+`GET /policies` (filterable by
+`policy_type_id`/`near_rt_ric_id`/`creator_id`), the only real gap
+left against the module's mapping-store role now that
 `GET /policies/{id}` existed but the list/filter view never did.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
