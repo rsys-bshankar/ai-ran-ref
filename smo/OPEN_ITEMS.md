@@ -129,25 +129,25 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| onboarding | 9 |
-| sme | 9 |
-| rapp-mgmt | 9 |
 | nfo | 9 |
 | ran-analytics | 9 |
+| sme | 9 |
 | mock-near-rt-ric | 10 |
 | r1-termination | 10 |
 | policy-mgmt | 10 |
-| sa-smos | 10 |
-| dme | 13 |
+| rapp-mgmt | 12 |
+| sa-smos | 12 |
 | focom | 13 |
 | so-smos | 13 |
-| ai-ml-workflow | 15 |
+| dme | 15 |
+| ai-ml-workflow | 18 |
+| onboarding | 18 |
 | a1-related | 18 |
 | ran-nf-oam | 20 |
 
-Plus 10 cross-service integration tests in `tests_integration/`. The
-`onboarding`/`sme`/`rapp-mgmt`/`nfo`/`ran-analytics` tier (9 tests each)
-is now the shallowest-covered. `rapp-mgmt` and
+Plus 10 cross-service integration tests in `tests_integration/`.
+`nfo`/`ran-analytics`/`sme` (9 tests each) are now the
+shallowest-covered tier. `rapp-mgmt` and
 `dme` moved out of the shallow tier in an earlier pass (both gained
 route-level tests); a later pass added route-level coverage for the five
 §1 items closed below — `ai-ml-workflow` (+4), `policy-mgmt` (+3),
@@ -345,6 +345,24 @@ before this pass despite being a real route.
   `ARRAY(Uuid)` round-trips real `uuid.UUID` objects. New tests: `dme`
   (+2), `rapp-mgmt` (+3), `ai-ml-workflow` (+3), `sa-smos` (+2). 197
   tests total, up from 187.
+- **Deepen `onboarding`'s coverage** (§4, was priority 2) — the largest
+  single-pass coverage gap found yet: 6 of its 8 routes (`GET /packages`,
+  `POST .../deprecate`, `POST .../cancel-delete`, `DELETE /packages/{id}`,
+  `POST .../usage/start`, `POST .../usage/{id}/stop`) had zero test
+  coverage at all, including the cascade-delete guard the module's own
+  docstring calls out as important — neither half of it (a blocking
+  dependent child package, an active usage registration) had ever been
+  exercised. All six now covered, along with `_validate_package`'s real
+  validation logic against genuinely malformed zip bytes (every prior
+  test mocked the function away entirely) and the `onboarding-status`
+  404-shaped-but-actually-409 error path for an unknown package id. No
+  real bugs found — same pure absence-of-tests shape as every coverage
+  pass so far. Chosen over the three other tied modules
+  (`sme`/`nfo`/`ran-analytics`) after a scan of all four route
+  inventories found `onboarding` had by far the most uncovered routes.
+  Now at 18 tests (was 9, tied for the largest module by test count).
+  `nfo`/`ran-analytics`/`sme` (9 tests each) are the new shallowest tier.
+  206 tests total, up from 197.
 
 ## Suggested next pass (priority order)
 
@@ -355,8 +373,9 @@ before this pass despite being a real route.
    correlation algorithm) that would otherwise be fabricated, and the
    third only needs revisiting if A1-ML's out-of-scope decision itself
    changes. Not blocked on a call, blocked on data or a scope change.
-2. `onboarding`, `sme`, `rapp-mgmt`, `nfo`, and `ran-analytics` are now
-   tied as the shallowest-covered tier (9 tests each) — the next natural
-   coverage target if another pass like this one is wanted; no single
-   module stands out this time, so pick whichever's route inventory
-   turns up the most untested paths.
+2. `nfo`, `ran-analytics`, and `sme` are now tied as the
+   shallowest-covered tier (9 tests each) — the next natural coverage
+   target if another pass like this one is wanted. A scan of `nfo` and
+   `ran-analytics` found only 1-2 minor edge-case gaps each, already
+   close to thoroughly covered; `sme` was not yet surveyed and is the
+   more likely candidate to turn up a real gap.

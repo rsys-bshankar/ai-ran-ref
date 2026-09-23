@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**197 tests total, all passing** as of this build: 187 unit tests across
+**206 tests total, all passing** as of this build: 196 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -122,8 +122,12 @@ service-registration payload it publishes, FOCOM's `deprovision_resource`
 stub asserted to succeed for an arbitrary, never-provisioned `resource_id`,
 and A1 Related's `GET`/`PUT`/`DELETE /policies/{id}`, `DELETE
 /policies/subscriptions/{id}`, and `DELETE /ei-types/{id}` — five whole
-routes with zero test coverage at all until this pass, the largest
-single-pass gap found across every coverage pass so far.
+routes with zero test coverage at all until that pass. Onboarding then
+topped it: 6 of its 8 routes (`GET /packages`, deprecate, cancel-delete,
+delete, and both usage-registration routes) had zero coverage, including
+neither half of the cascade-delete guard its own docstring calls out —
+a blocking dependent child package, or an active usage registration —
+ever having been exercised.
 so-smos, ran-analytics, focom, rapp-mgmt, and dme — previously among the
 thinnest-covered modules — now have route-level
 coverage too, not just dispatch-logic coverage, closing OPEN_ITEMS.md's
