@@ -27,6 +27,12 @@ class RegisterModelRequest(BaseModel):
     modelType: str
     version: str
     requiredResourceTypeId: str | None = None
+    description: str | None = None
+    author: str | None = None
+    owner: str | None = None
+    inputDataType: str | None = None
+    outputDataType: str | None = None
+    targetEnvironments: list[dict] = []
 
 
 class CreateCoordinationGroupRequest(BaseModel):
@@ -52,6 +58,12 @@ class UpdateModelRequest(BaseModel):
     trainingDataLineage: dict | None = None
     integrityHash: str | None = None
     clearedNodeGroups: list[str] | None = None
+    description: str | None = None
+    author: str | None = None
+    owner: str | None = None
+    inputDataType: str | None = None
+    outputDataType: str | None = None
+    targetEnvironments: list[dict] | None = None
 
 
 @app.post("/models", status_code=201)
@@ -60,9 +72,19 @@ def register_model(body: RegisterModelRequest, db: Session = Depends(get_session
     (mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint
     violation — this build accepted a duplicate (modelType, version)
     registration silently, creating a second, indistinguishable row.
+
+    Also OPEN_ITEMS.md section 5: registration metadata was thin — no
+    I/O data type schema, no author/owner, no TargetEnvironment
+    declarations, all real fields on the reference's own
+    ModelRelatedInformation/ModelInformation/Metadata (modelInfo.go).
+    Required there; kept optional here, since this build's own
+    RegisterModel was already permissive before this pass.
     """
     model = AIMLModel(registration_id=str(uuid.uuid4()), model_type=body.modelType, version=body.version,
-                       required_resource_type_id=body.requiredResourceTypeId, state=ModelState.REGISTERED)
+                       required_resource_type_id=body.requiredResourceTypeId, state=ModelState.REGISTERED,
+                       description=body.description, author=body.author, owner=body.owner,
+                       input_data_type=body.inputDataType, output_data_type=body.outputDataType,
+                       target_environments=body.targetEnvironments)
     db.add(model)
     try:
         db.commit()
@@ -118,6 +140,9 @@ def update_model(model_id: uuid.UUID, body: UpdateModelRequest, db: Session = De
     model.training_data_lineage = body.trainingDataLineage
     model.integrity_hash = body.integrityHash
     model.cleared_node_groups = body.clearedNodeGroups
+    model.description, model.author, model.owner = body.description, body.author, body.owner
+    model.input_data_type, model.output_data_type = body.inputDataType, body.outputDataType
+    model.target_environments = body.targetEnvironments
     db.commit()
     return _model_view(model)
 
@@ -404,4 +429,7 @@ def _trigger_group_retrain(db: Session, group: MLModelCoordinationGroup) -> list
 
 def _model_view(m: AIMLModel) -> dict:
     return {"modelId": str(m.model_id), "modelType": m.model_type, "version": m.version, "state": m.state,
-            "clearedNodeGroups": m.cleared_node_groups or [], "artifactLocation": m.artifact_location}
+            "clearedNodeGroups": m.cleared_node_groups or [], "artifactLocation": m.artifact_location,
+            "description": m.description, "author": m.author, "owner": m.owner,
+            "inputDataType": m.input_data_type, "outputDataType": m.output_data_type,
+            "targetEnvironments": m.target_environments or []}

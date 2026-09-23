@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**373 tests total, all passing** as of this build: 363 unit tests across
+**376 tests total, all passing** as of this build: 366 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -362,7 +362,15 @@ wholesale rather than as normalized child tables, and closed
 `discover_services`' own filtering thinness alongside it, partially —
 `aefId`/`protocol`/`dataFormat`/`commType` are now real filters
 walking the new field; `category` stays unfiltered since this build
-has no category concept on `ServiceProfile` at all.
+has no category concept on `ServiceProfile` at all. `ai-ml-workflow`
+went from 35 tests to 38 in the next pass: closed its thin
+registration metadata gap by adding `description`/`author`/`owner`/
+`inputDataType`/`outputDataType`/`targetEnvironments` to
+`RegisterModel`/`UpdateModel` (the reference's own
+`ModelRelatedInformation`/`ModelInformation`/`Metadata`/
+`TargetEnvironment` fields) — required there, kept optional here since
+this build's own `RegisterModel` was already permissive before this
+pass.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

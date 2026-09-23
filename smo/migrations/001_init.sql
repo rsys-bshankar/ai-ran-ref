@@ -431,6 +431,12 @@ CREATE TABLE aiml_model (
   artifact_location                       TEXT,
   required_resource_type_id                 TEXT,
   cleared_node_groups                          TEXT[],   -- NEW section 5: MultiNode Q2 gap closure
+  description                                    TEXT,   -- NEW section 5: ModelRelatedInformation.description
+  author                                            TEXT, -- NEW section 5: Metadata.author
+  owner                                               TEXT, -- NEW section 5: Metadata.owner
+  input_data_type                                       TEXT, -- NEW section 5: ModelInformation.inputDataType
+  output_data_type                                         TEXT, -- NEW section 5: ModelInformation.outputDataType
+  target_environments                                          JSONB, -- NEW section 5: ModelInformation.targetEnvironment[]
   UNIQUE (model_type, version)                           -- NEW section 5: the reference's own (modelName, modelVersion) uniqueness
 );
 
