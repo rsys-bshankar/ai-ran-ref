@@ -1,0 +1,142 @@
+"""Tests for A1 Related SMOS (A1 Related LLD sections 1-3).
+Run with: pytest smo/a1-related/tests -q
+"""
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from smo_shared.db import Base, get_session
+
+from app.a1_termination_client import A1TerminationClient
+from app.main import app, get_a1_termination_client
+from app.models import A1EIType, A1Policy, PolicyStatusSubscription
+
+
+class FakeA1Termination(A1TerminationClient):
+    """Stands in for the mock Near-RT RIC over HTTP — same contract,
+    no network call, so these stay unit tests. The real HTTP contract
+    against the actual mock service is covered by
+    mock-near-rt-ric/tests and the cross-service integration suite.
+    """
+
+    def __init__(self):
+        self.policies = {}
+
+    def create_policy(self, near_rt_ric_id, policy_type_id, policy_object):
+        status = "REJECTED" if not policy_object else "ENFORCED"
+        near_rt_ric_policy_id = "mock-nrt-policy-1"
+        self.policies[near_rt_ric_policy_id] = status
+        return {"policyId": near_rt_ric_policy_id, "enforcementStatus": status,
+                "rejectionReason": None if policy_object else "empty policyObject"}
+
+    def update_policy(self, policy_id, policy_object):
+        return {"enforcementStatus": "REJECTED" if not policy_object else "ENFORCED"}
+
+    def delete_policy(self, policy_id):
+        pass
+
+    def query_policy_status(self, policy_id):
+        return {"enforcementStatus": "ENFORCED"}
+
+
+@pytest.fixture
+def client():
+    # StaticPool: plain "sqlite://" opens a NEW blank in-memory DB per pooled
+    # connection, and FastAPI's per-request get_session override would grab a
+    # different connection than the one create_all ran on ("no such table").
+    # One shared connection for the whole test, matching the real deployment's
+    # one-shared-Postgres-instance topology closely enough for a unit test.
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine, tables=[A1Policy.__table__, PolicyStatusSubscription.__table__, A1EIType.__table__])
+    TestSession = sessionmaker(bind=engine)
+
+    def override_get_session():
+        session = TestSession()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_a1_termination_client] = lambda: FakeA1Termination()
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+def test_query_policy_types_returns_known_catalog(client):
+    resp = client.get("/policy-types")
+    names = {t["policyTypeId"] for t in resp.json()}
+    assert "ORAN_QoSandTSP_6.0.1" in names
+
+
+def test_create_policy_unknown_type_rejected(client):
+    resp = client.post("/policies", json={"policyTypeId": "NOT_A_REAL_TYPE", "policyObject": {"x": 1}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "POLICY_TYPE_NOT_SUPPORTED"
+
+
+def test_create_policy_enforced_via_southbound_call(client):
+    """The headline fix in this pass: enforcementStatus now reflects a
+    real (mocked) Near-RT RIC round trip, not a value fabricated locally.
+    """
+    resp = client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
+    assert resp.status_code == 201
+    assert resp.json()["enforcementStatus"] == "ENFORCED"
+
+
+def test_create_policy_with_empty_object_is_rejected_by_southbound(client):
+    resp = client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
+    assert resp.json()["enforcementStatus"] == "REJECTED"
+
+
+def test_query_policy_status_refreshes_from_southbound(client):
+    """R1GAP's cache/pass-through duality: query_policy_status is a LIVE
+    call, not just a DB read — this test proves the mirror gets refreshed.
+    """
+    created = client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {}, "nearRtRicId": "ric1", "creatorId": "rapp-1"}).json()
+    assert created["enforcementStatus"] == "REJECTED"
+    # FakeA1Termination.query_policy_status always answers ENFORCED, regardless
+    # of prior state — proves the value is genuinely re-fetched, not cached.
+    status = client.get(f"/policies/{created['policyId']}/status")
+    assert status.json()["enforcementStatus"] == "ENFORCED"
+
+
+def test_subscription_scope_and_policy_id_list_conflict(client):
+    resp = client.post("/policies/subscriptions", json={
+        "notificationDestination": "http://consumer/callback",
+        "subscriptionScope": "OWN",
+        "policyIdList": ["p1"],
+    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SUBSCRIPTION_SCOPE_CONFLICT"
+
+
+def test_subscription_scope_alone_is_valid(client):
+    resp = client.post("/policies/subscriptions", json={"notificationDestination": "http://consumer/callback", "subscriptionScope": "ALL"})
+    assert resp.status_code == 201
+
+
+def test_register_ei_type_wraps_dme_registration(client, monkeypatch):
+    """A1 Related LLD section 3: RegisterEIType is NOT a distinct R1AP
+    call — it wraps DME's RegisterDMEType. Mocking R1Client.post here
+    (unit test); the real cross-service call is covered by the
+    integration suite.
+    """
+    from smo_shared import r1_client as r1_client_module
+
+    class FakeResponse:
+        status_code = 201
+        def json(self):
+            return {"registrationId": "11111111-1111-1111-1111-111111111111"}
+
+    monkeypatch.setattr(r1_client_module.R1Client, "post", lambda self, path, json=None, **kw: FakeResponse())
+
+    resp = client.post("/ei-types/register", params={
+        "ei_type_id": "ei-1", "registered_by": "rapp-1",
+        "dme_namespace": "RAN", "dme_name": "CoverageIssue", "dme_version": "1.0.0",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["eiSourceDmeTypeId"] == "11111111-1111-1111-1111-111111111111"

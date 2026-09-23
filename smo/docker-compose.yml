@@ -1,0 +1,142 @@
+# AI-RAN SMO — Phase 1, Docker deployment topology (SMO Design v1.3 section 4).
+# One shared Postgres instance, moduleScope-partitioned (Requirements v0.1 section 3).
+# Every service built from the same Dockerfile, parameterized by MODULE.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: smo
+      POSTGRES_PASSWORD: smo
+      POSTGRES_DB: smo
+    volumes:
+      - smo_pgdata:/var/lib/postgresql/data
+      - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  r1-termination:
+    build: { context: ., args: { MODULE: r1-termination } }
+    ports: ["8080:8000"]
+    environment:
+      SME_URL: http://sme:8000
+      DME_URL: http://dme:8000
+      ONBOARDING_URL: http://onboarding:8000
+      RAPP_MGMT_URL: http://rapp-mgmt:8000
+      RAN_NF_OAM_URL: http://ran-nf-oam:8000
+      A1_RELATED_URL: http://a1-related:8000
+      NFO_URL: http://nfo:8000
+      FOCOM_URL: http://focom:8000
+      AI_ML_WORKFLOW_URL: http://ai-ml-workflow:8000
+      RAN_ANALYTICS_URL: http://ran-analytics:8000
+      POLICY_MGMT_URL: http://policy-mgmt:8000
+      SO_SMOS_URL: http://so-smos:8000
+      SA_SMOS_URL: http://sa-smos:8000
+
+  sme:
+    build: { context: ., args: { MODULE: sme } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment: &db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo:smo@postgres:5432/smo
+
+  dme:
+    build: { context: ., args: { MODULE: dme } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment: *db_env
+
+  onboarding:
+    build: { context: ., args: { MODULE: onboarding } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment: *db_env
+    volumes:
+      - smo_packages:/srv/packages   # FileSystem-aaS, SMO Design v1.3 section 3.4
+
+  rapp-mgmt:
+    build: { context: ., args: { MODULE: rapp-mgmt } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+
+  ran-nf-oam:
+    build: { context: ., args: { MODULE: ran-nf-oam } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+
+  a1-related:
+    build: { context: ., args: { MODULE: a1-related } }
+    depends_on: { postgres: { condition: service_healthy } }
+    networks: [default, a1_mock_net]
+    environment:
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+      MOCK_NEAR_RT_RIC_URL: http://mock-near-rt-ric:8000
+
+  mock-near-rt-ric:
+    build: { context: ., args: { MODULE: mock-near-rt-ric } }
+    networks: [a1_mock_net]   # isolated, non-routable dev segment — ONLY a1-related can reach it,
+                              # no published ports, not on `default` (closes RT-7, SMO Design v1.3 section 3.9)
+
+  nfo:
+    build: { context: ., args: { MODULE: nfo } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+    privileged: true   # Phase 1: docker run --gpus passthrough needs this on the NFO container itself
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # NFO's Docker bridge (SMO Design v1.3 section 3.7)
+
+  focom:
+    build: { context: ., args: { MODULE: focom } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment: *db_env
+
+  ai-ml-workflow:
+    build: { context: ., args: { MODULE: ai-ml-workflow } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+
+  ran-analytics:
+    build: { context: ., args: { MODULE: ran-analytics } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+
+  policy-mgmt:
+    build: { context: ., args: { MODULE: policy-mgmt } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment: *db_env
+
+  so-smos:
+    build: { context: ., args: { MODULE: so-smos } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+
+  sa-smos:
+    build: { context: ., args: { MODULE: sa-smos } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+
+networks:
+  default:
+  a1_mock_net:
+    internal: true   # no route out — enforces the isolation, not just documents it
+
+volumes:
+  smo_pgdata:
+  smo_packages:
