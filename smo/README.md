@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**215 tests total, all passing** as of this build: 205 unit tests across
+**217 tests total, all passing** as of this build: 207 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -136,7 +136,11 @@ thinnest-covered modules — now have route-level
 coverage too, not just dispatch-logic coverage, closing OPEN_ITEMS.md's
 test-coverage-parity item; `ran-nf-oam` went from FSM-only coverage to 20
 tests (its first route-level and NETCONF-client tests) resolving the CM
-sync method design decision.
+sync method design decision, then to 21 when a `GET /health` route was
+added to answer the callback URL `subscribe_pm` registers with DME (see
+"Real bugs" below and OPEN_ITEMS.md section 5). `a1-related` picked up
+the identical fix in the same pass — `register_ei_type` registers the
+same-shaped callback with DME — going from 18 tests to 19.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

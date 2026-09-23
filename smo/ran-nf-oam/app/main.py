@@ -165,6 +165,18 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
     return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine}
 
 
+@app.get("/health")
+def health_check():
+    """Producer health-supervision callback (OPEN_ITEMS.md section 5):
+    subscribe_pm registers this exact URL with DME as its
+    producerHealthCallbackUrl, but no route ever answered it — a health
+    poller hitting the registered callback would 404 against a producer
+    this module itself just told DME was healthy. A plain liveness
+    check: reachable and 200 means this RAN NF OAM instance is up.
+    """
+    return {"status": "healthy"}
+
+
 @app.post("/software-management-jobs", status_code=202)
 def software_update(managed_element_ref: str, ru_instance_id: str | None = None, db: Session = Depends(get_session)):
     job = SoftwareManagementJob(managed_element_ref=managed_element_ref, ru_instance_id=ru_instance_id, status="PENDING", phase="DOWNLOAD")

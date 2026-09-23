@@ -265,3 +265,14 @@ def test_register_ei_type_wraps_dme_registration(client, monkeypatch):
     })
     assert resp.status_code == 200
     assert resp.json()["eiSourceDmeTypeId"] == "11111111-1111-1111-1111-111111111111"
+
+
+def test_health_endpoint_answers_the_callback_url_register_ei_type_registers(client):
+    """OPEN_ITEMS.md section 5: register_ei_type registers
+    http://a1-related:8000/health as this producer's health-supervision
+    callback with DME, but no route ever answered it — a poller hitting
+    that URL would 404. Confirms the route now exists and returns 200.
+    """
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "healthy"

@@ -108,3 +108,14 @@ def test_config_change_rejects_unreachable_endpoint_without_dispatch(client, db_
     })
     job = client.get(f"/config-jobs/{resp.json()['jobId']}").json()
     assert job["subChanges"][0]["rejectionReason"] == "ENDPOINT_UNREACHABLE"
+
+
+def test_health_endpoint_answers_the_callback_url_subscribe_pm_registers(client):
+    """OPEN_ITEMS.md section 5: subscribe_pm registers
+    http://ran-nf-oam:8000/health as this producer's health-supervision
+    callback with DME, but no route ever answered it — a poller hitting
+    that URL would 404. Confirms the route now exists and returns 200.
+    """
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "healthy"

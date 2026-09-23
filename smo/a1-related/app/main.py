@@ -165,6 +165,18 @@ def deregister_ei_type(ei_type_id: str, db: Session = Depends(get_session)):
         db.commit()
 
 
+@app.get("/health")
+def health_check():
+    """Producer health-supervision callback (OPEN_ITEMS.md section 5):
+    register_ei_type registers this exact URL with DME as its
+    producerHealthCallbackUrl, but no route ever answered it — a health
+    poller hitting the registered callback would 404 against a producer
+    this module itself just told DME was healthy. A plain liveness
+    check: reachable and 200 means this A1 Related instance is up.
+    """
+    return {"status": "healthy"}
+
+
 def _policy_view(p: A1Policy) -> dict:
     return {"policyId": str(p.policy_id), "policyTypeId": p.policy_type_id, "nearRtRicId": p.near_rt_ric_id,
             "policyObject": p.policy_object, "enforcementStatus": p.enforcement_status}

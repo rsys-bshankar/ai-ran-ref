@@ -146,12 +146,12 @@ Per-module unit test counts:
 | dme | 15 |
 | ai-ml-workflow | 18 |
 | onboarding | 18 |
-| a1-related | 18 |
 | sme | 18 |
-| ran-nf-oam | 20 |
+| a1-related | 19 |
+| ran-nf-oam | 21 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
-`nfo`/`ran-analytics`/`sme` (9 tests each) are now the
+`nfo`/`ran-analytics` (9 tests each) are now the
 shallowest-covered tier. `rapp-mgmt` and
 `dme` moved out of the shallow tier in an earlier pass (both gained
 route-level tests); a later pass added route-level coverage for the five
@@ -279,13 +279,18 @@ own §1/§2 items stand as-is.
 
 ### RAN NF OAM (`ran-nf-oam/`) — vs `nonrtric-plt-ranpm`, `oam`, `smo-o1`, `sim-o1-interface`, `sim-o1-ofhmp-interfaces`
 
-- **`subscribe_pm` registers a dangling callback** — it POSTs
+- ~~**`subscribe_pm` registers a dangling callback** — it POSTs
   `"producerHealthCallbackUrl": "http://ran-nf-oam:8000/health"` to DME,
   but no `/health` route (or any producer job-callback route) exists
-  anywhere in `ran-nf-oam/app/main.py`. This is a concrete bug within
-  this module's own declared scope (the DME-registration wrapper), not
-  a missing-PM-pipeline issue — fixable without touching the (correctly
-  out-of-scope) real PM data path.
+  anywhere in `ran-nf-oam/app/main.py`.~~ — **closed.** Added
+  `GET /health` returning `{"status": "healthy"}`, a plain liveness
+  check answering the exact URL `subscribe_pm` registers with DME.
+  Covered by
+  `test_health_endpoint_answers_the_callback_url_subscribe_pm_registers`.
+  Note: `a1-related/app/main.py`'s `register_ei_type` registers the
+  identical `producerHealthCallbackUrl` pattern
+  (`http://a1-related:8000/health`) with DME and had the same missing
+  route — same bug class, fixed the same way, see below.
 - Alarm model is missing standard fault fields the wire format
   (VES/3GPP alarm IRP, per `oam`'s notification templates) carries:
   `probableCause`, `specificProblem`, `perceivedSeverity`,
@@ -307,6 +312,14 @@ own §1/§2 items stand as-is.
 
 ### A1 Related (`a1-related/`, `mock-near-rt-ric/`) — vs `sim-a1-interface`, `nonrtric-plt-a1policymanagementservice`
 
+- ~~**`register_ei_type` registers a dangling callback** — same bug
+  class as ran-nf-oam's `subscribe_pm`: it POSTs
+  `"producerHealthCallbackUrl": "http://a1-related:8000/health"` to
+  DME, but no `/health` route exists in
+  `a1-related/app/main.py`.~~ — **closed.** Added `GET /health`
+  returning `{"status": "healthy"}`, same fix as ran-nf-oam's. Covered
+  by
+  `test_health_endpoint_answers_the_callback_url_register_ei_type_registers`.
 - No policy list/query-by-filter endpoint at all (`GET /policies`
   filterable by type/RIC/service) — only `GET /policies/{id}` exists,
   despite the mapping-store's whole job being to track these mappings.
@@ -640,6 +653,12 @@ own §1/§2 items stand as-is.
   far. Now at 18 tests (was 9). `nfo`/`ran-analytics` (9 tests each) are
   the new shallowest tier, both already close to thoroughly covered per
   the earlier survey. 215 tests total, up from 206.
+- `ran-nf-oam`'s and `a1-related`'s dangling `/health` callbacks (§5)
+  closed in one pass, same bug class in both: `subscribe_pm` and
+  `register_ei_type` each register a `producerHealthCallbackUrl`
+  pointing at their own module's `/health` with DME, and neither
+  module answered it. Both now have a `GET /health` route. 217 tests
+  total, up from 215.
 
 ## Suggested next pass (priority order)
 
@@ -650,8 +669,14 @@ own §1/§2 items stand as-is.
    named. Within §5, the standout items — genuinely broken or misleading
    as shipped, not just "thinner than the reference" — are worth taking
    first:
-   - `ran-nf-oam`'s dangling `/health` callback (`subscribe_pm` registers
-     a URL that 404s — a one-route fix).
+   - ~~`ran-nf-oam`'s and `a1-related`'s dangling `/health` callbacks
+     (`subscribe_pm` and `register_ei_type` each register a URL that
+     404s) — a one-route fix, done for both in the same pass since it's
+     the identical bug class.~~ — **closed.** Grepped every module for
+     the same pattern (`producerHealthCallbackUrl`/`health_callback`
+     self-registered against DME with no matching `/health` route) —
+     confirmed no other module has it; this bug class is fully closed
+     across the build, not just these two.
    - `a1-related`'s `SubscribePolicyStatus`/`UnsubscribePolicyStatus`
      being complete no-ops with zero delivery anywhere in the stack.
    - `focom`'s `subscribe_inventory_changes` not actually subscribing to
