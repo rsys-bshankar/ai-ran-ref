@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**277 tests total, all passing** as of this build: 267 unit tests across
+**285 tests total, all passing** as of this build: 275 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -202,6 +202,16 @@ missing alarm-cleared lifecycle by setting `severity` to the
 already-valid `'cleared'` value (matching the reference's own
 `perceivedSeverity=CLEARED` shape) rather than adding a redundant
 parallel state field, plus `clearedAt`/`clearUserId` metadata.
+`onboarding` went from 18 tests to 26 in the next pass: added real
+`PRIMING`/`PRIMED`/`DEPRIMING` package states and `POST
+/packages/{id}/prime`/`POST /packages/{id}/deprime`, closing the
+missing package-level priming stage — `deprime` is genuinely blocked
+by an active usage registration and `DELETE` has no edge from
+`PRIMED` at all, matching the reference's own guards. `rapp-mgmt`'s
+`CreateInstance` still gates on `AVAILABLE`, not `PRIMED` — an
+already-confirmed design decision (D-SEC-RAPP-1), deliberately not
+overridden here (see OPEN_ITEMS.md section 5 for the full scoping
+note).
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

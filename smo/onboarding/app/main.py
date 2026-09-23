@@ -140,6 +140,38 @@ def deprecate_package(package_id: uuid.UUID, db: Session = Depends(get_session))
     return _package_view(pkg)
 
 
+@app.post("/packages/{package_id}/prime")
+def prime_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: the reference's real
+    COMMISSIONED->PRIMING->PRIMED lifecycle, missing entirely — this
+    build went ONBOARDING->AVAILABLE directly. Real ACM/DME/SME
+    resource pre-provisioning behind priming is out of scope (same
+    elision as this build's other southbound calls), so both
+    transitions fire within this one request.
+    """
+    pkg = db.get(ApplicationPackage, package_id)
+    pkg.state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.PRIME, db=db, package=pkg)
+    pkg.state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.PRIME_COMPLETE, db=db, package=pkg)
+    db.commit()
+    return _package_view(pkg)
+
+
+@app.post("/packages/{package_id}/deprime")
+def deprime_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
+    """The reference's own deprimeRapp guard: blocked while any rApp
+    instance still references this package (mirrors the cascade-delete
+    guard's active-usage-registration check).
+    """
+    pkg = db.get(ApplicationPackage, package_id)
+    try:
+        pkg.state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.DEPRIME, db=db, package=pkg)
+    except IllegalTransition:
+        raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail="blocked by an active usage registration")
+    pkg.state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.DEPRIME_COMPLETE, db=db, package=pkg)
+    db.commit()
+    return _package_view(pkg)
+
+
 @app.post("/packages/{package_id}/cancel-delete")
 def cancel_delete(package_id: uuid.UUID, db: Session = Depends(get_session)):
     pkg = db.get(ApplicationPackage, package_id)
