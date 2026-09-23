@@ -1,0 +1,73 @@
+name: SMO tests
+
+on:
+  push:
+    branches: [main]
+    paths: ["smo/**", ".github/workflows/smo-tests.yml"]
+  pull_request:
+    paths: ["smo/**", ".github/workflows/smo-tests.yml"]
+
+jobs:
+  unit-and-integration:
+    name: Unit + integration tests (SQLite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install shared library + service dependencies
+        working-directory: smo
+        run: |
+          pip install -e shared
+          pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic pytest
+
+      - name: Run each module's unit test suite
+        working-directory: smo
+        run: |
+          set -e
+          for m in onboarding rapp-mgmt ran-nf-oam ai-ml-workflow so-smos \
+                   a1-related sme dme r1-termination nfo focom ran-analytics \
+                   policy-mgmt sa-smos mock-near-rt-ric; do
+            echo "::group::$m"
+            (cd "$m" && PYTHONPATH=.:../shared python -m pytest tests/ -v)
+            echo "::endgroup::"
+          done
+
+      - name: Run cross-service integration tests
+        working-directory: smo
+        run: PYTHONPATH=shared python -m pytest tests_integration/ -v
+
+  migration-postgres:
+    name: Consolidated migration applies to real Postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: smo
+          POSTGRES_PASSWORD: smo
+          POSTGRES_DB: smo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U smo"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply migrations/001_init.sql
+        env:
+          PGPASSWORD: smo
+        run: psql -h localhost -U smo -d smo -v ON_ERROR_STOP=1 -f smo/migrations/001_init.sql
+
+      - name: Every table from the schema actually exists
+        env:
+          PGPASSWORD: smo
+        run: |
+          count=$(psql -h localhost -U smo -d smo -t -c "select count(*) from information_schema.tables where table_schema='public'")
+          echo "Tables created: $count"
+          [ "$count" -ge 30 ]
