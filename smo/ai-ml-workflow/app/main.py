@@ -8,7 +8,7 @@ clearedNodeGroups resolves MultiNode Q2's deployment-targeting gap.
 
 import uuid
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -59,6 +59,17 @@ def discover_models(model_type: str | None = None, db: Session = Depends(get_ses
     if model_type:
         stmt = stmt.where(AIMLModel.model_type == model_type)
     return [_model_view(m) for m in db.scalars(stmt).all()]
+
+
+@app.get("/models/{model_id}")
+def get_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: model CRUD was incomplete — only create
+    and a type-filtered list existed, no GET-by-id at all.
+    """
+    model = db.get(AIMLModel, model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="no such model")
+    return _model_view(model)
 
 
 @app.post("/coordination-groups", status_code=201)
