@@ -38,7 +38,8 @@ CREATE TABLE service_event_subscription (
   subscription_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   subscriber_id      TEXT NOT NULL,
   event_types        TEXT[] NOT NULL CHECK (event_types <@ ARRAY['SERVICE_API_AVAILABLE','SERVICE_API_UNAVAILABLE','SERVICE_API_UPDATE']),
-  callback_uri        TEXT NOT NULL
+  callback_uri        TEXT NOT NULL,
+  api_ids               TEXT[]  -- NEW section 5: CAPIFEventFilter.apiIds
 );
 
 -- ============================================================

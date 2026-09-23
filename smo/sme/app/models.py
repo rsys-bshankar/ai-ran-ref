@@ -49,6 +49,7 @@ class ServiceEventSubscription(Base):
     subscriber_id: Mapped[str] = mapped_column(String, nullable=False)
     event_types: Mapped[list[str]] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False)
     callback_uri: Mapped[str] = mapped_column(String, nullable=False)
+    api_ids: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))  # NEW section 5: CAPIFEventFilter.apiIds
 
 
 EVENT_TYPES = {"SERVICE_API_AVAILABLE", "SERVICE_API_UNAVAILABLE", "SERVICE_API_UPDATE"}

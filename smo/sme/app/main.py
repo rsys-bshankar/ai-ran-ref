@@ -40,6 +40,7 @@ class EventSubscriptionRequest(BaseModel):
     subscriberId: str
     eventTypes: list[str]
     callbackUri: str
+    apiIds: list[str] | None = None
 
 
 @app.post("/published-apis/v1/{apf_id}/service-apis", status_code=201)
@@ -119,9 +120,21 @@ def discover_services(api_invoker_id: str, api_name: str | None = None, api_vers
 
 @app.post("/capif-events/v1/{subscriber_id}/subscriptions", status_code=201)
 def subscribe_events(subscriber_id: str, body: EventSubscriptionRequest, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: event subscription filtering was type-only
+    — the reference's own CAPIFEventFilter also filters by apiId/
+    apiInvokerId/aefId (eventservice.go's getMatchingSubs). Of those,
+    only apiId is meaningfully implementable here: apiInvokerId filters
+    against an event's own ApiInvokerIds, which only API_INVOKER_ONBOARDED
+    events carry — a real CAPIF Invoker-onboarding subsystem this build
+    doesn't have (see this module's own structurally-out-of-scope note);
+    our SERVICE_API_* notifications have no invoker id in their payload
+    to filter on. aefId likewise needs aefProfiles, which ServiceProfile
+    doesn't model (the separate "flattened ServiceProfile" gap). apiId
+    maps directly onto this build's own service_id, so that one's real.
+    """
     if not set(body.eventTypes) <= EVENT_TYPES:
         raise framework_error(FrameworkError.SUBSCRIPTION_SCOPE_CONFLICT, detail=f"eventTypes must be a subset of {EVENT_TYPES}")
-    sub = ServiceEventSubscription(subscriber_id=subscriber_id, event_types=body.eventTypes, callback_uri=body.callbackUri)
+    sub = ServiceEventSubscription(subscriber_id=subscriber_id, event_types=body.eventTypes, callback_uri=body.callbackUri, api_ids=body.apiIds)
     db.add(sub)
     db.commit()
     return {"subscriptionId": str(sub.subscription_id)}
@@ -149,6 +162,8 @@ def notify_service_change(db: Session, service: ServiceProfile, event_type: str)
     policy = service.authz_policy
     for sub in subs:
         if event_type not in sub.event_types:
+            continue
+        if sub.api_ids and str(service.service_id) not in sub.api_ids:
             continue
         if policy is not None and policy.gates_discovery_visibility and policy.allowed_consumers and sub.subscriber_id not in policy.allowed_consumers:
             continue
