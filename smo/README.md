@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**325 tests total, all passing** as of this build: 315 unit tests across
+**326 tests total, all passing** as of this build: 316 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -270,7 +270,14 @@ reference's own `ModelID` composite primary key on
 creating a second, indistinguishable row. `dme` went from 31 tests to
 35 in the next pass: added `GET /production-capabilities/{producer_id}/status`,
 reusing the same live health-check signal `typeStatus` already uses
-(ICS's own `ProducerController.getInfoProducerStatus`).
+(ICS's own `ProducerController.getInfoProducerStatus`). `dme` went
+from 35 tests to 36 in the next pass: added a real `ON DELETE CASCADE`
+to `data_job`/`data_offer`'s `dme_type_id` FKs (matching
+`dme_delivery_schema`'s own already-cascading one — deregistering a
+producer with an existing job/offer against one of its types
+previously either silently orphaned the rows under SQLite or crashed
+with an unhandled `IntegrityError` on real Postgres), plus explicit
+application-level cleanup in `deregister_producer` itself.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

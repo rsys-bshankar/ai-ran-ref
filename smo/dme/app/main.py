@@ -99,8 +99,21 @@ def deregister_producer(producer_id: str, db: Session = Depends(get_session)):
     oauth_client_id) are no longer trustworthy and are torn down here,
     same as terminate_data_job's shape. Idempotent — a producer_id with
     nothing registered is a no-op, not an error.
+
+    OPEN_ITEMS.md section 5: this used to delete each DMEType row
+    unconditionally, leaving any DataJob/DataOffer still referencing
+    that type either orphaned (no FK enforcement under SQLite) or
+    crashing with an unhandled IntegrityError (real Postgres — neither
+    FK had an ON DELETE CASCADE, unlike dme_delivery_schema's own
+    already-cascading one). A job or offer for a type nobody produces
+    anymore is meaningless once the producer is gone, so this cleans
+    them up explicitly — the DB-level ON DELETE CASCADE (added
+    alongside this) is a defense-in-depth backstop, not the only line
+    of defense.
     """
     for t in db.scalars(select(DMEType).where(DMEType.producer_id == producer_id)).all():
+        db.query(DataJob).filter(DataJob.dme_type_id == t.dme_type_id).delete()
+        db.query(DataOffer).filter(DataOffer.dme_type_id == t.dme_type_id).delete()
         db.delete(t)
     db.commit()
 

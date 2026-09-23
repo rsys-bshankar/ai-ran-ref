@@ -45,7 +45,7 @@ class DataJob(Base):
 
     data_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     data_delivery_mode: Mapped[str] = mapped_column(String, nullable=False)
-    dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("dme_type.dme_type_id"))
+    dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("dme_type.dme_type_id", ondelete="CASCADE"))  # NEW section 5: matches dme_delivery_schema's own already-cascading FK
     production_job_definition: Mapped[dict | None] = mapped_column(JSON)
     data_delivery_method: Mapped[str] = mapped_column(String, nullable=False)
     delivery_details: Mapped[dict | None] = mapped_column(JSON)
@@ -57,7 +57,7 @@ class DataOffer(Base):
     __tablename__ = "data_offer"
 
     offer_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("dme_type.dme_type_id"))
+    dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("dme_type.dme_type_id", ondelete="CASCADE"))  # NEW section 5: matches dme_delivery_schema's own already-cascading FK
     data_delivery_methods_offered: Mapped[list[str]] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False)
     data_delivery_method_committed: Mapped[str | None] = mapped_column(String)
     data_availability_notification_uri: Mapped[str | None] = mapped_column(String)  # REVERSED direction, section 3.5

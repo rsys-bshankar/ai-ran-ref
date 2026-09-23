@@ -255,6 +255,34 @@ def test_deregister_unknown_producer_is_idempotent(client):
     assert resp.status_code == 204
 
 
+def test_deregister_producer_removes_dependent_data_jobs_and_offers(client):
+    """OPEN_ITEMS.md section 5: deregistering a producer used to delete
+    its DMEType rows unconditionally, leaving any DataJob/DataOffer
+    still referencing that type either orphaned (SQLite, no FK
+    enforcement) or crashing with an unhandled IntegrityError (real
+    Postgres — neither FK had an ON DELETE CASCADE, unlike
+    dme_delivery_schema's own already-cascading one). A job/offer for a
+    type nobody produces anymore is meaningless once the producer is
+    gone, so both are cleaned up now.
+    """
+    reg = client.post("/production-capabilities", json=register_type_body(producerId="rapp-1")).json()
+    job = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    }).json()
+    offer = client.post("/offers", json={
+        "dmeTypeId": reg["registrationId"], "dataDeliveryMode": "CONTINUOUS",
+        "dataDeliveryMethods": ["PULL_HTTP"],
+        "dataOfferTerminationNotificationUri": "http://producer/terminate",
+    }).json()
+
+    resp = client.delete("/production-capabilities", params={"producer_id": "rapp-1"})
+    assert resp.status_code == 204
+
+    assert client.get(f"/data-jobs/{job['dataJobId']}").status_code == 404
+    assert client.get(f"/offers/{offer['offerId']}").status_code == 404
+
+
 def test_terminate_data_offer_fires_termination_notification(client, monkeypatch):
     """Section 3.5: normal-direction notification on termination —
     framework -> Producer, distinct from the reversed availability

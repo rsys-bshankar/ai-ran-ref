@@ -69,7 +69,7 @@ CREATE TABLE dme_delivery_schema (
 CREATE TABLE data_job (
   data_job_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   data_delivery_mode   TEXT NOT NULL CHECK (data_delivery_mode IN ('ONE_TIME','CONTINUOUS')),
-  dme_type_id           UUID NOT NULL REFERENCES dme_type(dme_type_id),
+  dme_type_id           UUID NOT NULL REFERENCES dme_type(dme_type_id) ON DELETE CASCADE,  -- NEW section 5: matches dme_delivery_schema's own already-cascading FK
   production_job_definition JSONB,
   data_delivery_method  TEXT NOT NULL CHECK (data_delivery_method IN ('PULL_HTTP','PUSH_HTTP','STREAMING_KAFKA')),
   delivery_details       JSONB,
@@ -79,7 +79,7 @@ CREATE TABLE data_job (
 
 CREATE TABLE data_offer (
   offer_id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  dme_type_id                        UUID NOT NULL REFERENCES dme_type(dme_type_id),
+  dme_type_id                        UUID NOT NULL REFERENCES dme_type(dme_type_id) ON DELETE CASCADE,  -- NEW section 5: matches dme_delivery_schema's own already-cascading FK
   data_delivery_methods_offered       TEXT[] NOT NULL,
   data_delivery_method_committed      TEXT,
   data_availability_notification_uri  TEXT,   -- REVERSED direction — section 3.5
