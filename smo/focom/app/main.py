@@ -121,6 +121,101 @@ def get_deployment_manager(deployment_manager_id: str, db: Session = Depends(get
     return _deployment_manager_view(d)
 
 
+TEIV_CLOUD_PREFIX = "o-ran-smo-teiv-cloud"
+TEIV_URN_PREFIX = "urn:oran:smo:teiv"
+
+
+@app.get("/topology")
+def export_topology(db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: the Blueprint names "FOCOM's placement as
+    a TEIV data source" as a confirmed integration point, but FOCOM had
+    no typed entity/relationship model and no /topology-shaped endpoint
+    at all — not even a stub. This exports FOCOM's real ResourceType/
+    ResourcePool/DeploymentManager/Resource rows in the wire shape the
+    reference's own focom-to-teiv-adapter produces (entities keyed by
+    "<prefix>:<EntityType>" with {id, attributes}; relationships keyed by
+    "<prefix>:<A>_<REL>_<B>" with {id, aSide, bSide, sourceIds} — see
+    EntityAndRelationshipModel.java / TeivIdBuilder.java).
+
+    The real adapter derives OCloudNamespace/NodeCluster entities from
+    live FocomProvisioningRequest/O2ims Kubernetes CRDs and pushes them
+    over Kafka as CloudEvents — direct kubeconfig access, CRD reads, and
+    a message broker are all structurally out of scope for this
+    docker-run-based Phase 1 (same elision as the rest of this module).
+    So this exports FOCOM's own actual inventory instead, as a pull-based
+    GET, using only the module's real foreign keys (resource -> type,
+    resource -> pool, resource -> parent) rather than inventing
+    relationships this schema doesn't actually track.
+    """
+    _ensure_phase1_topology(db)
+
+    resource_types = db.scalars(select(ResourceType)).all()
+    resource_pools = db.scalars(select(ResourcePool)).all()
+    deployment_managers = db.scalars(select(DeploymentManager)).all()
+    resources = db.scalars(select(Resource)).all()
+
+    entities: list[dict] = []
+    if resource_types:
+        entities.append({f"{TEIV_CLOUD_PREFIX}:ResourceType": [
+            {"id": f"{TEIV_URN_PREFIX}:ResourceType:{t.resource_type_id}",
+             "attributes": {"name": t.name, "description": t.description, "vendor": t.vendor,
+                             "model": t.model, "version": t.version}}
+            for t in resource_types
+        ]})
+    if resource_pools:
+        entities.append({f"{TEIV_CLOUD_PREFIX}:ResourcePool": [
+            {"id": f"{TEIV_URN_PREFIX}:ResourcePool:{p.resource_pool_id}",
+             "attributes": {"name": p.name, "description": p.description, "oCloudId": p.o_cloud_id}}
+            for p in resource_pools
+        ]})
+    if deployment_managers:
+        entities.append({f"{TEIV_CLOUD_PREFIX}:DeploymentManager": [
+            {"id": f"{TEIV_URN_PREFIX}:DeploymentManager:{d.deployment_manager_id}",
+             "attributes": {"name": d.name, "description": d.description, "oCloudId": d.o_cloud_id,
+                             "serviceUri": d.service_uri}}
+            for d in deployment_managers
+        ]})
+    if resources:
+        entities.append({f"{TEIV_CLOUD_PREFIX}:Resource": [
+            {"id": f"{TEIV_URN_PREFIX}:Resource:{r.resource_id}",
+             "attributes": {"resourceTypeId": r.resource_type_id, "resourcePoolId": r.resource_pool_id,
+                             "description": r.description}}
+            for r in resources
+        ]})
+
+    is_of_type: list[dict] = []
+    contained_in: list[dict] = []
+    child_of: list[dict] = []
+    for r in resources:
+        resource_urn = f"{TEIV_URN_PREFIX}:Resource:{r.resource_id}"
+        is_of_type.append({
+            "id": f"{TEIV_URN_PREFIX}:RESOURCE_IS_OF_TYPE_RESOURCETYPE:{r.resource_id}",
+            "aSide": resource_urn, "bSide": f"{TEIV_URN_PREFIX}:ResourceType:{r.resource_type_id}",
+            "sourceIds": [str(r.resource_id), r.resource_type_id],
+        })
+        contained_in.append({
+            "id": f"{TEIV_URN_PREFIX}:RESOURCE_CONTAINED_IN_RESOURCEPOOL:{r.resource_id}",
+            "aSide": resource_urn, "bSide": f"{TEIV_URN_PREFIX}:ResourcePool:{r.resource_pool_id}",
+            "sourceIds": [str(r.resource_id), r.resource_pool_id],
+        })
+        if r.parent_id is not None:
+            child_of.append({
+                "id": f"{TEIV_URN_PREFIX}:RESOURCE_CHILD_OF_RESOURCE:{r.resource_id}",
+                "aSide": resource_urn, "bSide": f"{TEIV_URN_PREFIX}:Resource:{r.parent_id}",
+                "sourceIds": [str(r.resource_id), str(r.parent_id)],
+            })
+
+    relationships: list[dict] = []
+    if is_of_type:
+        relationships.append({f"{TEIV_CLOUD_PREFIX}:RESOURCE_IS_OF_TYPE_RESOURCETYPE": is_of_type})
+    if contained_in:
+        relationships.append({f"{TEIV_CLOUD_PREFIX}:RESOURCE_CONTAINED_IN_RESOURCEPOOL": contained_in})
+    if child_of:
+        relationships.append({f"{TEIV_CLOUD_PREFIX}:RESOURCE_CHILD_OF_RESOURCE": child_of})
+
+    return {"entities": entities, "relationships": relationships}
+
+
 def _notify_inventory_subscribers(db: Session, event_type: str, resource_id: str, resource_type_id: str | None) -> None:
     """OPEN_ITEMS.md section 5: subscribe_inventory_changes took no
     callback parameter, stored nothing, and delivered nothing — the
