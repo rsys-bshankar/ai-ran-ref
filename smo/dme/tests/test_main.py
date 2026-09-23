@@ -14,6 +14,11 @@ from app.main import app
 from app.models import DataJob, DataOffer, DMEDeliverySchema, DMEType
 
 
+class FakeHealthResponse:
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+
 @pytest.fixture
 def client():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -57,31 +62,77 @@ def test_different_version_is_not_a_conflict(client):
     assert resp.status_code == 201
 
 
-def test_discover_returns_dme_type_id_struct(client):
+def test_discover_returns_dme_type_id_struct(client, monkeypatch):
     """Foundational Platform LLD section 3.1: dmeTypeIdStruct is computed
     from our internal UUID, matching R1AP's actual wire identity.
     """
+    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(200))
     client.post("/production-capabilities", json=register_type_body())
     resp = client.get("/dme-types")
     struct = resp.json()[0]["dmeTypeIdStruct"]
     assert struct == {"namespace": "RAN", "name": "PMCounters", "version": "1.0.0"}
 
 
-def test_type_status_disabled_with_no_active_jobs(client):
-    """ADOPT from ICS (section 3.4) — computed ENABLED/DISABLED field."""
+def test_type_status_disabled_when_producer_health_callback_is_unreachable(client, monkeypatch):
+    """The actual fix: producerHealthCallbackUrl was stored but never
+    called at all, and typeStatus used to be derived from whether a
+    DataJob row was ACTIVE — a dead producer with an active job still
+    reported ENABLED. ICS's own typeStatus is driven entirely by real
+    producer availability (ConsumerController.typeStatus /
+    ProducerSupervision's health poll); this mirrors that.
+    """
+    import httpx as httpx_module
+
+    def raise_error(url, timeout=None):
+        raise httpx_module.ConnectError("unreachable")
+
+    monkeypatch.setattr("app.main.httpx.get", raise_error)
+
     client.post("/production-capabilities", json=register_type_body())
     resp = client.get("/dme-types")
     assert resp.json()[0]["typeStatus"] == "DISABLED"
 
 
-def test_type_status_enabled_once_a_data_job_is_active(client):
+def test_type_status_disabled_on_a_non_2xx_health_response(client, monkeypatch):
+    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(503))
+    client.post("/production-capabilities", json=register_type_body())
+    resp = client.get("/dme-types")
+    assert resp.json()[0]["typeStatus"] == "DISABLED"
+
+
+def test_type_status_enabled_when_producer_health_callback_responds(client, monkeypatch):
+    calls = []
+
+    def fake_get(url, timeout=None):
+        calls.append(url)
+        return FakeHealthResponse(200)
+
+    monkeypatch.setattr("app.main.httpx.get", fake_get)
+
+    client.post("/production-capabilities", json=register_type_body())
+    resp = client.get("/dme-types")
+    assert resp.json()[0]["typeStatus"] == "ENABLED"
+    assert calls == ["http://ran-nf-oam:8000/health"]  # the registered producerHealthCallbackUrl, genuinely called
+
+
+def test_type_status_stays_disabled_even_with_an_active_job_if_producer_is_unreachable(client, monkeypatch):
+    """The headline regression this fix closes: an ACTIVE DataJob must no
+    longer be enough on its own to report ENABLED.
+    """
+    import httpx as httpx_module
+
+    def raise_error(url, timeout=None):
+        raise httpx_module.ConnectError("unreachable")
+
+    monkeypatch.setattr("app.main.httpx.get", raise_error)
+
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     client.post("/data-jobs", json={
         "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
         "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
     })
     resp = client.get("/dme-types")
-    assert resp.json()[0]["typeStatus"] == "ENABLED"
+    assert resp.json()[0]["typeStatus"] == "DISABLED"
 
 
 def test_data_job_rejects_unknown_delivery_method(client):
@@ -167,11 +218,12 @@ def test_data_job_unaffected_by_offer_check_when_no_offer_exists(client):
     assert resp.status_code == 202
 
 
-def test_deregister_producer_removes_all_its_types(client):
+def test_deregister_producer_removes_all_its_types(client, monkeypatch):
     """The DME half of rApp Management's producer-reconsideration trigger
     (OPEN_ITEMS.md section 1) — deregistering a producer must remove
     every DMEType it registered, not just one.
     """
+    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(200))
     client.post("/production-capabilities", json=register_type_body(name="TypeA", producerId="rapp-1"))
     client.post("/production-capabilities", json=register_type_body(name="TypeB", producerId="rapp-1"))
     client.post("/production-capabilities", json=register_type_body(name="TypeC", producerId="rapp-2"))
@@ -274,11 +326,12 @@ def test_get_unknown_data_offer_is_404(client):
     assert resp.status_code == 404
 
 
-def test_discover_filters_by_data_category(client):
+def test_discover_filters_by_data_category(client, monkeypatch):
     """OPEN_ITEMS.md section 5: data_category was declared as a query
     param but silently never applied — every call returned every type
     regardless of the filter.
     """
+    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(200))
     client.post("/production-capabilities", json=register_type_body(name="CoverageIssue"))
     client.post("/production-capabilities", json={
         "namespace": "AIML", "name": "ModelHealth", "version": "1.0.0", "typeName": "AIML.ModelHealth",
@@ -291,7 +344,8 @@ def test_discover_filters_by_data_category(client):
     assert names == ["AIML.ModelHealth"]
 
 
-def test_discover_without_data_category_returns_every_type(client):
+def test_discover_without_data_category_returns_every_type(client, monkeypatch):
+    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(200))
     client.post("/production-capabilities", json=register_type_body(name="CoverageIssue"))
     client.post("/production-capabilities", json={
         "namespace": "AIML", "name": "ModelHealth", "version": "1.0.0", "typeName": "AIML.ModelHealth",

@@ -85,7 +85,7 @@ def discover_dme_types(data_category: str | None = None, db: Session = Depends(g
     if data_category:
         stmt = stmt.where(DMEType.namespace == data_category)
     rows = db.scalars(stmt).all()
-    return [_type_view(db, r) for r in rows]
+    return [_type_view(r) for r in rows]
 
 
 @app.delete("/production-capabilities", status_code=204)
@@ -236,17 +236,36 @@ def _offer_view(o: DataOffer) -> dict:
     }
 
 
-def _type_view(db: Session, t: DMEType) -> dict:
+def _type_view(t: DMEType) -> dict:
     return {
         "dmeTypeId": str(t.dme_type_id),
         "dmeTypeIdStruct": t.dme_type_id_struct,
         "typeName": t.type_name,
         "producerId": t.producer_id,
-        "typeStatus": _computed_type_status(db, t.dme_type_id),  # ADOPT from ICS, section 3.4
+        "typeStatus": _computed_type_status(t),  # ADOPT from ICS, section 3.4
         "producerHealthCallbackUrl": t.producer_health_callback_url,
     }
 
 
-def _computed_type_status(db: Session, dme_type_id: uuid.UUID) -> str:
-    active = db.scalar(select(DataJob).where(DataJob.dme_type_id == dme_type_id, DataJob.status == "ACTIVE").limit(1))
-    return "ENABLED" if active is not None else "DISABLED"
+def _computed_type_status(t: DMEType) -> str:
+    """OPEN_ITEMS.md section 5: this used to check only whether a DataJob
+    row was ACTIVE — a dead producer with an active job still reported
+    ENABLED, and producerHealthCallbackUrl was stored but never actually
+    called. ICS's own typeStatus (ConsumerController.typeStatus) is
+    driven entirely by real producer availability
+    (ProducerSupervision.checkOneProducer's periodic health poll); this
+    mirrors that signal — computed live at read time rather than via a
+    background scheduler, since no scheduler exists anywhere in this
+    build (elided, same as the real PM file-collection pipeline
+    elsewhere) — so a producer that's actually unreachable is never
+    silently reported ENABLED just because a job happens to be ACTIVE.
+    """
+    return "ENABLED" if _producer_is_healthy(t.producer_health_callback_url) else "DISABLED"
+
+
+def _producer_is_healthy(callback_url: str) -> bool:
+    try:
+        resp = httpx.get(callback_url, timeout=2.0)
+        return resp.status_code < 300
+    except httpx.HTTPError:
+        return False
