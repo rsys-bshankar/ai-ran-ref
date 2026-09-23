@@ -58,7 +58,7 @@ smo/
 | R1 Termination | `r1-termination/` | — (gateway, no domain schema) |
 | Software Package Onboarding | `onboarding/` | `ApplicationPackage` FSM |
 | rApp Management | `rapp-mgmt/` | `RAppInstance` FSM + upgrade auto-rollback |
-| RAN NF OAM | `ran-nf-oam/` | `WriteConfigJob`, `SoftwareManagementJob`, `O1AdaptorEndpoint` health — 3 FSMs |
+| RAN NF OAM | `ran-nf-oam/` | `WriteConfigJob`, `SoftwareManagementJob`, `O1AdaptorEndpoint` health — 3 FSMs; CM writes dispatch as real NETCONF `<edit-config>` RPCs (RESTCONF-provisioned MEs rejected, not implemented) |
 | A1 Related | `a1-related/` | — (A1-ML dormant, out of scope — see the module's LLD section 0). Its real southbound dependency is `mock-near-rt-ric/`, on an isolated network segment. |
 | NFO | `nfo/` | `NFDeployment` |
 | FOCOM | `focom/` | — |
@@ -66,7 +66,7 @@ smo/
 | RAN Analytics | `ran-analytics/` | — |
 | Policy Mgmt & Info | `policy-mgmt/` | — |
 | SO SMOS | `so-smos/` | dispatch table, fail-fast execution |
-| SA SMOS | `sa-smos/` | remedial-action dispatch (2 of 4 action types honestly unresolved) |
+| SA SMOS | `sa-smos/` | remedial-action dispatch (`RECONNECT` resolved via SO SMOS order lookup + NFO Heal; `ROLLBACK` honestly unresolved — see below) |
 
 ## Running it
 
@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**134 tests total, all passing** as of this build: 124 unit tests across
+**153 tests total, all passing** as of this build: 143 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -106,12 +106,17 @@ certification pipeline plus retraining re-entry, SO SMOS's fail-fast
 dispatch semantics, A1 Related's real round trip to the mock Near-RT RIC
 (both `ENFORCED` and `REJECTED` paths), a three-hop chain (SO SMOS → A1
 Related → mock Near-RT RIC) proving the dispatch table isn't calling
-into a stub, and a full onboard-to-deploy chain (Onboarding → NFO →
+into a stub, a full onboard-to-deploy chain (Onboarding → NFO →
 rApp Management) proving NFO's real `NFDeploymentDescriptor` row — not
-`packageId` — makes it all the way through. so-smos, ran-analytics,
-focom, rapp-mgmt, and dme — previously among the thinnest-covered
-modules — now have route-level coverage too, not just dispatch-logic
-coverage, closing OPEN_ITEMS.md's test-coverage-parity item.
+`packageId` — makes it all the way through, RAN NF OAM's real NETCONF
+`<edit-config>` dispatch (mocked transport, real RPC-reply parsing), and
+SA SMOS's `RECONNECT` resolving a concrete `nfDeploymentId` via a live SO
+SMOS order lookup. so-smos, ran-analytics, focom, rapp-mgmt, and dme —
+previously among the thinnest-covered modules — now have route-level
+coverage too, not just dispatch-logic coverage, closing OPEN_ITEMS.md's
+test-coverage-parity item; `ran-nf-oam` went from FSM-only coverage to 20
+tests (its first route-level and NETCONF-client tests) resolving the CM
+sync method design decision.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
@@ -214,6 +219,15 @@ Writing the tests, not just the code, is what surfaced these:
   models, never from this file, and the migration-Postgres CI job only
   checks table *count*, not columns. Verified fixed against a real local
   Postgres 16 instance, not just SQLite.
+- **`AI/ML Workflow`'s `RequestTraining` crashed on every ordinary
+  retrain** — it always fired the model FSM's `TRAIN` event regardless of
+  the model's actual state, but `TRAIN` is only a legal transition from
+  `REGISTERED`; calling `RequestTraining` on an `ACTIVE` model (the normal
+  retrain case) hit an unhandled `IllegalTransition` (500). Fixed by
+  firing `TRAIN` or `RETRAIN` based on the model's actual state, and by
+  explicitly cancelling an orphaned in-flight `TrainingJob` rather than
+  silently overwriting `model.training_job_id` when a second
+  `RequestTraining` call arrives mid-flight.
 
 ## What's deliberately incomplete
 
@@ -223,14 +237,25 @@ them:
 - **A1-ML operations** (`a1-related/`) — schema-dormant, no routes. Building
   them means implementing genuine A1AP behavior, out of this project's
   declared scope categorically (see the A1 Related LLD section 0).
-- **`RECONNECT`/`ROLLBACK`** (`sa-smos/app/main.py`) — raise a clear error
-  rather than silently picking one of several plausible meanings.
+- **`ROLLBACK`** (`sa-smos/app/main.py`) — raises a clear, specific error
+  (`ROLLBACK_HISTORY_UNAVAILABLE`) rather than picking one of several
+  plausible meanings: rApp Management's own upgrade machinery deletes the
+  prior `RAppInstance` row on a successful commit, so no version history
+  survives anywhere in this build to roll back to. `RECONNECT` is now
+  resolved (see the table above).
+- **RESTCONF-provisioned MEs in RAN NF OAM's `WriteConfigurationChanges`**
+  (`ran-nf-oam/app/main.py`) — the confirmed dispatch protocol is NETCONF
+  only; an ME with `o1_protocol=RESTCONF` is rejected with
+  `PROTOCOL_NOT_SUPPORTED` rather than silently applied. The NETCONF RPC
+  itself is still sent as XML over plain HTTP, not real SSH/ncclient
+  transport, matching this build's all-HTTP-JSON pragmatism everywhere
+  else.
 - **`upgradeTimeoutSeconds` default (300s)** (`rapp-mgmt/`) — not a
   researched value, flagged as a placeholder in both the LLD and the code.
 - **`WEIGHTED_TRIGGERS`** (`ai-ml-workflow/`) — raises `NotImplementedError`;
   needs real noise-floor data before it can be designed, not invented now.
 - Every module's actual southbound integration beyond A1 Related's mock
-  Near-RT RIC (O1 Adaptor `PATCH` calls, `docker run` invocations) is
-  elided in favor of recording the correct state transition — this is a
-  reference build of the SMO's own object model and orchestration logic,
-  not a full O-RAN stack.
+  Near-RT RIC and RAN NF OAM's NETCONF client (`docker run` invocations,
+  etc.) is elided in favor of recording the correct state transition —
+  this is a reference build of the SMO's own object model and
+  orchestration logic, not a full O-RAN stack.

@@ -5,6 +5,11 @@ Option A endpoint registry, multi-function-ME addressing, schema-checked
 writes with decomposed-PATCH aggregation, fleet-unique alarm IDs, and the
 explicit clarification that SubscribePM is a DME-producer registration,
 never a clause-8 call (no such API exists).
+
+CM writes dispatch as NETCONF-shaped <edit-config> RPCs (netconf_client.py)
+— the confirmed protocol per OPEN_ITEMS.md's "CM cache sync method" item.
+An ME provisioned for RESTCONF has no dispatch implementation yet and is
+rejected with PROTOCOL_NOT_SUPPORTED rather than silently applied.
 """
 
 import datetime
@@ -20,6 +25,7 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 
 from .models import Alarm, CMSchemaCache, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .netconf_client import send_edit_config
 from .statemachine import (
     ENDPOINT_HEALTH_FSM,
     SOFTWARE_MANAGEMENT_FSM,
@@ -80,12 +86,21 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
                                          attribute_changes=change["attributeChanges"], status="REJECTED",
                                          rejection_reason="ENDPOINT_UNREACHABLE"))
             continue
-        # Phase 1: the actual PATCH .../{className}={id} call against the
-        # endpoint's adaptor_uri is elided here — this reference build
-        # records the sub_change outcome as APPLIED once dispatched.
+        if me.o1_protocol != "NETCONF":
+            # Confirmed protocol choice (OPEN_ITEMS.md) is NETCONF — an ME
+            # provisioned for RESTCONF has no dispatch implementation yet,
+            # rejected honestly rather than silently treated as applied.
+            db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
+                                         managed_function_ref=change.get("managedFunctionRef"),
+                                         attribute_changes=change["attributeChanges"], status="REJECTED",
+                                         rejection_reason="PROTOCOL_NOT_SUPPORTED"))
+            continue
+        applied = send_edit_config(endpoint.adaptor_uri, change["managedElementRef"], change["attributeChanges"], message_id=str(job.job_id))
         db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
                                      managed_function_ref=change.get("managedFunctionRef"),
-                                     attribute_changes=change["attributeChanges"], status="APPLIED"))
+                                     attribute_changes=change["attributeChanges"],
+                                     status="APPLIED" if applied else "REJECTED",
+                                     rejection_reason=None if applied else "NETCONF_RPC_FAILED"))
 
     db.flush()
     statuses = [sc.status for sc in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)).all()]
