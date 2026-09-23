@@ -2,6 +2,8 @@
 Run with: pytest smo/a1-related/tests -q
 """
 
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -117,6 +119,129 @@ def test_subscription_scope_and_policy_id_list_conflict(client):
 def test_subscription_scope_alone_is_valid(client):
     resp = client.post("/policies/subscriptions", json={"notificationDestination": "http://consumer/callback", "subscriptionScope": "ALL"})
     assert resp.status_code == 201
+
+
+def test_query_policy_returns_created_policy(client):
+    """GET /policies/{id} had zero test coverage at all — five whole
+    routes (this, PUT, DELETE on policies, DELETE on subscriptions, and
+    DELETE on ei-types) were never exercised before this pass.
+    """
+    created = client.post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1",
+    }).json()
+
+    resp = client.get(f"/policies/{created['policyId']}")
+    assert resp.status_code == 200
+    assert resp.json()["policyId"] == created["policyId"]
+    assert resp.json()["policyObject"] == {"scope": "cell1"}
+    assert resp.json()["enforcementStatus"] == "ENFORCED"
+
+
+def test_query_policy_for_unknown_id_is_a_genuine_error_not_404(client):
+    """query_policy has no guard for a missing row — db.get returns None
+    and _policy_view(None) crashes. Asserting that explicitly, the same
+    pattern nfo/tests/test_main.py uses for its own unguarded-None path,
+    rather than silently avoiding the case.
+    """
+    from fastapi.testclient import TestClient as _TestClient
+    from app.main import app as _app
+    raw = _TestClient(_app, raise_server_exceptions=False)
+    resp = raw.get(f"/policies/{uuid.uuid4()}")
+    assert resp.status_code == 500
+
+
+def test_update_policy_reflects_southbound_enforcement_status(client):
+    created = client.post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {}, "nearRtRicId": "ric1", "creatorId": "rapp-1",
+    }).json()
+    assert created["enforcementStatus"] == "REJECTED"
+
+    resp = client.put(f"/policies/{created['policyId']}", json={"scope": "cell2"})
+    assert resp.status_code == 200
+    assert resp.json()["enforcementStatus"] == "ENFORCED"
+    assert resp.json()["policyObject"] == {"scope": "cell2"}
+
+
+def test_delete_policy_removes_it(client):
+    created = client.post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1",
+    }).json()
+
+    resp = client.delete(f"/policies/{created['policyId']}")
+    assert resp.status_code == 204
+
+    from fastapi.testclient import TestClient as _TestClient
+    from app.main import app as _app
+    raw = _TestClient(_app, raise_server_exceptions=False)
+    # same unguarded-None path as the query test above — proves the row is
+    # actually gone (a query against a still-existing row would 200).
+    assert raw.get(f"/policies/{created['policyId']}").status_code == 500
+
+
+def test_delete_unknown_policy_is_idempotent(client):
+    """delete_policy's `if p is not None` guard — never exercised for a
+    missing id before this pass.
+    """
+    resp = client.delete(f"/policies/{uuid.uuid4()}")
+    assert resp.status_code == 204
+
+
+def test_delete_policy_calls_southbound_delete(client):
+    """The mapping-store role's whole point: DELETE must reach the
+    Near-RT RIC too, not just drop the local mirror row.
+    """
+    calls = []
+
+    class RecordingA1Termination(FakeA1Termination):
+        def delete_policy(self, policy_id):
+            calls.append(policy_id)
+
+    shared = RecordingA1Termination()
+    app.dependency_overrides[get_a1_termination_client] = lambda: shared
+
+    created = client.post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1",
+    }).json()
+    client.delete(f"/policies/{created['policyId']}")
+
+    assert calls == ["mock-nrt-policy-1"]
+
+
+def test_unsubscribe_policy_status_removes_subscription(client):
+    sub = client.post("/policies/subscriptions", json={"notificationDestination": "http://consumer/callback", "subscriptionScope": "ALL"}).json()
+    resp = client.delete(f"/policies/subscriptions/{sub['subscriptionId']}")
+    assert resp.status_code == 204
+
+
+def test_unsubscribe_unknown_subscription_is_idempotent(client):
+    resp = client.delete(f"/policies/subscriptions/{uuid.uuid4()}")
+    assert resp.status_code == 204
+
+
+def test_deregister_ei_type_removes_it(client, monkeypatch):
+    from smo_shared import r1_client as r1_client_module
+
+    class FakeResponse:
+        status_code = 201
+        def json(self):
+            return {"registrationId": "11111111-1111-1111-1111-111111111111"}
+
+    monkeypatch.setattr(r1_client_module.R1Client, "post", lambda self, path, json=None, **kw: FakeResponse())
+    client.post("/ei-types/register", params={
+        "ei_type_id": "ei-1", "registered_by": "rapp-1",
+        "dme_namespace": "RAN", "dme_name": "CoverageIssue", "dme_version": "1.0.0",
+    })
+
+    resp = client.delete("/ei-types/ei-1")
+    assert resp.status_code == 204
+
+
+def test_deregister_unknown_ei_type_is_idempotent(client):
+    """deregister_ei_type's `if ei is not None` guard — never exercised
+    for a missing id before this pass.
+    """
+    resp = client.delete("/ei-types/never-registered")
+    assert resp.status_code == 204
 
 
 def test_register_ei_type_wraps_dme_registration(client, monkeypatch):
