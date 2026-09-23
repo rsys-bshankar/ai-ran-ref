@@ -34,8 +34,14 @@ sequenceDiagram
         SA->>SA: outcome = RESOLVED
     else actionType == SCALE
         SA->>SA: outcome = ESCALATED (inherits NFO's own Phase 1 stub status)
-    else actionType in {RECONNECT, ROLLBACK}
-        SA->>Operator: 422 — ambiguous in this reference build (SO/SA SMOS LLD section 2.1),<br/>needs module-qualified variants before implementing
+    else actionType == RECONNECT
+        SA->>SO: GET /orders/{targetOrderId} — resolve the DEPLOY step's nfDeploymentId
+        SO-->>SA: steps[] including the completed DEPLOY result
+        SA->>NFO: POST /deployments/{nfDeploymentId}/heal
+        NFO-->>SA: 200
+        SA->>SA: outcome = RESOLVED (or ESCALATED if no order/DEPLOY step resolves)
+    else actionType == ROLLBACK
+        SA->>Operator: 501 ROLLBACK_HISTORY_UNAVAILABLE — rApp Management deletes the<br/>previous RAppInstance row on a successful upgrade, so no version<br/>history survives to roll back to — not a semantics question anymore
     end
 
     alt still unresolved
@@ -45,5 +51,6 @@ sequenceDiagram
 
 **Key decisions this flow depends on:**
 - SO SMOS never rolls back completed steps on a later failure — Phase 1 has no compensating-transaction mechanism, matching every other Phase-1-thin limitation in this framework (stated explicitly, not silently assumed).
-- `RECONNECT` and `ROLLBACK` are deliberately **not** force-resolved to a single meaning — the reference build raises a clear error rather than silently picking one of several plausible targets (rApp version rollback vs. model version rollback).
-- A coordination-group-scoped `AssuranceMonitor` (via `targetCoordinationGroupId`) would route through AI/ML Workflow's `should_trigger_group_retrain` instead of a single `ServiceOrder` — see call flow 02.
+- `RECONNECT` resolves its target the same way every other remedial action does — through the `AssuranceMonitor`'s `targetOrderId`, read back from SO SMOS's own order record — rather than needing a new resource-reference field on the monitor itself.
+- `ROLLBACK` stays unsupported, but now for a concrete, checked reason (`ROLLBACK_HISTORY_UNAVAILABLE`) rather than a vague "ambiguous meaning" refusal: rApp Management's own upgrade machinery (`rapp-mgmt/app/upgrade.py`) deletes the prior `RAppInstance` row on a successful commit, so there is no version history anywhere in this build to roll back to — a rApp Management gap, not an SA SMOS design question.
+- A coordination-group-scoped `AssuranceMonitor` (via `targetCoordinationGroupId`) would route through AI/ML Workflow's `should_trigger_group_retrain` instead of a single `ServiceOrder` — see call flow 02. A coordination-group-scoped `RECONNECT`/`ROLLBACK` isn't resolved by this pass either — only the `targetOrderId` path is.

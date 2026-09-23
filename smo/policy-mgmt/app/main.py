@@ -8,6 +8,7 @@ DeregisterIntentHandlingFunction restores register/deregister symmetry.
 
 import uuid
 
+import httpx
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -26,6 +27,7 @@ class CreateIntentRequest(BaseModel):
     expectations: list[dict]
     priority: int = 1
     rmioId: str = ""
+    intentType: str | None = None
 
 
 class AdminStateRequest(BaseModel):
@@ -43,14 +45,42 @@ class RegisterRmihRequest(BaseModel):
     rmihId: str
     smeServiceId: str
     capabilities: list[dict]
+    notificationCallbackUri: str
 
 
 @app.post("/intents", status_code=201)
 def create_intent(body: CreateIntentRequest, db: Session = Depends(get_session)):
-    intent = Intent(intent_expectations=body.expectations, intent_priority=body.priority, rmio_id=body.rmioId)
+    """CreateIntent — closes the matching/dispatch gap between this and
+    RegisterIntentHandlingFunction: previously an RMIH was never notified
+    of a new Intent it could fulfil at all. Matching is capability-tag
+    based, the same pragmatic shape as DME's own opaque-schema handling
+    elsewhere in this build — intentType is checked for membership across
+    each registered RMIH's intent_handling_capability_list, not a deep
+    TS 28.312 expectation match (that grammar isn't in this build's
+    source corpus, same limitation intent_expectations already has).
+    Dispatch is best-effort: a callback failure never blocks CreateIntent
+    itself succeeding.
+    """
+    intent = Intent(intent_expectations=body.expectations, intent_priority=body.priority, rmio_id=body.rmioId,
+                     intent_mgmt_purpose=body.intentType)
     db.add(intent)
     db.commit()
+
+    if body.intentType:
+        for fn in _matching_rmihs(db, body.intentType):
+            try:
+                httpx.post(fn.notification_callback_uri, json={
+                    "intentId": str(intent.intent_id), "intentType": body.intentType,
+                    "priority": intent.intent_priority, "rmioId": intent.rmio_id,
+                }, timeout=5.0)
+            except httpx.HTTPError:
+                pass
     return {"intentId": str(intent.intent_id)}
+
+
+def _matching_rmihs(db: Session, intent_type: str) -> list[IntentHandlingFunction]:
+    return [fn for fn in db.scalars(select(IntentHandlingFunction)).all()
+            if any(cap.get("intentType") == intent_type for cap in fn.intent_handling_capability_list)]
 
 
 @app.get("/intents/{intent_id}")
@@ -100,7 +130,8 @@ def register_intent_handling_function(body: RegisterRmihRequest, db: Session = D
     """
     if not is_framework_internal_identity(body.rmihId):
         raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail="external callers may never hold an rmihId (D-SEC-POLICY-1)")
-    fn = IntentHandlingFunction(rmih_id=body.rmihId, sme_service_id=body.smeServiceId, intent_handling_capability_list=body.capabilities)
+    fn = IntentHandlingFunction(rmih_id=body.rmihId, sme_service_id=body.smeServiceId, intent_handling_capability_list=body.capabilities,
+                                 notification_callback_uri=body.notificationCallbackUri)
     db.add(fn)
     db.commit()
     return {"rmihId": fn.rmih_id}
@@ -117,4 +148,4 @@ def deregister_intent_handling_function(rmih_id: str, db: Session = Depends(get_
 
 def _intent_view(i: Intent) -> dict:
     return {"intentId": str(i.intent_id), "intentAdminState": i.intent_admin_state,
-            "intentPriority": i.intent_priority, "rmioId": i.rmio_id}
+            "intentPriority": i.intent_priority, "rmioId": i.rmio_id, "intentType": i.intent_mgmt_purpose}

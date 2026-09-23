@@ -12,9 +12,6 @@ These need a call from whoever owns the relevant module's requirements
 before they can be implemented — inventing an answer now would just move
 the ambiguity into code.
 
-- **In-flight training-job upgrade behavior** (`ai-ml-workflow/`) — what
-  happens to a `TrainingJob` mid-flight when the underlying `AIMLModel` is
-  upgraded. Left ambiguous in the LLD.
 - **rApp-as-producer reconsideration trigger** (`dme/` / `rapp-mgmt/`) —
   when a `RAppInstance` itself acts as a DME producer, what re-evaluates
   its registration on state change. Flagged, not decided.
@@ -26,25 +23,13 @@ the ambiguity into code.
   weighting function; the value would be fabricated without it.
 - **Shape B / `JOINT_TRAINING`** (`ai-ml-workflow/`) — declared out of
   scope for this build; never revisited to confirm that's still correct.
-- **RAN NF OAM's CM cache sync method** (`ran-nf-oam/`) — RESTCONF vs.
-  NETCONF confirmation owed to the O1 Adaptor team, never closed.
 - **Alarm-storm correlation algorithm** (`ran-nf-oam/`) — flagged as
   needing a real algorithm; nothing implemented.
 - **A1-ML operations** (`a1-related/`) — categorically out of scope per
   the A1 Related LLD section 0; schema-dormant. Revisit only if that scope
   decision changes.
-- **SA SMOS `RECONNECT`/`ROLLBACK`** (`sa-smos/`) — raises a clear error
-  rather than guessing at one of several plausible remedial-action
-  meanings. Needs the intended semantics defined.
 - **`upgradeTimeoutSeconds` default (300s)** (`rapp-mgmt/`) — a
   placeholder, not a researched value.
-- **Intent-to-RMIH matching semantics** (`policy-mgmt/`) — `CreateIntent`
-  and `RegisterIntentHandlingFunction` both exist, but nothing decides
-  which RMIH a new Intent should be dispatched to; needs a definition of
-  "matching" (by `intent_handling_scope`? capability equality? push
-  notification or RMIH-side polling?) before it can be built. Surfaced
-  writing call flow 09 (a sibling branch — see `smo/docs/call-flows/09-*`
-  once merged).
 
 ## 2. Repo code / lifecycle gaps
 
@@ -159,21 +144,25 @@ Per-module unit test counts:
 | nfo | 5 |
 | ran-analytics | 5 |
 | focom | 7 |
-| policy-mgmt | 7 |
-| sa-smos | 8 |
 | a1-related | 8 |
 | onboarding | 9 |
 | sme | 9 |
 | rapp-mgmt | 9 |
-| ran-nf-oam | 10 |
-| ai-ml-workflow | 11 |
+| policy-mgmt | 10 |
+| sa-smos | 10 |
 | dme | 13 |
 | so-smos | 13 |
+| ai-ml-workflow | 15 |
+| ran-nf-oam | 20 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
 `r1-termination` and `mock-near-rt-ric` are now the shallowest-covered
-modules; `rapp-mgmt` and `dme` moved out of the shallow tier this pass
-(both gained route-level tests — `rapp-mgmt` had none at all before).
+modules; `rapp-mgmt` and `dme` moved out of the shallow tier in an earlier
+pass (both gained route-level tests). This pass added route-level coverage
+for the five §1 items closed below — `ai-ml-workflow` (+4), `policy-mgmt`
+(+3), `sa-smos` (net +2, replacing one parametrized "ambiguous" test with
+four RECONNECT/ROLLBACK-specific ones), and `ran-nf-oam` (+10: its first
+route-level tests at all, plus unit tests for the new NETCONF client).
 
 ## Closed
 
@@ -192,14 +181,62 @@ modules; `rapp-mgmt` and `dme` moved out of the shallow tier this pass
   journeys are now in `smo/docs/call-flows/` (05 through 10); writing
   them is what surfaced the `RECOVER`/cascade-delete-guard/DME-validation
   items closed above, plus the Intent-to-RMIH matching item now in §1.
+- **Five §1 design-level decisions, resolved by the stakeholder and
+  implemented:**
+  - **In-flight training-job upgrade behavior** (`ai-ml-workflow/`) — a
+    second `RequestTraining` call on a model already `TRAINING` now
+    cancels the orphaned job rather than silently overwriting
+    `model.training_job_id`; the operator's new call wins. Also fixed a
+    real crash bug found while implementing this: `RequestTraining`
+    always fired the `TRAIN` event regardless of model state, which is
+    only a legal transition from `REGISTERED` — every ordinary retrain
+    (`ACTIVE -> TRAINING`) crashed with an unhandled `IllegalTransition`.
+    Now fires `TRAIN` or `RETRAIN` based on the model's actual state.
+  - **Intent-to-RMIH matching semantics** (`policy-mgmt/`) — resolved as
+    capability-based push: `CreateIntent` takes an `intentType`, matches
+    it against each `IntentHandlingFunction`'s
+    `intent_handling_capability_list`, and POSTs to the new
+    `notificationCallbackUri` (DME's `producerHealthCallbackUrl` pattern)
+    of every match. Best-effort — an unreachable RMIH callback never
+    fails `CreateIntent` itself.
+  - **RAN NF OAM's CM cache sync method** (`ran-nf-oam/`) — confirmed
+    NETCONF. `WriteConfigurationChanges`'s per-change dispatch (previously
+    elided behind a comment that recorded every sub_change as `APPLIED`
+    without dispatching anything) now sends a real NETCONF-shaped
+    `<edit-config>` RPC (`netconf_client.py`) over plain HTTP to the ME's
+    `O1AdaptorEndpoint.adaptor_uri` — not real SSH/ncclient transport,
+    matching this build's all-HTTP-JSON pragmatism everywhere else. An ME
+    provisioned for RESTCONF (`ManagedEntity.o1_protocol`) has no
+    dispatch implementation yet and is rejected with the (previously
+    dormant) `PROTOCOL_NOT_SUPPORTED` rather than silently applied.
+    Scoped to the CM-write path only — the separate `cm_schema_cache`
+    fetch path is untouched.
+  - **SA SMOS `RECONNECT`/`ROLLBACK`** (`sa-smos/`) — split into two
+    different problems. `RECONNECT` is now resolved: it reads the
+    `AssuranceMonitor`'s `target_order_id` back from SO SMOS's own order
+    record to find the completed `DEPLOY` step's `nfDeploymentId`, then
+    dispatches to NFO's Heal — no new resource-reference field needed on
+    the monitor itself. `ROLLBACK` stays unsupported, but now for a
+    concrete, checked reason (new `ROLLBACK_HISTORY_UNAVAILABLE`, 501)
+    instead of a generic "ambiguous meaning" refusal: rApp Management's
+    own upgrade machinery deletes the prior `RAppInstance` row on a
+    successful commit, so there is no version history anywhere in this
+    build to roll back to — an rApp Management data-retention gap, not
+    an SA SMOS design question. A coordination-group-scoped
+    `RECONNECT`/`ROLLBACK` isn't resolved by this pass either — only the
+    `targetOrderId` path is; bundled with the still-deferred
+    `MLModelCoordinationGroup` × SA SMOS convergence item above.
+
+  See `smo/docs/call-flows/04-closed-loop-assurance.md` for the updated
+  RECONNECT/ROLLBACK sequence.
 
 ## Suggested next pass (priority order)
 
-1. Resolve the design-level decisions (§1) that block further code — SA
-   SMOS `RECONNECT`/`ROLLBACK`, RAN NF OAM's CM sync method, and the
-   newly-added Intent-to-RMIH matching semantics are the most likely to
-   unblock near-term code changes once decided; these genuinely need a
-   stakeholder call, not an invented answer.
+1. The remaining §1 design-level decisions — the `MLModelCoordinationGroup`
+   × SA SMOS convergence (bundled with coordination-group-scoped
+   RECONNECT/ROLLBACK), rApp-as-producer reconsideration trigger,
+   `WEIGHTED_TRIGGERS`, Shape B/`JOINT_TRAINING`, the alarm-storm
+   correlation algorithm, and `upgradeTimeoutSeconds`'s default — still
+   need a stakeholder call, not an invented answer.
 2. Deepen `r1-termination`'s and `mock-near-rt-ric`'s coverage — the
-   shallowest tier remaining now that `rapp-mgmt` and `dme` have moved
-   out of it.
+   shallowest tier remaining.

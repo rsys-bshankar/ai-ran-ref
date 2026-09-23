@@ -467,7 +467,8 @@ CREATE TABLE intent_handling_function (
   rmih_id                        TEXT PRIMARY KEY,
   sme_service_id                  TEXT NOT NULL,
   intent_handling_scope             JSONB,
-  intent_handling_capability_list     JSONB NOT NULL
+  intent_handling_capability_list     JSONB NOT NULL,
+  notification_callback_uri            TEXT NOT NULL  -- NEW: closes the Intent-to-RMIH dispatch gap
 );
 
 -- ============================================================

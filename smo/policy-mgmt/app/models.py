@@ -37,3 +37,7 @@ class IntentHandlingFunction(Base):
     sme_service_id: Mapped[str] = mapped_column(String, nullable=False)
     intent_handling_scope: Mapped[list | None] = mapped_column(JSON)
     intent_handling_capability_list: Mapped[list] = mapped_column(JSON, nullable=False)
+    # Closes the Intent-to-RMIH matching/dispatch gap — CreateIntent POSTs
+    # here on a capability match, same established pattern as DME's
+    # producerHealthCallbackUrl.
+    notification_callback_uri: Mapped[str] = mapped_column(String, nullable=False)

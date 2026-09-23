@@ -18,8 +18,12 @@ from app.models import AssuranceMonitor, RemedialAction
 
 
 class FakeR1Response:
-    def __init__(self, status_code):
+    def __init__(self, status_code, payload=None):
         self.status_code = status_code
+        self._payload = payload or {}
+
+    def json(self):
+        return self._payload
 
 
 @pytest.fixture
@@ -95,16 +99,60 @@ def test_scale_always_escalates_phase1_stub(client):
     assert resp.json()["outcome"] == "ESCALATED"
 
 
-@pytest.mark.parametrize("action_type", ["RECONNECT", "ROLLBACK"])
-def test_ambiguous_action_types_are_not_silently_resolved(client, action_type):
-    """The core decision under test: rather than guess which of several
-    plausible meanings RECONNECT/ROLLBACK has, the route raises a clear
-    error naming the ambiguity (LLD section 2.1).
+def test_rollback_is_explicitly_unsupported_not_ambiguous(client):
+    """ROLLBACK stays unsupported, but for a concrete, checked reason now
+    — rApp Management retains no version history to roll back to at all
+    — not a vague "ambiguous meaning" refusal (LLD section 2.1).
     """
     monitor = client.post("/monitors", params={}, json={}).json()
-    resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": action_type})
-    assert resp.status_code == 422
-    assert "ambiguous" in resp.json()["detail"]["detail"]
+    resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "ROLLBACK"})
+    assert resp.status_code == 501
+    assert resp.json()["detail"]["title"] == "ROLLBACK_HISTORY_UNAVAILABLE"
+
+
+def test_reconnect_resolves_deployment_via_order_and_heals(client, monkeypatch):
+    """The actual fix: RECONNECT is no longer refused — it resolves the
+    monitor's target_order_id into a concrete nfDeploymentId via SO
+    SMOS's own order record, then dispatches to NFO's Heal.
+    """
+    order_id = uuid.uuid4()
+    nf_deployment_id = str(uuid.uuid4())
+    calls = []
+
+    def fake_get(self, path, **kw):
+        assert path == f"/so-smos/orders/{order_id}"
+        return FakeR1Response(200, {"steps": [
+            {"stepType": "DEPLOY", "status": "COMPLETED", "result": {"nfDeploymentId": nf_deployment_id}},
+        ]})
+
+    def fake_post(self, path, json=None, **kw):
+        calls.append(path)
+        return FakeR1Response(200)
+
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    monitor = client.post("/monitors", params={"target_order_id": str(order_id)}, json={}).json()
+    resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "RECONNECT"})
+    assert resp.status_code == 201
+    assert resp.json()["outcome"] == "RESOLVED"
+    assert calls == [f"/nfo/deployments/{nf_deployment_id}/heal"]
+
+
+def test_reconnect_escalates_when_monitor_has_no_target_order(client):
+    monitor = client.post("/monitors", params={}, json={}).json()  # no target_order_id at all
+    resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "RECONNECT"})
+    assert resp.json()["outcome"] == "ESCALATED"
+
+
+def test_reconnect_escalates_when_order_has_no_completed_deploy_step(client, monkeypatch):
+    order_id = uuid.uuid4()
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"steps": [
+        {"stepType": "CONFIG", "status": "COMPLETED", "result": {}},
+    ]}))
+    monitor = client.post("/monitors", params={"target_order_id": str(order_id)}, json={}).json()
+    resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "RECONNECT"})
+    assert resp.json()["outcome"] == "ESCALATED"
 
 
 def test_escalate_to_operator(client):

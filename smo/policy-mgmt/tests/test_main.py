@@ -67,6 +67,7 @@ def test_register_intent_handling_function_rejects_external_rapp_caller(client):
     """
     resp = client.post("/intent-handling-functions", json={
         "rmihId": "550e8400-e29b-41d4-a716-446655440000", "smeServiceId": "svc-1", "capabilities": [{"scope": "config"}],
+        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
     })
     assert resp.status_code == 409
     assert resp.json()["detail"]["title"] == "SERVICE_NAME_CONFLICT"
@@ -75,12 +76,16 @@ def test_register_intent_handling_function_rejects_external_rapp_caller(client):
 def test_register_intent_handling_function_accepts_framework_internal_caller(client):
     resp = client.post("/intent-handling-functions", json={
         "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"scope": "config"}],
+        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
     })
     assert resp.status_code == 201
 
 
 def test_deregister_intent_handling_function_symmetric_with_register(client):
-    client.post("/intent-handling-functions", json={"rmihId": "sa-smos", "smeServiceId": "svc-2", "capabilities": [{}]})
+    client.post("/intent-handling-functions", json={
+        "rmihId": "sa-smos", "smeServiceId": "svc-2", "capabilities": [{}],
+        "notificationCallbackUri": "http://sa-smos:8000/intents/notify",
+    })
     resp = client.delete("/intent-handling-functions/sa-smos")
     assert resp.status_code == 204
 
@@ -88,4 +93,65 @@ def test_deregister_intent_handling_function_symmetric_with_register(client):
 def test_publish_intent_report(client):
     intent = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1"}).json()
     resp = client.post("/intent-reports", json={"intentId": intent["intentId"], "fulfilmentReport": {"met": True}})
+    assert resp.status_code == 201
+
+
+def test_create_intent_dispatches_to_matching_rmih(client, monkeypatch):
+    """The actual fix: CreateIntent now notifies any RMIH whose
+    intent_handling_capability_list declares the matching intentType,
+    closing the gap where an RMIH was never told a new Intent existed.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/intent-handling-functions", json={
+        "rmihId": "so-smos", "smeServiceId": "svc-1",
+        "capabilities": [{"intentType": "COVERAGE_OPTIMIZATION"}],
+        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
+    })
+    client.post("/intent-handling-functions", json={
+        "rmihId": "sa-smos", "smeServiceId": "svc-2",
+        "capabilities": [{"intentType": "CAPACITY_PLANNING"}],
+        "notificationCallbackUri": "http://sa-smos:8000/intents/notify",
+    })
+
+    resp = client.post("/intents", json={
+        "expectations": [{"target": "coverage"}], "rmioId": "rapp-1", "intentType": "COVERAGE_OPTIMIZATION",
+    })
+    intent_id = resp.json()["intentId"]
+
+    assert len(calls) == 1  # only the matching RMIH (so-smos) was notified, not sa-smos
+    assert calls[0][0] == "http://so-smos:8000/intents/notify"
+    assert calls[0][1]["intentId"] == intent_id
+    assert calls[0][1]["intentType"] == "COVERAGE_OPTIMIZATION"
+
+
+def test_create_intent_without_intent_type_dispatches_to_no_one(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/intent-handling-functions", json={
+        "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"intentType": "COVERAGE_OPTIMIZATION"}],
+        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
+    })
+    client.post("/intents", json={"expectations": [], "rmioId": "rapp-1"})
+    assert calls == []
+
+
+def test_create_intent_succeeds_even_if_rmih_callback_is_unreachable(client, monkeypatch):
+    """Dispatch is best-effort — a dead RMIH callback must never fail
+    CreateIntent itself.
+    """
+    import httpx as httpx_module
+
+    def raise_error(url, json=None, timeout=None):
+        raise httpx_module.ConnectError("unreachable")
+
+    monkeypatch.setattr("app.main.httpx.post", raise_error)
+
+    client.post("/intent-handling-functions", json={
+        "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"intentType": "COVERAGE_OPTIMIZATION"}],
+        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
+    })
+    resp = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "intentType": "COVERAGE_OPTIMIZATION"})
     assert resp.status_code == 201

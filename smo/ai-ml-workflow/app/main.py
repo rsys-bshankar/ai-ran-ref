@@ -79,18 +79,44 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
     """RequestTraining — exactly one of modelId/modelCoordinationGroupId,
     enforced at the DB layer (exactly_one_target constraint) and checked
     here for a clean error.
+
+    modelId-targeted requests also drive the model's own FSM:
+    REGISTERED -> TRAINING (TRAIN, the very first cycle) or
+    ACTIVE -> TRAINING (RETRAIN, an ordinary retrain). This used to
+    always fire TRAIN regardless of the model's actual state, which
+    crashed with an unhandled IllegalTransition on every retrain attempt
+    (TRAIN is only legal from REGISTERED). A model already TRAINING (an
+    unresolved prior job) is treated as the operator's explicit decision
+    to supersede it: the orphaned job is marked CANCELLED rather than
+    left silently RUNNING and unreachable, which is what the old
+    unconditional `model.training_job_id = job.training_job_id`
+    assignment did.
     """
     if (body.modelId is None) == (body.modelCoordinationGroupId is None):
         raise framework_error(FrameworkError.COORDINATION_GROUP_MISMATCH)
+
+    model = db.get(AIMLModel, body.modelId) if body.modelId else None
+    if model is not None and model.state not in (ModelState.REGISTERED, ModelState.ACTIVE, ModelState.TRAINING):
+        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail=f"cannot (re)train a model in state {model.state}")
+
     job = TrainingJob(model_id=body.modelId, model_coordination_group_id=body.modelCoordinationGroupId,
                        producer_id=body.producerId, required_data=body.requiredData,
                        validation_criteria=body.validationCriteria, notification_uri=body.notificationUri,
                        status="RUNNING")
     db.add(job)
-    if body.modelId:
-        model = db.get(AIMLModel, body.modelId)
-        model.state = AIML_MODEL_FSM.fire(ModelState(model.state), ModelEvent.TRAIN)
+    db.flush()
+
+    if model is not None:
+        if model.state == ModelState.TRAINING:
+            if model.training_job_id is not None:
+                orphaned = db.get(TrainingJob, model.training_job_id)
+                if orphaned is not None and orphaned.status == "RUNNING":
+                    orphaned.status = "CANCELLED"
+        else:
+            event = ModelEvent.RETRAIN if model.state == ModelState.ACTIVE else ModelEvent.TRAIN
+            model.state = AIML_MODEL_FSM.fire(ModelState(model.state), event)
         model.training_job_id = job.training_job_id
+
     db.commit()
     return {"trainingJobId": str(job.training_job_id)}
 
