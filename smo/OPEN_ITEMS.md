@@ -139,7 +139,6 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| focom | 7 |
 | a1-related | 8 |
 | onboarding | 9 |
 | sme | 9 |
@@ -151,12 +150,13 @@ Per-module unit test counts:
 | policy-mgmt | 10 |
 | sa-smos | 10 |
 | dme | 13 |
+| focom | 13 |
 | so-smos | 13 |
 | ai-ml-workflow | 15 |
 | ran-nf-oam | 20 |
 
-Plus 10 cross-service integration tests in `tests_integration/`. `focom`
-is now the shallowest-covered module. `rapp-mgmt` and
+Plus 10 cross-service integration tests in `tests_integration/`.
+`a1-related` is now the shallowest-covered module. `rapp-mgmt` and
 `dme` moved out of the shallow tier in an earlier pass (both gained
 route-level tests); a later pass added route-level coverage for the five
 §1 items closed below — `ai-ml-workflow` (+4), `policy-mgmt` (+3),
@@ -269,6 +269,21 @@ before this pass despite being a real route.
   absence-of-tests shape as the previous coverage pass. Both now at 9
   tests; `focom` (7) is now the shallowest-covered module. 171 tests
   total, up from 163.
+- **Deepen `focom`'s coverage** (§4, was priority 2) — sat at 7 tests,
+  the shallowest tier remaining after the previous two passes. The
+  unfiltered path of `GET /performance` (no `resource_ref`) was never
+  exercised, only the filtered case; `GET /inventory`'s default
+  `resourceTypeId` fallback (`"generic"`) was asserted nowhere, only the
+  explicit-`resource_type` case; `GET /alarms` and `GET /performance`'s
+  empty-list responses were never checked; only one alarm was ever
+  ingested in any test, never proving a second one doesn't overwrite or
+  drop the first; and `deprovision_resource`'s Phase 1 stub behavior
+  (succeeds for any `resource_id`, provisioned or not) was only ever
+  exercised incidentally through the provision-then-deprovision happy
+  path, never asserted directly. All six now covered. No real bugs found
+  — same pure absence-of-tests shape as the previous two coverage
+  passes. Now at 13 tests; `a1-related` (8) is now the shallowest-covered
+  module. 177 tests total, up from 171.
 
 ## Suggested next pass (priority order)
 
@@ -278,5 +293,5 @@ before this pass despite being a real route.
    `WEIGHTED_TRIGGERS`, Shape B/`JOINT_TRAINING`, the alarm-storm
    correlation algorithm, and `upgradeTimeoutSeconds`'s default — still
    need a stakeholder call, not an invented answer.
-2. `focom` is now the shallowest-covered module (7 tests) — the next
+2. `a1-related` is now the shallowest-covered module (8 tests) — the next
    natural coverage target if another pass like this one is wanted.
