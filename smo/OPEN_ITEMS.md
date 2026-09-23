@@ -147,7 +147,7 @@ Per-module unit test counts:
 | ai-ml-workflow | 29 |
 | ran-nf-oam | 29 |
 | a1-related | 30 |
-| dme | 31 |
+| dme | 35 |
 | focom | 37 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
@@ -265,7 +265,13 @@ own §1/§2 items stand as-is.
   `a1-related` both now answer `/dme-jobs` (the URL they themselves
   register), the same dangling-callback bug class already fixed for
   `/health`.
-- No producer-status endpoint (`GET .../info-producers/{id}/status`).
+- ~~No producer-status endpoint (`GET .../info-producers/{id}/status`).~~
+  — **closed.** Added `GET /production-capabilities/{producer_id}/status`,
+  reusing the same live health-check signal `typeStatus` now uses
+  (ICS's own `ProducerController.getInfoProducerStatus`/
+  `ProducerStatusInfo` — `ENABLED`/`DISABLED` from real producer
+  availability). 404 if the producer has nothing registered, matching
+  ICS's own not-found behavior.
 - No job-definition schema validation against `dataProductionSchema` —
   `productionJobDefinition` is accepted as an arbitrary dict.
 - ~~No GET-by-id for `DataJob`/`DataOffer`, no job-level status
@@ -956,6 +962,11 @@ own §1/§2 items stand as-is.
   own `RegisterModel`. Verified against a real local Postgres 16
   instance. 321 tests total, up from 318 (`ai-ml-workflow` alone:
   26 -> 29).
+- `dme`'s missing producer-status endpoint (§5) closed: added
+  `GET /production-capabilities/{producer_id}/status`, reusing the
+  same live health-check signal `typeStatus` already uses (ICS's own
+  `ProducerController.getInfoProducerStatus`/`ProducerStatusInfo`).
+  325 tests total, up from 321 (`dme` alone: 31 -> 35).
 
 ## Suggested next pass (priority order)
 

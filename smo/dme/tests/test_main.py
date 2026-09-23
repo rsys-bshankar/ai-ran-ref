@@ -465,3 +465,49 @@ def test_register_dme_type_exposes_job_callback_url(client):
     client.post("/production-capabilities", json=register_type_body())
     resp = client.get("/dme-types")
     assert resp.json()[0]["jobCallbackUrl"] == "http://ran-nf-oam:8000/dme-jobs"
+
+
+def test_query_producer_status_enabled_when_healthy(client, monkeypatch):
+    """OPEN_ITEMS.md section 5: no producer-status endpoint existed at
+    all — ICS's own GET .../info-producers/{id}/status.
+    """
+    calls = []
+
+    def fake_get(url, timeout=None):
+        calls.append(url)
+        return FakeHealthResponse(200)
+
+    monkeypatch.setattr("app.main.httpx.get", fake_get)
+    client.post("/production-capabilities", json=register_type_body(producerId="ran-nf-oam"))
+
+    resp = client.get("/production-capabilities/ran-nf-oam/status")
+    assert resp.status_code == 200
+    assert resp.json() == {"producerId": "ran-nf-oam", "operationalState": "ENABLED"}
+    assert calls == ["http://ran-nf-oam:8000/health"]
+
+
+def test_query_producer_status_disabled_when_unreachable(client, monkeypatch):
+    import httpx as httpx_module
+
+    def raise_error(url, timeout=None):
+        raise httpx_module.ConnectError("unreachable")
+
+    monkeypatch.setattr("app.main.httpx.get", raise_error)
+    client.post("/production-capabilities", json=register_type_body(producerId="ran-nf-oam"))
+
+    resp = client.get("/production-capabilities/ran-nf-oam/status")
+    assert resp.status_code == 200
+    assert resp.json()["operationalState"] == "DISABLED"
+
+
+def test_query_producer_status_for_unknown_producer_is_404(client):
+    resp = client.get("/production-capabilities/never-registered/status")
+    assert resp.status_code == 404
+
+
+def test_query_producer_status_after_deregistration_is_404(client):
+    client.post("/production-capabilities", json=register_type_body(producerId="ran-nf-oam"))
+    client.delete("/production-capabilities", params={"producer_id": "ran-nf-oam"})
+
+    resp = client.get("/production-capabilities/ran-nf-oam/status")
+    assert resp.status_code == 404

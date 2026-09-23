@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**321 tests total, all passing** as of this build: 311 unit tests across
+**325 tests total, all passing** as of this build: 315 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -267,7 +267,10 @@ real `UniqueConstraint` on `AIMLModel`'s `(model_type, version)` (the
 reference's own `ModelID` composite primary key on
 `(modelName, modelVersion)`), so `register_model` now 409s
 (`MODEL_ALREADY_REGISTERED`) on a duplicate instead of silently
-creating a second, indistinguishable row.
+creating a second, indistinguishable row. `dme` went from 31 tests to
+35 in the next pass: added `GET /production-capabilities/{producer_id}/status`,
+reusing the same live health-check signal `typeStatus` already uses
+(ICS's own `ProducerController.getInfoProducerStatus`).
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
