@@ -96,36 +96,45 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| so-smos | 3 |
-| ran-analytics | 3 |
-| focom | 4 |
 | nfo | 4 |
-| mock-near-rt-ric | 5 |
 | r1-termination | 5 |
+| ran-analytics | 5 |
 | rapp-mgmt | 5 |
+| mock-near-rt-ric | 5 |
 | onboarding | 7 |
+| focom | 7 |
 | policy-mgmt | 7 |
-| sa-smos | 7 |
 | a1-related | 8 |
+| sa-smos | 8 |
 | sme | 9 |
 | dme | 10 |
 | ran-nf-oam | 10 |
 | ai-ml-workflow | 11 |
+| so-smos | 13 |
 
-Plus 9 cross-service integration tests in `tests_integration/`. The
-shallower modules (so-smos, ran-analytics, focom, nfo) have basic
-CRUD/validation coverage but not the same depth of edge-case and
-failure-path testing the FSM-heavy modules got.
+Plus 9 cross-service integration tests in `tests_integration/`.
+
+## Closed
+
+- **Bring the shallow-coverage modules to parity** (§4, was priority 2)
+  — so-smos, ran-analytics, and focom now have route-level test
+  coverage, not just dispatch/FSM-logic coverage. Writing it surfaced
+  and fixed two real bugs: SO SMOS's `CancelOrder` never actually
+  persisted (in-place JSON mutation SQLAlchemy never tracks), and RAN
+  Analytics' `RegisterAnalyticsProducer` crashed on a legitimate
+  re-registration (same shape as the SME bug from the original pass).
+  See `smo/README.md`'s "Real bugs this pass found" section. `nfo`
+  remains the one module still under the old 4-test baseline — it was
+  brought to 5 by the `NFDeploymentDescriptor` fix (a different branch)
+  but wasn't otherwise deepened here.
 
 ## Suggested next pass (priority order)
 
-1. `NFDeploymentDescriptor` population (§2) — closes a real cross-module
-   correctness gap already caught by an integration test, self-contained,
-   no open design question blocking it.
-2. Bring up the shallow-coverage modules (§4: so-smos, ran-analytics,
-   focom, nfo) to parity with the rest.
-3. Fill the call-flow gaps (§3) — mostly documentation, high value for
+1. Fill the call-flow gaps (§3) — mostly documentation, high value for
    onboarding new readers to the design.
-4. Resolve the design-level decisions (§1) that block further code — SA
+2. Resolve the design-level decisions (§1) that block further code — SA
    SMOS `RECONNECT`/`ROLLBACK` and RAN NF OAM's CM sync method are the two
    most likely to unblock near-term code changes once decided.
+3. Deepen `nfo`'s and `r1-termination`'s coverage — both still near the
+   original baseline; `nfo` in particular now carries more behavior
+   (`CreateDescriptor`) than its test count reflects on this branch.

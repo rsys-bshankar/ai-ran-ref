@@ -41,6 +41,40 @@ def test_query_inventory_returns_degenerate_cluster(client):
     assert resp.json()["clusterId"] == PHASE1_CLUSTER_ID
 
 
+def test_query_inventory_echoes_requested_resource_type(client):
+    """NFO+FOCOM LLD section 4: NFO's Instantiate passes resource_type
+    through to shape the returned resource pool — this is the query
+    parameter name NFO must use (resource_type, not resourceType; a
+    silent bug this exact mismatch caused before it was fixed).
+    """
+    resp = client.get("/inventory", params={"resource_type": "gpu-l40"})
+    assert resp.json()["resourcePools"][0]["resourceTypeId"] == "gpu-l40"
+
+
+def test_subscribe_inventory_changes_is_a_no_op(client):
+    """Phase 1: a single degenerate cluster never changes, so this is
+    intentionally a no-op rather than unimplemented (D-DEPLOY-FOCOM-1).
+    """
+    resp = client.post("/inventory/subscriptions")
+    assert resp.json()["status"] == "subscribed"
+
+
+def test_provision_and_deprovision_resource(client):
+    provisioned = client.post("/resources/provision", json={"cpu": 4, "memory": "16Gi"})
+    assert provisioned.status_code == 200
+    body = provisioned.json()
+    assert body["clusterId"] == PHASE1_CLUSTER_ID
+    assert "resourceId" in body
+
+    deprovisioned = client.delete(f"/resources/{body['resourceId']}")
+    assert deprovisioned.json()["status"] == "deprovisioned"
+
+
+def test_monitor_resource_reports_healthy(client):
+    resp = client.get("/resources/some-resource-id/status")
+    assert resp.json() == {"resourceId": "some-resource-id", "status": "healthy"}
+
+
 def test_ingested_alarm_is_queryable(client):
     """FOCOM's own alarm domain — infrastructure, distinct from RAN NF
     OAM's RAN-function Alarm (NFO+FOCOM LLD section 1).
