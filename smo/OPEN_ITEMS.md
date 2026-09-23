@@ -142,8 +142,8 @@ Per-module unit test counts:
 | rapp-mgmt | 12 |
 | sa-smos | 12 |
 | so-smos | 13 |
-| ai-ml-workflow | 18 |
 | onboarding | 18 |
+| ai-ml-workflow | 20 |
 | ran-nf-oam | 21 |
 | sme | 22 |
 | dme | 23 |
@@ -448,8 +448,9 @@ own §1/§2 items stand as-is.
   auto-incrementing `artifactVersion` separate from `modelVersion`; ours
   has an `artifact_location` string field that nothing in `main.py` ever
   reads or writes.
-- Model CRUD is incomplete — no `GET /models/{id}`, no update, no
-  delete/deregister; only create and a type-filtered list exist.
+- Model CRUD is incomplete — ~~no `GET /models/{id}`~~ (**closed**: now
+  404s on an unknown id), no update, no delete/deregister; only
+  create and a type-filtered list existed before this pass.
 - Registration metadata is thin — no I/O data type schema, no
   author/owner, no `TargetEnvironment` declarations (platform,
   environment type, dependencies) the reference requires.
@@ -763,6 +764,10 @@ own §1/§2 items stand as-is.
   tables to `migrations/001_init.sql`, verified against a real local
   Postgres 16 instance. 260 tests total, up from 245 (`focom` alone:
   19 -> 34).
+- `ai-ml-workflow`'s missing `GET /models/{id}` (§5) closed: 404s on
+  an unknown id. Update/delete/deregister remain open — a distinct,
+  larger CRUD-completeness gap, not part of this GET-by-id theme.
+  262 tests total, up from 260 (`ai-ml-workflow` alone: 18 -> 20).
 
 ## Suggested next pass (priority order)
 
@@ -803,8 +808,9 @@ own §1/§2 items stand as-is.
    All four standout items are now closed. Each module's remaining §5
    items are independently pickable — go module by module, or pick by
    theme (e.g. every module's missing GET-by-id/list/query endpoints is
-   a recurring pattern — `dme`'s, `a1-related`'s, and `focom`'s are now
-   closed; `ai-ml-workflow`/`ran-analytics` still have theirs).
+   a recurring pattern — `dme`'s, `a1-related`'s, `focom`'s, and
+   `ai-ml-workflow`'s `GET /models/{id}` are now closed;
+   `ran-analytics` still has theirs).
 2. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
    the alarm-storm correlation algorithm, and A1-ML operations — are not
    stakeholder-answerable the way the rest of that section was: the

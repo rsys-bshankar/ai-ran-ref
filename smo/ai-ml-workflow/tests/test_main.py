@@ -177,3 +177,23 @@ def test_no_group_retrain_when_not_breached(client, db_session_factory):
     body = resp.json()
     assert body["breachedFloor"] is False
     assert "groupRetrainTriggered" not in body
+
+
+def test_get_model_by_id_returns_its_fields(client):
+    """OPEN_ITEMS.md section 5: model CRUD was incomplete — only create
+    and a type-filtered list existed, no GET-by-id at all.
+    """
+    created = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()
+
+    resp = client.get(f"/models/{created['modelId']}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["modelId"] == created["modelId"]
+    assert body["modelType"] == "coverage-predictor"
+    assert body["version"] == "1.0"
+    assert body["state"] == ModelState.REGISTERED
+
+
+def test_get_unknown_model_is_404(client):
+    resp = client.get(f"/models/{uuid.uuid4()}")
+    assert resp.status_code == 404

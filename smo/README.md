@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**260 tests total, all passing** as of this build: 250 unit tests across
+**262 tests total, all passing** as of this build: 252 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -181,6 +181,10 @@ exposes as distinct operations (`/resourceTypes`, `/resourcePools`,
 `/{id}` variants) that FOCOM previously collapsed into one hardcoded
 `/inventory` route. `provision_resource`/`deprovision_resource` now
 persist/remove real `Resource` rows instead of a stub UUID.
+`ai-ml-workflow` went from 18 tests to 20 in the next pass: added
+`GET /models/{id}` (404 on an unknown id) — model CRUD's other gaps
+(update, delete/deregister) are a distinct, larger completeness item,
+not part of this fix.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
