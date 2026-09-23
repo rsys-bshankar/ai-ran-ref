@@ -135,13 +135,13 @@ Per-module unit test counts:
 | Module | Tests |
 |---|---|
 | nfo | 9 |
-| ran-analytics | 9 |
 | mock-near-rt-ric | 10 |
 | r1-termination | 10 |
 | policy-mgmt | 10 |
 | rapp-mgmt | 12 |
 | sa-smos | 12 |
 | so-smos | 13 |
+| ran-analytics | 17 |
 | onboarding | 18 |
 | ai-ml-workflow | 20 |
 | ran-nf-oam | 21 |
@@ -151,8 +151,7 @@ Per-module unit test counts:
 | focom | 34 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
-`nfo`/`ran-analytics` (9 tests each) are now the
-shallowest-covered tier. `rapp-mgmt` and
+`nfo` (9 tests) is now the shallowest-covered module. `rapp-mgmt` and
 `dme` moved out of the shallow tier in an earlier pass (both gained
 route-level tests); a later pass added route-level coverage for the five
 §1 items closed below — `ai-ml-workflow` (+4), `policy-mgmt` (+3),
@@ -476,10 +475,13 @@ own §1/§2 items stand as-is.
 
 ### RAN Analytics (`ran-analytics/`) — vs `aiml-fw-apm-influx-wrapper`, `aiml-fw-apm-monitoring-agent`, `aiml-fw-apm-monitoring-server`
 
-- No list/query endpoints for registered producers or active
+- ~~No list/query endpoints for registered producers or active
   subscriptions (`GET /producers`, `GET /subscriptions`) — the
   reference defines these routes (even though its own implementation of
-  them is a no-op stub).
+  them is a no-op stub).~~ — **closed.** Added both, filterable by
+  `analytics_type` and (`producer_id`/`requested_by` respectively) —
+  unlike the reference's stubs, ours actually reads real, persisted
+  rows.
 - The dead subscriber-notification loop in `publish_report`
   (`for sub in subs: pass`) is real, but not a regression behind the
   reference: `aiml-fw-apm-monitoring-server`'s own `Subscribe`
@@ -768,6 +770,11 @@ own §1/§2 items stand as-is.
   an unknown id. Update/delete/deregister remain open — a distinct,
   larger CRUD-completeness gap, not part of this GET-by-id theme.
   262 tests total, up from 260 (`ai-ml-workflow` alone: 18 -> 20).
+- `ran-analytics`'s missing `GET /producers`/`GET /subscriptions` (§5)
+  closed: both filterable, unlike the reference's own no-op stub
+  implementations of the same two routes. This was §5's last
+  GET-by-id/list/query item across every audited module. 270 tests
+  total, up from 262 (`ran-analytics` alone: 9 -> 17).
 
 ## Suggested next pass (priority order)
 
@@ -805,12 +812,11 @@ own §1/§2 items stand as-is.
      function's own claimed-but-unenforced authz gate while wiring it
      in.
 
-   All four standout items are now closed. Each module's remaining §5
-   items are independently pickable — go module by module, or pick by
-   theme (e.g. every module's missing GET-by-id/list/query endpoints is
-   a recurring pattern — `dme`'s, `a1-related`'s, `focom`'s, and
-   `ai-ml-workflow`'s `GET /models/{id}` are now closed;
-   `ran-analytics` still has theirs).
+   All four standout items are now closed. Every module's missing
+   GET-by-id/list/query endpoints — `dme`, `a1-related`, `focom`,
+   `ai-ml-workflow`, and finally `ran-analytics` — are now closed too;
+   that recurring theme across §5 is done. Each module's remaining §5
+   items are independently pickable, module by module.
 2. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
    the alarm-storm correlation algorithm, and A1-ML operations — are not
    stakeholder-answerable the way the rest of that section was: the
@@ -818,8 +824,7 @@ own §1/§2 items stand as-is.
    correlation algorithm) that would otherwise be fabricated, and the
    third only needs revisiting if A1-ML's out-of-scope decision itself
    changes. Not blocked on a call, blocked on data or a scope change.
-3. `nfo` and `ran-analytics` are tied as the shallowest test-covered
-   tier (9 tests each), but an earlier survey found only 1-2 minor
-   edge-case gaps in each — already close to thoroughly covered.
-   Diminishing returns as a coverage pass; §5's items are better
-   next targets for these same two modules.
+3. `nfo` (9 tests) is now the shallowest test-covered module, but an
+   earlier survey found only 1-2 minor edge-case gaps — already close
+   to thoroughly covered. Diminishing returns as a coverage pass;
+   §5's remaining items are a better next target.

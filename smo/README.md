@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**262 tests total, all passing** as of this build: 252 unit tests across
+**270 tests total, all passing** as of this build: 260 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -184,7 +184,12 @@ persist/remove real `Resource` rows instead of a stub UUID.
 `ai-ml-workflow` went from 18 tests to 20 in the next pass: added
 `GET /models/{id}` (404 on an unknown id) — model CRUD's other gaps
 (update, delete/deregister) are a distinct, larger completeness item,
-not part of this fix.
+not part of this fix. `ran-analytics` went from 9 tests to 17 in the
+final pass of this theme: added `GET /producers` and
+`GET /subscriptions` (both filterable), where the reference itself
+only ever defines the routes as no-op stubs — this build's versions
+actually read real, persisted rows. That closes every module's
+missing GET-by-id/list/query endpoint gap found by the O-RAN-SC audit.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
