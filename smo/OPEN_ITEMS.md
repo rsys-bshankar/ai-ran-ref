@@ -139,13 +139,13 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| nfo | 5 |
-| ran-analytics | 5 |
 | focom | 7 |
 | a1-related | 8 |
 | onboarding | 9 |
 | sme | 9 |
 | rapp-mgmt | 9 |
+| nfo | 9 |
+| ran-analytics | 9 |
 | mock-near-rt-ric | 10 |
 | r1-termination | 10 |
 | policy-mgmt | 10 |
@@ -155,8 +155,8 @@ Per-module unit test counts:
 | ai-ml-workflow | 15 |
 | ran-nf-oam | 20 |
 
-Plus 10 cross-service integration tests in `tests_integration/`. `nfo` and
-`ran-analytics` are now the shallowest-covered modules. `rapp-mgmt` and
+Plus 10 cross-service integration tests in `tests_integration/`. `focom`
+is now the shallowest-covered module. `rapp-mgmt` and
 `dme` moved out of the shallow tier in an earlier pass (both gained
 route-level tests); a later pass added route-level coverage for the five
 §1 items closed below — `ai-ml-workflow` (+4), `policy-mgmt` (+3),
@@ -251,6 +251,24 @@ before this pass despite being a real route.
   delete-of-unknown-id and cross-policy isolation. Both now at 10 tests,
   no real bugs found (the gap was pure absence of tests, not a latent
   defect). 163 tests total, up from 153.
+- **Deepen `nfo`'s and `ran-analytics`' coverage** (§4, was priority 2) —
+  both sat at 5 tests, the shallowest tier remaining after the previous
+  pass. `nfo`'s `query_operation_status` (`GET /operations/{id}`) had
+  zero test coverage at all — Instantiate's and Heal/Scale's own
+  `LCMOperation` rows were written but never read back through the route
+  meant to query them; `query_cluster_placement`'s success path was also
+  never asserted, only its deleted-deployment error path. Both now
+  covered, plus idempotent `terminate` on an unknown deployment id.
+  `ran-analytics`'s `RegisterAnalyticsProducer` never asserted on its own
+  SME registration side-effect payload (the `mdaf.<analyticsType>`
+  naming, `producerId`, `moduleScope`); `unsubscribe_analytics` on an
+  unknown id and `query_analytics_report`'s unfiltered (no
+  `analytics_type`) path were both also untested. All now covered,
+  including `MDAFReport.scope`, previously never set to a non-`None`
+  value in any test. No real bugs found this pass either — same pure
+  absence-of-tests shape as the previous coverage pass. Both now at 9
+  tests; `focom` (7) is now the shallowest-covered module. 171 tests
+  total, up from 163.
 
 ## Suggested next pass (priority order)
 
@@ -260,6 +278,5 @@ before this pass despite being a real route.
    `WEIGHTED_TRIGGERS`, Shape B/`JOINT_TRAINING`, the alarm-storm
    correlation algorithm, and `upgradeTimeoutSeconds`'s default — still
    need a stakeholder call, not an invented answer.
-2. `nfo` and `ran-analytics` are now the shallowest-covered modules (5
-   tests each) — the next natural coverage target if another pass like
-   this one is wanted.
+2. `focom` is now the shallowest-covered module (7 tests) — the next
+   natural coverage target if another pass like this one is wanted.
