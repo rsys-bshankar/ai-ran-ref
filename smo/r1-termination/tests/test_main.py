@@ -79,3 +79,89 @@ def test_proxy_forwards_to_correct_backend(monkeypatch):
     # originally forwarded the prefix through unstripped, which 404s
     # against every real backend service).
     assert url == f"{ROUTES['/sme']}/service-apis/v1/allServiceAPIs"
+
+
+class RecordingAsyncClient:
+    """Records every call made through it, for asserting exactly what the
+    proxy forwarded (method, url, headers, params, body) — none of that
+    was covered before this pass, only the URL-stripping behavior was.
+    """
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, status_code=200, content=b'{"ok": true}'):
+            self.status_code = status_code
+            self.content = content
+            self.headers = {"content-type": "application/json"}
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def request(self, method, url, headers=None, params=None, content=None, **kwargs):
+        self.calls.append({"method": method, "url": url, "headers": headers, "params": params, "content": content})
+        return self.FakeResponse(status_code=self._next_status)
+
+    _next_status = 200
+
+
+def _install_recording_client(monkeypatch, next_status=200):
+    RecordingAsyncClient.calls = []
+    RecordingAsyncClient._next_status = next_status
+    monkeypatch.setattr("app.main.httpx.AsyncClient", RecordingAsyncClient)
+    return RecordingAsyncClient
+
+
+def test_proxy_forwards_method_body_and_query_params(monkeypatch):
+    recorder = _install_recording_client(monkeypatch)
+    resp = client.post("/sme/published-apis/v1", params={"foo": "bar"}, json={"serviceName": "x"})
+    assert resp.status_code == 200
+    call = recorder.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == f"{ROUTES['/sme']}/published-apis/v1"
+    assert call["params"]["foo"] == "bar"
+    assert b"serviceName" in call["content"]
+
+
+def test_proxy_strips_host_header_but_forwards_others(monkeypatch):
+    recorder = _install_recording_client(monkeypatch)
+    client.get("/sme/service-apis/v1/allServiceAPIs", headers={"Authorization": "Bearer tok", "Host": "should-not-forward"})
+    call = recorder.calls[0]
+    assert "authorization" in {k.lower() for k in call["headers"]}
+    assert "host" not in {k.lower() for k in call["headers"]}
+
+
+def test_proxy_passes_through_upstream_error_status_unchanged(monkeypatch):
+    """A real backend failure (e.g. 503) must reach the rApp unchanged,
+    not be swallowed or remapped by the gateway.
+    """
+    _install_recording_client(monkeypatch, next_status=503)
+    resp = client.get("/sme/service-apis/v1/allServiceAPIs")
+    assert resp.status_code == 503
+
+
+def test_proxy_handles_prefix_only_path_with_no_trailing_segment(monkeypatch):
+    """/sme with nothing after it — full_path.split("/", 1) has no second
+    element, so rest_of_path must fall back to "" rather than crash.
+    """
+    recorder = _install_recording_client(monkeypatch)
+    resp = client.get("/sme")
+    assert resp.status_code == 200
+    assert recorder.calls[0]["url"] == f"{ROUTES['/sme']}/"
+
+
+def test_dme_push_and_pull_prefixes_route_to_dme_without_colliding(monkeypatch):
+    """/dme, /dme-push, and /dme-pull all resolve to the DME backend but
+    are distinct dict keys — proves none of the three shadows another via
+    prefix matching (the proxy's prefix lookup is dict equality, not
+    startswith, but that invariant was never actually asserted).
+    """
+    recorder = _install_recording_client(monkeypatch)
+    client.get("/dme-push/some/path")
+    assert recorder.calls[0]["url"] == f"{ROUTES['/dme-push']}/some/path"
+
+    recorder2 = _install_recording_client(monkeypatch)
+    client.get("/dme/some/path")
+    assert recorder2.calls[0]["url"] == f"{ROUTES['/dme']}/some/path"

@@ -38,3 +38,52 @@ def test_delete_then_query_returns_unknown():
     client.delete(f"/a1-p/policies/{created['policyId']}")
     status = client.get(f"/a1-p/policies/{created['policyId']}/status")
     assert status.json()["enforcementStatus"] == "SUSPENDED"
+
+
+def test_delete_unknown_policy_is_idempotent():
+    """dict.pop(id, None) — deleting an id that was never created (or
+    already deleted) must not raise, matching a real A1-P DELETE's
+    idempotent semantics.
+    """
+    resp = client.delete("/a1-p/policies/does-not-exist")
+    assert resp.status_code == 204
+
+
+def test_update_policy_with_object_is_enforced():
+    """UpdatePolicy (PUT /a1-p/policies/{id}) had no test coverage at all
+    before this pass — only create/query/delete were exercised.
+    """
+    created = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell1"}).json()
+    resp = client.put(f"/a1-p/policies/{created['policyId']}", json={"scope": "cell2"})
+    assert resp.status_code == 200
+    assert resp.json()["enforcementStatus"] == "ENFORCED"
+
+    status = client.get(f"/a1-p/policies/{created['policyId']}/status")
+    assert status.json()["enforcementStatus"] == "ENFORCED"
+
+
+def test_update_policy_with_empty_object_is_rejected():
+    created = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell1"}).json()
+    resp = client.put(f"/a1-p/policies/{created['policyId']}", json={})
+    assert resp.json()["enforcementStatus"] == "REJECTED"
+
+    status = client.get(f"/a1-p/policies/{created['policyId']}/status")
+    assert status.json()["enforcementStatus"] == "REJECTED"
+
+
+def test_update_unknown_policy_returns_rejected_without_crashing():
+    resp = client.put("/a1-p/policies/does-not-exist", json={"scope": "cell1"})
+    assert resp.status_code == 200
+    assert resp.json()["enforcementStatus"] == "REJECTED"
+    assert resp.json()["rejectionReason"] == "unknown policyId"
+
+
+def test_policies_are_tracked_independently():
+    """Two distinct policyIds in the shared _policies dict must never
+    cross-contaminate each other's status.
+    """
+    enforced = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell1"}).json()
+    rejected = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric2", "policy_type_id": "t2"}, json={}).json()
+
+    assert client.get(f"/a1-p/policies/{enforced['policyId']}/status").json()["enforcementStatus"] == "ENFORCED"
+    assert client.get(f"/a1-p/policies/{rejected['policyId']}/status").json()["enforcementStatus"] == "REJECTED"

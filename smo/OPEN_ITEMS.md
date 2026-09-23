@@ -139,8 +139,6 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| mock-near-rt-ric | 5 |
-| r1-termination | 5 |
 | nfo | 5 |
 | ran-analytics | 5 |
 | focom | 7 |
@@ -148,6 +146,8 @@ Per-module unit test counts:
 | onboarding | 9 |
 | sme | 9 |
 | rapp-mgmt | 9 |
+| mock-near-rt-ric | 10 |
+| r1-termination | 10 |
 | policy-mgmt | 10 |
 | sa-smos | 10 |
 | dme | 13 |
@@ -155,14 +155,20 @@ Per-module unit test counts:
 | ai-ml-workflow | 15 |
 | ran-nf-oam | 20 |
 
-Plus 10 cross-service integration tests in `tests_integration/`.
-`r1-termination` and `mock-near-rt-ric` are now the shallowest-covered
-modules; `rapp-mgmt` and `dme` moved out of the shallow tier in an earlier
-pass (both gained route-level tests). This pass added route-level coverage
-for the five §1 items closed below — `ai-ml-workflow` (+4), `policy-mgmt`
-(+3), `sa-smos` (net +2, replacing one parametrized "ambiguous" test with
-four RECONNECT/ROLLBACK-specific ones), and `ran-nf-oam` (+10: its first
+Plus 10 cross-service integration tests in `tests_integration/`. `nfo` and
+`ran-analytics` are now the shallowest-covered modules. `rapp-mgmt` and
+`dme` moved out of the shallow tier in an earlier pass (both gained
+route-level tests); a later pass added route-level coverage for the five
+§1 items closed below — `ai-ml-workflow` (+4), `policy-mgmt` (+3),
+`sa-smos` (net +2, replacing one parametrized "ambiguous" test with four
+RECONNECT/ROLLBACK-specific ones), and `ran-nf-oam` (+10: its first
 route-level tests at all, plus unit tests for the new NETCONF client).
+This pass closed the test-coverage priority item: `r1-termination` gained
+coverage for non-GET methods, body/header/query-param forwarding, and
+non-200 upstream passthrough (previously only GET and the URL-stripping
+fix were exercised); `mock-near-rt-ric` gained coverage for
+`UpdatePolicy` (`PUT /a1-p/policies/{id}`), which had zero tests at all
+before this pass despite being a real route.
 
 ## Closed
 
@@ -229,6 +235,22 @@ route-level tests at all, plus unit tests for the new NETCONF client).
 
   See `smo/docs/call-flows/04-closed-loop-assurance.md` for the updated
   RECONNECT/ROLLBACK sequence.
+- **Deepen `r1-termination`'s and `mock-near-rt-ric`'s coverage** (§4, was
+  priority 2) — both sat at 5 tests, the shallowest tier remaining after
+  the previous pass. `r1-termination`'s proxy only ever had GET exercised
+  through it, with no assertion on body/header/query-param forwarding or
+  on a non-200 upstream response passing through unchanged (only the
+  URL-stripping fix and the route table itself were covered); now also
+  covers POST body+method forwarding, `Host` header stripped while others
+  pass through, a 503 upstream response reaching the caller unchanged,
+  the prefix-with-no-trailing-segment edge case, and that `/dme`,
+  `/dme-push`, `/dme-pull` route independently rather than colliding.
+  `mock-near-rt-ric`'s `UpdatePolicy` (`PUT /a1-p/policies/{id}`) had zero
+  test coverage at all — a real, callable route nothing exercised; now
+  covered for the enforced/rejected/unknown-id cases, plus idempotent
+  delete-of-unknown-id and cross-policy isolation. Both now at 10 tests,
+  no real bugs found (the gap was pure absence of tests, not a latent
+  defect). 163 tests total, up from 153.
 
 ## Suggested next pass (priority order)
 
@@ -238,5 +260,6 @@ route-level tests at all, plus unit tests for the new NETCONF client).
    `WEIGHTED_TRIGGERS`, Shape B/`JOINT_TRAINING`, the alarm-storm
    correlation algorithm, and `upgradeTimeoutSeconds`'s default — still
    need a stakeholder call, not an invented answer.
-2. Deepen `r1-termination`'s and `mock-near-rt-ric`'s coverage — the
-   shallowest tier remaining.
+2. `nfo` and `ran-analytics` are now the shallowest-covered modules (5
+   tests each) — the next natural coverage target if another pass like
+   this one is wanted.
