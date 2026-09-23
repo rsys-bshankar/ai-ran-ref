@@ -131,7 +131,6 @@ Per-module unit test counts:
 |---|---|
 | nfo | 9 |
 | ran-analytics | 9 |
-| sme | 9 |
 | mock-near-rt-ric | 10 |
 | r1-termination | 10 |
 | policy-mgmt | 10 |
@@ -143,6 +142,7 @@ Per-module unit test counts:
 | ai-ml-workflow | 18 |
 | onboarding | 18 |
 | a1-related | 18 |
+| sme | 18 |
 | ran-nf-oam | 20 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
@@ -363,6 +363,22 @@ before this pass despite being a real route.
   Now at 18 tests (was 9, tied for the largest module by test count).
   `nfo`/`ran-analytics`/`sme` (9 tests each) are the new shallowest tier.
   206 tests total, up from 197.
+- **Deepen `sme`'s coverage** (§4, was priority 2) — the `nfo`/
+  `ran-analytics`/`sme` survey flagged `sme` as the likely candidate,
+  since `nfo` and `ran-analytics` were already close to thoroughly
+  covered. `DELETE /capif-events/v1/{subscriber}/subscriptions/{id}`
+  (`unsubscribe_events`) had zero test coverage at all; `deregister_service`'s
+  wrong-producer no-op guard, and `discover_services`' `api_name`/
+  `api_version` query filters, were also untested. `notify_service_change`
+  — real event-type-filtering and best-effort-delivery logic, gated by
+  the same authz check `discover_services` uses — isn't wired into any
+  route yet (its own docstring calls this out: "wired in as a
+  follow-up"), so it had never been tested at all; now covered directly
+  rather than left untested until something calls it. No real bugs
+  found — same pure absence-of-tests shape as every coverage pass so
+  far. Now at 18 tests (was 9). `nfo`/`ran-analytics` (9 tests each) are
+  the new shallowest tier, both already close to thoroughly covered per
+  the earlier survey. 215 tests total, up from 206.
 
 ## Suggested next pass (priority order)
 
@@ -373,9 +389,8 @@ before this pass despite being a real route.
    correlation algorithm) that would otherwise be fabricated, and the
    third only needs revisiting if A1-ML's out-of-scope decision itself
    changes. Not blocked on a call, blocked on data or a scope change.
-2. `nfo`, `ran-analytics`, and `sme` are now tied as the
-   shallowest-covered tier (9 tests each) — the next natural coverage
-   target if another pass like this one is wanted. A scan of `nfo` and
-   `ran-analytics` found only 1-2 minor edge-case gaps each, already
-   close to thoroughly covered; `sme` was not yet surveyed and is the
-   more likely candidate to turn up a real gap.
+2. `nfo` and `ran-analytics` are now tied as the shallowest-covered tier
+   (9 tests each), but an earlier survey found only 1-2 minor edge-case
+   gaps in each — already close to thoroughly covered. Diminishing
+   returns: a coverage pass here would likely find little. Worth a
+   quick look only if another pass like this one is specifically wanted.
