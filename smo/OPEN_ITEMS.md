@@ -143,7 +143,7 @@ Per-module unit test counts:
 | ran-analytics | 17 |
 | sme | 22 |
 | nfo | 23 |
-| dme | 23 |
+| dme | 25 |
 | onboarding | 26 |
 | ai-ml-workflow | 26 |
 | ran-nf-oam | 28 |
@@ -236,10 +236,20 @@ own §1/§2 items stand as-is.
 
 ### DME (`dme/`) — vs `nonrtric-plt-informationcoordinatorservice` (ICS)
 
-- **`producerHealthCallbackUrl` is stored but never called** — `typeStatus`
-  is computed only from whether a `DataJob` row is `ACTIVE`, so a dead
-  producer with an active job still reports `ENABLED`. ICS actually
-  polls the callback and derives status from real producer availability.
+- ~~**`producerHealthCallbackUrl` is stored but never called** —
+  `typeStatus` is computed only from whether a `DataJob` row is
+  `ACTIVE`, so a dead producer with an active job still reports
+  `ENABLED`. ICS actually polls the callback and derives status from
+  real producer availability.~~ — **closed.** `typeStatus` now calls
+  the registered `producerHealthCallbackUrl` for real
+  (`ConsumerController.typeStatus`/`ProducerSupervision`'s own health
+  signal — ENABLED iff the producer answers, not whether any `DataJob`
+  happens to be `ACTIVE`). Computed live, at read time
+  (`GET /dme-types`), rather than via a periodic background poll — no
+  scheduler exists anywhere in this build (elided, same as the real PM
+  file-collection pipeline elsewhere), so a live check on read is the
+  honest substitute. An unreachable/non-2xx producer now genuinely
+  reports `DISABLED` even with an `ACTIVE` job.
 - No job push to producers at all — ICS POSTs the job definition to the
   producer's callback URL on create/delete; `create_data_job`/
   `terminate_data_job` only ever touch our own DB.
@@ -898,6 +908,14 @@ own §1/§2 items stand as-is.
   dispatch table, the cross-service integration test) were updated to
   pass one. Verified against a real local Postgres 16 instance. 308
   tests total, up from 294 (`nfo` alone: 9 -> 23).
+- `dme`'s `producerHealthCallbackUrl` gap (§5) closed: `typeStatus` now
+  genuinely calls the registered callback (ICS's own
+  `ConsumerController.typeStatus`/`ProducerSupervision` health signal)
+  instead of trusting whether a `DataJob` row happened to be `ACTIVE` —
+  a dead producer with an active job no longer reports `ENABLED`.
+  Computed live at read time (`GET /dme-types`) rather than via a
+  periodic background poll, since no scheduler exists anywhere in this
+  build. 310 tests total, up from 308 (`dme` alone: 23 -> 25).
 
 ## Suggested next pass (priority order)
 

@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**308 tests total, all passing** as of this build: 298 unit tests across
+**310 tests total, all passing** as of this build: 300 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -244,7 +244,15 @@ descriptorId is rejected up front), a real resource-linkage object
 (`NFOCloudResource`, the reference's `NfOCloudVResource`), and real
 Heal/Scale state transitions in place of pure stubs. Terminate mirrors
 the reference's own state dispatch exactly, including its defensive
-catch-all for a double-terminate race.
+catch-all for a double-terminate race. `dme` went from 23 tests to 25
+in the next pass: `typeStatus` now genuinely calls the registered
+`producerHealthCallbackUrl` (ICS's own
+`ConsumerController.typeStatus`/`ProducerSupervision` health signal)
+instead of trusting whether a `DataJob` row happened to be `ACTIVE` —
+a dead producer with an active job no longer reports `ENABLED`.
+Computed live at read time rather than via a periodic background poll,
+since no scheduler exists anywhere in this build (elided, same as the
+real PM file-collection pipeline elsewhere).
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
