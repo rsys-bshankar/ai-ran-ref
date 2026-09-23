@@ -184,15 +184,14 @@ def test_unsubscribe_by_wrong_subscriber_is_a_silent_noop(client, db_session_fac
         assert session.get(ServiceEventSubscription, uuid.UUID(sub["subscriptionId"])) is not None
 
 
-def test_notify_service_change_posts_only_to_matching_subscribers(client, db_session_factory, monkeypatch):
-    """notify_service_change is real logic (event-type filtering, the same
-    authz gate discover_services uses, best-effort delivery) but was
-    entirely untested — it's not wired into register/deregister yet
-    (its own docstring: "kept as an explicit function... wired in as a
-    follow-up"), so this exercises it directly rather than through a route.
+def test_register_service_notifies_only_matching_subscribers(client, monkeypatch):
+    """OPEN_ITEMS.md section 5: notify_service_change was real logic
+    (event-type filtering, the same authz gate discover_services uses,
+    best-effort delivery) but was never actually called from anywhere —
+    its own docstring said "wired in as a follow-up". This is the
+    headline fix: registering a service now actually reaches a matching
+    subscriber's callback.
     """
-    from app.main import notify_service_change
-
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
@@ -202,21 +201,79 @@ def test_notify_service_change_posts_only_to_matching_subscribers(client, db_ses
     client.post("/capif-events/v1/rapp-3/subscriptions", json={
         "subscriberId": "rapp-3", "eventTypes": ["SERVICE_API_UPDATE"], "callbackUri": "http://rapp-3/cb",
     })
-    reg = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body()).json()
-
-    with db_session_factory() as session:
-        service = session.get(ServiceProfile, uuid.UUID(reg["serviceId"]))
-        notify_service_change(session, service, "SERVICE_API_AVAILABLE")
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body())
 
     assert len(calls) == 1
     assert calls[0][0] == "http://rapp-2/cb"
     assert calls[0][1]["eventType"] == "SERVICE_API_AVAILABLE"
 
 
-def test_notify_service_change_survives_unreachable_subscriber(client, db_session_factory, monkeypatch):
-    import httpx as httpx_module
+def test_reregister_service_notifies_with_update_event_type(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
-    from app.main import notify_service_change
+    client.post("/capif-events/v1/rapp-2/subscriptions", json={
+        "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE", "SERVICE_API_UPDATE"], "callbackUri": "http://rapp-2/cb",
+    })
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(version="1.0"))
+    calls.clear()  # discard the create-time SERVICE_API_AVAILABLE notification
+
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(version="2.0"))
+
+    assert len(calls) == 1
+    assert calls[0][1]["eventType"] == "SERVICE_API_UPDATE"
+
+
+def test_deregister_service_notifies_with_unavailable_event_type(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/capif-events/v1/rapp-2/subscriptions", json={
+        "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_UNAVAILABLE"], "callbackUri": "http://rapp-2/cb",
+    })
+    reg = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body()).json()
+    calls.clear()  # discard the create-time notification (different event type anyway)
+
+    client.delete(f"/published-apis/v1/rapp-1/service-apis/{reg['serviceId']}")
+
+    assert len(calls) == 1
+    assert calls[0][1]["eventType"] == "SERVICE_API_UNAVAILABLE"
+
+
+def test_deregister_by_wrong_producer_does_not_notify(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/capif-events/v1/rapp-2/subscriptions", json={
+        "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_UNAVAILABLE"], "callbackUri": "http://rapp-2/cb",
+    })
+    reg = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body()).json()
+    calls.clear()
+
+    client.delete(f"/published-apis/v1/rapp-2/service-apis/{reg['serviceId']}")  # wrong producer — silent no-op
+
+    assert calls == []
+
+
+def test_notify_service_change_does_not_notify_a_subscriber_the_service_is_not_visible_to(client, monkeypatch):
+    """notify_service_change's own docstring claims the same authz gate
+    discover_services uses, but nothing ever enforced it — an
+    unauthorized subscriber would have been notified about a service
+    it isn't even allowed to discover. Now enforced.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/capif-events/v1/rapp-3/subscriptions", json={
+        "subscriberId": "rapp-3", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-3/cb",
+    })
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(allowedConsumers=["rapp-2"]))
+
+    assert calls == []
+
+
+def test_notify_service_change_survives_unreachable_subscriber(client, monkeypatch):
+    import httpx as httpx_module
 
     def raise_error(url, json=None, timeout=None):
         raise httpx_module.ConnectError("unreachable")
@@ -226,8 +283,5 @@ def test_notify_service_change_survives_unreachable_subscriber(client, db_sessio
     client.post("/capif-events/v1/rapp-2/subscriptions", json={
         "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-2/cb",
     })
-    reg = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body()).json()
-
-    with db_session_factory() as session:
-        service = session.get(ServiceProfile, uuid.UUID(reg["serviceId"]))
-        notify_service_change(session, service, "SERVICE_API_AVAILABLE")  # must not raise
+    resp = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body())  # must not raise
+    assert resp.status_code == 201

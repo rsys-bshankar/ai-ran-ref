@@ -145,9 +145,9 @@ Per-module unit test counts:
 | dme | 15 |
 | ai-ml-workflow | 18 |
 | onboarding | 18 |
-| sme | 18 |
 | focom | 19 |
 | ran-nf-oam | 21 |
+| sme | 22 |
 | a1-related | 24 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
@@ -197,12 +197,21 @@ own §1/§2 items stand as-is.
 
 ### SME (`sme/`) — vs `nonrtric-plt-sme`
 
-- **`notify_service_change` has no caller** — the one piece of event
+- ~~**`notify_service_change` has no caller** — the one piece of event
   delivery this build actually wrote is never invoked from
   `register_service`/`deregister_service`, so `SubscribeEvents` is a
   dead pipeline end to end. The reference fires
   `SERVICE_API_AVAILABLE`/`UNAVAILABLE`/`UPDATE` from exactly those
-  routes.
+  routes.~~ — **closed.** `register_service` now fires
+  `SERVICE_API_AVAILABLE` on create and `SERVICE_API_UPDATE` on the
+  idempotent re-registration path; `deregister_service` fires
+  `SERVICE_API_UNAVAILABLE` (called before the row is deleted, since
+  `notify_service_change` needs the still-live `ServiceProfile`/
+  `authz_policy`). Also found and fixed while wiring this in:
+  `notify_service_change`'s own docstring already claimed the same
+  authz gate `discover_services` uses, but the code never enforced
+  it — an unauthorized subscriber would have been notified about a
+  service it isn't even allowed to discover. Now enforced.
 - Event subscription filtering is type-only — no per-`apiId`,
   `apiInvokerId`, or `aefId` filter, which the reference's
   `EventFilters` supports.
@@ -698,6 +707,14 @@ own §1/§2 items stand as-is.
   `inventory_subscription` table to `migrations/001_init.sql`,
   verified against a real local Postgres 16 instance. 228 tests total,
   up from 222 (`focom` alone: 13 -> 19).
+- `sme`'s dead `notify_service_change` (§5) closed: `register_service`
+  now fires `SERVICE_API_AVAILABLE`/`SERVICE_API_UPDATE` and
+  `deregister_service` fires `SERVICE_API_UNAVAILABLE`. Also fixed
+  while wiring it in: the function's own claimed authz gate (same one
+  `discover_services` uses) was never actually enforced — an
+  unauthorized subscriber would have been notified about a service it
+  couldn't even discover. 232 tests total, up from 228 (`sme` alone:
+  18 -> 22).
 
 ## Suggested next pass (priority order)
 
@@ -729,14 +746,19 @@ own §1/§2 items stand as-is.
      since deprovision doesn't know the resource's type (documented
      partial, tied to the still-open `ResourceType`/`ResourcePool`
      schema gap).
-   - `sme`'s `notify_service_change` never being called from the routes
-     that should trigger it (the delivery logic exists, it's just dead
-     code).
-   After those, each module's remaining §5 items are independently
-   pickable — go module by module, or pick by theme (e.g. every
-   module's missing GET-by-id/list/query endpoints is a recurring
-   pattern worth doing as one pass across `dme`/`a1-related`/`focom`/
-   `ai-ml-workflow`/`ran-analytics` together).
+   - ~~`sme`'s `notify_service_change` never being called from the
+     routes that should trigger it (the delivery logic exists, it's
+     just dead code).~~ — **closed.** Wired into
+     `register_service`/`deregister_service`; also fixed the
+     function's own claimed-but-unenforced authz gate while wiring it
+     in.
+
+   All four standout items are now closed. Each module's remaining §5
+   items are independently pickable — go module by module, or pick by
+   theme (e.g. every module's missing GET-by-id/list/query endpoints is
+   a recurring pattern worth doing as one pass across
+   `dme`/`a1-related`/`focom`/`ai-ml-workflow`/`ran-analytics`
+   together).
 2. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
    the alarm-storm correlation algorithm, and A1-ML operations — are not
    stakeholder-answerable the way the rest of that section was: the
