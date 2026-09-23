@@ -99,3 +99,61 @@ def test_performance_metrics_filterable_by_resource(client, db_session):
     resp = client.get("/performance", params={"resource_ref": "host-2"})
     assert len(resp.json()) == 1
     assert resp.json()[0]["value"] == 0.9
+
+
+def test_performance_metrics_without_filter_returns_all(client, db_session):
+    """The unfiltered path (no resource_ref) was never actually exercised
+    — every previous test passed a filter.
+    """
+    session = db_session()
+    session.add(OCloudPerformanceMetric(resource_ref="host-1", metric_name="cpu", value=0.5))
+    session.add(OCloudPerformanceMetric(resource_ref="host-2", metric_name="cpu", value=0.9))
+    session.commit()
+    session.close()
+
+    resp = client.get("/performance")
+    assert len(resp.json()) == 2
+
+
+def test_query_performance_returns_empty_list_when_none_seeded(client):
+    resp = client.get("/performance")
+    assert resp.json() == []
+
+
+def test_query_inventory_defaults_resource_type_to_generic(client):
+    """The no-resource_type fallback ("generic") was only ever exercised
+    implicitly through test_query_inventory_returns_degenerate_cluster,
+    which never actually checked resourcePools' resourceTypeId.
+    """
+    resp = client.get("/inventory")
+    assert resp.json()["resourcePools"][0]["resourceTypeId"] == "generic"
+
+
+def test_query_alarms_returns_empty_list_when_none_ingested(client):
+    resp = client.get("/alarms")
+    assert resp.json() == []
+
+
+def test_multiple_alarms_are_all_returned(client):
+    """test_ingested_alarm_is_queryable only ever ingested one alarm — a
+    second one arriving must not overwrite or drop the first.
+    """
+    client.post("/alarms/ingest", params={"resource_ref": "host-1", "severity": "critical"})
+    client.post("/alarms/ingest", params={"resource_ref": "host-2", "severity": "minor"})
+
+    resp = client.get("/alarms")
+    assert len(resp.json()) == 2
+    refs = {a["resourceRef"] for a in resp.json()}
+    assert refs == {"host-1", "host-2"}
+
+
+def test_deprovision_arbitrary_unprovisioned_resource_succeeds(client):
+    """Phase 1: deprovision_resource is a shape-only stub that never
+    checks whether the resource_id was ever actually provisioned — a
+    real, explicit behavior worth asserting directly rather than only
+    exercising it incidentally through the provision-then-deprovision
+    happy path.
+    """
+    resp = client.delete("/resources/never-provisioned-id")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "deprovisioned"
