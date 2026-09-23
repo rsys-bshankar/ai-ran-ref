@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**368 tests total, all passing** as of this build: 358 unit tests across
+**373 tests total, all passing** as of this build: 363 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -354,7 +354,15 @@ partially — added `apiIds` to `SubscribeEvents`/
 `apiInvokerId`/`aefId` filters stay unimplemented for a concrete
 reason — no invoker-onboarding events exist in this build to filter
 on, and no `aefProfiles` concept exists on `ServiceProfile` — not
-dropped silently.
+dropped silently. `sme` went from 24 tests to 29 in the next pass:
+closed its flattened `ServiceProfile` gap by adding real
+`aefProfiles`/`apiSuppFeats`/`shareableInfo` fields (the reference's
+own `ServiceAPIDescription` fields), stored as JSON and read back
+wholesale rather than as normalized child tables, and closed
+`discover_services`' own filtering thinness alongside it, partially —
+`aefId`/`protocol`/`dataFormat`/`commType` are now real filters
+walking the new field; `category` stays unfiltered since this build
+has no category concept on `ServiceProfile` at all.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

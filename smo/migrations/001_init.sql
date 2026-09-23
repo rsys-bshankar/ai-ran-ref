@@ -21,6 +21,9 @@ CREATE TABLE service_profile (
   service_capabilities      JSONB,             -- generic extension point (e.g. DME's supportedDataDeliveryModes)
   selection_criteria         JSONB,
   module_scope                 TEXT NOT NULL,
+  aef_profiles                    JSONB,       -- NEW section 5: real AefProfile[] (aefId, protocol, dataFormat, versions[].resources[].commType)
+  api_supp_feats                    TEXT,      -- NEW section 5
+  shareable_info                      JSONB,   -- NEW section 5: {isShareable, capifProvDoms}
   -- UNIQUE on service_name ALONE (not paired with producer_id): a different
   -- producer registering the same name is the conflict this LLD closes;
   -- the same producer re-registering it is an idempotent update-in-place,

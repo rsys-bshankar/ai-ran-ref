@@ -34,6 +34,9 @@ class ServiceRegistration(BaseModel):
     selectionCriteria: dict = {}
     moduleScope: str
     allowedConsumers: list[str] = []
+    aefProfiles: list[dict] = []
+    apiSuppFeats: str | None = None
+    shareableInfo: dict | None = None
 
 
 class EventSubscriptionRequest(BaseModel):
@@ -62,11 +65,13 @@ def register_service(apf_id: str, body: ServiceRegistration, db: Session = Depen
         profile.endpoint, profile.version = body.endpoint, body.version
         profile.full_api_versions, profile.service_capabilities = body.fullApiVersions, body.serviceCapabilities
         profile.selection_criteria, profile.module_scope = body.selectionCriteria, body.moduleScope
+        profile.aef_profiles, profile.api_supp_feats, profile.shareable_info = body.aefProfiles, body.apiSuppFeats, body.shareableInfo
     else:
         profile = ServiceProfile(
             service_name=body.serviceName, producer_id=apf_id, endpoint=body.endpoint, version=body.version,
             full_api_versions=body.fullApiVersions, service_capabilities=body.serviceCapabilities,
             selection_criteria=body.selectionCriteria, module_scope=body.moduleScope,
+            aef_profiles=body.aefProfiles, api_supp_feats=body.apiSuppFeats, shareable_info=body.shareableInfo,
         )
         db.add(profile)
     db.flush()
@@ -96,10 +101,24 @@ def query_own_services(apf_id: str, db: Session = Depends(get_session)):
 
 
 @app.get("/service-apis/v1/allServiceAPIs")
-def discover_services(api_invoker_id: str, api_name: str | None = None, api_version: str | None = None, db: Session = Depends(get_session)):
+def discover_services(api_invoker_id: str, api_name: str | None = None, api_version: str | None = None,
+                       aef_id: str | None = None, protocol: str | None = None, data_format: str | None = None,
+                       comm_type: str | None = None, db: Session = Depends(get_session)):
     """DiscoverServices. Section 2.2's decision: one gate — an unauthorized
     consumer's query simply never returns the service, it is never told
     the service exists.
+
+    OPEN_ITEMS.md section 5: discover_services only filtered on
+    api_name/api_version — the reference (discoverservice.go's
+    matchesFilter/checkAefId/checkProtocol/checkDataFormat/
+    checkVersionAndCommType) also filters against each service's
+    AefProfiles. aefId/protocol/dataFormat/commType are now real
+    filters over ServiceProfile.aef_profiles (walked in Python, since
+    it's a JSON blob here rather than the reference's relational
+    AefProfile/Version/Resource join — same adaptation as the field's
+    own storage). apiCat isn't — this build's ServiceProfile has no
+    category concept at all, a gap ServiceProfile's own flattening note
+    already covers.
     """
     stmt = select(ServiceProfile)
     if api_name:
@@ -110,12 +129,32 @@ def discover_services(api_invoker_id: str, api_name: str | None = None, api_vers
 
     visible = []
     for r in rows:
+        if not _matches_aef_filters(r, aef_id, protocol, data_format, comm_type):
+            continue
         policy = r.authz_policy
         if policy is None or not policy.gates_discovery_visibility:
             visible.append(r)
         elif not policy.allowed_consumers or api_invoker_id in policy.allowed_consumers:
             visible.append(r)
     return [_service_view(r) for r in visible]
+
+
+def _matches_aef_filters(r: ServiceProfile, aef_id: str | None, protocol: str | None, data_format: str | None, comm_type: str | None) -> bool:
+    if not any((aef_id, protocol, data_format, comm_type)):
+        return True
+    for profile in r.aef_profiles or []:
+        if aef_id and profile.get("aefId") != aef_id:
+            continue
+        if protocol and profile.get("protocol") != protocol:
+            continue
+        if data_format and profile.get("dataFormat") != data_format:
+            continue
+        if comm_type:
+            resources = (res for v in profile.get("versions", []) for res in v.get("resources", []))
+            if not any(res.get("commType") == comm_type for res in resources):
+                continue
+        return True
+    return False
 
 
 @app.post("/capif-events/v1/{subscriber_id}/subscriptions", status_code=201)
@@ -182,4 +221,7 @@ def _service_view(r: ServiceProfile) -> dict:
         "version": r.version,
         "fullApiVersions": r.full_api_versions or [],
         "serviceCapabilities": r.service_capabilities or {},
+        "aefProfiles": r.aef_profiles or [],
+        "apiSuppFeats": r.api_supp_feats,
+        "shareableInfo": r.shareable_info,
     }
