@@ -18,13 +18,26 @@ class DescriptorCreationFailed(Exception):
     """
 
 
+class PackageValidationFailed(Exception):
+    """OPEN_ITEMS.md section 5: the reference's own ordered validator
+    chain (rapp-manager-models' csar/validator/*) catches a package
+    whose filename doesn't follow convention (NamingValidator) or that
+    duplicates one already onboarded (AsdDescriptorValidator's own
+    descriptorId-uniqueness check, adapted here to this build's own
+    identity — a content hash — since real ASD descriptor data is a
+    deliberate elision elsewhere in this build). _validate_package
+    previously only checked the zip was well-formed and had its entry
+    definitions.
+    """
+
+
 # What counts as "this package fails to validate" — broadened beyond
 # malformed-zip/missing-entry to include the location being unreachable
 # at all (caught while integration-testing: an unreachable location
 # previously crashed OnboardPackage with an unhandled 500 instead of
 # routing to FAILED, which is itself a real, expected outcome here), and
-# now DescriptorCreationFailed alongside it.
-ONBOARD_VALIDATION_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, httpx.HTTPError, DescriptorCreationFailed)
+# now DescriptorCreationFailed/PackageValidationFailed alongside it.
+ONBOARD_VALIDATION_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, httpx.HTTPError, DescriptorCreationFailed, PackageValidationFailed)
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -65,6 +78,16 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
 
     try:
         entry_definitions, artifacts, integrity_hash = _validate_package(body.location)
+        # AsdDescriptorValidator's own duplicate-descriptor-id detection,
+        # adapted to this build's own package identity (a content hash,
+        # since real ASD descriptor data doesn't exist here) — a
+        # byte-identical package already onboarded is rejected the same
+        # way, not silently onboarded a second time.
+        existing = db.scalar(select(ApplicationPackage).where(
+            ApplicationPackage.integrity_hash == integrity_hash, ApplicationPackage.package_id != pkg.package_id,
+        ))
+        if existing is not None:
+            raise PackageValidationFailed(f"package with integrity hash {integrity_hash} already onboarded as {existing.package_id}")
         pkg.tosca_entry_definitions = entry_definitions
         pkg.integrity_hash = integrity_hash
         pkg.signature_verified = True
@@ -99,7 +122,18 @@ def _create_nf_deployment_descriptor(pkg: ApplicationPackage, entry_definitions:
 
 
 def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str]:
-    """Open TOSCA-Metadata/Definitions/Artifacts, per Onboarding LLD section 1."""
+    """Open TOSCA-Metadata/Definitions/Artifacts, per Onboarding LLD section 1.
+
+    OPEN_ITEMS.md section 5: two more checks from the reference's own
+    validator chain, previously entirely absent — NamingValidator's
+    filename convention (a package location not ending in `.csar` is
+    rejected up front, before ever fetching it) and
+    FileExistenceValidator's required `Definitions/acm_composition.json`
+    (checked alongside the existing `TOSCA-Metadata/TOSCA.meta`
+    requirement, not replacing it — the reference requires both).
+    """
+    if not location.endswith(".csar"):
+        raise PackageValidationFailed(f"package location {location!r} does not end with .csar")
     resp = httpx.get(location, timeout=30.0)
     resp.raise_for_status()
     data = resp.content
@@ -108,6 +142,7 @@ def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str]:
         entry_line = next(l for l in meta.splitlines() if l.startswith("Entry-Definitions:"))
         entry_definitions = entry_line.split(":", 1)[1].strip()
         z.getinfo(entry_definitions)  # raises KeyError if missing/malformed
+        z.getinfo("Definitions/acm_composition.json")  # required per the reference's FileExistenceValidator
         artifacts = [(n, f"{location}#{n}") for n in z.namelist() if n.startswith("Artifacts/") and not n.endswith("/")]
     integrity_hash = hashlib.sha256(data).hexdigest()
     return entry_definitions, artifacts, integrity_hash

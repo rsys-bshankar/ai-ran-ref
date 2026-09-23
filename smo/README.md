@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**362 tests total, all passing** as of this build: 352 unit tests across
+**366 tests total, all passing** as of this build: 356 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -336,7 +336,16 @@ own real JSON Schema validation via `org.everit.json.schema`) in
 `create_data_job`/`update_data_job` — a `productionJobDefinition` that
 doesn't validate against its `DmeType`'s registered
 `dataProductionSchema` is now rejected instead of accepted as an
-arbitrary dict.
+arbitrary dict. `onboarding` went from 26 tests to 30 in the next
+pass: closed its much-thinner package validation gap, partially —
+added the reference's `.csar` filename convention check and its
+required `Definitions/acm_composition.json` file check, plus
+duplicate-package detection keyed on this build's own already-computed
+`integrity_hash` (adapted from the reference's ASD-descriptor-id
+uniqueness check, since this build has no ASD descriptor concept to
+check against). All three route the package to `FAILED`, matching
+`OnboardPackage`'s existing async-contract shape rather than a
+synchronous HTTP rejection.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

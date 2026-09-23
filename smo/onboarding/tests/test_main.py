@@ -5,6 +5,8 @@ Run with: pytest smo/onboarding/tests -q
 """
 
 import uuid
+import zipfile
+from io import BytesIO
 
 import pytest
 from fastapi.testclient import TestClient
@@ -110,6 +112,92 @@ def test_onboard_routes_to_failed_on_a_real_malformed_zip(client, monkeypatch):
     assert status.json()["state"] == "FAILED"
 
 
+def _real_package_bytes(include_acm_composition=True) -> bytes:
+    """A minimal but genuinely well-formed CSAR — TOSCA-Metadata/TOSCA.meta
+    pointing at a real Definitions/ entry, optionally with the reference's
+    required Definitions/acm_composition.json alongside it.
+    """
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("TOSCA-Metadata/TOSCA.meta", "Entry-Definitions: Definitions/main.yaml\n")
+        z.writestr("Definitions/main.yaml", "tosca_definitions_version: tosca_simple_yaml_1_3\n")
+        if include_acm_composition:
+            z.writestr("Definitions/acm_composition.json", "{}")
+    return buf.getvalue()
+
+
+def _mock_fetch(monkeypatch, content: bytes) -> None:
+    class FakeHttpResponse:
+        def raise_for_status(self):
+            pass
+    FakeHttpResponse.content = content
+    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None: FakeHttpResponse())
+
+
+def test_onboard_routes_to_failed_when_location_does_not_end_with_csar(client, monkeypatch):
+    """OPEN_ITEMS.md section 5: the reference's own NamingValidator — a
+    package filename that doesn't follow the `.csar` convention was
+    previously accepted without complaint. Checked before ever fetching
+    the location, so no network mock is even needed here.
+    """
+    resp = client.post("/packages", json={"location": "http://example/pkg.zip"})
+    package_id = resp.json()["packageId"]
+
+    status = client.get(f"/packages/{package_id}/onboarding-status")
+    assert status.json()["state"] == "FAILED"
+
+
+def test_onboard_routes_to_failed_when_acm_composition_json_is_missing(client, monkeypatch):
+    """OPEN_ITEMS.md section 5: the reference's own FileExistenceValidator
+    requires Definitions/acm_composition.json alongside
+    TOSCA-Metadata/TOSCA.meta — previously never checked, a package
+    missing it onboarded successfully anyway.
+    """
+    _mock_fetch(monkeypatch, _real_package_bytes(include_acm_composition=False))
+
+    resp = client.post("/packages", json={"location": "http://example/pkg.csar"})
+    package_id = resp.json()["packageId"]
+
+    status = client.get(f"/packages/{package_id}/onboarding-status")
+    assert status.json()["state"] == "FAILED"
+
+
+def test_onboard_succeeds_with_a_real_well_formed_package(client, monkeypatch):
+    """The positive case for the two checks above — a genuinely
+    well-formed package (real zip bytes, not the usual fully-mocked
+    _validate_package) still reaches AVAILABLE.
+    """
+    _mock_fetch(monkeypatch, _real_package_bytes())
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+
+    resp = client.post("/packages", json={"location": "http://example/pkg.csar"})
+    package_id = resp.json()["packageId"]
+
+    status = client.get(f"/packages/{package_id}/onboarding-status")
+    assert status.json()["state"] == "AVAILABLE"
+
+
+def test_onboard_routes_to_failed_for_a_byte_identical_duplicate_package(client, monkeypatch):
+    """OPEN_ITEMS.md section 5: the reference's own AsdDescriptorValidator
+    rejects re-onboarding a package whose ASD descriptor already exists;
+    adapted here to this build's own identity (a content hash, since
+    real ASD descriptor data doesn't exist in this build) — a
+    byte-identical package already onboarded is rejected the same way
+    on a second attempt, not silently onboarded twice.
+    """
+    package_bytes = _real_package_bytes()
+    _mock_fetch(monkeypatch, package_bytes)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+
+    first = client.post("/packages", json={"location": "http://example/pkg.csar"})
+    first_status = client.get(f"/packages/{first.json()['packageId']}/onboarding-status")
+    assert first_status.json()["state"] == "AVAILABLE"
+
+    second = client.post("/packages", json={"location": "http://example/pkg-again.csar"})
+    second_status = client.get(f"/packages/{second.json()['packageId']}/onboarding-status")
+    assert second_status.json()["state"] == "FAILED"
+
+
 def test_onboarding_status_for_unknown_package_reuses_dme_type_version_conflict(client):
     """query_onboarding_status's own comment calls this a "404-shaped
     reuse", but DME_TYPE_VERSION_CONFLICT is actually a 409
@@ -121,8 +209,12 @@ def test_onboarding_status_for_unknown_package_reuses_dme_type_version_conflict(
     assert resp.json()["detail"]["title"] == "DME_TYPE_VERSION_CONFLICT"
 
 
-def _make_available_package(client, monkeypatch) -> str:
-    monkeypatch.setattr("app.main._validate_package", lambda location: ("Definitions/main.yaml", [], "deadbeef"))
+def _make_available_package(client, monkeypatch, integrity_hash="deadbeef") -> str:
+    # integrity_hash is a real, checked field now (OPEN_ITEMS.md section 5's
+    # duplicate-package detection) — a caller onboarding more than one
+    # package in the same test must vary it, or the second one routes to
+    # FAILED as a genuine duplicate.
+    monkeypatch.setattr("app.main._validate_package", lambda location: ("Definitions/main.yaml", [], integrity_hash))
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
     return client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
 
@@ -179,8 +271,8 @@ def test_delete_blocked_by_dependent_child_package(client, db_session_factory, m
     """Onboarding/rApp Mgmt LLD section 4's cascade-delete guard, one half:
     an AVAILABLE/DEPRECATED child package blocks its parent's deletion.
     """
-    parent_id = uuid.UUID(_make_available_package(client, monkeypatch))
-    child_id = uuid.UUID(_make_available_package(client, monkeypatch))
+    parent_id = uuid.UUID(_make_available_package(client, monkeypatch, integrity_hash="parent-hash"))
+    child_id = uuid.UUID(_make_available_package(client, monkeypatch, integrity_hash="child-hash"))
 
     with db_session_factory() as session:
         child = session.get(ApplicationPackage, child_id)
