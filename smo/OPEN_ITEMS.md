@@ -142,12 +142,12 @@ Per-module unit test counts:
 | rapp-mgmt | 12 |
 | sa-smos | 12 |
 | so-smos | 13 |
-| dme | 15 |
 | ai-ml-workflow | 18 |
 | onboarding | 18 |
 | focom | 19 |
 | ran-nf-oam | 21 |
 | sme | 22 |
+| dme | 23 |
 | a1-related | 24 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
@@ -245,9 +245,15 @@ own §1/§2 items stand as-is.
 - No producer-status endpoint (`GET .../info-producers/{id}/status`).
 - No job-definition schema validation against `dataProductionSchema` —
   `productionJobDefinition` is accepted as an arbitrary dict.
-- No GET-by-id for `DataJob`/`DataOffer`, no job-level status endpoint,
-  and `discover_dme_types`' `data_category` query param is declared but
-  silently never applied to the query.
+- ~~No GET-by-id for `DataJob`/`DataOffer`, no job-level status
+  endpoint, and `discover_dme_types`' `data_category` query param is
+  declared but silently never applied to the query.~~ — **closed.**
+  Added `GET /data-jobs/{id}`, `GET /data-jobs/{id}/status`, and
+  `GET /offers/{id}` (all 404 on an unknown id). `discover_dme_types`
+  now applies `data_category` — filtered against `namespace`, since
+  `DMEType` has no dedicated category column and namespace (the
+  grouping half of R1AP's `namespace.name` typeName convention) is the
+  closest concept it does have.
 - No update-in-place (PUT) semantics — only POST-create/DELETE.
 - No type-subscription mechanism (consumers notified when a type is
   registered/removed) — entirely absent.
@@ -715,6 +721,12 @@ own §1/§2 items stand as-is.
   unauthorized subscriber would have been notified about a service it
   couldn't even discover. 232 tests total, up from 228 (`sme` alone:
   18 -> 22).
+- `dme`'s missing GET-by-id/list/query endpoints (§5) closed: added
+  `GET /data-jobs/{id}`, `GET /data-jobs/{id}/status`, and
+  `GET /offers/{id}` (404 on an unknown id); `discover_dme_types`'
+  `data_category` query param now actually filters, against
+  `namespace` (the closest concept `DMEType` has to a category — see
+  §5 for why). 240 tests total, up from 232 (`dme` alone: 15 -> 23).
 
 ## Suggested next pass (priority order)
 
@@ -756,9 +768,9 @@ own §1/§2 items stand as-is.
    All four standout items are now closed. Each module's remaining §5
    items are independently pickable — go module by module, or pick by
    theme (e.g. every module's missing GET-by-id/list/query endpoints is
-   a recurring pattern worth doing as one pass across
-   `dme`/`a1-related`/`focom`/`ai-ml-workflow`/`ran-analytics`
-   together).
+   a recurring pattern — `dme`'s is now closed; `a1-related`/`focom`/
+   `ai-ml-workflow`/`ran-analytics` still have theirs, worth doing as
+   one pass across those four).
 2. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
    the alarm-storm correlation algorithm, and A1-ML operations — are not
    stakeholder-answerable the way the rest of that section was: the
