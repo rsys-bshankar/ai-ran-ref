@@ -146,7 +146,7 @@ Per-module unit test counts:
 | ai-ml-workflow | 20 |
 | sme | 22 |
 | dme | 23 |
-| ran-nf-oam | 25 |
+| ran-nf-oam | 28 |
 | a1-related | 29 |
 | focom | 34 |
 
@@ -322,10 +322,18 @@ own §1/§2 items stand as-is.
   existing `severity` column already carries that exact semantic
   content under its own wire name, so adding a second, duplicate
   field for it would be pure churn, not a real gap.
-- **No alarm-cleared lifecycle at all** — `/alarms/{id}/ack` only toggles
-  `ack_state`; there's no CLEARED state or clear-alarm endpoint, so an
-  alarm that stops recurring on the NF has no way to ever be marked
-  resolved.
+- ~~**No alarm-cleared lifecycle at all** — `/alarms/{id}/ack` only
+  toggles `ack_state`; there's no CLEARED state or clear-alarm
+  endpoint, so an alarm that stops recurring on the NF has no way to
+  ever be marked resolved.~~ — **closed.** Added
+  `PATCH /alarms/{id}/clear`, which sets `severity` to `'cleared'` —
+  the reference's own `NotifyClearedAlarm` reuses
+  `perceivedSeverity=CLEARED` rather than a separate state field, and
+  this build's `severity` CHECK constraint already allowed `'cleared'`
+  for exactly this reason, so this closes the gap without adding a
+  redundant parallel field. Also added `clearedAt`/`clearUserId`
+  metadata (the reference's `NotifyClearedAlarm` fields). A cleared
+  alarm stays queryable via `GET /alarms`, not deleted.
 - *Confirmed structurally out of scope*: the real PM file-collection/
   KPI-computation pipeline (`ranpm`'s FTPES/SFTP collector, XML→JSON
   converter, counter distributor) is a total, already-documented
@@ -792,6 +800,12 @@ own §1/§2 items stand as-is.
   `correlatedNotifications`/`proposedRepairActions` to `Alarm`, wired
   through `ingest_alarm`, verified against a real local Postgres 16
   instance. 274 tests total, up from 270 (`ran-nf-oam` alone: 21 -> 25).
+- `ran-nf-oam`'s missing alarm-cleared lifecycle (§5) closed: added
+  `PATCH /alarms/{id}/clear`, setting `severity` to the already-valid
+  `'cleared'` value (matching the reference's own
+  `perceivedSeverity=CLEARED` shape) plus `clearedAt`/`clearUserId`
+  metadata. Verified against a real local Postgres 16 instance. 277
+  tests total, up from 274 (`ran-nf-oam` alone: 25 -> 28).
 
 ## Suggested next pass (priority order)
 

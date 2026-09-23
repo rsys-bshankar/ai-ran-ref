@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**274 tests total, all passing** as of this build: 264 unit tests across
+**277 tests total, all passing** as of this build: 267 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -196,7 +196,12 @@ the standard 3GPP TS 28.532 FaultMnS fault fields (`probableCause`,
 a real `UUID[]` of related-alarm refs alongside the existing
 `correlationGroup` grouping string, `proposedRepairActions`), wired
 through `ingest_alarm` and `GET /alarms`, verified against a real
-local Postgres 16 instance.
+local Postgres 16 instance. `ran-nf-oam` went from 25 tests to 28 in
+the very next pass: added `PATCH /alarms/{id}/clear`, closing the
+missing alarm-cleared lifecycle by setting `severity` to the
+already-valid `'cleared'` value (matching the reference's own
+`perceivedSeverity=CLEARED` shape) rather than adding a redundant
+parallel state field, plus `clearedAt`/`clearUserId` metadata.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
