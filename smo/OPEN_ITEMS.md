@@ -147,7 +147,7 @@ Per-module unit test counts:
 | ai-ml-workflow | 29 |
 | ran-nf-oam | 29 |
 | a1-related | 30 |
-| dme | 35 |
+| dme | 36 |
 | focom | 37 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
@@ -286,9 +286,18 @@ own §1/§2 items stand as-is.
 - No update-in-place (PUT) semantics — only POST-create/DELETE.
 - No type-subscription mechanism (consumers notified when a type is
   registered/removed) — entirely absent.
-- `deregister_producer` deletes a producer's `DMEType` rows
-  unconditionally — no check for active producers still depending on a
-  type, and no cascade cleanup of orphaned `DataJob`/`DataOffer` rows.
+- ~~`deregister_producer` deletes a producer's `DMEType` rows
+  unconditionally — ... no cascade cleanup of orphaned `DataJob`/
+  `DataOffer` rows.~~ — **closed.** This was worse than "orphaned":
+  neither FK had an `ON DELETE CASCADE` (unlike `dme_delivery_schema`'s
+  own already-cascading one), so deleting a `DMEType` with an existing
+  `DataJob`/`DataOffer` would either silently orphan the rows (SQLite,
+  no FK enforcement — never caught until this pass) or crash with an
+  unhandled `IntegrityError` on real Postgres. Added the matching
+  `ON DELETE CASCADE` to both FKs, plus explicit application-level
+  cleanup in `deregister_producer` as a second, directly-testable line
+  of defense — verified the cascade fires for real against a local
+  Postgres 16 instance.
 
 ### Onboarding + rApp Management (`onboarding/`, `rapp-mgmt/`) — vs `nonrtric-plt-rappmanager`
 
@@ -967,6 +976,15 @@ own §1/§2 items stand as-is.
   same live health-check signal `typeStatus` already uses (ICS's own
   `ProducerController.getInfoProducerStatus`/`ProducerStatusInfo`).
   325 tests total, up from 321 (`dme` alone: 31 -> 35).
+- `dme`'s `deregister_producer` cascade gap (§5) closed: added a real
+  `ON DELETE CASCADE` to `data_job`/`data_offer`'s `dme_type_id` FKs
+  (matching `dme_delivery_schema`'s own already-cascading one — neither
+  had it before, so a `DMEType` with an existing `DataJob`/`DataOffer`
+  either silently orphaned the rows under SQLite or crashed with an
+  unhandled `IntegrityError` on real Postgres), plus explicit
+  application-level cleanup in `deregister_producer` itself. Verified
+  the cascade fires for real against a local Postgres 16 instance. 326
+  tests total, up from 325 (`dme` alone: 35 -> 36).
 
 ## Suggested next pass (priority order)
 
