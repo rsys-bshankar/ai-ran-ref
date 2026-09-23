@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**153 tests total, all passing** as of this build: 143 unit tests across
+**163 tests total, all passing** as of this build: 153 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -109,10 +109,14 @@ Related → mock Near-RT RIC) proving the dispatch table isn't calling
 into a stub, a full onboard-to-deploy chain (Onboarding → NFO →
 rApp Management) proving NFO's real `NFDeploymentDescriptor` row — not
 `packageId` — makes it all the way through, RAN NF OAM's real NETCONF
-`<edit-config>` dispatch (mocked transport, real RPC-reply parsing), and
-SA SMOS's `RECONNECT` resolving a concrete `nfDeploymentId` via a live SO
-SMOS order lookup. so-smos, ran-analytics, focom, rapp-mgmt, and dme —
-previously among the thinnest-covered modules — now have route-level
+`<edit-config>` dispatch (mocked transport, real RPC-reply parsing), SA
+SMOS's `RECONNECT` resolving a concrete `nfDeploymentId` via a live SO
+SMOS order lookup, R1 Termination's proxy forwarding a POST body, method,
+headers (`Host` stripped, others kept) and query params while passing a
+non-200 upstream status straight through, and the mock Near-RT RIC's
+`UpdatePolicy` route (previously entirely untested). so-smos,
+ran-analytics, focom, rapp-mgmt, and dme — previously among the
+thinnest-covered modules — now have route-level
 coverage too, not just dispatch-logic coverage, closing OPEN_ITEMS.md's
 test-coverage-parity item; `ran-nf-oam` went from FSM-only coverage to 20
 tests (its first route-level and NETCONF-client tests) resolving the CM
