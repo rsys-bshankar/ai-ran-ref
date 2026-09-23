@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**240 tests total, all passing** as of this build: 230 unit tests across
+**245 tests total, all passing** as of this build: 235 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -165,6 +165,11 @@ from 15 tests to 23 in the next pass: added `GET /data-jobs/{id}`,
 before), and fixed `discover_dme_types`' `data_category` query param,
 which was declared but silently never applied — it now filters
 against `namespace`, the closest concept `DMEType` has to a category.
+`a1-related` went from 24 tests to 29 in the next pass: added
+`GET /policies` (filterable by
+`policy_type_id`/`near_rt_ric_id`/`creator_id`), the only real gap
+left against the module's mapping-store role now that
+`GET /policies/{id}` existed but the list/filter view never did.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
