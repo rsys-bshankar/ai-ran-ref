@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**285 tests total, all passing** as of this build: 275 unit tests across
+**291 tests total, all passing** as of this build: 281 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -211,7 +211,18 @@ by an active usage registration and `DELETE` has no edge from
 `CreateInstance` still gates on `AVAILABLE`, not `PRIMED` — an
 already-confirmed design decision (D-SEC-RAPP-1), deliberately not
 overridden here (see OPEN_ITEMS.md section 5 for the full scoping
-note).
+note). `ai-ml-workflow` went from 20 tests to 26 in the next pass: added
+real `POST /models/{id}/artifact` (upload) and
+`GET /models/{id}/artifact/{version}` (download), closing the missing
+model artifact upload/download and versioning gap — `artifactVersion`
+is a real auto-incrementing counter per model, distinct from
+`modelVersion`, matching the reference's own `UploadModel`/
+`DownloadModel` shape. Real S3-backed storage stays a deliberate
+elision (as documented elsewhere in this build); the actual uploaded
+bytes are stored in a new `ModelArtifact` table instead, so upload and
+download genuinely round-trip, and `artifact_location` — previously a
+field nothing in `main.py` ever read or wrote — is now stamped on
+every upload.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

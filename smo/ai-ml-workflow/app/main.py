@@ -8,15 +8,15 @@ clearedNodeGroups resolves MultiNode Q2's deployment-targeting gap.
 
 import uuid
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 
-from .models import AIMLModel, InferenceJob, MLMFSubscription, MLModelCoordinationGroup, ModelChangeSubscription, PerformanceReport, TrainingJob
+from .models import AIMLModel, InferenceJob, MLMFSubscription, MLModelCoordinationGroup, ModelArtifact, ModelChangeSubscription, PerformanceReport, TrainingJob
 from .statemachine import AIML_MODEL_FSM, INFERENCE_JOB_FSM, InferenceEvent, InferenceState, ModelEvent, ModelState, should_trigger_group_retrain
 
 app = FastAPI(title="AI/ML Workflow SMOS")
@@ -70,6 +70,48 @@ def get_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
     if model is None:
         raise HTTPException(status_code=404, detail="no such model")
     return _model_view(model)
+
+
+@app.post("/models/{model_id}/artifact", status_code=201)
+def upload_model_artifact(model_id: uuid.UUID, file: UploadFile = File(...), db: Session = Depends(get_session)):
+    """UploadModel (aiml-fw-awmf-modelmgmtservice apis/mmes_apis.go) — the
+    reference looks the model up first (404 if unregistered), validates a
+    .zip suffix (415 otherwise), then stamps a fresh artifactVersion,
+    separate from modelVersion, auto-incremented per model. Real S3 storage
+    is elided (see ModelArtifact's docstring); the bytes are stored for real
+    here instead of being discarded, so upload+download round-trip.
+    """
+    model = db.get(AIMLModel, model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="no such model")
+    if not file.filename or not file.filename.endswith(".zip"):
+        raise HTTPException(status_code=415, detail="artifact must be a .zip file")
+
+    content = file.file.read()
+    next_version = (db.scalar(
+        select(func.max(ModelArtifact.artifact_version)).where(ModelArtifact.model_id == model_id)
+    ) or 0) + 1
+    artifact = ModelArtifact(model_id=model_id, artifact_version=next_version, filename=file.filename, content=content)
+    db.add(artifact)
+    model.artifact_location = f"model-artifact:{model_id}:{next_version}"
+    db.commit()
+    return {"modelId": str(model_id), "artifactId": str(artifact.artifact_id), "artifactVersion": next_version}
+
+
+@app.get("/models/{model_id}/artifact/{artifact_version}")
+def download_model_artifact(model_id: uuid.UUID, artifact_version: int, db: Session = Depends(get_session)):
+    """DownloadModel — same modelId+artifactVersion lookup as the reference's
+    modelName+modelVersion+artifactVersion modelKey.
+    """
+    artifact = db.scalar(
+        select(ModelArtifact).where(ModelArtifact.model_id == model_id, ModelArtifact.artifact_version == artifact_version)
+    )
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="no such artifact version")
+    return Response(
+        content=artifact.content, media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"'},
+    )
 
 
 @app.post("/coordination-groups", status_code=201)
@@ -278,4 +320,4 @@ def _trigger_group_retrain(db: Session, group: MLModelCoordinationGroup) -> list
 
 def _model_view(m: AIMLModel) -> dict:
     return {"modelId": str(m.model_id), "modelType": m.model_type, "version": m.version, "state": m.state,
-            "clearedNodeGroups": m.cleared_node_groups or []}
+            "clearedNodeGroups": m.cleared_node_groups or [], "artifactLocation": m.artifact_location}
