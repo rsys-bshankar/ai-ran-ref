@@ -43,13 +43,20 @@ def create_instance(body: CreateInstanceRequest, db: Session = Depends(get_sessi
     pkg_resp = r1.get(f"/onboarding/packages/{body.packageId}/onboarding-status")
     if pkg_resp.status_code != 200 or pkg_resp.json().get("state") != "AVAILABLE":
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail="package is not AVAILABLE")
+    nf_deployment_descriptor_id = pkg_resp.json().get("nfDeploymentDescriptorId")
+    if not nf_deployment_descriptor_id:
+        # Every package that reaches AVAILABLE has one — OnboardPackage's own
+        # validation pipeline creates it via NFO's CreateDescriptor (NFO+FOCOM
+        # LLD section 2). Missing here means an inconsistent record, not a
+        # normal refusal.
+        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail="package has no nfDeploymentDescriptorId")
 
     inst = RAppInstance(package_id=body.packageId, configuration=body.config, state=InstanceState.DEPLOYING, oauth_client_id=str(uuid.uuid4()))
     db.add(inst)
     db.flush()
 
     nfo_resp = r1.post("/nfo/deployments", json={
-        "nfDeploymentDescriptorId": str(body.packageId),  # resolved via the package's Artifacts, section 5
+        "nfDeploymentDescriptorId": nf_deployment_descriptor_id,  # the real descriptor, per section 5
         "requiredResourceTypeId": body.config.get("requiredResourceTypeId"),
     })
     inst.workload_ref = nfo_resp.json().get("nfDeploymentId") if nfo_resp.status_code == 200 else None

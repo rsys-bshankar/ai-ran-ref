@@ -47,9 +47,15 @@ def query_order_status(order_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.post("/orders/{order_id}/cancel")
 def cancel_order(order_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Reassigns order.steps to a NEW list rather than mutating the
+    existing one's dicts in place — a plain JSON column's list is never
+    tracked by SQLAlchemy's change detection on in-place mutation
+    (that needs sqlalchemy.ext.mutable), so the old in-place version of
+    this route silently never persisted the CANCELLED status at all:
+    commit()'s default expire-on-commit re-fetched the unchanged row
+    right back, discarding the edit.
+    """
     order = db.get(ServiceOrder, order_id)
-    for step in order.steps:
-        if step["status"] == "PENDING":
-            step["status"] = "CANCELLED"
+    order.steps = [{**step, "status": "CANCELLED"} if step["status"] == "PENDING" else step for step in order.steps]
     db.commit()
     return {"orderId": str(order.order_id), "steps": order.steps}

@@ -64,13 +64,17 @@ def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None):
     """Builds a fake R1Client.get/post pair that answers each of
     CreateInstance's three downstream calls (onboarding-status, NFO
     deploy, usage/start) based on the path, since they all go through
-    the same R1Client instance.
+    the same R1Client instance. onboarding-status includes a
+    nfDeploymentDescriptorId — CreateInstance now requires it (the
+    NFDeploymentDescriptor fix), so a fake response without it would
+    incorrectly 409 before ever reaching the usage-registration wiring
+    this suite actually tests.
     """
     reg_id = registration_id or uuid.uuid4()
 
     def fake_get(self, path, **kw):
         assert "/onboarding-status" in path
-        return FakeR1Response(200, {"state": onboarding_status})
+        return FakeR1Response(200, {"state": onboarding_status, "nfDeploymentDescriptorId": str(uuid.uuid4())})
 
     def fake_post(self, path, json=None, **kw):
         if "/nfo/deployments" in path:
@@ -135,7 +139,7 @@ def test_terminate_instance_skips_usage_stop_when_never_registered(client, monke
     to stop a registration that was never recorded.
     """
     def fake_get(self, path, **kw):
-        return FakeR1Response(200, {"state": "AVAILABLE"})
+        return FakeR1Response(200, {"state": "AVAILABLE", "nfDeploymentDescriptorId": str(uuid.uuid4())})
 
     def fake_post(self, path, json=None, **kw):
         if "/nfo/deployments" in path:

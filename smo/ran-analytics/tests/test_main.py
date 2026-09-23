@@ -16,13 +16,16 @@ from app.models import MDAFProducer, MDAFReport, MDASubscription
 
 
 @pytest.fixture
-def client(monkeypatch):
+def db_session_factory():
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[MDAFProducer.__table__, MDAFReport.__table__, MDASubscription.__table__])
-    TestSession = sessionmaker(bind=engine)
+    return sessionmaker(bind=engine)
 
+
+@pytest.fixture
+def client(db_session_factory, monkeypatch):
     def override_get_session():
-        session = TestSession()
+        session = db_session_factory()
         try:
             yield session
         finally:
@@ -63,3 +66,40 @@ def test_subscribe_and_unsubscribe_analytics(client):
     assert "subscriptionId" in sub
     resp = client.delete(f"/subscriptions/{sub['subscriptionId']}")
     assert resp.status_code == 204
+
+
+def test_reregistering_same_producer_and_type_updates_in_place(client, db_session_factory):
+    """The real fix this pass made: the same producer re-registering the
+    same analytics_type (e.g. on restart) previously crashed with an
+    unhandled IntegrityError on the (producer_id, analytics_type)
+    composite primary key instead of updating in place — same shape of
+    bug as SME's RegisterService had.
+    """
+    first_dme_type = uuid.uuid4()
+    resp1 = client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
+                         json={"dme_input_types": [str(first_dme_type)], "output_schema": {"type": "object"}})
+    assert resp1.status_code == 201
+
+    second_dme_type = uuid.uuid4()
+    resp2 = client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
+                         json={"dme_input_types": [str(second_dme_type)], "output_schema": {"type": "string"}})
+    assert resp2.status_code == 201
+
+    with db_session_factory() as session:
+        rows = session.query(MDAFProducer).filter_by(producer_id="rapp-mdaf-1", analytics_type="coverage-issue-analysis").all()
+        assert len(rows) == 1  # updated in place, not a second row or a crash
+        assert rows[0].dme_input_types == [str(second_dme_type)]
+        assert rows[0].output_schema == {"type": "string"}
+
+
+def test_different_analytics_type_for_same_producer_is_a_separate_row(client):
+    """producer_id + analytics_type together are the key — a different
+    analytics_type for the same producer is a distinct registration, not
+    a conflict with the one above.
+    """
+    resp1 = client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
+                         json={"dme_input_types": [], "output_schema": {}})
+    resp2 = client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "resource-utilization"},
+                         json={"dme_input_types": [], "output_schema": {}})
+    assert resp1.status_code == 201
+    assert resp2.status_code == 201

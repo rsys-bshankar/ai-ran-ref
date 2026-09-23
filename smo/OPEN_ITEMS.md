@@ -48,6 +48,15 @@ the ambiguity into code.
 
 ## 2. Repo code / lifecycle gaps
 
+- ~~**`NFDeploymentDescriptor` is never populated**~~ — **closed.** NFO
+  now has a `CreateDescriptor` endpoint (`POST /descriptors`), called
+  from Onboarding's `OnboardPackage` flow once validation succeeds;
+  `rApp Management` consumes the real `nfDeploymentDescriptorId` via
+  Onboarding's `onboarding-status` response instead of passing
+  `packageId`. Verified against real Postgres (the FK now correctly
+  rejects an invalid descriptor ID) and end to end via
+  `tests_integration/test_cross_service.py`'s
+  `test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_descriptor`.
 - ~~`RAppInstance.RECOVER` had no HTTP route~~ — **closed.** The FSM
   transition (`FAULTED -> DEPLOYING`) existed and was unit-tested
   directly against the FSM, but no route in `rapp-mgmt/app/main.py`
@@ -81,24 +90,6 @@ the ambiguity into code.
   ORM models directly, never from this file, and the migration-Postgres
   CI job only checks table *count*, not columns. Verified fixed against
   a real local Postgres 16 instance.
-- **Policy Mgmt has no Intent-to-RMIH matching/dispatch step**
-  (`policy-mgmt/`) — `CreateIntent` and `RegisterIntentHandlingFunction`
-  both exist, but nothing notifies an RMIH of a new Intent it could
-  fulfil; `IntentHandlingFunction.intent_handling_scope` is modeled but
-  no code path sets or reads it. On reflection this is design-level, not
-  a self-contained fix like the three above: "matching" needs a defined
-  semantics (by `intent_handling_scope`? by capability equality? push or
-  pull?) before it can be built without inventing the answer — moved to
-  section 1.
-- **`NFDeploymentDescriptor` is never populated** (`nfo/` + `onboarding/`)
-  — the NFO+FOCOM LLD's own design says it should be derived from an
-  onboarded package's TOSCA `Definitions/` at onboarding time; nothing in
-  this build creates one. `rApp Management` currently passes `packageId`
-  directly where NFO expects a real descriptor ID. Only surfaces against
-  real Postgres FK enforcement (SQLite's test engine doesn't catch it) —
-  flagged explicitly in `tests_integration/test_cross_service.py`. Fix:
-  new NFO endpoint to create the descriptor, called from Onboarding's
-  `OnboardPackage` flow.
 - **No real southbound integrations beyond the A1 mock** — O1 Adaptor
   `PATCH` calls, actual `docker run` invocations, etc. are all elided in
   favor of recording the correct state transition.
@@ -145,44 +136,51 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| so-smos | 3 |
-| ran-analytics | 3 |
-| focom | 4 |
-| nfo | 4 |
 | mock-near-rt-ric | 5 |
 | r1-termination | 5 |
-| onboarding | 7 |
+| nfo | 5 |
+| ran-analytics | 5 |
+| focom | 7 |
 | policy-mgmt | 7 |
-| sa-smos | 7 |
+| sa-smos | 8 |
 | a1-related | 8 |
+| onboarding | 9 |
 | sme | 9 |
 | rapp-mgmt | 9 |
 | ran-nf-oam | 10 |
-| dme | 13 |
 | ai-ml-workflow | 11 |
+| dme | 13 |
+| so-smos | 13 |
 
-Plus 9 cross-service integration tests in `tests_integration/`. The
-shallower modules (so-smos, ran-analytics, focom, nfo) have basic
-CRUD/validation coverage but not the same depth of edge-case and
-failure-path testing the FSM-heavy modules got. `rapp-mgmt` and `dme`
-moved out of the shallow tier this pass — both gained route-level tests
-covering the fixes above (previously `rapp-mgmt` had FSM-only coverage,
-no route tests at all).
+Plus 10 cross-service integration tests in `tests_integration/`.
+`r1-termination` and `mock-near-rt-ric` are now the shallowest-covered
+modules; `rapp-mgmt` and `dme` moved out of the shallow tier this pass
+(both gained route-level tests — `rapp-mgmt` had none at all before).
+
+## Closed
+
+- **`NFDeploymentDescriptor` population** (§2, was priority 1) — see
+  `smo/README.md`'s "Real bugs this pass found" section.
+- **Bring the shallow-coverage modules to parity** (§4, was priority 2)
+  — so-smos, ran-analytics, and focom now have route-level test
+  coverage, not just dispatch/FSM-logic coverage. Writing it surfaced
+  and fixed two real bugs: SO SMOS's `CancelOrder` never actually
+  persisted (in-place JSON mutation SQLAlchemy never tracks), and RAN
+  Analytics' `RegisterAnalyticsProducer` crashed on a legitimate
+  re-registration (same shape as the SME bug from the original pass).
+  See `smo/README.md`'s "Real bugs this pass found" section. `nfo` was
+  separately brought to 5 by the `NFDeploymentDescriptor` fix.
+- **Fill the call-flow gaps** (§3, was priority 3) — all six missing
+  journeys are now in `smo/docs/call-flows/` (05 through 10); writing
+  them is what surfaced the `RECOVER`/cascade-delete-guard/DME-validation
+  items closed above, plus the Intent-to-RMIH matching item now in §1.
 
 ## Suggested next pass (priority order)
 
-1. `NFDeploymentDescriptor` population (§2) — closes a real cross-module
-   correctness gap already caught by an integration test, self-contained,
-   no open design question blocking it. (In progress on a sibling
-   branch as of this pass.)
-2. Bring up the shallow-coverage modules (§4: so-smos, ran-analytics,
-   focom, nfo) to parity with the rest. (In progress on a sibling
-   branch as of this pass.)
-3. Fill the call-flow gaps (§3) — mostly documentation, high value for
-   onboarding new readers to the design. (In progress on a sibling
-   branch as of this pass — writing them is what surfaced the three
-   items closed above, plus the Intent-to-RMIH matching item now in §1.)
-4. Resolve the design-level decisions (§1) that block further code — SA
+1. Resolve the design-level decisions (§1) that block further code — SA
    SMOS `RECONNECT`/`ROLLBACK` and RAN NF OAM's CM sync method remain the
    two most likely to unblock near-term code changes once decided; these
    genuinely need a stakeholder call, not an invented answer.
+2. Deepen `r1-termination`'s and `mock-near-rt-ric`'s coverage — the
+   shallowest tier remaining now that `rapp-mgmt` and `dme` have moved
+   out of it.

@@ -96,16 +96,22 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**114 tests total, all passing** as of this build: 105 unit tests across
-all fourteen modules plus the mock, and 9 integration tests proving real
+**134 tests total, all passing** as of this build: 124 unit tests across
+all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
-actually reachable — see "Real bugs" below), upgrade auto-rollback, the
-`PARTIAL_SUCCESS` decomposed-PATCH aggregation, the O1 Adaptor endpoint
-health lifecycle, the full AI/ML certification pipeline plus retraining
-re-entry, SO SMOS's fail-fast dispatch semantics, A1 Related's real
-round trip to the mock Near-RT RIC (both `ENFORCED` and `REJECTED`
-paths), and a three-hop chain (SO SMOS → A1 Related → mock Near-RT RIC)
-proving the dispatch table isn't calling into a stub.
+actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
+below), upgrade auto-rollback, the `PARTIAL_SUCCESS` decomposed-PATCH
+aggregation, the O1 Adaptor endpoint health lifecycle, the full AI/ML
+certification pipeline plus retraining re-entry, SO SMOS's fail-fast
+dispatch semantics, A1 Related's real round trip to the mock Near-RT RIC
+(both `ENFORCED` and `REJECTED` paths), a three-hop chain (SO SMOS → A1
+Related → mock Near-RT RIC) proving the dispatch table isn't calling
+into a stub, and a full onboard-to-deploy chain (Onboarding → NFO →
+rApp Management) proving NFO's real `NFDeploymentDescriptor` row — not
+`packageId` — makes it all the way through. so-smos, ran-analytics,
+focom, rapp-mgmt, and dme — previously among the thinnest-covered
+modules — now have route-level coverage too, not just dispatch-logic
+coverage, closing OPEN_ITEMS.md's test-coverage-parity item.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
@@ -155,6 +161,31 @@ Writing the tests, not just the code, is what surfaced these:
   `sqlalchemy.dialects.postgresql.UUID`/`JSONB` don't compile on SQLite)
   and one ORM cascade config gap (deleting a `ServiceProfile` tried to
   null out its child's primary key instead of deleting the child row).
+- **`NFDeploymentDescriptor` was never populated** — NFO+FOCOM LLD
+  section 2's own stated design is that it's derived from an onboarded
+  package's TOSCA `Definitions/` at onboarding time; `rApp Management`
+  was passing `packageId` directly where NFO expected a real
+  `nfDeploymentDescriptorId`, silently correct only because SQLite's test
+  engine doesn't enforce the FK it relies on (a real Postgres run rejects
+  it outright — verified). Fixed with a new NFO `CreateDescriptor`
+  endpoint, called from Onboarding's `OnboardPackage` flow once
+  validation succeeds; `rApp Management` now consumes the real ID via
+  Onboarding's `onboarding-status` response. See
+  `tests_integration/test_cross_service.py`'s
+  `test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_descriptor`.
+- **SO SMOS's `CancelOrder` never actually persisted the `CANCELLED`
+  status** — it mutated the `steps` JSON column's list in place, which
+  SQLAlchemy's change detection never tracks without
+  `sqlalchemy.ext.mutable`; `commit()`'s default expire-on-commit then
+  re-fetched the unchanged row, silently discarding the edit every time.
+  Fixed by reassigning `order.steps` to a new list instead of mutating
+  the old one's dicts. Caught while adding the route its own test suite
+  never previously covered — no test had exercised `cancel_order` at all.
+- **RAN Analytics' `RegisterAnalyticsProducer` crashed on the same
+  producer re-registering the same `analyticsType`** — an unhandled
+  `IntegrityError` on the `(producer_id, analytics_type)` composite
+  primary key, the same shape of bug as SME's `RegisterService` had.
+  Fixed with the same update-in-place upsert.
 - **`RAppInstance.RECOVER` had no HTTP route at all** — the FSM
   transition (`FAULTED -> DEPLOYING`) existed and was unit-tested
   directly against the FSM, but nothing in `rapp-mgmt/app/main.py` ever
@@ -198,16 +229,6 @@ them:
   researched value, flagged as a placeholder in both the LLD and the code.
 - **`WEIGHTED_TRIGGERS`** (`ai-ml-workflow/`) — raises `NotImplementedError`;
   needs real noise-floor data before it can be designed, not invented now.
-- **`NFDeploymentDescriptor` is never actually populated** — NFO+FOCOM
-  LLD section 2's own stated design is that it's derived from an onboarded
-  package's TOSCA `Definitions/` at onboarding time, but nothing in this
-  build creates one; `rApp Management` currently passes `packageId`
-  directly where NFO expects a real `nfDeploymentDescriptorId`. SQLite's
-  default test engine doesn't enforce the FK this relies on, so this only
-  surfaces against real Postgres. Flagged explicitly in
-  `tests_integration/test_cross_service.py`'s onboarding test rather than
-  silently worked around — the real fix is a new NFO endpoint to create
-  the descriptor, called from Onboarding's `OnboardPackage` flow.
 - Every module's actual southbound integration beyond A1 Related's mock
   Near-RT RIC (O1 Adaptor `PATCH` calls, `docker run` invocations) is
   elided in favor of recording the correct state transition — this is a
