@@ -148,7 +148,7 @@ Per-module unit test counts:
 | a1-related | 30 |
 | ai-ml-workflow | 35 |
 | focom | 37 |
-| dme | 50 |
+| dme | 55 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
 `mock-near-rt-ric`/`r1-termination`/`policy-mgmt` (10 tests each) are
@@ -169,7 +169,8 @@ before this pass despite being a real route. A later pass added
 `ai-ml-workflow`'s `PUT`/`DELETE /models/{id}` coverage (+6, see §5),
 then `ran-analytics`'s real subscriber-notification delivery in
 `publish_report` (+5, see §5), then `dme`'s `PUT /data-jobs/{id}`
-(+5) and its `/type-subscriptions` mechanism (+9, see §5).
+(+5), its `/type-subscriptions` mechanism (+9), and real
+job-definition JSON Schema validation (+5, see §5).
 
 ## 5. O-RAN-SC completeness gaps (repo-audited)
 
@@ -276,8 +277,22 @@ own §1/§2 items stand as-is.
   `ProducerStatusInfo` — `ENABLED`/`DISABLED` from real producer
   availability). 404 if the producer has nothing registered, matching
   ICS's own not-found behavior.
-- No job-definition schema validation against `dataProductionSchema` —
-  `productionJobDefinition` is accepted as an arbitrary dict.
+- ~~No job-definition schema validation against `dataProductionSchema` —
+  `productionJobDefinition` is accepted as an arbitrary dict.~~ —
+  **closed.** ICS's own `InfoJobs.validateJsonObjectAgainstSchema`
+  (`org.everit.json.schema`, called from `validatePutInfoJob`) does
+  real JSON Schema validation of `jobDefinition` against the type's
+  `jobDataSchema` before accepting a job. Adopted the Python
+  equivalent, the `jsonschema` library (new dependency, added to
+  `shared/pyproject.toml` and the CI workflow), in both
+  `create_data_job` and `update_data_job` — a `productionJobDefinition`
+  that doesn't validate against its `DmeType`'s registered
+  `dataProductionSchema` is now rejected (`SCHEMA_VALIDATION_FAILED`,
+  422) instead of accepted as an arbitrary dict. A `dmeTypeId` that
+  doesn't resolve to a registered type skips the check, matching the
+  same permissive shape `_validate_delivery_method`'s own offer check
+  already has — nothing else in `create_data_job` enforces the type's
+  existence either.
 - ~~No GET-by-id for `DataJob`/`DataOffer`, no job-level status
   endpoint, and `discover_dme_types`' `data_category` query param is
   declared but silently never applied to the query.~~ — **closed.**
@@ -1108,6 +1123,13 @@ own §1/§2 items stand as-is.
   (`ConsumerCallbacks.notifyTypeRegistered`/`notifyTypeRemoved`),
   unfiltered, matching the reference's own lack of per-type scoping.
   357 tests total, up from 348 (`dme` alone: 41 -> 50).
+- DME's missing job-definition schema validation (§5) closed: adopted
+  the `jsonschema` library (ICS's own real JSON Schema validation,
+  `org.everit.json.schema`) in `create_data_job`/`update_data_job` — a
+  `productionJobDefinition` that doesn't validate against its
+  `DmeType`'s registered `dataProductionSchema` is now rejected
+  (`SCHEMA_VALIDATION_FAILED`, 422) instead of accepted as an arbitrary
+  dict. 362 tests total, up from 357 (`dme` alone: 50 -> 55).
 
 ## Suggested next pass (priority order)
 

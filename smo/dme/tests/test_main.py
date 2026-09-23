@@ -172,6 +172,82 @@ def test_data_job_accepts_wire_exact_delivery_values(client):
         assert resp.status_code == 202, method
 
 
+def test_data_job_rejects_a_definition_violating_the_registered_schema(client):
+    """OPEN_ITEMS.md section 5: ICS's own InfoJobs.validateJsonObjectAgainstSchema
+    (validatePutInfoJob) — productionJobDefinition used to be accepted as an
+    arbitrary dict, never checked against the DmeType's own
+    dataProductionSchema.
+    """
+    reg = client.post("/production-capabilities", json=register_type_body(
+        dataProductionSchema={"type": "object", "properties": {"cellId": {"type": "string"}}, "required": ["cellId"]},
+    )).json()
+
+    resp = client.post("/data-jobs", json={
+        "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+        "productionJobDefinition": {"cellId": 42},  # wrong type: schema requires a string
+    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
+
+
+def test_data_job_rejects_a_definition_missing_a_required_field(client):
+    reg = client.post("/production-capabilities", json=register_type_body(
+        dataProductionSchema={"type": "object", "properties": {"cellId": {"type": "string"}}, "required": ["cellId"]},
+    )).json()
+
+    resp = client.post("/data-jobs", json={
+        "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+        "productionJobDefinition": {},
+    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
+
+
+def test_data_job_accepts_a_definition_matching_the_registered_schema(client):
+    reg = client.post("/production-capabilities", json=register_type_body(
+        dataProductionSchema={"type": "object", "properties": {"cellId": {"type": "string"}}, "required": ["cellId"]},
+    )).json()
+
+    resp = client.post("/data-jobs", json={
+        "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+        "productionJobDefinition": {"cellId": "cell-42"},
+    })
+    assert resp.status_code == 202
+
+
+def test_data_job_unaffected_by_schema_check_for_an_unknown_dme_type(client):
+    """Not every dmeTypeId in a POST is guaranteed to resolve to a real
+    DmeType (nothing else in create_data_job checks that either) — the
+    schema check must not regress that existing permissive behavior.
+    """
+    resp = client.post("/data-jobs", json={
+        "dataDeliveryMode": "ONE_TIME", "dmeTypeId": "11111111-1111-1111-1111-111111111111",
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+        "productionJobDefinition": {"anything": "goes"},
+    })
+    assert resp.status_code == 202
+
+
+def test_update_data_job_rejects_a_definition_violating_the_registered_schema(client):
+    reg = client.post("/production-capabilities", json=register_type_body(
+        dataProductionSchema={"type": "object", "properties": {"cellId": {"type": "string"}}, "required": ["cellId"]},
+    )).json()
+    created = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1", "productionJobDefinition": {"cellId": "cell-1"},
+    }).json()
+
+    resp = client.put(f"/data-jobs/{created['dataJobId']}", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1", "productionJobDefinition": {},
+    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
+
+
 def test_data_offer_commits_to_first_offered_method(client):
     """Section 3.5: producer offers multiple methods, framework commits to one."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
