@@ -143,8 +143,8 @@ Per-module unit test counts:
 | sme | 22 |
 | ran-analytics | 22 |
 | nfo | 23 |
-| onboarding | 26 |
 | ran-nf-oam | 29 |
+| onboarding | 30 |
 | a1-related | 30 |
 | ai-ml-workflow | 35 |
 | focom | 37 |
@@ -170,7 +170,8 @@ before this pass despite being a real route. A later pass added
 then `ran-analytics`'s real subscriber-notification delivery in
 `publish_report` (+5, see §5), then `dme`'s `PUT /data-jobs/{id}`
 (+5), its `/type-subscriptions` mechanism (+9), and real
-job-definition JSON Schema validation (+5, see §5).
+job-definition JSON Schema validation (+5, see §5), and finally
+`onboarding`'s package-validation hardening (+4, see §5).
 
 ## 5. O-RAN-SC completeness gaps (repo-audited)
 
@@ -380,17 +381,40 @@ own §1/§2 items stand as-is.
   lifecycle and its blocking semantics are real, but nothing yet
   requires a package to have been primed before an instance is
   created against it.
-- Package validation is much thinner — the reference runs an ordered
+- ~~Package validation is much thinner — the reference runs an ordered
   validator chain (filename convention, required
   `Definitions/acm_composition.json`, ASD descriptor parsing with real
   duplicate-descriptor-id detection). `_validate_package` only reads
   `TOSCA.meta` and does a `KeyError` existence check — no filename
-  check, no duplicate-package detection at all.
+  check, no duplicate-package detection at all.~~ — **closed,
+  partially.** Added the reference's `NamingValidator` (`.csar`
+  filename convention, checked before ever fetching the location) and
+  `FileExistenceValidator`'s required `Definitions/acm_composition.json`
+  (alongside the existing `TOSCA-Metadata/TOSCA.meta` requirement, not
+  replacing it), plus duplicate-package detection adapted to this
+  build's own identity — a content hash (`integrity_hash`, already
+  computed but never checked for uniqueness) — since the reference's
+  own check is keyed on ASD descriptor data this build doesn't have.
+  All three route a failing package to `FAILED`, matching this
+  endpoint's existing async-contract shape (every call returns 202;
+  success or failure is only observable via `onboarding-status`), not
+  a synchronous HTTP rejection. The reference's real ASD descriptor
+  parsing itself (`AsdDescriptorValidator`'s JSON-pointer walk into a
+  descriptor/descriptor-variant id) stays out of scope — this build has
+  no ASD descriptor concept to parse, the same elision already
+  documented for `RappInstance`'s nested ACM/SME/DME resource records
+  below.
 - No resource-provenance detail endpoints — the reference's
   `GET /rapps/{id}` and `GET /rapps/{id}/instance/{id}` return nested
   ACM/SME/DME resource records (composition IDs, provider-function IDs,
   producer/consumer type lists); ours returns only flat
-  `{packageId, state, ...}`/`{instanceId, packageId, state}`.
+  `{packageId, state, ...}`/`{instanceId, packageId, state}`. *Confirmed
+  tied to the same out-of-scope boundary below*: the reference's nested
+  records are the caller-supplied ACM/SME/DME deploy descriptor this
+  build's `CreateInstance` never accepts in the first place (real
+  ACM/Helm/K8s deployment is the declared elision) — implementing this
+  would mean echoing back invented descriptor data, not exposing
+  something this build already computes.
 - No standalone delete-after-undeploy for an instance, distinct from
   `terminate`.
 - *Confirmed structurally out of scope*: real ACM/Helm/K8s deployment
@@ -1130,6 +1154,17 @@ own §1/§2 items stand as-is.
   `DmeType`'s registered `dataProductionSchema` is now rejected
   (`SCHEMA_VALIDATION_FAILED`, 422) instead of accepted as an arbitrary
   dict. 362 tests total, up from 357 (`dme` alone: 50 -> 55).
+- Onboarding's much-thinner package validation (§5) closed, partially:
+  added the reference's `.csar` filename convention check and its
+  required `Definitions/acm_composition.json` file check, plus
+  duplicate-package detection keyed on this build's own already-
+  computed `integrity_hash` (adapted from the reference's ASD-
+  descriptor-id uniqueness check, since this build has no ASD
+  descriptor concept). All three route to `FAILED`, matching
+  `OnboardPackage`'s existing async-contract shape. The reference's
+  real ASD descriptor parsing stays out of scope — the same elision
+  already documented for `RappInstance`'s nested ACM/SME/DME resource
+  records. 366 tests total, up from 362 (`onboarding` alone: 26 -> 30).
 
 ## Suggested next pass (priority order)
 

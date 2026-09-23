@@ -153,12 +153,14 @@ def test_onboarding_to_rapp_management_status_check(mesh):
     covered separately below.
     """
     # Points at a real, mesh-reachable endpoint that returns 200 JSON —
-    # reachable, but not valid zip bytes, so OnboardPackage's own
-    # zipfile.BadZipFile handling routes it to FAILED. (An unreachable
-    # host is also handled — onboarding/app/main.py's
-    # ONBOARD_VALIDATION_FAILURES now catches httpx.HTTPError too — but
-    # the mesh only resolves known service hosts, so that path isn't
-    # exercisable through this harness; not a gap in the fix itself.)
+    # reachable, but neither a real .csar filename nor valid zip bytes, so
+    # OnboardPackage's own validation (the filename check now, same as the
+    # zipfile.BadZipFile handling it would otherwise fall through to)
+    # routes it to FAILED. (An unreachable host is also handled —
+    # onboarding/app/main.py's ONBOARD_VALIDATION_FAILURES now catches
+    # httpx.HTTPError too — but the mesh only resolves known service
+    # hosts, so that path isn't exercisable through this harness; not a
+    # gap in the fix itself.)
     onboard = mesh["onboarding"].post("/packages", json={"location": "http://focom:8000/inventory"})
     package_id = onboard.json()["packageId"]
 
