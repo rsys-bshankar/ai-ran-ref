@@ -75,6 +75,7 @@ def register_service(apf_id: str, body: ServiceRegistration, db: Session = Depen
     else:
         profile.authz_policy.allowed_consumers = body.allowedConsumers
     db.commit()
+    notify_service_change(db, profile, "SERVICE_API_UPDATE" if existing is not None else "SERVICE_API_AVAILABLE")
     return {"serviceId": str(profile.service_id)}
 
 
@@ -82,6 +83,7 @@ def register_service(apf_id: str, body: ServiceRegistration, db: Session = Depen
 def deregister_service(apf_id: str, service_id: uuid.UUID, db: Session = Depends(get_session)):
     profile = db.get(ServiceProfile, service_id)
     if profile is not None and profile.producer_id == apf_id:
+        notify_service_change(db, profile, "SERVICE_API_UNAVAILABLE")  # before delete: notify_service_change needs the still-live row
         db.delete(profile)
         db.commit()
 
@@ -134,14 +136,21 @@ def unsubscribe_events(subscriber_id: str, subscription_id: uuid.UUID, db: Sessi
 
 
 def notify_service_change(db: Session, service: ServiceProfile, event_type: str) -> None:
-    """Producer-initiated push, called by register/deregister/update above
-    (wired in as a follow-up — kept as an explicit function so callers are
-    obvious) to every subscriber whose eventTypes includes event_type and
-    who is authorized to see the service, per section 2.2's same gate.
+    """Producer-initiated push (OPEN_ITEMS.md section 5): now wired in from
+    register_service (SERVICE_API_AVAILABLE on create, SERVICE_API_UPDATE
+    on the idempotent re-registration path) and deregister_service
+    (SERVICE_API_UNAVAILABLE). Delivered to every subscriber whose
+    eventTypes includes event_type AND who is authorized to see the
+    service, per discover_services' own gate (section 2.2) — the
+    docstring already claimed this authz check but the code never
+    enforced it until now.
     """
     subs = db.scalars(select(ServiceEventSubscription)).all()
+    policy = service.authz_policy
     for sub in subs:
         if event_type not in sub.event_types:
+            continue
+        if policy is not None and policy.gates_discovery_visibility and policy.allowed_consumers and sub.subscriber_id not in policy.allowed_consumers:
             continue
         try:
             httpx.post(sub.callback_uri, json={"serviceId": str(service.service_id), "eventType": event_type}, timeout=5.0)

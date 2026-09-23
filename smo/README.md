@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**228 tests total, all passing** as of this build: 218 unit tests across
+**232 tests total, all passing** as of this build: 222 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -152,7 +152,14 @@ section 5). `focom` went from 13 tests to 19 in the same pass:
 `deprovision_resource` delivering best-effort CREATE/DELETE
 notifications to matching subscribers (a new `inventory_subscription`
 table in `migrations/001_init.sql`, verified against a real local
-Postgres 16 instance).
+Postgres 16 instance). `sme` went from 18 tests to 22 in the next
+pass: `notify_service_change` — real event-type-filtering and
+best-effort-delivery logic that had sat uncalled since it was
+written — is now actually fired from `register_service`
+(`SERVICE_API_AVAILABLE`/`SERVICE_API_UPDATE`) and
+`deregister_service` (`SERVICE_API_UNAVAILABLE`); wiring it in also
+surfaced that its own claimed authz gate (the same one
+`discover_services` uses) was never enforced, now fixed.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
