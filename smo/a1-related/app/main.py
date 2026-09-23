@@ -75,6 +75,26 @@ def create_policy(body: CreatePolicyRequest, db: Session = Depends(get_session),
     return {"policyId": str(policy.policy_id), "enforcementStatus": policy.enforcement_status}
 
 
+@app.get("/policies")
+def query_policies(policy_type_id: str | None = None, near_rt_ric_id: str | None = None, creator_id: str | None = None, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: no policy list/query-by-filter endpoint
+    existed at all — only GET /policies/{id}, despite the mapping-store's
+    whole job (section 1.1) being to track these mappings. Filterable by
+    policyTypeId/nearRtRicId/creatorId (the "type/RIC/service" filters
+    the gap named — creatorId is the closest concept this model has to
+    "service", since it's the rApp/service that created the policy).
+    """
+    stmt = select(A1Policy)
+    if policy_type_id:
+        stmt = stmt.where(A1Policy.policy_type_id == policy_type_id)
+    if near_rt_ric_id:
+        stmt = stmt.where(A1Policy.near_rt_ric_id == near_rt_ric_id)
+    if creator_id:
+        stmt = stmt.where(A1Policy.creator_id == creator_id)
+    rows = db.scalars(stmt).all()
+    return [_policy_view(r) for r in rows]
+
+
 @app.get("/policies/{policy_id}")
 def query_policy(policy_id: uuid.UUID, db: Session = Depends(get_session)):
     p = db.get(A1Policy, policy_id)

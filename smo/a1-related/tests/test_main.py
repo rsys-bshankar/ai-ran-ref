@@ -369,3 +369,49 @@ def test_notification_delivery_survives_unreachable_subscriber(client, monkeypat
 
     resp = client.put(f"/policies/{created['policyId']}", json={})  # must not raise
     assert resp.status_code == 200
+
+
+def test_query_policies_returns_every_policy_unfiltered(client):
+    """OPEN_ITEMS.md section 5: no policy list/query-by-filter endpoint
+    existed at all — only GET /policies/{id}.
+    """
+    client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
+    client.post("/policies", json={"policyTypeId": "ORAN_TrafficSteeringPreference_6.0.1", "policyObject": {"scope": "cell2"}, "nearRtRicId": "ric2", "creatorId": "rapp-2"})
+
+    resp = client.get("/policies")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 2
+
+
+def test_query_policies_filters_by_policy_type_id(client):
+    client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
+    client.post("/policies", json={"policyTypeId": "ORAN_TrafficSteeringPreference_6.0.1", "policyObject": {"scope": "cell2"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
+
+    resp = client.get("/policies", params={"policy_type_id": "ORAN_TrafficSteeringPreference_6.0.1"})
+    types = [p["policyTypeId"] for p in resp.json()]
+    assert types == ["ORAN_TrafficSteeringPreference_6.0.1"]
+
+
+def test_query_policies_filters_by_near_rt_ric_id(client):
+    client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
+    client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell2"}, "nearRtRicId": "ric2", "creatorId": "rapp-1"})
+
+    resp = client.get("/policies", params={"near_rt_ric_id": "ric2"})
+    rics = [p["nearRtRicId"] for p in resp.json()]
+    assert rics == ["ric2"]
+
+
+def test_query_policies_filters_by_creator_id(client):
+    client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
+    client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell2"}, "nearRtRicId": "ric1", "creatorId": "rapp-2"})
+
+    resp = client.get("/policies", params={"creator_id": "rapp-2"})
+    assert len(resp.json()) == 1
+    assert resp.json()[0]["policyObject"] == {"scope": "cell2"}
+
+
+def test_query_policies_with_no_matching_filter_returns_empty_list(client):
+    client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
+
+    resp = client.get("/policies", params={"near_rt_ric_id": "ric-does-not-exist"})
+    assert resp.json() == []

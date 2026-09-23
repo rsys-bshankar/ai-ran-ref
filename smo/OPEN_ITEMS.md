@@ -148,7 +148,7 @@ Per-module unit test counts:
 | focom | 19 |
 | ran-nf-oam | 21 |
 | sme | 22 |
-| a1-related | 24 |
+| a1-related | 29 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
 `nfo`/`ran-analytics` (9 tests each) are now the
@@ -329,9 +329,12 @@ own §1/§2 items stand as-is.
   returning `{"status": "healthy"}`, same fix as ran-nf-oam's. Covered
   by
   `test_health_endpoint_answers_the_callback_url_register_ei_type_registers`.
-- No policy list/query-by-filter endpoint at all (`GET /policies`
-  filterable by type/RIC/service) — only `GET /policies/{id}` exists,
-  despite the mapping-store's whole job being to track these mappings.
+- ~~No policy list/query-by-filter endpoint at all (`GET /policies`
+  filterable by type/RIC/service) — only `GET /policies/{id}`
+  exists.~~ — **closed.** Added `GET /policies`, filterable by
+  `policy_type_id`/`near_rt_ric_id`/`creator_id` (the closest concept
+  this model has to "service" is `creator_id` — the rApp that created
+  the policy — since there's no separate service identifier).
 - No policy-type detail retrieval (`GET /policy-types/{id}`) —
   `QueryPolicyTypes` returns a hardcoded Python set (`KNOWN_POLICY_TYPES`),
   never sourced from or synced with an actual RIC; `nearRtRicId` is
@@ -715,6 +718,10 @@ own §1/§2 items stand as-is.
   unauthorized subscriber would have been notified about a service it
   couldn't even discover. 232 tests total, up from 228 (`sme` alone:
   18 -> 22).
+- `a1-related`'s missing policy list/query-by-filter endpoint (§5)
+  closed: added `GET /policies`, filterable by
+  `policy_type_id`/`near_rt_ric_id`/`creator_id`. 237 tests total, up
+  from 232 (`a1-related` alone: 24 -> 29).
 
 ## Suggested next pass (priority order)
 
@@ -756,9 +763,9 @@ own §1/§2 items stand as-is.
    All four standout items are now closed. Each module's remaining §5
    items are independently pickable — go module by module, or pick by
    theme (e.g. every module's missing GET-by-id/list/query endpoints is
-   a recurring pattern worth doing as one pass across
-   `dme`/`a1-related`/`focom`/`ai-ml-workflow`/`ran-analytics`
-   together).
+   a recurring pattern — `a1-related`'s `GET /policies` list/filter is
+   now closed; `dme`/`focom`/`ai-ml-workflow`/`ran-analytics` still
+   have theirs, worth doing as one pass across those four).
 2. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
    the alarm-storm correlation algorithm, and A1-ML operations — are not
    stakeholder-answerable the way the rest of that section was: the
