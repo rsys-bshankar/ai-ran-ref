@@ -24,8 +24,19 @@ app = FastAPI(title="RAN Analytics SMOS (MDAF)")
 
 @app.post("/producers", status_code=201)
 def register_analytics_producer(producer_id: str, analytics_type: str, dme_input_types: list[uuid.UUID], output_schema: dict, db: Session = Depends(get_session)):
-    prod = MDAFProducer(producer_id=producer_id, analytics_type=analytics_type, dme_input_types=dme_input_types, output_schema=output_schema)
-    db.add(prod)
+    """RegisterAnalyticsProducer — an update-in-place upsert on
+    (producer_id, analytics_type), not just an insert: the same producer
+    re-registering the same analytics_type (e.g. on restart) is a normal
+    occurrence, not a conflict, and previously crashed with an unhandled
+    IntegrityError on the composite primary key instead. Same shape of
+    fix as SME's RegisterService (Foundational Platform LLD section 5).
+    """
+    prod = db.get(MDAFProducer, (producer_id, analytics_type))
+    if prod is None:
+        prod = MDAFProducer(producer_id=producer_id, analytics_type=analytics_type)
+        db.add(prod)
+    prod.dme_input_types = dme_input_types
+    prod.output_schema = output_schema
     db.commit()
     R1Client().post("/sme/published-apis/v1/{}/service-apis".format(producer_id), json={
         "serviceName": f"mdaf.{analytics_type}", "producerId": producer_id, "endpoint": "internal",

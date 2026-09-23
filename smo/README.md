@@ -96,8 +96,8 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**110 tests total, all passing** as of this build: 100 unit tests across all
-fourteen modules plus the mock, and 10 integration tests proving real
+**127 tests total, all passing** as of this build: 117 unit tests across
+all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard, upgrade
 auto-rollback, the `PARTIAL_SUCCESS` decomposed-PATCH aggregation, the O1
 Adaptor endpoint health lifecycle, the full AI/ML certification pipeline
@@ -107,7 +107,9 @@ Related's real round trip to the mock Near-RT RIC (both `ENFORCED` and
 Near-RT RIC) proving the dispatch table isn't calling into a stub, and a
 full onboard-to-deploy chain (Onboarding → NFO → rApp Management) proving
 NFO's real `NFDeploymentDescriptor` row — not `packageId` — makes it all
-the way through.
+the way through. so-smos, ran-analytics, and focom — previously the
+thinnest-covered modules — now have route-level coverage too, not just
+dispatch-logic coverage, closing OPEN_ITEMS.md's test-coverage-parity item.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
@@ -169,6 +171,19 @@ Writing the tests, not just the code, is what surfaced these:
   Onboarding's `onboarding-status` response. See
   `tests_integration/test_cross_service.py`'s
   `test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_descriptor`.
+- **SO SMOS's `CancelOrder` never actually persisted the `CANCELLED`
+  status** — it mutated the `steps` JSON column's list in place, which
+  SQLAlchemy's change detection never tracks without
+  `sqlalchemy.ext.mutable`; `commit()`'s default expire-on-commit then
+  re-fetched the unchanged row, silently discarding the edit every time.
+  Fixed by reassigning `order.steps` to a new list instead of mutating
+  the old one's dicts. Caught while adding the route its own test suite
+  never previously covered — no test had exercised `cancel_order` at all.
+- **RAN Analytics' `RegisterAnalyticsProducer` crashed on the same
+  producer re-registering the same `analyticsType`** — an unhandled
+  `IntegrityError` on the `(producer_id, analytics_type)` composite
+  primary key, the same shape of bug as SME's `RegisterService` had.
+  Fixed with the same update-in-place upsert.
 
 ## What's deliberately incomplete
 
