@@ -142,10 +142,10 @@ Per-module unit test counts:
 | sa-smos | 12 |
 | so-smos | 13 |
 | ran-analytics | 17 |
-| onboarding | 18 |
 | ai-ml-workflow | 20 |
 | sme | 22 |
 | dme | 23 |
+| onboarding | 26 |
 | ran-nf-oam | 28 |
 | a1-related | 29 |
 | focom | 34 |
@@ -262,13 +262,36 @@ own §1/§2 items stand as-is.
 
 ### Onboarding + rApp Management (`onboarding/`, `rapp-mgmt/`) — vs `nonrtric-plt-rappmanager`
 
-- **Missing package-level priming stage** — the reference has a distinct
-  COMMISSIONED→PRIMING→PRIMED→DEPRIMING lifecycle that pre-provisions
-  ACM composition/DME/SME resource declarations *before* any instance
-  deploys, and blocks deprime/delete while instances reference the
-  package. Our `onboarding` goes ONBOARDING→AVAILABLE directly and does
-  all provisioning inline per-instance in `rapp-mgmt`, collapsing a real
-  two-phase lifecycle into one.
+- ~~**Missing package-level priming stage** — the reference has a
+  distinct COMMISSIONED→PRIMING→PRIMED→DEPRIMING lifecycle that
+  pre-provisions ACM composition/DME/SME resource declarations
+  *before* any instance deploys, and blocks deprime/delete while
+  instances reference the package. Our `onboarding` goes
+  ONBOARDING→AVAILABLE directly and does all provisioning inline
+  per-instance in `rapp-mgmt`, collapsing a real two-phase lifecycle
+  into one.~~ — **closed, partially.** Added the real
+  `PRIMING`/`PRIMED`/`DEPRIMING` states and `POST
+  /packages/{id}/prime`/`POST /packages/{id}/deprime` (our `AVAILABLE`
+  plays the reference's `COMMISSIONED` role). `deprime` is genuinely
+  blocked while any active `PackageUsageRegistration` exists (the
+  reference's own deprimeRapp guard), and `DELETE` has no edge from
+  `PRIMED` at all — matching the reference's own `deleteRapp` guard
+  ("the rApp is not in COMMISSIONED state") — so deleting a primed
+  package now genuinely requires depriming first, not just as a
+  documented rule. Real ACM/DME/SME resource pre-provisioning behind
+  `PRIME` stays out of scope (same elision as this build's other
+  southbound calls), so both transitions complete synchronously
+  within one request rather than staying observably
+  `PRIMING`/`DEPRIMING`. Deliberately **not** changed:
+  `rapp-mgmt`'s `CreateInstance` still gates on `AVAILABLE`, not
+  `PRIMED` — that's an already-confirmed, explicitly-cited design
+  decision (D-SEC-RAPP-1) in `rapp-mgmt/app/main.py`, not something
+  this pass should silently override. The real causal link the
+  reference has ("primed resources exist before an instance can
+  deploy against them") is therefore still not enforced — the
+  lifecycle and its blocking semantics are real, but nothing yet
+  requires a package to have been primed before an instance is
+  created against it.
 - Package validation is much thinner — the reference runs an ordered
   validator chain (filename convention, required
   `Definitions/acm_composition.json`, ASD descriptor parsing with real
@@ -806,6 +829,16 @@ own §1/§2 items stand as-is.
   `perceivedSeverity=CLEARED` shape) plus `clearedAt`/`clearUserId`
   metadata. Verified against a real local Postgres 16 instance. 277
   tests total, up from 274 (`ran-nf-oam` alone: 25 -> 28).
+- `onboarding`'s missing package-level priming stage (§5) closed,
+  partially: added real `PRIMING`/`PRIMED`/`DEPRIMING` states and
+  `POST /packages/{id}/prime`/`POST /packages/{id}/deprime`, with
+  `deprime` genuinely blocked by active usage registrations and
+  `DELETE` having no edge from `PRIMED` at all (matches the
+  reference's own guards). Deliberately not changed:
+  `rapp-mgmt`'s `CreateInstance` still gates on `AVAILABLE`, not
+  `PRIMED` — an already-confirmed design decision (D-SEC-RAPP-1), not
+  overridden by this pass. Verified against a real local Postgres 16
+  instance. 285 tests total, up from 277 (`onboarding` alone: 18 -> 26).
 
 ## Suggested next pass (priority order)
 

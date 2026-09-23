@@ -96,7 +96,7 @@ CREATE TABLE application_package (
   vendor                     TEXT,
   version                     TEXT NOT NULL,
   state                         TEXT NOT NULL DEFAULT 'ONBOARDING'
-                                   CHECK (state IN ('ONBOARDING','AVAILABLE','DEPRECATED','DELETING','FAILED')),
+                                   CHECK (state IN ('ONBOARDING','AVAILABLE','PRIMING','PRIMED','DEPRIMING','DEPRECATED','DELETING','FAILED')),
   scheduled_deletion_date        TIMESTAMPTZ,
   parent_package_id                UUID REFERENCES application_package(package_id),
   manifest_ref                       TEXT NOT NULL,

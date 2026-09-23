@@ -100,3 +100,53 @@ def test_no_transition_from_failed(db):
     pkg = make_package(db, state=PackageState.FAILED)
     with pytest.raises(IllegalTransition):
         ONBOARDING_FSM.fire(PackageState.FAILED, PackageEvent.VALIDATE_OK, db=db, package=pkg)
+
+
+def test_prime_then_deprime_round_trip(db):
+    """OPEN_ITEMS.md section 5: the reference's real
+    COMMISSIONED->PRIMING->PRIMED->DEPRIMING lifecycle, missing
+    entirely before this pass.
+    """
+    pkg = make_package(db, state=PackageState.AVAILABLE)
+    s = ONBOARDING_FSM.fire(PackageState.AVAILABLE, PackageEvent.PRIME, db=db, package=pkg)
+    assert s == PackageState.PRIMING
+    s = ONBOARDING_FSM.fire(s, PackageEvent.PRIME_COMPLETE, db=db, package=pkg)
+    assert s == PackageState.PRIMED
+
+    s = ONBOARDING_FSM.fire(s, PackageEvent.DEPRIME, db=db, package=pkg)
+    assert s == PackageState.DEPRIMING
+    s = ONBOARDING_FSM.fire(s, PackageEvent.DEPRIME_COMPLETE, db=db, package=pkg)
+    assert s == PackageState.AVAILABLE
+
+
+def test_prime_from_onboarding_is_illegal(db):
+    """No PRIME edge exists from ONBOARDING (or DEPRECATED, DELETING,
+    FAILED) — only AVAILABLE. A package that never reached AVAILABLE
+    can't be primed.
+    """
+    pkg = make_package(db, state=PackageState.ONBOARDING)
+    with pytest.raises(IllegalTransition):
+        ONBOARDING_FSM.fire(PackageState.ONBOARDING, PackageEvent.PRIME, db=db, package=pkg)
+
+
+def test_deprime_blocked_by_active_usage_registration(db):
+    """The reference's own deprimeRapp guard: 'Unable to deprime as there
+    are active rapp instances.'
+    """
+    pkg = make_package(db, state=PackageState.PRIMED)
+    db.add(PackageUsageRegistration(package_id=pkg.package_id, consumer_id="some-rapp", stopped_at=None))
+    db.flush()
+
+    with pytest.raises(IllegalTransition):
+        ONBOARDING_FSM.fire(PackageState.PRIMED, PackageEvent.DEPRIME, db=db, package=pkg)
+
+
+def test_delete_has_no_edge_from_primed(db):
+    """Matches the reference's own deleteRapp guard: delete is only
+    permitted from COMMISSIONED (our AVAILABLE) — a PRIMED package
+    must be deprimed first, same as the reference's error
+    'the rApp is not in COMMISSIONED state'.
+    """
+    pkg = make_package(db, state=PackageState.PRIMED)
+    with pytest.raises(IllegalTransition):
+        ONBOARDING_FSM.fire(PackageState.PRIMED, PackageEvent.DELETE, db=db, package=pkg)

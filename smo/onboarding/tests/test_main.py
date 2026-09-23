@@ -215,3 +215,53 @@ def test_delete_succeeds_once_usage_registration_is_stopped(client, monkeypatch)
     resp = client.delete(f"/packages/{package_id}")
     assert resp.status_code == 200
     assert resp.json()["state"] == "DELETING"
+
+
+def test_prime_moves_available_package_to_primed(client, monkeypatch):
+    """OPEN_ITEMS.md section 5: the reference's real
+    COMMISSIONED->PRIMING->PRIMED lifecycle was missing entirely —
+    this build went ONBOARDING->AVAILABLE directly.
+    """
+    package_id = _make_available_package(client, monkeypatch)
+
+    resp = client.post(f"/packages/{package_id}/prime")
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "PRIMED"
+
+
+def test_deprime_moves_primed_package_back_to_available(client, monkeypatch):
+    package_id = _make_available_package(client, monkeypatch)
+    client.post(f"/packages/{package_id}/prime")
+
+    resp = client.post(f"/packages/{package_id}/deprime")
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "AVAILABLE"
+
+
+def test_deprime_blocked_by_active_usage_registration(client, monkeypatch):
+    """The reference's own deprimeRapp guard: 'Unable to deprime as there
+    are active rapp instances.'
+    """
+    package_id = _make_available_package(client, monkeypatch)
+    client.post(f"/packages/{package_id}/prime")
+    client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "instance-1"})
+
+    resp = client.post(f"/packages/{package_id}/deprime")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "SERVICE_NAME_CONFLICT"
+
+    with_package = client.get("/packages", params={"state": "PRIMED"}).json()
+    assert [p["packageId"] for p in with_package] == [package_id]
+
+
+def test_deprime_succeeds_once_usage_registration_is_stopped(client, monkeypatch):
+    package_id = _make_available_package(client, monkeypatch)
+    client.post(f"/packages/{package_id}/prime")
+    reg = client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "instance-1"}).json()
+    client.post(f"/packages/{package_id}/usage/{reg['registrationId']}/stop")
+
+    resp = client.post(f"/packages/{package_id}/deprime")
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "AVAILABLE"
+
+
