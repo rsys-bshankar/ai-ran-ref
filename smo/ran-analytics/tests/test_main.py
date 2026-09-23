@@ -162,3 +162,91 @@ def test_publish_report_persists_scope(client, db_session_factory):
     with db_session_factory() as session:
         report = session.get(MDAFReport, uuid.UUID(report_id))
         assert report.scope == {"cellId": "cell-42"}
+
+
+def test_list_producers_returns_registered_producer(client):
+    """OPEN_ITEMS.md section 5: no list/query endpoint for registered
+    producers existed at all — the reference defines this route (even
+    if its own implementation is a no-op stub).
+    """
+    dme_type = str(uuid.uuid4())
+    client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
+                json={"dme_input_types": [dme_type], "output_schema": {"type": "object"}})
+
+    resp = client.get("/producers")
+    assert resp.status_code == 200
+    producers = resp.json()
+    assert len(producers) == 1
+    assert producers[0]["producerId"] == "rapp-mdaf-1"
+    assert producers[0]["analyticsType"] == "coverage-issue-analysis"
+    assert producers[0]["dmeInputTypes"] == [dme_type]
+
+
+def test_list_producers_filters_by_analytics_type(client):
+    client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
+                json={"dme_input_types": [], "output_schema": {}})
+    client.post("/producers", params={"producer_id": "rapp-mdaf-2", "analytics_type": "resource-utilization"},
+                json={"dme_input_types": [], "output_schema": {}})
+
+    resp = client.get("/producers", params={"analytics_type": "resource-utilization"})
+    ids = [p["producerId"] for p in resp.json()]
+    assert ids == ["rapp-mdaf-2"]
+
+
+def test_list_producers_filters_by_producer_id(client):
+    client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
+                json={"dme_input_types": [], "output_schema": {}})
+    client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "resource-utilization"},
+                json={"dme_input_types": [], "output_schema": {}})
+    client.post("/producers", params={"producer_id": "rapp-mdaf-2", "analytics_type": "resource-utilization"},
+                json={"dme_input_types": [], "output_schema": {}})
+
+    resp = client.get("/producers", params={"producer_id": "rapp-mdaf-1"})
+    assert len(resp.json()) == 2
+    assert {p["producerId"] for p in resp.json()} == {"rapp-mdaf-1"}
+
+
+def test_list_producers_returns_empty_list_when_none_registered(client):
+    resp = client.get("/producers")
+    assert resp.json() == []
+
+
+def test_list_subscriptions_returns_active_subscription(client):
+    """OPEN_ITEMS.md section 5: no list/query endpoint for active
+    subscriptions existed at all — same gap as list_analytics_producers.
+    """
+    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"})
+
+    resp = client.get("/subscriptions")
+    assert resp.status_code == 200
+    subs = resp.json()
+    assert len(subs) == 1
+    assert subs[0]["analyticsType"] == "coverage-issue-analysis"
+    assert subs[0]["requestedBy"] == "sa-smos"
+
+
+def test_list_subscriptions_filters_by_analytics_type(client):
+    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"})
+    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"})
+
+    resp = client.get("/subscriptions", params={"analytics_type": "resource-utilization"})
+    requesters = [s["requestedBy"] for s in resp.json()]
+    assert requesters == ["nfo"]
+
+
+def test_list_subscriptions_filters_by_requested_by(client):
+    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"})
+    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "sa-smos"})
+    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"})
+
+    resp = client.get("/subscriptions", params={"requested_by": "sa-smos"})
+    assert len(resp.json()) == 2
+    assert {s["requestedBy"] for s in resp.json()} == {"sa-smos"}
+
+
+def test_list_subscriptions_excludes_unsubscribed(client):
+    sub = client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"}).json()
+    client.delete(f"/subscriptions/{sub['subscriptionId']}")
+
+    resp = client.get("/subscriptions")
+    assert resp.json() == []
