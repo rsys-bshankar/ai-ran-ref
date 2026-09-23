@@ -152,6 +152,86 @@ def test_discover_services_filters_by_api_version(client):
     assert versions == ["2.0"]
 
 
+def test_register_service_stores_and_exposes_aef_profiles(client):
+    """OPEN_ITEMS.md section 5: ServiceProfile was flattened — no
+    aefProfiles (multiple exposing functions per API), apiSuppFeats, or
+    shareableInfo (cross-provider sharing flag).
+    """
+    aef_profiles = [{
+        "aefId": "aef-1", "protocol": "HTTP_2", "dataFormat": "JSON",
+        "versions": [{"apiVersion": "v1", "resources": [{"resourceName": "counters", "commType": "REQUEST_RESPONSE"}]}],
+    }]
+    resp = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(
+        aefProfiles=aef_profiles, apiSuppFeats="1f", shareableInfo={"isShareable": True, "capifProvDoms": ["domain-a"]},
+    ))
+    service_id = resp.json()["serviceId"]
+
+    view = client.get("/service-apis/v1/allServiceAPIs", params={"api_invoker_id": "anyone"}).json()[0]
+    assert view["serviceId"] == service_id
+    assert view["aefProfiles"] == aef_profiles
+    assert view["apiSuppFeats"] == "1f"
+    assert view["shareableInfo"] == {"isShareable": True, "capifProvDoms": ["domain-a"]}
+
+
+def test_discover_services_filters_by_aef_id(client):
+    """OPEN_ITEMS.md section 5: discover_services only filtered on
+    api_name/api_version — the reference (discoverservice.go's
+    matchesFilter) also filters against each service's AefProfiles.
+    """
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(
+        service_name="watched", aefProfiles=[{"aefId": "aef-1", "versions": []}],
+    ))
+    client.post("/published-apis/v1/rapp-2/service-apis", json=register_body(
+        service_name="other", producer="rapp-2", aefProfiles=[{"aefId": "aef-2", "versions": []}],
+    ))
+
+    resp = client.get("/service-apis/v1/allServiceAPIs", params={"api_invoker_id": "anyone", "aef_id": "aef-1"})
+    names = [s["serviceName"] for s in resp.json()]
+    assert names == ["watched"]
+
+
+def test_discover_services_filters_by_protocol_and_data_format(client):
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(
+        service_name="http-service", aefProfiles=[{"aefId": "aef-1", "protocol": "HTTP_2", "dataFormat": "JSON", "versions": []}],
+    ))
+    client.post("/published-apis/v1/rapp-2/service-apis", json=register_body(
+        service_name="other-service", producer="rapp-2", aefProfiles=[{"aefId": "aef-2", "protocol": "HTTP_1_1", "dataFormat": "XML", "versions": []}],
+    ))
+
+    by_protocol = client.get("/service-apis/v1/allServiceAPIs", params={"api_invoker_id": "anyone", "protocol": "HTTP_2"})
+    assert [s["serviceName"] for s in by_protocol.json()] == ["http-service"]
+
+    by_data_format = client.get("/service-apis/v1/allServiceAPIs", params={"api_invoker_id": "anyone", "data_format": "XML"})
+    assert [s["serviceName"] for s in by_data_format.json()] == ["other-service"]
+
+
+def test_discover_services_filters_by_comm_type_across_nested_resources(client):
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(
+        service_name="streaming-service", aefProfiles=[{
+            "aefId": "aef-1", "versions": [{"apiVersion": "v1", "resources": [{"resourceName": "r1", "commType": "SUBSCRIBE_NOTIFY"}]}],
+        }],
+    ))
+    client.post("/published-apis/v1/rapp-2/service-apis", json=register_body(
+        service_name="request-service", producer="rapp-2", aefProfiles=[{
+            "aefId": "aef-2", "versions": [{"apiVersion": "v1", "resources": [{"resourceName": "r1", "commType": "REQUEST_RESPONSE"}]}],
+        }],
+    ))
+
+    resp = client.get("/service-apis/v1/allServiceAPIs", params={"api_invoker_id": "anyone", "comm_type": "SUBSCRIBE_NOTIFY"})
+    assert [s["serviceName"] for s in resp.json()] == ["streaming-service"]
+
+
+def test_discover_services_with_no_aef_filters_returns_services_without_aef_profiles(client):
+    """A service registered without any aefProfiles at all (every service
+    in this build before this pass) must still be discoverable when no
+    aef-level filter is given.
+    """
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body())
+
+    resp = client.get("/service-apis/v1/allServiceAPIs", params={"api_invoker_id": "anyone"})
+    assert len(resp.json()) == 1
+
+
 def test_unsubscribe_events_removes_subscription(client, db_session_factory):
     """unsubscribe_events (DELETE /capif-events/v1/{subscriber}/subscriptions/{id})
     had zero test coverage at all before this pass.

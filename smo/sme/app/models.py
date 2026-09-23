@@ -26,6 +26,18 @@ class ServiceProfile(Base):
     service_capabilities: Mapped[dict | None] = mapped_column(JSON)
     selection_criteria: Mapped[dict | None] = mapped_column(JSON)
     module_scope: Mapped[str] = mapped_column(String, nullable=False)
+    # NEW section 5: the reference's own ServiceAPIDescription carries these
+    # three — ServiceProfile was flattened, missing all of them. Stored as
+    # JSON rather than normalized child tables (aefProfiles is registered
+    # and read back wholesale, never independently CRUD'd — same adaptation
+    # as DMEType.collection_spec/TrainingJob.required_data elsewhere in this
+    # build). Only the fields discover_services' own new filters need are
+    # kept (aefId, protocol, dataFormat, versions[].resources[].commType) —
+    # not the full CAPIF AefProfile/Resource schema (aefLocation,
+    # domainName, interfaceDescriptions, custOperations, etc.).
+    aef_profiles: Mapped[list[dict] | None] = mapped_column(JSON)
+    api_supp_feats: Mapped[str | None] = mapped_column(String)
+    shareable_info: Mapped[dict | None] = mapped_column(JSON)
 
     authz_policy: Mapped["ServiceAuthzPolicy"] = relationship(back_populates="service", uselist=False, cascade="all, delete-orphan")
 

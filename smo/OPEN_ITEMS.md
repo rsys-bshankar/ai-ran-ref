@@ -142,8 +142,8 @@ Per-module unit test counts:
 | mock-near-rt-ric | 16 |
 | ran-analytics | 22 |
 | nfo | 23 |
-| sme | 24 |
 | ran-nf-oam | 29 |
+| sme | 29 |
 | onboarding | 30 |
 | a1-related | 30 |
 | ai-ml-workflow | 35 |
@@ -171,8 +171,10 @@ then `ran-analytics`'s real subscriber-notification delivery in
 `publish_report` (+5, see §5), then `dme`'s `PUT /data-jobs/{id}`
 (+5), its `/type-subscriptions` mechanism (+9), and real
 job-definition JSON Schema validation (+5, see §5), then
-`onboarding`'s package-validation hardening (+4), and finally `sme`'s
-`apiIds` event-subscription filter (+2, see §5).
+`onboarding`'s package-validation hardening (+4), `sme`'s `apiIds`
+event-subscription filter (+2), and finally `sme`'s real
+`aefProfiles`/`apiSuppFeats`/`shareableInfo` fields plus
+`discover_services`' matching filters (+5, see §5).
 
 ## 5. O-RAN-SC completeness gaps (repo-audited)
 
@@ -237,13 +239,29 @@ own §1/§2 items stand as-is.
   payload to filter on at all. `aefId` needs `aefProfiles`, which
   `ServiceProfile` doesn't model — the separate "flattened
   `ServiceProfile`" gap immediately below.
-- `discover_services` only filters on `api_name`/`api_version` — the
+- ~~`discover_services` only filters on `api_name`/`api_version` — the
   reference also filters on category, `aefId`, protocol, data format,
   and comm type, against a nested `AefProfiles → Versions → Resources`
-  structure ours has no equivalent of.
-- `ServiceProfile` is flattened — no `aefProfiles` (multiple exposing
+  structure ours has no equivalent of.~~ — **closed, partially.**
+  `aefId`/`protocol`/`dataFormat`/`commType` are now real filters
+  (`discoverservice.go`'s `matchesFilter`/`checkAefId`/`checkProtocol`/
+  `checkDataFormat`/`checkVersionAndCommType`), walking the new
+  `aef_profiles` field below. `category` stays unfiltered — this
+  build's `ServiceProfile` has no category concept to filter on at all
+  (not just an unwired filter param, an entirely absent one).
+- ~~`ServiceProfile` is flattened — no `aefProfiles` (multiple exposing
   functions per API), `apiSuppFeats`, or `shareableInfo` (cross-provider
-  sharing flag).
+  sharing flag).~~ — **closed.** Added all three
+  (`ServiceAPIDescription`'s own fields) to `ServiceRegistration`/
+  `ServiceProfile`, registered and read back wholesale. `aefProfiles`
+  is stored as JSON rather than normalized `AefProfile`/`Version`/
+  `Resource` child tables — it's registered and queried as one unit,
+  never independently CRUD'd, the same adaptation this build already
+  uses for `DMEType.collection_spec`/`TrainingJob.required_data`. Only
+  the fields `discover_services`' own new filters need are kept
+  (`aefId`, `protocol`, `dataFormat`, per-version `resources[].commType`)
+  — not the full CAPIF `AefProfile`/`Resource` schema (`aefLocation`,
+  `domainName`, `interfaceDescriptions`, `custOperations`, etc.).
 - `register_service` accepts any `apf_id` with no check that it's an
   actual registered publisher — a direct consequence of provider
   enrolment being unmodeled (see below).
@@ -1188,6 +1206,17 @@ own §1/§2 items stand as-is.
   concrete reason (no invoker-onboarding events, no `aefProfiles`
   concept), not dropped silently. 368 tests total, up from 366 (`sme`
   alone: 22 -> 24).
+- SME's flattened `ServiceProfile` (§5) closed: added real
+  `aefProfiles`/`apiSuppFeats`/`shareableInfo` fields (the reference's
+  own `ServiceAPIDescription` fields), stored and read back wholesale
+  as JSON rather than normalized child tables — the same adaptation
+  already used elsewhere in this build for data that's registered and
+  queried as one unit, never independently CRUD'd. `discover_services`'
+  own filtering thinness (§5) closed alongside it, partially: `aefId`/
+  `protocol`/`dataFormat`/`commType` are now real filters walking the
+  new field; `category` stays unfiltered since this build has no
+  category concept on `ServiceProfile` at all. 373 tests total, up
+  from 368 (`sme` alone: 24 -> 29).
 
 ## Suggested next pass (priority order)
 
