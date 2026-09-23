@@ -66,10 +66,18 @@ def bootstrap():
 
 @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def proxy(full_path: str, request: Request):
-    prefix = "/" + full_path.split("/")[0]
+    segments = full_path.split("/", 1)
+    prefix = "/" + segments[0]
     backend = ROUTES.get(prefix)
     if backend is None:
         return JSONResponse(status_code=404, content={"title": "NO_ROUTE", "status": 404})
+
+    # Strip the module prefix before forwarding — no backend service's own
+    # routes carry it (e.g. SME's real route is /published-apis/v1/...,
+    # never /sme/published-apis/v1/...). Forwarding the prefix through
+    # unstripped would 404 against every real backend; caught while
+    # building the cross-service integration test harness.
+    rest_of_path = segments[1] if len(segments) > 1 else ""
 
     # TLS is terminated at the ingress in front of this container (Phase 1: docker-compose
     # network boundary); OAuth2.0 validation happens here before forwarding, per
@@ -79,7 +87,7 @@ async def proxy(full_path: str, request: Request):
     async with httpx.AsyncClient() as client:
         upstream = await client.request(
             request.method,
-            f"{backend}/{full_path}",
+            f"{backend}/{rest_of_path}",
             headers={k: v for k, v in request.headers.items() if k.lower() != "host"},
             params=request.query_params,
             content=body,

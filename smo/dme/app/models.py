@@ -57,7 +57,7 @@ class DataOffer(Base):
 
     offer_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("dme_type.dme_type_id"))
-    data_delivery_methods_offered: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
+    data_delivery_methods_offered: Mapped[list[str]] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False)
     data_delivery_method_committed: Mapped[str | None] = mapped_column(String)
     data_availability_notification_uri: Mapped[str | None] = mapped_column(String)  # REVERSED direction, section 3.5
     data_offer_termination_notification_uri: Mapped[str] = mapped_column(String, nullable=False)

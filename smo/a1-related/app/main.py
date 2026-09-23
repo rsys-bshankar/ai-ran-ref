@@ -2,8 +2,10 @@
 
 SMO Design v1.3 section 3.9, corrected by A1 Related LLD: the mapping-store
 role (section 1.1) is what's actually in scope — enforcementStatus is a
-local mirror, never computed here. The five A1-ML operations are dormant
-(section 0) — not implemented in this reference build.
+local mirror, refreshed from the (mocked) Near-RT RIC via
+a1_termination_client rather than fabricated locally. The five A1-ML
+operations are dormant (section 0) — not implemented in this reference
+build.
 """
 
 import uuid
@@ -17,11 +19,16 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 
+from .a1_termination_client import A1TerminationClient
 from .models import A1EIType, A1Policy, PolicyStatusSubscription
 
 app = FastAPI(title="A1 Related SMOS")
 
 KNOWN_POLICY_TYPES = {"ORAN_QoSandTSP_6.0.1", "ORAN_TrafficSteeringPreference_6.0.1"}  # A1TD clause 7.2 catalog sample
+
+
+def get_a1_termination_client() -> A1TerminationClient:
+    return A1TerminationClient()
 
 
 class CreatePolicyRequest(BaseModel):
@@ -45,24 +52,26 @@ def query_policy_types(near_rt_ric_id: str | None = None):
 
 
 @app.post("/policies", status_code=201)
-def create_policy(body: CreatePolicyRequest, db: Session = Depends(get_session)):
+def create_policy(body: CreatePolicyRequest, db: Session = Depends(get_session), a1t: A1TerminationClient = Depends(get_a1_termination_client)):
     """Create A1 policy — section 1.1's confirmed thin-envelope sequence:
-    AuthZ (via SME, elided in this reference), generate policyId, [ref: A1
-    interface call, out of scope], store the policyId<->nearRtRicId
-    mapping. That mapping IS the actual in-scope substance.
+    AuthZ (via SME, elided in this reference), generate policyId, the
+    A1UCR clause 6.3 call to the Near-RT RIC (a1_termination_client, the
+    mock endpoint per SMO Design v1.3 section 3.9, closes RT-7), then
+    store the policyId<->nearRtRicId mapping AND the resulting
+    enforcement status. The mapping-store role is still the actual
+    in-scope substance — the southbound call is a real dependency now,
+    not silently elided.
     """
     if body.policyTypeId not in KNOWN_POLICY_TYPES:
         raise framework_error(FrameworkError.POLICY_TYPE_NOT_SUPPORTED, detail=body.policyTypeId)
+    result = a1t.create_policy(body.nearRtRicId, body.policyTypeId, body.policyObject)
     policy = A1Policy(policy_type_id=body.policyTypeId, creator_id=body.creatorId,
                        near_rt_ric_id=body.nearRtRicId, policy_object=body.policyObject,
-                       enforcement_status="PENDING")
+                       near_rt_ric_policy_id=result.get("policyId"),
+                       enforcement_status=result["enforcementStatus"], rejection_reason=result.get("rejectionReason"))
     db.add(policy)
     db.commit()
-    # Phase 1: the actual A1UCR clause 6.3 call to the Near-RT RIC is out of
-    # scope — mock endpoint per SMO Design v1.3 section 3.9 (closes RT-7).
-    # enforcement_status stays PENDING until a status-sync mechanism (also
-    # out of this reference build's scope) updates it.
-    return {"policyId": str(policy.policy_id)}
+    return {"policyId": str(policy.policy_id), "enforcementStatus": policy.enforcement_status}
 
 
 @app.get("/policies/{policy_id}")
@@ -72,25 +81,37 @@ def query_policy(policy_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 @app.put("/policies/{policy_id}")
-def update_policy(policy_id: uuid.UUID, policy_object: dict, db: Session = Depends(get_session)):
+def update_policy(policy_id: uuid.UUID, policy_object: dict, db: Session = Depends(get_session), a1t: A1TerminationClient = Depends(get_a1_termination_client)):
     p = db.get(A1Policy, policy_id)
+    result = a1t.update_policy(p.near_rt_ric_policy_id, policy_object)
     p.policy_object = policy_object
+    p.enforcement_status = result["enforcementStatus"]
     db.commit()
     return _policy_view(p)
 
 
 @app.delete("/policies/{policy_id}", status_code=204)
-def delete_policy(policy_id: uuid.UUID, db: Session = Depends(get_session)):
+def delete_policy(policy_id: uuid.UUID, db: Session = Depends(get_session), a1t: A1TerminationClient = Depends(get_a1_termination_client)):
     p = db.get(A1Policy, policy_id)
     if p is not None:
+        a1t.delete_policy(p.near_rt_ric_policy_id)
         db.delete(p)
         db.commit()
 
 
 @app.get("/policies/{policy_id}/status")
-def query_policy_status(policy_id: uuid.UUID, db: Session = Depends(get_session)):
+def query_policy_status(policy_id: uuid.UUID, db: Session = Depends(get_session), a1t: A1TerminationClient = Depends(get_a1_termination_client)):
+    """R1GAP's cache/pass-through duality (section 1.1): refresh the local
+    mirror from a live Near-RT RIC call rather than trusting a
+    potentially-stale cached value indefinitely. Uses near_rt_ric_policy_id
+    — the Near-RT RIC's OWN identifier for this policy, not our R1-facing
+    policy_id (see the model's docstring; caught by the integration suite).
+    """
     p = db.get(A1Policy, policy_id)
-    return {"policyId": str(p.policy_id), "enforcementStatus": p.enforcement_status}  # cached, per section 1.1
+    result = a1t.query_policy_status(p.near_rt_ric_policy_id)
+    p.enforcement_status = result["enforcementStatus"]
+    db.commit()
+    return {"policyId": str(p.policy_id), "enforcementStatus": p.enforcement_status}
 
 
 @app.post("/policies/subscriptions", status_code=201)
@@ -130,7 +151,7 @@ def register_ei_type(ei_type_id: str, registered_by: str, dme_namespace: str, dm
         "dataProductionSchema": {}, "producerHealthCallbackUrl": "http://a1-related:8000/health",
     })
     dme_type_id = dme_resp.json()["registrationId"]
-    ei = A1EIType(ei_type_id=ei_type_id, registered_by=registered_by, ei_source_dme_type_id=dme_type_id)
+    ei = A1EIType(ei_type_id=ei_type_id, registered_by=registered_by, ei_source_dme_type_id=uuid.UUID(dme_type_id))
     db.add(ei)
     db.commit()
     return {"eiTypeId": ei.ei_type_id, "eiSourceDmeTypeId": dme_type_id}

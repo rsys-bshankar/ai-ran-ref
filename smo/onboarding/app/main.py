@@ -11,6 +11,13 @@ import zipfile
 from io import BytesIO
 
 import httpx
+
+# What counts as "this package fails to validate" — broadened beyond
+# malformed-zip/missing-entry to include the location being unreachable
+# at all (caught while integration-testing: an unreachable location
+# previously crashed OnboardPackage with an unhandled 500 instead of
+# routing to FAILED, which is itself a real, expected outcome here).
+ONBOARD_VALIDATION_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, httpx.HTTPError)
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -56,7 +63,7 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
         for path, access_url in artifacts:
             db.add(Artifact(package_id=pkg.package_id, path=path, access_url=access_url))
         new_state = ONBOARDING_FSM.fire(PackageState.ONBOARDING, PackageEvent.VALIDATE_OK, db=db, package=pkg)
-    except (zipfile.BadZipFile, KeyError, FileNotFoundError):
+    except ONBOARD_VALIDATION_FAILURES:
         new_state = ONBOARDING_FSM.fire(PackageState.ONBOARDING, PackageEvent.VALIDATE_FAILED, db=db, package=pkg)
 
     pkg.state = new_state

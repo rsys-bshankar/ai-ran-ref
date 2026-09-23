@@ -14,7 +14,6 @@ import httpx
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
@@ -47,25 +46,34 @@ class EventSubscriptionRequest(BaseModel):
 def register_service(apf_id: str, body: ServiceRegistration, db: Session = Depends(get_session)):
     """RegisterService. apfId == producerId == rAppId (Foundational Platform
     LLD section 1) — identity.py's equivalence, enforced here.
+
+    Section 2.3's conflict rule realized correctly: serviceName is globally
+    unique. The SAME producer re-registering the same name updates in
+    place (idempotent); a DIFFERENT producer registering that name is
+    SERVICE_NAME_CONFLICT.
     """
-    profile = ServiceProfile(
-        service_name=body.serviceName,
-        producer_id=apf_id,
-        endpoint=body.endpoint,
-        version=body.version,
-        full_api_versions=body.fullApiVersions,
-        service_capabilities=body.serviceCapabilities,
-        selection_criteria=body.selectionCriteria,
-        module_scope=body.moduleScope,
-    )
-    db.add(profile)
-    try:
-        db.flush()
-    except IntegrityError:
-        db.rollback()
+    existing = db.scalar(select(ServiceProfile).where(ServiceProfile.service_name == body.serviceName))
+    if existing is not None and existing.producer_id != apf_id:
         raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail=f"{body.serviceName} already registered by a different producer")
 
-    db.add(ServiceAuthzPolicy(service_id=profile.service_id, allowed_consumers=body.allowedConsumers))
+    if existing is not None:
+        profile = existing
+        profile.endpoint, profile.version = body.endpoint, body.version
+        profile.full_api_versions, profile.service_capabilities = body.fullApiVersions, body.serviceCapabilities
+        profile.selection_criteria, profile.module_scope = body.selectionCriteria, body.moduleScope
+    else:
+        profile = ServiceProfile(
+            service_name=body.serviceName, producer_id=apf_id, endpoint=body.endpoint, version=body.version,
+            full_api_versions=body.fullApiVersions, service_capabilities=body.serviceCapabilities,
+            selection_criteria=body.selectionCriteria, module_scope=body.moduleScope,
+        )
+        db.add(profile)
+    db.flush()
+
+    if profile.authz_policy is None:
+        db.add(ServiceAuthzPolicy(service_id=profile.service_id, allowed_consumers=body.allowedConsumers))
+    else:
+        profile.authz_policy.allowed_consumers = body.allowedConsumers
     db.commit()
     return {"serviceId": str(profile.service_id)}
 

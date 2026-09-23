@@ -21,7 +21,11 @@ CREATE TABLE service_profile (
   service_capabilities      JSONB,             -- generic extension point (e.g. DME's supportedDataDeliveryModes)
   selection_criteria         JSONB,
   module_scope                 TEXT NOT NULL,
-  UNIQUE (service_name, producer_id)
+  -- UNIQUE on service_name ALONE (not paired with producer_id): a different
+  -- producer registering the same name is the conflict this LLD closes;
+  -- the same producer re-registering it is an idempotent update-in-place,
+  -- handled at the application layer (sme/app/main.py), not blocked here.
+  UNIQUE (service_name)
 );
 
 CREATE TABLE service_authz_policy (
@@ -233,6 +237,7 @@ CREATE TABLE software_management_job (
 
 CREATE TABLE a1_policy (
   policy_id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  near_rt_ric_policy_id TEXT,   -- the Near-RT RIC's OWN identifier for this policy, distinct from policy_id (see a1-related/app/models.py)
   policy_type_id       TEXT NOT NULL,
   creator_id             TEXT NOT NULL,   -- == rapp_instance.instance_id
   near_rt_ric_id           TEXT NOT NULL,
@@ -350,7 +355,8 @@ CREATE TABLE training_job (
                                              CHECK (status IN ('PENDING','RUNNING','COMPLETED','FAILED','CANCELLED')),
   notification_uri                          TEXT,
   CONSTRAINT exactly_one_target CHECK (
-    (model_id IS NOT NULL)::int + (model_coordination_group_id IS NOT NULL)::int = 1
+    (model_id IS NOT NULL AND model_coordination_group_id IS NULL)
+    OR (model_id IS NULL AND model_coordination_group_id IS NOT NULL)
   )
 );
 
@@ -466,7 +472,7 @@ CREATE TABLE assurance_monitor (
   analytics_subscription_id           UUID REFERENCES mda_subscription(subscription_id),
   requirement_thresholds                 JSONB NOT NULL,
   CONSTRAINT one_target_only CHECK (
-    (target_order_id IS NOT NULL)::int + (target_coordination_group_id IS NOT NULL)::int <= 1
+    NOT (target_order_id IS NOT NULL AND target_coordination_group_id IS NOT NULL)
   )
 );
 

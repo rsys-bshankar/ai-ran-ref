@@ -10,6 +10,14 @@ class A1Policy(Base):
     __tablename__ = "a1_policy"
 
     policy_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    # The Near-RT RIC's OWN internal identifier for this policy — NOT the
+    # same UUID as policy_id. A1 Related generates policy_id as the
+    # R1-facing identifier (section 1.1); a real Near-RT RIC generates its
+    # own identifier for the same policy independently. Caught by the
+    # cross-service integration suite: update/delete/status calls were
+    # using policy_id against the mock, which had no record under that ID
+    # at all — SUSPENDED ("unknown policyId") on every status query.
+    near_rt_ric_policy_id: Mapped[str | None] = mapped_column(String)
     policy_type_id: Mapped[str] = mapped_column(String, nullable=False)
     creator_id: Mapped[str] = mapped_column(String, nullable=False)  # == rAppId
     near_rt_ric_id: Mapped[str] = mapped_column(String, nullable=False)
@@ -25,9 +33,9 @@ class PolicyStatusSubscription(Base):
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     notification_destination: Mapped[str] = mapped_column(String, nullable=False)
     subscription_scope: Mapped[str | None] = mapped_column(String)  # OWN | OTHERS | ALL
-    policy_id_list: Mapped[list[str] | None] = mapped_column(ARRAY(String))
-    policy_type_id_list: Mapped[list[str] | None] = mapped_column(ARRAY(String))
-    near_rt_ric_id_list: Mapped[list[str] | None] = mapped_column(ARRAY(String))
+    policy_id_list: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
+    policy_type_id_list: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
+    near_rt_ric_id_list: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
 
 
 class A1EIType(Base):

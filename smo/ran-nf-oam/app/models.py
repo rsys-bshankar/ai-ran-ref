@@ -13,7 +13,7 @@ class O1AdaptorEndpoint(Base):
     endpoint_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     managed_element_ref: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     adaptor_uri: Mapped[str] = mapped_column(String, nullable=False)
-    protocol_support: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
+    protocol_support: Mapped[list[str]] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False)
     registered_via: Mapped[str] = mapped_column(String, nullable=False, default="MNS_REGISTRY_NRM")
     health_status: Mapped[str] = mapped_column(String, nullable=False, default="ACTIVE")
     last_heartbeat_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))

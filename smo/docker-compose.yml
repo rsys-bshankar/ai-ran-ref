@@ -73,10 +73,16 @@ services:
   a1-related:
     build: { context: ., args: { MODULE: a1-related } }
     depends_on: { postgres: { condition: service_healthy } }
+    networks: [default, a1_mock_net]
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
-    # reserved, inert until Near-RT RIC exists — runs, but has nothing live to talk to (SMO Design v1.3 section 3.9)
+      MOCK_NEAR_RT_RIC_URL: http://mock-near-rt-ric:8000
+
+  mock-near-rt-ric:
+    build: { context: ., args: { MODULE: mock-near-rt-ric } }
+    networks: [a1_mock_net]   # isolated, non-routable dev segment — ONLY a1-related can reach it,
+                              # no published ports, not on `default` (closes RT-7, SMO Design v1.3 section 3.9)
 
   nfo:
     build: { context: ., args: { MODULE: nfo } }
@@ -125,6 +131,11 @@ services:
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
+
+networks:
+  default:
+  a1_mock_net:
+    internal: true   # no route out — enforces the isolation, not just documents it
 
 volumes:
   smo_pgdata:

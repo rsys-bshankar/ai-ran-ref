@@ -33,7 +33,7 @@ def instantiate(body: InstantiateRequest, db: Session = Depends(get_session)):
     Phase 1 degenerate cluster being assumed implicitly.
     """
     r1 = R1Client()
-    inv_resp = r1.get("/focom/inventory", params={"resourceType": body.requiredResourceTypeId or ""})
+    inv_resp = r1.get("/focom/inventory", params={"resource_type": body.requiredResourceTypeId or ""})
     cluster_id = inv_resp.json().get("clusterId", "phase1-degenerate-cluster") if inv_resp.status_code == 200 else "phase1-degenerate-cluster"
 
     deployment = NFDeployment(

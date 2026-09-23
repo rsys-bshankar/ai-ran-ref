@@ -9,8 +9,10 @@ from smo_shared.db import Base
 class AssuranceMonitor(Base):
     __tablename__ = "assurance_monitor"
     __table_args__ = (
+        # Portable boolean form — "::int" cast syntax is Postgres-only and
+        # fails on SQLite.
         CheckConstraint(
-            "(target_order_id IS NOT NULL)::int + (target_coordination_group_id IS NOT NULL)::int <= 1",
+            "NOT (target_order_id IS NOT NULL AND target_coordination_group_id IS NOT NULL)",
             name="one_target_only",
         ),
     )

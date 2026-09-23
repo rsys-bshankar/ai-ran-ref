@@ -7,6 +7,24 @@ service in this repo, not a placeholder.
 from smo_shared.r1_client import R1Client
 
 
+class DownstreamError(Exception):
+    """A downstream module answered (no transport-level exception), but
+    with an error status. Caught while integration-testing: every
+    dispatcher here was returning resp.json() unconditionally, so a real
+    422 from A1 Related (an unknown policyTypeId) was recorded as
+    COMPLETED with the error body as the "result" — execute_order's
+    fail-fast logic only ever catches raised exceptions, never a
+    successfully-received error response, so this silently defeated
+    section 1.1's whole fail-fast guarantee until fixed.
+    """
+
+
+def _ensure_ok(resp) -> dict:
+    if resp.status_code >= 400:
+        raise DownstreamError(f"{resp.status_code}: {resp.json()}")
+    return resp.json()
+
+
 def dispatch_config(r1: R1Client, step: dict) -> dict:
     resp = r1.post("/ran-nf-oam/config-jobs", json={
         "requestedBy": step.get("requestedBy", "so-smos"),
@@ -14,7 +32,7 @@ def dispatch_config(r1: R1Client, step: dict) -> dict:
         "changes": step["changes"],
         "msacRole": step.get("msacRole"),
     })
-    return resp.json()
+    return _ensure_ok(resp)
 
 
 def dispatch_deploy(r1: R1Client, step: dict) -> dict:
@@ -22,12 +40,12 @@ def dispatch_deploy(r1: R1Client, step: dict) -> dict:
         "nfDeploymentDescriptorId": step["nfDeploymentDescriptorId"],
         "requiredResourceTypeId": step.get("requiredResourceTypeId"),
     })
-    return resp.json()
+    return _ensure_ok(resp)
 
 
 def dispatch_infra(r1: R1Client, step: dict) -> dict:
     resp = r1.post("/focom/resources/provision", json=step.get("spec", {}))
-    return resp.json()
+    return _ensure_ok(resp)
 
 
 def dispatch_training(r1: R1Client, step: dict) -> dict:
@@ -38,7 +56,7 @@ def dispatch_training(r1: R1Client, step: dict) -> dict:
         "requiredData": step.get("requiredData", {}),
         "validationCriteria": step.get("validationCriteria", {}),
     })
-    return resp.json()
+    return _ensure_ok(resp)
 
 
 def dispatch_policy(r1: R1Client, step: dict) -> dict:
@@ -48,7 +66,7 @@ def dispatch_policy(r1: R1Client, step: dict) -> dict:
         "nearRtRicId": step["nearRtRicId"],
         "creatorId": step.get("creatorId", "so-smos"),
     })
-    return resp.json()
+    return _ensure_ok(resp)
 
 
 # stepType -> (targetModule, dispatcher) — SO SMOS LLD section 1's table, made executable

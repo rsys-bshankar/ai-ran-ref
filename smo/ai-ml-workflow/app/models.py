@@ -12,8 +12,8 @@ class MLModelCoordinationGroup(Base):
 
     group_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     group_type: Mapped[str] = mapped_column(String, nullable=False, default="SHARED_MODEL")
-    member_model_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid), nullable=False)
-    member_use_cases: Mapped[list[str] | None] = mapped_column(ARRAY(String))
+    member_model_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False)
+    member_use_cases: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
     shared_feature_pipeline_ref: Mapped[str | None] = mapped_column(String)
     retrain_propagation: Mapped[str] = mapped_column(String, nullable=False, default="ANY_MEMBER_TRIGGERS")
 
@@ -31,14 +31,18 @@ class AIMLModel(Base):
     integrity_hash: Mapped[str | None] = mapped_column(String)
     artifact_location: Mapped[str | None] = mapped_column(String)
     required_resource_type_id: Mapped[str | None] = mapped_column(String)
-    cleared_node_groups: Mapped[list[str] | None] = mapped_column(ARRAY(String))  # MultiNode Q2 gap closure, LLD section 5
+    cleared_node_groups: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))  # MultiNode Q2 gap closure, LLD section 5
 
 
 class TrainingJob(Base):
     __tablename__ = "training_job"
     __table_args__ = (
+        # Portable boolean form — "::int" cast syntax is Postgres-only and
+        # fails on SQLite (caught by sa-smos/tests, which shares this same
+        # exactly-one-of-two-targets shape).
         CheckConstraint(
-            "(model_id IS NOT NULL)::int + (model_coordination_group_id IS NOT NULL)::int = 1",
+            "(model_id IS NOT NULL AND model_coordination_group_id IS NULL) "
+            "OR (model_id IS NULL AND model_coordination_group_id IS NOT NULL)",
             name="exactly_one_target",
         ),
     )
@@ -67,7 +71,7 @@ class MLMFSubscription(Base):
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id"))
-    metric_types: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
+    metric_types: Mapped[list[str]] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False)
     dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     guard_kpi_floor: Mapped[dict | None] = mapped_column(JSON)
 
