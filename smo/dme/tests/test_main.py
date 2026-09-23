@@ -346,6 +346,97 @@ def test_query_unknown_data_job_status_is_404(client):
     assert resp.status_code == 404
 
 
+def test_update_data_job_changes_its_definition(client):
+    """OPEN_ITEMS.md section 5: DME had no update-in-place semantics at
+    all — only POST-create/DELETE. ICS's own PutIndividualInfoJob.
+    """
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    created = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1", "productionJobDefinition": {"v": 1},
+    }).json()
+
+    resp = client.put(f"/data-jobs/{created['dataJobId']}", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1", "productionJobDefinition": {"v": 2},
+    })
+    assert resp.status_code == 200
+    assert resp.json()["productionJobDefinition"] == {"v": 2}
+
+    view = client.get(f"/data-jobs/{created['dataJobId']}").json()
+    assert view["productionJobDefinition"] == {"v": 2}
+
+
+def test_update_data_job_rejects_changing_its_target(client):
+    """ICS itself rejects changing a job's type mid-update ("Cannot
+    modify job type", 409 there) — the equivalent identity fields here
+    are dmeTypeId/consumerId/dataDeliveryMode, all fixed at creation.
+    """
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    created = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    }).json()
+
+    resp = client.put(f"/data-jobs/{created['dataJobId']}", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-2",
+    })
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["title"] == "DATA_JOB_TARGET_IMMUTABLE"
+
+
+def test_update_data_job_revalidates_delivery_method_against_the_offer(client):
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    client.post("/offers", json={
+        "dmeTypeId": reg["registrationId"], "dataDeliveryMode": "CONTINUOUS",
+        "dataDeliveryMethods": ["PULL_HTTP"],
+        "dataOfferTerminationNotificationUri": "http://producer/terminate",
+    })
+    created = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    }).json()
+
+    resp = client.put(f"/data-jobs/{created['dataJobId']}", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "STREAMING_KAFKA", "consumerId": "rapp-1",
+    })
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "DELIVERY_METHOD_NOT_OFFERED"
+
+
+def test_update_unknown_data_job_is_404(client):
+    resp = client.put("/data-jobs/11111111-1111-1111-1111-111111111111", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": "22222222-2222-2222-2222-222222222222",
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    })
+    assert resp.status_code == 404
+
+
+def test_update_data_job_re_pushes_to_the_producer(client, monkeypatch):
+    """ICS re-runs startInfoSubscriptionJob on every PUT, new or
+    updated — the producer is re-notified with the new job definition.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    created = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    }).json()
+    calls.clear()  # drop the push from create_data_job itself
+
+    client.put(f"/data-jobs/{created['dataJobId']}", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1", "productionJobDefinition": {"v": 2},
+    })
+
+    assert len(calls) == 1
+    assert calls[0][1]["infoJobData"] == {"v": 2}
+
+
 def test_get_data_offer_by_id_returns_its_fields(client):
     """OPEN_ITEMS.md section 5: no GET-by-id for DataOffer existed at all."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()

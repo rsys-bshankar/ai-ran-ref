@@ -147,8 +147,8 @@ Per-module unit test counts:
 | ran-nf-oam | 29 |
 | a1-related | 30 |
 | ai-ml-workflow | 35 |
-| dme | 36 |
 | focom | 37 |
+| dme | 41 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
 `mock-near-rt-ric`/`r1-termination`/`policy-mgmt` (10 tests each) are
@@ -286,7 +286,25 @@ own §1/§2 items stand as-is.
   `DMEType` has no dedicated category column and namespace (the
   grouping half of R1AP's `namespace.name` typeName convention) is the
   closest concept it does have.
-- No update-in-place (PUT) semantics — only POST-create/DELETE.
+- ~~No update-in-place (PUT) semantics — only POST-create/DELETE.~~ —
+  **closed.** Added `PUT /data-jobs/{id}` (ICS's own
+  `PutIndividualInfoJob`, `ConsumerController.java`). ICS's own PUT is
+  create-or-update against a caller-supplied `jobId` (201 new / 200
+  updated); this build's `dataJobId` is always server-generated (see
+  `create_data_job`), so this endpoint only ever updates an existing
+  job — 404 on an unknown id, matching this module's other
+  GET/DELETE-by-id routes. ICS itself also rejects changing a job's
+  type mid-update ("Cannot modify job type", 409 there); the
+  equivalent identity fields here (`dmeTypeId`/`consumerId`/
+  `dataDeliveryMode`, all fixed at creation) are likewise immutable via
+  this endpoint (`DATA_JOB_TARGET_IMMUTABLE`, 400 — the same adaptation
+  AI/ML Workflow's `update_model` already made for its own identity
+  fields). `dataDeliveryMethod` is re-validated against the same
+  `DataOffer` cross-check `create_data_job` already applies (factored
+  into a shared `_validate_delivery_method` helper), and a successful
+  update re-pushes the job to the producer (ICS re-runs
+  `startInfoSubscriptionJob` on every PUT, new or updated, not just on
+  first creation).
 - No type-subscription mechanism (consumers notified when a type is
   registered/removed) — entirely absent.
 - ~~`deregister_producer` deletes a producer's `DMEType` rows
@@ -1044,6 +1062,31 @@ own §1/§2 items stand as-is.
   check ("reused id across types") doesn't apply here — this build's
   `policyId` is always freshly server-generated, never caller-supplied.
   332 tests total, up from 326 (`mock-near-rt-ric` alone: 10 -> 16).
+- `ai-ml-workflow`'s model CRUD's last two gaps (§5) closed: added
+  `PUT`/`DELETE /models/{id}`. Delete surfaced the same unchecked-FK
+  shape already found and fixed for DME's `deregister_producer` — none
+  of `aiml_model`'s five dependent FKs had cascade behavior — fixed the
+  same way (`ON DELETE CASCADE` plus explicit application-level
+  cleanup), verified against a real local Postgres 16 instance
+  including the transitive `performance_report -> mlmf_subscription ->
+  aiml_model` hop. 338 tests total, up from 332 (`ai-ml-workflow`
+  alone: 29 -> 35).
+- `ran-analytics`'s dead subscriber-notification loop in
+  `publish_report` (§5) closed: added an optional
+  `notificationDestination` to `SubscribeAnalytics`/`MDASubscription`
+  (same shape as A1 Related's/Policy Mgmt's own subscription
+  callbacks), and a published report is now best-effort POSTed to
+  every matching subscriber that registered one. 343 tests total, up
+  from 338 (`ran-analytics` alone: 17 -> 22).
+- DME's missing update-in-place semantics (§5) closed: added
+  `PUT /data-jobs/{id}` (ICS's own `PutIndividualInfoJob`). This
+  build's `dataJobId` is server-generated (unlike ICS's caller-supplied
+  `jobId`), so the endpoint only ever updates an existing job (404 on
+  an unknown id); `dmeTypeId`/`consumerId`/`dataDeliveryMode` stay
+  immutable (`DATA_JOB_TARGET_IMMUTABLE`, 400), matching ICS's own
+  "cannot modify job type" rejection, and a successful update
+  re-pushes the job to the producer, matching ICS's own PUT behavior.
+  348 tests total, up from 343 (`dme` alone: 36 -> 41).
 
 ## Suggested next pass (priority order)
 
