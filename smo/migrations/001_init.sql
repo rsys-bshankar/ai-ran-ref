@@ -59,6 +59,12 @@ CREATE TABLE dme_type (
   UNIQUE (namespace, name, version)
 );
 
+CREATE TABLE dme_type_subscription (  -- NEW section 5: ICS's own /info-type-subscription
+  subscription_id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  notification_destination   TEXT NOT NULL,
+  owner                         TEXT NOT NULL
+);
+
 CREATE TABLE dme_delivery_schema (
   delivery_schema_id  TEXT PRIMARY KEY,
   dme_type_id          UUID NOT NULL REFERENCES dme_type(dme_type_id) ON DELETE CASCADE,

@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 
-from .models import DELIVERY_METHODS, DataJob, DataOffer, DMEType
+from .models import DELIVERY_METHODS, DataJob, DataOffer, DMEType, DMETypeSubscription
 
 app = FastAPI(title="DME — Data Management and Exposure")
 
@@ -54,6 +54,11 @@ class DataOfferRequest(BaseModel):
     dataOfferTerminationNotificationUri: str
 
 
+class TypeSubscriptionRequest(BaseModel):
+    notificationDestination: str
+    owner: str
+
+
 @app.post("/production-capabilities", status_code=201)
 def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_session)):
     t = DMEType(
@@ -73,6 +78,7 @@ def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_sessi
     except IntegrityError:
         db.rollback()
         raise framework_error(FrameworkError.DME_TYPE_VERSION_CONFLICT, detail=f"{body.namespace}:{body.name}:{body.version} already registered")
+    _notify_type_subscribers(db, t.dme_type_id, t.data_production_schema, "REGISTERED")
     return {"registrationId": str(t.dme_type_id)}
 
 
@@ -111,11 +117,15 @@ def deregister_producer(producer_id: str, db: Session = Depends(get_session)):
     alongside this) is a defense-in-depth backstop, not the only line
     of defense.
     """
-    for t in db.scalars(select(DMEType).where(DMEType.producer_id == producer_id)).all():
+    types = db.scalars(select(DMEType).where(DMEType.producer_id == producer_id)).all()
+    removed = [(t.dme_type_id, t.data_production_schema) for t in types]  # snapshot before delete — post-commit access on a deleted row would fail
+    for t in types:
         db.query(DataJob).filter(DataJob.dme_type_id == t.dme_type_id).delete()
         db.query(DataOffer).filter(DataOffer.dme_type_id == t.dme_type_id).delete()
         db.delete(t)
     db.commit()
+    for dme_type_id, schema in removed:
+        _notify_type_subscribers(db, dme_type_id, schema, "DEREGISTERED")
 
 
 @app.get("/production-capabilities/{producer_id}/status")
@@ -137,6 +147,68 @@ def query_producer_status(producer_id: str, db: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="no such producer")
     operational_state = "ENABLED" if _producer_is_healthy(t.producer_health_callback_url) else "DISABLED"
     return {"producerId": producer_id, "operationalState": operational_state}
+
+
+@app.post("/type-subscriptions", status_code=201)
+def subscribe_type_changes(body: TypeSubscriptionRequest, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: ICS's own `/info-type-subscription`
+    (InfoTypeSubscriptions/ConsumerCallbacks) — a consumer notified
+    whenever any DmeType is registered or removed. Entirely absent from
+    this build until now. ICS's own PUT is create-or-update against a
+    caller-supplied subscriptionId; this build's id is server-generated
+    (same adaptation already made for every other subscription in this
+    codebase — RAN Analytics, A1 Related, Policy Mgmt, FOCOM).
+    """
+    sub = DMETypeSubscription(notification_destination=body.notificationDestination, owner=body.owner)
+    db.add(sub)
+    db.commit()
+    return {"subscriptionId": str(sub.subscription_id)}
+
+
+@app.get("/type-subscriptions")
+def list_type_subscriptions(owner: str | None = None, db: Session = Depends(get_session)):
+    stmt = select(DMETypeSubscription)
+    if owner:
+        stmt = stmt.where(DMETypeSubscription.owner == owner)
+    return [_subscription_view(s) for s in db.scalars(stmt).all()]
+
+
+@app.get("/type-subscriptions/{subscription_id}")
+def get_type_subscription(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    sub = db.get(DMETypeSubscription, subscription_id)
+    if sub is None:
+        raise HTTPException(status_code=404, detail="no such subscription")
+    return _subscription_view(sub)
+
+
+@app.delete("/type-subscriptions/{subscription_id}", status_code=204)
+def unsubscribe_type_changes(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    sub = db.get(DMETypeSubscription, subscription_id)
+    if sub is not None:
+        db.delete(sub)
+        db.commit()
+
+
+def _notify_type_subscribers(db: Session, dme_type_id: uuid.UUID, job_data_schema: dict, status: str) -> None:
+    """ICS's own ConsumerCallbacks.notifyTypeRegistered/notifyTypeRemoved
+    (InfoTypeSubscriptions) — POSTs to every subscriber's
+    notificationDestination whenever any DmeType is registered or
+    removed. Unfiltered, matching the reference: ICS's own subscription
+    has no per-type scoping at all — every subscriber hears about every
+    type change. Best-effort, same pattern as every other subscriber
+    notification in this build.
+    """
+    for sub in db.scalars(select(DMETypeSubscription)).all():
+        try:
+            httpx.post(sub.notification_destination, json={
+                "infoTypeId": str(dme_type_id), "jobDataSchema": job_data_schema, "status": status,
+            }, timeout=2.0)
+        except httpx.HTTPError:
+            pass
+
+
+def _subscription_view(s: DMETypeSubscription) -> dict:
+    return {"subscriptionId": str(s.subscription_id), "notificationDestination": s.notification_destination, "owner": s.owner}
 
 
 def _validate_delivery_method(db: Session, dme_type_id: uuid.UUID, method: str) -> None:

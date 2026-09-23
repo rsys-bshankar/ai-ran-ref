@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from smo_shared.db import Base, get_session
 
 from app.main import app
-from app.models import DataJob, DataOffer, DMEDeliverySchema, DMEType
+from app.models import DataJob, DataOffer, DMEDeliverySchema, DMEType, DMETypeSubscription
 
 
 class FakeHealthResponse:
@@ -22,7 +22,7 @@ class FakeHealthResponse:
 @pytest.fixture
 def client():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[DMEType.__table__, DMEDeliverySchema.__table__, DataJob.__table__, DataOffer.__table__])
+    Base.metadata.create_all(engine, tables=[DMEType.__table__, DMEDeliverySchema.__table__, DataJob.__table__, DataOffer.__table__, DMETypeSubscription.__table__])
     TestSession = sessionmaker(bind=engine)
 
     def override_get_session():
@@ -630,3 +630,98 @@ def test_query_producer_status_after_deregistration_is_404(client):
 
     resp = client.get("/production-capabilities/ran-nf-oam/status")
     assert resp.status_code == 404
+
+
+def test_subscribe_and_unsubscribe_type_changes(client):
+    """OPEN_ITEMS.md section 5: ICS's own `/info-type-subscription` — a
+    consumer notified whenever any DmeType is registered or removed.
+    Entirely absent from this build until this pass.
+    """
+    sub = client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"}).json()
+    assert "subscriptionId" in sub
+
+    resp = client.delete(f"/type-subscriptions/{sub['subscriptionId']}")
+    assert resp.status_code == 204
+
+
+def test_unsubscribe_unknown_type_subscription_is_idempotent(client):
+    resp = client.delete("/type-subscriptions/11111111-1111-1111-1111-111111111111")
+    assert resp.status_code == 204
+
+
+def test_get_type_subscription_by_id_returns_its_fields(client):
+    created = client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"}).json()
+
+    resp = client.get(f"/type-subscriptions/{created['subscriptionId']}")
+    assert resp.status_code == 200
+    assert resp.json() == {"subscriptionId": created["subscriptionId"], "notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"}
+
+
+def test_get_unknown_type_subscription_is_404(client):
+    resp = client.get("/type-subscriptions/11111111-1111-1111-1111-111111111111")
+    assert resp.status_code == 404
+
+
+def test_list_type_subscriptions_filters_by_owner(client):
+    client.post("/type-subscriptions", json={"notificationDestination": "http://sa-smos/type-changes", "owner": "sa-smos"})
+    client.post("/type-subscriptions", json={"notificationDestination": "http://nfo/type-changes", "owner": "nfo"})
+
+    resp = client.get("/type-subscriptions", params={"owner": "nfo"})
+    assert [s["owner"] for s in resp.json()] == ["nfo"]
+
+
+def test_register_dme_type_notifies_subscribers(client, monkeypatch):
+    """The headline fix — ICS's own ConsumerCallbacks.notifyTypeRegistered.
+    Unfiltered: every subscriber hears about every type registration,
+    matching the reference's own lack of per-type scoping.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"})
+
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+
+    assert len(calls) == 1
+    assert calls[0][0] == "http://consumer/type-changes"
+    assert calls[0][1]["infoTypeId"] == reg["registrationId"]
+    assert calls[0][1]["jobDataSchema"] == {"type": "object"}
+    assert calls[0][1]["status"] == "REGISTERED"
+
+
+def test_deregister_producer_notifies_subscribers_per_removed_type(client, monkeypatch):
+    """ICS's own ConsumerCallbacks.notifyTypeRemoved — fired once per
+    DmeType a producer's deregistration actually removes.
+    """
+    client.post("/production-capabilities", json=register_type_body(name="TypeA", producerId="rapp-1"))
+    client.post("/production-capabilities", json=register_type_body(name="TypeB", producerId="rapp-1"))
+
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"})
+
+    client.delete("/production-capabilities", params={"producer_id": "rapp-1"})
+
+    assert len(calls) == 2
+    assert {c[1]["status"] for c in calls} == {"DEREGISTERED"}
+
+
+def test_register_dme_type_does_not_notify_when_no_subscribers(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/production-capabilities", json=register_type_body())
+
+    assert calls == []
+
+
+def test_register_dme_type_succeeds_even_if_a_subscriber_is_unreachable(client, monkeypatch):
+    import httpx as httpx_module
+
+    def raise_error(url, json=None, timeout=None):
+        raise httpx_module.ConnectError("unreachable")
+
+    monkeypatch.setattr("app.main.httpx.post", raise_error)
+    client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"})
+
+    resp = client.post("/production-capabilities", json=register_type_body())
+    assert resp.status_code == 201  # must not raise despite the unreachable subscriber
