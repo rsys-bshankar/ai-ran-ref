@@ -115,20 +115,38 @@ the ambiguity into code.
   network-isolation claim is structurally correct in the compose file but
   functionally unverified.
 
-## 3. Call-flow gaps
+## 3. Call-flow gaps — closed
 
-Only 4 of many plausible cross-module journeys are diagrammed today
-(`smo/docs/call-flows/`): rApp onboarding → deployment, AI/ML model train
-→ inference, config write with schema check, closed-loop assurance.
-Missing:
+~~Only 4 of many plausible cross-module journeys were diagrammed~~ — all
+six missing journeys listed here previously are now in
+`smo/docs/call-flows/` (05 through 10): A1 EI registration end-to-end,
+onboarding failure/deprecation/deletion paths, rApp fault/performance
+reporting, RAN Analytics' own data-production flow, the Policy Mgmt
+Intent-driven flow, and a multi-step SO SMOS order combining
+INFRA + TRAINING + DEPLOY.
 
-- A1 EI registration end-to-end
-- Onboarding failure / deprecation / deletion paths
-- rApp fault/performance reporting
-- RAN Analytics' own data-production flow
-- Policy Mgmt Intent-driven flow
-- A multi-step SO SMOS order combining INFRA + TRAINING + DEPLOY in one
-  call chain
+Writing them surfaced four real, previously-undocumented gaps. Three
+are closed above (§2: `RAppInstance.RECOVER`'s missing route, the
+cascade-delete guard's dead usage-registration wiring, DME's unchecked
+`DataOffer`/`DataJob` method mismatch); the fourth (Policy Mgmt's
+Intent-to-RMIH matching) turned out to need its own design decision and
+moved to §1 instead:
+
+- `RAppInstance`'s `RECOVER` transition (`FAULTED -> DEPLOYING`) had no
+  HTTP route — a critically-faulted rApp instance had no API path back
+  to `RUNNING` at all (call flow 07). Closed.
+- Onboarding's cascade-delete guard depended on `PackageUsageRegistration`
+  rows that rApp Management's `CreateInstance`/`TerminateInstance` never
+  actually created or stopped — `usage/start`/`usage/stop` were reachable
+  only out-of-band, not from ordinary rApp deployment (call flow 06). Closed.
+- DME's `CreateDataJob` validated `dataDeliveryMethod` against the
+  global known-methods set only, never against the specific `DataOffer`
+  the `dmeTypeId` is actually associated with (call flow 05). Closed.
+- Policy Mgmt has no matching/dispatch step between `CreateIntent` and
+  `RegisterIntentHandlingFunction` — an RMIH is never notified of a new
+  Intent it could fulfil; `IntentHandlingFunction.intent_handling_scope`
+  is modeled but no code path ever sets or reads it (call flow 09). Needs
+  a design decision — see §1.
 
 ## 4. Test coverage is uneven
 
@@ -178,9 +196,10 @@ modules; `rapp-mgmt` and `dme` moved out of the shallow tier this pass
 ## Suggested next pass (priority order)
 
 1. Resolve the design-level decisions (§1) that block further code — SA
-   SMOS `RECONNECT`/`ROLLBACK` and RAN NF OAM's CM sync method remain the
-   two most likely to unblock near-term code changes once decided; these
-   genuinely need a stakeholder call, not an invented answer.
+   SMOS `RECONNECT`/`ROLLBACK`, RAN NF OAM's CM sync method, and the
+   newly-added Intent-to-RMIH matching semantics are the most likely to
+   unblock near-term code changes once decided; these genuinely need a
+   stakeholder call, not an invented answer.
 2. Deepen `r1-termination`'s and `mock-near-rt-ric`'s coverage — the
    shallowest tier remaining now that `rapp-mgmt` and `dme` have moved
    out of it.
