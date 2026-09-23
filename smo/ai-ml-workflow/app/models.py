@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, CheckConstraint, ForeignKey, Integer, JSON, LargeBinary, String, Uuid
+from sqlalchemy import ARRAY, CheckConstraint, ForeignKey, Integer, JSON, LargeBinary, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -19,7 +19,17 @@ class MLModelCoordinationGroup(Base):
 
 
 class AIMLModel(Base):
+    """OPEN_ITEMS.md section 5: no uniqueness/conflict check on
+    (model_type, version) existed — duplicate registrations silently
+    succeeded where the reference 409s. The reference's own ModelID
+    (modelInfo.go) is a composite primary key on
+    (modelName, modelVersion); this build never introduced a separate
+    name field, so model_type plays that identifying role already —
+    the same adaptation this codebase already made elsewhere (e.g.
+    DMEType's own (namespace, name, version) UniqueConstraint).
+    """
     __tablename__ = "aiml_model"
+    __table_args__ = (UniqueConstraint("model_type", "version"),)
 
     model_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     registration_id: Mapped[str] = mapped_column(String, nullable=False)

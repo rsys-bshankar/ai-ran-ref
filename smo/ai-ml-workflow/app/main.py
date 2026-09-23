@@ -11,6 +11,7 @@ import uuid
 from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
@@ -46,10 +47,19 @@ class RequestTrainingRequest(BaseModel):
 
 @app.post("/models", status_code=201)
 def register_model(body: RegisterModelRequest, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: the reference's own RegisterModel
+    (mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint
+    violation — this build accepted a duplicate (modelType, version)
+    registration silently, creating a second, indistinguishable row.
+    """
     model = AIMLModel(registration_id=str(uuid.uuid4()), model_type=body.modelType, version=body.version,
                        required_resource_type_id=body.requiredResourceTypeId, state=ModelState.REGISTERED)
     db.add(model)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise framework_error(FrameworkError.MODEL_ALREADY_REGISTERED, detail=f"model type {body.modelType} version {body.version} already registered")
     return {"modelId": str(model.model_id), "state": model.state}
 
 

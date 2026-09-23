@@ -420,7 +420,8 @@ CREATE TABLE aiml_model (
   integrity_hash                       TEXT,
   artifact_location                       TEXT,
   required_resource_type_id                 TEXT,
-  cleared_node_groups                          TEXT[]    -- NEW section 5: MultiNode Q2 gap closure
+  cleared_node_groups                          TEXT[],   -- NEW section 5: MultiNode Q2 gap closure
+  UNIQUE (model_type, version)                           -- NEW section 5: the reference's own (modelName, modelVersion) uniqueness
 );
 
 CREATE TABLE model_artifact (

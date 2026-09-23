@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**318 tests total, all passing** as of this build: 308 unit tests across
+**321 tests total, all passing** as of this build: 311 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -262,6 +262,12 @@ also closed the producer-side half of the same gap: `ran-nf-oam`
 (28 -> 29 tests) and `a1-related` (29 -> 30 tests) now both answer
 `/dme-jobs` — the URL they themselves register with DME — the same
 dangling-callback bug class already fixed for `/health`.
+`ai-ml-workflow` went from 26 tests to 29 in the next pass: added a
+real `UniqueConstraint` on `AIMLModel`'s `(model_type, version)` (the
+reference's own `ModelID` composite primary key on
+`(modelName, modelVersion)`), so `register_model` now 409s
+(`MODEL_ALREADY_REGISTERED`) on a duplicate instead of silently
+creating a second, indistinguishable row.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
