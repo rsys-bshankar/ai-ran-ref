@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**232 tests total, all passing** as of this build: 222 unit tests across
+**240 tests total, all passing** as of this build: 230 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -159,7 +159,12 @@ written — is now actually fired from `register_service`
 (`SERVICE_API_AVAILABLE`/`SERVICE_API_UPDATE`) and
 `deregister_service` (`SERVICE_API_UNAVAILABLE`); wiring it in also
 surfaced that its own claimed authz gate (the same one
-`discover_services` uses) was never enforced, now fixed.
+`discover_services` uses) was never enforced, now fixed. `dme` went
+from 15 tests to 23 in the next pass: added `GET /data-jobs/{id}`,
+`GET /data-jobs/{id}/status`, and `GET /offers/{id}` (none existed
+before), and fixed `discover_dme_types`' `data_category` query param,
+which was declared but silently never applied — it now filters
+against `namespace`, the closest concept `DMEType` has to a category.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
