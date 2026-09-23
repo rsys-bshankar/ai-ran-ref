@@ -354,3 +354,79 @@ def test_get_deployment_manager_by_id(client):
 def test_get_unknown_deployment_manager_is_404(client):
     resp = client.get("/deployment-managers/does-not-exist")
     assert resp.status_code == 404
+
+
+def test_topology_export_includes_phase1_seeded_entities(client):
+    """OPEN_ITEMS.md section 5: FOCOM had no typed entity/relationship
+    model and no /topology-shaped endpoint at all — not even a stub —
+    despite the Blueprint naming FOCOM's placement as a TEIV data
+    source. Phase 1's seeded ResourceType/ResourcePool/DeploymentManager
+    must show up even before any resource is ever provisioned.
+    """
+    resp = client.get("/topology")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    entity_types = {key for group in body["entities"] for key in group}
+    assert entity_types == {
+        "o-ran-smo-teiv-cloud:ResourceType",
+        "o-ran-smo-teiv-cloud:ResourcePool",
+        "o-ran-smo-teiv-cloud:DeploymentManager",
+    }
+    # No resources provisioned yet, so no Resource entities and no relationships at all.
+    assert body["relationships"] == []
+
+    resource_types = next(g["o-ran-smo-teiv-cloud:ResourceType"] for g in body["entities"] if "o-ran-smo-teiv-cloud:ResourceType" in g)
+    assert resource_types[0]["id"] == f"urn:oran:smo:teiv:ResourceType:{PHASE1_RESOURCE_TYPE_ID}"
+    assert resource_types[0]["attributes"]["name"] == "generic"
+
+
+def test_topology_export_includes_provisioned_resource_and_its_relationships(client):
+    """The actual fix: a provisioned Resource now shows up as a real
+    typed entity, with real FK-backed relationships to its
+    ResourceType and ResourcePool — matching the wire shape the
+    reference's focom-to-teiv-adapter itself produces (id/attributes
+    for entities, id/aSide/bSide/sourceIds for relationships).
+    """
+    provisioned = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()
+    resource_id = provisioned["resourceId"]
+
+    body = client.get("/topology").json()
+
+    resource_entities = next(g["o-ran-smo-teiv-cloud:Resource"] for g in body["entities"] if "o-ran-smo-teiv-cloud:Resource" in g)
+    assert len(resource_entities) == 1
+    assert resource_entities[0]["id"] == f"urn:oran:smo:teiv:Resource:{resource_id}"
+    assert resource_entities[0]["attributes"]["resourceTypeId"] == "gpu-l40"
+    assert resource_entities[0]["attributes"]["resourcePoolId"] == PHASE1_POOL_ID
+
+    rel_types = {key for group in body["relationships"] for key in group}
+    assert rel_types == {
+        "o-ran-smo-teiv-cloud:RESOURCE_IS_OF_TYPE_RESOURCETYPE",
+        "o-ran-smo-teiv-cloud:RESOURCE_CONTAINED_IN_RESOURCEPOOL",
+    }
+
+    is_of_type = next(g["o-ran-smo-teiv-cloud:RESOURCE_IS_OF_TYPE_RESOURCETYPE"] for g in body["relationships"] if "o-ran-smo-teiv-cloud:RESOURCE_IS_OF_TYPE_RESOURCETYPE" in g)
+    assert is_of_type[0]["aSide"] == f"urn:oran:smo:teiv:Resource:{resource_id}"
+    assert is_of_type[0]["bSide"] == "urn:oran:smo:teiv:ResourceType:gpu-l40"
+    assert is_of_type[0]["sourceIds"] == [resource_id, "gpu-l40"]
+
+
+def test_topology_export_reflects_child_resource_relationship(client, db_session):
+    """Resource's own parentId column (already modeling the reference's
+    parent/child resource tree) must show up as a real
+    RESOURCE_CHILD_OF_RESOURCE relationship in the export, not just sit
+    unused in the drill-down view.
+    """
+    parent_id = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()["resourceId"]
+    child_id = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()["resourceId"]
+
+    with db_session() as session:
+        child = session.get(Resource, uuid.UUID(child_id))
+        child.parent_id = uuid.UUID(parent_id)
+        session.commit()
+
+    body = client.get("/topology").json()
+    child_of = next(g["o-ran-smo-teiv-cloud:RESOURCE_CHILD_OF_RESOURCE"] for g in body["relationships"] if "o-ran-smo-teiv-cloud:RESOURCE_CHILD_OF_RESOURCE" in g)
+    assert len(child_of) == 1
+    assert child_of[0]["aSide"] == f"urn:oran:smo:teiv:Resource:{child_id}"
+    assert child_of[0]["bSide"] == f"urn:oran:smo:teiv:Resource:{parent_id}"

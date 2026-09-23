@@ -148,7 +148,7 @@ Per-module unit test counts:
 | ai-ml-workflow | 26 |
 | ran-nf-oam | 28 |
 | a1-related | 29 |
-| focom | 34 |
+| focom | 37 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
 `nfo` (9 tests) is now the shallowest-covered module. `rapp-mgmt` and
@@ -471,17 +471,26 @@ own §1/§2 items stand as-is.
   guards and a resource-linkage object; ours only moves
   INSTANTIATING→RUNNING with no such guards, and Heal/Scale have no
   state transitions of any kind.
-- **No topology/entity-relationship export for TEIV at all** — the
-  Blueprint explicitly names "FOCOM's placement as a TEIV data source"
-  as a confirmed integration point, but FOCOM has no typed
-  entity/relationship model, no CloudEvent/Kafka producer, and no
-  `/topology`-shaped endpoint — not even a stub exists for an
-  integration this build's own Blueprint claims.
+- ~~**No topology/entity-relationship export for TEIV at all**~~
+  (**closed, partially**: real `GET /topology`, exporting FOCOM's own
+  `ResourceType`/`ResourcePool`/`DeploymentManager`/`Resource` rows as
+  typed entities/relationships in the reference's own wire shape
+  (`o-ran-smo-teiv-cloud:<EntityType>` keys, `{id, attributes}` for
+  entities, `{id, aSide, bSide, sourceIds}` for relationships — matching
+  `EntityAndRelationshipModel.java`/`TeivIdBuilder.java`), with
+  relationships built only from this schema's real foreign keys
+  (resource→type, resource→pool, resource→parent) rather than invented
+  ones. Deliberately not built: a CloudEvent/Kafka producer — this
+  build has no message broker anywhere, and the reference's own export
+  is push-based over Kafka, not a pull endpoint at all; `/topology` is
+  this build's honest pull-based substitute).
 - *Confirmed structurally out of scope*: the real `focom-to-teiv-adapter`
-  mechanism (direct kubeconfig access to K8s clusters, CRD reads),
-  pti-o2's hardware-telemetry watchers, and real multi-cluster K8s
-  lifecycle management are correctly excluded from a docker-run-based
-  Phase 1.
+  mechanism (direct kubeconfig access to K8s clusters, CRD reads,
+  deriving `OCloudNamespace`/`NodeCluster` entities from live
+  `FocomProvisioningRequest`/O2ims Kubernetes CRDs), the Kafka/CloudEvent
+  producer noted above, pti-o2's hardware-telemetry watchers, and real
+  multi-cluster K8s lifecycle management are correctly excluded from a
+  docker-run-based Phase 1.
 
 ### AI/ML Workflow (`ai-ml-workflow/`) — vs `aiml-fw-awmf-modelmgmtservice`, `aiml-fw-awmf-tm`, `aiml-fw-athp-sdk-feature-store`, `aiml-fw-athp-tps-kubeflow-adapter`
 
@@ -854,6 +863,16 @@ own §1/§2 items stand as-is.
   of sitting unused. Added the table to `migrations/001_init.sql`,
   verified against a real local Postgres 16 instance. 291 tests total,
   up from 285 (`ai-ml-workflow` alone: 20 -> 26).
+- `focom`'s missing TEIV topology export (§5) closed, partially: added
+  real `GET /topology`, a typed entity/relationship export of FOCOM's
+  own `ResourceType`/`ResourcePool`/`DeploymentManager`/`Resource` rows
+  in the reference's own wire shape, with relationships built only from
+  this schema's real foreign keys. No new table needed — it's a pure
+  read-only projection of already-existing rows. Deliberately not
+  built: a CloudEvent/Kafka producer, since this build has no message
+  broker anywhere and the reference's own export is push-based, not a
+  pull endpoint — `/topology` is the honest substitute. 294 tests
+  total, up from 291 (`focom` alone: 34 -> 37).
 
 ## Suggested next pass (priority order)
 

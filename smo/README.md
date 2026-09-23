@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**291 tests total, all passing** as of this build: 281 unit tests across
+**294 tests total, all passing** as of this build: 284 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -222,7 +222,17 @@ elision (as documented elsewhere in this build); the actual uploaded
 bytes are stored in a new `ModelArtifact` table instead, so upload and
 download genuinely round-trip, and `artifact_location` — previously a
 field nothing in `main.py` ever read or wrote — is now stamped on
-every upload.
+every upload. `focom` went from 34 tests to 37 in the next pass: added
+real `GET /topology`, closing the missing TEIV topology export —
+FOCOM's own `ResourceType`/`ResourcePool`/`DeploymentManager`/
+`Resource` rows now export as typed entities/relationships in the
+reference's own wire shape, relationships built only from this
+schema's real foreign keys (resource→type, resource→pool,
+resource→parent), no invented ones. A CloudEvent/Kafka producer is
+deliberately not built — this build has no message broker anywhere,
+and the reference's own export is push-based, not a pull endpoint at
+all; `/topology` is the honest pull-based substitute (see
+OPEN_ITEMS.md section 5 for the full scoping note).
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
