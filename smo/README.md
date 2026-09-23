@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**343 tests total, all passing** as of this build: 333 unit tests across
+**348 tests total, all passing** as of this build: 338 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -310,7 +310,17 @@ now actually delivers. Added an optional `notificationDestination` to
 and a published report is now best-effort POSTed to every matching
 subscriber that registered one; a purely poll-based subscriber (no
 destination registered) is left alone rather than having a delivery
-target guessed for it.
+target guessed for it. `dme` went from 36 tests to 41 in the next
+pass: added `PUT /data-jobs/{id}` (ICS's own `PutIndividualInfoJob`),
+closing the missing update-in-place gap. This build's `dataJobId` is
+server-generated (unlike ICS's caller-supplied `jobId`), so the
+endpoint only ever updates an existing job; `dmeTypeId`/`consumerId`/
+`dataDeliveryMode` stay immutable, matching ICS's own "cannot modify
+job type" rejection, `dataDeliveryMethod` is re-validated against the
+same `DataOffer` cross-check `create_data_job` already applies, and a
+successful update re-pushes the job to the producer, matching ICS's
+own PUT behavior of re-running `startInfoSubscriptionJob` on every
+call, new or updated.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

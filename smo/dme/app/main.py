@@ -139,18 +139,22 @@ def query_producer_status(producer_id: str, db: Session = Depends(get_session)):
     return {"producerId": producer_id, "operationalState": operational_state}
 
 
-@app.post("/data-jobs", status_code=202)
-def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
-    if body.dataDeliveryMethod not in DELIVERY_METHODS:
-        raise framework_error(FrameworkError.DELIVERY_METHOD_NOT_OFFERED, detail=f"unknown method {body.dataDeliveryMethod}")
+def _validate_delivery_method(db: Session, dme_type_id: uuid.UUID, method: str) -> None:
+    if method not in DELIVERY_METHODS:
+        raise framework_error(FrameworkError.DELIVERY_METHOD_NOT_OFFERED, detail=f"unknown method {method}")
     # Cross-check against the actual DataOffer(s) for this dmeTypeId, not just
     # the global wire-value set — a consumer requesting a method no offer for
     # this type ever committed to was previously accepted without complaint.
     # A type with no DataOffer at all skips this (not every DmeType requires
     # one in this build), so this only tightens the case where an offer exists.
-    offers = db.scalars(select(DataOffer).where(DataOffer.dme_type_id == body.dmeTypeId)).all()
-    if offers and not any(o.data_delivery_method_committed == body.dataDeliveryMethod for o in offers):
-        raise framework_error(FrameworkError.DELIVERY_METHOD_NOT_OFFERED, detail=f"{body.dataDeliveryMethod} not committed by any DataOffer for this dmeTypeId")
+    offers = db.scalars(select(DataOffer).where(DataOffer.dme_type_id == dme_type_id)).all()
+    if offers and not any(o.data_delivery_method_committed == method for o in offers):
+        raise framework_error(FrameworkError.DELIVERY_METHOD_NOT_OFFERED, detail=f"{method} not committed by any DataOffer for this dmeTypeId")
+
+
+@app.post("/data-jobs", status_code=202)
+def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
+    _validate_delivery_method(db, body.dmeTypeId, body.dataDeliveryMethod)
     job = DataJob(
         data_delivery_mode=body.dataDeliveryMode,
         dme_type_id=body.dmeTypeId,
@@ -173,6 +177,40 @@ def get_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(DataJob, data_job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="no such data job")
+    return _job_view(job)
+
+
+@app.put("/data-jobs/{data_job_id}")
+def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, db: Session = Depends(get_session)):
+    """PutIndividualInfoJob (ICS's ConsumerController.java) — DME had no
+    update-in-place semantics at all, only POST-create/DELETE. ICS's own
+    PUT is create-or-update against a caller-supplied jobId (201 new /
+    200 updated); this build's data_job_id is always server-generated
+    (see create_data_job), so this endpoint only ever updates an
+    existing job — 404 on an unknown id, matching this module's other
+    GET/DELETE-by-id routes. ICS itself also rejects changing a job's
+    type mid-update ("Cannot modify job type", 409 there) — the
+    equivalent identity fields here are dmeTypeId/consumerId/
+    dataDeliveryMode, all fixed at creation and immutable via this
+    endpoint (same adaptation AI/ML Workflow's update_model already
+    made for its own identity fields).
+    """
+    job = db.get(DataJob, data_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such data job")
+    if job.dme_type_id != body.dmeTypeId or job.consumer_id != body.consumerId or job.data_delivery_mode != body.dataDeliveryMode:
+        raise framework_error(FrameworkError.DATA_JOB_TARGET_IMMUTABLE, detail="dmeTypeId/consumerId/dataDeliveryMode cannot change on update")
+    _validate_delivery_method(db, body.dmeTypeId, body.dataDeliveryMethod)
+    job.production_job_definition = body.productionJobDefinition
+    job.data_delivery_method = body.dataDeliveryMethod
+    job.delivery_details = body.deliveryDetails
+    db.commit()
+    dme_type = db.get(DMEType, job.dme_type_id)
+    if dme_type is not None:
+        # ICS re-runs startInfoSubscriptionJob on every PUT, new or
+        # updated — the producer is re-notified with the new job
+        # definition, not just on first creation.
+        _push_job_to_producer(dme_type, job)
     return _job_view(job)
 
 
