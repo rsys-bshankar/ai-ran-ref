@@ -74,21 +74,57 @@ the ambiguity into code.
   against each service in isolation have been validated. The RT-7
   network-isolation claim is structurally correct in the compose file but
   functionally unverified.
+- **`RAppInstance.RECOVER` has no HTTP route** (`rapp-mgmt/`) — the FSM
+  transition (`FAULTED -> DEPLOYING`) exists and is unit-tested directly
+  against the FSM, but no route in `app/main.py` fires it; a critically
+  faulted rApp instance has no API path back to `RUNNING`. Fix: a
+  `POST /instances/{id}/recover` route mirroring `bootstrap-complete`'s
+  shape. Surfaced writing call flow 07.
+- **Onboarding's cascade-delete guard is unreachable from ordinary rApp
+  deployment** (`onboarding/` + `rapp-mgmt/`) — `PackageUsageRegistration`
+  rows are only ever created/stopped via Onboarding's `usage/start`/
+  `usage/stop`, which nothing in `rApp Management`'s `CreateInstance`/
+  `TerminateInstance` calls. Fix: wire those two calls into the
+  respective rApp Management routes. Surfaced writing call flow 06.
+- **DME's `CreateDataJob` doesn't validate against the actual `DataOffer`**
+  (`dme/`) — it checks `dataDeliveryMethod` against the global
+  `DELIVERY_METHODS` set only, not against what the `dmeTypeId`'s own
+  `DataOffer` actually committed to; a consumer can request a method the
+  producer never offered. Surfaced writing call flow 05.
+- **Policy Mgmt has no Intent-to-RMIH matching/dispatch step**
+  (`policy-mgmt/`) — `CreateIntent` and `RegisterIntentHandlingFunction`
+  both exist, but nothing notifies an RMIH of a new Intent it could
+  fulfil; `IntentHandlingFunction.intent_handling_scope` is modeled but
+  no code path sets or reads it. Surfaced writing call flow 09.
 
-## 3. Call-flow gaps
+## 3. Call-flow gaps — closed
 
-Only 4 of many plausible cross-module journeys are diagrammed today
-(`smo/docs/call-flows/`): rApp onboarding → deployment, AI/ML model train
-→ inference, config write with schema check, closed-loop assurance.
-Missing:
+~~Only 4 of many plausible cross-module journeys were diagrammed~~ — all
+six missing journeys listed here previously are now in
+`smo/docs/call-flows/` (05 through 10): A1 EI registration end-to-end,
+onboarding failure/deprecation/deletion paths, rApp fault/performance
+reporting, RAN Analytics' own data-production flow, the Policy Mgmt
+Intent-driven flow, and a multi-step SO SMOS order combining
+INFRA + TRAINING + DEPLOY.
 
-- A1 EI registration end-to-end
-- Onboarding failure / deprecation / deletion paths
-- rApp fault/performance reporting
-- RAN Analytics' own data-production flow
-- Policy Mgmt Intent-driven flow
-- A multi-step SO SMOS order combining INFRA + TRAINING + DEPLOY in one
-  call chain
+Writing them surfaced four real, previously-undocumented gaps (now each
+its own item in section 2 below, not fixed here — these are doc-writing
+findings, not doc-writing fixes):
+
+- `RAppInstance`'s `RECOVER` transition (`FAULTED -> DEPLOYING`) has no
+  HTTP route — a critically-faulted rApp instance has no API path back
+  to `RUNNING` at all (call flow 07).
+- Onboarding's cascade-delete guard depends on `PackageUsageRegistration`
+  rows that rApp Management's `CreateInstance`/`TerminateInstance` never
+  actually creates or stops — `usage/start`/`usage/stop` are reachable
+  only out-of-band, not from ordinary rApp deployment (call flow 06).
+- DME's `CreateDataJob` validates `dataDeliveryMethod` against the
+  global known-methods set only, never against the specific `DataOffer`
+  the `dmeTypeId` is actually associated with (call flow 05).
+- Policy Mgmt has no matching/dispatch step between `CreateIntent` and
+  `RegisterIntentHandlingFunction` — an RMIH is never notified of a new
+  Intent it could fulfil; `IntentHandlingFunction.intent_handling_scope`
+  is modeled but no code path ever sets or reads it (call flow 09).
 
 ## 4. Test coverage is uneven
 
@@ -124,8 +160,13 @@ failure-path testing the FSM-heavy modules got.
    no open design question blocking it.
 2. Bring up the shallow-coverage modules (§4: so-smos, ran-analytics,
    focom, nfo) to parity with the rest.
-3. Fill the call-flow gaps (§3) — mostly documentation, high value for
-   onboarding new readers to the design.
-4. Resolve the design-level decisions (§1) that block further code — SA
+3. ~~Fill the call-flow gaps (§3)~~ — done; see §3.
+4. The four small, self-contained gaps §3 surfaced while writing those
+   flows (§2: `RAppInstance.RECOVER`'s missing route, the cascade-delete
+   guard's dead usage-registration wiring, DME's unchecked
+   `DataOffer`/`DataJob` method mismatch, Policy Mgmt's missing
+   Intent-to-RMIH dispatch) — each is independent, no open design
+   question blocking any of them, same shape as item 1 above.
+5. Resolve the design-level decisions (§1) that block further code — SA
    SMOS `RECONNECT`/`ROLLBACK` and RAN NF OAM's CM sync method are the two
    most likely to unblock near-term code changes once decided.
