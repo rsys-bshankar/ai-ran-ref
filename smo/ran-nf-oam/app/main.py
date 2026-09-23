@@ -155,6 +155,23 @@ def change_alarm_ack_state(alarm_id: uuid.UUID, new_state: str, db: Session = De
     return _alarm_view(alarm)
 
 
+@app.patch("/alarms/{alarm_id}/clear")
+def clear_alarm(alarm_id: uuid.UUID, clear_user_id: str | None = None, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: no alarm-cleared lifecycle existed at
+    all — `/alarms/{id}/ack` only ever toggled ack_state, so an alarm
+    that stopped recurring on the NF had no way to ever be marked
+    resolved. Matches the reference's own NotifyClearedAlarm shape:
+    setting severity to 'cleared' (already a valid value in this
+    build's own CHECK constraint) rather than a separate state field.
+    """
+    alarm = db.get(Alarm, alarm_id)
+    alarm.severity = "cleared"
+    alarm.cleared_at = datetime.datetime.now(datetime.UTC)
+    alarm.clear_user_id = clear_user_id
+    db.commit()
+    return _alarm_view(alarm)
+
+
 @app.post("/pm-subscriptions")
 def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: str, db: Session = Depends(get_session)):
     """SubscribePM — RAN NF OAM LLD section 3.5: this is a DME-producer
@@ -243,4 +260,5 @@ def _alarm_view(a: Alarm) -> dict:
             "probableCause": a.probable_cause, "specificProblem": a.specific_problem,
             "rootCauseIndicator": a.root_cause_indicator,
             "correlatedNotifications": [str(c) for c in a.correlated_notifications],
-            "proposedRepairActions": a.proposed_repair_actions}
+            "proposedRepairActions": a.proposed_repair_actions,
+            "clearedAt": a.cleared_at.isoformat() if a.cleared_at else None, "clearUserId": a.clear_user_id}

@@ -198,7 +198,9 @@ CREATE TABLE alarm (
   specific_problem       TEXT,
   root_cause_indicator    BOOLEAN NOT NULL DEFAULT false,
   correlated_notifications UUID[] NOT NULL DEFAULT '{}',
-  proposed_repair_actions   TEXT
+  proposed_repair_actions   TEXT,
+  cleared_at                 TIMESTAMPTZ,
+  clear_user_id                TEXT
 );
 CREATE INDEX idx_alarm_correlation ON alarm (correlation_group) WHERE correlation_group IS NOT NULL;
 CREATE INDEX idx_alarm_me ON alarm (managed_element_ref);

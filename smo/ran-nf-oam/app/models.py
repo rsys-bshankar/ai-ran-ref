@@ -49,6 +49,14 @@ class Alarm(Base):
     root_cause_indicator: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     correlated_notifications: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False, default=list)
     proposed_repair_actions: Mapped[str | None] = mapped_column(String)
+    # OPEN_ITEMS.md section 5: no alarm-cleared lifecycle existed at all.
+    # The reference's own NotifyClearedAlarm reuses perceivedSeverity=CLEARED
+    # rather than a separate state field — this build's `severity` CHECK
+    # constraint already allows 'cleared' for exactly this reason, so
+    # clearing an alarm sets severity to 'cleared' rather than adding a
+    # parallel, redundant lifecycle field.
+    cleared_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    clear_user_id: Mapped[str | None] = mapped_column(String)
 
 
 class CMSchemaCache(Base):

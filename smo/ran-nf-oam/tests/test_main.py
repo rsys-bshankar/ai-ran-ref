@@ -202,3 +202,49 @@ def test_change_alarm_ack_state(client, db_session_factory):
     resp = client.patch(f"/alarms/{alarm_id}/ack", params={"new_state": "ACKNOWLEDGED"})
     assert resp.status_code == 200
     assert resp.json()["ackState"] == "ACKNOWLEDGED"
+
+
+def test_clear_alarm_sets_cleared_severity_and_metadata(client, db_session_factory):
+    """OPEN_ITEMS.md section 5: no alarm-cleared lifecycle existed at
+    all — an alarm that stopped recurring on the NF had no way to ever
+    be marked resolved. Matches the reference's own NotifyClearedAlarm
+    shape: perceivedSeverity=CLEARED, not a separate state field.
+    """
+    _make_me(db_session_factory)
+    alarm_id = client.post("/alarms/ingest", params={
+        "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "critical",
+    }).json()["alarmId"]
+
+    resp = client.patch(f"/alarms/{alarm_id}/clear", params={"clear_user_id": "operator-1"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["severity"] == "cleared"
+    assert body["clearUserId"] == "operator-1"
+    assert body["clearedAt"] is not None
+
+
+def test_cleared_alarm_still_appears_in_query_alarms(client, db_session_factory):
+    """Clearing doesn't delete the alarm — it stays queryable, same as
+    the reference's own retained-but-cleared alarm records.
+    """
+    _make_me(db_session_factory)
+    alarm_id = client.post("/alarms/ingest", params={
+        "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "critical",
+    }).json()["alarmId"]
+    client.patch(f"/alarms/{alarm_id}/clear")
+
+    alarms = client.get("/alarms").json()
+    assert len(alarms) == 1
+    assert alarms[0]["severity"] == "cleared"
+
+
+def test_clear_alarm_without_clear_user_id_leaves_it_null(client, db_session_factory):
+    _make_me(db_session_factory)
+    alarm_id = client.post("/alarms/ingest", params={
+        "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "warning",
+    }).json()["alarmId"]
+
+    resp = client.patch(f"/alarms/{alarm_id}/clear")
+    assert resp.status_code == 200
+    assert resp.json()["clearUserId"] is None
+    assert resp.json()["clearedAt"] is not None
