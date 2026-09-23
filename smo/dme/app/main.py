@@ -105,6 +105,27 @@ def deregister_producer(producer_id: str, db: Session = Depends(get_session)):
     db.commit()
 
 
+@app.get("/production-capabilities/{producer_id}/status")
+def query_producer_status(producer_id: str, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: no producer-status endpoint existed at
+    all. ICS's own GET .../info-producers/{id}/status
+    (ProducerController.getInfoProducerStatus) returns a single
+    ENABLED/DISABLED operational_state per producer, derived from the
+    same producer-availability signal typeStatus itself now uses
+    (ProducerStatusInfo, producer.isAvailable()). Our schema has no
+    separate InfoProducer entity — a producer is however many DMEType
+    rows share its producer_id — so this reuses the first one's
+    producer_health_callback_url, live, same as _computed_type_status.
+    404 if the producer has nothing registered at all, matching ICS's
+    own getProducer-not-found behavior.
+    """
+    t = db.scalar(select(DMEType).where(DMEType.producer_id == producer_id).limit(1))
+    if t is None:
+        raise HTTPException(status_code=404, detail="no such producer")
+    operational_state = "ENABLED" if _producer_is_healthy(t.producer_health_callback_url) else "DISABLED"
+    return {"producerId": producer_id, "operationalState": operational_state}
+
+
 @app.post("/data-jobs", status_code=202)
 def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
     if body.dataDeliveryMethod not in DELIVERY_METHODS:
