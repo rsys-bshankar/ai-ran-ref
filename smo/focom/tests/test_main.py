@@ -12,14 +12,17 @@ from sqlalchemy.pool import StaticPool
 
 from smo_shared.db import Base, get_session
 
-from app.main import app, PHASE1_CLUSTER_ID
-from app.models import InventorySubscription, OCloudAlarm, OCloudPerformanceMetric
+from app.main import app, PHASE1_CLUSTER_ID, PHASE1_DEPLOYMENT_MANAGER_ID, PHASE1_POOL_ID, PHASE1_RESOURCE_TYPE_ID
+from app.models import DeploymentManager, InventorySubscription, OCloudAlarm, OCloudPerformanceMetric, Resource, ResourcePool, ResourceType
 
 
 @pytest.fixture
 def db_session():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[OCloudAlarm.__table__, OCloudPerformanceMetric.__table__, InventorySubscription.__table__])
+    Base.metadata.create_all(engine, tables=[
+        OCloudAlarm.__table__, OCloudPerformanceMetric.__table__, InventorySubscription.__table__,
+        ResourceType.__table__, ResourcePool.__table__, Resource.__table__, DeploymentManager.__table__,
+    ])
     TestSession = sessionmaker(bind=engine)
     return TestSession
 
@@ -107,10 +110,10 @@ def test_provision_resource_does_not_notify_subscriber_filtered_out_by_type(clie
 
 
 def test_deprovision_resource_notifies_subscriber_regardless_of_type_filter(client, monkeypatch):
-    """resource_type_id is unknown at deprovision time (no
-    ResourceType/ResourcePool schema exists yet — a separate, larger
-    gap), so a type-filtered subscriber must still be notified rather
-    than silently missing every delete event.
+    """resource_id here was never actually provisioned, so its type is
+    unknowable — a type-filtered subscriber must still be notified
+    rather than silently missing the delete event, same as any other
+    unset-filter match.
     """
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
@@ -122,6 +125,21 @@ def test_deprovision_resource_notifies_subscriber_regardless_of_type_filter(clie
     assert len(calls) == 1
     assert calls[0][1]["notificationEventType"] == "DELETE"
     assert calls[0][1]["resourceId"] == "some-resource-id"
+
+
+def test_deprovision_known_resource_notifies_with_its_real_type(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
+    provisioned = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()
+    calls.clear()  # discard the provision-time CREATE notification
+
+    client.delete(f"/resources/{provisioned['resourceId']}")
+
+    assert len(calls) == 1
+    assert calls[0][1]["notificationEventType"] == "DELETE"
+    assert calls[0][1]["resourceTypeId"] == "gpu-l40"
 
 
 def test_inventory_notification_delivery_survives_unreachable_subscriber(client, monkeypatch):
@@ -227,12 +245,112 @@ def test_multiple_alarms_are_all_returned(client):
 
 
 def test_deprovision_arbitrary_unprovisioned_resource_succeeds(client):
-    """Phase 1: deprovision_resource is a shape-only stub that never
-    checks whether the resource_id was ever actually provisioned — a
-    real, explicit behavior worth asserting directly rather than only
-    exercising it incidentally through the provision-then-deprovision
-    happy path.
+    """Phase 1: deprovision_resource never rejects a resource_id that
+    was never actually provisioned — a real, explicit behavior worth
+    asserting directly rather than only exercising it incidentally
+    through the provision-then-deprovision happy path.
     """
     resp = client.delete("/resources/never-provisioned-id")
     assert resp.status_code == 200
     assert resp.json()["status"] == "deprovisioned"
+
+
+def test_list_resource_types_returns_seeded_phase1_type(client):
+    """OPEN_ITEMS.md section 5: no ResourceType/ResourcePool/
+    DeploymentManager schema existed at all, and no drill-down
+    endpoints existed either. Phase 1's degenerate topology is now
+    real, seeded rows, not a hardcoded literal.
+    """
+    resp = client.get("/resource-types")
+    ids = [t["resourceTypeId"] for t in resp.json()]
+    assert ids == [PHASE1_RESOURCE_TYPE_ID]
+
+
+def test_get_resource_type_by_id(client):
+    resp = client.get(f"/resource-types/{PHASE1_RESOURCE_TYPE_ID}")
+    assert resp.status_code == 200
+    assert resp.json()["resourceTypeId"] == PHASE1_RESOURCE_TYPE_ID
+
+
+def test_get_unknown_resource_type_is_404(client):
+    resp = client.get("/resource-types/does-not-exist")
+    assert resp.status_code == 404
+
+
+def test_provision_with_unrecognized_type_auto_registers_it(client):
+    """provision_resource never validated resourceTypeId before this
+    pass — auto-registering an unrecognized one preserves that, rather
+    than rejecting it now that a real ResourceType table exists.
+    """
+    client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"})
+
+    resp = client.get("/resource-types")
+    ids = {t["resourceTypeId"] for t in resp.json()}
+    assert ids == {PHASE1_RESOURCE_TYPE_ID, "gpu-l40"}
+
+
+def test_list_resource_pools_returns_seeded_phase1_pool(client):
+    resp = client.get("/resource-pools")
+    ids = [p["resourcePoolId"] for p in resp.json()]
+    assert ids == [PHASE1_POOL_ID]
+
+
+def test_get_resource_pool_by_id(client):
+    resp = client.get(f"/resource-pools/{PHASE1_POOL_ID}")
+    assert resp.status_code == 200
+    assert resp.json()["oCloudId"] == PHASE1_CLUSTER_ID
+
+
+def test_get_unknown_resource_pool_is_404(client):
+    resp = client.get("/resource-pools/does-not-exist")
+    assert resp.status_code == 404
+
+
+def test_list_pool_resources_is_empty_before_any_provisioning(client):
+    resp = client.get(f"/resource-pools/{PHASE1_POOL_ID}/resources")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_list_pool_resources_reflects_provisioned_resource(client):
+    """provision_resource previously returned a random UUID and
+    persisted nothing — this is the headline fix: a provisioned
+    resource now actually shows up in its pool's resource list.
+    """
+    provisioned = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()
+
+    resp = client.get(f"/resource-pools/{PHASE1_POOL_ID}/resources")
+    resources = resp.json()
+    assert len(resources) == 1
+    assert resources[0]["resourceId"] == provisioned["resourceId"]
+    assert resources[0]["resourceTypeId"] == "gpu-l40"
+
+
+def test_deprovisioned_resource_no_longer_listed(client):
+    provisioned = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()
+    client.delete(f"/resources/{provisioned['resourceId']}")
+
+    resp = client.get(f"/resource-pools/{PHASE1_POOL_ID}/resources")
+    assert resp.json() == []
+
+
+def test_list_resources_for_unknown_pool_is_404(client):
+    resp = client.get("/resource-pools/does-not-exist/resources")
+    assert resp.status_code == 404
+
+
+def test_list_deployment_managers_returns_seeded_phase1_manager(client):
+    resp = client.get("/deployment-managers")
+    ids = [d["deploymentManagerId"] for d in resp.json()]
+    assert ids == [PHASE1_DEPLOYMENT_MANAGER_ID]
+
+
+def test_get_deployment_manager_by_id(client):
+    resp = client.get(f"/deployment-managers/{PHASE1_DEPLOYMENT_MANAGER_ID}")
+    assert resp.status_code == 200
+    assert resp.json()["oCloudId"] == PHASE1_CLUSTER_ID
+
+
+def test_get_unknown_deployment_manager_is_404(client):
+    resp = client.get("/deployment-managers/does-not-exist")
+    assert resp.status_code == 404

@@ -144,11 +144,11 @@ Per-module unit test counts:
 | so-smos | 13 |
 | ai-ml-workflow | 18 |
 | onboarding | 18 |
-| focom | 19 |
 | ran-nf-oam | 21 |
 | sme | 22 |
 | dme | 23 |
 | a1-related | 29 |
+| focom | 34 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
 `nfo`/`ran-analytics` (9 tests each) are now the
@@ -382,18 +382,34 @@ own §1/§2 items stand as-is.
 
 ### NFO + FOCOM (`nfo/`, `focom/`) — vs `pti-o2`, `smo-teiv`
 
-- **No `ResourceType`/`ResourcePool`/`DeploymentManager` schema at all** —
-  not just an empty collection behind the documented single-cluster
-  limitation, but no model shape to extend later. `query_inventory`
-  returns one hardcoded `resourcePools: [{resourcePoolId: "pool-0"}]`
-  with nothing behind it, vs. the reference's real parent/child resource
-  tree (pserver → CPU/RAM/interfaces/PCI/accelerators) typed via a
-  20-value `ResourceTypeEnum`.
-- No per-resource-type/pool/resource drill-down endpoints — the
+- ~~**No `ResourceType`/`ResourcePool`/`DeploymentManager` schema at
+  all** — not just an empty collection behind the documented
+  single-cluster limitation, but no model shape to extend later.
+  `query_inventory` returns one hardcoded
+  `resourcePools: [{resourcePoolId: "pool-0"}]` with nothing behind
+  it, vs. the reference's real parent/child resource tree (pserver →
+  CPU/RAM/interfaces/PCI/accelerators) typed via a 20-value
+  `ResourceTypeEnum`.~~ — **closed.** Added real `ResourceType`,
+  `ResourcePool`, `Resource` (with a `parentId` column supporting the
+  reference's parent/child tree shape — real hardware telemetry
+  populating it stays out of scope, same as elsewhere in this build),
+  and `DeploymentManager` tables, lazily seeded with Phase 1's single
+  degenerate topology on first read (matching the reference's own
+  parent/child resource shape, not the 20-value enum's real hardware
+  variety — deliberately out of scope for the same reason).
+- ~~No per-resource-type/pool/resource drill-down endpoints — the
   reference exposes `/resourceTypes`, `/resourceTypes/{id}`,
   `/resourcePools/{id}/resources`, `/deploymentManagers/{id}` as
   distinct operations; FOCOM collapses everything into one `/inventory`
-  route.
+  route.~~ — **closed.** Added `GET /resource-types`,
+  `GET /resource-types/{id}`, `GET /resource-pools`,
+  `GET /resource-pools/{id}`, `GET /resource-pools/{id}/resources`,
+  `GET /deployment-managers`, `GET /deployment-managers/{id}` (all 404
+  on an unknown id, kebab-case to match this build's route-naming
+  convention rather than the reference's camelCase). `provision_resource`/
+  `deprovision_resource` now persist/remove real `Resource` rows
+  instead of just returning a random UUID and storing nothing, so the
+  new drill-down endpoints have real data behind them.
 - ~~**`subscribe_inventory_changes` doesn't actually subscribe to
   anything** — it takes no callback parameter, stores nothing, and
   delivers nothing. The reference's `Subscription` model stores a real
@@ -404,11 +420,10 @@ own §1/§2 items stand as-is.
   /inventory/subscriptions`, and wired best-effort CREATE/DELETE
   delivery into the module's only two mutating endpoints
   (`provision_resource`/`deprovision_resource`) — same pattern as
-  A1 Related's `_notify_policy_status_subscribers`. Partial:
-  `deprovision_resource` doesn't know a resource's type (no
-  `ResourceType`/`ResourcePool` schema exists yet — the gap above),
-  so a type-filtered subscriber is still notified on every delete
-  rather than silently missing them.
+  A1 Related's `_notify_policy_status_subscribers`. The type-unknown-
+  at-delete partial noted here originally is now also resolved: since
+  `deprovision_resource` looks up the real `Resource` row before
+  deleting it, it notifies with the resource's actual type.
 - NFO's deployment state machine is much thinner — reference has 7
   states (including ABNORMAL/UPDATING) plus real duplication/dependency
   guards and a resource-linkage object; ours only moves
@@ -734,6 +749,20 @@ own §1/§2 items stand as-is.
   closed: added `GET /policies`, filterable by
   `policy_type_id`/`near_rt_ric_id`/`creator_id`. 245 tests total, up
   from 240 (`a1-related` alone: 24 -> 29).
+- `focom`'s missing `ResourceType`/`ResourcePool`/`DeploymentManager`
+  schema and drill-down endpoints (§5) closed: added the four tables
+  (with `Resource.parentId` for the reference's parent/child shape,
+  no real telemetry behind it), lazily seeded with Phase 1's single
+  degenerate topology, plus `GET /resource-types`(`/{id}`),
+  `GET /resource-pools`(`/{id}`, `/{id}/resources`), and
+  `GET /deployment-managers`(`/{id}`). `provision_resource`/
+  `deprovision_resource` now persist/remove real `Resource` rows
+  instead of a stub UUID — also resolving the earlier partial in
+  `subscribe_inventory_changes`'s notification delivery (deprovision
+  can now notify with the resource's real type). Added the four
+  tables to `migrations/001_init.sql`, verified against a real local
+  Postgres 16 instance. 260 tests total, up from 245 (`focom` alone:
+  19 -> 34).
 
 ## Suggested next pass (priority order)
 
@@ -760,11 +789,10 @@ own §1/§2 items stand as-is.
      as a documented partial, not silently dropped).
    - ~~`focom`'s `subscribe_inventory_changes` not actually subscribing
      to anything (no callback param, no storage, no delivery).~~ —
-     **closed.** Real best-effort delivery on provision/deprovision now
-     exists; a type-filtered subscriber still gets every delete event
-     since deprovision doesn't know the resource's type (documented
-     partial, tied to the still-open `ResourceType`/`ResourcePool`
-     schema gap).
+     **closed.** Real best-effort delivery on provision/deprovision;
+     the original type-unknown-at-delete partial is also resolved now
+     that a real `ResourceType`/`ResourcePool` schema exists (see
+     below).
    - ~~`sme`'s `notify_service_change` never being called from the
      routes that should trigger it (the delivery logic exists, it's
      just dead code).~~ — **closed.** Wired into
@@ -775,9 +803,8 @@ own §1/§2 items stand as-is.
    All four standout items are now closed. Each module's remaining §5
    items are independently pickable — go module by module, or pick by
    theme (e.g. every module's missing GET-by-id/list/query endpoints is
-   a recurring pattern — `dme`'s and `a1-related`'s are now closed;
-   `focom`/`ai-ml-workflow`/`ran-analytics` still have theirs, worth
-   doing as one pass across those three).
+   a recurring pattern — `dme`'s, `a1-related`'s, and `focom`'s are now
+   closed; `ai-ml-workflow`/`ran-analytics` still have theirs).
 2. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
    the alarm-storm correlation algorithm, and A1-ML operations — are not
    stakeholder-answerable the way the rest of that section was: the

@@ -341,6 +341,38 @@ CREATE TABLE inventory_subscription (
   resource_type_id   TEXT   -- optional filter; unset matches every resource type
 );
 
+CREATE TABLE resource_type (
+  resource_type_id  TEXT PRIMARY KEY,   -- literal ID, not a UUID (Phase 1's degenerate topology is fixed, not generated)
+  name               TEXT NOT NULL,
+  description         TEXT,
+  vendor               TEXT,
+  model                 TEXT,
+  version               TEXT
+);
+
+CREATE TABLE resource_pool (
+  resource_pool_id  TEXT PRIMARY KEY,
+  name               TEXT NOT NULL,
+  description         TEXT,
+  o_cloud_id           TEXT NOT NULL
+);
+
+CREATE TABLE resource (
+  resource_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  resource_type_id   TEXT NOT NULL REFERENCES resource_type(resource_type_id),
+  resource_pool_id   TEXT NOT NULL REFERENCES resource_pool(resource_pool_id),
+  parent_id            UUID,
+  description           TEXT
+);
+
+CREATE TABLE deployment_manager (
+  deployment_manager_id  TEXT PRIMARY KEY,
+  name                     TEXT NOT NULL,
+  description                TEXT,
+  o_cloud_id                  TEXT NOT NULL,
+  service_uri                  TEXT
+);
+
 -- ============================================================
 -- AI/ML Content: AI/ML Workflow  (AI/ML Workflow LLD sections 4, 6)
 -- ============================================================
