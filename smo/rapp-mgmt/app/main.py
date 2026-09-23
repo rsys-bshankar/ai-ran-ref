@@ -57,6 +57,7 @@ def create_instance(body: CreateInstanceRequest, db: Session = Depends(get_sessi
 
     nfo_resp = r1.post("/nfo/deployments", json={
         "nfDeploymentDescriptorId": nf_deployment_descriptor_id,  # the real descriptor, per section 5
+        "name": f"rapp-instance-{inst.instance_id}",  # NFO's own duplication guard (OPEN_ITEMS.md section 5) needs a real name
         "requiredResourceTypeId": body.config.get("requiredResourceTypeId"),
     })
     inst.workload_ref = nfo_resp.json().get("nfDeploymentId") if nfo_resp.status_code == 200 else None

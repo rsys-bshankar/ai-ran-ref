@@ -19,8 +19,12 @@ def test_nfo_instantiate_actually_resolves_cluster_through_focom(mesh):
     """NFO+FOCOM LLD section 4: NFO's Instantiate queries FOCOM's real
     inventory endpoint — not a mock — before placing a workload.
     """
+    descriptor_id = mesh["nfo"].post("/descriptors", json={
+        "packageId": str(uuid.uuid4()), "name": "Definitions/main.yaml",
+    }).json()["nfDeploymentDescriptorId"]
+
     resp = mesh["nfo"].post("/deployments", json={
-        "nfDeploymentDescriptorId": str(uuid.uuid4()), "requiredResourceTypeId": "gpu-l40",
+        "nfDeploymentDescriptorId": descriptor_id, "name": "integration-test-deployment", "requiredResourceTypeId": "gpu-l40",
     })
     assert resp.status_code == 202
     body = resp.json()

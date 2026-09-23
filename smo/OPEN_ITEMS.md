@@ -134,7 +134,6 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| nfo | 9 |
 | mock-near-rt-ric | 10 |
 | r1-termination | 10 |
 | policy-mgmt | 10 |
@@ -143,6 +142,7 @@ Per-module unit test counts:
 | so-smos | 13 |
 | ran-analytics | 17 |
 | sme | 22 |
+| nfo | 23 |
 | dme | 23 |
 | onboarding | 26 |
 | ai-ml-workflow | 26 |
@@ -151,7 +151,9 @@ Per-module unit test counts:
 | focom | 37 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
-`nfo` (9 tests) is now the shallowest-covered module. `rapp-mgmt` and
+`mock-near-rt-ric`/`r1-termination`/`policy-mgmt` (10 tests each) are
+now the shallowest-covered tier — `nfo` moved out of it in a later pass
+(gained real deployment-state-machine coverage). `rapp-mgmt` and
 `dme` moved out of the shallow tier in an earlier pass (both gained
 route-level tests); a later pass added route-level coverage for the five
 §1 items closed below — `ai-ml-workflow` (+4), `policy-mgmt` (+3),
@@ -466,11 +468,24 @@ own §1/§2 items stand as-is.
   at-delete partial noted here originally is now also resolved: since
   `deprovision_resource` looks up the real `Resource` row before
   deleting it, it notifies with the resource's actual type.
-- NFO's deployment state machine is much thinner — reference has 7
+- ~~NFO's deployment state machine is much thinner — reference has 7
   states (including ABNORMAL/UPDATING) plus real duplication/dependency
   guards and a resource-linkage object; ours only moves
   INSTANTIATING→RUNNING with no such guards, and Heal/Scale have no
-  state transitions of any kind.
+  state transitions of any kind.~~ — **closed.** Added the reference's
+  real 7-state lifecycle (`o2dms/domain/states.py`'s Initial/Installing/
+  Installed/Updating/Uninstalling/Abnormal/Deleting, kept under this
+  build's own INITIAL/INSTANTIATING/RUNNING/UPDATING/TERMINATING/
+  ABNORMAL/DELETING naming), the reference's own duplication/dependency
+  guards on Instantiate (`_check_duplication`/`_check_dependencies`,
+  `dms_lcm_nfdeployment.py`), a real resource-linkage object
+  (`NFOCloudResource`, the reference's `NfOCloudVResource`), and
+  Heal/Scale now drive real state transitions instead of being pure
+  stubs. Terminate mirrors the reference's own state dispatch exactly,
+  including its defensive DELETING→ABNORMAL catch-all for a
+  double-terminate race. Heal itself isn't modeled by the reference at
+  all (no Heal command exists there) — its transitions are this build's
+  own extrapolation to close the stated gap.
 - ~~**No topology/entity-relationship export for TEIV at all**~~
   (**closed, partially**: real `GET /topology`, exporting FOCOM's own
   `ResourceType`/`ResourcePool`/`DeploymentManager`/`Resource` rows as
@@ -873,6 +888,16 @@ own §1/§2 items stand as-is.
   broker anywhere and the reference's own export is push-based, not a
   pull endpoint — `/topology` is the honest substitute. 294 tests
   total, up from 291 (`focom` alone: 34 -> 37).
+- `nfo`'s thin deployment state machine (§5) closed: added the
+  reference's real 7-state lifecycle (statemachine.py), the reference's
+  own duplication/dependency guards on Instantiate, a real
+  resource-linkage object (`NFOCloudResource`), and real Heal/Scale
+  state transitions in place of pure stubs. `NFDeployment` gained a
+  real `name` column the duplication guard needs; the three real
+  cross-module callers of NFO's Instantiate (`rapp-mgmt`, `so-smos`'s
+  dispatch table, the cross-service integration test) were updated to
+  pass one. Verified against a real local Postgres 16 instance. 308
+  tests total, up from 294 (`nfo` alone: 9 -> 23).
 
 ## Suggested next pass (priority order)
 
@@ -922,7 +947,10 @@ own §1/§2 items stand as-is.
    correlation algorithm) that would otherwise be fabricated, and the
    third only needs revisiting if A1-ML's out-of-scope decision itself
    changes. Not blocked on a call, blocked on data or a scope change.
-3. `nfo` (9 tests) is now the shallowest test-covered module, but an
-   earlier survey found only 1-2 minor edge-case gaps — already close
-   to thoroughly covered. Diminishing returns as a coverage pass;
-   §5's remaining items are a better next target.
+3. `mock-near-rt-ric`/`r1-termination`/`policy-mgmt` (10 tests each) are
+   now the shallowest test-covered modules; `nfo`'s own real gap (the
+   thin deployment state machine, closed this pass) is done, not just a
+   coverage number. An earlier survey of the remaining shallow tier
+   found only 1-2 minor edge-case gaps each — already close to
+   thoroughly covered. Diminishing returns as a coverage pass; §5's
+   remaining items are a better next target.

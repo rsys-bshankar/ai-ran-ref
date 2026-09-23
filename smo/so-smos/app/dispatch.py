@@ -38,6 +38,7 @@ def dispatch_config(r1: R1Client, step: dict) -> dict:
 def dispatch_deploy(r1: R1Client, step: dict) -> dict:
     resp = r1.post("/nfo/deployments", json={
         "nfDeploymentDescriptorId": step["nfDeploymentDescriptorId"],
+        "name": step.get("name") or f"deploy-{step['nfDeploymentDescriptorId']}",  # NFO's own duplication guard (OPEN_ITEMS.md section 5) needs a real name
         "requiredResourceTypeId": step.get("requiredResourceTypeId"),
     })
     return _ensure_ok(resp)
