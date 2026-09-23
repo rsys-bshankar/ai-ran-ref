@@ -116,3 +116,62 @@ def test_heal_and_scale_are_stub_only(client):
     for op in ("heal", "scale"):
         resp = client.post(f"/deployments/{fake_id}/{op}")
         assert resp.json()["status"] == "stub-only"
+
+
+def test_query_operation_status_after_instantiate(client, db_session_factory, monkeypatch):
+    """query_operation_status (GET /operations/{id}) had no test coverage
+    at all before this pass — Instantiate's own LCMOperation row was
+    never looked back up through the route meant to query it.
+    """
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"clusterId": "c1"}))
+    created = client.post("/deployments", json={"nfDeploymentDescriptorId": str(uuid.uuid4())}).json()
+
+    with db_session_factory() as session:
+        op = session.query(LCMOperation).filter_by(
+            nf_deployment_id=uuid.UUID(created["nfDeploymentId"]), operation_type="INSTANTIATE",
+        ).one()
+
+    resp = client.get(f"/operations/{op.operation_id}")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "COMPLETED"
+
+
+def test_query_operation_status_returns_completed_for_heal_and_scale(client, db_session_factory):
+    """Heal/Scale each persist their own LCMOperation row with status
+    COMPLETED (set unconditionally, Phase 1 stub behavior) — verify it's
+    actually retrievable through the query route, not just written.
+    """
+    fake_deployment_id = uuid.uuid4()
+    heal_resp = client.post(f"/deployments/{fake_deployment_id}/heal")
+    assert heal_resp.status_code == 200
+
+    with db_session_factory() as session:
+        op = session.query(LCMOperation).filter_by(nf_deployment_id=fake_deployment_id, operation_type="HEAL").one()
+
+    status_resp = client.get(f"/operations/{op.operation_id}")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["status"] == "COMPLETED"
+
+
+def test_query_cluster_placement_for_existing_deployment(client, monkeypatch):
+    """The success path was never actually asserted — only the
+    deleted-deployment error path (test_terminate_removes_deployment) had
+    coverage for this route.
+    """
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"clusterId": "focom-cluster"}))
+    created = client.post("/deployments", json={"nfDeploymentDescriptorId": str(uuid.uuid4())}).json()
+
+    resp = client.get(f"/deployments/{created['nfDeploymentId']}/placement")
+    assert resp.status_code == 200
+    assert resp.json()["clusterId"] == "focom-cluster"
+    assert resp.json()["nfDeploymentId"] == created["nfDeploymentId"]
+
+
+def test_terminate_unknown_deployment_is_idempotent(client):
+    """terminate's `if d is not None` guard means deleting a deployment
+    that was never created (or already deleted) must not raise, matching
+    a real O2dms Terminate's idempotent semantics — never exercised
+    before this pass.
+    """
+    resp = client.delete(f"/deployments/{uuid.uuid4()}")
+    assert resp.status_code == 204

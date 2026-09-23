@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**163 tests total, all passing** as of this build: 153 unit tests across
+**171 tests total, all passing** as of this build: 161 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -113,9 +113,13 @@ rApp Management) proving NFO's real `NFDeploymentDescriptor` row — not
 SMOS's `RECONNECT` resolving a concrete `nfDeploymentId` via a live SO
 SMOS order lookup, R1 Termination's proxy forwarding a POST body, method,
 headers (`Host` stripped, others kept) and query params while passing a
-non-200 upstream status straight through, and the mock Near-RT RIC's
-`UpdatePolicy` route (previously entirely untested). so-smos,
-ran-analytics, focom, rapp-mgmt, and dme — previously among the
+non-200 upstream status straight through, the mock Near-RT RIC's
+`UpdatePolicy` route (previously entirely untested), NFO's
+`query_operation_status` route reading back the exact `LCMOperation` rows
+Instantiate/Heal/Scale wrote (also previously entirely untested), and RAN
+Analytics' `RegisterAnalyticsProducer` asserted against the actual SME
+service-registration payload it publishes. so-smos, ran-analytics, focom,
+rapp-mgmt, and dme — previously among the
 thinnest-covered modules — now have route-level
 coverage too, not just dispatch-logic coverage, closing OPEN_ITEMS.md's
 test-coverage-parity item; `ran-nf-oam` went from FSM-only coverage to 20
