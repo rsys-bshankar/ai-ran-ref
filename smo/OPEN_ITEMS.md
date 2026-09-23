@@ -144,7 +144,7 @@ Per-module unit test counts:
 | sme | 22 |
 | nfo | 23 |
 | onboarding | 26 |
-| ai-ml-workflow | 26 |
+| ai-ml-workflow | 29 |
 | ran-nf-oam | 29 |
 | a1-related | 30 |
 | dme | 31 |
@@ -554,8 +554,14 @@ own §1/§2 items stand as-is.
 - No feature-group/feature-store concept exists at all — the reference
   has a first-class `FeatureGroup` entity with its own CRUD and a real
   SDK querying by trainingjob/feature name.
-- No uniqueness/conflict check on `(model_type, version)` — duplicate
-  registrations silently succeed where the reference 409s.
+- ~~No uniqueness/conflict check on `(model_type, version)` — duplicate
+  registrations silently succeed where the reference 409s.~~ —
+  **closed.** Added a real `UniqueConstraint(model_type, version)` to
+  `AIMLModel` (the reference's own `ModelID` composite primary key on
+  `(modelName, modelVersion)`, `modelInfo.go`), and `register_model`
+  now catches the resulting `IntegrityError` and 409s
+  (`MODEL_ALREADY_REGISTERED`), matching the reference's own
+  `RegisterModel` (`mmes_apis.go`).
 - *Confirmed structurally out of scope*: real Kubeflow/K8s pipeline
   execution, the real Cassandra-backed feature store, and S3 artifact
   storage are total, deliberate elisions consistent with this build's
@@ -941,6 +947,15 @@ own §1/§2 items stand as-is.
   against a real local Postgres 16 instance. 318 tests total, up from
   310 (`dme` alone: 25 -> 31, `ran-nf-oam` alone: 28 -> 29,
   `a1-related` alone: 29 -> 30).
+- `ai-ml-workflow`'s missing `(model_type, version)` uniqueness check
+  (§5) closed: added a real `UniqueConstraint` to `AIMLModel` (the
+  reference's own `ModelID` composite primary key on
+  `(modelName, modelVersion)`), and `register_model` now 409s
+  (`MODEL_ALREADY_REGISTERED`) on a duplicate instead of silently
+  creating a second, indistinguishable row — matching the reference's
+  own `RegisterModel`. Verified against a real local Postgres 16
+  instance. 321 tests total, up from 318 (`ai-ml-workflow` alone:
+  26 -> 29).
 
 ## Suggested next pass (priority order)
 

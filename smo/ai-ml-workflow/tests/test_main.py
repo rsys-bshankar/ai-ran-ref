@@ -124,8 +124,11 @@ def _make_group_with_subscription(db_session_factory, member_states, retrain_pro
     member_ids = [uuid.uuid4() for _ in member_states]
     sub_id = uuid.uuid4()
     with db_session_factory() as session:
-        for member_id, state in zip(member_ids, member_states):
-            session.add(AIMLModel(model_id=member_id, registration_id=str(uuid.uuid4()), model_type="t", version="1.0", state=state))
+        # Distinct model_type per member — a real coordination group's
+        # members are distinct models, and (model_type, version) is now
+        # a genuine unique constraint (this pass's own fix).
+        for i, (member_id, state) in enumerate(zip(member_ids, member_states)):
+            session.add(AIMLModel(model_id=member_id, registration_id=str(uuid.uuid4()), model_type=f"t{i}", version="1.0", state=state))
         session.add(MLModelCoordinationGroup(member_model_ids=member_ids, retrain_propagation=retrain_propagation))
         session.add(MLMFSubscription(subscription_id=sub_id, model_id=member_ids[0], metric_types=["accuracy"],
                                       dme_type_id=uuid.uuid4(), guard_kpi_floor={"accuracy": 0.9}))
@@ -192,6 +195,35 @@ def test_get_model_by_id_returns_its_fields(client):
     assert body["modelType"] == "coverage-predictor"
     assert body["version"] == "1.0"
     assert body["state"] == ModelState.REGISTERED
+
+
+def test_register_model_rejects_duplicate_type_and_version(client):
+    """OPEN_ITEMS.md section 5: the reference's own RegisterModel
+    (mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint
+    violation — this build accepted a duplicate silently, creating a
+    second, indistinguishable row for the same (modelType, version).
+    """
+    first = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"})
+    assert first.status_code == 201
+
+    resp = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "MODEL_ALREADY_REGISTERED"
+
+    all_models = client.get("/models").json()
+    assert len(all_models) == 1
+
+
+def test_register_model_allows_a_different_version_of_the_same_type(client):
+    client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"})
+    resp = client.post("/models", json={"modelType": "coverage-predictor", "version": "2.0"})
+    assert resp.status_code == 201
+
+
+def test_register_model_allows_the_same_version_of_a_different_type(client):
+    client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"})
+    resp = client.post("/models", json={"modelType": "throughput-predictor", "version": "1.0"})
+    assert resp.status_code == 201
 
 
 def test_get_unknown_model_is_404(client):
