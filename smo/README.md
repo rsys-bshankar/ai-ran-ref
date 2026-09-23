@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**206 tests total, all passing** as of this build: 196 unit tests across
+**215 tests total, all passing** as of this build: 205 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -127,7 +127,10 @@ topped it: 6 of its 8 routes (`GET /packages`, deprecate, cancel-delete,
 delete, and both usage-registration routes) had zero coverage, including
 neither half of the cascade-delete guard its own docstring calls out —
 a blocking dependent child package, or an active usage registration —
-ever having been exercised.
+ever having been exercised. SME's `unsubscribe_events` route and its
+`notify_service_change` function — real event-filtering and
+best-effort-delivery logic not yet wired into any route — were also
+both entirely untested until this pass.
 so-smos, ran-analytics, focom, rapp-mgmt, and dme — previously among the
 thinnest-covered modules — now have route-level
 coverage too, not just dispatch-logic coverage, closing OPEN_ITEMS.md's

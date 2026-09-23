@@ -2,6 +2,8 @@
 Run with: pytest smo/sme/tests -q
 """
 
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -15,13 +17,16 @@ from app.models import ServiceAuthzPolicy, ServiceEventSubscription, ServiceProf
 
 
 @pytest.fixture
-def client():
+def db_session_factory():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine, tables=[ServiceProfile.__table__, ServiceAuthzPolicy.__table__, ServiceEventSubscription.__table__])
-    TestSession = sessionmaker(bind=engine)
+    return sessionmaker(bind=engine)
 
+
+@pytest.fixture
+def client(db_session_factory):
     def override_get_session():
-        session = TestSession()
+        session = db_session_factory()
         try:
             yield session
         finally:
@@ -108,3 +113,121 @@ def test_deregister_removes_service(client):
     client.delete(f"/published-apis/v1/rapp-1/service-apis/{reg['serviceId']}")
     resp = client.get("/published-apis/v1/rapp-1/service-apis")
     assert resp.json() == []
+
+
+def test_deregister_unknown_service_is_idempotent(client):
+    resp = client.delete(f"/published-apis/v1/rapp-1/service-apis/{uuid.uuid4()}")
+    assert resp.status_code == 204
+
+
+def test_deregister_by_wrong_producer_is_a_silent_noop(client):
+    """deregister_service's `profile.producer_id == apf_id` guard — a
+    producer can't delete another producer's service. Never exercised
+    before this pass: only the matching-owner success path had coverage.
+    """
+    reg = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body()).json()
+
+    resp = client.delete(f"/published-apis/v1/rapp-2/service-apis/{reg['serviceId']}")
+    assert resp.status_code == 204  # silent no-op, not an error — same shape as an unknown id
+
+    still_there = client.get("/published-apis/v1/rapp-1/service-apis").json()
+    assert len(still_there) == 1
+
+
+def test_discover_services_filters_by_api_name(client):
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(service_name="training-status"))
+    client.post("/published-apis/v1/rapp-2/service-apis", json=register_body(service_name="coverage-analysis", producer="rapp-2"))
+
+    resp = client.get("/service-apis/v1/allServiceAPIs", params={"api_invoker_id": "anyone", "api_name": "coverage-analysis"})
+    names = [s["serviceName"] for s in resp.json()]
+    assert names == ["coverage-analysis"]
+
+
+def test_discover_services_filters_by_api_version(client):
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(version="1.0"))
+    client.post("/published-apis/v1/rapp-2/service-apis", json=register_body(service_name="other-service", producer="rapp-2", version="2.0"))
+
+    resp = client.get("/service-apis/v1/allServiceAPIs", params={"api_invoker_id": "anyone", "api_version": "2.0"})
+    versions = [s["version"] for s in resp.json()]
+    assert versions == ["2.0"]
+
+
+def test_unsubscribe_events_removes_subscription(client, db_session_factory):
+    """unsubscribe_events (DELETE /capif-events/v1/{subscriber}/subscriptions/{id})
+    had zero test coverage at all before this pass.
+    """
+    sub = client.post("/capif-events/v1/rapp-1/subscriptions", json={
+        "subscriberId": "rapp-1", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-1/cb",
+    }).json()
+
+    resp = client.delete(f"/capif-events/v1/rapp-1/subscriptions/{sub['subscriptionId']}")
+    assert resp.status_code == 204
+
+    with db_session_factory() as session:
+        assert session.get(ServiceEventSubscription, uuid.UUID(sub["subscriptionId"])) is None
+
+
+def test_unsubscribe_unknown_subscription_is_idempotent(client):
+    resp = client.delete(f"/capif-events/v1/rapp-1/subscriptions/{uuid.uuid4()}")
+    assert resp.status_code == 204
+
+
+def test_unsubscribe_by_wrong_subscriber_is_a_silent_noop(client, db_session_factory):
+    sub = client.post("/capif-events/v1/rapp-1/subscriptions", json={
+        "subscriberId": "rapp-1", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-1/cb",
+    }).json()
+
+    resp = client.delete(f"/capif-events/v1/rapp-2/subscriptions/{sub['subscriptionId']}")
+    assert resp.status_code == 204  # silent no-op, not an error
+
+    with db_session_factory() as session:
+        assert session.get(ServiceEventSubscription, uuid.UUID(sub["subscriptionId"])) is not None
+
+
+def test_notify_service_change_posts_only_to_matching_subscribers(client, db_session_factory, monkeypatch):
+    """notify_service_change is real logic (event-type filtering, the same
+    authz gate discover_services uses, best-effort delivery) but was
+    entirely untested — it's not wired into register/deregister yet
+    (its own docstring: "kept as an explicit function... wired in as a
+    follow-up"), so this exercises it directly rather than through a route.
+    """
+    from app.main import notify_service_change
+
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/capif-events/v1/rapp-2/subscriptions", json={
+        "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-2/cb",
+    })
+    client.post("/capif-events/v1/rapp-3/subscriptions", json={
+        "subscriberId": "rapp-3", "eventTypes": ["SERVICE_API_UPDATE"], "callbackUri": "http://rapp-3/cb",
+    })
+    reg = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body()).json()
+
+    with db_session_factory() as session:
+        service = session.get(ServiceProfile, uuid.UUID(reg["serviceId"]))
+        notify_service_change(session, service, "SERVICE_API_AVAILABLE")
+
+    assert len(calls) == 1
+    assert calls[0][0] == "http://rapp-2/cb"
+    assert calls[0][1]["eventType"] == "SERVICE_API_AVAILABLE"
+
+
+def test_notify_service_change_survives_unreachable_subscriber(client, db_session_factory, monkeypatch):
+    import httpx as httpx_module
+
+    from app.main import notify_service_change
+
+    def raise_error(url, json=None, timeout=None):
+        raise httpx_module.ConnectError("unreachable")
+
+    monkeypatch.setattr("app.main.httpx.post", raise_error)
+
+    client.post("/capif-events/v1/rapp-2/subscriptions", json={
+        "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-2/cb",
+    })
+    reg = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body()).json()
+
+    with db_session_factory() as session:
+        service = session.get(ServiceProfile, uuid.UUID(reg["serviceId"]))
+        notify_service_change(session, service, "SERVICE_API_AVAILABLE")  # must not raise
