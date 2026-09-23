@@ -132,31 +132,39 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| so-smos | 3 |
-| ran-analytics | 3 |
-| focom | 4 |
-| mock-near-rt-ric | 5 |
 | nfo | 5 |
+| mock-near-rt-ric | 5 |
 | r1-termination | 5 |
 | rapp-mgmt | 5 |
+| ran-analytics | 5 |
+| focom | 7 |
 | policy-mgmt | 7 |
-| sa-smos | 7 |
+| sa-smos | 8 |
 | a1-related | 8 |
 | onboarding | 9 |
 | sme | 9 |
 | dme | 10 |
 | ran-nf-oam | 10 |
 | ai-ml-workflow | 11 |
+| so-smos | 13 |
 
-Plus 10 cross-service integration tests in `tests_integration/`. The
-shallower modules (so-smos, ran-analytics, focom) have basic
-CRUD/validation coverage but not the same depth of edge-case and
-failure-path testing the FSM-heavy modules got.
+Plus 10 cross-service integration tests in `tests_integration/`.
+`rapp-mgmt` and `r1-termination` are now the shallowest-covered
+modules — both still near their original baseline.
 
 ## Closed
 
 - **`NFDeploymentDescriptor` population** (§2, was priority 1) — see
   `smo/README.md`'s "Real bugs this pass found" section.
+- **Bring the shallow-coverage modules to parity** (§4, was priority 2)
+  — so-smos, ran-analytics, and focom now have route-level test
+  coverage, not just dispatch/FSM-logic coverage. Writing it surfaced
+  and fixed two real bugs: SO SMOS's `CancelOrder` never actually
+  persisted (in-place JSON mutation SQLAlchemy never tracks), and RAN
+  Analytics' `RegisterAnalyticsProducer` crashed on a legitimate
+  re-registration (same shape as the SME bug from the original pass).
+  See `smo/README.md`'s "Real bugs this pass found" section. `nfo` was
+  separately brought to 5 by the `NFDeploymentDescriptor` fix.
 
 ## Suggested next pass (priority order)
 
@@ -173,3 +181,5 @@ failure-path testing the FSM-heavy modules got.
 5. Resolve the design-level decisions (§1) that block further code — SA
    SMOS `RECONNECT`/`ROLLBACK` and RAN NF OAM's CM sync method are the two
    most likely to unblock near-term code changes once decided.
+6. Deepen `rapp-mgmt`'s and `r1-termination`'s coverage — both are now
+   the shallowest tier remaining.
