@@ -31,6 +31,20 @@ class DMEType(Base):
         return {"namespace": self.namespace, "name": self.name, "version": self.version}
 
 
+class DMETypeSubscription(Base):
+    """OPEN_ITEMS.md section 5: ICS's own `/info-type-subscription`
+    (InfoTypeSubscriptions/ConsumerCallbacks) — a consumer subscribes to
+    be notified when any DmeType is registered or removed. Entirely
+    absent from this build until now.
+    """
+
+    __tablename__ = "dme_type_subscription"
+
+    subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    notification_destination: Mapped[str] = mapped_column(String, nullable=False)
+    owner: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class DMEDeliverySchema(Base):
     __tablename__ = "dme_delivery_schema"
 

@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**348 tests total, all passing** as of this build: 338 unit tests across
+**357 tests total, all passing** as of this build: 347 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -320,7 +320,16 @@ job type" rejection, `dataDeliveryMethod` is re-validated against the
 same `DataOffer` cross-check `create_data_job` already applies, and a
 successful update re-pushes the job to the producer, matching ICS's
 own PUT behavior of re-running `startInfoSubscriptionJob` on every
-call, new or updated.
+call, new or updated. `dme` went from 41 tests to 50 in the next pass:
+added `POST`/`GET`/`DELETE /type-subscriptions` and
+`GET /type-subscriptions/{id}`, closing the missing type-subscription
+mechanism (ICS's own `/info-type-subscription`). `register_dme_type`
+and `deregister_producer` now best-effort notify every subscriber
+whenever any type is registered or removed (ICS's own
+`ConsumerCallbacks.notifyTypeRegistered`/`notifyTypeRemoved`),
+unfiltered — matching the reference's own lack of per-type scoping on
+this particular subscription (unlike, say, A1 Related's policy-status
+subscriptions, which do filter).
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

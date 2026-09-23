@@ -148,7 +148,7 @@ Per-module unit test counts:
 | a1-related | 30 |
 | ai-ml-workflow | 35 |
 | focom | 37 |
-| dme | 41 |
+| dme | 50 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
 `mock-near-rt-ric`/`r1-termination`/`policy-mgmt` (10 tests each) are
@@ -168,7 +168,8 @@ fix were exercised); `mock-near-rt-ric` gained coverage for
 before this pass despite being a real route. A later pass added
 `ai-ml-workflow`'s `PUT`/`DELETE /models/{id}` coverage (+6, see §5),
 then `ran-analytics`'s real subscriber-notification delivery in
-`publish_report` (+5, see §5).
+`publish_report` (+5, see §5), then `dme`'s `PUT /data-jobs/{id}`
+(+5) and its `/type-subscriptions` mechanism (+9, see §5).
 
 ## 5. O-RAN-SC completeness gaps (repo-audited)
 
@@ -305,8 +306,20 @@ own §1/§2 items stand as-is.
   update re-pushes the job to the producer (ICS re-runs
   `startInfoSubscriptionJob` on every PUT, new or updated, not just on
   first creation).
-- No type-subscription mechanism (consumers notified when a type is
-  registered/removed) — entirely absent.
+- ~~No type-subscription mechanism (consumers notified when a type is
+  registered/removed) — entirely absent.~~ — **closed.** Added
+  `POST`/`GET`/`DELETE /type-subscriptions` and
+  `GET /type-subscriptions/{id}` (ICS's own `/info-type-subscription`,
+  `InfoTypeSubscriptions`/`ConsumerCallbacks`). ICS's own PUT is
+  create-or-update against a caller-supplied `subscriptionId`; this
+  build's id is server-generated, the same adaptation already made for
+  every other subscription in this codebase (RAN Analytics, A1
+  Related, Policy Mgmt, FOCOM). `register_dme_type` and
+  `deregister_producer` now best-effort POST
+  `{infoTypeId, jobDataSchema, status: REGISTERED|DEREGISTERED}` to
+  every subscriber's `notificationDestination` (ICS's own
+  `notifyTypeRegistered`/`notifyTypeRemoved`) — unfiltered, matching
+  the reference's own lack of per-type scoping on this subscription.
 - ~~`deregister_producer` deletes a producer's `DMEType` rows
   unconditionally — ... no cascade cleanup of orphaned `DataJob`/
   `DataOffer` rows.~~ — **closed.** This was worse than "orphaned":
@@ -1087,6 +1100,14 @@ own §1/§2 items stand as-is.
   "cannot modify job type" rejection, and a successful update
   re-pushes the job to the producer, matching ICS's own PUT behavior.
   348 tests total, up from 343 (`dme` alone: 36 -> 41).
+- DME's missing type-subscription mechanism (§5) closed: added
+  `POST`/`GET`/`DELETE /type-subscriptions` and
+  `GET /type-subscriptions/{id}` (ICS's own `/info-type-subscription`).
+  `register_dme_type`/`deregister_producer` now best-effort notify
+  every subscriber on any type registration/removal
+  (`ConsumerCallbacks.notifyTypeRegistered`/`notifyTypeRemoved`),
+  unfiltered, matching the reference's own lack of per-type scoping.
+  357 tests total, up from 348 (`dme` alone: 41 -> 50).
 
 ## Suggested next pass (priority order)
 
