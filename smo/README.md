@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**376 tests total, all passing** as of this build: 366 unit tests across
+**380 tests total, all passing** as of this build: 370 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -370,7 +370,16 @@ registration metadata gap by adding `description`/`author`/`owner`/
 `ModelRelatedInformation`/`ModelInformation`/`Metadata`/
 `TargetEnvironment` fields) — required there, kept optional here since
 this build's own `RegisterModel` was already permissive before this
-pass.
+pass. `ai-ml-workflow` went from 38 tests to 42 in the next pass:
+closed its thin `TrainingJob` gap, partially — added `runId`/
+`trainingDataset`/`validationDataset`/`consumerRappId`/
+`producerRappId` to `RequestTraining`, plus a real metrics-writeback
+route pair matching the reference's own `update-model-metrics`/
+`get-model-metrics` routes. The reference's real two-axis step×status
+tracking stays deliberately unadopted — replacing this build's
+existing flat `status` field with a step state machine would be a
+bigger rework of already-shipped behavior, not a purely additive
+field.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

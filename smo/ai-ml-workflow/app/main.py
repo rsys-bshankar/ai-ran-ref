@@ -49,6 +49,11 @@ class RequestTrainingRequest(BaseModel):
     requiredData: dict = {}
     validationCriteria: dict = {}
     notificationUri: str | None = None
+    runId: str | None = None
+    trainingDataset: str | None = None
+    validationDataset: str | None = None
+    consumerRappId: str | None = None
+    producerRappId: str | None = None
 
 
 class UpdateModelRequest(BaseModel):
@@ -264,7 +269,9 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
     job = TrainingJob(model_id=body.modelId, model_coordination_group_id=body.modelCoordinationGroupId,
                        producer_id=body.producerId, required_data=body.requiredData,
                        validation_criteria=body.validationCriteria, notification_uri=body.notificationUri,
-                       status="RUNNING")
+                       status="RUNNING", run_id=body.runId, training_dataset=body.trainingDataset,
+                       validation_dataset=body.validationDataset, consumer_rapp_id=body.consumerRappId,
+                       producer_rapp_id=body.producerRappId)
     db.add(job)
     db.flush()
 
@@ -286,7 +293,11 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
 @app.get("/training-jobs/{training_job_id}/status")
 def query_training_job_status(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(TrainingJob, training_job_id)
-    return {"trainingJobId": str(job.training_job_id), "status": job.status}
+    return {
+        "trainingJobId": str(job.training_job_id), "status": job.status, "runId": job.run_id,
+        "trainingDataset": job.training_dataset, "validationDataset": job.validation_dataset,
+        "consumerRappId": job.consumer_rapp_id, "producerRappId": job.producer_rapp_id,
+    }
 
 
 @app.delete("/training-jobs/{training_job_id}", status_code=204)
@@ -295,6 +306,29 @@ def cancel_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessio
     if job is not None:
         job.status = "CANCELLED"
         db.commit()
+
+
+@app.post("/training-jobs/{training_job_id}/model-metrics")
+def update_training_job_model_metrics(training_job_id: uuid.UUID, model_metrics: dict, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: TrainingJob had no metrics-writeback
+    endpoint at all. The reference's own
+    POST /training-jobs/update-model-metrics/<id> (trainingjob_controller.py)
+    replaces model_metrics wholesale, not a merge — same here.
+    """
+    job = db.get(TrainingJob, training_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such training job")
+    job.model_metrics = model_metrics
+    db.commit()
+    return {"trainingJobId": str(job.training_job_id), "modelMetrics": job.model_metrics}
+
+
+@app.get("/training-jobs/{training_job_id}/model-metrics")
+def get_training_job_model_metrics(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    job = db.get(TrainingJob, training_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such training job")
+    return job.model_metrics or {}
 
 
 @app.post("/models/{model_id}/advance")

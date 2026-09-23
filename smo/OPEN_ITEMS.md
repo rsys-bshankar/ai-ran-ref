@@ -147,7 +147,7 @@ Per-module unit test counts:
 | onboarding | 30 |
 | a1-related | 30 |
 | focom | 37 |
-| ai-ml-workflow | 38 |
+| ai-ml-workflow | 42 |
 | dme | 55 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
@@ -711,12 +711,25 @@ own §1/§2 items stand as-is.
   `targetEnvironments` is stored as JSON, not a normalized child table
   — registered and read back wholesale, the same adaptation this build
   already uses for SME's `aefProfiles`/`DMEType.collection_spec`.
-- `TrainingJob` is far thinner than the reference's real two-axis
+- ~~`TrainingJob` is far thinner than the reference's real two-axis
   (step × status) tracking — no `run_id`, no distinct
   training/validation dataset fields, no metrics-writeback endpoint, no
   step state machine (DATA_EXTRACTION/TRAINING/TRAINED_MODEL), no
   separate consumer/producer rApp ids. Ours collapses all of this into
-  two free-form JSON dicts and a flat status string.
+  two free-form JSON dicts and a flat status string.~~ — **closed,
+  partially.** Added `runId`/`trainingDataset`/`validationDataset`/
+  `consumerRappId`/`producerRappId` to `RequestTraining`, exposed on
+  `GET .../status`, plus a real metrics-writeback pair
+  (`POST`/`GET /training-jobs/{id}/model-metrics`, matching the
+  reference's own `POST .../update-model-metrics/<id>`/
+  `GET .../get-model-metrics/<id>`, whole-body-replace semantics, not a
+  merge). Deliberately **not** adopted: the reference's real two-axis
+  step×status tracking (`steps_state`/`TrainingJobStatus`,
+  `trainingmgr/models/steps_state.py`) — replacing this build's
+  existing flat `status` field with a step state machine would be a
+  bigger, riskier rework of already-shipped behavior (every existing
+  caller reads/writes a flat `status`), not a purely additive field;
+  left for a future pass rather than attempted here.
 - No feature-group/feature-store concept exists at all — the reference
   has a first-class `FeatureGroup` entity with its own CRUD and a real
   SDK querying by trainingjob/feature name.
@@ -1234,6 +1247,16 @@ own §1/§2 items stand as-is.
   there, kept optional here since this build's own `RegisterModel` was
   already permissive. 376 tests total, up from 373 (`ai-ml-workflow`
   alone: 35 -> 38).
+- AI/ML Workflow's thin `TrainingJob` (§5) closed, partially: added
+  `runId`/`trainingDataset`/`validationDataset`/`consumerRappId`/
+  `producerRappId` to `RequestTraining`, plus a real metrics-writeback
+  pair (`POST`/`GET /training-jobs/{id}/model-metrics`, matching the
+  reference's own `update-model-metrics`/`get-model-metrics` routes).
+  The reference's real two-axis step×status tracking stays deliberately
+  unadopted — replacing this build's existing flat `status` field with
+  a step state machine is a bigger rework of already-shipped behavior,
+  not a purely additive field. 380 tests total, up from 376
+  (`ai-ml-workflow` alone: 38 -> 42).
 
 ## Suggested next pass (priority order)
 
