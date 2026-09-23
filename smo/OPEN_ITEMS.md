@@ -139,7 +139,6 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| a1-related | 8 |
 | onboarding | 9 |
 | sme | 9 |
 | rapp-mgmt | 9 |
@@ -153,10 +152,12 @@ Per-module unit test counts:
 | focom | 13 |
 | so-smos | 13 |
 | ai-ml-workflow | 15 |
+| a1-related | 18 |
 | ran-nf-oam | 20 |
 
-Plus 10 cross-service integration tests in `tests_integration/`.
-`a1-related` is now the shallowest-covered module. `rapp-mgmt` and
+Plus 10 cross-service integration tests in `tests_integration/`. The
+`onboarding`/`sme`/`rapp-mgmt`/`nfo`/`ran-analytics` tier (9 tests each)
+is now the shallowest-covered. `rapp-mgmt` and
 `dme` moved out of the shallow tier in an earlier pass (both gained
 route-level tests); a later pass added route-level coverage for the five
 §1 items closed below — `ai-ml-workflow` (+4), `policy-mgmt` (+3),
@@ -284,6 +285,23 @@ before this pass despite being a real route.
   — same pure absence-of-tests shape as the previous two coverage
   passes. Now at 13 tests; `a1-related` (8) is now the shallowest-covered
   module. 177 tests total, up from 171.
+- **Deepen `a1-related`'s coverage** (§4, was priority 2) — sat at 8
+  tests, the shallowest tier remaining after the previous three coverage
+  passes. Five whole routes had zero test coverage at all: `GET
+  /policies/{id}`, `PUT /policies/{id}`, `DELETE /policies/{id}`,
+  `DELETE /policies/subscriptions/{id}`, and `DELETE /ei-types/{id}` — by
+  far the largest single-pass gap found across all four coverage passes.
+  All five now covered, including each delete route's idempotent-on-
+  unknown-id case, `DELETE /policies/{id}` actually reaching the (mocked)
+  Near-RT RIC via `a1_termination_client` rather than only dropping the
+  local mirror row, and `query_policy`'s unguarded-`None` crash on an
+  unknown/deleted id explicitly asserted (the same "genuine error path,
+  not a friendly 404" pattern `nfo`'s own placement route uses) rather
+  than silently avoided. No real bugs found — same pure absence-of-tests
+  shape as the previous three coverage passes. Now at 18 tests — the
+  largest module by test count after `ran-nf-oam`.
+  `onboarding`/`sme`/`rapp-mgmt`/`nfo`/`ran-analytics` (9 tests each) are
+  now the shallowest-covered tier. 187 tests total, up from 177.
 
 ## Suggested next pass (priority order)
 
@@ -293,5 +311,8 @@ before this pass despite being a real route.
    `WEIGHTED_TRIGGERS`, Shape B/`JOINT_TRAINING`, the alarm-storm
    correlation algorithm, and `upgradeTimeoutSeconds`'s default — still
    need a stakeholder call, not an invented answer.
-2. `a1-related` is now the shallowest-covered module (8 tests) — the next
-   natural coverage target if another pass like this one is wanted.
+2. `onboarding`, `sme`, `rapp-mgmt`, `nfo`, and `ran-analytics` are now
+   tied as the shallowest-covered tier (9 tests each) — the next natural
+   coverage target if another pass like this one is wanted; no single
+   module stands out this time, so pick whichever's route inventory
+   turns up the most untested paths.
