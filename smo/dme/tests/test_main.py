@@ -37,10 +37,27 @@ def client():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def _default_producer_callbacks_are_harmless(monkeypatch):
+    """Every test registers producers at fake hostnames
+    (http://ran-nf-oam:8000/...) that only resolve inside the real
+    docker-compose network — health checks and job push/stop are all
+    best-effort by design (OPEN_ITEMS.md section 5), so defaulting them
+    to a harmless, deterministic response keeps every test that doesn't
+    care about this behavior fast and stable. Tests that actually
+    exercise health/push/stop behavior override this with their own
+    monkeypatch.setattr call.
+    """
+    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(200))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: FakeHealthResponse(200))
+    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None: FakeHealthResponse(204))
+
+
 def register_type_body(name="PMCounters", version="1.0.0", **extra):
     return {"namespace": "RAN", "name": name, "version": version, "typeName": f"RAN.{name}",
             "producerId": "ran-nf-oam", "dataProductionSchema": {"type": "object"},
-            "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health", **extra}
+            "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
+            "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs", **extra}
 
 
 def test_register_dme_type_returns_registration_id(client):
@@ -62,11 +79,10 @@ def test_different_version_is_not_a_conflict(client):
     assert resp.status_code == 201
 
 
-def test_discover_returns_dme_type_id_struct(client, monkeypatch):
+def test_discover_returns_dme_type_id_struct(client):
     """Foundational Platform LLD section 3.1: dmeTypeIdStruct is computed
     from our internal UUID, matching R1AP's actual wire identity.
     """
-    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(200))
     client.post("/production-capabilities", json=register_type_body())
     resp = client.get("/dme-types")
     struct = resp.json()[0]["dmeTypeIdStruct"]
@@ -218,12 +234,11 @@ def test_data_job_unaffected_by_offer_check_when_no_offer_exists(client):
     assert resp.status_code == 202
 
 
-def test_deregister_producer_removes_all_its_types(client, monkeypatch):
+def test_deregister_producer_removes_all_its_types(client):
     """The DME half of rApp Management's producer-reconsideration trigger
     (OPEN_ITEMS.md section 1) — deregistering a producer must remove
     every DMEType it registered, not just one.
     """
-    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(200))
     client.post("/production-capabilities", json=register_type_body(name="TypeA", producerId="rapp-1"))
     client.post("/production-capabilities", json=register_type_body(name="TypeB", producerId="rapp-1"))
     client.post("/production-capabilities", json=register_type_body(name="TypeC", producerId="rapp-2"))
@@ -326,17 +341,17 @@ def test_get_unknown_data_offer_is_404(client):
     assert resp.status_code == 404
 
 
-def test_discover_filters_by_data_category(client, monkeypatch):
+def test_discover_filters_by_data_category(client):
     """OPEN_ITEMS.md section 5: data_category was declared as a query
     param but silently never applied — every call returned every type
     regardless of the filter.
     """
-    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(200))
     client.post("/production-capabilities", json=register_type_body(name="CoverageIssue"))
     client.post("/production-capabilities", json={
         "namespace": "AIML", "name": "ModelHealth", "version": "1.0.0", "typeName": "AIML.ModelHealth",
         "producerId": "ai-ml-workflow", "dataProductionSchema": {"type": "object"},
         "producerHealthCallbackUrl": "http://ai-ml-workflow:8000/health",
+        "jobCallbackUrl": "http://ai-ml-workflow:8000/dme-jobs",
     })
 
     resp = client.get("/dme-types", params={"data_category": "AIML"})
@@ -344,14 +359,109 @@ def test_discover_filters_by_data_category(client, monkeypatch):
     assert names == ["AIML.ModelHealth"]
 
 
-def test_discover_without_data_category_returns_every_type(client, monkeypatch):
-    monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(200))
+def test_discover_without_data_category_returns_every_type(client):
     client.post("/production-capabilities", json=register_type_body(name="CoverageIssue"))
     client.post("/production-capabilities", json={
         "namespace": "AIML", "name": "ModelHealth", "version": "1.0.0", "typeName": "AIML.ModelHealth",
         "producerId": "ai-ml-workflow", "dataProductionSchema": {"type": "object"},
         "producerHealthCallbackUrl": "http://ai-ml-workflow:8000/health",
+        "jobCallbackUrl": "http://ai-ml-workflow:8000/dme-jobs",
     })
 
     resp = client.get("/dme-types")
     assert len(resp.json()) == 2
+
+
+def test_create_data_job_pushes_the_job_to_the_producer(client, monkeypatch):
+    """OPEN_ITEMS.md section 5: create_data_job/terminate_data_job only
+    ever touched our own DB — ICS's own ProducerCallbacks.startInfoJob
+    actually POSTs the job to the producer's jobCallbackUrl
+    (ProducerJobInfo's wire shape). This is the actual fix.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    created = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+        "productionJobDefinition": {"kpi": "throughput"},
+    }).json()
+
+    assert len(calls) == 1
+    url, body = calls[0]
+    assert url == "http://ran-nf-oam:8000/dme-jobs"
+    assert body["infoJobIdentity"] == created["dataJobId"]
+    assert body["infoTypeIdentity"] == reg["registrationId"]
+    assert body["infoJobData"] == {"kpi": "throughput"}
+    assert body["owner"] == "rapp-1"
+    assert "lastUpdated" in body
+
+
+def test_create_data_job_succeeds_even_if_the_producer_push_fails(client, monkeypatch):
+    """Best-effort, same pattern as every other DME/FOCOM/A1-Related
+    notification in this build — an unreachable producer must not fail
+    the consumer-facing CreateDataJob call.
+    """
+    import httpx as httpx_module
+
+    def raise_error(url, json=None, timeout=None):
+        raise httpx_module.ConnectError("unreachable")
+
+    monkeypatch.setattr("app.main.httpx.post", raise_error)
+
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    resp = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    })
+    assert resp.status_code == 202
+
+
+def test_terminate_data_job_stops_the_job_at_the_producer(client, monkeypatch):
+    """ICS's own ProducerCallbacks.stopInfoJob — DELETE to
+    jobCallbackUrl/{jobId}.
+    """
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    created = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    }).json()
+
+    calls = []
+    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None: calls.append(url))
+
+    client.delete(f"/data-jobs/{created['dataJobId']}")
+    assert calls == [f"http://ran-nf-oam:8000/dme-jobs/{created['dataJobId']}"]
+
+
+def test_terminate_unknown_data_job_pushes_nothing(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None: calls.append(url))
+
+    resp = client.delete("/data-jobs/11111111-1111-1111-1111-111111111111")
+    assert resp.status_code == 204
+    assert calls == []
+
+
+def test_terminate_data_job_succeeds_even_if_the_producer_stop_fails(client, monkeypatch):
+    import httpx as httpx_module
+
+    def raise_error(url, timeout=None):
+        raise httpx_module.ConnectError("unreachable")
+
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    created = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    }).json()
+
+    monkeypatch.setattr("app.main.httpx.delete", raise_error)
+    resp = client.delete(f"/data-jobs/{created['dataJobId']}")
+    assert resp.status_code == 204
+
+
+def test_register_dme_type_exposes_job_callback_url(client):
+    client.post("/production-capabilities", json=register_type_body())
+    resp = client.get("/dme-types")
+    assert resp.json()[0]["jobCallbackUrl"] == "http://ran-nf-oam:8000/dme-jobs"

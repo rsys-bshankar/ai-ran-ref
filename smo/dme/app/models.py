@@ -21,6 +21,7 @@ class DMEType(Base):
     data_production_schema: Mapped[dict] = mapped_column(JSON, nullable=False)
     collection_spec: Mapped[dict | None] = mapped_column(JSON)
     producer_health_callback_url: Mapped[str] = mapped_column(String, nullable=False)
+    job_callback_url: Mapped[str] = mapped_column(String, nullable=False)  # NEW section 5: ICS's own InfoProducer.jobCallbackUrl — distinct from the health-check URL
 
     @property
     def dme_type_id_struct(self) -> dict:

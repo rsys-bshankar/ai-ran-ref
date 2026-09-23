@@ -143,11 +143,11 @@ Per-module unit test counts:
 | ran-analytics | 17 |
 | sme | 22 |
 | nfo | 23 |
-| dme | 25 |
 | onboarding | 26 |
 | ai-ml-workflow | 26 |
-| ran-nf-oam | 28 |
-| a1-related | 29 |
+| ran-nf-oam | 29 |
+| a1-related | 30 |
+| dme | 31 |
 | focom | 37 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
@@ -250,9 +250,21 @@ own §1/§2 items stand as-is.
   file-collection pipeline elsewhere), so a live check on read is the
   honest substitute. An unreachable/non-2xx producer now genuinely
   reports `DISABLED` even with an `ACTIVE` job.
-- No job push to producers at all — ICS POSTs the job definition to the
-  producer's callback URL on create/delete; `create_data_job`/
-  `terminate_data_job` only ever touch our own DB.
+- ~~No job push to producers at all — ICS POSTs the job definition to
+  the producer's callback URL on create/delete; `create_data_job`/
+  `terminate_data_job` only ever touch our own DB.~~ — **closed.**
+  Added a real `jobCallbackUrl` field to `DMEType` registration
+  (ICS's own `InfoProducer.jobCallbackUrl`, distinct from the
+  health-supervision URL), and `create_data_job`/`terminate_data_job`
+  now genuinely POST/DELETE to it (ICS's own
+  `ProducerCallbacks.startInfoJob`/`stopInfoJob`, matching
+  `ProducerJobInfo`'s wire shape). Best-effort, same pattern as every
+  other DME/FOCOM/A1-Related notification in this build — an
+  unreachable producer never fails the consumer-facing call. Also
+  closed the two real producers' own half of this: `ran-nf-oam` and
+  `a1-related` both now answer `/dme-jobs` (the URL they themselves
+  register), the same dangling-callback bug class already fixed for
+  `/health`.
 - No producer-status endpoint (`GET .../info-producers/{id}/status`).
 - No job-definition schema validation against `dataProductionSchema` —
   `productionJobDefinition` is accepted as an arbitrary dict.
@@ -916,6 +928,19 @@ own §1/§2 items stand as-is.
   Computed live at read time (`GET /dme-types`) rather than via a
   periodic background poll, since no scheduler exists anywhere in this
   build. 310 tests total, up from 308 (`dme` alone: 23 -> 25).
+- `dme`'s missing job push to producers (§5) closed: added a real
+  `jobCallbackUrl` field to `DMEType` registration (ICS's own
+  `InfoProducer.jobCallbackUrl`, distinct from the health-supervision
+  URL), and `create_data_job`/`terminate_data_job` now genuinely
+  POST/DELETE to it (ICS's own `ProducerCallbacks.startInfoJob`/
+  `stopInfoJob`, matching `ProducerJobInfo`'s wire shape), best-effort.
+  Also closed the producer-side half of this for both real producers
+  in this build: `ran-nf-oam` and `a1-related` now answer `/dme-jobs`
+  (the URL they themselves register with DME), the same
+  dangling-callback bug class already fixed for `/health`. Verified
+  against a real local Postgres 16 instance. 318 tests total, up from
+  310 (`dme` alone: 25 -> 31, `ran-nf-oam` alone: 28 -> 29,
+  `a1-related` alone: 29 -> 30).
 
 ## Suggested next pass (priority order)
 

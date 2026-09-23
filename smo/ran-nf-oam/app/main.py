@@ -188,6 +188,7 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
         "namespace": "RAN", "name": f"PMCounters.{counter_type}", "version": "1.0.0",
         "typeName": f"RAN.PMCounters.{counter_type}", "producerId": "ran-nf-oam",
         "dataProductionSchema": {}, "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
+        "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs",
     })
     return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine}
 
@@ -202,6 +203,23 @@ def health_check():
     check: reachable and 200 means this RAN NF OAM instance is up.
     """
     return {"status": "healthy"}
+
+
+@app.post("/dme-jobs")
+def receive_dme_job(body: dict):
+    """DME's own job-push callback (OPEN_ITEMS.md section 5): DME's
+    create_data_job now actually POSTs the job to jobCallbackUrl on
+    create — subscribe_pm registers this exact URL, so this closes the
+    same class of dangling-callback bug the /health route closed for
+    the health-supervision URL. Phase 1: acks only, no real per-job
+    state tracked producer-side.
+    """
+    return {"status": "accepted"}
+
+
+@app.delete("/dme-jobs/{data_job_id}", status_code=204)
+def stop_dme_job(data_job_id: str):
+    pass
 
 
 @app.post("/software-management-jobs", status_code=202)

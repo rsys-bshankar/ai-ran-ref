@@ -55,6 +55,7 @@ CREATE TABLE dme_type (
   data_production_schema               JSONB NOT NULL,
   collection_spec                        JSONB,               -- above-spec addition, kept deliberately (section 3.4)
   producer_health_callback_url             TEXT NOT NULL,     -- ADOPT from ICS (repo inventory)
+  job_callback_url                            TEXT NOT NULL,  -- NEW section 5: ICS's own InfoProducer.jobCallbackUrl
   UNIQUE (namespace, name, version)
 );
 

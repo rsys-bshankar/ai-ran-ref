@@ -123,6 +123,21 @@ def test_health_endpoint_answers_the_callback_url_subscribe_pm_registers(client)
     assert resp.json()["status"] == "healthy"
 
 
+def test_dme_jobs_endpoint_answers_the_callback_url_subscribe_pm_registers(client):
+    """OPEN_ITEMS.md section 5: subscribe_pm now also registers
+    http://ran-nf-oam:8000/dme-jobs as this producer's jobCallbackUrl —
+    DME's own create_data_job/terminate_data_job actually push to it
+    now, so this closes the same class of dangling-callback bug the
+    /health route closed for the health-supervision URL.
+    """
+    resp = client.post("/dme-jobs", json={"infoJobIdentity": "job-1", "infoTypeIdentity": "type-1", "infoJobData": {}})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "accepted"
+
+    resp = client.delete("/dme-jobs/job-1")
+    assert resp.status_code == 204
+
+
 def test_ingest_alarm_persists_standard_fault_fields(client, db_session_factory):
     """OPEN_ITEMS.md section 5: the alarm model was missing the standard
     fault fields the wire format (VES/3GPP alarm IRP, per oam's own
