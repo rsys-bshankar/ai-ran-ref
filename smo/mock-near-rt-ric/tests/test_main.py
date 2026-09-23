@@ -2,11 +2,24 @@
 v1.3 section 3.9). Run with: pytest smo/mock-near-rt-ric/tests -q
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import _fingerprints, _policies, app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _reset_mock_state():
+    """_policies/_fingerprints are plain module-level dicts (this is a
+    Phase 1 test double, not a real persistent service) — without this,
+    OPEN_ITEMS.md section 5's new duplicate-content check would see
+    every test's identical {"scope": "cell1"} payload under "t1" as a
+    duplicate of whichever test happened to run first.
+    """
+    _policies.clear()
+    _fingerprints.clear()
 
 
 def test_create_policy_with_object_is_enforced():
@@ -87,3 +100,62 @@ def test_policies_are_tracked_independently():
 
     assert client.get(f"/a1-p/policies/{enforced['policyId']}/status").json()["enforcementStatus"] == "ENFORCED"
     assert client.get(f"/a1-p/policies/{rejected['policyId']}/status").json()["enforcementStatus"] == "REJECTED"
+
+
+def test_create_policy_rejects_duplicate_content_for_the_same_type():
+    """OPEN_ITEMS.md section 5: the real near-rt-ric-simulator's own
+    fingerprint-based duplicate check (a1_mediator_controller.py) was
+    entirely unenforced here — a second, byte-identical policyObject
+    under the same type used to be accepted without complaint.
+    """
+    first = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell1"}).json()
+    assert first["enforcementStatus"] == "ENFORCED"
+
+    second = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell1"}).json()
+    assert second["enforcementStatus"] == "REJECTED"
+    assert second["rejectionReason"] == "duplicate policy content for this type"
+    assert second["policyId"] != first["policyId"]
+
+
+def test_create_policy_allows_identical_content_under_a_different_type():
+    """The fingerprint is scoped by policy type — the same content is
+    legitimately reusable across distinct types.
+    """
+    client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell1"})
+    resp = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t2"}, json={"scope": "cell1"})
+    assert resp.json()["enforcementStatus"] == "ENFORCED"
+
+
+def test_create_policy_allows_different_content_under_the_same_type():
+    client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell1"})
+    resp = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell2"})
+    assert resp.json()["enforcementStatus"] == "ENFORCED"
+
+
+def test_update_policy_rejects_content_duplicating_a_different_policy():
+    other = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell1"}).json()
+    target = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell2"}).json()
+
+    resp = client.put(f"/a1-p/policies/{target['policyId']}", json={"scope": "cell1"})
+    assert resp.json()["enforcementStatus"] == "REJECTED"
+    assert resp.json()["rejectionReason"] == "duplicate policy content for this type"
+
+    # target's own status genuinely flips to REJECTED, not left stale as ENFORCED
+    status = client.get(f"/a1-p/policies/{target['policyId']}/status")
+    assert status.json()["enforcementStatus"] == "REJECTED"
+    # the other policy this collided with is untouched
+    assert client.get(f"/a1-p/policies/{other['policyId']}/status").json()["enforcementStatus"] == "ENFORCED"
+
+
+def test_update_policy_to_its_own_current_content_is_not_a_self_collision():
+    created = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell1"}).json()
+    resp = client.put(f"/a1-p/policies/{created['policyId']}", json={"scope": "cell1"})
+    assert resp.json()["enforcementStatus"] == "ENFORCED"
+
+
+def test_delete_frees_up_its_content_fingerprint_for_reuse():
+    created = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell1"}).json()
+    client.delete(f"/a1-p/policies/{created['policyId']}")
+
+    resp = client.post("/a1-p/policies", params={"near_rt_ric_id": "ric1", "policy_type_id": "t1"}, json={"scope": "cell1"})
+    assert resp.json()["enforcementStatus"] == "ENFORCED"

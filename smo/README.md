@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**326 tests total, all passing** as of this build: 316 unit tests across
+**332 tests total, all passing** as of this build: 322 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -278,6 +278,12 @@ producer with an existing job/offer against one of its types
 previously either silently orphaned the rows under SQLite or crashed
 with an unhandled `IntegrityError` on real Postgres), plus explicit
 application-level cleanup in `deregister_producer` itself.
+`mock-near-rt-ric` went from 10 tests to 16 in the next pass: added a
+real content-fingerprint check to `create_policy`/`update_policy`
+(ADOPT from the real near-rt-ric-simulator's own `calcFingerprint`/
+`policy_fingerprint`), scoped per policy type — a second, byte-
+identical `policyObject` under the same type is now genuinely
+`REJECTED`.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
