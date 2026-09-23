@@ -144,9 +144,9 @@ Per-module unit test counts:
 | sme | 22 |
 | nfo | 23 |
 | onboarding | 26 |
-| ai-ml-workflow | 29 |
 | ran-nf-oam | 29 |
 | a1-related | 30 |
+| ai-ml-workflow | 35 |
 | dme | 36 |
 | focom | 37 |
 
@@ -165,7 +165,8 @@ coverage for non-GET methods, body/header/query-param forwarding, and
 non-200 upstream passthrough (previously only GET and the URL-stripping
 fix were exercised); `mock-near-rt-ric` gained coverage for
 `UpdatePolicy` (`PUT /a1-p/policies/{id}`), which had zero tests at all
-before this pass despite being a real route.
+before this pass despite being a real route. A later pass added
+`ai-ml-workflow`'s `PUT`/`DELETE /models/{id}` coverage (+6, see §5).
 
 ## 5. O-RAN-SC completeness gaps (repo-audited)
 
@@ -564,9 +565,35 @@ own §1/§2 items stand as-is.
   elision — the uploaded bytes are stored in a new `ModelArtifact`
   table instead, so upload+download genuinely round-trip;
   `artifact_location` is now actually written by `main.py`).
-- Model CRUD is incomplete — ~~no `GET /models/{id}`~~ (**closed**: now
-  404s on an unknown id), no update, no delete/deregister; only
-  create and a type-filtered list existed before this pass.
+- ~~Model CRUD is incomplete — no `GET /models/{id}`, no update, no
+  delete/deregister; only create and a type-filtered list existed.~~ —
+  **closed.** `GET /models/{id}` (previous pass) now has siblings:
+  `PUT /models/{id}` (`UpdateModel`, `mmes_apis.go`) 404s on an unknown
+  id and 400s (`MODEL_IDENTITY_IMMUTABLE`) on a `modelType`/`version`
+  mismatch against the existing record, matching the reference's own
+  identity-is-immutable rejection; it updates only the metadata fields
+  around that identity (`requiredResourceTypeId`,
+  `trainingDataLineage`, `integrityHash`, `clearedNodeGroups`) —
+  `state`/`trainingJobId`/`artifactLocation` stay owned by the
+  dedicated advance/training/artifact-upload endpoints, not a generic
+  PUT. `DELETE /models/{id}` (`DeleteModel`) surfaced the same
+  unchecked-FK shape already found and fixed for DME's
+  `deregister_producer`: none of `aiml_model`'s five dependent FKs
+  (`model_artifact`, `training_job`, `model_change_subscription`,
+  `mlmf_subscription`, `inference_job`, transitively
+  `performance_report`) had any cascade behavior, so deleting a model
+  with dependent rows would orphan them (SQLite, no FK enforcement) or
+  crash with an unhandled `IntegrityError` (real Postgres). Fixed the
+  same way as DME's fix: `ON DELETE CASCADE` added to every FK (the
+  reference's own `DeleteModel`/`repo.Delete` explicitly cleans up its
+  one dependent child table, `TargetEnvironment`, before deleting the
+  parent — the same defense-in-depth shape, not an invented one) plus
+  explicit application-level cleanup in `deregister_model` as a second,
+  directly-testable line of defense. Verified the cascade fires for
+  real against a local Postgres 16 instance, including the transitive
+  `performance_report -> mlmf_subscription -> aiml_model` hop. Delete
+  is idempotent on an unknown id, matching this module's other DELETE
+  routes (`cancel_training`).
 - Registration metadata is thin — no I/O data type schema, no
   author/owner, no `TargetEnvironment` declarations (platform,
   environment type, dependencies) the reference requires.

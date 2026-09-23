@@ -15,7 +15,7 @@ from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import AIMLModel, MLMFSubscription, MLModelCoordinationGroup, ModelArtifact, PerformanceReport, TrainingJob
+from app.models import AIMLModel, InferenceJob, MLMFSubscription, MLModelCoordinationGroup, ModelArtifact, ModelChangeSubscription, PerformanceReport, TrainingJob
 from app.statemachine import ModelState
 
 
@@ -29,6 +29,7 @@ def db_session_factory():
     Base.metadata.create_all(engine, tables=[
         AIMLModel.__table__, TrainingJob.__table__, MLModelCoordinationGroup.__table__,
         MLMFSubscription.__table__, PerformanceReport.__table__, ModelArtifact.__table__,
+        ModelChangeSubscription.__table__, InferenceJob.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -293,3 +294,92 @@ def test_download_unknown_artifact_version_is_404(client):
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
     resp = client.get(f"/models/{model_id}/artifact/1")
     assert resp.status_code == 404
+
+
+def test_update_model_changes_metadata_fields(client):
+    """OPEN_ITEMS.md section 5: model CRUD was incomplete — create, list,
+    and (as of the previous pass) get-by-id existed, but no update at all.
+    """
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0", "requiredResourceTypeId": "gpu-a"}).json()["modelId"]
+
+    resp = client.put(f"/models/{model_id}", json={
+        "modelType": "coverage-predictor", "version": "1.0", "requiredResourceTypeId": "gpu-b",
+        "trainingDataLineage": {"source": "dme-type-1"}, "integrityHash": "sha256:abc", "clearedNodeGroups": ["ng1"],
+    })
+    assert resp.status_code == 200
+    assert resp.json()["clearedNodeGroups"] == ["ng1"]
+
+    view = client.get(f"/models/{model_id}").json()
+    assert view["clearedNodeGroups"] == ["ng1"]
+
+
+def test_update_model_rejects_changing_its_identity(client):
+    """UpdateModel (mmes_apis.go) 400s when the body's modelName/
+    modelVersion doesn't match the existing record at that id — identity
+    is immutable, matching register_model's own (model_type, version)
+    uniqueness constraint.
+    """
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+
+    resp = client.put(f"/models/{model_id}", json={"modelType": "coverage-predictor", "version": "2.0"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["title"] == "MODEL_IDENTITY_IMMUTABLE"
+
+    unchanged = client.get(f"/models/{model_id}").json()
+    assert unchanged["version"] == "1.0"
+
+
+def test_update_unknown_model_is_404(client):
+    resp = client.put(f"/models/{uuid.uuid4()}", json={"modelType": "t", "version": "1.0"})
+    assert resp.status_code == 404
+
+
+def test_delete_model_removes_it(client):
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+
+    resp = client.delete(f"/models/{model_id}")
+    assert resp.status_code == 204
+    assert client.get(f"/models/{model_id}").status_code == 404
+
+
+def test_delete_unknown_model_is_idempotent(client):
+    resp = client.delete(f"/models/{uuid.uuid4()}")
+    assert resp.status_code == 204
+
+
+def test_delete_model_cascades_its_artifacts_and_training_jobs(client, db_session_factory):
+    """OPEN_ITEMS.md section 5: none of aiml_model's five dependent FKs
+    (model_artifact, training_job, model_change_subscription,
+    mlmf_subscription, inference_job) had any cascade behavior — the
+    same unchecked-FK shape already found and fixed for DME's
+    deregister_producer. Deleting a model with dependent rows used to
+    either orphan them (SQLite) or crash with an unhandled
+    IntegrityError (real Postgres, verified separately against a live
+    instance). This proves the application-level cleanup actually
+    removes every dependent row, not just the model itself.
+    """
+    model_id = uuid.UUID(client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"])
+    client.post(f"/models/{model_id}/artifact", files={"file": ("model.zip", b"bytes", "application/zip")})
+    client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
+
+    with db_session_factory() as session:
+        session.add(ModelChangeSubscription(model_id=model_id, consumer_id="rapp-2"))
+        sub = MLMFSubscription(model_id=model_id, metric_types=["accuracy"], dme_type_id=uuid.uuid4())
+        session.add(sub)
+        session.add(InferenceJob(model_id=model_id))
+        session.commit()
+        subscription_id = sub.subscription_id
+        session.add(PerformanceReport(subscription_id=subscription_id, metrics={"accuracy": 0.1}, breached_floor=True))
+        session.commit()
+
+    resp = client.delete(f"/models/{model_id}")
+    assert resp.status_code == 204
+
+    with db_session_factory() as session:
+        assert session.get(AIMLModel, model_id) is None
+        assert session.query(ModelArtifact).filter(ModelArtifact.model_id == model_id).count() == 0
+        assert session.query(TrainingJob).filter(TrainingJob.model_id == model_id).count() == 0
+        assert session.query(ModelChangeSubscription).filter(ModelChangeSubscription.model_id == model_id).count() == 0
+        assert session.query(MLMFSubscription).filter(MLMFSubscription.model_id == model_id).count() == 0
+        assert session.query(InferenceJob).filter(InferenceJob.model_id == model_id).count() == 0
+        assert session.query(PerformanceReport).filter(PerformanceReport.subscription_id == subscription_id).count() == 0

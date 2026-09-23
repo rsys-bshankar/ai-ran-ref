@@ -426,7 +426,7 @@ CREATE TABLE aiml_model (
 
 CREATE TABLE model_artifact (
   artifact_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  model_id          UUID NOT NULL REFERENCES aiml_model(model_id),
+  model_id          UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
   artifact_version  INTEGER NOT NULL CHECK (artifact_version >= 1),
   filename          TEXT NOT NULL,
   content           BYTEA NOT NULL,
@@ -435,7 +435,7 @@ CREATE TABLE model_artifact (
 
 CREATE TABLE training_job (
   training_job_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  model_id                     UUID REFERENCES aiml_model(model_id),
+  model_id                     UUID REFERENCES aiml_model(model_id) ON DELETE CASCADE,
   model_coordination_group_id  UUID REFERENCES ml_model_coordination_group(group_id),
   producer_type                  TEXT NOT NULL DEFAULT 'rApp' CHECK (producer_type = 'rApp'),
   producer_id                      TEXT NOT NULL,
@@ -452,13 +452,13 @@ CREATE TABLE training_job (
 
 CREATE TABLE model_change_subscription (
   subscription_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  model_id          UUID NOT NULL REFERENCES aiml_model(model_id),
+  model_id          UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
   consumer_id         TEXT NOT NULL
 );
 
 CREATE TABLE mlmf_subscription (
   subscription_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  model_id          UUID NOT NULL REFERENCES aiml_model(model_id),
+  model_id          UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
   metric_types      TEXT[] NOT NULL,
   dme_type_id       UUID NOT NULL REFERENCES dme_type(dme_type_id),
   guard_kpi_floor   JSONB
@@ -466,7 +466,7 @@ CREATE TABLE mlmf_subscription (
 
 CREATE TABLE performance_report (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  subscription_id  UUID NOT NULL REFERENCES mlmf_subscription(subscription_id),
+  subscription_id  UUID NOT NULL REFERENCES mlmf_subscription(subscription_id) ON DELETE CASCADE,
   metrics          JSONB NOT NULL,
   breached_floor   BOOLEAN NOT NULL DEFAULT false,
   reported_at      TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -475,7 +475,7 @@ CREATE INDEX idx_perf_breach ON performance_report (subscription_id) WHERE breac
 
 CREATE TABLE inference_job (
   inference_job_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  model_id         UUID NOT NULL REFERENCES aiml_model(model_id),
+  model_id         UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
   status           TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','COMPLETED','FAILED')),
   notification_destination TEXT
 );

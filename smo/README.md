@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**332 tests total, all passing** as of this build: 322 unit tests across
+**338 tests total, all passing** as of this build: 328 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -283,7 +283,23 @@ real content-fingerprint check to `create_policy`/`update_policy`
 (ADOPT from the real near-rt-ric-simulator's own `calcFingerprint`/
 `policy_fingerprint`), scoped per policy type — a second, byte-
 identical `policyObject` under the same type is now genuinely
-`REJECTED`.
+`REJECTED`. `ai-ml-workflow` went from 29 tests to 35 in the next
+pass, closing model CRUD's last two gaps: `PUT /models/{id}`
+(`UpdateModel`) 404s on an unknown id and 400s
+(`MODEL_IDENTITY_IMMUTABLE`) on a `modelType`/`version` mismatch
+against the existing record — identity stays immutable, matching
+`register_model`'s own uniqueness constraint — updating only the
+metadata around it. `DELETE /models/{id}` (`DeleteModel`) surfaced the
+exact same unchecked-FK shape already found and fixed for DME's
+`deregister_producer`: none of `aiml_model`'s five dependent FKs had
+any cascade behavior, so deleting a model with dependent rows would
+orphan them under SQLite or crash with an unhandled `IntegrityError`
+on real Postgres. Fixed with `ON DELETE CASCADE` on every FK (the
+reference's own `DeleteModel` explicitly cleans up its one dependent
+child table first, in a transaction — the same defense-in-depth shape,
+not invented) plus explicit application-level cleanup, verified
+against a real local Postgres 16 instance including the transitive
+`performance_report -> mlmf_subscription -> aiml_model` hop.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

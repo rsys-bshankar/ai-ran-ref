@@ -45,6 +45,15 @@ class RequestTrainingRequest(BaseModel):
     notificationUri: str | None = None
 
 
+class UpdateModelRequest(BaseModel):
+    modelType: str
+    version: str
+    requiredResourceTypeId: str | None = None
+    trainingDataLineage: dict | None = None
+    integrityHash: str | None = None
+    clearedNodeGroups: list[str] | None = None
+
+
 @app.post("/models", status_code=201)
 def register_model(body: RegisterModelRequest, db: Session = Depends(get_session)):
     """OPEN_ITEMS.md section 5: the reference's own RegisterModel
@@ -80,6 +89,71 @@ def get_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
     if model is None:
         raise HTTPException(status_code=404, detail="no such model")
     return _model_view(model)
+
+
+@app.put("/models/{model_id}")
+def update_model(model_id: uuid.UUID, body: UpdateModelRequest, db: Session = Depends(get_session)):
+    """UpdateModel (mmes_apis.go) — 404s on an unknown id, same as
+    GetModelInfoById there. The reference also rejects a modelName/
+    modelVersion mismatch between the path's existing record and the
+    body with a 400 ("model with id ... has different modelName and
+    modelVersion than provided") rather than silently renaming it —
+    (model_type, version) is this build's own identity for the same
+    reference ModelID composite key `register_model`'s uniqueness
+    constraint already treats as immutable identity, so this endpoint
+    only ever updates the metadata fields around it, never the identity
+    itself. `state`/`trainingJobId`/`artifactLocation` stay out of this
+    body on purpose — those are owned by the dedicated advance/training/
+    artifact-upload endpoints, not a generic PUT.
+    """
+    model = db.get(AIMLModel, model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="no such model")
+    if model.model_type != body.modelType or model.version != body.version:
+        raise framework_error(
+            FrameworkError.MODEL_IDENTITY_IMMUTABLE,
+            detail=f"model {model_id} has modelType={model.model_type!r} version={model.version!r}, not the provided modelType/version",
+        )
+    model.required_resource_type_id = body.requiredResourceTypeId
+    model.training_data_lineage = body.trainingDataLineage
+    model.integrity_hash = body.integrityHash
+    model.cleared_node_groups = body.clearedNodeGroups
+    db.commit()
+    return _model_view(model)
+
+
+@app.delete("/models/{model_id}", status_code=204)
+def deregister_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
+    """DeleteModel (mmes_apis.go) — the reference's own repo.Delete
+    explicitly cleans up its one dependent child table
+    (TargetEnvironment) before deleting the parent row, in a
+    transaction, rather than relying on the DB to cascade it. This
+    build's schema has five FKs to aiml_model (model_artifact,
+    training_job, model_change_subscription, mlmf_subscription,
+    inference_job), none of which had any cascade behavior at all —
+    the exact same unchecked-FK shape already found and fixed for
+    DME's deregister_producer (OPEN_ITEMS.md section 5): deleting a
+    model with any dependent row would either orphan it (SQLite, no FK
+    enforcement) or crash with an unhandled IntegrityError (real
+    Postgres). Cleaned up explicitly here, same as there, with the
+    DB-level ON DELETE CASCADE added alongside this as a defense-in-
+    depth backstop, not the only line of defense. Idempotent: deleting
+    an unknown id is a silent no-op, matching this module's other
+    DELETE routes (cancel_training).
+    """
+    model = db.get(AIMLModel, model_id)
+    if model is None:
+        return
+    db.query(PerformanceReport).filter(PerformanceReport.subscription_id.in_(
+        select(MLMFSubscription.subscription_id).where(MLMFSubscription.model_id == model_id)
+    )).delete(synchronize_session=False)
+    db.query(MLMFSubscription).filter(MLMFSubscription.model_id == model_id).delete()
+    db.query(ModelChangeSubscription).filter(ModelChangeSubscription.model_id == model_id).delete()
+    db.query(InferenceJob).filter(InferenceJob.model_id == model_id).delete()
+    db.query(TrainingJob).filter(TrainingJob.model_id == model_id).delete()
+    db.query(ModelArtifact).filter(ModelArtifact.model_id == model_id).delete()
+    db.delete(model)
+    db.commit()
 
 
 @app.post("/models/{model_id}/artifact", status_code=201)

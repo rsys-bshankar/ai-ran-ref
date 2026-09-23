@@ -60,7 +60,7 @@ class ModelArtifact(Base):
     )
 
     artifact_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id"), nullable=False)
+    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id", ondelete="CASCADE"), nullable=False)  # NEW section 5: deregister_model's cascade, same shape as DME's dme_type FKs
     artifact_version: Mapped[int] = mapped_column(Integer, nullable=False)
     filename: Mapped[str] = mapped_column(String, nullable=False)
     content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
@@ -81,7 +81,7 @@ class TrainingJob(Base):
     )
 
     training_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    model_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("aiml_model.model_id"))
+    model_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("aiml_model.model_id", ondelete="CASCADE"))  # NEW section 5: deregister_model's cascade
     model_coordination_group_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("ml_model_coordination_group.group_id"))
     producer_type: Mapped[str] = mapped_column(String, nullable=False, default="rApp")
     producer_id: Mapped[str] = mapped_column(String, nullable=False)
@@ -95,7 +95,7 @@ class ModelChangeSubscription(Base):
     __tablename__ = "model_change_subscription"
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id"))
+    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id", ondelete="CASCADE"))  # NEW section 5: deregister_model's cascade
     consumer_id: Mapped[str] = mapped_column(String, nullable=False)
 
 
@@ -103,7 +103,7 @@ class MLMFSubscription(Base):
     __tablename__ = "mlmf_subscription"
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id"))
+    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id", ondelete="CASCADE"))  # NEW section 5: deregister_model's cascade
     metric_types: Mapped[list[str]] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False)
     dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     guard_kpi_floor: Mapped[dict | None] = mapped_column(JSON)
@@ -113,7 +113,7 @@ class PerformanceReport(Base):
     __tablename__ = "performance_report"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("mlmf_subscription.subscription_id"))
+    subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("mlmf_subscription.subscription_id", ondelete="CASCADE"))  # NEW section 5: deregister_model's cascade, transitively via mlmf_subscription
     metrics: Mapped[dict] = mapped_column(JSON, nullable=False)
     breached_floor: Mapped[bool] = mapped_column(default=False)
     reported_at: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))
@@ -123,6 +123,6 @@ class InferenceJob(Base):
     __tablename__ = "inference_job"
 
     inference_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id"))
+    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id", ondelete="CASCADE"))  # NEW section 5: deregister_model's cascade
     status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
     notification_destination: Mapped[str | None] = mapped_column(String)
