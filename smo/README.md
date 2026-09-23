@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**245 tests total, all passing** as of this build: 235 unit tests across
+**260 tests total, all passing** as of this build: 250 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -170,6 +170,17 @@ against `namespace`, the closest concept `DMEType` has to a category.
 `policy_type_id`/`near_rt_ric_id`/`creator_id`), the only real gap
 left against the module's mapping-store role now that
 `GET /policies/{id}` existed but the list/filter view never did.
+`focom` went from 19 tests to 34 in the next pass — the biggest single
+jump yet: real `ResourceType`/`ResourcePool`/`Resource`/
+`DeploymentManager` tables (`Resource` carries a `parentId` for the
+reference's parent/child shape; no real hardware telemetry populates
+it, same elision as elsewhere), lazily seeded with Phase 1's single
+degenerate topology, plus the drill-down endpoints the reference
+exposes as distinct operations (`/resourceTypes`, `/resourcePools`,
+`/resourcePools/{id}/resources`, `/deploymentManagers`, all with
+`/{id}` variants) that FOCOM previously collapsed into one hardcoded
+`/inventory` route. `provision_resource`/`deprovision_resource` now
+persist/remove real `Resource` rows instead of a stub UUID.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
