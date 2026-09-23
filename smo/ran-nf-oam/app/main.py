@@ -15,7 +15,7 @@ rejected with PROTOCOL_NOT_SUPPORTED rather than silently applied.
 import datetime
 import uuid
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -126,12 +126,22 @@ def query_alarms(managed_element_ref: str | None = None, db: Session = Depends(g
 
 
 @app.post("/alarms/ingest")
-def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, correlation_group: str | None = None, db: Session = Depends(get_session)):
+def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, correlation_group: str | None = None,
+                  probable_cause: str | None = None, specific_problem: str | None = None, root_cause_indicator: bool = False,
+                  correlated_notifications: list[uuid.UUID] = Query(default=[]), proposed_repair_actions: str | None = None,
+                  db: Session = Depends(get_session)):
     """alarmId is ALWAYS a fresh UUID minted here, never the raising ME's
     native ID — RAN NF OAM LLD section 3.3, closing R1UCR's own flagged,
     unresolved collision risk under a fleet of N MEs.
+
+    probableCause/specificProblem/rootCauseIndicator/correlatedNotifications/
+    proposedRepairActions (OPEN_ITEMS.md section 5): the standard fault
+    fields 3GPP TS 28.532 FaultMnS's NotifyNewAlarm carries, previously
+    entirely absent from this alarm model.
     """
-    alarm = Alarm(source_alarm_id=source_alarm_id, managed_element_ref=managed_element_ref, severity=severity, correlation_group=correlation_group)
+    alarm = Alarm(source_alarm_id=source_alarm_id, managed_element_ref=managed_element_ref, severity=severity, correlation_group=correlation_group,
+                  probable_cause=probable_cause, specific_problem=specific_problem, root_cause_indicator=root_cause_indicator,
+                  correlated_notifications=correlated_notifications or [], proposed_repair_actions=proposed_repair_actions)
     db.add(alarm)
     db.commit()
     return {"alarmId": str(alarm.alarm_id)}
@@ -229,4 +239,8 @@ def endpoint_heartbeat(endpoint_id: uuid.UUID, db: Session = Depends(get_session
 
 def _alarm_view(a: Alarm) -> dict:
     return {"alarmId": str(a.alarm_id), "sourceAlarmId": a.source_alarm_id, "managedElementRef": a.managed_element_ref,
-            "severity": a.severity, "ackState": a.ack_state, "correlationGroup": a.correlation_group}
+            "severity": a.severity, "ackState": a.ack_state, "correlationGroup": a.correlation_group,
+            "probableCause": a.probable_cause, "specificProblem": a.specific_problem,
+            "rootCauseIndicator": a.root_cause_indicator,
+            "correlatedNotifications": [str(c) for c in a.correlated_notifications],
+            "proposedRepairActions": a.proposed_repair_actions}

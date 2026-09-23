@@ -4,6 +4,8 @@ elided behind a comment that recorded every sub_change as APPLIED without
 dispatching anything. Run with: pytest smo/ran-nf-oam/tests -q
 """
 
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
@@ -119,3 +121,84 @@ def test_health_endpoint_answers_the_callback_url_subscribe_pm_registers(client)
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json()["status"] == "healthy"
+
+
+def test_ingest_alarm_persists_standard_fault_fields(client, db_session_factory):
+    """OPEN_ITEMS.md section 5: the alarm model was missing the standard
+    fault fields the wire format (VES/3GPP alarm IRP, per oam's own
+    NotifyNewAlarm template) carries — probableCause, specificProblem,
+    rootCauseIndicator, correlatedNotifications, proposedRepairActions.
+    """
+    _make_me(db_session_factory)
+    other_alarm_id = str(uuid.uuid4())
+
+    resp = client.post("/alarms/ingest", params={
+        "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "critical",
+        "probable_cause": "linkFailure", "specific_problem": "Optical link down",
+        "root_cause_indicator": True, "correlated_notifications": [other_alarm_id],
+        "proposed_repair_actions": "Replace the SFP module.",
+    })
+    assert resp.status_code == 200
+    alarm_id = resp.json()["alarmId"]
+
+    listing = client.get("/alarms").json()
+    assert len(listing) == 1
+    alarm = listing[0]
+    assert alarm["alarmId"] == alarm_id
+    assert alarm["probableCause"] == "linkFailure"
+    assert alarm["specificProblem"] == "Optical link down"
+    assert alarm["rootCauseIndicator"] is True
+    assert alarm["correlatedNotifications"] == [other_alarm_id]
+    assert alarm["proposedRepairActions"] == "Replace the SFP module."
+
+
+def test_ingest_alarm_defaults_fault_fields_when_not_provided(client, db_session_factory):
+    """The reference's NotifyNewAlarm fields are all optional on ingest —
+    an alarm raised without them must not crash and must default sanely
+    (rootCauseIndicator false, correlatedNotifications empty).
+    """
+    _make_me(db_session_factory)
+
+    resp = client.post("/alarms/ingest", params={
+        "source_alarm_id": "src-2", "managed_element_ref": "ME-1", "severity": "minor",
+    })
+    assert resp.status_code == 200
+
+    alarm = client.get("/alarms").json()[0]
+    assert alarm["probableCause"] is None
+    assert alarm["specificProblem"] is None
+    assert alarm["rootCauseIndicator"] is False
+    assert alarm["correlatedNotifications"] == []
+    assert alarm["proposedRepairActions"] is None
+
+
+def test_query_alarms_filters_by_managed_element_ref(client, db_session_factory):
+    db = db_session_factory()
+    endpoint1 = O1AdaptorEndpoint(managed_element_ref="ME-1", adaptor_uri="http://adaptor-1:9000/netconf", protocol_support=["NETCONF"])
+    endpoint2 = O1AdaptorEndpoint(managed_element_ref="ME-2", adaptor_uri="http://adaptor-2:9000/netconf", protocol_support=["NETCONF"])
+    db.add(endpoint1)
+    db.add(endpoint2)
+    db.flush()
+    db.add(ManagedEntity(managed_element_ref="ME-1", entity_type="O-DU", o1_protocol="NETCONF", o1_adaptor_endpoint_id=endpoint1.endpoint_id))
+    db.add(ManagedEntity(managed_element_ref="ME-2", entity_type="O-DU", o1_protocol="NETCONF", o1_adaptor_endpoint_id=endpoint2.endpoint_id))
+    db.commit()
+    db.close()
+
+    client.post("/alarms/ingest", params={"source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "critical"})
+    client.post("/alarms/ingest", params={"source_alarm_id": "src-2", "managed_element_ref": "ME-2", "severity": "minor"})
+
+    resp = client.get("/alarms", params={"managed_element_ref": "ME-2"})
+    alarms = resp.json()
+    assert len(alarms) == 1
+    assert alarms[0]["managedElementRef"] == "ME-2"
+
+
+def test_change_alarm_ack_state(client, db_session_factory):
+    _make_me(db_session_factory)
+    alarm_id = client.post("/alarms/ingest", params={
+        "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "major",
+    }).json()["alarmId"]
+
+    resp = client.patch(f"/alarms/{alarm_id}/ack", params={"new_state": "ACKNOWLEDGED"})
+    assert resp.status_code == 200
+    assert resp.json()["ackState"] == "ACKNOWLEDGED"

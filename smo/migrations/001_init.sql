@@ -193,7 +193,12 @@ CREATE TABLE alarm (
   severity           TEXT NOT NULL CHECK (severity IN ('critical','major','minor','warning','cleared')),
   ack_state          TEXT NOT NULL DEFAULT 'UNACKNOWLEDGED' CHECK (ack_state IN ('ACKNOWLEDGED','UNACKNOWLEDGED')),
   correlation_group  TEXT,
-  raised_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+  raised_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  probable_cause        TEXT,
+  specific_problem       TEXT,
+  root_cause_indicator    BOOLEAN NOT NULL DEFAULT false,
+  correlated_notifications UUID[] NOT NULL DEFAULT '{}',
+  proposed_repair_actions   TEXT
 );
 CREATE INDEX idx_alarm_correlation ON alarm (correlation_group) WHERE correlation_group IS NOT NULL;
 CREATE INDEX idx_alarm_me ON alarm (managed_element_ref);
