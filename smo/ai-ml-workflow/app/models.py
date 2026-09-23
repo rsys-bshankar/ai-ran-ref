@@ -41,6 +41,20 @@ class AIMLModel(Base):
     integrity_hash: Mapped[str | None] = mapped_column(String)
     artifact_location: Mapped[str | None] = mapped_column(String)
     required_resource_type_id: Mapped[str | None] = mapped_column(String)
+    # NEW section 5: the reference's own ModelRelatedInformation/
+    # ModelInformation/Metadata/TargetEnvironment (modelInfo.go) — all
+    # required there, kept optional here since this build's own
+    # RegisterModel was already permissive before this pass and nothing
+    # should retroactively reject an existing caller. target_environments
+    # stored as JSON, not a normalized child table — registered and read
+    # back wholesale, the same adaptation this build already uses for
+    # SME's aefProfiles/DMEType.collection_spec.
+    description: Mapped[str | None] = mapped_column(String)
+    author: Mapped[str | None] = mapped_column(String)
+    owner: Mapped[str | None] = mapped_column(String)
+    input_data_type: Mapped[str | None] = mapped_column(String)
+    output_data_type: Mapped[str | None] = mapped_column(String)
+    target_environments: Mapped[list[dict] | None] = mapped_column(JSON)
     cleared_node_groups: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))  # MultiNode Q2 gap closure, LLD section 5
 
 

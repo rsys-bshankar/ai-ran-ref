@@ -146,8 +146,8 @@ Per-module unit test counts:
 | sme | 29 |
 | onboarding | 30 |
 | a1-related | 30 |
-| ai-ml-workflow | 35 |
 | focom | 37 |
+| ai-ml-workflow | 38 |
 | dme | 55 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
@@ -699,9 +699,18 @@ own §1/§2 items stand as-is.
   `performance_report -> mlmf_subscription -> aiml_model` hop. Delete
   is idempotent on an unknown id, matching this module's other DELETE
   routes (`cancel_training`).
-- Registration metadata is thin — no I/O data type schema, no
+- ~~Registration metadata is thin — no I/O data type schema, no
   author/owner, no `TargetEnvironment` declarations (platform,
-  environment type, dependencies) the reference requires.
+  environment type, dependencies) the reference requires.~~ —
+  **closed.** Added `description`/`author`/`owner`/`inputDataType`/
+  `outputDataType`/`targetEnvironments` to `RegisterModel` and
+  `UpdateModel` — the reference's own `ModelRelatedInformation`/
+  `ModelInformation`/`Metadata`/`TargetEnvironment` fields
+  (`modelInfo.go`), required there but kept optional here since this
+  build's own `RegisterModel` was already permissive before this pass.
+  `targetEnvironments` is stored as JSON, not a normalized child table
+  — registered and read back wholesale, the same adaptation this build
+  already uses for SME's `aefProfiles`/`DMEType.collection_spec`.
 - `TrainingJob` is far thinner than the reference's real two-axis
   (step × status) tracking — no `run_id`, no distinct
   training/validation dataset fields, no metrics-writeback endpoint, no
@@ -1217,6 +1226,14 @@ own §1/§2 items stand as-is.
   new field; `category` stays unfiltered since this build has no
   category concept on `ServiceProfile` at all. 373 tests total, up
   from 368 (`sme` alone: 24 -> 29).
+- AI/ML Workflow's thin registration metadata (§5) closed: added
+  `description`/`author`/`owner`/`inputDataType`/`outputDataType`/
+  `targetEnvironments` to `RegisterModel`/`UpdateModel` (the
+  reference's own `ModelRelatedInformation`/`ModelInformation`/
+  `Metadata`/`TargetEnvironment` fields, `modelInfo.go`) — required
+  there, kept optional here since this build's own `RegisterModel` was
+  already permissive. 376 tests total, up from 373 (`ai-ml-workflow`
+  alone: 35 -> 38).
 
 ## Suggested next pass (priority order)
 

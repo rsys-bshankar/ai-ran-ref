@@ -198,6 +198,54 @@ def test_get_model_by_id_returns_its_fields(client):
     assert body["state"] == ModelState.REGISTERED
 
 
+def test_register_model_stores_and_exposes_registration_metadata(client):
+    """OPEN_ITEMS.md section 5: registration metadata was thin — no I/O
+    data type schema, no author/owner, no TargetEnvironment
+    declarations, all real fields on the reference's own
+    ModelRelatedInformation/ModelInformation/Metadata (modelInfo.go).
+    """
+    target_environments = [{"platformName": "k8s-cluster-1", "environmentType": "PRODUCTION", "dependencyList": "numpy==1.26"}]
+    resp = client.post("/models", json={
+        "modelType": "coverage-predictor", "version": "1.0", "description": "predicts coverage gaps",
+        "author": "team-ran", "owner": "team-ran-oncall", "inputDataType": "csv", "outputDataType": "json",
+        "targetEnvironments": target_environments,
+    })
+    model_id = resp.json()["modelId"]
+
+    view = client.get(f"/models/{model_id}").json()
+    assert view["description"] == "predicts coverage gaps"
+    assert view["author"] == "team-ran"
+    assert view["owner"] == "team-ran-oncall"
+    assert view["inputDataType"] == "csv"
+    assert view["outputDataType"] == "json"
+    assert view["targetEnvironments"] == target_environments
+
+
+def test_register_model_without_metadata_defaults_to_empty(client):
+    """This build's own RegisterModel stays permissive — none of the new
+    fields are required, unlike the reference's own validate:"required".
+    """
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+
+    view = client.get(f"/models/{model_id}").json()
+    assert view["description"] is None
+    assert view["author"] is None
+    assert view["targetEnvironments"] == []
+
+
+def test_update_model_changes_registration_metadata(client):
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+
+    resp = client.put(f"/models/{model_id}", json={
+        "modelType": "coverage-predictor", "version": "1.0", "description": "updated description",
+        "author": "team-ran", "targetEnvironments": [{"platformName": "k8s-cluster-2", "environmentType": "STAGING", "dependencyList": ""}],
+    })
+    assert resp.status_code == 200
+    assert resp.json()["description"] == "updated description"
+    assert resp.json()["author"] == "team-ran"
+    assert resp.json()["targetEnvironments"][0]["platformName"] == "k8s-cluster-2"
+
+
 def test_register_model_rejects_duplicate_type_and_version(client):
     """OPEN_ITEMS.md section 5: the reference's own RegisterModel
     (mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint
