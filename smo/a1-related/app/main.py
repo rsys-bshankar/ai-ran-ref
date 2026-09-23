@@ -206,6 +206,7 @@ def register_ei_type(ei_type_id: str, registered_by: str, dme_namespace: str, dm
         "namespace": dme_namespace, "name": dme_name, "version": dme_version,
         "typeName": f"{dme_namespace}.{dme_name}", "producerId": registered_by,
         "dataProductionSchema": {}, "producerHealthCallbackUrl": "http://a1-related:8000/health",
+        "jobCallbackUrl": "http://a1-related:8000/dme-jobs",
     })
     dme_type_id = dme_resp.json()["registrationId"]
     ei = A1EIType(ei_type_id=ei_type_id, registered_by=registered_by, ei_source_dme_type_id=uuid.UUID(dme_type_id))
@@ -232,6 +233,23 @@ def health_check():
     check: reachable and 200 means this A1 Related instance is up.
     """
     return {"status": "healthy"}
+
+
+@app.post("/dme-jobs")
+def receive_dme_job(body: dict):
+    """DME's own job-push callback (OPEN_ITEMS.md section 5): DME's
+    create_data_job now actually POSTs the job to jobCallbackUrl on
+    create — register_ei_type registers this exact URL, so this closes
+    the same class of dangling-callback bug the /health route closed
+    for the health-supervision URL. Phase 1: acks only, no real per-job
+    state tracked producer-side.
+    """
+    return {"status": "accepted"}
+
+
+@app.delete("/dme-jobs/{data_job_id}", status_code=204)
+def stop_dme_job(data_job_id: str):
+    pass
 
 
 def _policy_view(p: A1Policy) -> dict:

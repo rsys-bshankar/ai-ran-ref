@@ -6,6 +6,7 @@ this is where the LLD's headline finding gets built: DataJob (section 3.3)
 never had a schema OR endpoints in v1.3 at all.
 """
 
+import datetime
 import uuid
 
 import httpx
@@ -32,6 +33,7 @@ class DMETypeRegistration(BaseModel):
     dataProductionSchema: dict
     collectionSpec: dict | None = None
     producerHealthCallbackUrl: str
+    jobCallbackUrl: str
 
 
 class DataJobRequest(BaseModel):
@@ -63,6 +65,7 @@ def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_sessi
         data_production_schema=body.dataProductionSchema,
         collection_spec=body.collectionSpec,
         producer_health_callback_url=body.producerHealthCallbackUrl,
+        job_callback_url=body.jobCallbackUrl,
     )
     db.add(t)
     try:
@@ -125,6 +128,9 @@ def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
     )
     db.add(job)
     db.commit()
+    dme_type = db.get(DMEType, body.dmeTypeId)
+    if dme_type is not None:
+        _push_job_to_producer(dme_type, job)
     return {"dataJobId": str(job.data_job_id)}
 
 
@@ -151,9 +157,13 @@ def terminate_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session
     against a Producer rApp (consumer_id == 'DME_FRAMEWORK').
     """
     job = db.get(DataJob, data_job_id)
-    if job is not None:
-        db.delete(job)
-        db.commit()
+    if job is None:
+        return
+    dme_type = db.get(DMEType, job.dme_type_id)
+    db.delete(job)
+    db.commit()
+    if dme_type is not None:
+        _stop_job_at_producer(dme_type, data_job_id)
 
 
 @app.post("/offers", status_code=201)
@@ -212,6 +222,38 @@ def offer_data_availability(offer_id: uuid.UUID, body: dict, db: Session = Depen
     # transport handler (dme-pull/dme-push routes), this endpoint just acks.
 
 
+def _push_job_to_producer(dme_type: DMEType, job: DataJob) -> None:
+    """OPEN_ITEMS.md section 5: no job push to producers existed at
+    all — create_data_job/terminate_data_job only ever touched our own
+    DB. ICS's own ProducerCallbacks.startInfoJob POSTs the job to the
+    producer's jobCallbackUrl (ProducerJobInfo's wire shape); best-effort,
+    same pattern as every other DME/FOCOM/A1-Related notification in this
+    build — an unreachable producer never fails the consumer-facing call,
+    matching the reference's own onErrorResume-and-continue behavior.
+    """
+    try:
+        httpx.post(dme_type.job_callback_url, json={
+            "infoJobIdentity": str(job.data_job_id),
+            "infoTypeIdentity": str(dme_type.dme_type_id),
+            "infoJobData": job.production_job_definition or {},
+            "targetUri": (job.delivery_details or {}).get("targetUri", ""),
+            "owner": job.consumer_id,
+            "lastUpdated": datetime.datetime.now(datetime.UTC).isoformat(),
+        }, timeout=5.0)
+    except httpx.HTTPError:
+        pass
+
+
+def _stop_job_at_producer(dme_type: DMEType, data_job_id: uuid.UUID) -> None:
+    """ICS's own ProducerCallbacks.stopInfoJob — DELETE to
+    jobCallbackUrl/{jobId}, best-effort.
+    """
+    try:
+        httpx.delete(f"{dme_type.job_callback_url}/{data_job_id}", timeout=5.0)
+    except httpx.HTTPError:
+        pass
+
+
 def _job_view(j: DataJob) -> dict:
     return {
         "dataJobId": str(j.data_job_id),
@@ -244,6 +286,7 @@ def _type_view(t: DMEType) -> dict:
         "producerId": t.producer_id,
         "typeStatus": _computed_type_status(t),  # ADOPT from ICS, section 3.4
         "producerHealthCallbackUrl": t.producer_health_callback_url,
+        "jobCallbackUrl": t.job_callback_url,
     }
 
 

@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**310 tests total, all passing** as of this build: 300 unit tests across
+**318 tests total, all passing** as of this build: 308 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -252,7 +252,16 @@ instead of trusting whether a `DataJob` row happened to be `ACTIVE` —
 a dead producer with an active job no longer reports `ENABLED`.
 Computed live at read time rather than via a periodic background poll,
 since no scheduler exists anywhere in this build (elided, same as the
-real PM file-collection pipeline elsewhere).
+real PM file-collection pipeline elsewhere). `dme` went from 25 tests
+to 31 in the next pass: added a real `jobCallbackUrl` field to
+`DMEType` registration (ICS's own `InfoProducer.jobCallbackUrl`,
+distinct from the health-supervision URL), and `create_data_job`/
+`terminate_data_job` now genuinely POST/DELETE to it (ICS's own
+`ProducerCallbacks.startInfoJob`/`stopInfoJob`), best-effort. This
+also closed the producer-side half of the same gap: `ran-nf-oam`
+(28 -> 29 tests) and `a1-related` (29 -> 30 tests) now both answer
+`/dme-jobs` — the URL they themselves register with DME — the same
+dangling-callback bug class already fixed for `/health`.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

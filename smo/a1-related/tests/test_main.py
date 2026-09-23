@@ -278,6 +278,21 @@ def test_health_endpoint_answers_the_callback_url_register_ei_type_registers(cli
     assert resp.json()["status"] == "healthy"
 
 
+def test_dme_jobs_endpoint_answers_the_callback_url_register_ei_type_registers(client):
+    """OPEN_ITEMS.md section 5: register_ei_type now also registers
+    http://a1-related:8000/dme-jobs as this producer's jobCallbackUrl —
+    DME's own create_data_job/terminate_data_job actually push to it
+    now, so this closes the same class of dangling-callback bug the
+    /health route closed for the health-supervision URL.
+    """
+    resp = client.post("/dme-jobs", json={"infoJobIdentity": "job-1", "infoTypeIdentity": "type-1", "infoJobData": {}})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "accepted"
+
+    resp = client.delete("/dme-jobs/job-1")
+    assert resp.status_code == 204
+
+
 def test_update_policy_notifies_matching_subscriber_on_status_change(client, monkeypatch):
     """OPEN_ITEMS.md section 5: SubscribePolicyStatus/UnsubscribePolicyStatus
     were pure no-ops with zero delivery anywhere. This is the headline
