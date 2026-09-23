@@ -4,7 +4,10 @@ Tracked gaps against the original scope (`SMO Design Document v1.3`, the
 `AI-RAN Framework Consolidated Reference`, and the `O-RAN-SC Repo
 Inventory`), beyond what PR #1 delivers. Grouped so the next pass can be
 picked up module by module. Nothing here blocks PR #1 — CI is green and it
-merges as Phase 1's baseline; this is the Phase 2 backlog.
+merges as Phase 1's baseline; this is the Phase 2 backlog. §5 adds a
+different kind of item: gaps found by cloning the actual O-RAN-SC repos
+named in the Repo Blueprint and auditing each module's real completeness
+against them, not just inferring from this build's own code.
 
 ## 1. Design-level decisions needed (not just code)
 
@@ -81,7 +84,9 @@ the ambiguity into code.
   vendored/integrated** — this build consolidates on one Python/FastAPI
   stack rather than forking `nonrtric-plt-sme` (Go), the ICS reference
   (Java), `pti-o2` (Python), etc. The ADOPT repos stay pattern references
-  only.
+  only. §5 goes further than this: it audits, per module, whether the
+  *functionality* those repos implement was still carried over even
+  without vendoring the code — it mostly wasn't.
 - **The full `docker-compose` stack (15 services, including the isolated
   `a1_mock_net` network segment) has never been run end-to-end** — no
   Docker daemon is available in the build sandbox; only
@@ -160,6 +165,262 @@ non-200 upstream passthrough (previously only GET and the URL-stripping
 fix were exercised); `mock-near-rt-ric` gained coverage for
 `UpdatePolicy` (`PUT /a1-p/policies/{id}`), which had zero tests at all
 before this pass despite being a real route.
+
+## 5. O-RAN-SC completeness gaps (repo-audited)
+
+Every other section in this document was written from this build's own
+code and the LLDs. This section is different: it's from directly cloning
+the actual O-RAN-SC repos the Repo Blueprint named per module (18 repos,
+under `/home/user/o-ran-sc/` when audited) and comparing each one's real
+API surface against our implementation, route by route. The question
+asked wasn't "does a pattern reference exist" (already answered by the
+Blueprint) but "did we actually carry over everything in scope, or did
+we quietly drop real functionality." The answer, per module: real,
+concrete holes exist everywhere audited — this was not a clean bill of
+health.
+
+Two categories are kept separate. **Real gaps** are in-scope operations,
+fields, or behaviors the reference repo has that ours doesn't — these
+are actionable, pickable items, the same as everywhere else in this
+document. **Structurally out of scope** is the already-known southbound-
+elision pattern (real K8s/Helm/Kafka/S3/Kubeflow execution, real
+transport security) — not repeated in full here since §2 already tracks
+it in aggregate; only named again where a specific audit sharpened it.
+
+Not every module could be audited this way: **R1 Termination** has no
+O-RAN-SC repo of its own (only an external Kong pattern reference, not
+this org's code) — nothing to diff against. **Policy Mgmt & Info**,
+**SO SMOS**, and **SA SMOS** were independently confirmed at Blueprint
+time to have no direct O-RAN-SC repo match (`BUILD` verdict) — there is
+nothing upstream to audit completeness against for these three; their
+own §1/§2 items stand as-is.
+
+### SME (`sme/`) — vs `nonrtric-plt-sme`
+
+- **`notify_service_change` has no caller** — the one piece of event
+  delivery this build actually wrote is never invoked from
+  `register_service`/`deregister_service`, so `SubscribeEvents` is a
+  dead pipeline end to end. The reference fires
+  `SERVICE_API_AVAILABLE`/`UNAVAILABLE`/`UPDATE` from exactly those
+  routes.
+- Event subscription filtering is type-only — no per-`apiId`,
+  `apiInvokerId`, or `aefId` filter, which the reference's
+  `EventFilters` supports.
+- `discover_services` only filters on `api_name`/`api_version` — the
+  reference also filters on category, `aefId`, protocol, data format,
+  and comm type, against a nested `AefProfiles → Versions → Resources`
+  structure ours has no equivalent of.
+- `ServiceProfile` is flattened — no `aefProfiles` (multiple exposing
+  functions per API), `apiSuppFeats`, or `shareableInfo` (cross-provider
+  sharing flag).
+- `register_service` accepts any `apf_id` with no check that it's an
+  actual registered publisher — a direct consequence of provider
+  enrolment being unmodeled (see below).
+- *Structurally out of scope, confirmed by direct inspection*: API
+  Invoker onboarding, Provider (APF/AEF/AMF) enrolment, and the
+  Security/token API are real CAPIF subsystems the reference implements
+  that this build assumes pre-established: not gaps, a declared
+  boundary. `accesscontrolpolicyapi`/`routinginfoapi`/`auditingapi`/
+  `loggingapi` are unimplemented in the reference itself too — nothing
+  to catch up to there.
+
+### DME (`dme/`) — vs `nonrtric-plt-informationcoordinatorservice` (ICS)
+
+- **`producerHealthCallbackUrl` is stored but never called** — `typeStatus`
+  is computed only from whether a `DataJob` row is `ACTIVE`, so a dead
+  producer with an active job still reports `ENABLED`. ICS actually
+  polls the callback and derives status from real producer availability.
+- No job push to producers at all — ICS POSTs the job definition to the
+  producer's callback URL on create/delete; `create_data_job`/
+  `terminate_data_job` only ever touch our own DB.
+- No producer-status endpoint (`GET .../info-producers/{id}/status`).
+- No job-definition schema validation against `dataProductionSchema` —
+  `productionJobDefinition` is accepted as an arbitrary dict.
+- No GET-by-id for `DataJob`/`DataOffer`, no job-level status endpoint,
+  and `discover_dme_types`' `data_category` query param is declared but
+  silently never applied to the query.
+- No update-in-place (PUT) semantics — only POST-create/DELETE.
+- No type-subscription mechanism (consumers notified when a type is
+  registered/removed) — entirely absent.
+- `deregister_producer` deletes a producer's `DMEType` rows
+  unconditionally — no check for active producers still depending on a
+  type, and no cascade cleanup of orphaned `DataJob`/`DataOffer` rows.
+
+### Onboarding + rApp Management (`onboarding/`, `rapp-mgmt/`) — vs `nonrtric-plt-rappmanager`
+
+- **Missing package-level priming stage** — the reference has a distinct
+  COMMISSIONED→PRIMING→PRIMED→DEPRIMING lifecycle that pre-provisions
+  ACM composition/DME/SME resource declarations *before* any instance
+  deploys, and blocks deprime/delete while instances reference the
+  package. Our `onboarding` goes ONBOARDING→AVAILABLE directly and does
+  all provisioning inline per-instance in `rapp-mgmt`, collapsing a real
+  two-phase lifecycle into one.
+- Package validation is much thinner — the reference runs an ordered
+  validator chain (filename convention, required
+  `Definitions/acm_composition.json`, ASD descriptor parsing with real
+  duplicate-descriptor-id detection). `_validate_package` only reads
+  `TOSCA.meta` and does a `KeyError` existence check — no filename
+  check, no duplicate-package detection at all.
+- No resource-provenance detail endpoints — the reference's
+  `GET /rapps/{id}` and `GET /rapps/{id}/instance/{id}` return nested
+  ACM/SME/DME resource records (composition IDs, provider-function IDs,
+  producer/consumer type lists); ours returns only flat
+  `{packageId, state, ...}`/`{instanceId, packageId, state}`.
+- No standalone delete-after-undeploy for an instance, distinct from
+  `terminate`.
+- *Confirmed structurally out of scope*: real ACM/Helm/K8s deployment
+  (`rapp-manager-acm`'s composition create/prime/instantiate + real
+  DeployState convergence polling) is the single largest elision in
+  this whole build, and it's the intended one — already documented, not
+  hidden. Real SME/CAPIF provider registration is the same pattern.
+  (Also worth noting: this build's fault/performance reporting and
+  CRASH/RECOVER/UPGRADE states are *additions* beyond the reference's
+  own scope, not omissions.)
+
+### RAN NF OAM (`ran-nf-oam/`) — vs `nonrtric-plt-ranpm`, `oam`, `smo-o1`, `sim-o1-interface`, `sim-o1-ofhmp-interfaces`
+
+- **`subscribe_pm` registers a dangling callback** — it POSTs
+  `"producerHealthCallbackUrl": "http://ran-nf-oam:8000/health"` to DME,
+  but no `/health` route (or any producer job-callback route) exists
+  anywhere in `ran-nf-oam/app/main.py`. This is a concrete bug within
+  this module's own declared scope (the DME-registration wrapper), not
+  a missing-PM-pipeline issue — fixable without touching the (correctly
+  out-of-scope) real PM data path.
+- Alarm model is missing standard fault fields the wire format
+  (VES/3GPP alarm IRP, per `oam`'s notification templates) carries:
+  `probableCause`, `specificProblem`, `perceivedSeverity`,
+  `rootCauseIndicator`, `correlatedNotifications` (a real list of
+  related-alarm refs, not just a grouping string), `proposedRepairActions`.
+- **No alarm-cleared lifecycle at all** — `/alarms/{id}/ack` only toggles
+  `ack_state`; there's no CLEARED state or clear-alarm endpoint, so an
+  alarm that stops recurring on the NF has no way to ever be marked
+  resolved.
+- *Confirmed structurally out of scope*: the real PM file-collection/
+  KPI-computation pipeline (`ranpm`'s FTPES/SFTP collector, XML→JSON
+  converter, counter distributor) is a total, already-documented
+  elision — this module is correctly scoped as a registration wrapper
+  only. Real NETCONF/SSH transport and a real xNF simulator are the
+  same pattern. No repo audited implements a real alarm-correlation
+  *algorithm* either, so `correlation_group` being a coarse string (not
+  an algorithm) tracks the reference's own immaturity, not a gap behind
+  it.
+
+### A1 Related (`a1-related/`, `mock-near-rt-ric/`) — vs `sim-a1-interface`, `nonrtric-plt-a1policymanagementservice`
+
+- No policy list/query-by-filter endpoint at all (`GET /policies`
+  filterable by type/RIC/service) — only `GET /policies/{id}` exists,
+  despite the mapping-store's whole job being to track these mappings.
+- No policy-type detail retrieval (`GET /policy-types/{id}`) —
+  `QueryPolicyTypes` returns a hardcoded Python set (`KNOWN_POLICY_TYPES`),
+  never sourced from or synced with an actual RIC; `nearRtRicId` is
+  accepted but never used to filter or query anything real. No RIC
+  repository (`/rics`) concept exists at all.
+- **`SubscribePolicyStatus`/`UnsubscribePolicyStatus` are pure no-ops with
+  zero delivery anywhere in the stack** — confirmed against the real
+  mechanism: the reference PMS passes a per-policy status-notification
+  URI down to the RIC at creation time, and `sim-a1-interface`'s own
+  mediator actually stores and pushes it. This is a genuine gap against
+  a working reference, not just an ours-vs-theirs modeling choice — our
+  endpoint's own declared purpose (notify on status change) is unmet.
+- No service registration/supervision (`/services`, keepalive, and
+  auto-delete of a stale rApp's policies).
+- No duplicate-policy/fingerprint detection — the reference's mediator
+  rejects duplicate policy content or a reused id across types; ours
+  accepts anything per `policyId` with only an empty-object check.
+- *Confirmed structurally out of scope*: A1TD/A1AP JSON-schema
+  validation of `policyObject`, A1-ML (categorically dormant per LLD
+  section 0), and real A1AP transport (TLS+mTLS+OAuth2.0+JWT) are all
+  already-documented elisions, consistent with the reference's own
+  simulator-only intent for some of these.
+
+### NFO + FOCOM (`nfo/`, `focom/`) — vs `pti-o2`, `smo-teiv`
+
+- **No `ResourceType`/`ResourcePool`/`DeploymentManager` schema at all** —
+  not just an empty collection behind the documented single-cluster
+  limitation, but no model shape to extend later. `query_inventory`
+  returns one hardcoded `resourcePools: [{resourcePoolId: "pool-0"}]`
+  with nothing behind it, vs. the reference's real parent/child resource
+  tree (pserver → CPU/RAM/interfaces/PCI/accelerators) typed via a
+  20-value `ResourceTypeEnum`.
+- No per-resource-type/pool/resource drill-down endpoints — the
+  reference exposes `/resourceTypes`, `/resourceTypes/{id}`,
+  `/resourcePools/{id}/resources`, `/deploymentManagers/{id}` as
+  distinct operations; FOCOM collapses everything into one `/inventory`
+  route.
+- **`subscribe_inventory_changes` doesn't actually subscribe to anything** —
+  it takes no callback parameter, stores nothing, and delivers nothing.
+  The reference's `Subscription` model stores a real callback + filter
+  and pushes typed create/modify/delete notifications on inventory
+  change.
+- NFO's deployment state machine is much thinner — reference has 7
+  states (including ABNORMAL/UPDATING) plus real duplication/dependency
+  guards and a resource-linkage object; ours only moves
+  INSTANTIATING→RUNNING with no such guards, and Heal/Scale have no
+  state transitions of any kind.
+- **No topology/entity-relationship export for TEIV at all** — the
+  Blueprint explicitly names "FOCOM's placement as a TEIV data source"
+  as a confirmed integration point, but FOCOM has no typed
+  entity/relationship model, no CloudEvent/Kafka producer, and no
+  `/topology`-shaped endpoint — not even a stub exists for an
+  integration this build's own Blueprint claims.
+- *Confirmed structurally out of scope*: the real `focom-to-teiv-adapter`
+  mechanism (direct kubeconfig access to K8s clusters, CRD reads),
+  pti-o2's hardware-telemetry watchers, and real multi-cluster K8s
+  lifecycle management are correctly excluded from a docker-run-based
+  Phase 1.
+
+### AI/ML Workflow (`ai-ml-workflow/`) — vs `aiml-fw-awmf-modelmgmtservice`, `aiml-fw-awmf-tm`, `aiml-fw-athp-sdk-feature-store`, `aiml-fw-athp-tps-kubeflow-adapter`
+
+- No model artifact upload/download or versioning — the reference has
+  real `UploadModel`/`DownloadModel` (S3-backed) with an
+  auto-incrementing `artifactVersion` separate from `modelVersion`; ours
+  has an `artifact_location` string field that nothing in `main.py` ever
+  reads or writes.
+- Model CRUD is incomplete — no `GET /models/{id}`, no update, no
+  delete/deregister; only create and a type-filtered list exist.
+- Registration metadata is thin — no I/O data type schema, no
+  author/owner, no `TargetEnvironment` declarations (platform,
+  environment type, dependencies) the reference requires.
+- `TrainingJob` is far thinner than the reference's real two-axis
+  (step × status) tracking — no `run_id`, no distinct
+  training/validation dataset fields, no metrics-writeback endpoint, no
+  step state machine (DATA_EXTRACTION/TRAINING/TRAINED_MODEL), no
+  separate consumer/producer rApp ids. Ours collapses all of this into
+  two free-form JSON dicts and a flat status string.
+- No feature-group/feature-store concept exists at all — the reference
+  has a first-class `FeatureGroup` entity with its own CRUD and a real
+  SDK querying by trainingjob/feature name.
+- No uniqueness/conflict check on `(model_type, version)` — duplicate
+  registrations silently succeed where the reference 409s.
+- *Confirmed structurally out of scope*: real Kubeflow/K8s pipeline
+  execution, the real Cassandra-backed feature store, and S3 artifact
+  storage are total, deliberate elisions consistent with this build's
+  no-real-southbound-compute design — `TrainingJob.status` is
+  confirmed to be a pure DB flag with no executor behind it anywhere.
+  (Also worth noting: MLMF's guard-floor-triggered group retrain, this
+  session's own recent addition, is a real feature the AWMF repos don't
+  even have.)
+
+### RAN Analytics (`ran-analytics/`) — vs `aiml-fw-apm-influx-wrapper`, `aiml-fw-apm-monitoring-agent`, `aiml-fw-apm-monitoring-server`
+
+- No list/query endpoints for registered producers or active
+  subscriptions (`GET /producers`, `GET /subscriptions`) — the
+  reference defines these routes (even though its own implementation of
+  them is a no-op stub).
+- The dead subscriber-notification loop in `publish_report`
+  (`for sub in subs: pass`) is real, but not a regression behind the
+  reference: `aiml-fw-apm-monitoring-server`'s own `Subscribe`
+  executor is equally an empty stub that doesn't even persist a
+  subscription — ours is one step ahead (real DB persistence) with the
+  same missing last-mile delivery.
+- **Confirms the Blueprint's "BUILD" verdict directly**: of the three
+  repos checked, `aiml-fw-apm-influx-wrapper` and
+  `aiml-fw-apm-monitoring-agent` are both genuinely empty (only
+  `.gitreview`/`INFO.yaml`, zero source), and
+  `aiml-fw-apm-monitoring-server` has real route scaffolding but zero
+  working business logic behind any of it. There is very little real
+  O-RAN-SC prior art for this module to have been measured against —
+  most of the items above are the one real, fixable exception.
 
 ## Closed
 
@@ -382,15 +643,36 @@ before this pass despite being a real route.
 
 ## Suggested next pass (priority order)
 
-1. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
+1. **§5's repo-audited completeness gaps are now the priority backlog** —
+   unlike §1's remaining items, every one of these is concrete, scoped,
+   and buildable without a stakeholder call: a real reference
+   implementation was read and a specific missing operation/field/behavior
+   named. Within §5, the standout items — genuinely broken or misleading
+   as shipped, not just "thinner than the reference" — are worth taking
+   first:
+   - `ran-nf-oam`'s dangling `/health` callback (`subscribe_pm` registers
+     a URL that 404s — a one-route fix).
+   - `a1-related`'s `SubscribePolicyStatus`/`UnsubscribePolicyStatus`
+     being complete no-ops with zero delivery anywhere in the stack.
+   - `focom`'s `subscribe_inventory_changes` not actually subscribing to
+     anything (no callback param, no storage, no delivery).
+   - `sme`'s `notify_service_change` never being called from the routes
+     that should trigger it (the delivery logic exists, it's just dead
+     code).
+   After those, each module's remaining §5 items are independently
+   pickable — go module by module, or pick by theme (e.g. every
+   module's missing GET-by-id/list/query endpoints is a recurring
+   pattern worth doing as one pass across `dme`/`a1-related`/`focom`/
+   `ai-ml-workflow`/`ran-analytics` together).
+2. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
    the alarm-storm correlation algorithm, and A1-ML operations — are not
-   stakeholder-answerable the way the rest of this section was: the
+   stakeholder-answerable the way the rest of that section was: the
    first two genuinely need real data (noise-floor data; a real
    correlation algorithm) that would otherwise be fabricated, and the
    third only needs revisiting if A1-ML's out-of-scope decision itself
    changes. Not blocked on a call, blocked on data or a scope change.
-2. `nfo` and `ran-analytics` are now tied as the shallowest-covered tier
-   (9 tests each), but an earlier survey found only 1-2 minor edge-case
-   gaps in each — already close to thoroughly covered. Diminishing
-   returns: a coverage pass here would likely find little. Worth a
-   quick look only if another pass like this one is specifically wanted.
+3. `nfo` and `ran-analytics` are tied as the shallowest test-covered
+   tier (9 tests each), but an earlier survey found only 1-2 minor
+   edge-case gaps in each — already close to thoroughly covered.
+   Diminishing returns as a coverage pass; §5's items are better
+   next targets for these same two modules.
