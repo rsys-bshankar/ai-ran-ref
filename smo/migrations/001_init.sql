@@ -335,6 +335,12 @@ CREATE TABLE ocloud_performance_metric (
   collected_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE inventory_subscription (
+  subscription_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  callback_uri      TEXT NOT NULL,
+  resource_type_id   TEXT   -- optional filter; unset matches every resource type
+);
+
 -- ============================================================
 -- AI/ML Content: AI/ML Workflow  (AI/ML Workflow LLD sections 4, 6)
 -- ============================================================

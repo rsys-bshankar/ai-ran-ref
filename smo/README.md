@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**222 tests total, all passing** as of this build: 212 unit tests across
+**228 tests total, all passing** as of this build: 218 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -145,7 +145,14 @@ in the next pass when `SubscribePolicyStatus`/`UnsubscribePolicyStatus`
 went from pure no-ops to actually delivering a best-effort notification
 to matching subscribers whenever a policy's enforcement status changes
 (`update_policy` and `query_policy_status` — see OPEN_ITEMS.md
-section 5).
+section 5). `focom` went from 13 tests to 19 in the same pass:
+`subscribe_inventory_changes` went from a pure no-op to a real
+`InventorySubscription` model backing `POST`/`DELETE
+/inventory/subscriptions`, with `provision_resource`/
+`deprovision_resource` delivering best-effort CREATE/DELETE
+notifications to matching subscribers (a new `inventory_subscription`
+table in `migrations/001_init.sql`, verified against a real local
+Postgres 16 instance).
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

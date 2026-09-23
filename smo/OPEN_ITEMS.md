@@ -141,12 +141,12 @@ Per-module unit test counts:
 | policy-mgmt | 10 |
 | rapp-mgmt | 12 |
 | sa-smos | 12 |
-| focom | 13 |
 | so-smos | 13 |
 | dme | 15 |
 | ai-ml-workflow | 18 |
 | onboarding | 18 |
 | sme | 18 |
+| focom | 19 |
 | ran-nf-oam | 21 |
 | a1-related | 24 |
 
@@ -376,11 +376,21 @@ own §1/§2 items stand as-is.
   `/resourcePools/{id}/resources`, `/deploymentManagers/{id}` as
   distinct operations; FOCOM collapses everything into one `/inventory`
   route.
-- **`subscribe_inventory_changes` doesn't actually subscribe to anything** —
-  it takes no callback parameter, stores nothing, and delivers nothing.
-  The reference's `Subscription` model stores a real callback + filter
-  and pushes typed create/modify/delete notifications on inventory
-  change.
+- ~~**`subscribe_inventory_changes` doesn't actually subscribe to
+  anything** — it takes no callback parameter, stores nothing, and
+  delivers nothing. The reference's `Subscription` model stores a real
+  callback + filter and pushes typed create/modify/delete notifications
+  on inventory change.~~ — **closed.** Added a real
+  `InventorySubscription` model (`callbackUri` + optional
+  `resourceTypeId` filter) with `POST`/`DELETE
+  /inventory/subscriptions`, and wired best-effort CREATE/DELETE
+  delivery into the module's only two mutating endpoints
+  (`provision_resource`/`deprovision_resource`) — same pattern as
+  A1 Related's `_notify_policy_status_subscribers`. Partial:
+  `deprovision_resource` doesn't know a resource's type (no
+  `ResourceType`/`ResourcePool` schema exists yet — the gap above),
+  so a type-filtered subscriber is still notified on every delete
+  rather than silently missing them.
 - NFO's deployment state machine is much thinner — reference has 7
   states (including ABNORMAL/UPDATING) plus real duplication/dependency
   guards and a resource-linkage object; ours only moves
@@ -680,6 +690,14 @@ own §1/§2 items stand as-is.
   deliver a best-effort notification to matching subscribers whenever
   a policy's enforcement status actually changes. 222 tests total, up
   from 217 (`a1-related` alone: 19 -> 24).
+- `focom`'s `subscribe_inventory_changes` no-op (§5) closed: a real
+  `InventorySubscription` model (callback + optional resource-type
+  filter) now backs `POST`/`DELETE /inventory/subscriptions`, and
+  `provision_resource`/`deprovision_resource` deliver best-effort
+  CREATE/DELETE notifications to matching subscribers. Added the
+  `inventory_subscription` table to `migrations/001_init.sql`,
+  verified against a real local Postgres 16 instance. 228 tests total,
+  up from 222 (`focom` alone: 13 -> 19).
 
 ## Suggested next pass (priority order)
 
@@ -704,8 +722,13 @@ own §1/§2 items stand as-is.
      `subscriptionScope`'s `OWN`/`OTHERS` filtering remains unhonored
      (needs subscriber identity this build doesn't track — noted in §5
      as a documented partial, not silently dropped).
-   - `focom`'s `subscribe_inventory_changes` not actually subscribing to
-     anything (no callback param, no storage, no delivery).
+   - ~~`focom`'s `subscribe_inventory_changes` not actually subscribing
+     to anything (no callback param, no storage, no delivery).~~ —
+     **closed.** Real best-effort delivery on provision/deprovision now
+     exists; a type-filtered subscriber still gets every delete event
+     since deprovision doesn't know the resource's type (documented
+     partial, tied to the still-open `ResourceType`/`ResourcePool`
+     schema gap).
    - `sme`'s `notify_service_change` never being called from the routes
      that should trigger it (the delivery logic exists, it's just dead
      code).

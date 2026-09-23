@@ -2,6 +2,8 @@
 pytest smo/focom/tests -q
 """
 
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -11,13 +13,13 @@ from sqlalchemy.pool import StaticPool
 from smo_shared.db import Base, get_session
 
 from app.main import app, PHASE1_CLUSTER_ID
-from app.models import OCloudAlarm, OCloudPerformanceMetric
+from app.models import InventorySubscription, OCloudAlarm, OCloudPerformanceMetric
 
 
 @pytest.fixture
 def db_session():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[OCloudAlarm.__table__, OCloudPerformanceMetric.__table__])
+    Base.metadata.create_all(engine, tables=[OCloudAlarm.__table__, OCloudPerformanceMetric.__table__, InventorySubscription.__table__])
     TestSession = sessionmaker(bind=engine)
     return TestSession
 
@@ -51,12 +53,89 @@ def test_query_inventory_echoes_requested_resource_type(client):
     assert resp.json()["resourcePools"][0]["resourceTypeId"] == "gpu-l40"
 
 
-def test_subscribe_inventory_changes_is_a_no_op(client):
-    """Phase 1: a single degenerate cluster never changes, so this is
-    intentionally a no-op rather than unimplemented (D-DEPLOY-FOCOM-1).
+def test_subscribe_inventory_changes_returns_subscription_id(client):
+    resp = client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback"})
+    assert resp.status_code == 201
+    assert "subscriptionId" in resp.json()
+
+
+def test_unsubscribe_inventory_changes_removes_subscription(client, db_session):
+    sub = client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback"}).json()
+
+    resp = client.delete(f"/inventory/subscriptions/{sub['subscriptionId']}")
+    assert resp.status_code == 204
+
+    with db_session() as session:
+        assert session.get(InventorySubscription, uuid.UUID(sub["subscriptionId"])) is None
+
+
+def test_unsubscribe_unknown_inventory_subscription_is_idempotent(client):
+    resp = client.delete("/inventory/subscriptions/11111111-1111-1111-1111-111111111111")
+    assert resp.status_code == 204
+
+
+def test_provision_resource_notifies_matching_subscriber(client, monkeypatch):
+    """OPEN_ITEMS.md section 5: subscribe_inventory_changes took no
+    callback parameter, stored nothing, and delivered nothing. This is
+    the headline fix — provisioning a resource now actually reaches a
+    matching subscriber's callback.
     """
-    resp = client.post("/inventory/subscriptions")
-    assert resp.json()["status"] == "subscribed"
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
+
+    resp = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"})
+    resource_id = resp.json()["resourceId"]
+
+    assert len(calls) == 1
+    assert calls[0][0] == "http://consumer/callback"
+    assert calls[0][1]["notificationEventType"] == "CREATE"
+    assert calls[0][1]["resourceId"] == resource_id
+    assert calls[0][1]["resourceTypeId"] == "gpu-l40"
+
+
+def test_provision_resource_does_not_notify_subscriber_filtered_out_by_type(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
+
+    client.post("/resources/provision", json={"resourceTypeId": "generic"})
+
+    assert calls == []
+
+
+def test_deprovision_resource_notifies_subscriber_regardless_of_type_filter(client, monkeypatch):
+    """resource_type_id is unknown at deprovision time (no
+    ResourceType/ResourcePool schema exists yet — a separate, larger
+    gap), so a type-filtered subscriber must still be notified rather
+    than silently missing every delete event.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
+
+    client.delete("/resources/some-resource-id")
+
+    assert len(calls) == 1
+    assert calls[0][1]["notificationEventType"] == "DELETE"
+    assert calls[0][1]["resourceId"] == "some-resource-id"
+
+
+def test_inventory_notification_delivery_survives_unreachable_subscriber(client, monkeypatch):
+    import httpx as httpx_module
+
+    def raise_error(url, json=None, timeout=None):
+        raise httpx_module.ConnectError("unreachable")
+
+    monkeypatch.setattr("app.main.httpx.post", raise_error)
+
+    client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback"})
+
+    resp = client.post("/resources/provision", json={"resourceTypeId": "generic"})  # must not raise
+    assert resp.status_code == 200
 
 
 def test_provision_and_deprovision_resource(client):
