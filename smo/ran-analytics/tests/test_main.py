@@ -250,3 +250,69 @@ def test_list_subscriptions_excludes_unsubscribed(client):
 
     resp = client.get("/subscriptions")
     assert resp.json() == []
+
+
+def test_publish_report_notifies_subscriber_with_a_notification_destination(client, monkeypatch):
+    """OPEN_ITEMS.md section 5: PublishAnalyticsReport's subscriber loop
+    was a deliberate no-op (`for sub in subs: pass`) — a matching
+    MDASubscription was looked up but never actually notified. This is
+    the headline fix — a published report now actually reaches a
+    matching subscriber's notificationDestination.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos", "notification_destination": "http://sa-smos:8000/analytics-reports"})
+    resp = client.post("/reports", params={"analytics_type": "coverage-issue-analysis"}, json={"output": {"issue": "cellA"}, "input_sources": []})
+    report_id = resp.json()["reportId"]
+
+    assert len(calls) == 1
+    assert calls[0][0] == "http://sa-smos:8000/analytics-reports"
+    assert calls[0][1]["reportId"] == report_id
+    assert calls[0][1]["analyticsType"] == "coverage-issue-analysis"
+    assert calls[0][1]["output"] == {"issue": "cellA"}
+
+
+def test_publish_report_does_not_notify_subscriber_without_a_notification_destination(client, monkeypatch):
+    """A subscriber that never registered a notificationDestination is a
+    purely poll-based consumer (QueryAnalyticsReport) — left alone
+    rather than having a delivery target guessed for it.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"})
+    client.post("/reports", params={"analytics_type": "coverage-issue-analysis"}, json={"output": {}, "input_sources": []})
+
+    assert calls == []
+
+
+def test_publish_report_does_not_notify_subscriber_of_a_different_analytics_type(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo", "notification_destination": "http://nfo:8000/analytics-reports"})
+    client.post("/reports", params={"analytics_type": "coverage-issue-analysis"}, json={"output": {}, "input_sources": []})
+
+    assert calls == []
+
+
+def test_publish_report_notification_delivery_survives_unreachable_subscriber(client, monkeypatch):
+    import httpx as httpx_module
+
+    def raise_error(url, json=None, timeout=None):
+        raise httpx_module.ConnectError("unreachable")
+
+    monkeypatch.setattr("app.main.httpx.post", raise_error)
+
+    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos", "notification_destination": "http://sa-smos:8000/analytics-reports"})
+    resp = client.post("/reports", params={"analytics_type": "coverage-issue-analysis"}, json={"output": {}, "input_sources": []})
+
+    assert resp.status_code == 201  # must not raise despite the unreachable subscriber
+
+
+def test_list_subscriptions_exposes_notification_destination(client):
+    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos", "notification_destination": "http://sa-smos:8000/analytics-reports"})
+
+    resp = client.get("/subscriptions")
+    assert resp.json()[0]["notificationDestination"] == "http://sa-smos:8000/analytics-reports"

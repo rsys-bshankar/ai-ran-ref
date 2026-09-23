@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**338 tests total, all passing** as of this build: 328 unit tests across
+**343 tests total, all passing** as of this build: 333 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -300,6 +300,17 @@ child table first, in a transaction — the same defense-in-depth shape,
 not invented) plus explicit application-level cleanup, verified
 against a real local Postgres 16 instance including the transitive
 `performance_report -> mlmf_subscription -> aiml_model` hop.
+`ran-analytics` went from 17 tests to 22 in the next pass:
+`publish_report`'s subscriber-notification loop (`for sub in subs:
+pass`) — a real gap, though not a regression behind
+`aiml-fw-apm-monitoring-server`'s own equally-empty `Subscribe` stub —
+now actually delivers. Added an optional `notificationDestination` to
+`SubscribeAnalytics`/`MDASubscription` (same shape as A1 Related's
+`notification_destination`/Policy Mgmt's `notificationCallbackUri`),
+and a published report is now best-effort POSTed to every matching
+subscriber that registered one; a purely poll-based subscriber (no
+destination registered) is left alone rather than having a delivery
+target guessed for it.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

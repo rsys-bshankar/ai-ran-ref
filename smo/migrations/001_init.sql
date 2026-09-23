@@ -506,7 +506,8 @@ CREATE TABLE mda_subscription (
   subscription_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   analytics_type     TEXT NOT NULL,
   scope                JSONB,
-  requested_by          TEXT NOT NULL
+  requested_by          TEXT NOT NULL,
+  notification_destination  TEXT  -- NEW section 5: publish_report's actual delivery target
 );
 
 -- ============================================================

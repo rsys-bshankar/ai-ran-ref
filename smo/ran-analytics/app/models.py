@@ -35,3 +35,4 @@ class MDASubscription(Base):
     analytics_type: Mapped[str] = mapped_column(String, nullable=False)
     scope: Mapped[dict | None] = mapped_column(JSON)
     requested_by: Mapped[str] = mapped_column(String, nullable=False)
+    notification_destination: Mapped[str | None] = mapped_column(String)  # NEW section 5: publish_report's actual delivery target — see main.py
