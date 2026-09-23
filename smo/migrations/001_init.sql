@@ -308,18 +308,31 @@ ALTER TABLE application_package
 CREATE TABLE nf_deployment (
   nf_deployment_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nf_deployment_descriptor_id  UUID NOT NULL REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
-  cluster_id                    TEXT NOT NULL,   -- degenerate single value, Phase 1
-  state                           TEXT NOT NULL DEFAULT 'INSTANTIATING'
-                                     CHECK (state IN ('INSTANTIATING','RUNNING','HEALING','SCALING','UPGRADING','TERMINATING')),
-  workload_ref                      TEXT,
-  required_resource_type_id           TEXT,
-  config_secrets                        JSONB
+  name                          TEXT NOT NULL,   -- NEW section 5: the reference's own duplication guard needs a real name
+  cluster_id                     TEXT NOT NULL,   -- degenerate single value, Phase 1
+  state                            TEXT NOT NULL DEFAULT 'INITIAL'
+                                      -- NEW section 5: the reference's real 7-state NfDeploymentState
+                                      -- (Initial/Installing/Installed/Updating/Uninstalling/Abnormal/Deleting)
+                                      CHECK (state IN ('INITIAL','INSTANTIATING','RUNNING','UPDATING','TERMINATING','ABNORMAL','DELETING')),
+  workload_ref                       TEXT,
+  required_resource_type_id            TEXT,
+  config_secrets                         JSONB
+);
+
+-- NEW section 5: the reference's own NfOCloudVResource — the
+-- resource-linkage object between an NfDeployment and the O-Cloud
+-- resource(s) it actually consumes, entirely missing before this pass.
+CREATE TABLE nf_ocloud_resource (
+  resource_link_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nf_deployment_id   UUID NOT NULL REFERENCES nf_deployment(nf_deployment_id),
+  resource_ref          TEXT NOT NULL,
+  vresource_type           TEXT NOT NULL DEFAULT 'COMPUTE'
 );
 
 CREATE TABLE lcm_operation (
   operation_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nf_deployment_id   UUID NOT NULL REFERENCES nf_deployment(nf_deployment_id),
-  operation_type       TEXT NOT NULL CHECK (operation_type IN ('INSTANTIATE','TERMINATE','HEAL','SCALE','UPGRADE')),
+  operation_type       TEXT NOT NULL CHECK (operation_type IN ('INSTANTIATE','TERMINATE','HEAL','SCALE')),
   status                 TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','IN_PROGRESS','COMPLETED','FAILED'))
 );
 

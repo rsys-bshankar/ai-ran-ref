@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**294 tests total, all passing** as of this build: 284 unit tests across
+**308 tests total, all passing** as of this build: 298 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -232,7 +232,19 @@ resource→parent), no invented ones. A CloudEvent/Kafka producer is
 deliberately not built — this build has no message broker anywhere,
 and the reference's own export is push-based, not a pull endpoint at
 all; `/topology` is the honest pull-based substitute (see
-OPEN_ITEMS.md section 5 for the full scoping note).
+OPEN_ITEMS.md section 5 for the full scoping note). `nfo` went from 9
+tests to 23 in the next pass: added the reference's real 7-state
+deployment lifecycle
+(INITIAL/INSTANTIATING/RUNNING/UPDATING/TERMINATING/ABNORMAL/DELETING,
+matching `o2dms/domain/states.py`'s own Initial/Installing/Installed/
+Updating/Uninstalling/Abnormal/Deleting one for one), the reference's
+own duplication/dependency guards on Instantiate (a deployment can no
+longer silently double-book a name or a descriptor, and a nonexistent
+descriptorId is rejected up front), a real resource-linkage object
+(`NFOCloudResource`, the reference's `NfOCloudVResource`), and real
+Heal/Scale state transitions in place of pure stubs. Terminate mirrors
+the reference's own state dispatch exactly, including its defensive
+catch-all for a double-terminate race.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
