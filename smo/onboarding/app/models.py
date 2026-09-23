@@ -24,6 +24,19 @@ class ApplicationPackage(Base):
     tosca_entry_definitions: Mapped[str | None] = mapped_column(String)
     signature_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     integrity_hash: Mapped[str | None] = mapped_column(String)
+    # NFO+FOCOM LLD section 2: populated by NFO's CreateDescriptor once
+    # OnboardPackage's own validation succeeds — the actual fix for the
+    # gap where rApp Management used to pass packageId where NFO expected
+    # a real nfDeploymentDescriptorId. use_alter=True: nf_deployment_descriptor
+    # itself has a FK back to application_package (which package it was
+    # derived from), so this pair is a genuine mutual reference — same as
+    # migrations/001_init.sql adding this column via ALTER TABLE after
+    # nf_deployment_descriptor exists, this tells SQLAlchemy to emit the
+    # constraint the same way rather than inline, breaking the cycle for
+    # dependency-sort purposes (create_all/drop_all ordering).
+    nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("nf_deployment_descriptor.nf_deployment_descriptor_id", use_alter=True, name="fk_application_package_nf_deployment_descriptor_id")
+    )
 
 
 class Artifact(Base):

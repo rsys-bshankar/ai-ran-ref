@@ -5,7 +5,7 @@ sections 3-4). Run with: pytest smo/onboarding/tests -q
 import uuid
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import Column, Table, Uuid, create_engine
 from sqlalchemy.orm import Session
 
 from smo_shared.db import Base
@@ -18,6 +18,12 @@ from app.statemachine import ONBOARDING_FSM, PackageEvent, PackageState
 @pytest.fixture
 def db():
     engine = create_engine("sqlite://")
+    # nf_deployment_descriptor lives in the nfo module, out of scope for this
+    # test package — stand in a minimal table so ApplicationPackage's FK
+    # resolves. Production runs against the full consolidated migration
+    # (001_init.sql), same pattern as nfo/tests' application_package stub.
+    if "nf_deployment_descriptor" not in Base.metadata.tables:
+        Table("nf_deployment_descriptor", Base.metadata, Column("nf_deployment_descriptor_id", Uuid, primary_key=True))
     Base.metadata.create_all(engine, tables=[ApplicationPackage.__table__, PackageUsageRegistration.__table__])
     with Session(engine) as session:
         yield session

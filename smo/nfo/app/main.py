@@ -26,6 +26,31 @@ class InstantiateRequest(BaseModel):
     requiredResourceTypeId: str | None = None
 
 
+class CreateDescriptorRequest(BaseModel):
+    packageId: uuid.UUID
+    name: str
+    workloadTemplate: dict = {}
+    requiredResourceTypeId: str | None = None
+
+
+@app.post("/descriptors", status_code=201)
+def create_descriptor(body: CreateDescriptorRequest, db: Session = Depends(get_session)):
+    """CreateDescriptor — NFO+FOCOM LLD section 2: an NFDeploymentDescriptor
+    derived from an onboarded package's TOSCA Definitions/, called from
+    Onboarding's OnboardPackage flow once validation succeeds, closing the
+    gap where nfDeploymentDescriptorId previously referenced nothing
+    concrete.
+    """
+    descriptor = NFDeploymentDescriptor(
+        package_id=body.packageId, name=body.name,
+        required_resource_type_id=body.requiredResourceTypeId,
+        workload_template=body.workloadTemplate,
+    )
+    db.add(descriptor)
+    db.commit()
+    return {"nfDeploymentDescriptorId": str(descriptor.nf_deployment_descriptor_id)}
+
+
 @app.post("/deployments", status_code=202)
 def instantiate(body: InstantiateRequest, db: Session = Depends(get_session)):
     """Instantiate — NFO+FOCOM LLD section 4: FOCOM's inventory is queried
