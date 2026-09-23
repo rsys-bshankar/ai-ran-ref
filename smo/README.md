@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**217 tests total, all passing** as of this build: 207 unit tests across
+**222 tests total, all passing** as of this build: 212 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -140,7 +140,12 @@ sync method design decision, then to 21 when a `GET /health` route was
 added to answer the callback URL `subscribe_pm` registers with DME (see
 "Real bugs" below and OPEN_ITEMS.md section 5). `a1-related` picked up
 the identical fix in the same pass — `register_ei_type` registers the
-same-shaped callback with DME — going from 18 tests to 19.
+same-shaped callback with DME — going from 18 tests to 19, then to 24
+in the next pass when `SubscribePolicyStatus`/`UnsubscribePolicyStatus`
+went from pure no-ops to actually delivering a best-effort notification
+to matching subscribers whenever a policy's enforcement status changes
+(`update_policy` and `query_policy_status` — see OPEN_ITEMS.md
+section 5).
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

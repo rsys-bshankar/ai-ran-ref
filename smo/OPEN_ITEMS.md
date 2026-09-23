@@ -147,8 +147,8 @@ Per-module unit test counts:
 | ai-ml-workflow | 18 |
 | onboarding | 18 |
 | sme | 18 |
-| a1-related | 19 |
 | ran-nf-oam | 21 |
+| a1-related | 24 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
 `nfo`/`ran-analytics` (9 tests each) are now the
@@ -328,13 +328,29 @@ own §1/§2 items stand as-is.
   never sourced from or synced with an actual RIC; `nearRtRicId` is
   accepted but never used to filter or query anything real. No RIC
   repository (`/rics`) concept exists at all.
-- **`SubscribePolicyStatus`/`UnsubscribePolicyStatus` are pure no-ops with
-  zero delivery anywhere in the stack** — confirmed against the real
-  mechanism: the reference PMS passes a per-policy status-notification
-  URI down to the RIC at creation time, and `sim-a1-interface`'s own
-  mediator actually stores and pushes it. This is a genuine gap against
-  a working reference, not just an ours-vs-theirs modeling choice — our
-  endpoint's own declared purpose (notify on status change) is unmet.
+- ~~**`SubscribePolicyStatus`/`UnsubscribePolicyStatus` are pure no-ops
+  with zero delivery anywhere in the stack** — confirmed against the
+  real mechanism: the reference PMS passes a per-policy
+  status-notification URI down to the RIC at creation time, and
+  `sim-a1-interface`'s own mediator actually stores and pushes it. This
+  is a genuine gap against a working reference, not just an
+  ours-vs-theirs modeling choice — our endpoint's own declared purpose
+  (notify on status change) is unmet.~~ — **closed.** `update_policy`
+  and `query_policy_status` now call `_notify_policy_status_subscribers`
+  whenever a policy's `enforcement_status` actually changes,
+  best-effort (same pattern as Policy Mgmt's `CreateIntent`
+  notification — an unreachable subscriber never fails the call).
+  Filters by `policyIdList`/`policyTypeIdList`/`nearRtRicIdList`.
+  Partial: `subscriptionScope`'s `OWN`/`OTHERS` distinction still can't
+  be honored — it needs a subscriber identity this build doesn't track
+  anywhere (the same elided-AuthZ pattern as `CreatePolicy`'s own
+  docstring already calls out), so a scope-only subscription is treated
+  as `ALL` rather than silently dropped. Covered by
+  `test_update_policy_notifies_matching_subscriber_on_status_change`,
+  `test_update_policy_does_not_notify_when_status_unchanged`,
+  `test_query_policy_status_notifies_on_refreshed_status_change`,
+  `test_notification_is_not_sent_to_subscriber_filtered_out_by_policy_type`,
+  `test_notification_delivery_survives_unreachable_subscriber`.
 - No service registration/supervision (`/services`, keepalive, and
   auto-delete of a stale rApp's policies).
 - No duplicate-policy/fingerprint detection — the reference's mediator
@@ -659,6 +675,11 @@ own §1/§2 items stand as-is.
   pointing at their own module's `/health` with DME, and neither
   module answered it. Both now have a `GET /health` route. 217 tests
   total, up from 215.
+- `a1-related`'s `SubscribePolicyStatus`/`UnsubscribePolicyStatus`
+  no-ops (§5) closed: `update_policy` and `query_policy_status` now
+  deliver a best-effort notification to matching subscribers whenever
+  a policy's enforcement status actually changes. 222 tests total, up
+  from 217 (`a1-related` alone: 19 -> 24).
 
 ## Suggested next pass (priority order)
 
@@ -677,8 +698,12 @@ own §1/§2 items stand as-is.
      self-registered against DME with no matching `/health` route) —
      confirmed no other module has it; this bug class is fully closed
      across the build, not just these two.
-   - `a1-related`'s `SubscribePolicyStatus`/`UnsubscribePolicyStatus`
-     being complete no-ops with zero delivery anywhere in the stack.
+   - ~~`a1-related`'s `SubscribePolicyStatus`/`UnsubscribePolicyStatus`
+     being complete no-ops with zero delivery anywhere in the stack.~~ —
+     **closed.** Real best-effort delivery on status change now exists;
+     `subscriptionScope`'s `OWN`/`OTHERS` filtering remains unhonored
+     (needs subscriber identity this build doesn't track — noted in §5
+     as a documented partial, not silently dropped).
    - `focom`'s `subscribe_inventory_changes` not actually subscribing to
      anything (no callback param, no storage, no delivery).
    - `sme`'s `notify_service_change` never being called from the routes

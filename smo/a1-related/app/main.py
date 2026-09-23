@@ -10,6 +10,7 @@ build.
 
 import uuid
 
+import httpx
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -83,10 +84,13 @@ def query_policy(policy_id: uuid.UUID, db: Session = Depends(get_session)):
 @app.put("/policies/{policy_id}")
 def update_policy(policy_id: uuid.UUID, policy_object: dict, db: Session = Depends(get_session), a1t: A1TerminationClient = Depends(get_a1_termination_client)):
     p = db.get(A1Policy, policy_id)
+    old_status = p.enforcement_status
     result = a1t.update_policy(p.near_rt_ric_policy_id, policy_object)
     p.policy_object = policy_object
     p.enforcement_status = result["enforcementStatus"]
     db.commit()
+    if p.enforcement_status != old_status:
+        _notify_policy_status_subscribers(db, p)
     return _policy_view(p)
 
 
@@ -108,10 +112,43 @@ def query_policy_status(policy_id: uuid.UUID, db: Session = Depends(get_session)
     policy_id (see the model's docstring; caught by the integration suite).
     """
     p = db.get(A1Policy, policy_id)
+    old_status = p.enforcement_status
     result = a1t.query_policy_status(p.near_rt_ric_policy_id)
     p.enforcement_status = result["enforcementStatus"]
     db.commit()
+    if p.enforcement_status != old_status:
+        _notify_policy_status_subscribers(db, p)
     return {"policyId": str(p.policy_id), "enforcementStatus": p.enforcement_status}
+
+
+def _notify_policy_status_subscribers(db: Session, policy: A1Policy) -> None:
+    """A1 Related LLD section 1.2's subscription mechanism (OPEN_ITEMS.md
+    section 5): SubscribePolicyStatus/UnsubscribePolicyStatus stored and
+    removed subscription rows but nothing ever delivered to
+    notification_destination on an actual status change. Filters by
+    policyIdList/policyTypeIdList/nearRtRicIdList (an unset filter
+    matches everything); subscriptionScope's OWN/OTHERS distinction
+    needs a subscriber identity this build doesn't track anywhere —
+    same AuthZ elision as CreatePolicy's own docstring calls out — so a
+    scope-only subscription is treated as ALL rather than silently
+    dropped. Best-effort delivery, same pattern as Policy Mgmt's
+    CreateIntent notification: an unreachable subscriber must never
+    fail the status-changing call that triggered it.
+    """
+    for sub in db.scalars(select(PolicyStatusSubscription)).all():
+        if sub.policy_id_list is not None and str(policy.policy_id) not in sub.policy_id_list:
+            continue
+        if sub.policy_type_id_list is not None and policy.policy_type_id not in sub.policy_type_id_list:
+            continue
+        if sub.near_rt_ric_id_list is not None and policy.near_rt_ric_id not in sub.near_rt_ric_id_list:
+            continue
+        try:
+            httpx.post(sub.notification_destination, json={
+                "policyId": str(policy.policy_id), "policyTypeId": policy.policy_type_id,
+                "nearRtRicId": policy.near_rt_ric_id, "enforcementStatus": policy.enforcement_status,
+            }, timeout=2.0)
+        except httpx.HTTPError:
+            pass
 
 
 @app.post("/policies/subscriptions", status_code=201)

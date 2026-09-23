@@ -276,3 +276,96 @@ def test_health_endpoint_answers_the_callback_url_register_ei_type_registers(cli
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json()["status"] == "healthy"
+
+
+def test_update_policy_notifies_matching_subscriber_on_status_change(client, monkeypatch):
+    """OPEN_ITEMS.md section 5: SubscribePolicyStatus/UnsubscribePolicyStatus
+    were pure no-ops with zero delivery anywhere. This is the headline
+    fix — a real status change now actually reaches a matching
+    subscriber's notificationDestination.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    created = client.post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1",
+    }).json()
+    assert created["enforcementStatus"] == "ENFORCED"
+
+    client.post("/policies/subscriptions", json={
+        "notificationDestination": "http://consumer/callback", "policyIdList": [created["policyId"]],
+    })
+
+    # FakeA1Termination.update_policy rejects an empty policyObject — a real status change.
+    client.put(f"/policies/{created['policyId']}", json={})
+
+    assert len(calls) == 1
+    assert calls[0][0] == "http://consumer/callback"
+    assert calls[0][1]["policyId"] == created["policyId"]
+    assert calls[0][1]["enforcementStatus"] == "REJECTED"
+
+
+def test_update_policy_does_not_notify_when_status_unchanged(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    created = client.post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1",
+    }).json()
+    client.post("/policies/subscriptions", json={"notificationDestination": "http://consumer/callback"})
+
+    # Non-empty policyObject stays ENFORCED per FakeA1Termination — no real change.
+    client.put(f"/policies/{created['policyId']}", json={"scope": "cell2"})
+
+    assert calls == []
+
+
+def test_query_policy_status_notifies_on_refreshed_status_change(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    created = client.post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {}, "nearRtRicId": "ric1", "creatorId": "rapp-1",
+    }).json()
+    assert created["enforcementStatus"] == "REJECTED"
+    client.post("/policies/subscriptions", json={"notificationDestination": "http://consumer/callback"})
+
+    # FakeA1Termination.query_policy_status always answers ENFORCED — a real change from REJECTED.
+    client.get(f"/policies/{created['policyId']}/status")
+
+    assert len(calls) == 1
+    assert calls[0][1]["enforcementStatus"] == "ENFORCED"
+
+
+def test_notification_is_not_sent_to_subscriber_filtered_out_by_policy_type(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    created = client.post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1",
+    }).json()
+    client.post("/policies/subscriptions", json={
+        "notificationDestination": "http://consumer/callback",
+        "policyTypeIdList": ["ORAN_TrafficSteeringPreference_6.0.1"],
+    })
+
+    client.put(f"/policies/{created['policyId']}", json={})  # -> REJECTED, a real change
+
+    assert calls == []
+
+
+def test_notification_delivery_survives_unreachable_subscriber(client, monkeypatch):
+    import httpx as httpx_module
+
+    def raise_error(url, json=None, timeout=None):
+        raise httpx_module.ConnectError("unreachable")
+
+    monkeypatch.setattr("app.main.httpx.post", raise_error)
+
+    created = client.post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1",
+    }).json()
+    client.post("/policies/subscriptions", json={"notificationDestination": "http://consumer/callback"})
+
+    resp = client.put(f"/policies/{created['policyId']}", json={})  # must not raise
+    assert resp.status_code == 200
