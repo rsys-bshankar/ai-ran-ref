@@ -460,6 +460,12 @@ CREATE TABLE training_job (
   status                                   TEXT NOT NULL DEFAULT 'PENDING'
                                              CHECK (status IN ('PENDING','RUNNING','COMPLETED','FAILED','CANCELLED')),
   notification_uri                          TEXT,
+  run_id                                       TEXT,  -- NEW section 5: trainingmgr's own TrainingJob.run_id
+  training_dataset                                TEXT, -- NEW section 5
+  validation_dataset                                 TEXT, -- NEW section 5
+  consumer_rapp_id                                      TEXT, -- NEW section 5
+  producer_rapp_id                                         TEXT, -- NEW section 5
+  model_metrics                                               JSONB, -- NEW section 5: writeback target, POST .../model-metrics
   CONSTRAINT exactly_one_target CHECK (
     (model_id IS NOT NULL AND model_coordination_group_id IS NULL)
     OR (model_id IS NULL AND model_coordination_group_id IS NOT NULL)

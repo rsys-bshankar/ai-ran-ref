@@ -103,6 +103,21 @@ class TrainingJob(Base):
     validation_criteria: Mapped[dict | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
     notification_uri: Mapped[str | None] = mapped_column(String)
+    # NEW section 5: the reference's own TrainingJob (trainingmgr/models/trainingjob.py)
+    # carries these too — run_id, distinct training/validation dataset
+    # references, separate consumer/producer rApp ids, and a
+    # model_metrics writeback target. Its real two-axis (step x status)
+    # tracking (steps_state/TrainingJobStatus) is deliberately NOT
+    # adopted here — replacing this build's existing flat `status`
+    # field with a step state machine is a bigger, riskier rework of
+    # already-shipped behavior, not a purely additive field; left for a
+    # future pass.
+    run_id: Mapped[str | None] = mapped_column(String)
+    training_dataset: Mapped[str | None] = mapped_column(String)
+    validation_dataset: Mapped[str | None] = mapped_column(String)
+    consumer_rapp_id: Mapped[str | None] = mapped_column(String)
+    producer_rapp_id: Mapped[str | None] = mapped_column(String)
+    model_metrics: Mapped[dict | None] = mapped_column(JSON)
 
 
 class ModelChangeSubscription(Base):

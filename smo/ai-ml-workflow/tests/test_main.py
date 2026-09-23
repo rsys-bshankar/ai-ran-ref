@@ -66,6 +66,58 @@ def test_request_training_on_registered_model_fires_train(client, db_session_fac
         assert model.state == ModelState.TRAINING
 
 
+def test_request_training_stores_and_exposes_extended_fields(client, db_session_factory):
+    """OPEN_ITEMS.md section 5: TrainingJob was far thinner than the
+    reference's own TrainingJob (trainingmgr/models/trainingjob.py) —
+    no run_id, no distinct training/validation dataset fields, no
+    separate consumer/producer rApp ids.
+    """
+    model_id = _make_model(db_session_factory, ModelState.REGISTERED)
+    resp = client.post("/training-jobs", json={
+        "modelId": str(model_id), "producerId": "rapp-1", "runId": "run-42",
+        "trainingDataset": "s3://bucket/train.csv", "validationDataset": "s3://bucket/val.csv",
+        "consumerRappId": "rapp-consumer", "producerRappId": "rapp-producer",
+    })
+    training_job_id = resp.json()["trainingJobId"]
+
+    status = client.get(f"/training-jobs/{training_job_id}/status").json()
+    assert status["runId"] == "run-42"
+    assert status["trainingDataset"] == "s3://bucket/train.csv"
+    assert status["validationDataset"] == "s3://bucket/val.csv"
+    assert status["consumerRappId"] == "rapp-consumer"
+    assert status["producerRappId"] == "rapp-producer"
+
+
+def test_update_and_get_training_job_model_metrics(client, db_session_factory):
+    """OPEN_ITEMS.md section 5: no metrics-writeback endpoint existed at
+    all. The reference's own POST .../update-model-metrics/<id> replaces
+    model_metrics wholesale, not a merge.
+    """
+    model_id = _make_model(db_session_factory, ModelState.REGISTERED)
+    training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+
+    resp = client.post(f"/training-jobs/{training_job_id}/model-metrics", json={"accuracy": 0.9})
+    assert resp.status_code == 200
+    assert resp.json()["modelMetrics"] == {"accuracy": 0.9}
+
+    get_resp = client.get(f"/training-jobs/{training_job_id}/model-metrics")
+    assert get_resp.json() == {"accuracy": 0.9}
+
+    # a second update replaces, it doesn't merge
+    client.post(f"/training-jobs/{training_job_id}/model-metrics", json={"f1": 0.8})
+    assert client.get(f"/training-jobs/{training_job_id}/model-metrics").json() == {"f1": 0.8}
+
+
+def test_get_model_metrics_for_unknown_training_job_is_404(client):
+    resp = client.get(f"/training-jobs/{uuid.uuid4()}/model-metrics")
+    assert resp.status_code == 404
+
+
+def test_update_model_metrics_for_unknown_training_job_is_404(client):
+    resp = client.post(f"/training-jobs/{uuid.uuid4()}/model-metrics", json={"accuracy": 0.9})
+    assert resp.status_code == 404
+
+
 def test_request_training_on_active_model_fires_retrain_not_train(client, db_session_factory):
     """The actual bug this pass fixed: RequestTraining always fired TRAIN
     regardless of the model's state, which is only a legal transition
