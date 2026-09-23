@@ -15,7 +15,7 @@ from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import AIMLModel, MLMFSubscription, MLModelCoordinationGroup, PerformanceReport, TrainingJob
+from app.models import AIMLModel, MLMFSubscription, MLModelCoordinationGroup, ModelArtifact, PerformanceReport, TrainingJob
 from app.statemachine import ModelState
 
 
@@ -28,7 +28,7 @@ def db_session_factory():
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
         AIMLModel.__table__, TrainingJob.__table__, MLModelCoordinationGroup.__table__,
-        MLMFSubscription.__table__, PerformanceReport.__table__,
+        MLMFSubscription.__table__, PerformanceReport.__table__, ModelArtifact.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -196,4 +196,68 @@ def test_get_model_by_id_returns_its_fields(client):
 
 def test_get_unknown_model_is_404(client):
     resp = client.get(f"/models/{uuid.uuid4()}")
+    assert resp.status_code == 404
+
+
+def test_upload_model_artifact_stamps_version_one_and_records_location(client):
+    """OPEN_ITEMS.md section 5: the reference's real UploadModel — ours had
+    an artifact_location field nothing in main.py ever read or wrote.
+    """
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+
+    resp = client.post(f"/models/{model_id}/artifact", files={"file": ("model.zip", b"pkzip-bytes", "application/zip")})
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["modelId"] == model_id
+    assert body["artifactVersion"] == 1
+
+    view = client.get(f"/models/{model_id}").json()
+    assert view["artifactLocation"] == f"model-artifact:{model_id}:1"
+
+
+def test_upload_model_artifact_versions_increment_independently_of_model_version(client):
+    """artifactVersion is a separate auto-incrementing counter from
+    modelVersion — a second upload against the same model bumps it to 2
+    without touching AIMLModel.version at all.
+    """
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+    client.post(f"/models/{model_id}/artifact", files={"file": ("model.zip", b"first", "application/zip")})
+
+    second = client.post(f"/models/{model_id}/artifact", files={"file": ("model.zip", b"second", "application/zip")})
+    assert second.json()["artifactVersion"] == 2
+
+    unchanged = client.get(f"/models/{model_id}").json()
+    assert unchanged["version"] == "1.0"
+
+
+def test_upload_model_artifact_rejects_non_zip(client):
+    """The reference's own UploadModel validation: anything but a .zip
+    suffix is 415 Unsupported Media Type.
+    """
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+
+    resp = client.post(f"/models/{model_id}/artifact", files={"file": ("model.tar", b"not-a-zip", "application/x-tar")})
+    assert resp.status_code == 415
+
+
+def test_upload_model_artifact_for_unknown_model_is_404(client):
+    resp = client.post(f"/models/{uuid.uuid4()}/artifact", files={"file": ("model.zip", b"bytes", "application/zip")})
+    assert resp.status_code == 404
+
+
+def test_download_model_artifact_round_trips_the_uploaded_bytes(client):
+    """DownloadModel — byte-for-byte round trip against the same
+    modelId+artifactVersion key UploadModel stamped."""
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+    client.post(f"/models/{model_id}/artifact", files={"file": ("model.zip", b"pkzip-bytes", "application/zip")})
+
+    resp = client.get(f"/models/{model_id}/artifact/1")
+    assert resp.status_code == 200
+    assert resp.content == b"pkzip-bytes"
+    assert resp.headers["content-type"] == "application/zip"
+
+
+def test_download_unknown_artifact_version_is_404(client):
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+    resp = client.get(f"/models/{model_id}/artifact/1")
     assert resp.status_code == 404

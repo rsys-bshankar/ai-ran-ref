@@ -409,6 +409,15 @@ CREATE TABLE aiml_model (
   cleared_node_groups                          TEXT[]    -- NEW section 5: MultiNode Q2 gap closure
 );
 
+CREATE TABLE model_artifact (
+  artifact_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  model_id          UUID NOT NULL REFERENCES aiml_model(model_id),
+  artifact_version  INTEGER NOT NULL CHECK (artifact_version >= 1),
+  filename          TEXT NOT NULL,
+  content           BYTEA NOT NULL,
+  uploaded_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE training_job (
   training_job_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   model_id                     UUID REFERENCES aiml_model(model_id),

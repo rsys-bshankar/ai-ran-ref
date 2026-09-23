@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, CheckConstraint, ForeignKey, JSON, String, Uuid
+from sqlalchemy import ARRAY, CheckConstraint, ForeignKey, Integer, JSON, LargeBinary, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -32,6 +32,29 @@ class AIMLModel(Base):
     artifact_location: Mapped[str | None] = mapped_column(String)
     required_resource_type_id: Mapped[str | None] = mapped_column(String)
     cleared_node_groups: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))  # MultiNode Q2 gap closure, LLD section 5
+
+
+class ModelArtifact(Base):
+    """OPEN_ITEMS.md section 5: the reference's real UploadModel/DownloadModel
+    (S3-backed), with an auto-incrementing artifactVersion distinct from
+    modelVersion. Real S3 storage is a total, deliberate elision in this
+    build (same as elsewhere), so `content` holds the actual uploaded bytes
+    in-DB — the honest, minimal, self-contained substitute: upload and
+    download genuinely round-trip within the sandbox rather than being a
+    metadata-only stub.
+    """
+
+    __tablename__ = "model_artifact"
+    __table_args__ = (
+        CheckConstraint("artifact_version >= 1", name="artifact_version_positive"),
+    )
+
+    artifact_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id"), nullable=False)
+    artifact_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    filename: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    uploaded_at: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))
 
 
 class TrainingJob(Base):

@@ -142,10 +142,10 @@ Per-module unit test counts:
 | sa-smos | 12 |
 | so-smos | 13 |
 | ran-analytics | 17 |
-| ai-ml-workflow | 20 |
 | sme | 22 |
 | dme | 23 |
 | onboarding | 26 |
+| ai-ml-workflow | 26 |
 | ran-nf-oam | 28 |
 | a1-related | 29 |
 | focom | 34 |
@@ -485,11 +485,14 @@ own §1/§2 items stand as-is.
 
 ### AI/ML Workflow (`ai-ml-workflow/`) — vs `aiml-fw-awmf-modelmgmtservice`, `aiml-fw-awmf-tm`, `aiml-fw-athp-sdk-feature-store`, `aiml-fw-athp-tps-kubeflow-adapter`
 
-- No model artifact upload/download or versioning — the reference has
-  real `UploadModel`/`DownloadModel` (S3-backed) with an
-  auto-incrementing `artifactVersion` separate from `modelVersion`; ours
-  has an `artifact_location` string field that nothing in `main.py` ever
-  reads or writes.
+- ~~No model artifact upload/download or versioning~~ (**closed**: real
+  `POST /models/{id}/artifact`/`GET /models/{id}/artifact/{version}`,
+  with a real auto-incrementing `artifactVersion` separate from
+  `modelVersion`, matching the reference's own `UploadModel`/
+  `DownloadModel` shape. Real S3-backed storage is still a deliberate
+  elision — the uploaded bytes are stored in a new `ModelArtifact`
+  table instead, so upload+download genuinely round-trip;
+  `artifact_location` is now actually written by `main.py`).
 - Model CRUD is incomplete — ~~no `GET /models/{id}`~~ (**closed**: now
   404s on an unknown id), no update, no delete/deregister; only
   create and a type-filtered list existed before this pass.
@@ -839,6 +842,18 @@ own §1/§2 items stand as-is.
   `PRIMED` — an already-confirmed design decision (D-SEC-RAPP-1), not
   overridden by this pass. Verified against a real local Postgres 16
   instance. 285 tests total, up from 277 (`onboarding` alone: 18 -> 26).
+- `ai-ml-workflow`'s missing model artifact upload/download and
+  versioning (§5) closed, as an honest Phase-1 stand-in: real S3-backed
+  storage stays a total, deliberate elision (as before), so a new
+  `ModelArtifact` table stores the actual uploaded bytes in-DB instead —
+  `POST /models/{id}/artifact` and `GET /models/{id}/artifact/{version}`
+  now genuinely round-trip, with `artifactVersion` a real
+  auto-incrementing counter per model, distinct from `modelVersion`
+  (matching the reference's own `UploadModel`/`DownloadModel` shape),
+  and `artifact_location` is now actually written by `main.py` instead
+  of sitting unused. Added the table to `migrations/001_init.sql`,
+  verified against a real local Postgres 16 instance. 291 tests total,
+  up from 285 (`ai-ml-workflow` alone: 20 -> 26).
 
 ## Suggested next pass (priority order)
 
