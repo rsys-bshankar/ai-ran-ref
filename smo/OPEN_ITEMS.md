@@ -41,15 +41,15 @@ the ambiguity into code.
 
 ## 2. Repo code / lifecycle gaps
 
-- **`NFDeploymentDescriptor` is never populated** (`nfo/` + `onboarding/`)
-  — the NFO+FOCOM LLD's own design says it should be derived from an
-  onboarded package's TOSCA `Definitions/` at onboarding time; nothing in
-  this build creates one. `rApp Management` currently passes `packageId`
-  directly where NFO expects a real descriptor ID. Only surfaces against
-  real Postgres FK enforcement (SQLite's test engine doesn't catch it) —
-  flagged explicitly in `tests_integration/test_cross_service.py`. Fix:
-  new NFO endpoint to create the descriptor, called from Onboarding's
-  `OnboardPackage` flow.
+- ~~**`NFDeploymentDescriptor` is never populated**~~ — **closed.** NFO
+  now has a `CreateDescriptor` endpoint (`POST /descriptors`), called
+  from Onboarding's `OnboardPackage` flow once validation succeeds;
+  `rApp Management` consumes the real `nfDeploymentDescriptorId` via
+  Onboarding's `onboarding-status` response instead of passing
+  `packageId`. Verified against real Postgres (the FK now correctly
+  rejects an invalid descriptor ID) and end to end via
+  `tests_integration/test_cross_service.py`'s
+  `test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_descriptor`.
 - **No real southbound integrations beyond the A1 mock** — O1 Adaptor
   `PATCH` calls, actual `docker run` invocations, etc. are all elided in
   favor of recording the correct state transition.
@@ -96,26 +96,30 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| nfo | 4 |
-| r1-termination | 5 |
-| ran-analytics | 5 |
-| rapp-mgmt | 5 |
+| nfo | 5 |
 | mock-near-rt-ric | 5 |
-| onboarding | 7 |
+| r1-termination | 5 |
+| rapp-mgmt | 5 |
+| ran-analytics | 5 |
 | focom | 7 |
 | policy-mgmt | 7 |
-| a1-related | 8 |
 | sa-smos | 8 |
+| a1-related | 8 |
+| onboarding | 9 |
 | sme | 9 |
 | dme | 10 |
 | ran-nf-oam | 10 |
 | ai-ml-workflow | 11 |
 | so-smos | 13 |
 
-Plus 9 cross-service integration tests in `tests_integration/`.
+Plus 10 cross-service integration tests in `tests_integration/`.
+`rapp-mgmt` and `r1-termination` are now the shallowest-covered
+modules — both still near their original baseline.
 
 ## Closed
 
+- **`NFDeploymentDescriptor` population** (§2, was priority 1) — see
+  `smo/README.md`'s "Real bugs this pass found" section.
 - **Bring the shallow-coverage modules to parity** (§4, was priority 2)
   — so-smos, ran-analytics, and focom now have route-level test
   coverage, not just dispatch/FSM-logic coverage. Writing it surfaced
@@ -123,10 +127,8 @@ Plus 9 cross-service integration tests in `tests_integration/`.
   persisted (in-place JSON mutation SQLAlchemy never tracks), and RAN
   Analytics' `RegisterAnalyticsProducer` crashed on a legitimate
   re-registration (same shape as the SME bug from the original pass).
-  See `smo/README.md`'s "Real bugs this pass found" section. `nfo`
-  remains the one module still under the old 4-test baseline — it was
-  brought to 5 by the `NFDeploymentDescriptor` fix (a different branch)
-  but wasn't otherwise deepened here.
+  See `smo/README.md`'s "Real bugs this pass found" section. `nfo` was
+  separately brought to 5 by the `NFDeploymentDescriptor` fix.
 
 ## Suggested next pass (priority order)
 
@@ -135,6 +137,5 @@ Plus 9 cross-service integration tests in `tests_integration/`.
 2. Resolve the design-level decisions (§1) that block further code — SA
    SMOS `RECONNECT`/`ROLLBACK` and RAN NF OAM's CM sync method are the two
    most likely to unblock near-term code changes once decided.
-3. Deepen `nfo`'s and `r1-termination`'s coverage — both still near the
-   original baseline; `nfo` in particular now carries more behavior
-   (`CreateDescriptor`) than its test count reflects on this branch.
+3. Deepen `rapp-mgmt`'s and `r1-termination`'s coverage — both are now
+   the shallowest tier remaining.

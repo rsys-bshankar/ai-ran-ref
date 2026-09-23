@@ -27,17 +27,20 @@ class FakeR1Response:
 
 
 @pytest.fixture
-def client():
+def db_session_factory():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     if "application_package" not in Base.metadata.tables:
         Table("application_package", Base.metadata, Column("package_id", UuidType, primary_key=True))
     Base.metadata.create_all(engine, tables=[
         Base.metadata.tables["application_package"], NFDeploymentDescriptor.__table__, NFDeployment.__table__, LCMOperation.__table__,
     ])
-    TestSession = sessionmaker(bind=engine)
+    return sessionmaker(bind=engine)
 
+
+@pytest.fixture
+def client(db_session_factory):
     def override_get_session():
-        session = TestSession()
+        session = db_session_factory()
         try:
             yield session
         finally:
@@ -49,6 +52,27 @@ def client():
     # on the resulting HTTP status, not the raised Python exception.
     yield TestClient(app, raise_server_exceptions=False)
     app.dependency_overrides.clear()
+
+
+def test_create_descriptor_persists_a_real_row(client, db_session_factory):
+    """NFO+FOCOM LLD section 2: CreateDescriptor — the endpoint that
+    closes the gap where NFDeploymentDescriptor was never populated.
+    """
+    package_id = uuid.uuid4()
+    resp = client.post("/descriptors", json={
+        "packageId": str(package_id), "name": "Definitions/main.yaml",
+        "workloadTemplate": {"toscaEntryDefinitions": "Definitions/main.yaml"},
+        "requiredResourceTypeId": "gpu-l40",
+    })
+    assert resp.status_code == 201
+    descriptor_id = uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
+
+    with db_session_factory() as session:
+        descriptor = session.get(NFDeploymentDescriptor, descriptor_id)
+        assert descriptor is not None
+        assert descriptor.package_id == package_id
+        assert descriptor.required_resource_type_id == "gpu-l40"
+        assert descriptor.workload_template == {"toscaEntryDefinitions": "Definitions/main.yaml"}
 
 
 def test_instantiate_resolves_cluster_via_focom(client, monkeypatch):

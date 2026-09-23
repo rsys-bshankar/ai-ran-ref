@@ -277,6 +277,15 @@ CREATE TABLE nf_deployment_descriptor (
   workload_template                 JSONB NOT NULL
 );
 
+-- Added after nf_deployment_descriptor rather than inline on
+-- application_package (defined earlier in this file) because the FK
+-- target has to exist first. NFO's CreateDescriptor (NFO+FOCOM LLD
+-- section 2) populates this once OnboardPackage's validation succeeds —
+-- closes the gap where rApp Management used to pass packageId where NFO
+-- expected a real nfDeploymentDescriptorId.
+ALTER TABLE application_package
+  ADD COLUMN nf_deployment_descriptor_id UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id);
+
 CREATE TABLE nf_deployment (
   nf_deployment_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nf_deployment_descriptor_id  UUID NOT NULL REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
