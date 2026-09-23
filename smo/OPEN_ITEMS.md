@@ -134,12 +134,12 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| mock-near-rt-ric | 10 |
 | r1-termination | 10 |
 | policy-mgmt | 10 |
 | rapp-mgmt | 12 |
 | sa-smos | 12 |
 | so-smos | 13 |
+| mock-near-rt-ric | 16 |
 | ran-analytics | 17 |
 | sme | 22 |
 | nfo | 23 |
@@ -452,9 +452,19 @@ own §1/§2 items stand as-is.
   `test_notification_delivery_survives_unreachable_subscriber`.
 - No service registration/supervision (`/services`, keepalive, and
   auto-delete of a stale rApp's policies).
-- No duplicate-policy/fingerprint detection — the reference's mediator
-  rejects duplicate policy content or a reused id across types; ours
-  accepts anything per `policyId` with only an empty-object check.
+- ~~No duplicate-policy/fingerprint detection — the reference's
+  mediator rejects duplicate policy content or a reused id across
+  types; ours accepts anything per `policyId` with only an
+  empty-object check.~~ — **closed, partially.** Added a real
+  content-fingerprint check to `mock-near-rt-ric`'s `create_policy`/
+  `update_policy` (ADOPT from the real near-rt-ric-simulator's own
+  `calcFingerprint`/`policy_fingerprint` in
+  `a1_mediator_controller.py`), scoped per policy type — a second,
+  byte-identical `policyObject` under the same type is now genuinely
+  `REJECTED`. The reference's other check ("reused id across types")
+  doesn't apply to this build: our `policyId` is always freshly
+  server-generated, never caller-supplied, so it can never collide
+  with an existing one by construction.
 - *Confirmed structurally out of scope*: A1TD/A1AP JSON-schema
   validation of `policyObject`, A1-ML (categorically dormant per LLD
   section 0), and real A1AP transport (TLS+mTLS+OAuth2.0+JWT) are all
@@ -985,6 +995,14 @@ own §1/§2 items stand as-is.
   application-level cleanup in `deregister_producer` itself. Verified
   the cascade fires for real against a local Postgres 16 instance. 326
   tests total, up from 325 (`dme` alone: 35 -> 36).
+- `a1-related`'s missing duplicate-policy detection (§5) closed,
+  partially: added a real content-fingerprint check to
+  `mock-near-rt-ric`'s `create_policy`/`update_policy` (ADOPT from the
+  real near-rt-ric-simulator's own `calcFingerprint`/
+  `policy_fingerprint`), scoped per policy type. The reference's other
+  check ("reused id across types") doesn't apply here — this build's
+  `policyId` is always freshly server-generated, never caller-supplied.
+  332 tests total, up from 326 (`mock-near-rt-ric` alone: 10 -> 16).
 
 ## Suggested next pass (priority order)
 
