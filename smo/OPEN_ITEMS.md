@@ -136,10 +136,10 @@ Per-module unit test counts:
 |---|---|
 | r1-termination | 10 |
 | policy-mgmt | 10 |
-| rapp-mgmt | 12 |
 | sa-smos | 12 |
 | so-smos | 13 |
 | mock-near-rt-ric | 16 |
+| rapp-mgmt | 17 |
 | ran-analytics | 22 |
 | nfo | 23 |
 | ran-nf-oam | 29 |
@@ -448,8 +448,34 @@ own §1/§2 items stand as-is.
   ACM/Helm/K8s deployment is the declared elision) — implementing this
   would mean echoing back invented descriptor data, not exposing
   something this build already computes.
-- No standalone delete-after-undeploy for an instance, distinct from
-  `terminate`.
+- ~~No standalone delete-after-undeploy for an instance, distinct from
+  `terminate`.~~ — **closed.** Adopted the reference's own split
+  (`RappService.undeployRappInstance`/`deleteRappInstance`, DEPLOYED ->
+  UNDEPLOYING -> UNDEPLOYED, delete only legal from UNDEPLOYED):
+  `TERMINATE` now only tears the workload down (credential revocation,
+  DME producer reconsideration, package-usage-stop — all unchanged) and
+  lands in a terminal `UNDEPLOYED` state with the instance row still
+  present, replacing the old `TERMINATING` state name. Deleting the row
+  is now the separate `DELETE /instances/{id}` — 409
+  (`RAPP_INSTANCE_NOT_UNDEPLOYED`) unless the instance is already
+  `UNDEPLOYED`, matching the reference's own guard message ("not in
+  UNDEPLOYED state"). Also found and fixed while wiring this in: neither
+  `rapp_fault_report` nor `rapp_performance_report` had an `ON DELETE
+  CASCADE` on their `instance_id` FK — the same FK-cascade bug class
+  already found in DME's `deregister_producer`/AI-ML Workflow's
+  `deregister_model` — so an instance with fault/performance history
+  would have orphaned those rows (SQLite) or crashed with an unhandled
+  `IntegrityError` (real Postgres) the first time this new DELETE was
+  ever exercised. Fixed with both a DB-level `ON DELETE CASCADE` and
+  explicit application-level cleanup, verified against a real local
+  Postgres 16 instance. Not touched: `CreateInstance` still deploys the
+  workload immediately and unconditionally (an already-cited, unrelated
+  design decision, D-SEC-RAPP-1) — the reference's own POST only
+  registers an instance `UNDEPLOYED`, with a separate `PUT .../instance/
+  {id}` (`DeployOrder.DEPLOY`) actually triggering deployment; adopting
+  that half too would mean reworking `CreateInstance`'s already-shipped
+  contract, not just adding a standalone delete, so it's out of scope
+  for this item specifically.
 - *Confirmed structurally out of scope*: real ACM/Helm/K8s deployment
   (`rapp-manager-acm`'s composition create/prime/instantiate + real
   DeployState convergence polling) is the single largest elision in
@@ -1305,6 +1331,21 @@ own §1/§2 items stand as-is.
   out of scope — this build models no near-RT-RIC entity or inventory
   beyond the single A1 mock. 389 tests total, up from 387 (`a1-related`
   alone: 30 -> 32).
+- rApp Management's missing standalone delete-after-undeploy (§5)
+  closed: adopted the reference's own `undeployRappInstance`/
+  `deleteRappInstance` split (DEPLOYED -> UNDEPLOYING -> UNDEPLOYED,
+  delete only legal from UNDEPLOYED) — `TERMINATE` now lands in a
+  terminal `UNDEPLOYED` state (replacing the old `TERMINATING` name)
+  with the instance row still present, and a new
+  `DELETE /instances/{id}` removes it, 409'ing
+  (`RAPP_INSTANCE_NOT_UNDEPLOYED`) otherwise. Also found and fixed:
+  `rapp_fault_report`/`rapp_performance_report` had no `ON DELETE
+  CASCADE` on their `instance_id` FK — same bug class as DME's
+  `deregister_producer`/AI-ML Workflow's `deregister_model` — fixed
+  with both a DB-level cascade and explicit application cleanup,
+  verified against real Postgres. `CreateInstance`'s already-shipped
+  immediate-deploy behavior (D-SEC-RAPP-1) is unrelated and untouched.
+  394 tests total, up from 389 (`rapp-mgmt` alone: 12 -> 17).
 
 ## Suggested next pass (priority order)
 

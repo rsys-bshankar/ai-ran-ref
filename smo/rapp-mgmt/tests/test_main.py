@@ -236,3 +236,91 @@ def test_recover_route_fires_recover_transition(client, db_session_factory):
     resp = client.post(f"/instances/{inst_id}/recover")
     assert resp.status_code == 200
     assert resp.json()["state"] == "DEPLOYING"
+
+
+def test_terminate_lands_in_undeployed_and_keeps_the_row(client, db_session_factory, monkeypatch):
+    """OPEN_ITEMS.md section 5: TERMINATE used to delete the instance row
+    outright, in the same call as the workload teardown. The reference's
+    own split (RappService.undeployRappInstance/deleteRappInstance) keeps
+    the row around, in a terminal UNDEPLOYED state, until a separate
+    delete is called.
+    """
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+
+    resp = client.post(f"/instances/{created['instanceId']}/terminate")
+    assert resp.status_code == 200
+    assert resp.json() == {"instanceId": created["instanceId"], "state": "UNDEPLOYED"}
+
+    with db_session_factory() as session:
+        inst = session.get(RAppInstance, uuid.UUID(created["instanceId"]))
+        assert inst is not None
+        assert inst.state == "UNDEPLOYED"
+
+
+def test_delete_instance_requires_undeployed_state(client, monkeypatch):
+    """The reference's own DeleteRappInstance guard: "Unable to delete rApp
+    instance %s as it is not in UNDEPLOYED state" — a running instance
+    can't be deleted out from under itself.
+    """
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")  # -> RUNNING, not UNDEPLOYED
+
+    resp = client.delete(f"/instances/{created['instanceId']}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "RAPP_INSTANCE_NOT_UNDEPLOYED"
+
+
+def test_delete_instance_removes_the_row_once_undeployed(client, db_session_factory, monkeypatch):
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    client.post(f"/instances/{created['instanceId']}/terminate")
+
+    resp = client.delete(f"/instances/{created['instanceId']}")
+    assert resp.status_code == 204
+
+    with db_session_factory() as session:
+        assert session.get(RAppInstance, uuid.UUID(created["instanceId"])) is None
+
+
+def test_delete_instance_cascades_fault_and_performance_reports(client, db_session_factory, monkeypatch):
+    """Same FK-cascade bug class already found and fixed for DME's
+    deregister_producer/AI-ML Workflow's deregister_model: neither
+    dependent table had an ON DELETE CASCADE, so deleting an instance with
+    fault/performance history would orphan those rows (SQLite) or crash
+    with an unhandled IntegrityError (real Postgres).
+    """
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+    instance_id = created["instanceId"]
+    client.post(f"/instances/{instance_id}/bootstrap-complete")
+    client.post(f"/instances/{instance_id}/performance", json={"cpu": 0.5})
+    client.post(f"/instances/{instance_id}/fault", params={"severity": "minor"})
+    client.post(f"/instances/{instance_id}/terminate")
+
+    resp = client.delete(f"/instances/{instance_id}")
+    assert resp.status_code == 204
+
+    with db_session_factory() as session:
+        assert session.query(RAppFaultReport).filter(RAppFaultReport.instance_id == uuid.UUID(instance_id)).count() == 0
+        assert session.query(RAppPerformanceReport).filter(RAppPerformanceReport.instance_id == uuid.UUID(instance_id)).count() == 0
+
+
+def test_delete_unknown_instance_is_404(client):
+    resp = client.delete(f"/instances/{uuid.uuid4()}")
+    assert resp.status_code == 404

@@ -50,7 +50,7 @@ def test_terminate_revokes_credential(db):
     inst = running_instance(db)
     assert inst.oauth_client_id is not None
     new_state = RAPP_INSTANCE_FSM.fire(InstanceState.RUNNING, InstanceEvent.TERMINATE, instance=inst)
-    assert new_state == InstanceState.TERMINATING
+    assert new_state == InstanceState.UNDEPLOYED
     assert inst.oauth_client_id is None
 
 
@@ -69,7 +69,7 @@ def test_upgrade_success_commits_and_removes_old_row(db):
     assert new.state == InstanceState.RUNNING
     assert new.package_id == new_package
     # old row is gone; the surviving instance is `new`, now on the new package
-    assert old not in db.new and old.state == InstanceState.TERMINATING
+    assert old not in db.new and old.state == InstanceState.UNDEPLOYED
 
 
 def test_upgrade_failure_auto_rolls_back_old_row_untouched(db):
