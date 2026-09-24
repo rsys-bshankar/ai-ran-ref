@@ -280,6 +280,9 @@ CREATE TABLE write_config_sub_change (
   managed_element_ref TEXT NOT NULL,
   managed_function_ref TEXT,
   attribute_changes  JSONB NOT NULL,
+  -- SPEC_AUDIT.md item 3: RFC 6241 section 7.2's real edit-config
+  -- operation attribute, previously entirely absent from this model.
+  operation          TEXT NOT NULL DEFAULT 'merge' CHECK (operation IN ('merge','replace','create','delete','remove')),
   status             TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','APPLIED','REJECTED')),
   rejection_reason   TEXT
 );

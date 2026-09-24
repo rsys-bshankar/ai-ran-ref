@@ -56,7 +56,7 @@ def _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heart
 
 def test_config_change_dispatches_netconf_and_applies(client, db_session_factory, monkeypatch):
     _make_me(db_session_factory, protocol="NETCONF")
-    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id: True)
+    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge": True)
 
     resp = client.post("/config-jobs", json={
         "requestedBy": "operator", "scope": "cell",
@@ -67,11 +67,42 @@ def test_config_change_dispatches_netconf_and_applies(client, db_session_factory
 
     job = client.get(f"/config-jobs/{resp.json()['jobId']}").json()
     assert job["subChanges"][0]["status"] == "APPLIED"
+    assert job["subChanges"][0]["operation"] == "merge"
+
+
+def test_config_change_threads_operation_and_allows_empty_payload_for_delete(client, db_session_factory, monkeypatch):
+    """SPEC_AUDIT.md item 3: RFC 6241 section 7.2's real edit-config
+    `operation` attribute, previously not modeled at all — every write
+    was implicitly a merge. A delete legitimately carries no
+    attributeChanges, which the pre-fix `change["attributeChanges"]`
+    lookup would have raised a KeyError on.
+    """
+    _make_me(db_session_factory, protocol="NETCONF")
+    seen = {}
+
+    def fake_send_edit_config(adaptor_uri, target_ref, attribute_changes, message_id, operation="merge"):
+        seen["attribute_changes"] = attribute_changes
+        seen["operation"] = operation
+        return True
+
+    monkeypatch.setattr("app.main.send_edit_config", fake_send_edit_config)
+
+    resp = client.post("/config-jobs", json={
+        "requestedBy": "operator", "scope": "cell",
+        "changes": [{"managedElementRef": "ME-1", "operation": "delete"}],
+    })
+    assert resp.status_code == 202
+    assert seen["attribute_changes"] == {}
+    assert seen["operation"] == "delete"
+
+    job = client.get(f"/config-jobs/{resp.json()['jobId']}").json()
+    assert job["subChanges"][0]["status"] == "APPLIED"
+    assert job["subChanges"][0]["operation"] == "delete"
 
 
 def test_config_change_rejects_when_netconf_rpc_fails(client, db_session_factory, monkeypatch):
     _make_me(db_session_factory, protocol="NETCONF")
-    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id: False)
+    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge": False)
 
     resp = client.post("/config-jobs", json={
         "requestedBy": "operator", "scope": "cell",
@@ -135,7 +166,7 @@ def test_config_change_rejects_a_stale_active_endpoint_live_without_an_explicit_
 def test_config_change_proceeds_for_a_freshly_heartbeated_active_endpoint(client, db_session_factory, monkeypatch):
     fresh = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=5)
     _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heartbeat_at=fresh)
-    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id: True)
+    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge": True)
 
     resp = client.post("/config-jobs", json={
         "requestedBy": "operator", "scope": "cell",

@@ -272,10 +272,17 @@ same-shape PR like this session's others:
 2. ~~RAN NF OAM: constrain `severity` intent aside — add `ack_user_id`
    and `changed_at` to `Alarm`/the ack-state route.~~ — **closed**
    (same pass as item 1).
-3. RAN NF OAM: constrain `intent_handling_scope`... *(policy-mgmt,
-   see below)* — add an `operation` enum (create/modify/delete) to
+3. ~~RAN NF OAM: add an `operation` enum (create/modify/delete) to
    `WriteConfigSubChange` and wire `netconf_client.py`'s RPC builder to
-   emit it.
+   emit it.~~ — **closed**. Grounded in RFC 6241 section 7.2's real
+   edit-config `operation` attribute (merge/replace/create/delete/
+   remove — this build's actually-implemented southbound protocol)
+   rather than `TS28532_ProvMnS.yaml`'s HTTP-verb framing; defaults to
+   `"merge"` so every existing caller is unaffected. Surfaced a real
+   bug fixed in the same pass: `mock-o1-adaptor`'s `edit_config`
+   handler rejected any empty `attribute_changes` payload
+   unconditionally, which would have wrongly rejected a legitimate
+   delete (`OPEN_ITEMS.md`'s pass-history log).
 4. RAN NF OAM: add `granularity_period` to `PMSubscription`.
 5. Policy Mgmt: constrain `intent_handling_scope` to the real 2-value
    enum and actually use it as a pre-filter.

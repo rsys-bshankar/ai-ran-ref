@@ -1768,6 +1768,32 @@ own §1/§2 items stand as-is.
   instance (migration applies cleanly, `check_migration_matches_models.py`
   passes, 58 tables). 449 tests total, up from 448 (`ran-nf-oam` alone:
   34 -> 35).
+- **`SPEC_AUDIT.md` item 3: RAN NF OAM's `WriteConfigSubChange` had no
+  operation-type field at all** — every write was implicitly a merge,
+  with no create/delete/replace equivalent anywhere in `main.py` or
+  `netconf_client.py`, even though `TS28532_ProvMnS.yaml` defines four
+  distinct MOI lifecycle operations. Grounded in RFC 6241 section 7.2's
+  real edit-config `operation` attribute (merge/replace/create/delete/
+  remove) — this build's actually-implemented southbound protocol, per
+  `netconf_client.py`'s own docstring — rather than ProvMnS's
+  HTTP-verb-level framing, since that's the more precise match for what
+  this build really dispatches. `operation` defaults to `"merge"`
+  everywhere (real Postgres `CHECK` constraint for the 5 RFC values,
+  verified to reject an invalid value against a real local instance),
+  so every existing caller is unaffected. `netconf_client.py` now emits
+  it as an attribute on the `<managed-object>` node itself (the RFC's
+  real placement — the node the operation applies to, not
+  `<edit-config>`). `mock-o1-adaptor`'s `edit_config` handler previously
+  rejected any empty `attribute_changes` payload unconditionally; a
+  real `delete`/`remove` legitimately carries none, so that would have
+  wrongly rejected a legitimate delete — now only rejected for the
+  other operations, and a delete/remove clears (rather than overwrites)
+  the mock's own `_applied_changes` record for that ref. Verified
+  against a real local Postgres 16 instance (migration applies cleanly,
+  `check_migration_matches_models.py` passes, 58 tables; a manual
+  `psql` insert confirmed the `operation` `CHECK` constraint genuinely
+  rejects an invalid value). 453 tests total, up from 449 (`ran-nf-oam`:
+  35 -> 37; `mock-o1-adaptor`: 6 -> 8).
 
 ## Suggested next pass (priority order)
 

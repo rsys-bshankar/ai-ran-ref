@@ -36,10 +36,14 @@ async def edit_config(request: Request) -> Response:
     exactly: parses the real <rpc><edit-config>...</edit-config></rpc>
     request, replies <rpc-reply><ok/></rpc-reply> (RFC 6241 section 4.2) on
     success. REJECTED (a real <rpc-error>, same as a real NETCONF agent
-    refusing a request) when the managed-object ref is missing or its
-    config body is empty — the same "empty payload is a real, testable
-    rejection trigger" pattern mock-near-rt-ric's own create_policy
-    already established for an empty policyObject.
+    refusing a request) when the managed-object ref is missing, or its
+    config body is empty for any operation other than delete/remove — a
+    delete legitimately carries no attribute_changes at all (RFC 6241
+    section 7.2's `operation` attribute), so rejecting it for emptiness
+    would be wrong. Non-delete/remove emptiness rejection is the same
+    "empty payload is a real, testable rejection trigger" pattern
+    mock-near-rt-ric's own create_policy already established for an
+    empty policyObject.
     """
     body = await request.body()
     try:
@@ -53,6 +57,10 @@ async def edit_config(request: Request) -> Response:
     message_id = root.attrib.get("message-id", "0")
     managed_object = root.find(f".//{{{NETCONF_BASE_NS}}}managed-object")
     ref = managed_object.attrib.get("ref") if managed_object is not None else None
+    # RFC 6241 section 7.2's edit-config `operation` attribute — defaults
+    # to "merge" per the RFC when absent, matching netconf_client.py's own
+    # build_edit_config_rpc default.
+    operation = managed_object.attrib.get("operation", "merge") if managed_object is not None else "merge"
     # child.tag carries the inherited default namespace (build_edit_config_rpc
     # declares xmlns once, on the <rpc> root — every descendant, including
     # each attribute-change element, inherits it) — strip it back to the
@@ -62,10 +70,13 @@ async def edit_config(request: Request) -> Response:
         child.tag.rsplit("}", 1)[-1]: child.text for child in managed_object
     } if managed_object is not None else {}
 
-    if not ref or not attribute_changes:
+    if not ref or (not attribute_changes and operation not in ("delete", "remove")):
         return _reply(message_id, ok=False, error_tag="invalid-value")
 
-    _applied_changes[ref] = attribute_changes
+    if operation in ("delete", "remove"):
+        _applied_changes.pop(ref, None)
+    else:
+        _applied_changes[ref] = attribute_changes
     return _reply(message_id, ok=True)
 
 

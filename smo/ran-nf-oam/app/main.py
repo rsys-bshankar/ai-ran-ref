@@ -50,7 +50,7 @@ MISSED_HEARTBEAT_THRESHOLD = datetime.timedelta(seconds=90)
 class WriteConfigRequest(BaseModel):
     requestedBy: str
     scope: str
-    changes: list[dict]  # each: {managedElementRef, managedFunctionRef?, attributeChanges}
+    changes: list[dict]  # each: {managedElementRef, managedFunctionRef?, attributeChanges?, operation?}
     msacRole: str | None = None
 
 
@@ -73,11 +73,17 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
     db.flush()
 
     for change in body.changes:
+        # SPEC_AUDIT.md item 3: `operation` is RFC 6241 section 7.2's real
+        # edit-config attribute — a delete/remove legitimately carries no
+        # attributeChanges at all, so this no longer assumes the key is
+        # always present the way a merge-only model could.
+        attribute_changes = change.get("attributeChanges", {})
+        operation = change.get("operation", "merge")
         me = db.get(ManagedEntity, change["managedElementRef"])
         if me is None or me.o1_adaptor_endpoint_id is None:
             db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
                                          managed_function_ref=change.get("managedFunctionRef"),
-                                         attribute_changes=change["attributeChanges"], status="REJECTED",
+                                         attribute_changes=attribute_changes, operation=operation, status="REJECTED",
                                          rejection_reason="ENDPOINT_UNREACHABLE"))
             continue
         endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id)
@@ -90,7 +96,7 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
         if endpoint.health_status in ("UNREACHABLE", "DEGRADED"):
             db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
                                          managed_function_ref=change.get("managedFunctionRef"),
-                                         attribute_changes=change["attributeChanges"], status="REJECTED",
+                                         attribute_changes=attribute_changes, operation=operation, status="REJECTED",
                                          rejection_reason="ENDPOINT_UNREACHABLE"))
             continue
         if me.o1_protocol != "NETCONF":
@@ -99,13 +105,14 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
             # rejected honestly rather than silently treated as applied.
             db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
                                          managed_function_ref=change.get("managedFunctionRef"),
-                                         attribute_changes=change["attributeChanges"], status="REJECTED",
+                                         attribute_changes=attribute_changes, operation=operation, status="REJECTED",
                                          rejection_reason="PROTOCOL_NOT_SUPPORTED"))
             continue
-        applied = send_edit_config(endpoint.adaptor_uri, change["managedElementRef"], change["attributeChanges"], message_id=str(job.job_id))
+        applied = send_edit_config(endpoint.adaptor_uri, change["managedElementRef"], attribute_changes,
+                                    message_id=str(job.job_id), operation=operation)
         db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
                                      managed_function_ref=change.get("managedFunctionRef"),
-                                     attribute_changes=change["attributeChanges"],
+                                     attribute_changes=attribute_changes, operation=operation,
                                      status="APPLIED" if applied else "REJECTED",
                                      rejection_reason=None if applied else "NETCONF_RPC_FAILED"))
 
@@ -121,7 +128,7 @@ def query_write_config_job_status(job_id: uuid.UUID, db: Session = Depends(get_s
     job = db.get(WriteConfigJob, job_id)
     sub_changes = db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job_id)).all()
     return {"jobId": str(job.job_id), "status": job.status,
-            "subChanges": [{"managedElementRef": sc.managed_element_ref, "status": sc.status, "rejectionReason": sc.rejection_reason} for sc in sub_changes]}
+            "subChanges": [{"managedElementRef": sc.managed_element_ref, "operation": sc.operation, "status": sc.status, "rejectionReason": sc.rejection_reason} for sc in sub_changes]}
 
 
 @app.get("/alarms")

@@ -127,7 +127,7 @@ PYTHONPATH=shared python scripts/generate_openapi_specs.py
 docker compose config --quiet
 ```
 
-**449 tests total, all passing** as of this build: 433 unit tests across
+**453 tests total, all passing** as of this build: 437 unit tests across
 all fourteen modules plus the two mocks, and 16 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -576,7 +576,19 @@ reject an invalid value) and `ackUserId`/`alarmChangedTime` (neither
 previously recorded — `changed_at` now updates on both the ack and
 clear routes, the two places this build mutates an existing alarm).
 Verified against a real local Postgres 16 instance. `ran-nf-oam` went
-from 34 tests to 35.
+from 34 tests to 35. Next: item 3, `WriteConfigSubChange` had no
+operation-type field at all — every write was implicitly a merge, with
+no create/delete/replace equivalent. Grounded in RFC 6241 section 7.2's
+real edit-config `operation` attribute (the actually-implemented
+southbound protocol) rather than `TS28532_ProvMnS.yaml`'s HTTP-verb
+framing; defaults to `"merge"` everywhere (real `CHECK` constraint for
+the 5 RFC values, verified to reject an invalid one) so every existing
+caller is unaffected. Fixing this surfaced a real bug in
+`mock-o1-adaptor`: its `edit_config` handler rejected any empty
+`attribute_changes` payload unconditionally, which would have wrongly
+rejected a legitimate delete (a delete carries none by design) — now
+only rejected for the other operations. `ran-nf-oam` went from 35 tests
+to 37, `mock-o1-adaptor` from 6 to 8.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

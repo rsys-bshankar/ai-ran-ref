@@ -17,17 +17,22 @@ from defusedxml.common import DefusedXmlException
 NETCONF_BASE_NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
 
 
-def build_edit_config_rpc(message_id: str, target_ref: str, attribute_changes: dict) -> str:
+def build_edit_config_rpc(message_id: str, target_ref: str, attribute_changes: dict, operation: str = "merge") -> str:
+    """`operation` is RFC 6241 section 7.2's real edit-config attribute
+    (merge/replace/create/delete/remove), emitted on the target
+    <managed-object> node itself — the node the operation applies to —
+    rather than on <edit-config>, matching the RFC's real placement.
+    """
     config_body = "".join(f"<{name}>{value}</{name}>" for name, value in attribute_changes.items())
     return (
         f'<rpc message-id="{message_id}" xmlns="{NETCONF_BASE_NS}">'
         f"<edit-config><target><running/></target>"
-        f'<config><managed-object ref="{target_ref}">{config_body}</managed-object></config>'
+        f'<config><managed-object ref="{target_ref}" operation="{operation}">{config_body}</managed-object></config>'
         f"</edit-config></rpc>"
     )
 
 
-def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict, message_id: str) -> bool:
+def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict, message_id: str, operation: str = "merge") -> bool:
     """POSTs the edit-config RPC and reports whether the rpc-reply carried
     <ok/> rather than <rpc-error> (RFC 6241 section 4.2). Any transport
     failure, non-2xx response, or unparseable/unexpected reply counts as
@@ -35,7 +40,7 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
     than raising, matching how every other per-change failure in
     write_configuration_changes is handled.
     """
-    rpc = build_edit_config_rpc(message_id, target_ref, attribute_changes)
+    rpc = build_edit_config_rpc(message_id, target_ref, attribute_changes, operation)
     try:
         resp = httpx.post(adaptor_uri, content=rpc, headers={"Content-Type": "application/xml"}, timeout=10.0)
     except httpx.HTTPError:
