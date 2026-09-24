@@ -91,6 +91,44 @@ CSAR itself is malformed — re-run `python3 smo/samples/build_csar.py`
 and re-copy it (step 1), and check `Files/Acm/definition/compositions.json`
 and `TOSCA-Metadata/TOSCA.meta`/`Entry-Definitions` are both present.
 
+**A real validation failure** — `_validate_package`'s own duplicate-
+content check (adapted from the reference's `AsdDescriptorValidator`
+descriptor-id uniqueness rule to this build's own package identity, a
+content hash) rejects a byte-identical package that's already
+onboarded. Onboard the exact same CSAR a second time:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://onboarding:8000/packages', json={
+    'location': 'http://r1-termination:8899/hello-world-rapp.csar',
+})
+print(r.status_code, r.json())
+"
+```
+
+This still returns `202` — `OnboardPackage`'s own async contract never
+rejects synchronously, success or failure is only ever observable via
+`onboarding-status`, matching every other outcome in this endpoint.
+Poll the new `packageId`:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://onboarding:8000/packages/<secondPackageId>/onboarding-status')
+print(r.json())
+"
+```
+
+`state` is `FAILED` — a real, deliberate rejection (the same
+`integrity_hash` already exists on the first package), not a bug.
+Nothing about this second package (name, version, artifacts,
+`nfDeploymentDescriptorId`) was ever populated — the FSM's own
+`VALIDATE_FAILED` transition fires before any of that work happens.
+The first package (from the step above) is untouched and still
+`AVAILABLE` — this failure path is fully independent of the one this
+runbook actually deploys.
+
 ## 3. Deploy it (CreateInstance)
 
 ```bash

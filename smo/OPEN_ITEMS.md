@@ -2193,6 +2193,41 @@ own §1/§2 items stand as-is.
   local Postgres 16 pass (58 tables, 0 mismatches) and the
   live-schema-match check, both green. Unit-test counts unchanged;
   `tests_integration` stays at 16.
+- **Pilot demo depth: Onboarding's real duplicate-content validation
+  failure.** Fourth and last confidently-in-scope demo-depth pass in
+  this sequence. `_validate_package`'s duplicate-content check
+  (adapted from the reference's `AsdDescriptorValidator` descriptor-id
+  uniqueness rule to this build's own package identity — a content
+  hash, since real ASD descriptor data is a deliberate elision
+  elsewhere) was already implemented and unit-tested but never
+  demonstrated — every prior demo pass onboards exactly one package and
+  only ever shows the success path. Extended `DEMO_RUNBOOK.md`'s
+  onboarding section (§2) with a failure-path walkthrough: onboard the
+  exact same CSAR a second time — `OnboardPackage`'s own async contract
+  still returns `202` synchronously (no rejection is ever
+  synchronous in this endpoint, success or failure alike), and polling
+  `onboarding-status` shows the second package genuinely `FAILED`
+  (matching `integrity_hash` against the first), with the first
+  package's own `AVAILABLE` state untouched — a real demonstration that
+  this failure path is fully independent of the one the rest of the
+  runbook actually deploys. `tests_integration/test_demo_runbook.py`
+  gained a matching step, asserting the duplicate lands `FAILED` and
+  the original stays `AVAILABLE`. No code, schema, or OpenAPI-spec
+  change — confirmed via a full local Postgres 16 pass (58 tables, 0
+  mismatches) and the live-schema-match check, both green. Unit-test
+  counts unchanged; `tests_integration` stays at 16.
+
+  This closes the confidently-in-scope portion of the post-§5
+  demo-gap list (RAN NF OAM `PARTIAL_SUCCESS`, A1 Policy Management,
+  Policy Mgmt scope-filter negative case, this item). Remaining items
+  from that list — FOCOM FCAPS depth and SME's Trusted Invokers
+  registry — are each already-confirmed out of scope (the
+  large/structural triage above, and SPEC_AUDIT.md's own SME item 6
+  respectively); bringing AI/ML Workflow, RAN Analytics, SO SMOS, or SA
+  SMOS into the demo for the first time is a genuine scope-expansion
+  question (none were ever part of the original rApp-lifecycle
+  narrative), not a mechanical pickup — left for explicit user
+  direction rather than assumed.
 
 ## Suggested next pass (priority order)
 

@@ -36,6 +36,20 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     status = mesh["onboarding"].get(f"/packages/{package_id}/onboarding-status")
     assert status.json()["state"] == "AVAILABLE"
 
+    # A real validation failure: onboarding the exact same CSAR a second
+    # time hits _validate_package's own real duplicate-content check
+    # (matching integrity_hash) — a genuine FAILED outcome via the async
+    # onboarding-status contract (still 202 synchronously), not a bug,
+    # and it must not disturb the first, already-AVAILABLE package.
+    duplicate_onboard = mesh["onboarding"].post("/packages", json={"location": "http://example/hello-world-rapp.csar"})
+    assert duplicate_onboard.status_code == 202
+    duplicate_package_id = duplicate_onboard.json()["packageId"]
+    duplicate_status = mesh["onboarding"].get(f"/packages/{duplicate_package_id}/onboarding-status")
+    assert duplicate_status.json()["state"] == "FAILED"
+
+    still_available = mesh["onboarding"].get(f"/packages/{package_id}/onboarding-status")
+    assert still_available.json()["state"] == "AVAILABLE"
+
     # step 3: deploy
     create = mesh["rapp-mgmt"].post("/instances", json={"packageId": package_id, "config": {}})
     assert create.status_code == 202
