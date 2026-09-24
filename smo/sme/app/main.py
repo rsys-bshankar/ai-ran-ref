@@ -8,20 +8,58 @@ and registration conflict detection ((serviceName, producerId) uniqueness,
 section 2.3).
 """
 
+import datetime
+import hashlib
+import secrets
 import uuid
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.timeutil import as_utc
 
-from .models import EVENT_TYPES, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile
+from .models import EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile
+
+ACCESS_TOKEN_TTL_SECONDS = 3600
+_SCRYPT_N, _SCRYPT_R, _SCRYPT_P, _SCRYPT_DKLEN = 2**14, 8, 1, 32
 
 app = FastAPI(title="SME — Service Management and Exposure")
+
+
+def _hash_secret(secret: str) -> str:
+    """Security review: an invoker's onboarding_secret is a real, checked
+    credential — never stored in cleartext, or a DB leak (backup, SQL
+    injection elsewhere, a dump) would hand out reusable client
+    credentials directly. Salted scrypt (stdlib hashlib, no new
+    dependency), stored as "salt_hex:digest_hex" — there's no separate
+    salt column, the salt itself isn't secret, only storing the raw
+    secret would be.
+    """
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(secret.encode(), salt=salt, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=_SCRYPT_DKLEN)
+    return f"{salt.hex()}:{digest.hex()}"
+
+
+def _verify_secret(secret: str, stored: str) -> bool:
+    salt_hex, digest_hex = stored.split(":")
+    candidate = hashlib.scrypt(secret.encode(), salt=bytes.fromhex(salt_hex), n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=_SCRYPT_DKLEN)
+    return secrets.compare_digest(candidate, bytes.fromhex(digest_hex))
+
+
+def _hash_token(token: str) -> str:
+    """Unlike onboarding_secret, the token is already 256 bits of real
+    randomness from secrets.token_urlsafe, not a low-entropy human-chosen
+    secret — a fast SHA-256 hash (not a slow KDF) is the correct,
+    standard choice here. The raw token is returned to the caller once
+    at issuance and never stored; only this hash is.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 class ServiceRegistration(BaseModel):
@@ -80,6 +118,89 @@ def deregister_provider(apf_id: str, db: Session = Depends(get_session)):
     if provider is not None:
         db.delete(provider)
         db.commit()
+
+
+class InvokerRegistrationRequest(BaseModel):
+    apiInvokerId: str
+    onboardingSecret: str
+
+
+@app.post("/invoker-registrations", status_code=201)
+def register_invoker(body: InvokerRegistrationRequest, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 2: API Invoker onboarding
+    (`invokermanagement.go`'s `InvokerManager`) — the real registry the
+    Security/token API's own `IsInvokerRegistered`/`VerifyInvokerSecret`
+    gate needs, entirely absent before this pass. Idempotent
+    update-in-place on a re-registration of the same `apiInvokerId`, the
+    same shape `register_provider`/`register_service` already use.
+    """
+    inv = db.get(InvokerRegistration, body.apiInvokerId)
+    if inv is None:
+        inv = InvokerRegistration(api_invoker_id=body.apiInvokerId)
+        db.add(inv)
+    inv.onboarding_secret_hash = _hash_secret(body.onboardingSecret)
+    db.commit()
+    return {"apiInvokerId": inv.api_invoker_id}
+
+
+class AccessTokenRequest(BaseModel):
+    grant_type: str
+    client_id: str
+    client_secret: str | None = None
+    scope: str | None = None
+
+
+@app.post("/oauth2/token")
+def issue_access_token(body: AccessTokenRequest, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 2: "no actual validation code path" for
+    R1 Termination's advertised tokenEndPoint — this is that endpoint,
+    finally real. Mirrors `PostSecuritiesSecurityIdToken`
+    (`securityservice.go`)'s real request/response shape (`client_id`/
+    `client_secret`/`grant_type`/`scope`, `access_token`/`expires_in`/
+    `token_type`/`scope`) and its real two checks
+    (`IsInvokerRegistered`, `VerifyInvokerSecret`) — 400 on either
+    failure, same as the reference. The reference then delegates actual
+    JWT signing to an external Keycloak instance; this build has no real
+    IdP, so it issues its own opaque, server-tracked token instead (see
+    `IssuedAccessToken`). Per-scope AEF/API validation
+    (`IsFunctionRegistered`/`IsAPIPublished`) stays out of scope — this
+    build elides fine-grained AuthZ throughout (e.g. `create_policy`'s
+    own docstring), so `scope` is accepted and echoed back, never
+    checked against what's actually published.
+    """
+    if body.grant_type != "client_credentials":
+        return JSONResponse(status_code=400, content={"error": "unsupported_grant_type"})
+    inv = db.get(InvokerRegistration, body.client_id)
+    if inv is None:
+        return JSONResponse(status_code=400, content={"error": "invalid_client", "error_description": "invoker not registered"})
+    if not _verify_secret(body.client_secret or "", inv.onboarding_secret_hash):
+        return JSONResponse(status_code=400, content={"error": "unauthorized_client", "error_description": "onboarding secret not valid"})
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=ACCESS_TOKEN_TTL_SECONDS)
+    db.add(IssuedAccessToken(access_token_hash=_hash_token(token), api_invoker_id=inv.api_invoker_id, expires_at=expires_at))
+    db.commit()
+    return {"access_token": token, "expires_in": ACCESS_TOKEN_TTL_SECONDS, "token_type": "Bearer", "scope": body.scope}
+
+
+class IntrospectRequest(BaseModel):
+    token: str
+
+
+@app.post("/oauth2/introspect")
+def introspect_token(body: IntrospectRequest, db: Session = Depends(get_session)):
+    """RFC 7662 — the honest substitute for the reference's own
+    self-contained signed-JWT validation (see issue_access_token's own
+    docstring for why this build issues opaque tokens instead). R1
+    Termination calls this on every proxied request to decide whether to
+    forward it; an unauthenticated internal call, matching the same
+    network-isolation reasoning /bootstrap's own docstring already gives
+    for staying unauthenticated itself (SME<->R1 Termination traffic
+    never leaves the docker-compose network).
+    """
+    rec = db.get(IssuedAccessToken, _hash_token(body.token))
+    if rec is None or as_utc(rec.expires_at) <= datetime.datetime.now(datetime.UTC):
+        return {"active": False}
+    return {"active": True, "client_id": rec.api_invoker_id, "exp": int(as_utc(rec.expires_at).timestamp())}
 
 
 @app.post("/published-apis/v1/{apf_id}/service-apis", status_code=201)

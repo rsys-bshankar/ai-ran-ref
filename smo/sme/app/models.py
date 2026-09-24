@@ -1,6 +1,7 @@
+import datetime
 import uuid
 
-from sqlalchemy import ARRAY, Boolean, ForeignKey, JSON, String, UniqueConstraint, Uuid
+from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, JSON, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from smo_shared.db import Base
@@ -70,6 +71,54 @@ class ProviderRegistration(Base):
 
     apf_id: Mapped[str] = mapped_column(String, primary_key=True)
     provider_domain_info: Mapped[str | None] = mapped_column(String)
+
+
+class InvokerRegistration(Base):
+    """OPEN_ITEMS.md section 2: the reference's own API Invoker onboarding
+    (`invokermanagement.go`'s `InvokerRegister`) — a real prerequisite for
+    the Security/token API (`securityservice.go`'s
+    `PostSecuritiesSecurityIdToken`, gated on
+    `IsInvokerRegistered`/`VerifyInvokerSecret`), which this build never
+    modeled at all. `api_invoker_id` is this build's own flattened
+    identity (the same `== consumerId == rAppId` equivalence
+    `ProviderRegistration.apf_id` already established for producers) —
+    `onboarding_secret` is self-asserted at registration time, since this
+    build has no real onboarding ceremony (CSR, admin approval) anywhere;
+    it's still a genuine, checked secret at token-issuance time, not a
+    rubber stamp. Security review: never stored in cleartext — only a
+    salted `scrypt` hash (`onboarding_secret_hash`, `salt:digest` hex),
+    so a DB leak (backup, SQL injection elsewhere, a dump) can't hand out
+    reusable client credentials directly.
+    """
+    __tablename__ = "invoker_registration"
+
+    api_invoker_id: Mapped[str] = mapped_column(String, primary_key=True)
+    onboarding_secret_hash: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class IssuedAccessToken(Base):
+    """OPEN_ITEMS.md section 2: "No real OAuth2/token enforcement at R1
+    Termination — only a comment and a tokenEndPoint URI in the bootstrap
+    response; no actual validation code path." The reference's own
+    AccessTokenRsp is a real signed JWT (`keycloak.GetToken`, an external
+    IdP this build doesn't run — the same no-real-southbound-integration
+    elision as everywhere else); this is the honest, opaque-token
+    substitute: a real, server-tracked bearer token with a real expiry,
+    validated by R1 Termination via POST /oauth2/introspect (RFC 7662) on
+    every proxied request rather than by self-contained signature
+    verification. Security review: the raw token is returned to the
+    caller once and never stored — only its SHA-256 hash
+    (`access_token_hash`), so a DB leak can't hand out live, reusable
+    bearer tokens directly (unlike `onboarding_secret_hash`, a `scrypt`
+    KDF isn't needed here: the token is already 256 bits of real
+    randomness from `secrets.token_urlsafe`, not a low-entropy
+    human-chosen secret).
+    """
+    __tablename__ = "issued_access_token"
+
+    access_token_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    api_invoker_id: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ServiceEventSubscription(Base):

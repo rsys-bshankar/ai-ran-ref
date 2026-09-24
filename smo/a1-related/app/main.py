@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
+from smo_shared.timeutil import as_utc
 
 from .a1_termination_client import A1TerminationClient
 from .models import A1EIType, A1Policy, A1ServiceRegistration, PolicyStatusSubscription
@@ -225,20 +226,8 @@ class ServiceRegistrationRequest(BaseModel):
     keepAliveIntervalSeconds: int = 0  # 0 == supervision disabled, per the reference's own schema
 
 
-def _as_utc(dt: datetime.datetime) -> datetime.datetime:
-    """SQLite's DateTime(timezone=True) columns round-trip as naive
-    datetimes even though every value here is written from
-    datetime.now(datetime.UTC); Postgres returns them tz-aware already.
-    Treat a naive value as UTC rather than the local system timezone
-    Python would otherwise assume, or every elapsed-time computation
-    below would crash comparing a naive and an aware datetime under the
-    unit tests' SQLite engine.
-    """
-    return dt if dt.tzinfo is not None else dt.replace(tzinfo=datetime.UTC)
-
-
 def _seconds_since_activity(svc: A1ServiceRegistration) -> float:
-    return (datetime.datetime.now(datetime.UTC) - _as_utc(svc.last_activity_at)).total_seconds()
+    return (datetime.datetime.now(datetime.UTC) - as_utc(svc.last_activity_at)).total_seconds()
 
 
 def _sweep_stale_service(db: Session, svc: A1ServiceRegistration, a1t: A1TerminationClient) -> bool:
