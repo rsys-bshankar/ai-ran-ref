@@ -128,9 +128,18 @@ def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str]:
     validator chain, previously entirely absent — NamingValidator's
     filename convention (a package location not ending in `.csar` is
     rejected up front, before ever fetching it) and
-    FileExistenceValidator's required `Definitions/acm_composition.json`
-    (checked alongside the existing `TOSCA-Metadata/TOSCA.meta`
-    requirement, not replacing it — the reference requires both).
+    FileExistenceValidator's required composition file (checked alongside
+    the existing `TOSCA-Metadata/TOSCA.meta` requirement, not replacing
+    it — the reference requires both). The exact path was wrong before —
+    `Definitions/acm_composition.json` — a guess that didn't match the
+    reference; the real one is `RappCsarPathProvider.
+    ACM_COMPOSITION_JSON_LOCATION` (`FileExistenceValidator.java`):
+    `Files/Acm/definition/compositions.json`. Caught while adapting the
+    reference's own real sample package (`sample-rapp-generator/rapp-all`,
+    which puts its composition file at exactly this path) for a demo —
+    the old path would have rejected every real CSAR the reference itself
+    produces, even though this build's own synthetic test fixture
+    (constructed to match the same wrong assumption) never caught it.
     """
     if not location.endswith(".csar"):
         raise PackageValidationFailed(f"package location {location!r} does not end with .csar")
@@ -142,7 +151,7 @@ def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str]:
         entry_line = next(l for l in meta.splitlines() if l.startswith("Entry-Definitions:"))
         entry_definitions = entry_line.split(":", 1)[1].strip()
         z.getinfo(entry_definitions)  # raises KeyError if missing/malformed
-        z.getinfo("Definitions/acm_composition.json")  # required per the reference's FileExistenceValidator
+        z.getinfo("Files/Acm/definition/compositions.json")  # required per the reference's FileExistenceValidator
         artifacts = [(n, f"{location}#{n}") for n in z.namelist() if n.startswith("Artifacts/") and not n.endswith("/")]
     integrity_hash = hashlib.sha256(data).hexdigest()
     return entry_definitions, artifacts, integrity_hash

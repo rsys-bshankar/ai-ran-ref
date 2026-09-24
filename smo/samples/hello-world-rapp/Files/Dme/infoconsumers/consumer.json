@@ -1,0 +1,9 @@
+{
+  "_comment": "smo/dme's real DataJobRequest shape (POST /data-jobs). dmeTypeId is only known after the producer.json registration in ../infoproducers/ returns it — see smo/DEMO_RUNBOOK.md for how the runbook fills this placeholder in.",
+  "dataDeliveryMode": "CONTINUOUS",
+  "dmeTypeId": "REPLACE_WITH_THE_DMETYPEID_FROM_PRODUCER_REGISTRATION",
+  "productionJobDefinition": {},
+  "dataDeliveryMethod": "PULL_HTTP",
+  "deliveryDetails": {},
+  "consumerId": "hello-world-rapp"
+}

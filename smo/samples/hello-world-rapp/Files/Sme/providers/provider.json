@@ -1,0 +1,5 @@
+{
+  "_comment": "smo/sme's real ProviderRegistrationRequest shape (POST /provider-registrations). apfId == producerId == rAppId per this build's own flattened-identity convention (see sme/app/models.py's ProviderRegistration docstring) — reuse this same value below for producerId/apiInvokerId/consumerId.",
+  "apfId": "hello-world-rapp",
+  "providerDomainInfo": "Hello World rApp — demo provider domain"
+}
