@@ -218,6 +218,8 @@ def test_ingest_alarm_persists_standard_fault_fields(client, db_session_factory)
     fault fields the wire format (VES/3GPP alarm IRP, per oam's own
     NotifyNewAlarm template) carries — probableCause, specificProblem,
     rootCauseIndicator, correlatedNotifications, proposedRepairActions.
+    alarmType (SPEC_AUDIT.md, TS28111_FaultNrm.yaml's AlarmRecord) was
+    the one of these still missing after that pass.
     """
     _make_me(db_session_factory)
     other_alarm_id = str(uuid.uuid4())
@@ -226,7 +228,7 @@ def test_ingest_alarm_persists_standard_fault_fields(client, db_session_factory)
         "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "critical",
         "probable_cause": "linkFailure", "specific_problem": "Optical link down",
         "root_cause_indicator": True, "correlated_notifications": [other_alarm_id],
-        "proposed_repair_actions": "Replace the SFP module.",
+        "proposed_repair_actions": "Replace the SFP module.", "alarm_type": "EQUIPMENT_ALARM",
     })
     assert resp.status_code == 200
     alarm_id = resp.json()["alarmId"]
@@ -240,6 +242,7 @@ def test_ingest_alarm_persists_standard_fault_fields(client, db_session_factory)
     assert alarm["rootCauseIndicator"] is True
     assert alarm["correlatedNotifications"] == [other_alarm_id]
     assert alarm["proposedRepairActions"] == "Replace the SFP module."
+    assert alarm["alarmType"] == "EQUIPMENT_ALARM"
 
 
 def test_ingest_alarm_defaults_fault_fields_when_not_provided(client, db_session_factory):
@@ -260,6 +263,7 @@ def test_ingest_alarm_defaults_fault_fields_when_not_provided(client, db_session
     assert alarm["rootCauseIndicator"] is False
     assert alarm["correlatedNotifications"] == []
     assert alarm["proposedRepairActions"] is None
+    assert alarm["alarmType"] is None
 
 
 def test_query_alarms_filters_by_managed_element_ref(client, db_session_factory):
@@ -294,6 +298,24 @@ def test_change_alarm_ack_state(client, db_session_factory):
     assert resp.json()["ackState"] == "ACKNOWLEDGED"
 
 
+def test_change_alarm_ack_state_records_ack_user_id_and_changed_at(client, db_session_factory):
+    """SPEC_AUDIT.md: TS28111_FaultNrm.yaml's AlarmRecord carries
+    ackUserId (who acknowledged it) and alarmChangedTime (its own "last
+    mutated" timestamp) — PATCH /alarms/{id}/ack never recorded either.
+    """
+    _make_me(db_session_factory)
+    alarm_id = client.post("/alarms/ingest", params={
+        "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "major",
+    }).json()["alarmId"]
+    assert client.get("/alarms").json()[0]["changedAt"] is None
+
+    resp = client.patch(f"/alarms/{alarm_id}/ack", params={"new_state": "ACKNOWLEDGED", "ack_user_id": "operator-1"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ackUserId"] == "operator-1"
+    assert body["changedAt"] is not None
+
+
 def test_clear_alarm_sets_cleared_severity_and_metadata(client, db_session_factory):
     """OPEN_ITEMS.md section 5: no alarm-cleared lifecycle existed at
     all — an alarm that stopped recurring on the NF had no way to ever
@@ -311,6 +333,7 @@ def test_clear_alarm_sets_cleared_severity_and_metadata(client, db_session_facto
     assert body["severity"] == "cleared"
     assert body["clearUserId"] == "operator-1"
     assert body["clearedAt"] is not None
+    assert body["changedAt"] == body["clearedAt"]
 
 
 def test_cleared_alarm_still_appears_in_query_alarms(client, db_session_factory):

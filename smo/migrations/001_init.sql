@@ -246,8 +246,11 @@ CREATE TABLE alarm (
   root_cause_indicator    BOOLEAN NOT NULL DEFAULT false,
   correlated_notifications UUID[] NOT NULL DEFAULT '{}',
   proposed_repair_actions   TEXT,
+  alarm_type                TEXT CHECK (alarm_type IN ('COMMUNICATIONS_ALARM','QUALITY_OF_SERVICE_ALARM','PROCESSING_ERROR_ALARM','EQUIPMENT_ALARM','ENVIRONMENTAL_ALARM','INTEGRITY_VIOLATION','OPERATIONAL_VIOLATION','PHYSICAL_VIOLATION','SECURITY_SERVICE_OR_MECHANISM_VIOLATION','TIME_DOMAIN_VIOLATION','OTHER')),
   cleared_at                 TIMESTAMPTZ,
-  clear_user_id                TEXT
+  clear_user_id                TEXT,
+  ack_user_id                  TEXT,
+  changed_at                    TIMESTAMPTZ
 );
 CREATE INDEX idx_alarm_correlation ON alarm (correlation_group) WHERE correlation_group IS NOT NULL;
 CREATE INDEX idx_alarm_me ON alarm (managed_element_ref);

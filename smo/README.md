@@ -127,7 +127,7 @@ PYTHONPATH=shared python scripts/generate_openapi_specs.py
 docker compose config --quiet
 ```
 
-**448 tests total, all passing** as of this build: 432 unit tests across
+**449 tests total, all passing** as of this build: 433 unit tests across
 all fourteen modules plus the two mocks, and 16 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -569,6 +569,14 @@ real reference — the actual required path
 `Files/Acm/definition/compositions.json`. Fixed, and now proven by two
 new permanent integration tests that run the real CSAR and the full
 runbook sequence end to end. `tests_integration` went from 14 tests to 16.
+Started closing `SPEC_AUDIT.md`'s small/closeable gaps directly, per
+explicit direction. First: RAN NF OAM's `Alarm` model was missing
+`alarmType` (a real Postgres `CHECK` constraint, verified to actually
+reject an invalid value) and `ackUserId`/`alarmChangedTime` (neither
+previously recorded — `changed_at` now updates on both the ack and
+clear routes, the two places this build mutates an existing alarm).
+Verified against a real local Postgres 16 instance. `ran-nf-oam` went
+from 34 tests to 35.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

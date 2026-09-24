@@ -49,6 +49,11 @@ class Alarm(Base):
     root_cause_indicator: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     correlated_notifications: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False, default=list)
     proposed_repair_actions: Mapped[str | None] = mapped_column(String)
+    # SPEC_AUDIT.md: TS28111_FaultNrm.yaml's AlarmRecord requires alarmType
+    # (a closed 11-value enum), which this model never had at all — nullable
+    # here since not every real caller of /alarms/ingest necessarily knows
+    # it, unlike the spec's own readOnly/required framing.
+    alarm_type: Mapped[str | None] = mapped_column(String)
     # OPEN_ITEMS.md section 5: no alarm-cleared lifecycle existed at all.
     # The reference's own NotifyClearedAlarm reuses perceivedSeverity=CLEARED
     # rather than a separate state field — this build's `severity` CHECK
@@ -57,6 +62,12 @@ class Alarm(Base):
     # parallel, redundant lifecycle field.
     cleared_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     clear_user_id: Mapped[str | None] = mapped_column(String)
+    # SPEC_AUDIT.md: the spec's AlarmRecord also carries ackUserId (who
+    # acknowledged it — PATCH /alarms/{id}/ack never recorded this) and
+    # alarmChangedTime (distinct from raised_at/cleared_at — the spec's own
+    # "last mutated" timestamp, set whenever ack_state or severity changes).
+    ack_user_id: Mapped[str | None] = mapped_column(String)
+    changed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class CMSchemaCache(Base):
