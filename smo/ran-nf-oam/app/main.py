@@ -136,7 +136,7 @@ def query_alarms(managed_element_ref: str | None = None, db: Session = Depends(g
 def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, correlation_group: str | None = None,
                   probable_cause: str | None = None, specific_problem: str | None = None, root_cause_indicator: bool = False,
                   correlated_notifications: list[uuid.UUID] = Query(default=[]), proposed_repair_actions: str | None = None,
-                  db: Session = Depends(get_session)):
+                  alarm_type: str | None = None, db: Session = Depends(get_session)):
     """alarmId is ALWAYS a fresh UUID minted here, never the raising ME's
     native ID — RAN NF OAM LLD section 3.3, closing R1UCR's own flagged,
     unresolved collision risk under a fleet of N MEs.
@@ -144,20 +144,31 @@ def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, 
     probableCause/specificProblem/rootCauseIndicator/correlatedNotifications/
     proposedRepairActions (OPEN_ITEMS.md section 5): the standard fault
     fields 3GPP TS 28.532 FaultMnS's NotifyNewAlarm carries, previously
-    entirely absent from this alarm model.
+    entirely absent from this alarm model. alarmType (SPEC_AUDIT.md,
+    TS28111_FaultNrm.yaml's AlarmRecord) was the one of these fields
+    still missing after that pass.
     """
     alarm = Alarm(source_alarm_id=source_alarm_id, managed_element_ref=managed_element_ref, severity=severity, correlation_group=correlation_group,
                   probable_cause=probable_cause, specific_problem=specific_problem, root_cause_indicator=root_cause_indicator,
-                  correlated_notifications=correlated_notifications or [], proposed_repair_actions=proposed_repair_actions)
+                  correlated_notifications=correlated_notifications or [], proposed_repair_actions=proposed_repair_actions,
+                  alarm_type=alarm_type)
     db.add(alarm)
     db.commit()
     return {"alarmId": str(alarm.alarm_id)}
 
 
 @app.patch("/alarms/{alarm_id}/ack")
-def change_alarm_ack_state(alarm_id: uuid.UUID, new_state: str, db: Session = Depends(get_session)):
+def change_alarm_ack_state(alarm_id: uuid.UUID, new_state: str, ack_user_id: str | None = None, db: Session = Depends(get_session)):
+    """ackUserId (SPEC_AUDIT.md, TS28111_FaultNrm.yaml's AlarmRecord) —
+    who acknowledged it, never recorded before. alarmChangedTime (the
+    spec's own "last mutated" timestamp, distinct from raised_at/
+    cleared_at) updates here and in clear_alarm below, the two places
+    this build actually mutates an existing alarm.
+    """
     alarm = db.get(Alarm, alarm_id)
     alarm.ack_state = new_state
+    alarm.ack_user_id = ack_user_id
+    alarm.changed_at = datetime.datetime.now(datetime.UTC)
     db.commit()
     return _alarm_view(alarm)
 
@@ -175,6 +186,7 @@ def clear_alarm(alarm_id: uuid.UUID, clear_user_id: str | None = None, db: Sessi
     alarm.severity = "cleared"
     alarm.cleared_at = datetime.datetime.now(datetime.UTC)
     alarm.clear_user_id = clear_user_id
+    alarm.changed_at = alarm.cleared_at
     db.commit()
     return _alarm_view(alarm)
 
@@ -305,5 +317,6 @@ def _alarm_view(a: Alarm) -> dict:
             "probableCause": a.probable_cause, "specificProblem": a.specific_problem,
             "rootCauseIndicator": a.root_cause_indicator,
             "correlatedNotifications": [str(c) for c in a.correlated_notifications],
-            "proposedRepairActions": a.proposed_repair_actions,
+            "proposedRepairActions": a.proposed_repair_actions, "alarmType": a.alarm_type,
+            "ackUserId": a.ack_user_id, "changedAt": a.changed_at.isoformat() if a.changed_at else None,
             "clearedAt": a.cleared_at.isoformat() if a.cleared_at else None, "clearUserId": a.clear_user_id}

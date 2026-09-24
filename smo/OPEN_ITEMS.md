@@ -1754,6 +1754,20 @@ own §1/§2 items stand as-is.
   `test_real_demo_csar_onboards_and_deploys` (the CSAR alone) and
   `test_full_runbook_sequence_succeeds` (every single runbook command,
   in order). 448 tests total, up from 446 (`tests_integration`: 14 -> 16).
+- **Started closing `SPEC_AUDIT.md`'s small/closeable gaps, per explicit
+  direction** (the user's own call: no demo-blocking gap turned up, so
+  work through the list directly). First: RAN NF OAM's `Alarm` model
+  was missing `alarmType` (`TS28111_FaultNrm.yaml`'s closed 11-value
+  enum, real Postgres `CHECK` constraint added and verified to actually
+  reject an invalid value against a real local instance) and
+  `ackUserId`/`alarmChangedTime` (who acknowledged an alarm, and the
+  spec's own "last mutated" timestamp — neither previously recorded;
+  `changed_at` now updates on both `PATCH /alarms/{id}/ack` and
+  `PATCH /alarms/{id}/clear`, the two places this build actually
+  mutates an existing alarm). Verified against a real local Postgres 16
+  instance (migration applies cleanly, `check_migration_matches_models.py`
+  passes, 58 tables). 449 tests total, up from 448 (`ran-nf-oam` alone:
+  34 -> 35).
 
 ## Suggested next pass (priority order)
 

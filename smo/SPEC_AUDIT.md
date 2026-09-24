@@ -267,9 +267,11 @@ In priority order — these don't touch any established wire contract a
 real caller (NFO, another module, a test) depends on, so each is a
 same-shape PR like this session's others:
 
-1. RAN NF OAM: add `alarm_type` (11-value enum) to `Alarm`.
-2. RAN NF OAM: constrain `severity` intent aside — add `ack_user_id`
-   and `changed_at` to `Alarm`/the ack-state route.
+1. ~~RAN NF OAM: add `alarm_type` (11-value enum) to `Alarm`.~~ —
+   **closed** (`OPEN_ITEMS.md`'s pass-history log).
+2. ~~RAN NF OAM: constrain `severity` intent aside — add `ack_user_id`
+   and `changed_at` to `Alarm`/the ack-state route.~~ — **closed**
+   (same pass as item 1).
 3. RAN NF OAM: constrain `intent_handling_scope`... *(policy-mgmt,
    see below)* — add an `operation` enum (create/modify/delete) to
    `WriteConfigSubChange` and wire `netconf_client.py`'s RPC builder to
