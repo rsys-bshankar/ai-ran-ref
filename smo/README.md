@@ -127,7 +127,7 @@ PYTHONPATH=shared python scripts/generate_openapi_specs.py
 docker compose config --quiet
 ```
 
-**475 tests total, all passing** as of this build: 459 unit tests across
+**478 tests total, all passing** as of this build: 462 unit tests across
 all fourteen modules plus the two mocks, and 16 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -695,6 +695,28 @@ updated to reflect the fix, while the real CAPIF core's separate
 "Trusted Invokers" registry (a genuine additional subsystem) stays
 named as still open. This closes every item on `SPEC_AUDIT.md`'s
 "Moderate/breaking-shape items" list. `sme` went from 47 tests to 49.
+
+**Pilot demo, Phase B: RAN NF OAM closed-loop.** Per the large/structural
+triage's own conclusion, the next pass exercises real, already-tested
+capabilities the demo never actually called rather than building
+confirmed-out-of-scope items. Building `DEMO_RUNBOOK.md`'s new RAN NF OAM
+section surfaced a genuine gap: the `EndpointHealth` FSM and the
+CM-write/alarm routes were real and fully unit-tested, but no route
+anywhere ever created an `O1AdaptorEndpoint`/`ManagedEntity` row in the
+first place — `docker-compose.yml`'s own comment on `mock-o1-adaptor`
+names this exact gap, and the real LLD design intent (each ME's O1
+Adaptor self-registers into the MnS Registry NRM) was never implemented
+as a route. Closed with a new `POST /o1-adaptor-endpoints` route that
+creates both rows starting at the FSM's real `DISCOVERED` state (a first
+heartbeat is still required to reach `ACTIVE`). `DEMO_RUNBOOK.md` gained
+a full closed-loop walkthrough — register, heartbeat, dispatch a real CM
+write, confirm it against the mock O1 Adaptor's own applied-config
+endpoint, then ingest/ack/clear an alarm — and
+`tests_integration/test_demo_runbook.py` proves the same sequence end to
+end. No schema change. `ran-nf-oam` went from 39 tests to 42. Next: Phase
+C (FOCOM resource management) and Phase D (Policy Mgmt intent
+automation), per explicit user direction to build the large/structural
+triage into the pilot demo's use case one phase at a time.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

@@ -54,6 +54,54 @@ class WriteConfigRequest(BaseModel):
     msacRole: str | None = None
 
 
+class RegisterO1AdaptorEndpointRequest(BaseModel):
+    managedElementRef: str
+    adaptorUri: str
+    protocolSupport: list[str]
+    o1Protocol: str
+    entityType: str
+    managedFunctionRef: str | None = None
+    vendorName: str | None = None
+
+
+@app.post("/o1-adaptor-endpoints", status_code=201)
+def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Session = Depends(get_session)):
+    """RAN NF OAM LLD section 1's own design intent (Option A,
+    `docs/call-flows/03-config-write-with-schema-check.md`: "per ME's O1
+    Adaptor registers itself into the MnS Registry NRM") had no concrete
+    self-registration route anywhere in this build — the entire
+    `O1AdaptorEndpoint`/`ManagedEntity` registry could previously only
+    ever be populated by a test fixture reaching directly into the DB,
+    never by any real caller; even `endpoint_heartbeat` below implicitly
+    assumed the row it pings already existed. `docker-compose.yml`'s own
+    comment on `mock-o1-adaptor` names this precisely: a real ME's
+    `adaptor_uri` "would point at http://mock-o1-adaptor:8000/edit-config
+    once one is ever registered against this service" — until now, none
+    ever was.
+
+    Real MnS Registry NRM polling stays out of scope (no such registry
+    exists in this build, OPEN_ITEMS.md's confirmed elision) — this is
+    the same honest, lighter self-registration-POST substitute already
+    used everywhere else in this build (DME's producer registration,
+    SME's provider/invoker registration): the O1 Adaptor itself POSTs
+    its own existence here instead of a registry polling it.
+    `health_status` starts at `DISCOVERED`, the FSM's own real starting
+    state (`statemachine.py`'s `ENDPOINT_HEALTH_FSM`) — not the model's
+    column default `ACTIVE` (chosen for other callers' test
+    convenience) — since a fresh registration hasn't heartbeated yet.
+    """
+    endpoint = O1AdaptorEndpoint(managed_element_ref=body.managedElementRef, adaptor_uri=body.adaptorUri,
+                                  protocol_support=body.protocolSupport, health_status=EndpointHealth.DISCOVERED.value)
+    db.add(endpoint)
+    db.flush()
+    me = ManagedEntity(managed_element_ref=body.managedElementRef, managed_function_ref=body.managedFunctionRef,
+                        entity_type=body.entityType, vendor_name=body.vendorName, o1_protocol=body.o1Protocol,
+                        o1_adaptor_endpoint_id=endpoint.endpoint_id)
+    db.add(me)
+    db.commit()
+    return {"endpointId": str(endpoint.endpoint_id), "managedElementRef": me.managed_element_ref, "healthStatus": endpoint.health_status}
+
+
 @app.post("/config-jobs", status_code=202)
 def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(get_session)):
     """WriteConfigurationChanges — RAN NF OAM LLD section 5.1's full
