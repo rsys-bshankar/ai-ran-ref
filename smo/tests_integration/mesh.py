@@ -51,7 +51,7 @@ class ServiceMesh:
 
         raise LookupError(f"mesh has no route for host {host!r} ({url})")
 
-    def dispatch(self, verb: str, url: str, *, json=None, params=None, headers=None, timeout=None, **kwargs):
+    def dispatch(self, verb: str, url: str, *, json=None, params=None, headers=None, content=None, timeout=None, **kwargs):
         client, rest_path = self.resolve(url)
         method = getattr(client, verb)
         # httpx's own GET/DELETE signatures have no `json` parameter at all
@@ -61,6 +61,15 @@ class ServiceMesh:
         # A1 Related's live status refresh) was hitting this before the fix.
         if verb in ("get", "delete"):
             return method(rest_path, params=params, headers=headers)
+        # RAN NF OAM's netconf_client.py posts a raw XML body via `content=`,
+        # not `json=` — every other caller until now was JSON-only, so this
+        # branch never existed and `content` was silently dropped, always
+        # forwarding an EMPTY body regardless of what the real caller sent.
+        # Caught adding mock-o1-adaptor's own integration test (OPEN_ITEMS.md
+        # section 2): the request "succeeded" against an empty body and
+        # looked like a genuine REJECTED outcome, not a harness bug.
+        if content is not None:
+            return method(rest_path, content=content, params=params, headers=headers)
         return method(rest_path, json=json, params=params, headers=headers)
 
 

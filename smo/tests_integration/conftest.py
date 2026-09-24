@@ -26,7 +26,7 @@ from mesh import ServiceMesh, install as install_mesh  # noqa: E402
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
     "a1-related", "nfo", "focom", "ai-ml-workflow", "ran-analytics",
-    "policy-mgmt", "so-smos", "sa-smos", "mock-near-rt-ric",
+    "policy-mgmt", "so-smos", "sa-smos", "mock-near-rt-ric", "mock-o1-adaptor",
 ]
 
 

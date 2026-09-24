@@ -22,7 +22,7 @@ jobs:
         working-directory: smo
         run: |
           pip install -e shared
-          pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic python-multipart jsonschema pytest
+          pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic python-multipart jsonschema pytest defusedxml
 
       - name: Run each module's unit test suite
         working-directory: smo
@@ -30,7 +30,7 @@ jobs:
           set -e
           for m in onboarding rapp-mgmt ran-nf-oam ai-ml-workflow so-smos \
                    a1-related sme dme r1-termination nfo focom ran-analytics \
-                   policy-mgmt sa-smos mock-near-rt-ric; do
+                   policy-mgmt sa-smos mock-near-rt-ric mock-o1-adaptor; do
             echo "::group::$m"
             (cd "$m" && PYTHONPATH=.:../shared python -m pytest tests/ -v)
             echo "::endgroup::"

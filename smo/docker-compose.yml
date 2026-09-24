@@ -70,6 +70,15 @@ services:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
+  mock-o1-adaptor:
+    build: { context: ., args: { MODULE: mock-o1-adaptor } }
+    # No isolated network segment — unlike mock-near-rt-ric (RT-7, SMO
+    # Design v1.3 section 3.9), nothing in this build's own design
+    # documents an equivalent O1-adaptor isolation requirement. A real
+    # ManagedElement's own adaptor_uri (o1_adaptor_endpoint.adaptor_uri)
+    # would point at http://mock-o1-adaptor:8000/edit-config once one is
+    # ever registered against this service — see OPEN_ITEMS.md section 2.
+
   a1-related:
     build: { context: ., args: { MODULE: a1-related } }
     depends_on: { postgres: { condition: service_healthy } }
