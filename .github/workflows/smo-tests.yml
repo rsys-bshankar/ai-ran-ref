@@ -36,6 +36,10 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Run the shared library's tests (R1Client's OAuth2 client flow)
+        working-directory: smo/shared
+        run: PYTHONPATH=. python -m pytest tests/ -v
+
       - name: Run cross-service integration tests
         working-directory: smo
         run: PYTHONPATH=shared python -m pytest tests_integration/ -v

@@ -11,7 +11,11 @@ class RAppInstance(Base):
     __tablename__ = "rapp_instance"
 
     instance_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    package_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("application_package.package_id"))
+    # Cross-module reference: enforced by the FK in migrations/001_init.sql, not
+    # declared as an ORM ForeignKey — this module runs in its own process, where
+    # the other module's table isn't in the metadata and an ORM FK can't resolve
+    # (NoReferencedTableError on flush). tests_integration/test_module_isolation.py.
+    package_id: Mapped[uuid.UUID] = mapped_column(Uuid)  # -> application_package (Onboarding)
     state: Mapped[str] = mapped_column(String, nullable=False, default="DEPLOYING")
     configuration: Mapped[dict | None] = mapped_column(JSON)
     workload_ref: Mapped[str | None] = mapped_column(String)
@@ -19,7 +23,7 @@ class RAppInstance(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
     upgrade_timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=300)  # confirmed default, LLD section 6 (OPEN_ITEMS.md section 1)
     pending_upgrade_instance_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # links old row to its in-flight replacement
-    package_usage_registration_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("package_usage_registration.id"))
+    package_usage_registration_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> package_usage_registration (Onboarding), cross-module like package_id
 
 
 class RAppFaultReport(Base):

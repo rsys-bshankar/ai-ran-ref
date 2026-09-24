@@ -27,16 +27,15 @@ class ApplicationPackage(Base):
     # NFO+FOCOM LLD section 2: populated by NFO's CreateDescriptor once
     # OnboardPackage's own validation succeeds — the actual fix for the
     # gap where rApp Management used to pass packageId where NFO expected
-    # a real nfDeploymentDescriptorId. use_alter=True: nf_deployment_descriptor
-    # itself has a FK back to application_package (which package it was
-    # derived from), so this pair is a genuine mutual reference — same as
-    # migrations/001_init.sql adding this column via ALTER TABLE after
-    # nf_deployment_descriptor exists, this tells SQLAlchemy to emit the
-    # constraint the same way rather than inline, breaking the cycle for
-    # dependency-sort purposes (create_all/drop_all ordering).
-    nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("nf_deployment_descriptor.nf_deployment_descriptor_id", use_alter=True, name="fk_application_package_nf_deployment_descriptor_id")
-    )
+    # a real nfDeploymentDescriptorId. nf_deployment_descriptor is NFO's table,
+    # and it references application_package back — a genuine mutual reference,
+    # which migrations/001_init.sql closes by adding this column's FK via ALTER
+    # TABLE once both tables exist.
+    # Cross-module reference: enforced by the FK in migrations/001_init.sql, not
+    # declared as an ORM ForeignKey — this module runs in its own process, where
+    # the other module's table isn't in the metadata and an ORM FK can't resolve
+    # (NoReferencedTableError on flush). tests_integration/test_module_isolation.py.
+    nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> nf_deployment_descriptor (NFO)
 
 
 class Artifact(Base):

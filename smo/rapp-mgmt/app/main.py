@@ -70,7 +70,9 @@ def create_instance(body: CreateInstanceRequest, db: Session = Depends(get_sessi
         "name": f"rapp-instance-{inst.instance_id}",  # NFO's own duplication guard (OPEN_ITEMS.md section 5) needs a real name
         "requiredResourceTypeId": body.config.get("requiredResourceTypeId"),
     })
-    inst.workload_ref = nfo_resp.json().get("nfDeploymentId") if nfo_resp.status_code == 200 else None
+    # NFO Instantiate answers 202 Accepted (nfo/app/main.py) — a 200-only check
+    # dropped every real workloadRef.
+    inst.workload_ref = nfo_resp.json().get("nfDeploymentId") if nfo_resp.status_code in (200, 202) else None
 
     usage_resp = r1.post(f"/onboarding/packages/{body.packageId}/usage/start", params={"consumer_id": str(inst.instance_id)})
     if usage_resp.status_code == 200:

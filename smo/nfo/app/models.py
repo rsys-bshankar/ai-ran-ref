@@ -10,7 +10,11 @@ class NFDeploymentDescriptor(Base):
     __tablename__ = "nf_deployment_descriptor"
 
     nf_deployment_descriptor_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    package_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("application_package.package_id"))
+    # Cross-module reference: enforced by the FK in migrations/001_init.sql, not
+    # declared as an ORM ForeignKey — this module runs in its own process, where
+    # the other module's table isn't in the metadata and an ORM FK can't resolve
+    # (NoReferencedTableError on flush). tests_integration/test_module_isolation.py.
+    package_id: Mapped[uuid.UUID] = mapped_column(Uuid)  # -> application_package (Onboarding)
     name: Mapped[str] = mapped_column(String, nullable=False)
     required_resource_type_id: Mapped[str | None] = mapped_column(String)
     workload_template: Mapped[dict] = mapped_column(JSON, nullable=False)

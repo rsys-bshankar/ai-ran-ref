@@ -84,7 +84,14 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
         state=PackageState.ONBOARDING,
     )
     db.add(pkg)
-    db.flush()
+    # Committed, not just flushed, before the pipeline runs: NFO's
+    # CreateDescriptor (below) writes from its own process and connection,
+    # and its nf_deployment_descriptor.package_id FK can only see a
+    # committed application_package row — an uncommitted one made every
+    # real onboarding fail with a ForeignKeyViolation. It also makes the
+    # ONBOARDING state observable while validation runs, as the async
+    # contract describes.
+    db.commit()
 
     try:
         entry_definitions, artifacts, integrity_hash = _validate_package(body.location)

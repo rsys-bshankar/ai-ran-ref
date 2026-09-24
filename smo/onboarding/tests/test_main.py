@@ -379,3 +379,43 @@ def test_query_packages_exposes_identity_fields_for_the_gui(client, db_session_f
     [pkg] = client.get("/packages").json()
     assert (pkg["name"], pkg["version"], pkg["vendor"], pkg["applicationType"]) == ("hello-world", "1.0.0", "acme", "rApp")
     assert pkg["nfDeploymentDescriptorId"] is None
+
+
+def test_package_row_is_committed_before_nfo_create_descriptor_is_called(tmp_path, monkeypatch):
+    """NFO is a separate process with its own DB connection, and its
+    nf_deployment_descriptor.package_id carries a real FK to
+    application_package (migrations/001_init.sql). The package row used to
+    be only flushed — uncommitted, invisible to any other connection — when
+    CreateDescriptor ran, so on real Postgres NFO's insert hit a
+    ForeignKeyViolation and every onboarding ended FAILED. A file-backed
+    SQLite with one connection per session reproduces that visibility
+    (the StaticPool fixture above shares one connection, so it can't).
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'onboarding.db'}", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine, tables=[ApplicationPackage.__table__, Artifact.__table__, PackageUsageRegistration.__table__])
+    factory = sessionmaker(bind=engine)
+
+    def override_get_session():
+        session = factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    seen_by_nfo = []
+
+    def fake_nfo_create_descriptor(self, path, json=None, **kw):
+        with factory() as other_connection:
+            seen_by_nfo.append(other_connection.get(ApplicationPackage, uuid.UUID(json["packageId"])) is not None)
+        return FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())})
+
+    _mock_fetch(monkeypatch, _real_package_bytes())
+    monkeypatch.setattr("app.main.R1Client.post", fake_nfo_create_descriptor)
+    app.dependency_overrides[get_session] = override_get_session
+    try:
+        package_id = TestClient(app).post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+        state = TestClient(app).get(f"/packages/{package_id}/onboarding-status").json()["state"]
+    finally:
+        app.dependency_overrides.clear()
+    assert seen_by_nfo == [True]
+    assert state == "AVAILABLE"

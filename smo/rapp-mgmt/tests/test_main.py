@@ -396,3 +396,20 @@ def test_list_fault_reports_returns_recorded_faults(client, db_session_factory):
 def test_list_reports_404_on_an_unknown_instance(client):
     assert client.get(f"/instances/{uuid.uuid4()}/performance").status_code == 404
     assert client.get(f"/instances/{uuid.uuid4()}/faults").status_code == 404
+
+
+def test_create_instance_records_workload_ref_from_nfos_202(client, db_session_factory, monkeypatch):
+    """NFO's Instantiate answers 202 Accepted; the old 200-only check left
+    workloadRef empty on every real deployment."""
+    fake_get, fake_post = _route_r1_get_post()
+    nf_deployment_id = str(uuid.uuid4())
+
+    def post_202_from_nfo(self, path, json=None, **kw):
+        if "/nfo/deployments" in path:
+            return FakeR1Response(202, {"nfDeploymentId": nf_deployment_id, "state": "RUNNING"})
+        return fake_post(self, path, json=json, **kw)
+
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", post_202_from_nfo)
+    instance_id = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()["instanceId"]
+    assert client.get(f"/instances/{instance_id}").json()["workloadRef"] == nf_deployment_id
