@@ -735,6 +735,24 @@ CSAR fetch), asserting the real CREATE/DELETE payloads round-trip. No
 code, schema, or OpenAPI-spec change. Next: Phase D (Policy Mgmt intent
 automation), the last of the three.
 
+**Pilot demo, Phase D: Policy Mgmt intent automation.** Last of the
+three passes; like Phase C, no code gap — the capability-based
+Intent-to-RMIH match-and-dispatch was already real and unit-tested,
+`DEMO_RUNBOOK.md` just never called it. New section: register an RMIH
+under the `so-smos` framework-internal identity (D-SEC-POLICY-1 rejects
+an rApp's UUID `rmihId` outright) declaring `supportedExpectationObjectType:
+RAN_SUBNETWORK`, create an Intent with a matching
+`expectationObject.objectType`, confirm the real dispatch notification
+fires to the RMIH's callback, then retract symmetrically (delete the
+Intent, deregister the RMIH) — the same provision/deprovision-pair
+shape as Phase C. The live callback has no real route behind it in this
+build, stated explicitly, same honesty pattern as Phase C.
+`tests_integration/test_demo_runbook.py` gained a step proving the real
+dispatch fires by intercepting the exact `httpx.post` call
+`create_intent` makes. No code, schema, or OpenAPI-spec change. This
+closes out all three demo-expansion phases confirmed with the user for
+this pilot demo pass.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style

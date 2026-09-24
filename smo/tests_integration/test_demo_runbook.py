@@ -183,7 +183,51 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert notifications[1]["notificationEventType"] == "DELETE"
     assert notifications[1]["resourceId"] == resource_id
 
-    # step 9: retire — terminate then delete
+    # step 9: Policy Mgmt intent automation — register an RMIH, create a
+    # matching Intent, observe the real dispatch notification, retract.
+    # Intercepted at the same httpx.post call create_intent makes,
+    # same technique as FOCOM's step above.
+    intent_notifications = []
+    real_post_2 = httpx.post
+
+    def fake_post_2(location, json=None, timeout=None, **kwargs):
+        if location == "http://so-smos:8000/intents/notify":
+            intent_notifications.append(json)
+            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
+        return real_post_2(location, json=json, timeout=timeout, **kwargs)
+
+    monkeypatch.setattr(loaded_apps["policy-mgmt"].httpx, "post", fake_post_2)
+
+    rmih = mesh["policy-mgmt"].post("/intent-handling-functions", json={
+        "rmihId": "so-smos", "smeServiceId": "so-smos-svc",
+        "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
+        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
+        "intentHandlingScope": ["RAN"],
+    })
+    assert rmih.status_code == 201
+
+    intent = mesh["policy-mgmt"].post("/intents", json={
+        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}],
+        "rmioId": "hello-world-rapp", "intentHandlingScope": "RAN",
+    })
+    assert intent.status_code == 201
+    intent_id = intent.json()["intentId"]
+
+    assert len(intent_notifications) == 1
+    assert intent_notifications[0]["intentId"] == intent_id
+    assert intent_notifications[0]["expectationObjectTypes"] == ["RAN_SUBNETWORK"]
+
+    get_intent = mesh["policy-mgmt"].get(f"/intents/{intent_id}")
+    assert get_intent.status_code == 200
+    assert get_intent.json()["intentAdminState"] == "ACTIVATED"
+
+    del_intent = mesh["policy-mgmt"].delete(f"/intents/{intent_id}")
+    assert del_intent.status_code == 204
+
+    del_rmih = mesh["policy-mgmt"].delete("/intent-handling-functions/so-smos")
+    assert del_rmih.status_code == 204
+
+    # step 10: retire — terminate then delete
     term = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/terminate")
     assert term.status_code == 200
     assert term.json()["state"] == "UNDEPLOYED"

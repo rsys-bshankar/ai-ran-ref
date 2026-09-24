@@ -2080,6 +2080,40 @@ own §1/§2 items stand as-is.
   covered this logic); `tests_integration` stays at 16 (one test grew a
   step, no new test file). Next: Phase D (Policy Mgmt intent
   automation), the last of the three.
+- **Pilot demo, Phase D: Policy Mgmt intent automation.** Last of the
+  three sequential demo-expansion passes. Like Phase C, no code gap —
+  `POST /intent-handling-functions`, `POST /intents`'s capability-based
+  match-and-dispatch (PR #71's real `TS28312_IntentNrm.yaml`-grounded
+  `_requested_expectation_object_types`/`_matching_rmihs`), `GET
+  /intents/{id}`, `DELETE /intents/{id}` (PR #66), and `DELETE
+  /intent-handling-functions/{id}` were already real and already fully
+  unit-tested; `DEMO_RUNBOOK.md` never called any of them. Added a new
+  runbook section: register an RMIH under the `so-smos` identity (the
+  only kind D-SEC-POLICY-1 allows — `is_framework_internal_identity`
+  rejects an rApp's UUID `rmihId` outright, so this uses the same
+  framework-internal identity SO SMOS itself registers under, matching
+  this build's own tests) declaring `supportedExpectationObjectType:
+  RAN_SUBNETWORK`, then create an Intent whose
+  `expectations[].expectationObject.objectType` is `RAN_SUBNETWORK` —
+  `create_intent` matches it against the registered RMIH's capability
+  and dispatches a real notification to the RMIH's own
+  `notificationCallbackUri`. Confirmed via `GET /intents/{id}`, then
+  retracted symmetrically (`DELETE /intents/{id}` then `DELETE
+  /intent-handling-functions/{id}`), the same provision/deprovision-pair
+  shape already used for FOCOM in Phase C. The live walkthrough's
+  callback (`http://so-smos:8000/intents/notify`) has no real route
+  behind it in this build — `so-smos/app/main.py` only ever grew
+  `/orders` endpoints — so the runbook says so explicitly, same honesty
+  pattern as Phase C. `tests_integration/test_demo_runbook.py` gained a
+  step proving the real dispatch fires, intercepting the exact
+  `httpx.post` call `create_intent` makes (same technique as Phase C)
+  and asserting the real `intentId`/`expectationObjectTypes` payload.
+  No code, schema, or OpenAPI-spec change — confirmed via a full local
+  Postgres 16 pass (58 tables, 0 mismatches) and
+  `tests_integration/test_openapi_specs.py`'s live-schema-match check,
+  both green. Unit-test count unchanged at 462; `tests_integration`
+  stays at 16. This closes out all three demo-expansion phases (B, C,
+  D) confirmed with the user for this pilot demo pass.
 
 ## Suggested next pass (priority order)
 
