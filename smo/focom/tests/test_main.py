@@ -57,13 +57,46 @@ def test_query_inventory_echoes_requested_resource_type(client):
 
 
 def test_subscribe_inventory_changes_returns_subscription_id(client):
-    resp = client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback"})
+    resp = client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback"})
     assert resp.status_code == 201
     assert "subscriptionId" in resp.json()
 
 
+def test_subscribe_inventory_changes_persists_and_returns_consumer_subscription_id(client):
+    """SPEC_AUDIT.md item 8: ORAN.O2ims.Inventory.yaml's
+    consumerSubscriptionId (the consumer's own tracking id for the
+    subscription), previously entirely absent from this model.
+    """
+    resp = client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "consumerSubscriptionId": "consumer-sub-1"})
+    assert resp.status_code == 201
+    assert resp.json()["consumerSubscriptionId"] == "consumer-sub-1"
+
+
+def test_subscribe_inventory_changes_without_consumer_subscription_id_defaults_to_null(client):
+    resp = client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback"})
+    assert resp.json()["consumerSubscriptionId"] is None
+
+
+def test_provision_resource_notification_passes_through_consumer_subscription_id(client, monkeypatch):
+    """SPEC_AUDIT.md item 8: the spec's own description says
+    consumerSubscriptionId exists "for tracking, routing, or
+    identifying the subscription used to report the event" — it must
+    come back on the notification itself, not just be stored.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/inventory/subscriptions", json={
+        "callback": "http://consumer/callback", "resourceTypeId": "gpu-l40", "consumerSubscriptionId": "consumer-sub-1",
+    })
+    client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"})
+
+    assert len(calls) == 1
+    assert calls[0][1]["consumerSubscriptionId"] == "consumer-sub-1"
+
+
 def test_unsubscribe_inventory_changes_removes_subscription(client, db_session):
-    sub = client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback"}).json()
+    sub = client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback"}).json()
 
     resp = client.delete(f"/inventory/subscriptions/{sub['subscriptionId']}")
     assert resp.status_code == 204
@@ -86,7 +119,7 @@ def test_provision_resource_notifies_matching_subscriber(client, monkeypatch):
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
-    client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
+    client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
 
     resp = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"})
     resource_id = resp.json()["resourceId"]
@@ -102,7 +135,7 @@ def test_provision_resource_does_not_notify_subscriber_filtered_out_by_type(clie
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
-    client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
+    client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
 
     client.post("/resources/provision", json={"resourceTypeId": "generic"})
 
@@ -118,7 +151,7 @@ def test_deprovision_resource_notifies_subscriber_regardless_of_type_filter(clie
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
-    client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
+    client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
 
     client.delete("/resources/some-resource-id")
 
@@ -131,7 +164,7 @@ def test_deprovision_known_resource_notifies_with_its_real_type(client, monkeypa
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
-    client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
+    client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
     provisioned = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()
     calls.clear()  # discard the provision-time CREATE notification
 
@@ -150,7 +183,7 @@ def test_inventory_notification_delivery_survives_unreachable_subscriber(client,
 
     monkeypatch.setattr("app.main.httpx.post", raise_error)
 
-    client.post("/inventory/subscriptions", json={"callbackUri": "http://consumer/callback"})
+    client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback"})
 
     resp = client.post("/resources/provision", json={"resourceTypeId": "generic"})  # must not raise
     assert resp.status_code == 200

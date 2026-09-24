@@ -8,10 +8,19 @@ from smo_shared.db import Base
 
 
 class InventorySubscription(Base):
+    """SPEC_AUDIT.md item 8: ORAN.O2ims.Inventory.yaml's InventorySubscription
+    names this field `callback`, not `callbackUri` — this build's own
+    invented name, previously undocumented as a deviation. Renamed
+    outright rather than documented: no cross-module caller in this
+    build ever used the old name (only this module's own routes/tests).
+    consumerSubscriptionId (the spec's own consumer-provided tracking
+    id, nullable) was entirely absent.
+    """
     __tablename__ = "inventory_subscription"
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    callback_uri: Mapped[str] = mapped_column(String, nullable=False)
+    callback: Mapped[str] = mapped_column(String, nullable=False)
+    consumer_subscription_id: Mapped[str | None] = mapped_column(String)
     resource_type_id: Mapped[str | None] = mapped_column(String)  # optional filter; unset matches every resource type
 
 

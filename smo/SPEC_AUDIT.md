@@ -295,9 +295,12 @@ same-shape PR like this session's others:
    `tags`/`groups`/`globalAssetId` as nullable columns.~~ — **closed**
    (`OPEN_ITEMS.md`'s pass-history log; `resourceKind`/`resourceClass`
    got real `CHECK` constraints too).
-8. FOCOM: rename `InventorySubscription`'s wire field `callbackUri` →
+8. ~~FOCOM: rename `InventorySubscription`'s wire field `callbackUri` →
    `callback` (or explicitly document the deviation) and add
-   `consumerSubscriptionId` passthrough.
+   `consumerSubscriptionId` passthrough.~~ — **closed**
+   (`OPEN_ITEMS.md`'s pass-history log). This was the last item on
+   this list — every small/scoped, non-breaking spec gap identified in
+   this pass is now closed.
 
 Moderate/breaking-shape items (worth a deliberate follow-up pass, not
 a quick fix, since each changes a request/response contract a real
