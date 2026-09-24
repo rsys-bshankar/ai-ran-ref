@@ -100,7 +100,11 @@ the ambiguity into code.
   AEF/API validation at token-issuance time (`IsFunctionRegistered`/
   `IsAPIPublished`) — this build elides fine-grained AuthZ throughout, so
   `scope` is accepted and echoed back, never checked against what's
-  actually published.
+  actually published. Neither the onboarding secret nor the issued
+  token is ever stored in cleartext (a GitHub Advanced Security finding
+  caught and fixed before merge) — `InvokerRegistration` keeps only a
+  salted `scrypt` hash, `IssuedAccessToken` only a SHA-256 hash of the
+  token itself.
 - **RAN NF OAM's MnS Registry discovery is a heartbeat-aging stub**, not
   real registry polling.
 - ~~**No persisted OpenAPI spec files anywhere** — relying entirely on
@@ -191,7 +195,7 @@ Per-module unit test counts:
 | onboarding | 30 |
 | focom | 37 |
 | a1-related | 43 |
-| sme | 45 |
+| sme | 47 |
 | ai-ml-workflow | 49 |
 | dme | 55 |
 
@@ -1530,8 +1534,16 @@ own §1/§2 items stand as-is.
   it deliberately bypasses R1 Termination's own proxy mechanics. Also
   extracted `smo_shared/timeutil.py`'s `as_utc()` from A1 Related's own
   local copy, now needed a second time for `IssuedAccessToken`'s expiry
-  check. 430 tests total, up from 417 (`sme` alone: 37 -> 45;
-  `r1-termination` alone: 10 -> 15).
+  check. A GitHub Advanced Security review on the PR then caught a real
+  finding before merge: `onboarding_secret` and `access_token` were both
+  stored in cleartext — a DB leak (backup, SQL injection elsewhere, a
+  dump) would have handed out reusable client credentials and live
+  session tokens directly. Fixed: `InvokerRegistration` now stores only
+  a salted `scrypt` hash (`onboarding_secret_hash`, stdlib `hashlib`, no
+  new dependency), and `IssuedAccessToken` stores only a SHA-256 hash of
+  the token (`access_token_hash`) — the raw token is returned to the
+  caller once at issuance and never persisted. 432 tests total, up from
+  417 (`sme` alone: 37 -> 47; `r1-termination` alone: 10 -> 15).
 
 ## Suggested next pass (priority order)
 

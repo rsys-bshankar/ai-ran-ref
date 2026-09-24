@@ -504,6 +504,31 @@ def test_register_invoker_creates_it(client):
     assert resp.json() == {"apiInvokerId": "rapp-invoker-1"}
 
 
+def test_onboarding_secret_is_never_stored_in_cleartext(client, db_session_factory):
+    """Security review finding on PR #54: a DB leak (backup, SQL
+    injection elsewhere, a dump) must never hand out a reusable client
+    credential directly.
+    """
+    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
+    with db_session_factory() as session:
+        stored = session.get(InvokerRegistration, "rapp-invoker-1").onboarding_secret_hash
+    assert "s3cret" not in stored
+    assert ":" in stored  # salt_hex:digest_hex
+
+
+def test_access_token_is_never_stored_in_cleartext(client, db_session_factory):
+    """Same finding: the raw bearer token is returned to the caller once
+    and must never be recoverable from a DB leak either.
+    """
+    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
+    token = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "rapp-invoker-1", "client_secret": "s3cret"}).json()["access_token"]
+    with db_session_factory() as session:
+        stored_hashes = [row.access_token_hash for row in session.query(IssuedAccessToken).all()]
+    assert token not in stored_hashes
+    assert len(stored_hashes) == 1
+    assert len(stored_hashes[0]) == 64  # hex-encoded SHA-256
+
+
 def test_issue_token_succeeds_for_a_registered_invoker(client):
     client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
     resp = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "rapp-invoker-1", "client_secret": "s3cret"})
@@ -555,8 +580,10 @@ def test_introspect_expired_token_is_inactive(client, db_session_factory):
     client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
     token = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "rapp-invoker-1", "client_secret": "s3cret"}).json()["access_token"]
 
+    from app.main import _hash_token
+
     with db_session_factory() as session:
-        rec = session.get(IssuedAccessToken, token)
+        rec = session.get(IssuedAccessToken, _hash_token(token))
         rec.expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)
         session.commit()
 

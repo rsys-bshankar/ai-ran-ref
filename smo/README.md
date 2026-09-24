@@ -106,7 +106,7 @@ PYTHONPATH=shared python -m pytest tests_integration/ -v
 PYTHONPATH=shared python scripts/generate_openapi_specs.py
 ```
 
-**430 tests total, all passing** as of this build: 418 unit tests across
+**432 tests total, all passing** as of this build: 420 unit tests across
 all fourteen modules plus the mock, and 12 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -468,7 +468,11 @@ genuinely checked secret), and `POST /oauth2/introspect` (RFC 7662 —
 the honest substitute for the reference's own externally-signed-JWT
 validation, which needs a Keycloak instance this build doesn't run). R1
 Termination now genuinely enforces this on every proxied request,
-failing closed if SME is unreachable. `sme` went from 37 tests to 45;
+failing closed if SME is unreachable. A GitHub Advanced Security review
+on that PR caught a real finding before merge: the onboarding secret
+and issued tokens were both stored in cleartext — fixed with a salted
+`scrypt` hash for the former and a SHA-256 hash of the token for the
+latter, neither value ever stored raw. `sme` went from 37 tests to 47;
 `r1-termination` from 10 to 15.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)

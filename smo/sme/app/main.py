@@ -9,6 +9,7 @@ section 2.3).
 """
 
 import datetime
+import hashlib
 import secrets
 import uuid
 
@@ -26,8 +27,39 @@ from smo_shared.timeutil import as_utc
 from .models import EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile
 
 ACCESS_TOKEN_TTL_SECONDS = 3600
+_SCRYPT_N, _SCRYPT_R, _SCRYPT_P, _SCRYPT_DKLEN = 2**14, 8, 1, 32
 
 app = FastAPI(title="SME — Service Management and Exposure")
+
+
+def _hash_secret(secret: str) -> str:
+    """Security review: an invoker's onboarding_secret is a real, checked
+    credential — never stored in cleartext, or a DB leak (backup, SQL
+    injection elsewhere, a dump) would hand out reusable client
+    credentials directly. Salted scrypt (stdlib hashlib, no new
+    dependency), stored as "salt_hex:digest_hex" — there's no separate
+    salt column, the salt itself isn't secret, only storing the raw
+    secret would be.
+    """
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(secret.encode(), salt=salt, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=_SCRYPT_DKLEN)
+    return f"{salt.hex()}:{digest.hex()}"
+
+
+def _verify_secret(secret: str, stored: str) -> bool:
+    salt_hex, digest_hex = stored.split(":")
+    candidate = hashlib.scrypt(secret.encode(), salt=bytes.fromhex(salt_hex), n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=_SCRYPT_DKLEN)
+    return secrets.compare_digest(candidate, bytes.fromhex(digest_hex))
+
+
+def _hash_token(token: str) -> str:
+    """Unlike onboarding_secret, the token is already 256 bits of real
+    randomness from secrets.token_urlsafe, not a low-entropy human-chosen
+    secret — a fast SHA-256 hash (not a slow KDF) is the correct,
+    standard choice here. The raw token is returned to the caller once
+    at issuance and never stored; only this hash is.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 class ServiceRegistration(BaseModel):
@@ -106,7 +138,7 @@ def register_invoker(body: InvokerRegistrationRequest, db: Session = Depends(get
     if inv is None:
         inv = InvokerRegistration(api_invoker_id=body.apiInvokerId)
         db.add(inv)
-    inv.onboarding_secret = body.onboardingSecret
+    inv.onboarding_secret_hash = _hash_secret(body.onboardingSecret)
     db.commit()
     return {"apiInvokerId": inv.api_invoker_id}
 
@@ -141,11 +173,11 @@ def issue_access_token(body: AccessTokenRequest, db: Session = Depends(get_sessi
     inv = db.get(InvokerRegistration, body.client_id)
     if inv is None:
         return JSONResponse(status_code=400, content={"error": "invalid_client", "error_description": "invoker not registered"})
-    if not secrets.compare_digest(body.client_secret or "", inv.onboarding_secret):
+    if not _verify_secret(body.client_secret or "", inv.onboarding_secret_hash):
         return JSONResponse(status_code=400, content={"error": "unauthorized_client", "error_description": "onboarding secret not valid"})
     token = secrets.token_urlsafe(32)
     expires_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=ACCESS_TOKEN_TTL_SECONDS)
-    db.add(IssuedAccessToken(access_token=token, api_invoker_id=inv.api_invoker_id, expires_at=expires_at))
+    db.add(IssuedAccessToken(access_token_hash=_hash_token(token), api_invoker_id=inv.api_invoker_id, expires_at=expires_at))
     db.commit()
     return {"access_token": token, "expires_in": ACCESS_TOKEN_TTL_SECONDS, "token_type": "Bearer", "scope": body.scope}
 
@@ -165,7 +197,7 @@ def introspect_token(body: IntrospectRequest, db: Session = Depends(get_session)
     for staying unauthenticated itself (SME<->R1 Termination traffic
     never leaves the docker-compose network).
     """
-    rec = db.get(IssuedAccessToken, body.token)
+    rec = db.get(IssuedAccessToken, _hash_token(body.token))
     if rec is None or as_utc(rec.expires_at) <= datetime.datetime.now(datetime.UTC):
         return {"active": False}
     return {"active": True, "client_id": rec.api_invoker_id, "exp": int(as_utc(rec.expires_at).timestamp())}

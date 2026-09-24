@@ -56,20 +56,26 @@ CREATE TABLE provider_registration (
 
 -- NEW section 2: API Invoker onboarding (invokermanagement.go) — the
 -- real registry the Security/token API's own IsInvokerRegistered/
--- VerifyInvokerSecret gate needs.
+-- VerifyInvokerSecret gate needs. onboarding_secret_hash: security
+-- review — never store the raw secret, only a salted scrypt hash
+-- ("salt_hex:digest_hex"), or a DB leak hands out reusable client
+-- credentials directly.
 CREATE TABLE invoker_registration (
-  api_invoker_id       TEXT PRIMARY KEY,
-  onboarding_secret       TEXT NOT NULL
+  api_invoker_id            TEXT PRIMARY KEY,
+  onboarding_secret_hash       TEXT NOT NULL
 );
 
 -- NEW section 2: opaque, server-tracked bearer tokens — the honest
 -- substitute for the reference's own externally-signed JWT (Keycloak,
 -- an external IdP this build doesn't run). Validated by R1 Termination
 -- via POST /oauth2/introspect on every proxied request.
+-- access_token_hash: security review — the raw token is returned to
+-- the caller once at issuance and never stored; only its SHA-256 hash
+-- is, so a DB leak can't hand out live, reusable bearer tokens.
 CREATE TABLE issued_access_token (
-  access_token       TEXT PRIMARY KEY,
-  api_invoker_id       TEXT NOT NULL,
-  expires_at             TIMESTAMPTZ NOT NULL
+  access_token_hash       TEXT PRIMARY KEY,
+  api_invoker_id             TEXT NOT NULL,
+  expires_at                    TIMESTAMPTZ NOT NULL
 );
 
 -- ============================================================
