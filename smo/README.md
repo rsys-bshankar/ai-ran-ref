@@ -6,7 +6,9 @@ and the `O-RAN-SC Repo Inventory` — see the session's Design blueprint for
 the architecture pyramid and repo-adoption map this build follows). The
 formal specs this build is grounded against — 3GPP 5G Core OpenAPI, O-RAN
 O1/O2 YANG and information models — live as sibling reference material in
-[`../specs/`](../specs/README.md).
+[`../specs/`](../specs/README.md). `SPEC_AUDIT.md` compares this build
+against those formal specs directly (distinct from `OPEN_ITEMS.md`
+section 5's audits against the O-RAN-SC source-code repos).
 
 ## Stack
 

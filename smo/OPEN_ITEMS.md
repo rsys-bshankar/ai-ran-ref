@@ -1685,16 +1685,41 @@ own §1/§2 items stand as-is.
   FOCOM's inventory routes have so far only been audited against
   `pti-o2`'s Python implementation of, never the formal spec itself).
   No code changes; groundwork for the next item, not a closure.
-- **Next up, per explicit direction**: a deep audit of `smo/` against
-  (a) these formal specs in `specs/` (a different, complementary ground
-  truth from the O-RAN-SC source-code audits §5 already did) and (b)
-  another pass against the O-RAN-SC Repo Blueprint's 18 shortlisted
-  repos (§5 already covered all 18 once; this revisits for anything
-  missed or changed since, especially given everything closed in this
-  session since §5 finished — OAuth2, the O1 mock, heartbeat-aging,
-  FOCOM's inventory wiring). Once both audits land, the goal shifts to
-  identifying and closing whatever's still missing for a pilot demo of
-  a sample rApp's full lifecycle.
+- Per explicit direction, ran the first of the two planned audits: `smo/`
+  against the formal specs now in `specs/` — RAN NF OAM vs.
+  MsacNrm/FaultNrm/ProvMnS/PerfMeasJobCtrlMnS + O1NRM YANGs, FOCOM vs.
+  the real O2IMS data model, Policy Mgmt vs. IntentNrm, and SME vs.
+  CAPIF core's real security-service source (the closest thing to a
+  formal spec available for it, since no CAPIF OpenAPI file lives in
+  `specs/`). Full findings in the new `smo/SPEC_AUDIT.md` — not
+  reproduced here in full; highlights: RAN NF OAM's MSAC gate is
+  confirmed a placeholder vs. the spec's real per-data-node RBAC engine
+  (large, deliberate); FOCOM's `ResourceType`/`ResourcePool`/
+  `DeploymentManager` are each missing several real, small-to-add
+  fields; Policy Mgmt's Intent-to-RMIH matching field is wrong per the
+  spec (matches on an invented `intentType` string instead of the
+  spec's real `supportedExpectationObjectType` enum), and the spec
+  itself suggests a different, consumer-selects-by-DN architecture
+  than the push-notify mechanism already built; SME's invoker
+  onboarding has the trust direction backwards vs. real CAPIF (client
+  supplies its own `apiInvokerId`/secret rather than the CAPIF core
+  generating and returning them), and the real CAPIF core's separate
+  "Trusted Invokers" per-AEF authorization registry has no equivalent
+  at all here — both newly documented, not previously known. Not yet
+  audited against a formal spec (no directly relevant one lives in
+  `specs/`): DME, A1 Related, Onboarding/rApp Mgmt, AI/ML Workflow, RAN
+  Analytics — those stay grounded only against §5's source-code audits.
+  No code changes in this pass — `SPEC_AUDIT.md` itself names which
+  findings are small/closeable-now vs. moderate/breaking vs.
+  large/structural-and-deliberate.
+- **Next up, per explicit direction**: a fresh audit pass against the
+  O-RAN-SC Repo Blueprint's 18 shortlisted repos (§5 already covered
+  all 18 once; this revisits for anything missed or changed since,
+  especially given everything closed in this session since §5 finished
+  — OAuth2, the O1 mock, heartbeat-aging, FOCOM's inventory wiring).
+  Once both audits are fully landed, the goal shifts to identifying and
+  closing whatever's still missing for a pilot demo of a sample rApp's
+  full lifecycle.
 
 ## Suggested next pass (priority order)
 
