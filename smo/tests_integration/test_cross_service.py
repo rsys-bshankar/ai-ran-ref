@@ -216,3 +216,89 @@ def test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_de
         )
         assert deployment is not None
         assert deployment.state == "RUNNING"
+
+
+def test_ran_nf_oam_config_write_reaches_a_real_mock_o1_adaptor(mesh, loaded_apps, shared_engine):
+    """OPEN_ITEMS.md section 2: "no real southbound integrations beyond
+    the A1 mock" — RAN NF OAM LLD section 5.1's PATCH step
+    (netconf_client.py) always dispatched a real RFC 6241 <edit-config>
+    RPC, but nothing in this build's own topology ever answered it for
+    real before mock-o1-adaptor existed. Proven end to end here, the same
+    way A1 Related's own mock Near-RT RIC round trip already is: no
+    ManagedElement registration route exists (a separate, undocumented
+    gap, not this item's own scope), so the ManagedEntity/O1AdaptorEndpoint
+    rows are seeded directly through the shared engine — the real HTTP
+    call this test proves is write_configuration_changes's own dispatch
+    to mock-o1-adaptor, not this setup step.
+    """
+    from sqlalchemy.orm import Session
+
+    ManagedEntity = loaded_apps["ran-nf-oam"].ManagedEntity
+    O1AdaptorEndpoint = loaded_apps["ran-nf-oam"].O1AdaptorEndpoint
+
+    with Session(shared_engine) as session:
+        endpoint = O1AdaptorEndpoint(
+            managed_element_ref="ME-integration-1", adaptor_uri="http://mock-o1-adaptor:8000/edit-config",
+            protocol_support=["NETCONF"],
+        )
+        session.add(endpoint)
+        session.flush()
+        session.add(ManagedEntity(
+            managed_element_ref="ME-integration-1", entity_type="O-DU", o1_protocol="NETCONF",
+            o1_adaptor_endpoint_id=endpoint.endpoint_id,
+        ))
+        session.commit()
+
+    resp = mesh["ran-nf-oam"].post("/config-jobs", json={
+        "requestedBy": "test", "scope": "single-NF",
+        "changes": [{"managedElementRef": "ME-integration-1", "attributeChanges": {"adminState": "UNLOCKED"}}],
+    })
+    assert resp.status_code == 202
+    job = resp.json()
+    assert job["status"] == "COMPLETED"  # every sub-change APPLIED
+
+    status = mesh["ran-nf-oam"].get(f"/config-jobs/{job['jobId']}")
+    assert status.json()["subChanges"][0]["status"] == "APPLIED"
+
+    # mock-o1-adaptor's own real, parsed record of what it received —
+    # proves the RPC round trip actually carried the real attribute
+    # changes, not just that RAN NF OAM's own status flipped to APPLIED.
+    applied = mesh["mock-o1-adaptor"].get("/edit-config/ME-integration-1")
+    assert applied.json()["attributeChanges"] == {"adminState": "UNLOCKED"}
+
+
+def test_ran_nf_oam_config_write_rejected_by_mock_o1_adaptor_is_recorded(mesh, loaded_apps, shared_engine):
+    """The other real outcome: mock-o1-adaptor's own rejection (an empty
+    attributeChanges payload — the same real, testable trigger its own
+    unit tests use) must surface as a genuine REJECTED sub_change, not a
+    silently-swallowed failure.
+    """
+    from sqlalchemy.orm import Session
+
+    ManagedEntity = loaded_apps["ran-nf-oam"].ManagedEntity
+    O1AdaptorEndpoint = loaded_apps["ran-nf-oam"].O1AdaptorEndpoint
+
+    with Session(shared_engine) as session:
+        endpoint = O1AdaptorEndpoint(
+            managed_element_ref="ME-integration-2", adaptor_uri="http://mock-o1-adaptor:8000/edit-config",
+            protocol_support=["NETCONF"],
+        )
+        session.add(endpoint)
+        session.flush()
+        session.add(ManagedEntity(
+            managed_element_ref="ME-integration-2", entity_type="O-DU", o1_protocol="NETCONF",
+            o1_adaptor_endpoint_id=endpoint.endpoint_id,
+        ))
+        session.commit()
+
+    resp = mesh["ran-nf-oam"].post("/config-jobs", json={
+        "requestedBy": "test", "scope": "single-NF",
+        "changes": [{"managedElementRef": "ME-integration-2", "attributeChanges": {}}],
+    })
+    job = resp.json()
+    assert job["status"] == "FAILED"  # every sub-change REJECTED
+
+    status = mesh["ran-nf-oam"].get(f"/config-jobs/{job['jobId']}")
+    sub_change = status.json()["subChanges"][0]
+    assert sub_change["status"] == "REJECTED"
+    assert sub_change["rejectionReason"] == "NETCONF_RPC_FAILED"

@@ -68,9 +68,27 @@ the ambiguity into code.
   ORM models directly, never from this file, and the migration-Postgres
   CI job only checks table *count*, not columns. Verified fixed against
   a real local Postgres 16 instance.
-- **No real southbound integrations beyond the A1 mock** — O1 Adaptor
+- ~~**No real southbound integrations beyond the A1 mock** — O1 Adaptor
   `PATCH` calls, actual `docker run` invocations, etc. are all elided in
-  favor of recording the correct state transition.
+  favor of recording the correct state transition.~~ — **closed,
+  partially.** The O1 Adaptor `PATCH` half is real now: a new
+  `mock-o1-adaptor` module (mirroring `mock-near-rt-ric`'s own scope —
+  give the real caller something real to call, not a full protocol
+  implementation) answers RAN NF OAM's real RFC 6241 `<edit-config>` RPC
+  (`netconf_client.py`, already dispatching one over HTTP, previously to
+  nothing that existed anywhere in this build's own topology) with a
+  real `<rpc-reply>`, `<ok/>` or `<rpc-error>` depending on the request.
+  Proven end to end by two new cross-service integration tests, not just
+  a unit test — one of which surfaced a real, separate bug in the test
+  harness itself: `tests_integration/mesh.py`'s `dispatch()` only ever
+  forwarded a JSON body (`json=`), silently dropping any `content=`
+  kwarg — every caller until `netconf_client.py` was JSON-only, so a raw
+  XML POST body was forwarded as empty without erroring, masking itself
+  as a plausible-looking `REJECTED` outcome rather than a harness bug.
+  Fixed. Real `docker run` invocations (NFO) stay unmodeled — no
+  equivalent test double exists for that southbound call, a
+  structurally different, much bigger elision (real K8s/Helm/container
+  orchestration) than answering one HTTP RPC.
 - ~~**No real OAuth2/token enforcement at R1 Termination** — only a
   comment and a `tokenEndPoint` URI in the bootstrap response; no actual
   validation code path.~~ — **closed, partially.** The reference's own
@@ -183,6 +201,7 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
+| mock-o1-adaptor | 5 |
 | policy-mgmt | 10 |
 | sa-smos | 12 |
 | so-smos | 13 |
@@ -199,7 +218,7 @@ Per-module unit test counts:
 | ai-ml-workflow | 49 |
 | dme | 55 |
 
-Plus 12 cross-service integration tests in `tests_integration/`.
+Plus 14 cross-service integration tests in `tests_integration/`.
 `mock-near-rt-ric`/`r1-termination`/`policy-mgmt` (10 tests each) are
 now the shallowest-covered tier — `nfo` moved out of it in a later pass
 (gained real deployment-state-machine coverage). `rapp-mgmt` and
@@ -1544,6 +1563,18 @@ own §1/§2 items stand as-is.
   the token (`access_token_hash`) — the raw token is returned to the
   caller once at issuance and never persisted. 432 tests total, up from
   417 (`sme` alone: 37 -> 47; `r1-termination` alone: 10 -> 15).
+- Continuing to revisit previously-declared Phase-1 boundaries per
+  explicit direction, closed §2's "no real southbound integrations
+  beyond the A1 mock" for its O1 Adaptor half: a new `mock-o1-adaptor`
+  module (mirroring `mock-near-rt-ric`'s own minimal scope) answers RAN
+  NF OAM's real RFC 6241 `<edit-config>` RPC for real, proven by two new
+  cross-service integration tests. Writing them surfaced a real,
+  separate bug in the integration test harness itself:
+  `tests_integration/mesh.py`'s `dispatch()` only ever forwarded a JSON
+  body, silently dropping `content=` (needed for `netconf_client.py`'s
+  raw XML POST, the first non-JSON caller this harness ever had) —
+  fixed. 439 tests total, up from 432 (`mock-o1-adaptor`: new module, 5
+  tests; integration suite 12 -> 14).
 
 ## Suggested next pass (priority order)
 

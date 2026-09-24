@@ -41,6 +41,11 @@ smo/
   mock-near-rt-ric/        the isolated A1-P test double (closes RT-7) —
                           not an SMO module, A1 Related's only southbound
                           dependency
+  mock-o1-adaptor/         the NETCONF-shaped O1 Adaptor test double —
+                          not an SMO module, RAN NF OAM's real southbound
+                          dependency for CM writes (real RFC 6241
+                          <edit-config> RPCs, previously answered by
+                          nothing in this build's own topology)
   docs/call-flows/         Mermaid sequence diagrams stitching multiple
                           modules' LLDs into end-to-end journeys
   docs/openapi/            committed OpenAPI spec per module, generated
@@ -64,7 +69,7 @@ smo/
 | R1 Termination | `r1-termination/` | — (gateway, no domain schema) |
 | Software Package Onboarding | `onboarding/` | `ApplicationPackage` FSM |
 | rApp Management | `rapp-mgmt/` | `RAppInstance` FSM + upgrade auto-rollback; CRASH/TERMINATE now push a DME deregistration for the instance's own producer registrations |
-| RAN NF OAM | `ran-nf-oam/` | `WriteConfigJob`, `SoftwareManagementJob`, `O1AdaptorEndpoint` health — 3 FSMs; CM writes dispatch as real NETCONF `<edit-config>` RPCs (RESTCONF-provisioned MEs rejected, not implemented) |
+| RAN NF OAM | `ran-nf-oam/` | `WriteConfigJob`, `SoftwareManagementJob`, `O1AdaptorEndpoint` health — 3 FSMs; CM writes dispatch as real NETCONF `<edit-config>` RPCs (RESTCONF-provisioned MEs rejected, not implemented). Its real southbound dependency is `mock-o1-adaptor/`, which actually answers them. |
 | A1 Related | `a1-related/` | — (A1-ML dormant, out of scope — see the module's LLD section 0). Its real southbound dependency is `mock-near-rt-ric/`, on an isolated network segment. |
 | NFO | `nfo/` | `NFDeployment` |
 | FOCOM | `focom/` | — |
@@ -93,7 +98,7 @@ pip install -e shared
 # per-module unit tests (each module in isolation, in-memory SQLite)
 for m in onboarding rapp-mgmt ran-nf-oam ai-ml-workflow so-smos a1-related \
          sme dme r1-termination nfo focom ran-analytics policy-mgmt sa-smos \
-         mock-near-rt-ric; do
+         mock-near-rt-ric mock-o1-adaptor; do
   (cd $m && PYTHONPATH=.:../shared python -m pytest tests/ -v)
 done
 
@@ -106,9 +111,9 @@ PYTHONPATH=shared python -m pytest tests_integration/ -v
 PYTHONPATH=shared python scripts/generate_openapi_specs.py
 ```
 
-**432 tests total, all passing** as of this build: 420 unit tests across
-all fourteen modules plus the mock, and 12 integration tests proving real
-cross-service wiring. Notably including: the cascade-delete guard (now
+**439 tests total, all passing** as of this build: 425 unit tests across
+all fourteen modules plus the two mocks, and 14 integration tests proving
+real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
 below), upgrade auto-rollback, the `PARTIAL_SUCCESS` decomposed-PATCH
 aggregation, the O1 Adaptor endpoint health lifecycle, the full AI/ML
@@ -473,7 +478,17 @@ on that PR caught a real finding before merge: the onboarding secret
 and issued tokens were both stored in cleartext — fixed with a salted
 `scrypt` hash for the former and a SHA-256 hash of the token for the
 latter, neither value ever stored raw. `sme` went from 37 tests to 47;
-`r1-termination` from 10 to 15.
+`r1-termination` from 10 to 15. Continuing to revisit previously-declared
+Phase-1 boundaries, the next pass closed the O1 Adaptor half of "no real
+southbound integrations beyond the A1 mock": a new `mock-o1-adaptor`
+module (mirroring `mock-near-rt-ric`'s own minimal scope) answers RAN NF
+OAM's real RFC 6241 `<edit-config>` RPC for real. Writing the two new
+cross-service integration tests that prove this surfaced a real,
+separate bug in the harness itself: `tests_integration/mesh.py`'s
+`dispatch()` only ever forwarded a JSON body, silently dropping any raw
+`content=` kwarg (`netconf_client.py`'s XML POST was the first non-JSON
+caller this harness ever had) — fixed. `mock-o1-adaptor` is a new
+module: 5 tests; the integration suite went from 12 to 14.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
