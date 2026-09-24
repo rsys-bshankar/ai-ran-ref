@@ -319,3 +319,63 @@ Provisioning/Artifacts/Cluster/Infrastructure categories, CAPIF's
 Trusted Invokers registry) this build was never going to build in
 Phase 1, now named precisely against their real spec citation instead
 of described only in general terms.
+
+## Large/structural items: demo-relevance triage
+
+Per explicit direction: for each large/structural item above, whether
+it's worth reconsidering before `DEMO_RUNBOOK.md`'s pilot demo, or is
+genuinely out of scope for it. Grounded directly in what the runbook's
+own steps actually call — not a general risk assessment. The runbook
+exercises Onboarding → rApp Mgmt → NFO → FOCOM (`GET /inventory`,
+read-only) → SME (provider/invoker registration, OAuth2 token, publish
+service API) → DME (optional producer registration) → rApp Mgmt
+(performance report, terminate, delete). RAN NF OAM and Policy Mgmt
+are never called anywhere in the runbook.
+
+1. **RAN NF OAM: MSAC RBAC placeholder.** Out of scope. The gated
+   route (`WriteConfigurationChanges` / `POST /config-jobs`) never
+   appears in the runbook — RAN NF OAM isn't touched at all.
+2. **RAN NF OAM: flat-string addressing instead of DN/typed
+   identityrefs.** Out of scope, same reason — RAN NF OAM isn't in the
+   demo path.
+3. **RAN NF OAM: file/streaming transport machinery
+   (`FileDataReportingMnS`/`StreamingDataMnS`).** Out of scope —
+   `subscribe_pm` (the one route this would affect) isn't called
+   either; the runbook's "operate" step is rApp Mgmt's own
+   `performance` route, not a real PM subscription.
+4. **FOCOM: FCAPS (alarm/performance) depth.** Out of scope. FOCOM
+   appears exactly once, at step 3, as a single read-only
+   `GET /inventory` call sourcing a cluster for NFO's `Instantiate` —
+   no alarm or performance route is ever called.
+5. **FOCOM: whole resource categories absent (`ProvisioningRequest`,
+   `ArtifactResourceType`/`ArtifactResource`, `NodeCluster`,
+   `Gateway`/`SiteNetwork`).** Out of scope, same reason as (4) — the
+   demo never exercises FOCOM beyond that one inventory read.
+6. **SME: the real CAPIF core's "Trusted Invokers" security-context
+   subsystem has no equivalent.** **Worth reconsidering** — this is
+   the one item the demo actually walks through live. Step 4's own
+   invoker-registration call has the client self-assert
+   `apiInvokerId: 'hello-world-rapp'` and choose its own
+   `onboardingSecret` — exactly the weaker trust model the adjacent
+   moderate-tier finding above (SME item 1: "invoker onboarding has
+   the trust direction backwards") already names, and exactly what a
+   real Trusted Invokers registry (`PUT`/`GET`/`DELETE
+   /trusted-invokers/{apiInvokerId}` + revocation) would exist to
+   check against. Building the real subsystem before the demo is
+   disproportionate — it's a genuine new subsystem, not a scoped fix,
+   the same assessment the audit already gave it. But because a
+   technically literate reviewer watching this exact step could
+   reasonably ask "what stops a different rApp from registering with
+   this same invoker ID," this is worth a one-line disclosure in the
+   live walkthrough ("self-asserted identity in Phase 1; the real
+   CAPIF core issues these server-side") rather than staying a silent
+   gap, and a named line on the platform roadmap — not a demo
+   blocker, but the one item here with real audience-facing exposure.
+
+Not on the large/structural list, but adjacent and worth naming for
+the same reason: Policy Mgmt's own architecture question (§ above —
+whether Intent-to-RMIH matching should be consumer-side LDN selection
+per the spec's NRM containment model, rather than this build's
+producer-side push) is moot for this specific demo — `CreateIntent`/
+`RegisterIntentHandlingFunction` are never called in the runbook
+either. Relevant to the platform roadmap, not to this walkthrough.
