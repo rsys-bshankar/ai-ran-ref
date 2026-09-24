@@ -1,0 +1,1511 @@
+{
+  "components": {
+    "schemas": {
+      "Body_subscribe_performance_monitoring_mlmf_subscriptions_post": {
+        "properties": {
+          "guard_kpi_floor": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guard Kpi Floor"
+          },
+          "metric_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Metric Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "metric_types"
+        ],
+        "title": "Body_subscribe_performance_monitoring_mlmf_subscriptions_post",
+        "type": "object"
+      },
+      "Body_upload_model_artifact_models__model_id__artifact_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_model_artifact_models__model_id__artifact_post",
+        "type": "object"
+      },
+      "CreateCoordinationGroupRequest": {
+        "properties": {
+          "memberModelIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Membermodelids",
+            "type": "array"
+          },
+          "memberUseCases": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Memberusecases",
+            "type": "array"
+          },
+          "retrainPropagation": {
+            "default": "ANY_MEMBER_TRIGGERS",
+            "title": "Retrainpropagation",
+            "type": "string"
+          },
+          "sharedFeaturePipelineRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharedfeaturepipelineref"
+          }
+        },
+        "required": [
+          "memberModelIds"
+        ],
+        "title": "CreateCoordinationGroupRequest",
+        "type": "object"
+      },
+      "CreateFeatureGroupRequest": {
+        "properties": {
+          "bucket": {
+            "title": "Bucket",
+            "type": "string"
+          },
+          "datalakeSource": {
+            "title": "Datalakesource",
+            "type": "string"
+          },
+          "dbOrg": {
+            "title": "Dborg",
+            "type": "string"
+          },
+          "dmePort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dmeport"
+          },
+          "enableDme": {
+            "default": false,
+            "title": "Enabledme",
+            "type": "boolean"
+          },
+          "featureGroupName": {
+            "title": "Featuregroupname",
+            "type": "string"
+          },
+          "featureList": {
+            "title": "Featurelist",
+            "type": "string"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "measuredObjClass": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measuredobjclass"
+          },
+          "measurement": {
+            "title": "Measurement",
+            "type": "string"
+          },
+          "port": {
+            "title": "Port",
+            "type": "string"
+          },
+          "sourceName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcename"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "featureGroupName",
+          "featureList",
+          "datalakeSource",
+          "host",
+          "port",
+          "bucket",
+          "token",
+          "dbOrg",
+          "measurement"
+        ],
+        "title": "CreateFeatureGroupRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "RegisterModelRequest": {
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "inputDataType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputdatatype"
+          },
+          "modelType": {
+            "title": "Modeltype",
+            "type": "string"
+          },
+          "outputDataType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputdatatype"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "requiredResourceTypeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requiredresourcetypeid"
+          },
+          "targetEnvironments": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Targetenvironments",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "modelType",
+          "version"
+        ],
+        "title": "RegisterModelRequest",
+        "type": "object"
+      },
+      "RequestTrainingRequest": {
+        "properties": {
+          "consumerRappId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumerrappid"
+          },
+          "modelCoordinationGroupId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelcoordinationgroupid"
+          },
+          "modelId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelid"
+          },
+          "notificationUri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notificationuri"
+          },
+          "producerId": {
+            "title": "Producerid",
+            "type": "string"
+          },
+          "producerRappId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Producerrappid"
+          },
+          "requiredData": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Requireddata",
+            "type": "object"
+          },
+          "runId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runid"
+          },
+          "trainingDataset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trainingdataset"
+          },
+          "validationCriteria": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Validationcriteria",
+            "type": "object"
+          },
+          "validationDataset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validationdataset"
+          }
+        },
+        "required": [
+          "producerId"
+        ],
+        "title": "RequestTrainingRequest",
+        "type": "object"
+      },
+      "UpdateModelRequest": {
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author"
+          },
+          "clearedNodeGroups": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clearednodegroups"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "inputDataType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputdatatype"
+          },
+          "integrityHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Integrityhash"
+          },
+          "modelType": {
+            "title": "Modeltype",
+            "type": "string"
+          },
+          "outputDataType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputdatatype"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "requiredResourceTypeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requiredresourcetypeid"
+          },
+          "targetEnvironments": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targetenvironments"
+          },
+          "trainingDataLineage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trainingdatalineage"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "modelType",
+          "version"
+        ],
+        "title": "UpdateModelRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "AI/ML Workflow SMOS",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/coordination-groups": {
+      "post": {
+        "description": "AI/ML Workflow LLD section 4.5's call flow, step 1: register the\ngroup as a sibling of individual model registrations.",
+        "operationId": "create_coordination_group_coordination_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCoordinationGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Coordination Group"
+      }
+    },
+    "/feature-groups": {
+      "get": {
+        "operationId": "list_feature_groups_feature_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Feature Groups"
+      },
+      "post": {
+        "description": "OPEN_ITEMS.md section 5: no feature-group/feature-store concept\nexisted at all. Matches the reference's own\nCreateFeatureGroup (featuregroup_controller.py): name must be\n`\\w+` (word characters only) and 3-63 characters long \u2014 the same\nrule the reference applies to both TrainingJob and FeatureGroup\nnames \u2014 and a duplicate `featureGroupName` 409s, matching\n`DBException` (\"already exist\") there. `enableDme`'s real\nDME job creation (a raw PUT to\ndata-consumer/v1/info-jobs/{featureGroupName} on the feature\ngroup's own host:port, trainingmgr_operations.create_dme_filtered_data_job)\nis a deliberate elision \u2014 `enableDme` is stored and returned\nfaithfully, just not acted on, the same no-real-southbound-compute\npattern as elsewhere in this build.",
+        "operationId": "create_feature_group_feature_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFeatureGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Feature Group"
+      }
+    },
+    "/inference-jobs/{inference_job_id}/resolve": {
+      "post": {
+        "operationId": "resolve_inference_inference_jobs__inference_job_id__resolve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inference_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Inference Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "succeeded",
+            "required": true,
+            "schema": {
+              "title": "Succeeded",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Inference"
+      }
+    },
+    "/inference-jobs/{inference_job_id}/status": {
+      "get": {
+        "operationId": "query_inference_status_inference_jobs__inference_job_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inference_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Inference Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Inference Status"
+      }
+    },
+    "/mlmf/subscriptions": {
+      "post": {
+        "description": "MLMF \u2014 new sub-function, AI/ML Workflow LLD section 2. Distinct\ndomain from RAN Analytics' MDAF (model performance, not RAN behavior).",
+        "operationId": "subscribe_performance_monitoring_mlmf_subscriptions_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dme_type_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dme Type Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_subscribe_performance_monitoring_mlmf_subscriptions_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Subscribe Performance Monitoring"
+      }
+    },
+    "/mlmf/subscriptions/{subscription_id}/reports": {
+      "post": {
+        "operationId": "report_performance_mlmf_subscriptions__subscription_id__reports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Metrics",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Performance"
+      }
+    },
+    "/models": {
+      "get": {
+        "operationId": "discover_models_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover Models"
+      },
+      "post": {
+        "description": "OPEN_ITEMS.md section 5: the reference's own RegisterModel\n(mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint\nviolation \u2014 this build accepted a duplicate (modelType, version)\nregistration silently, creating a second, indistinguishable row.\n\nAlso OPEN_ITEMS.md section 5: registration metadata was thin \u2014 no\nI/O data type schema, no author/owner, no TargetEnvironment\ndeclarations, all real fields on the reference's own\nModelRelatedInformation/ModelInformation/Metadata (modelInfo.go).\nRequired there; kept optional here, since this build's own\nRegisterModel was already permissive before this pass.",
+        "operationId": "register_model_models_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Model"
+      }
+    },
+    "/models/{model_id}": {
+      "delete": {
+        "description": "DeleteModel (mmes_apis.go) \u2014 the reference's own repo.Delete\nexplicitly cleans up its one dependent child table\n(TargetEnvironment) before deleting the parent row, in a\ntransaction, rather than relying on the DB to cascade it. This\nbuild's schema has five FKs to aiml_model (model_artifact,\ntraining_job, model_change_subscription, mlmf_subscription,\ninference_job), none of which had any cascade behavior at all \u2014\nthe exact same unchecked-FK shape already found and fixed for\nDME's deregister_producer (OPEN_ITEMS.md section 5): deleting a\nmodel with any dependent row would either orphan it (SQLite, no FK\nenforcement) or crash with an unhandled IntegrityError (real\nPostgres). Cleaned up explicitly here, same as there, with the\nDB-level ON DELETE CASCADE added alongside this as a defense-in-\ndepth backstop, not the only line of defense. Idempotent: deleting\nan unknown id is a silent no-op, matching this module's other\nDELETE routes (cancel_training).",
+        "operationId": "deregister_model_models__model_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deregister Model"
+      },
+      "get": {
+        "description": "OPEN_ITEMS.md section 5: model CRUD was incomplete \u2014 only create\nand a type-filtered list existed, no GET-by-id at all.",
+        "operationId": "get_model_models__model_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Model"
+      },
+      "put": {
+        "description": "UpdateModel (mmes_apis.go) \u2014 404s on an unknown id, same as\nGetModelInfoById there. The reference also rejects a modelName/\nmodelVersion mismatch between the path's existing record and the\nbody with a 400 (\"model with id ... has different modelName and\nmodelVersion than provided\") rather than silently renaming it \u2014\n(model_type, version) is this build's own identity for the same\nreference ModelID composite key `register_model`'s uniqueness\nconstraint already treats as immutable identity, so this endpoint\nonly ever updates the metadata fields around it, never the identity\nitself. `state`/`trainingJobId`/`artifactLocation` stay out of this\nbody on purpose \u2014 those are owned by the dedicated advance/training/\nartifact-upload endpoints, not a generic PUT.",
+        "operationId": "update_model_models__model_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Model"
+      }
+    },
+    "/models/{model_id}/advance": {
+      "post": {
+        "description": "Single endpoint driving TRAINING_COMPLETE -> VALIDATION_COMPLETE ->\nCERTIFY -> LOAD -> ACTIVATE -> RETRAIN -> DEPRECATE, each a real FSM\ntransition (statemachine.py). One endpoint rather than six nearly\nidentical ones, since the pattern is mechanically the same at every step.",
+        "operationId": "advance_model_lifecycle_models__model_id__advance_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event",
+            "required": true,
+            "schema": {
+              "title": "Event",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Advance Model Lifecycle"
+      }
+    },
+    "/models/{model_id}/artifact": {
+      "post": {
+        "description": "UploadModel (aiml-fw-awmf-modelmgmtservice apis/mmes_apis.go) \u2014 the\nreference looks the model up first (404 if unregistered), validates a\n.zip suffix (415 otherwise), then stamps a fresh artifactVersion,\nseparate from modelVersion, auto-incremented per model. Real S3 storage\nis elided (see ModelArtifact's docstring); the bytes are stored for real\nhere instead of being discarded, so upload+download round-trip.",
+        "operationId": "upload_model_artifact_models__model_id__artifact_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_model_artifact_models__model_id__artifact_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Model Artifact"
+      }
+    },
+    "/models/{model_id}/artifact/{artifact_version}": {
+      "get": {
+        "description": "DownloadModel \u2014 same modelId+artifactVersion lookup as the reference's\nmodelName+modelVersion+artifactVersion modelKey.",
+        "operationId": "download_model_artifact_models__model_id__artifact__artifact_version__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "artifact_version",
+            "required": true,
+            "schema": {
+              "title": "Artifact Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Model Artifact"
+      }
+    },
+    "/models/{model_id}/deploy": {
+      "post": {
+        "description": "RequestModelDeployment \u2014 triggers MLLF. Requires CERTIFIED-or-later\nstate (the AIMgF gate, unchanged from v1.3) and now stamps\nclearedNodeGroups (LLD section 5, closing MultiNode Q2's targeting gap).",
+        "operationId": "request_model_deployment_models__model_id__deploy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Node Groups",
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Model Deployment"
+      }
+    },
+    "/models/{model_id}/inference-jobs": {
+      "post": {
+        "description": "RequestInference \u2014 new, MLEF-hosted (AI/ML Workflow LLD section 3).",
+        "operationId": "request_inference_models__model_id__inference_jobs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "notification_destination",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Notification Destination"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Inference"
+      }
+    },
+    "/training-jobs": {
+      "post": {
+        "description": "RequestTraining \u2014 exactly one of modelId/modelCoordinationGroupId,\nenforced at the DB layer (exactly_one_target constraint) and checked\nhere for a clean error.\n\nmodelId-targeted requests also drive the model's own FSM:\nREGISTERED -> TRAINING (TRAIN, the very first cycle) or\nACTIVE -> TRAINING (RETRAIN, an ordinary retrain). This used to\nalways fire TRAIN regardless of the model's actual state, which\ncrashed with an unhandled IllegalTransition on every retrain attempt\n(TRAIN is only legal from REGISTERED). A model already TRAINING (an\nunresolved prior job) is treated as the operator's explicit decision\nto supersede it: the orphaned job is marked CANCELLED rather than\nleft silently RUNNING and unreachable, which is what the old\nunconditional `model.training_job_id = job.training_job_id`\nassignment did.",
+        "operationId": "request_training_training_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestTrainingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Training"
+      }
+    },
+    "/training-jobs/{training_job_id}": {
+      "delete": {
+        "operationId": "cancel_training_training_jobs__training_job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "training_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Training Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Training"
+      }
+    },
+    "/training-jobs/{training_job_id}/model-metrics": {
+      "get": {
+        "operationId": "get_training_job_model_metrics_training_jobs__training_job_id__model_metrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "training_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Training Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Training Job Model Metrics"
+      },
+      "post": {
+        "description": "OPEN_ITEMS.md section 5: TrainingJob had no metrics-writeback\nendpoint at all. The reference's own\nPOST /training-jobs/update-model-metrics/<id> (trainingjob_controller.py)\nreplaces model_metrics wholesale, not a merge \u2014 same here.",
+        "operationId": "update_training_job_model_metrics_training_jobs__training_job_id__model_metrics_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "training_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Training Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Model Metrics",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Training Job Model Metrics"
+      }
+    },
+    "/training-jobs/{training_job_id}/status": {
+      "get": {
+        "operationId": "query_training_job_status_training_jobs__training_job_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "training_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Training Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Training Job Status"
+      }
+    }
+  }
+}

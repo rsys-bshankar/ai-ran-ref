@@ -1,0 +1,312 @@
+{
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "SA SMOS",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/monitors": {
+      "post": {
+        "operationId": "register_assurance_monitor_monitors_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "target_order_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Order Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_coordination_group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Coordination Group Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "analytics_subscription_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Analytics Subscription Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Thresholds",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Assurance Monitor"
+      }
+    },
+    "/monitors/{monitor_id}/escalate": {
+      "post": {
+        "operationId": "escalate_to_operator_monitors__monitor_id__escalate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "monitor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Monitor Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": true,
+            "schema": {
+              "title": "Reason",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Escalate To Operator"
+      }
+    },
+    "/monitors/{monitor_id}/evaluate": {
+      "post": {
+        "description": "Periodic, aligned with RAN Analytics' subscription cadence\n(D-NFR-PERF-SA-1, unchanged from v1.3 \u2014 this was already specified,\nnot a gap this LLD pass needed to close).",
+        "operationId": "evaluate_thresholds_monitors__monitor_id__evaluate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "monitor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Monitor Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Current Metrics",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Evaluate Thresholds"
+      }
+    },
+    "/monitors/{monitor_id}/remedial-actions": {
+      "post": {
+        "description": "ExecuteRemedialAction \u2014 gated by autoExecutionScopeConfig, admin-only\nto change (REQ-CNFG-ADM pattern, unchanged). Dispatch per SO/SA SMOS\nLLD section 2.1: CONFIG_CHANGE, SCALE, and RECONNECT are resolved;\nROLLBACK stays unsupported for a concrete, checked reason (see the\nmodule docstring), not a generic \"ambiguous\" refusal. A\ncoordination-group-scoped monitor bypasses all four actionType\nbranches below \u2014 see the module docstring's MLModelCoordinationGroup\nconvergence note.",
+        "operationId": "execute_remedial_action_monitors__monitor_id__remedial_actions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "monitor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Monitor Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action_type",
+            "required": true,
+            "schema": {
+              "title": "Action Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requester_is_admin",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Requester Is Admin",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execute Remedial Action"
+      }
+    }
+  }
+}

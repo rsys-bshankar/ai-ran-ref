@@ -1,0 +1,433 @@
+{
+  "components": {
+    "schemas": {
+      "CreateDescriptorRequest": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "packageId": {
+            "format": "uuid",
+            "title": "Packageid",
+            "type": "string"
+          },
+          "requiredResourceTypeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requiredresourcetypeid"
+          },
+          "workloadTemplate": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Workloadtemplate",
+            "type": "object"
+          }
+        },
+        "required": [
+          "packageId",
+          "name"
+        ],
+        "title": "CreateDescriptorRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InstantiateRequest": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "nfDeploymentDescriptorId": {
+            "format": "uuid",
+            "title": "Nfdeploymentdescriptorid",
+            "type": "string"
+          },
+          "requiredResourceTypeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requiredresourcetypeid"
+          }
+        },
+        "required": [
+          "nfDeploymentDescriptorId",
+          "name"
+        ],
+        "title": "InstantiateRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "NFO SMOS (O2dms)",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/deployments": {
+      "post": {
+        "description": "Instantiate \u2014 NFO+FOCOM LLD section 4: FOCOM's inventory is queried\nto resolve clusterId before the workload is placed, rather than the\nPhase 1 degenerate cluster being assumed implicitly. OPEN_ITEMS.md\nsection 5: now also enforces the reference's own real guards before\ncreating anything \u2014 _check_dependencies (the descriptor must exist)\nand _check_duplication (no two deployments may share a name, and a\ndescriptor may only be deployed once).",
+        "operationId": "instantiate_deployments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstantiateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Instantiate"
+      }
+    },
+    "/deployments/{nf_deployment_id}": {
+      "delete": {
+        "description": "Terminate \u2014 mirrors the reference's own state dispatch\n(lcm_nfdeployment_uninstall, dms_lcm_nfdeployment.py): INITIAL/\nABNORMAL delete immediately (no chart was ever installed, or it's\nalready broken); every in-flight/running state passes through\nTERMINATING first (Phase 1 elision: real Helm uninstall completes\nsynchronously, same pattern as Instantiate's own elision); calling\nTerminate again on an already-TERMINATING deployment is a no-op\n(matches the reference's own `elif ... Uninstalling: pass`); calling\nit on one already DELETING flips it to ABNORMAL instead of deleting\ntwice \u2014 the reference's own defensive catch-all for a Terminate\nlanding on a state its dispatch chain doesn't otherwise expect.",
+        "operationId": "terminate_deployments__nf_deployment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nf_deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Nf Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Terminate"
+      }
+    },
+    "/deployments/{nf_deployment_id}/heal": {
+      "post": {
+        "description": "OPEN_ITEMS.md section 5: previously a pure stub with no state\ntransition of any kind. Self-healing recovery isn't modeled by the\nreference at all (no Heal command exists there); this closes the\nstate-transition gap directly: legal from ABNORMAL (genuine\nrecovery) or RUNNING (idempotent \u2014 already healthy). Real K8s\npod-health remediation behind it stays out of scope\n(D-DEPLOY-NFO-3, unchanged).",
+        "operationId": "heal_deployments__nf_deployment_id__heal_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nf_deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Nf Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Heal"
+      }
+    },
+    "/deployments/{nf_deployment_id}/placement": {
+      "get": {
+        "operationId": "query_cluster_placement_deployments__nf_deployment_id__placement_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nf_deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Nf Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Cluster Placement"
+      }
+    },
+    "/deployments/{nf_deployment_id}/resources": {
+      "get": {
+        "description": "The reference's own NfOCloudVResource, genuinely queryable rather\nthan just a column nothing ever reads.",
+        "operationId": "query_deployment_resources_deployments__nf_deployment_id__resources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nf_deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Nf Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Deployment Resources"
+      }
+    },
+    "/deployments/{nf_deployment_id}/scale": {
+      "post": {
+        "description": "OPEN_ITEMS.md section 5: previously a pure stub with no state\ntransition of any kind. Scale is a replica-count change, the same\nconceptual operation as the reference's Update (RUNNING->UPDATING),\nso it drives that same edge \u2014 legal only from RUNNING.",
+        "operationId": "scale_deployments__nf_deployment_id__scale_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nf_deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Nf Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scale"
+      }
+    },
+    "/descriptors": {
+      "post": {
+        "description": "CreateDescriptor \u2014 NFO+FOCOM LLD section 2: an NFDeploymentDescriptor\nderived from an onboarded package's TOSCA Definitions/, called from\nOnboarding's OnboardPackage flow once validation succeeds, closing the\ngap where nfDeploymentDescriptorId previously referenced nothing\nconcrete.",
+        "operationId": "create_descriptor_descriptors_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDescriptorRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Descriptor"
+      }
+    },
+    "/operations/{operation_id}": {
+      "get": {
+        "operationId": "query_operation_status_operations__operation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Operation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Operation Status"
+      }
+    }
+  }
+}

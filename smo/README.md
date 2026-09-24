@@ -43,6 +43,12 @@ smo/
                           dependency
   docs/call-flows/         Mermaid sequence diagrams stitching multiple
                           modules' LLDs into end-to-end journeys
+  docs/openapi/            committed OpenAPI spec per module, generated
+                          from each app's own real app.openapi() output
+                          (scripts/generate_openapi_specs.py) — a real
+                          contract change now shows up as a diff, caught
+                          if it drifts by tests_integration/test_openapi_specs.py
+  scripts/                 one-off tooling, e.g. generate_openapi_specs.py
   docker-compose.yml       Phase 1 deployment topology (SMO Design v1.3
                           section 4), including the isolated a1_mock_net
                           network segment
@@ -94,10 +100,14 @@ done
 # cross-service integration tests (multiple modules loaded into one
 # process, real calls between them — see tests_integration/)
 PYTHONPATH=shared python -m pytest tests_integration/ -v
+
+# regenerate docs/openapi/<module>.json after a real route/schema change
+# (test_openapi_specs.py fails CI if a committed spec drifts from this)
+PYTHONPATH=shared python scripts/generate_openapi_specs.py
 ```
 
-**415 tests total, all passing** as of this build: 405 unit tests across
-all fourteen modules plus the mock, and 10 integration tests proving real
+**417 tests total, all passing** as of this build: 405 unit tests across
+all fourteen modules plus the mock, and 12 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
 below), upgrade auto-rollback, the `PARTIAL_SUCCESS` decomposed-PATCH
@@ -438,7 +448,19 @@ the reference's full provider-domain/APF-AEF-AMF hierarchy.
 reference's own real `IsPublishingFunctionRegistered` gate. This
 changes an already-shipped route's contract: RAN Analytics' only
 cross-module call into SME now enrols before publishing, verified
-against the real cross-service integration suite.
+against the real cross-service integration suite. With §5 fully
+closed, the next pass moved to §2: closed "no persisted OpenAPI spec
+files anywhere" — `docs/openapi/<module>.json` for all fourteen modules
+plus the mock, generated from each app's own real `app.openapi()`
+output, with a new CI-enforced drift check
+(`tests_integration/test_openapi_specs.py`) that fails if a committed
+spec stops matching the live schema. Writing that test caught a real
+bug: `r1-termination`'s catch-all proxy route (one route serving five
+HTTP methods) got a non-deterministic `operationId` from FastAPI's own
+`generate_unique_id()`, which picks the first element of a plain `set`
+— hash-seed-dependent, so the "committed" schema would never have
+stayed stable. Fixed with an explicit `operation_id`. Integration
+suite: 10 tests to 12.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

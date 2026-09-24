@@ -1,0 +1,459 @@
+{
+  "components": {
+    "schemas": {
+      "AdminStateRequest": {
+        "properties": {
+          "newState": {
+            "title": "Newstate",
+            "type": "string"
+          },
+          "requesterId": {
+            "title": "Requesterid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "newState",
+          "requesterId"
+        ],
+        "title": "AdminStateRequest",
+        "type": "object"
+      },
+      "CreateIntentRequest": {
+        "properties": {
+          "expectations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Expectations",
+            "type": "array"
+          },
+          "intentType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intenttype"
+          },
+          "priority": {
+            "default": 1,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "rmioId": {
+            "default": "",
+            "title": "Rmioid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectations"
+        ],
+        "title": "CreateIntentRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IntentReportRequest": {
+        "properties": {
+          "conflictReports": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conflictreports"
+          },
+          "fulfilmentReport": {
+            "additionalProperties": true,
+            "title": "Fulfilmentreport",
+            "type": "object"
+          },
+          "intentId": {
+            "format": "uuid",
+            "title": "Intentid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId",
+          "fulfilmentReport"
+        ],
+        "title": "IntentReportRequest",
+        "type": "object"
+      },
+      "RegisterRmihRequest": {
+        "properties": {
+          "capabilities": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "notificationCallbackUri": {
+            "title": "Notificationcallbackuri",
+            "type": "string"
+          },
+          "rmihId": {
+            "title": "Rmihid",
+            "type": "string"
+          },
+          "smeServiceId": {
+            "title": "Smeserviceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rmihId",
+          "smeServiceId",
+          "capabilities",
+          "notificationCallbackUri"
+        ],
+        "title": "RegisterRmihRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Policy Management & Info SMOS",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/intent-handling-functions": {
+      "post": {
+        "description": "RegisterIntentHandlingFunction \u2014 rejected if caller is external\n(D-SEC-POLICY-1, unchanged). identity.py's helper distinguishes an\nrApp caller (always rejected here) from a framework-internal SMO\nmodule (SO SMOS / SA SMOS, the only legitimate callers).",
+        "operationId": "register_intent_handling_function_intent_handling_functions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRmihRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Intent Handling Function"
+      }
+    },
+    "/intent-handling-functions/{rmih_id}": {
+      "delete": {
+        "description": "NEW \u2014 symmetric with Register, closing v1.3's gap (Policy Mgmt LLD section 1).",
+        "operationId": "deregister_intent_handling_function_intent_handling_functions__rmih_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rmih_id",
+            "required": true,
+            "schema": {
+              "title": "Rmih Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deregister Intent Handling Function"
+      }
+    },
+    "/intent-reports": {
+      "post": {
+        "operationId": "publish_intent_report_intent_reports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntentReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Intent Report"
+      }
+    },
+    "/intents": {
+      "get": {
+        "operationId": "query_intents_intents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "admin_state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Admin State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Intents"
+      },
+      "post": {
+        "description": "CreateIntent \u2014 closes the matching/dispatch gap between this and\nRegisterIntentHandlingFunction: previously an RMIH was never notified\nof a new Intent it could fulfil at all. Matching is capability-tag\nbased, the same pragmatic shape as DME's own opaque-schema handling\nelsewhere in this build \u2014 intentType is checked for membership across\neach registered RMIH's intent_handling_capability_list, not a deep\nTS 28.312 expectation match (that grammar isn't in this build's\nsource corpus, same limitation intent_expectations already has).\nDispatch is best-effort: a callback failure never blocks CreateIntent\nitself succeeding.",
+        "operationId": "create_intent_intents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIntentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Intent"
+      }
+    },
+    "/intents/{intent_id}": {
+      "get": {
+        "description": "NEW \u2014 v1.3 had CreateIntent and subscribe/publish, but no read\noperation at all (Policy Mgmt LLD section 1).",
+        "operationId": "query_intent_intents__intent_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Intent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Intent"
+      }
+    },
+    "/intents/{intent_id}/admin-state": {
+      "patch": {
+        "description": "NEW \u2014 closes v1.3's gap: intentAdminState had two enum values and no\noperation ever transitioning it. RMIO-only, checked against rmioId.",
+        "operationId": "update_intent_admin_state_intents__intent_id__admin_state_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Intent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminStateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Intent Admin State"
+      }
+    }
+  }
+}

@@ -1,0 +1,643 @@
+{
+  "components": {
+    "schemas": {
+      "EventSubscriptionRequest": {
+        "properties": {
+          "apiIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apiids"
+          },
+          "callbackUri": {
+            "title": "Callbackuri",
+            "type": "string"
+          },
+          "eventTypes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Eventtypes",
+            "type": "array"
+          },
+          "subscriberId": {
+            "title": "Subscriberid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subscriberId",
+          "eventTypes",
+          "callbackUri"
+        ],
+        "title": "EventSubscriptionRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ProviderRegistrationRequest": {
+        "properties": {
+          "apfId": {
+            "title": "Apfid",
+            "type": "string"
+          },
+          "providerDomainInfo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Providerdomaininfo"
+          }
+        },
+        "required": [
+          "apfId"
+        ],
+        "title": "ProviderRegistrationRequest",
+        "type": "object"
+      },
+      "ServiceRegistration": {
+        "properties": {
+          "aefProfiles": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Aefprofiles",
+            "type": "array"
+          },
+          "allowedConsumers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowedconsumers",
+            "type": "array"
+          },
+          "apiSuppFeats": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apisuppfeats"
+          },
+          "endpoint": {
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "fullApiVersions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Fullapiversions",
+            "type": "array"
+          },
+          "moduleScope": {
+            "title": "Modulescope",
+            "type": "string"
+          },
+          "producerId": {
+            "title": "Producerid",
+            "type": "string"
+          },
+          "selectionCriteria": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Selectioncriteria",
+            "type": "object"
+          },
+          "serviceCapabilities": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Servicecapabilities",
+            "type": "object"
+          },
+          "serviceName": {
+            "title": "Servicename",
+            "type": "string"
+          },
+          "shareableInfo": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shareableinfo"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serviceName",
+          "producerId",
+          "endpoint",
+          "version",
+          "moduleScope"
+        ],
+        "title": "ServiceRegistration",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "SME \u2014 Service Management and Exposure",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/capif-events/v1/{subscriber_id}/subscriptions": {
+      "post": {
+        "description": "OPEN_ITEMS.md section 5: event subscription filtering was type-only\n\u2014 the reference's own CAPIFEventFilter also filters by apiId/\napiInvokerId/aefId (eventservice.go's getMatchingSubs). Of those,\nonly apiId is meaningfully implementable here: apiInvokerId filters\nagainst an event's own ApiInvokerIds, which only API_INVOKER_ONBOARDED\nevents carry \u2014 a real CAPIF Invoker-onboarding subsystem this build\ndoesn't have (see this module's own structurally-out-of-scope note);\nour SERVICE_API_* notifications have no invoker id in their payload\nto filter on. aefId likewise needs aefProfiles, which ServiceProfile\ndoesn't model (the separate \"flattened ServiceProfile\" gap). apiId\nmaps directly onto this build's own service_id, so that one's real.",
+        "operationId": "subscribe_events_capif_events_v1__subscriber_id__subscriptions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscriber_id",
+            "required": true,
+            "schema": {
+              "title": "Subscriber Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Subscribe Events"
+      }
+    },
+    "/capif-events/v1/{subscriber_id}/subscriptions/{subscription_id}": {
+      "delete": {
+        "operationId": "unsubscribe_events_capif_events_v1__subscriber_id__subscriptions__subscription_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscriber_id",
+            "required": true,
+            "schema": {
+              "title": "Subscriber Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unsubscribe Events"
+      }
+    },
+    "/provider-registrations": {
+      "post": {
+        "description": "OPEN_ITEMS.md section 5: Provider (APF) enrolment\n(`PostRegistrations`, `providermanagement.go`) \u2014 the real registry\n`register_service`'s own `apf_id` check needs, entirely absent\nbefore this pass. Idempotent update-in-place on a re-registration of\nthe same `apfId`, the same shape `register_service`'s own\nsame-producer re-registration already uses \u2014 the reference's real\ndomain/function-id collision detection doesn't apply here, since\nthis build has no separate provider-domain concept to collide on.",
+        "operationId": "register_provider_provider_registrations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderRegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Provider"
+      }
+    },
+    "/provider-registrations/{apf_id}": {
+      "delete": {
+        "description": "DeleteRegistrationsRegistrationId, providermanagement.go \u2014 idempotent,\nmatching the reference's own delete-if-present-else-still-204 shape.",
+        "operationId": "deregister_provider_provider_registrations__apf_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "apf_id",
+            "required": true,
+            "schema": {
+              "title": "Apf Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deregister Provider"
+      }
+    },
+    "/published-apis/v1/{apf_id}/service-apis": {
+      "get": {
+        "description": "GetApfIdServiceApis, publishservice.go \u2014 mirrors the reference's own\nbranch exactly: an apf_id with existing services always gets them back\n(a real producer's own row set wins regardless of its current\nenrolment state \u2014 the reference's own map-lookup-first shape), and\nonly an apf_id with zero services falls back to the same\nIsPublishingFunctionRegistered gate register_service now uses, to\ndistinguish \"a real publisher with nothing registered yet\" (empty\nlist) from \"not a publisher at all\" (404).",
+        "operationId": "query_own_services_published_apis_v1__apf_id__service_apis_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "apf_id",
+            "required": true,
+            "schema": {
+              "title": "Apf Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Own Services"
+      },
+      "post": {
+        "description": "RegisterService. apfId == producerId == rAppId (Foundational Platform\nLLD section 1) \u2014 identity.py's equivalence, enforced here.\n\nSection 2.3's conflict rule realized correctly: serviceName is globally\nunique. The SAME producer re-registering the same name updates in\nplace (idempotent); a DIFFERENT producer registering that name is\nSERVICE_NAME_CONFLICT.\n\nOPEN_ITEMS.md section 5: previously accepted any apf_id with no check\nthat it's an actual registered publisher. The reference's own gate\n(`PostApfIdServiceApis`, `publishservice.go`:\n`serviceRegister.IsPublishingFunctionRegistered(apfId)`, 403\notherwise) is now real, backed by ProviderRegistration \u2014\nregister_provider above.",
+        "operationId": "register_service_published_apis_v1__apf_id__service_apis_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "apf_id",
+            "required": true,
+            "schema": {
+              "title": "Apf Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceRegistration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Service"
+      }
+    },
+    "/published-apis/v1/{apf_id}/service-apis/{service_id}": {
+      "delete": {
+        "operationId": "deregister_service_published_apis_v1__apf_id__service_apis__service_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "apf_id",
+            "required": true,
+            "schema": {
+              "title": "Apf Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Service Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deregister Service"
+      }
+    },
+    "/service-apis/v1/allServiceAPIs": {
+      "get": {
+        "description": "DiscoverServices. Section 2.2's decision: one gate \u2014 an unauthorized\nconsumer's query simply never returns the service, it is never told\nthe service exists.\n\nOPEN_ITEMS.md section 5: discover_services only filtered on\napi_name/api_version \u2014 the reference (discoverservice.go's\nmatchesFilter/checkAefId/checkProtocol/checkDataFormat/\ncheckVersionAndCommType) also filters against each service's\nAefProfiles. aefId/protocol/dataFormat/commType are now real\nfilters over ServiceProfile.aef_profiles (walked in Python, since\nit's a JSON blob here rather than the reference's relational\nAefProfile/Version/Resource join \u2014 same adaptation as the field's\nown storage). apiCat isn't \u2014 this build's ServiceProfile has no\ncategory concept at all, a gap ServiceProfile's own flattening note\nalready covers.",
+        "operationId": "discover_services_service_apis_v1_allServiceAPIs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "api_invoker_id",
+            "required": true,
+            "schema": {
+              "title": "Api Invoker Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "api_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Api Name"
+            }
+          },
+          {
+            "in": "query",
+            "name": "api_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Api Version"
+            }
+          },
+          {
+            "in": "query",
+            "name": "aef_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Aef Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "protocol",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Protocol"
+            }
+          },
+          {
+            "in": "query",
+            "name": "data_format",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Data Format"
+            }
+          },
+          {
+            "in": "query",
+            "name": "comm_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Comm Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover Services"
+      }
+    }
+  }
+}

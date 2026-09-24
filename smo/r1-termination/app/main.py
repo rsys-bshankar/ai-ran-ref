@@ -64,8 +64,21 @@ def bootstrap():
     }
 
 
-@app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+@app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], operation_id="proxy")
 async def proxy(full_path: str, request: Request):
+    """OPEN_ITEMS.md section 2: explicit operation_id, not FastAPI's
+    auto-derived one — generate_unique_id() picks
+    list(route.methods)[0].lower() for its default, and route.methods is
+    a plain set, so the auto id (and the "Duplicate Operation ID"
+    warning it triggers) was non-deterministic across process runs
+    (PYTHONHASHSEED-dependent set iteration order) purely because this
+    one route serves five methods. Surfaced by adding a persisted
+    OpenAPI spec (docs/openapi/) with a CI check that the committed file
+    matches the live schema — a non-deterministic operationId made that
+    check itself flaky. operation_id isn't referenced by any client in
+    this build, so pinning it to a fixed string is a pure stability fix,
+    not a behavior change.
+    """
     segments = full_path.split("/", 1)
     prefix = "/" + segments[0]
     backend = ROUTES.get(prefix)
