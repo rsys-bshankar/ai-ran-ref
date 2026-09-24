@@ -40,6 +40,16 @@ jobs:
         working-directory: smo
         run: PYTHONPATH=shared python -m pytest tests_integration/ -v
 
+  docker-compose-config:
+    name: docker-compose.yml is structurally valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docker compose config
+        working-directory: smo
+        run: docker compose config --quiet
+
   migration-postgres:
     name: Consolidated migration applies to real Postgres
     runs-on: ubuntu-latest

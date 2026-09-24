@@ -177,13 +177,22 @@ the ambiguity into code.
   only. §5 goes further than this: it audits, per module, whether the
   *functionality* those repos implement was still carried over even
   without vendoring the code — it mostly wasn't.
-- **The full `docker-compose` stack (15 services, including the isolated
+- **The full `docker-compose` stack (17 services, including the isolated
   `a1_mock_net` network segment) has never been run end-to-end** — no
-  Docker daemon is available in the build sandbox; only
-  `docker-compose config` YAML parsing and direct Python/pytest execution
+  Docker daemon is available in the build sandbox (or in this build's own
+  CI runners), so this stays genuinely out of scope: only
+  `docker compose config` YAML parsing and direct Python/pytest execution
   against each service in isolation have been validated. The RT-7
   network-isolation claim is structurally correct in the compose file but
-  functionally unverified.
+  functionally unverified. **Narrower piece closed**: that YAML-parsing
+  validation used to be purely manual — an agent remembering to run
+  `docker compose config` by hand after touching the compose file, easy
+  to forget (and, per this build's own history, occasionally forgotten).
+  A new CI job (`docker-compose-config`, no Docker daemon required —
+  `docker compose config` only parses and renders the file) now runs it
+  automatically on every push/PR touching `smo/**`, the same "catch real
+  structural drift automatically instead of relying on human diligence"
+  philosophy already used for the OpenAPI spec drift-check.
 
 ## 3. Call-flow gaps — closed
 
@@ -1630,6 +1639,18 @@ own §1/§2 items stand as-is.
   `ResourceType`/`ResourcePool`/`DeploymentManager` schema the §5 pass
   gave every drill-down route — now sourced from the same seeded row.
   446 tests total, up from 445 (`focom` alone: 37 -> 38).
+- Continuing "other items like that": §2's "the full `docker-compose`
+  stack has never been run end-to-end" stays genuinely out of scope (no
+  Docker daemon in this build's sandbox or its own CI runners), but the
+  narrower piece — `docker compose config` YAML validation — used to be
+  purely manual, an agent remembering to run it by hand after touching
+  the compose file. A new `docker-compose-config` CI job now runs it
+  automatically on every push/PR (no daemon required, confirmed: it
+  parses and renders the file without needing one), the same drift-check
+  philosophy already used for the OpenAPI specs. Also fixed the bullet's
+  stale service count (15 -> 17, `mock-o1-adaptor` and others had been
+  added since it was last written). No test-count change (a CI-only
+  addition, not a pytest one) — still 446 tests.
 
 ## Suggested next pass (priority order)
 

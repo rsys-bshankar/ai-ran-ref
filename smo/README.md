@@ -109,6 +109,11 @@ PYTHONPATH=shared python -m pytest tests_integration/ -v
 # regenerate docs/openapi/<module>.json after a real route/schema change
 # (test_openapi_specs.py fails CI if a committed spec drifts from this)
 PYTHONPATH=shared python scripts/generate_openapi_specs.py
+
+# validate docker-compose.yml itself (no Docker daemon needed — this
+# only parses and renders the file; CI runs it automatically too, the
+# docker-compose-config job)
+docker compose config --quiet
 ```
 
 **446 tests total, all passing** as of this build: 432 unit tests across
@@ -516,7 +521,14 @@ Instantiate call actually depends on) was still a hardcoded literal
 that never touched the real `ResourceType`/`ResourcePool`/
 `DeploymentManager` schema a §5 pass had already given every drill-down
 route — now sourced from the same seeded row every other route reads.
-`focom` went from 37 tests to 38.
+`focom` went from 37 tests to 38. Continuing "other items like that",
+the full `docker-compose` stack running end-to-end stays genuinely out
+of scope (no Docker daemon in this build's sandbox or its own CI
+runners), but the narrower piece — validating the compose file's YAML
+structure — used to be purely manual. A new `docker-compose-config` CI
+job now runs `docker compose config --quiet` automatically on every
+push/PR (no daemon needed for that, just parsing and rendering), the
+same drift-check philosophy already used for the OpenAPI specs.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
