@@ -127,7 +127,7 @@ PYTHONPATH=shared python scripts/generate_openapi_specs.py
 docker compose config --quiet
 ```
 
-**478 tests total, all passing** as of this build: 462 unit tests across
+**495 tests total, all passing** as of this build: 479 unit tests across
 all fourteen modules plus the two mocks, and 16 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -819,6 +819,25 @@ disclosed honestly (no `POST /performance` route exists in this build
 at all; real metrics would arrive via O2ims's own collection
 mechanism, not a stub). `tests_integration/test_demo_runbook.py`
 gained a matching step. No code, schema, or OpenAPI-spec change.
+
+**SME's real "Trusted Invokers" security-context registry**
+(SPEC_AUDIT.md SME item 2), built for real per explicit user direction
+reversing the earlier "disproportionate for a scoped fix" assessment.
+Added the real `PUT`/`GET`/`DELETE /trusted-invokers/{apiInvokerId}`
+plus revocation, matching `capifcore/internal/securityservice/
+security.go`'s own routes and validation — invoker-registration gate
+on `PUT`, real body validation, `GET`'s real authenticationInfo/
+authorizationInfo redaction by default, and revocation's real
+per-entry removal with whole-record cleanup once empty. Confirmed by
+inspection that CAPIF core's own token-issuance path never reads
+`trustedInvokers` at all, so no existing SME route needed rewiring —
+this is a standalone registry a real AEF would consult directly. New
+`TrustedInvoker` model (JSON `security_info`, the same flattening
+adaptation already used for `aefProfiles`), new migration table, a new
+`DEMO_RUNBOOK.md` section reusing step 4's real invoker registration,
+and a matching integration-test step. Verified against a real local
+Postgres 16 instance (59 tables, up from 58). `sme` went from 49 tests
+to 66.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

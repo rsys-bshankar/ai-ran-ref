@@ -237,20 +237,34 @@ more closely for security/trust-model detail than that pass went)
    input — a self-asserted identity and a client-chosen secret, not a
    server-issued one. Weaker trust model than the real spec, not
    currently documented anywhere as a deliberate choice.
-2. **The real CAPIF core's "Trusted Invokers" security-context
-   subsystem has no equivalent at all** — large/structural, previously
-   undocumented. `capifcore/internal/securityservice/security.go`
-   implements a second, separate real mechanism beyond OAuth2 token
-   issuance: `PUT`/`GET`/`DELETE /trusted-invokers/{apiInvokerId}` plus
-   revocation (`POST .../delete`), managing per-AEF+API
-   `SecurityInfo` (authentication/authorization info) that a real AEF
-   (resource server) would consult. SME's `/oauth2/introspect` (RFC
-   7662) is a related but distinct, honest standards-based mechanism
-   for a different purpose (R1 Termination's own gateway check) — it
-   doesn't cover this per-AEF trusted-invoker registry at all. Already
-   adjacent to the documented "per-scope AEF/API validation... stays
-   out of scope" elision, but that line doesn't capture that a whole
-   separate real subsystem exists here, not just a missing check.
+2. ~~**The real CAPIF core's "Trusted Invokers" security-context
+   subsystem has no equivalent at all**~~ — **closed**, per explicit
+   user direction to build the real subsystem rather than leave it
+   documented. Added the real `PUT`/`GET`/`DELETE
+   /trusted-invokers/{apiInvokerId}` plus revocation (`POST
+   .../delete`), matching `capifcore/internal/securityservice/
+   security.go`'s own routes and validation (invoker-registration gate
+   on `PUT`, `notificationDestination`/`securityInfo`/
+   `prefSecurityMethods` required, `GET`'s real authenticationInfo/
+   authorizationInfo redaction by default, revocation's real per-entry
+   removal with whole-record cleanup once empty). `PrepareNewSecurity
+   Context`'s own real cross-check against a published AEF's declared
+   security methods has no equivalent data source in this build (no
+   per-AEF security-method catalog was ever modeled) — adapted
+   honestly: `selSecurityMethod` is the invoker's own first declared
+   preference, not a fabricated AEF-side match. Confirmed by inspection
+   that CAPIF core's own token-issuance path
+   (`PostSecuritiesSecurityIdToken`) never reads `trustedInvokers` at
+   all — this is a standalone registry a real AEF would consult
+   directly, so no existing SME route needed rewiring. New
+   `TrustedInvoker` model (`security_info` as one JSON list per
+   invoker, the same "flatten to what this build's own identity model
+   needs" adaptation already used for `aefProfiles`/
+   `DMEType.collection_spec`), 17 new unit tests, a new
+   `DEMO_RUNBOOK.md` section, and a matching integration-test step.
+   Verified against a real local Postgres 16 instance (59 tables, up
+   from 58, 0 mismatches; a manual insert round-tripped the new JSONB
+   `security_info` column). `docs/openapi/sme.json` regenerated.
 3. **VES-based heartbeat (`oam/code/client-scripts-ves-v7/
    sendVesHeartbeat.py`) confirmed NOT a gap** — this build's
    endpoint-registry heartbeat pattern (a lightweight REST POST) is a
@@ -377,6 +391,10 @@ are never called anywhere in the runbook.
    appears exactly once, at step 3, as a single read-only
    `GET /inventory` call sourcing a cluster for NFO's `Instantiate` —
    no alarm or performance route is ever called.
+   **Update, per later explicit user direction to build it anyway:
+   closed** — `DEMO_RUNBOOK.md`'s FOCOM section now includes real
+   alarm ingest/query and a performance query (empty in a fresh stack,
+   honestly disclosed — no ingest route exists in this build).
 5. **FOCOM: whole resource categories absent (`ProvisioningRequest`,
    `ArtifactResourceType`/`ArtifactResource`, `NodeCluster`,
    `Gateway`/`SiteNetwork`).** Out of scope, same reason as (4) — the
@@ -401,6 +419,10 @@ are never called anywhere in the runbook.
    CAPIF core issues these server-side") rather than staying a silent
    gap, and a named line on the platform roadmap — not a demo
    blocker, but the one item here with real audience-facing exposure.
+   **Update, per later explicit user direction to build it anyway:
+   closed** — see the struck-through item 2 above; the real
+   `PUT`/`GET`/`DELETE /trusted-invokers/{apiInvokerId}` registry now
+   exists and has its own `DEMO_RUNBOOK.md` section.
 
 Not on the large/structural list, but adjacent and worth naming for
 the same reason: Policy Mgmt's own architecture question (§ above —

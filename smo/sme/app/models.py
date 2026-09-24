@@ -131,6 +131,35 @@ class IssuedAccessToken(Base):
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class TrustedInvoker(Base):
+    """SPEC_AUDIT.md SME item 2: the real CAPIF core's "Trusted Invokers"
+    security-context subsystem (`capifcore/internal/securityservice/
+    security.go`'s `PUT`/`GET`/`DELETE /trusted-invokers/{apiInvokerId}`
+    plus revocation, `POST .../delete`) — a second, separate real
+    mechanism beyond OAuth2 token issuance, managing per-AEF+API
+    `SecurityInfo` (authentication/authorization info) that a real AEF
+    (resource server) would consult directly, not something CAPIF core's
+    own token-issuance path (`PostSecuritiesSecurityIdToken`) ever reads
+    — confirmed by inspection: that function never touches
+    `trustedInvokers` at all. Previously entirely absent from this build
+    (large/structural, per the earlier triage).
+
+    `security_info` is stored as one JSON list per invoker, matching
+    this build's own established "flatten to what this build's own
+    identity model needs" adaptation (already used for `aefProfiles`/
+    `DMEType.collection_spec` elsewhere) rather than a normalized child
+    table — the real CAPIF core itself keeps this as one in-memory
+    `ServiceSecurity` struct per invoker too (`map[string]
+    ServiceSecurity`), not normalized rows.
+    """
+    __tablename__ = "trusted_invoker"
+
+    api_invoker_id: Mapped[str] = mapped_column(String, primary_key=True)
+    notification_destination: Mapped[str] = mapped_column(String, nullable=False)
+    request_test_notification: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    security_info: Mapped[list] = mapped_column(JSON, nullable=False)
+
+
 class ServiceEventSubscription(Base):
     __tablename__ = "service_event_subscription"
 

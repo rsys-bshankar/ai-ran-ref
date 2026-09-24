@@ -12,6 +12,7 @@ import datetime
 import hashlib
 import secrets
 import uuid
+from typing import Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
@@ -24,7 +25,7 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.timeutil import as_utc
 
-from .models import EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile
+from .models import EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile, TrustedInvoker
 
 ACCESS_TOKEN_TTL_SECONDS = 3600
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P, _SCRYPT_DKLEN = 2**14, 8, 1, 32
@@ -211,6 +212,154 @@ def introspect_token(body: IntrospectRequest, db: Session = Depends(get_session)
     if rec is None or as_utc(rec.expires_at) <= datetime.datetime.now(datetime.UTC):
         return {"active": False}
     return {"active": True, "client_id": rec.api_invoker_id, "exp": int(as_utc(rec.expires_at).timestamp())}
+
+
+class SecurityInformationRequest(BaseModel):
+    aefId: str | None = None
+    apiId: str | None = None
+    authenticationInfo: str | None = None
+    authorizationInfo: str | None = None
+    prefSecurityMethods: list[str]
+
+
+class ServiceSecurityRequest(BaseModel):
+    notificationDestination: str
+    requestTestNotification: bool = False
+    securityInfo: list[SecurityInformationRequest]
+
+
+def _validate_service_security(body: ServiceSecurityRequest) -> None:
+    if not body.notificationDestination.strip():
+        raise framework_error(FrameworkError.SECURITY_CONTEXT_INVALID, detail="ServiceSecurity missing required notificationDestination")
+    if not body.securityInfo:
+        raise framework_error(FrameworkError.SECURITY_CONTEXT_INVALID, detail="ServiceSecurity missing required securityInfo")
+    for info in body.securityInfo:
+        if not info.prefSecurityMethods:
+            raise framework_error(FrameworkError.SECURITY_CONTEXT_INVALID, detail="SecurityInformation missing required prefSecurityMethods")
+
+
+def _security_info_with_sel_method(security_info: list[SecurityInformationRequest]) -> list[dict]:
+    """`typeupdate.go`'s `PrepareNewSecurityContext`: the real CAPIF core
+    cross-checks each `securityInfo` entry's `apiId`/`aefId` against a
+    real published `ServiceAPIDescription`'s own `AefProfile.
+    SecurityMethods` to pick a compatible `selSecurityMethod`, 400ing if
+    none exists. This build's own `ServiceProfile.aef_profiles` (SPEC_
+    AUDIT.md SME item, closed earlier) never stored a per-AEF security-
+    method catalog — there's no real AEF-side capability data here to
+    cross-check against, only what the invoker itself declares. Adapted
+    honestly: `selSecurityMethod` is the caller's own first declared
+    `prefSecurityMethods` entry, not a fabricated AEF-side match.
+    """
+    return [
+        {"aefId": info.aefId, "apiId": info.apiId, "authenticationInfo": info.authenticationInfo,
+         "authorizationInfo": info.authorizationInfo, "prefSecurityMethods": info.prefSecurityMethods,
+         "selSecurityMethod": info.prefSecurityMethods[0]}
+        for info in security_info
+    ]
+
+
+@app.put("/trusted-invokers/{api_invoker_id}", status_code=201)
+def register_trusted_invoker(api_invoker_id: str, body: ServiceSecurityRequest, db: Session = Depends(get_session)):
+    """PutTrustedInvokersApiInvokerId (`security.go`) — registers (or
+    replaces, on a re-PUT) the security context a real AEF would consult
+    for this invoker. Gated on the invoker already being onboarded
+    (`invokerRegister.IsInvokerRegistered`), same real 400 the reference
+    returns otherwise.
+    """
+    if db.get(InvokerRegistration, api_invoker_id) is None:
+        raise framework_error(FrameworkError.INVOKER_NOT_REGISTERED, detail=f"invoker {api_invoker_id} not registered")
+    _validate_service_security(body)
+    ti = db.get(TrustedInvoker, api_invoker_id)
+    if ti is None:
+        ti = TrustedInvoker(api_invoker_id=api_invoker_id)
+        db.add(ti)
+    ti.notification_destination = body.notificationDestination
+    ti.request_test_notification = body.requestTestNotification
+    ti.security_info = _security_info_with_sel_method(body.securityInfo)
+    db.commit()
+    return _trusted_invoker_view(ti)
+
+
+@app.get("/trusted-invokers/{api_invoker_id}")
+def get_trusted_invoker(api_invoker_id: str, authentication_info: bool = False, authorization_info: bool = False, db: Session = Depends(get_session)):
+    """GetTrustedInvokersApiInvokerId — the real reference redacts
+    `authenticationInfo`/`authorizationInfo` to an empty string unless
+    the caller explicitly asks for each via its own query params
+    (`checkParams`), rather than always returning the raw secrets to
+    whoever asks.
+    """
+    ti = db.get(TrustedInvoker, api_invoker_id)
+    if ti is None:
+        raise framework_error(FrameworkError.TRUSTED_INVOKER_NOT_FOUND, detail=f"invoker {api_invoker_id} not registered as trusted invoker")
+    view = _trusted_invoker_view(ti)
+    for info in view["securityInfo"]:
+        if not authentication_info:
+            info["authenticationInfo"] = ""
+        if not authorization_info:
+            info["authorizationInfo"] = ""
+    return view
+
+
+@app.delete("/trusted-invokers/{api_invoker_id}", status_code=204)
+def deregister_trusted_invoker(api_invoker_id: str, db: Session = Depends(get_session)):
+    ti = db.get(TrustedInvoker, api_invoker_id)
+    if ti is not None:
+        db.delete(ti)
+        db.commit()
+
+
+@app.post("/trusted-invokers/{api_invoker_id}/update")
+def update_trusted_invoker(api_invoker_id: str, body: ServiceSecurityRequest, db: Session = Depends(get_session)):
+    """PostTrustedInvokersApiInvokerIdUpdate — update-in-place. Unlike
+    the PUT above, the reference never re-checks invoker registration
+    here, only that a trusted-invoker context already exists.
+    """
+    ti = db.get(TrustedInvoker, api_invoker_id)
+    if ti is None:
+        raise framework_error(FrameworkError.TRUSTED_INVOKER_NOT_FOUND, detail=f"invoker {api_invoker_id} not registered as trusted invoker")
+    _validate_service_security(body)
+    ti.notification_destination = body.notificationDestination
+    ti.request_test_notification = body.requestTestNotification
+    ti.security_info = _security_info_with_sel_method(body.securityInfo)
+    db.commit()
+    return _trusted_invoker_view(ti)
+
+
+class SecurityNotificationRequest(BaseModel):
+    aefId: str | None = None
+    apiIds: list[str]
+    apiInvokerId: str
+    cause: Literal["OVERLIMIT_USAGE", "UNEXPECTED_REASON"]
+
+
+@app.post("/trusted-invokers/{api_invoker_id}/delete", status_code=204)
+def revoke_trusted_invoker(api_invoker_id: str, body: SecurityNotificationRequest, db: Session = Depends(get_session)):
+    """PostTrustedInvokersApiInvokerIdDelete — revocation, not a full
+    delete: only the `securityInfo` entries matching the notified
+    `aefId` or one of `apiIds` are removed (`revokeTrustedInvoker`); the
+    whole trusted-invoker record is only dropped once no entries remain.
+    Implements the reference's own stated filter semantics directly
+    (keep entries that don't match) rather than its own Go loop, which
+    mutates a slice by a stale index mid-iteration — a real bug in
+    `capifcore` itself, not behavior worth reproducing.
+    """
+    if not body.apiIds:
+        raise framework_error(FrameworkError.SECURITY_CONTEXT_INVALID, detail="SecurityNotification missing required apiIds")
+    ti = db.get(TrustedInvoker, api_invoker_id)
+    if ti is None:
+        raise framework_error(FrameworkError.TRUSTED_INVOKER_NOT_FOUND, detail=f"invoker {api_invoker_id} not registered as trusted invoker")
+    remaining = [info for info in ti.security_info
+                 if info.get("aefId") != body.aefId and info.get("apiId") not in body.apiIds]
+    if not remaining:
+        db.delete(ti)
+    else:
+        ti.security_info = remaining
+    db.commit()
+
+
+def _trusted_invoker_view(ti: TrustedInvoker) -> dict:
+    return {"apiInvokerId": ti.api_invoker_id, "notificationDestination": ti.notification_destination,
+            "requestTestNotification": ti.request_test_notification, "securityInfo": ti.security_info}
 
 
 @app.post("/published-apis/v1/{apf_id}/service-apis", status_code=201)

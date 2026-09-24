@@ -82,6 +82,19 @@ CREATE TABLE issued_access_token (
   expires_at                    TIMESTAMPTZ NOT NULL
 );
 
+-- SPEC_AUDIT.md SME item 2: the real CAPIF core's "Trusted Invokers"
+-- security-context subsystem (capifcore/internal/securityservice/
+-- security.go) -- a second, separate real mechanism beyond OAuth2
+-- token issuance, that a real AEF (resource server) would consult
+-- directly. security_info is one JSON list per invoker, matching the
+-- real CAPIF core's own in-memory ServiceSecurity struct shape.
+CREATE TABLE trusted_invoker (
+  api_invoker_id              TEXT PRIMARY KEY,
+  notification_destination      TEXT NOT NULL,
+  request_test_notification       BOOLEAN NOT NULL DEFAULT FALSE,
+  security_info                     JSONB NOT NULL
+);
+
 -- ============================================================
 -- Foundational Platform: DME  (Foundational Platform LLD section 3.8)
 -- ============================================================

@@ -754,7 +754,80 @@ print(r3.status_code)
 "
 ```
 
-## 12. Retire it — Terminate, then Delete
+## 12. SME Trusted Invokers (optional) — register, query, revoke a real security context
+
+Independent of the sample rApp instance above — this exercises the real
+CAPIF core's second, separate security mechanism beyond OAuth2 token
+issuance (`capifcore/internal/securityservice/security.go`): a per-AEF
+security context a real AEF (resource server) would consult directly,
+not something the token endpoint itself ever reads. Previously entirely
+absent from this build (SPEC_AUDIT.md SME item 2).
+
+Reuse the `apiInvokerId` from step 4's invoker registration. Register a
+security context for it — this genuinely requires the invoker already
+be onboarded:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.put('http://sme:8000/trusted-invokers/<apiInvokerId>', json={
+    'notificationDestination': 'http://demo-consumer:9000/security-notify',
+    'securityInfo': [{'aefId': 'hello-world-rapp', 'apiId': 'helloworld-api', 'authenticationInfo': 'demo-auth-info',
+                       'authorizationInfo': 'demo-authz-info', 'prefSecurityMethods': ['OAUTH']}],
+})
+print(r.status_code, r.json())
+"
+```
+
+`201` — `selSecurityMethod` is the invoker's own first preferred method
+(this build has no real per-AEF security-method catalog to cross-check
+against, honestly, the same "unknown real content, permissive
+placeholder" pattern used elsewhere). Query it back — by default,
+`authenticationInfo`/`authorizationInfo` are redacted:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://sme:8000/trusted-invokers/<apiInvokerId>')
+print(r.status_code, r.json())
+"
+```
+
+Both fields come back as empty strings. Ask for them explicitly:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://sme:8000/trusted-invokers/<apiInvokerId>', params={'authentication_info': True, 'authorization_info': True})
+print(r.status_code, r.json())
+"
+```
+
+Now the real values come back. **Revoke** the context for this one
+AEF — a real, partial removal, not a full delete:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sme:8000/trusted-invokers/<apiInvokerId>/delete', json={
+    'aefId': 'hello-world-rapp', 'apiIds': ['helloworld-api'], 'apiInvokerId': '<apiInvokerId>', 'cause': 'UNEXPECTED_REASON',
+})
+print(r.status_code)
+"
+```
+
+Since that was the only `securityInfo` entry, the whole trusted-invoker
+record is now gone — confirm with a 404:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://sme:8000/trusted-invokers/<apiInvokerId>')
+print(r.status_code, r.json())
+"
+```
+
+## 13. Retire it — Terminate, then Delete
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -777,7 +850,8 @@ print(r.status_code)
 204 with an empty body — the instance row is gone. The full lifecycle
 — onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
 loop, FOCOM resource management, FOCOM FCAPS, Policy Mgmt intent
-automation, A1 Policy Management, retire — is now complete against a
+automation, A1 Policy Management, SME Trusted Invokers, retire — is now
+complete against a
 real running
 stack.
 

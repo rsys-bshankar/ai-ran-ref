@@ -144,6 +144,107 @@
         "title": "ProviderRegistrationRequest",
         "type": "object"
       },
+      "SecurityInformationRequest": {
+        "properties": {
+          "aefId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aefid"
+          },
+          "apiId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apiid"
+          },
+          "authenticationInfo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authenticationinfo"
+          },
+          "authorizationInfo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorizationinfo"
+          },
+          "prefSecurityMethods": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Prefsecuritymethods",
+            "type": "array"
+          }
+        },
+        "required": [
+          "prefSecurityMethods"
+        ],
+        "title": "SecurityInformationRequest",
+        "type": "object"
+      },
+      "SecurityNotificationRequest": {
+        "properties": {
+          "aefId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aefid"
+          },
+          "apiIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Apiids",
+            "type": "array"
+          },
+          "apiInvokerId": {
+            "title": "Apiinvokerid",
+            "type": "string"
+          },
+          "cause": {
+            "enum": [
+              "OVERLIMIT_USAGE",
+              "UNEXPECTED_REASON"
+            ],
+            "title": "Cause",
+            "type": "string"
+          }
+        },
+        "required": [
+          "apiIds",
+          "apiInvokerId",
+          "cause"
+        ],
+        "title": "SecurityNotificationRequest",
+        "type": "object"
+      },
       "ServiceRegistration": {
         "properties": {
           "aefProfiles": {
@@ -235,6 +336,32 @@
           "moduleScope"
         ],
         "title": "ServiceRegistration",
+        "type": "object"
+      },
+      "ServiceSecurityRequest": {
+        "properties": {
+          "notificationDestination": {
+            "title": "Notificationdestination",
+            "type": "string"
+          },
+          "requestTestNotification": {
+            "default": false,
+            "title": "Requesttestnotification",
+            "type": "boolean"
+          },
+          "securityInfo": {
+            "items": {
+              "$ref": "#/components/schemas/SecurityInformationRequest"
+            },
+            "title": "Securityinfo",
+            "type": "array"
+          }
+        },
+        "required": [
+          "notificationDestination",
+          "securityInfo"
+        ],
+        "title": "ServiceSecurityRequest",
         "type": "object"
       },
       "ValidationError": {
@@ -814,6 +941,231 @@
           }
         },
         "summary": "Discover Services"
+      }
+    },
+    "/trusted-invokers/{api_invoker_id}": {
+      "delete": {
+        "operationId": "deregister_trusted_invoker_trusted_invokers__api_invoker_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "api_invoker_id",
+            "required": true,
+            "schema": {
+              "title": "Api Invoker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deregister Trusted Invoker"
+      },
+      "get": {
+        "description": "GetTrustedInvokersApiInvokerId \u2014 the real reference redacts\n`authenticationInfo`/`authorizationInfo` to an empty string unless\nthe caller explicitly asks for each via its own query params\n(`checkParams`), rather than always returning the raw secrets to\nwhoever asks.",
+        "operationId": "get_trusted_invoker_trusted_invokers__api_invoker_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "api_invoker_id",
+            "required": true,
+            "schema": {
+              "title": "Api Invoker Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "authentication_info",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Authentication Info",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "authorization_info",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Authorization Info",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Trusted Invoker"
+      },
+      "put": {
+        "description": "PutTrustedInvokersApiInvokerId (`security.go`) \u2014 registers (or\nreplaces, on a re-PUT) the security context a real AEF would consult\nfor this invoker. Gated on the invoker already being onboarded\n(`invokerRegister.IsInvokerRegistered`), same real 400 the reference\nreturns otherwise.",
+        "operationId": "register_trusted_invoker_trusted_invokers__api_invoker_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "api_invoker_id",
+            "required": true,
+            "schema": {
+              "title": "Api Invoker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceSecurityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Trusted Invoker"
+      }
+    },
+    "/trusted-invokers/{api_invoker_id}/delete": {
+      "post": {
+        "description": "PostTrustedInvokersApiInvokerIdDelete \u2014 revocation, not a full\ndelete: only the `securityInfo` entries matching the notified\n`aefId` or one of `apiIds` are removed (`revokeTrustedInvoker`); the\nwhole trusted-invoker record is only dropped once no entries remain.\nImplements the reference's own stated filter semantics directly\n(keep entries that don't match) rather than its own Go loop, which\nmutates a slice by a stale index mid-iteration \u2014 a real bug in\n`capifcore` itself, not behavior worth reproducing.",
+        "operationId": "revoke_trusted_invoker_trusted_invokers__api_invoker_id__delete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "api_invoker_id",
+            "required": true,
+            "schema": {
+              "title": "Api Invoker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecurityNotificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Trusted Invoker"
+      }
+    },
+    "/trusted-invokers/{api_invoker_id}/update": {
+      "post": {
+        "description": "PostTrustedInvokersApiInvokerIdUpdate \u2014 update-in-place. Unlike\nthe PUT above, the reference never re-checks invoker registration\nhere, only that a trusted-invoker context already exists.",
+        "operationId": "update_trusted_invoker_trusted_invokers__api_invoker_id__update_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "api_invoker_id",
+            "required": true,
+            "schema": {
+              "title": "Api Invoker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceSecurityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Trusted Invoker"
       }
     }
   }

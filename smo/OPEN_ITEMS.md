@@ -2249,6 +2249,47 @@ own §1/§2 items stand as-is.
   OpenAPI-spec change — confirmed via a full local Postgres 16 pass
   (58 tables, 0 mismatches) and the live-schema-match check, both
   green. Unit-test counts unchanged; `tests_integration` stays at 16.
+- **SME's real "Trusted Invokers" security-context registry**
+  (SPEC_AUDIT.md SME item 2, and the large/structural triage's item
+  6) — per explicit user direction to build this real subsystem after
+  all, reversing the earlier "disproportionate for a scoped fix"
+  assessment. Added the real `PUT`/`GET`/`DELETE
+  /trusted-invokers/{apiInvokerId}` plus revocation (`POST .../delete`),
+  matching `capifcore/internal/securityservice/security.go`'s own
+  routes: `PUT` gated on the invoker already being registered
+  (`INVOKER_NOT_REGISTERED`, 400), real body validation
+  (`notificationDestination`/`securityInfo`/each entry's
+  `prefSecurityMethods` required, `SECURITY_CONTEXT_INVALID`, 422),
+  `GET`'s real `authenticationInfo`/`authorizationInfo` redaction
+  (empty string unless explicitly requested via query params, matching
+  the reference's own `checkParams`), and revocation's real per-entry
+  removal by `aefId`/`apiIds` match with whole-record cleanup once no
+  entries remain (implementing the reference's own stated filter
+  semantics directly, not its own Go loop, which mutates a slice by a
+  stale index mid-iteration — a real bug in `capifcore` itself, not
+  behavior worth reproducing). Confirmed by inspection that CAPIF
+  core's own token-issuance path (`PostSecuritiesSecurityIdToken`)
+  never reads `trustedInvokers` at all — this is a standalone registry
+  a real AEF (resource server) would consult directly, so no existing
+  SME route (`/oauth2/token`, `/oauth2/introspect`) needed rewiring.
+  `PrepareNewSecurityContext`'s own real cross-check against a
+  published AEF's declared security methods has no equivalent data
+  source in this build (no per-AEF security-method catalog was ever
+  modeled, even after `aefProfiles` was added) — adapted honestly:
+  `selSecurityMethod` is the invoker's own first declared preference,
+  not a fabricated AEF-side match. New `TrustedInvoker` model
+  (`security_info` as one JSON list per invoker, the same "flatten to
+  what this build's own identity model needs" adaptation already used
+  for `aefProfiles`/`DMEType.collection_spec`), new `trusted_invoker`
+  table (`migrations/001_init.sql`), 3 new `FrameworkError` codes.
+  `DEMO_RUNBOOK.md` gained a new section reusing step 4's real
+  invoker registration: register a security context, confirm default
+  redaction, confirm real values on request, revoke, confirm the whole
+  record is gone. `tests_integration/test_demo_runbook.py` gained a
+  matching step. `docs/openapi/sme.json` regenerated (only spec that
+  changed). Verified against a real local Postgres 16 instance (59
+  tables, up from 58, 0 mismatches; a manual insert round-tripped the
+  new JSONB `security_info` column). `sme` went from 49 tests to 66.
 
 ## Suggested next pass (priority order)
 
