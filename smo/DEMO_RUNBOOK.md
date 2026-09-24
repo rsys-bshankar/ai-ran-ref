@@ -162,6 +162,17 @@ print(r.status_code, r.json())
 "
 ```
 
+**Worth calling out live**: the client picks its own `apiInvokerId` and
+`onboardingSecret` here. The real CAPIF core's invoker-onboarding flow
+is public-key-based — the client submits a public key, and CAPIF
+*generates* both values server-side and hands them back; `apiInvokerId`
+"shall not be present" in the real onboarding request at all. This
+build's Phase 1 is the weaker, self-asserted model, with no equivalent
+of the real CAPIF core's separate "Trusted Invokers" security-context
+registry behind it either (`SPEC_AUDIT.md`'s SME section, items 1 and
+2). Named here rather than left silent, since this exact step is where
+it's visible.
+
 **Obtain an OAuth2 token:**
 
 ```bash
