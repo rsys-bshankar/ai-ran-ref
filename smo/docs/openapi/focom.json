@@ -15,10 +15,22 @@
         "type": "object"
       },
       "SubscribeInventoryRequest": {
+        "description": "SPEC_AUDIT.md item 8: ORAN.O2ims.Inventory.yaml's InventorySubscription\nnames this field `callback`, not this build's own invented\n`callbackUri` \u2014 renamed to match. consumerSubscriptionId (the\nspec's own consumer-provided tracking id) was entirely absent.",
         "properties": {
-          "callbackUri": {
-            "title": "Callbackuri",
+          "callback": {
+            "title": "Callback",
             "type": "string"
+          },
+          "consumerSubscriptionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumersubscriptionid"
           },
           "resourceTypeId": {
             "anyOf": [
@@ -33,7 +45,7 @@
           }
         },
         "required": [
-          "callbackUri"
+          "callback"
         ],
         "title": "SubscribeInventoryRequest",
         "type": "object"

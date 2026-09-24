@@ -423,7 +423,11 @@ CREATE TABLE ocloud_performance_metric (
 
 CREATE TABLE inventory_subscription (
   subscription_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  callback_uri      TEXT NOT NULL,
+  -- SPEC_AUDIT.md item 8: ORAN.O2ims.Inventory.yaml names this field
+  -- `callback`, not this build's own invented `callback_uri`.
+  callback          TEXT NOT NULL,
+  -- SPEC_AUDIT.md item 8: consumer-provided tracking id, entirely absent.
+  consumer_subscription_id  TEXT,
   resource_type_id   TEXT   -- optional filter; unset matches every resource type
 );
 

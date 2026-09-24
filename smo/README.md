@@ -127,7 +127,7 @@ PYTHONPATH=shared python scripts/generate_openapi_specs.py
 docker compose config --quiet
 ```
 
-**464 tests total, all passing** as of this build: 448 unit tests across
+**467 tests total, all passing** as of this build: 451 unit tests across
 all fourteen modules plus the two mocks, and 16 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -620,6 +620,21 @@ All added as nullable columns (no route registers a `ResourceType` or
 caller: `provision_resource`'s already-untyped spec dict now reads
 `globalAssetId`/`tags`/`groups` from it too. `focom` went from 38
 tests to 42.
+
+Last: item 8, `InventorySubscription` used this build's own invented
+`callbackUri` instead of the real spec's `callback`, and had no
+`consumerSubscriptionId` at all. Renamed outright (no cross-module
+caller ever used the old name); `consumerSubscriptionId` is now
+accepted, persisted, returned on the subscribe response, and — per the
+spec's own description of what it's for — passed through on every
+inventory-change notification, not just stored inertly. `focom` went
+from 42 tests to 45.
+
+This closes `SPEC_AUDIT.md`'s entire "What's genuinely closeable now"
+list — every small/scoped, non-breaking spec gap that pass identified
+is now closed. What remains there is moderate/breaking-shape or
+large/structural, each already flagged as needing a deliberate
+follow-up pass or a confirmed Phase-1 scope cut.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

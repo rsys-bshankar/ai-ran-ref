@@ -45,8 +45,14 @@ def _ensure_phase1_topology(db: Session) -> None:
 
 
 class SubscribeInventoryRequest(BaseModel):
-    callbackUri: str
+    """SPEC_AUDIT.md item 8: ORAN.O2ims.Inventory.yaml's InventorySubscription
+    names this field `callback`, not this build's own invented
+    `callbackUri` — renamed to match. consumerSubscriptionId (the
+    spec's own consumer-provided tracking id) was entirely absent.
+    """
+    callback: str
     resourceTypeId: str | None = None
+    consumerSubscriptionId: str | None = None
 
 
 @app.get("/inventory")
@@ -244,14 +250,20 @@ def _notify_inventory_subscribers(db: Session, event_type: str, resource_id: str
     unset filter always matches rather than being silently dropped.
     Best-effort delivery, same pattern as Policy Mgmt's CreateIntent
     notification.
+
+    consumerSubscriptionId (SPEC_AUDIT.md item 8): the spec's own
+    description is explicit that it exists "for tracking, routing, or
+    identifying the subscription used to report the event" — i.e. it's
+    meant to come back on the notification itself, not just be stored.
     """
     for sub in db.scalars(select(InventorySubscription)).all():
         if sub.resource_type_id is not None and resource_type_id is not None and sub.resource_type_id != resource_type_id:
             continue
         try:
-            httpx.post(sub.callback_uri, json={
+            httpx.post(sub.callback, json={
                 "objectType": "resource", "notificationEventType": event_type,
                 "resourceId": resource_id, "resourceTypeId": resource_type_id,
+                "consumerSubscriptionId": sub.consumer_subscription_id,
             }, timeout=2.0)
         except httpx.HTTPError:
             pass
@@ -259,10 +271,11 @@ def _notify_inventory_subscribers(db: Session, event_type: str, resource_id: str
 
 @app.post("/inventory/subscriptions", status_code=201)
 def subscribe_inventory_changes(body: SubscribeInventoryRequest, db: Session = Depends(get_session)):
-    sub = InventorySubscription(callback_uri=body.callbackUri, resource_type_id=body.resourceTypeId)
+    sub = InventorySubscription(callback=body.callback, resource_type_id=body.resourceTypeId,
+                                 consumer_subscription_id=body.consumerSubscriptionId)
     db.add(sub)
     db.commit()
-    return {"subscriptionId": str(sub.subscription_id)}
+    return {"subscriptionId": str(sub.subscription_id), "consumerSubscriptionId": sub.consumer_subscription_id}
 
 
 @app.delete("/inventory/subscriptions/{subscription_id}", status_code=204)

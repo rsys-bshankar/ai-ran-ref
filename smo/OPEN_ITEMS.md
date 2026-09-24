@@ -1859,6 +1859,30 @@ own §1/§2 items stand as-is.
   inserts round-tripped every new column, including the two `CHECK`
   constraints genuinely rejecting an invalid value). 464 tests total,
   up from 460 (`focom`: 38 -> 42).
+- **`SPEC_AUDIT.md` item 8 (the last of the "genuinely closeable now"
+  list): FOCOM's `InventorySubscription` used this build's own
+  invented `callbackUri` field name instead of the real
+  `ORAN.O2ims.Inventory.yaml` name `callback`, and had no
+  `consumerSubscriptionId` at all.** Renamed outright — no
+  cross-module caller in this build ever used the old name, only this
+  module's own routes/tests — rather than documented as a deviation,
+  since a real rename was cheap here. `consumerSubscriptionId` (the
+  spec's own consumer-provided tracking id) is now accepted on `POST
+  /inventory/subscriptions`, persisted, returned on the subscribe
+  response, and — since the spec's own description says it exists
+  "for tracking, routing, or identifying the subscription used to
+  report the event" — passed through on every notification
+  `_notify_inventory_subscribers` sends, not just stored inertly.
+  Verified against a real local Postgres 16 instance (migration
+  applies cleanly, `check_migration_matches_models.py` passes, 58
+  tables). 467 tests total, up from 464 (`focom`: 42 -> 45).
+
+  This closes the last item on `SPEC_AUDIT.md`'s "What's genuinely
+  closeable now" list — every small/scoped, non-breaking spec gap
+  identified in that pass is now closed. The remaining `SPEC_AUDIT.md`
+  items are moderate/breaking-shape or large/structural, each already
+  flagged as needing a deliberate follow-up pass or a confirmed
+  Phase-1 scope cut, not a quick fix.
 
 ## Suggested next pass (priority order)
 
