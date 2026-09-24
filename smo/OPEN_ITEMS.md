@@ -2228,6 +2228,27 @@ own §1/§2 items stand as-is.
   question (none were ever part of the original rApp-lifecycle
   narrative), not a mechanical pickup — left for explicit user
   direction rather than assumed.
+- **Pilot demo depth: FOCOM FCAPS, per explicit user direction to
+  reverse the earlier "out of scope" triage.** `DEMO_RUNBOOK.md`'s
+  FOCOM section only ever touched inventory/resource-provisioning
+  routes; FOCOM's own alarm and performance routes (a distinct domain
+  from RAN NF OAM's RAN-function alarms, NFO+FOCOM LLD section 1) were
+  already real, already Postgres-backed, and already unit-tested but
+  never in the demo at all. Extended the FOCOM section: real
+  infrastructure alarm ingest (`POST /alarms/ingest`) against the
+  Phase 1 degenerate cluster, confirmed via `GET /alarms`, then
+  `GET /performance` — genuinely queryable and filterable
+  (`test_performance_metrics_filterable_by_resource` already covers
+  this), but returns `[]` in a fresh stack, disclosed honestly rather
+  than glossed over: there is no `POST /performance` route in this
+  build at all — real O-Cloud performance metrics would arrive via
+  O2ims's own collection mechanism, the same "no real southbound
+  collection pipeline exists" elision already documented for RAN NF
+  OAM's PM subscriptions, not a stub or a bug. `tests_integration/
+  test_demo_runbook.py` gained a matching step. No code, schema, or
+  OpenAPI-spec change — confirmed via a full local Postgres 16 pass
+  (58 tables, 0 mismatches) and the live-schema-match check, both
+  green. Unit-test counts unchanged; `tests_integration` stays at 16.
 
 ## Suggested next pass (priority order)
 

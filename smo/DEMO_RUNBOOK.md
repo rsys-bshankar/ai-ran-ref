@@ -473,7 +473,51 @@ print(r.status_code, r.json())
 "
 ```
 
-## 9. Policy Mgmt intent automation (optional) — register, dispatch, retract
+**FOCOM FCAPS** — a distinct domain from RAN NF OAM's RAN-function
+alarms (NFO+FOCOM LLD section 1): infrastructure/O-Cloud host alarms
+and performance. Ingest a real infrastructure alarm against the Phase 1
+degenerate cluster:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://focom:8000/alarms/ingest', params={'resource_ref': 'phase1-degenerate-cluster', 'severity': 'critical'})
+print(r.status_code, r.json())
+"
+```
+
+Confirm it's queryable:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://focom:8000/alarms')
+print(r.status_code, r.json())
+"
+```
+
+Performance metrics are also genuinely queryable, filterable by
+`resource_ref`:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://focom:8000/performance')
+print(r.status_code, r.json())
+"
+```
+
+This returns `[]` in a fresh stack — honestly, not a bug: there is no
+`POST /performance` route in this build at all, matching the same
+"no real southbound collection pipeline" elision already documented for
+RAN NF OAM's PM subscriptions — real O-Cloud performance metrics would
+arrive via O2ims's own collection mechanism, not an rApp-facing write.
+The route itself, and its filter, are real and already unit-tested
+(`test_performance_metrics_filterable_by_resource`); nothing here is
+stubbed, there is simply nothing to collect from in a docker-run-based
+Phase 1.
+
+## 10. Policy Mgmt intent automation (optional) — register, dispatch, retract
 
 Independent of the sample rApp instance above — this shows Policy Mgmt's
 real Intent-to-RMIH dispatch mechanism firing: an SMO-internal RAN
@@ -593,7 +637,7 @@ print(r4.status_code)
 "
 ```
 
-## 10. A1 Policy Management (optional) — register, enforce, a real duplicate rejection, retract
+## 11. A1 Policy Management (optional) — register, enforce, a real duplicate rejection, retract
 
 Independent of the sample rApp instance above — this exercises a whole
 module the runbook has never touched: A1 Related's real mapping-store
@@ -710,7 +754,7 @@ print(r3.status_code)
 "
 ```
 
-## 11. Retire it — Terminate, then Delete
+## 12. Retire it — Terminate, then Delete
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -732,8 +776,9 @@ print(r.status_code)
 
 204 with an empty body — the instance row is gone. The full lifecycle
 — onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
-loop, FOCOM resource management, Policy Mgmt intent automation, A1
-Policy Management, retire — is now complete against a real running
+loop, FOCOM resource management, FOCOM FCAPS, Policy Mgmt intent
+automation, A1 Policy Management, retire — is now complete against a
+real running
 stack.
 
 ## Known rough edges for a live walkthrough

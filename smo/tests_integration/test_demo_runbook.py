@@ -216,7 +216,21 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert notifications[1]["notificationEventType"] == "DELETE"
     assert notifications[1]["resourceId"] == resource_id
 
-    # step 9: Policy Mgmt intent automation — register an RMIH, create a
+    # FOCOM FCAPS — a distinct domain from RAN NF OAM's RAN-function
+    # alarms: real infrastructure/O-Cloud alarm ingest + query, plus
+    # performance query (no ingest route exists in this build — real
+    # O2ims collection elision — so it's asserted empty, honestly, not
+    # skipped).
+    alarm = mesh["focom"].post("/alarms/ingest", params={"resource_ref": "phase1-degenerate-cluster", "severity": "critical"})
+    assert alarm.status_code == 200
+    alarms = mesh["focom"].get("/alarms")
+    assert any(a["resourceRef"] == "phase1-degenerate-cluster" and a["severity"] == "critical" for a in alarms.json())
+
+    performance = mesh["focom"].get("/performance")
+    assert performance.status_code == 200
+    assert performance.json() == []
+
+    # step 10: Policy Mgmt intent automation — register an RMIH, create a
     # matching Intent, observe the real dispatch notification, retract.
     # Intercepted at the same httpx.post call create_intent makes,
     # same technique as FOCOM's step above.
@@ -292,7 +306,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     del_rmih2 = mesh["policy-mgmt"].delete("/intent-handling-functions/sa-smos")
     assert del_rmih2.status_code == 204
 
-    # step 10: A1 Policy Management — register a service, create a real
+    # step 11: A1 Policy Management — register a service, create a real
     # policy against the mock Near-RT RIC, observe a real duplicate-
     # content rejection, observe a real status-change notification,
     # retract. Intercepted at the same httpx.post call
@@ -353,7 +367,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     del_service = mesh["a1-related"].delete("/services/hello-world-rapp")
     assert del_service.status_code == 204
 
-    # step 11: retire — terminate then delete
+    # step 12: retire — terminate then delete
     term = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/terminate")
     assert term.status_code == 200
     assert term.json()["state"] == "UNDEPLOYED"
