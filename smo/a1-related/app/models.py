@@ -1,6 +1,7 @@
+import datetime
 import uuid
 
-from sqlalchemy import ARRAY, CheckConstraint, ForeignKey, JSON, String, Uuid
+from sqlalchemy import ARRAY, CheckConstraint, DateTime, ForeignKey, Integer, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -44,6 +45,22 @@ class A1EIType(Base):
     ei_type_id: Mapped[str] = mapped_column(String, primary_key=True)
     registered_by: Mapped[str] = mapped_column(String, nullable=False)
     ei_source_dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+
+
+class A1ServiceRegistration(Base):
+    """OPEN_ITEMS.md section 5: the reference's own Service Registry and
+    Supervision (`pms-api-v3.json`'s `/services`/`ServiceRegistrationInfo`/
+    `ServiceStatus`) — service_id is caller-supplied (the reference's own
+    `serviceId` is required, never server-generated), matching creator_id's
+    own identity space on A1Policy (a service here is the same rApp/
+    consumer identity that creates policies).
+    """
+    __tablename__ = "a1_service_registration"
+
+    service_id: Mapped[str] = mapped_column(String, primary_key=True)
+    callback_url: Mapped[str | None] = mapped_column(String)
+    keep_alive_interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0 == supervision disabled, per the reference's own schema
+    last_activity_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
 # A1TrainingCapability: DORMANT (A1 Related LLD section 0) — deliberately not
 # modeled here. R1AP clause 9 contains only 9.1 (policy management); the

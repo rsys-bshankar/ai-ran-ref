@@ -145,8 +145,8 @@ Per-module unit test counts:
 | ran-nf-oam | 29 |
 | sme | 29 |
 | onboarding | 30 |
-| a1-related | 32 |
 | focom | 37 |
+| a1-related | 43 |
 | ai-ml-workflow | 49 |
 | dme | 55 |
 
@@ -594,8 +594,35 @@ own §1/§2 items stand as-is.
   `test_query_policy_status_notifies_on_refreshed_status_change`,
   `test_notification_is_not_sent_to_subscriber_filtered_out_by_policy_type`,
   `test_notification_delivery_survives_unreachable_subscriber`.
-- No service registration/supervision (`/services`, keepalive, and
-  auto-delete of a stale rApp's policies).
+- ~~No service registration/supervision (`/services`, keepalive, and
+  auto-delete of a stale rApp's policies).~~ — **closed.** This module's
+  own reference clone (`nonrtric-plt-a1policymanagementservice`) has no
+  real Java source to ground against (only its OpenAPI spec), but that
+  spec (`pms-api-v3.json`'s `ServiceRegistrationInfo`/`ServiceStatus`/
+  the `/services*` routes) is itself real, authoritative wire-contract
+  content, not invented. Added `PUT /services` (register-or-update,
+  same idempotent shape as SME's own `register_service`), `GET
+  /services`/`GET /services?serviceId=`, `DELETE /services/{id}`, and
+  `PUT /services/{id}/keepalive`. `creator_id` is this build's existing
+  identity for "the service that created a policy" (`query_policies`'s
+  own docstring already established this equivalence), so unregistering
+  a service — or the supervision sweep below — genuinely deletes its
+  A1 policies via the same real southbound `a1t.delete_policy` call
+  `delete_policy` itself uses, not just a local row drop. No scheduler
+  exists anywhere in this build (the same elision already documented for
+  DME's producer health), so the reference's own timeout-triggered
+  auto-deregistration is enforced lazily: a stale service (past its own
+  `keepAliveIntervalSeconds`) is swept the moment `GET /services` next
+  reads it, computed live rather than via a periodic poll. Also found
+  and fixed while wiring this in: `DateTime(timezone=True)` columns
+  round-trip as naive datetimes under SQLite (Postgres returns them
+  tz-aware) — the first elapsed-time computation in this build, and
+  the first time this particular portability gap was hit; noted in
+  `README.md`'s SQLite portability section. Deliberately out of scope:
+  the reference's own `RICStatus` callback (notifying a registered
+  service's `callbackUrl` of Near-RT RIC availability changes) — this
+  build has no concept of RIC availability independent of the single
+  A1 mock to trigger it from.
 - ~~No duplicate-policy/fingerprint detection — the reference's
   mediator rejects duplicate policy content or a reused id across
   types; ours accepts anything per `policyId` with only an
@@ -1346,6 +1373,22 @@ own §1/§2 items stand as-is.
   verified against real Postgres. `CreateInstance`'s already-shipped
   immediate-deploy behavior (D-SEC-RAPP-1) is unrelated and untouched.
   394 tests total, up from 389 (`rapp-mgmt` alone: 12 -> 17).
+- A1 Related's missing service registration/supervision (§5) closed:
+  added `PUT`/`GET /services`, `DELETE /services/{id}`, and
+  `PUT /services/{id}/keepalive` (the reference's own `pms-api-v3.json`
+  OpenAPI contract — no real Java source exists in this module's
+  reference clone to ground against, but the spec itself is real,
+  authoritative content). Unregistering a service, or the lazy
+  keepalive-timeout sweep (no scheduler exists anywhere in this build,
+  so staleness is computed live at `GET /services` read time, the same
+  pattern as DME's producer health), genuinely deletes that service's
+  A1 policies via the same real southbound call `delete_policy` itself
+  uses. The reference's own `RICStatus` callback stays out of scope —
+  this build has no RIC-availability concept independent of the single
+  A1 mock. Also fixed: a real SQLite/Postgres `DateTime(timezone=True)`
+  portability gap (naive vs. tz-aware datetimes), the first one this
+  build's first elapsed-time computation ever hit. 405 tests total, up
+  from 394 (`a1-related` alone: 32 -> 43).
 
 ## Suggested next pass (priority order)
 

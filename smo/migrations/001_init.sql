@@ -295,6 +295,16 @@ CREATE TABLE a1_ei_type (
   registered_by          TEXT NOT NULL,
   ei_source_dme_type_id   UUID NOT NULL REFERENCES dme_type(dme_type_id)
 );
+
+-- NEW section 5: Service Registry and Supervision (the reference's own
+-- pms-api-v3.json /services routes). service_id is caller-supplied, the
+-- same identity space as a1_policy.creator_id.
+CREATE TABLE a1_service_registration (
+  service_id                  TEXT PRIMARY KEY,
+  callback_url                  TEXT,
+  keep_alive_interval_seconds     INTEGER NOT NULL DEFAULT 0,  -- 0 == supervision disabled
+  last_activity_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 -- A1TrainingCapability: DORMANT (section 0 of the A1 Related LLD) — no table until
 -- a future scope decision explicitly reaches into A1AP. Do not create this table.
 
