@@ -839,6 +839,17 @@ and a matching integration-test step. Verified against a real local
 Postgres 16 instance (59 tables, up from 58). `sme` went from 49 tests
 to 66.
 
+**Demo: AI/ML Workflow.** The first of four modules never touched by
+any demo phase before this pass. New section: register a model with
+real metadata → request training (fires the real `TRAIN` FSM
+transition) → upload a real artifact (genuinely round-trips through a
+Postgres-backed row) → write real training metrics → advance the model
+through its real lifecycle FSM (`TRAINING_COMPLETE` →
+`VALIDATION_COMPLETE` → `CERTIFY` → `LOAD` → `ACTIVATE`, five genuine
+transitions) → download the artifact back and confirm the bytes match
+→ deregister. `tests_integration/test_demo_runbook.py` gained a
+matching step. No code, schema, or OpenAPI-spec change.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style

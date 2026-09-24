@@ -395,7 +395,52 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     gone = mesh["sme"].get(f"/trusted-invokers/{invoker['apiInvokerId']}")
     assert gone.status_code == 404
 
-    # step 13: retire — terminate then delete
+    # step 13: AI/ML Workflow — register a model, request training, upload
+    # a real artifact, write metrics, advance the real lifecycle FSM to
+    # ACTIVE, download the artifact back, deregister.
+    model = mesh["ai-ml-workflow"].post("/models", json={
+        "modelType": "hello-world-anomaly-detector", "version": "1.0.0",
+        "description": "Demo anomaly-detection model for the hello-world rApp",
+        "author": "hello-world-rapp", "owner": "hello-world-rapp",
+        "inputDataType": "application/json", "outputDataType": "application/json",
+    })
+    assert model.status_code == 201
+    model_id = model.json()["modelId"]
+    assert model.json()["state"] == "REGISTERED"
+
+    training = mesh["ai-ml-workflow"].post("/training-jobs", json={
+        "modelId": model_id, "producerId": "hello-world-rapp", "runId": "demo-run-1",
+        "trainingDataset": "s3://demo/hello-world-train", "validationDataset": "s3://demo/hello-world-val",
+    })
+    assert training.status_code == 201
+    training_job_id = training.json()["trainingJobId"]
+
+    training_state = mesh["ai-ml-workflow"].get(f"/models/{model_id}")
+    assert training_state.json()["state"] == "TRAINING"
+
+    artifact_bytes = b"demo-model-weights-bytes"
+    artifact = mesh["ai-ml-workflow"].post(f"/models/{model_id}/artifact",
+                                            files={"file": ("hello-world-model.zip", artifact_bytes, "application/zip")})
+    assert artifact.status_code == 201
+    assert artifact.json()["artifactVersion"] == 1
+
+    metrics = mesh["ai-ml-workflow"].post(f"/training-jobs/{training_job_id}/model-metrics", json={"accuracy": 0.94, "f1Score": 0.91})
+    assert metrics.status_code == 200
+    assert metrics.json()["modelMetrics"] == {"accuracy": 0.94, "f1Score": 0.91}
+
+    for event in ["TRAINING_COMPLETE", "VALIDATION_COMPLETE", "CERTIFY", "LOAD", "ACTIVATE"]:
+        advanced = mesh["ai-ml-workflow"].post(f"/models/{model_id}/advance", params={"event": event})
+        assert advanced.status_code == 200
+    assert advanced.json()["state"] == "ACTIVE"
+
+    downloaded = mesh["ai-ml-workflow"].get(f"/models/{model_id}/artifact/1")
+    assert downloaded.status_code == 200
+    assert downloaded.content == artifact_bytes
+
+    deregistered = mesh["ai-ml-workflow"].delete(f"/models/{model_id}")
+    assert deregistered.status_code == 204
+
+    # step 14: retire — terminate then delete
     term = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/terminate")
     assert term.status_code == 200
     assert term.json()["state"] == "UNDEPLOYED"

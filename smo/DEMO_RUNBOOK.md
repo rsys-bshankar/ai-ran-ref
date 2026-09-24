@@ -827,7 +827,111 @@ print(r.status_code, r.json())
 "
 ```
 
-## 13. Retire it — Terminate, then Delete
+## 13. AI/ML Workflow (optional) — register, train, upload/download a real artifact, advance to ACTIVE
+
+Independent of the sample rApp instance above — a whole module never
+touched by this runbook before. Real MLModel lifecycle FSM (SMO Design
+v1.3 section 3.8), a real training-job round trip, and real artifact
+bytes that genuinely round-trip through Postgres, not a stub.
+
+Register a model with real metadata:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/models', json={
+    'modelType': 'hello-world-anomaly-detector', 'version': '1.0.0',
+    'description': 'Demo anomaly-detection model for the hello-world rApp',
+    'author': 'hello-world-rapp', 'owner': 'hello-world-rapp',
+    'inputDataType': 'application/json', 'outputDataType': 'application/json',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `modelId` — `state` is `REGISTERED`. Request training against
+it — a real FSM transition (`REGISTERED -> TRAINING`, `TRAIN`):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/training-jobs', json={
+    'modelId': '<modelId>', 'producerId': 'hello-world-rapp',
+    'runId': 'demo-run-1', 'trainingDataset': 's3://demo/hello-world-train',
+    'validationDataset': 's3://demo/hello-world-val',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `trainingJobId`. Confirm the model really moved to `TRAINING`:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://ai-ml-workflow:8000/models/<modelId>')
+print(r.status_code, r.json())
+"
+```
+
+**Upload a real model artifact** — the bytes genuinely round-trip
+through a Postgres-backed `ModelArtifact` row, not a discarded stub
+(real S3 storage is the one deliberate elision here):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/models/<modelId>/artifact',
+                files={'file': ('hello-world-model.zip', b'demo-model-weights-bytes', 'application/zip')})
+print(r.status_code, r.json())
+"
+```
+
+Note `artifactVersion` (1). Write real training metrics, matching the
+reference's own whole-body-replace semantics:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/training-jobs/<trainingJobId>/model-metrics', json={'accuracy': 0.94, 'f1Score': 0.91})
+print(r.status_code, r.json())
+"
+```
+
+**Advance the model through its real lifecycle FSM** — each step is a
+genuine state transition, not a fast-forward:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+for event in ['TRAINING_COMPLETE', 'VALIDATION_COMPLETE', 'CERTIFY', 'LOAD', 'ACTIVATE']:
+    r = httpx.post('http://ai-ml-workflow:8000/models/<modelId>/advance', params={'event': event})
+    print(event, '->', r.status_code, r.json()['state'])
+"
+```
+
+Ending state is `ACTIVE`. Download the artifact back and confirm the
+bytes really match what was uploaded:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://ai-ml-workflow:8000/models/<modelId>/artifact/1')
+print(r.status_code, r.content == b'demo-model-weights-bytes')
+"
+```
+
+Deregister — real cascade cleanup of the artifact and training-job rows:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://ai-ml-workflow:8000/models/<modelId>')
+print(r.status_code)
+"
+```
+
+## 14. Retire it — Terminate, then Delete
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -850,8 +954,8 @@ print(r.status_code)
 204 with an empty body — the instance row is gone. The full lifecycle
 — onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
 loop, FOCOM resource management, FOCOM FCAPS, Policy Mgmt intent
-automation, A1 Policy Management, SME Trusted Invokers, retire — is now
-complete against a
+automation, A1 Policy Management, SME Trusted Invokers, AI/ML Workflow,
+retire — is now complete against a
 real running
 stack.
 
