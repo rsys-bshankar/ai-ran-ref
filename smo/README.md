@@ -111,7 +111,7 @@ PYTHONPATH=shared python -m pytest tests_integration/ -v
 PYTHONPATH=shared python scripts/generate_openapi_specs.py
 ```
 
-**440 tests total, all passing** as of this build: 426 unit tests across
+**445 tests total, all passing** as of this build: 431 unit tests across
 all fourteen modules plus the two mocks, and 14 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -495,7 +495,20 @@ with stdlib `xml.etree.ElementTree`, vulnerable to XML internal entity
 expansion (CWE-611) — fixed by switching to `defusedxml.ElementTree`
 there and, for the same vulnerability class at the same protocol
 boundary, in `netconf_client.py`'s reply parsing too. `mock-o1-adaptor`
-went from 5 tests to 6.
+went from 5 tests to 6. Continuing to revisit previously-declared
+Phase-1 boundaries, the next pass closed "RAN NF OAM's MnS Registry
+discovery is a heartbeat-aging stub" — partially: real MnS Registry NRM
+polling stays out of scope (no such registry exists in this build), but
+`write_configuration_changes`'s own gate now ages a stale `ACTIVE`
+endpoint live, the moment a write is attempted against it, rather than
+depending on something having already called the separate
+`POST /o1-adaptor-endpoints/discover` sweep first — the same "no
+scheduler exists anywhere in this build" pattern as DME's producer
+health and A1 Related's service supervision. Writing real route-level
+tests for this (previously zero) surfaced the third occurrence of the
+naive-vs-aware `DateTime(timezone=True)` SQLite portability gap — fixed
+with the same `as_utc` helper A1 Related and SME already use.
+`ran-nf-oam` went from 29 tests to 34.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

@@ -4,6 +4,7 @@ elided behind a comment that recorded every sub_change as APPLIED without
 dispatching anything. Run with: pytest smo/ran-nf-oam/tests -q
 """
 
+import datetime
 import uuid
 
 import pytest
@@ -41,10 +42,10 @@ def client(db_session_factory):
     app.dependency_overrides.clear()
 
 
-def _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE"):
+def _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heartbeat_at=None):
     db = db_session_factory()
     endpoint = O1AdaptorEndpoint(managed_element_ref="ME-1", adaptor_uri="http://adaptor:9000/netconf",
-                                  protocol_support=[protocol], health_status=health)
+                                  protocol_support=[protocol], health_status=health, last_heartbeat_at=last_heartbeat_at)
     db.add(endpoint)
     db.flush()
     me = ManagedEntity(managed_element_ref="ME-1", entity_type="O-DU", o1_protocol=protocol, o1_adaptor_endpoint_id=endpoint.endpoint_id)
@@ -110,6 +111,80 @@ def test_config_change_rejects_unreachable_endpoint_without_dispatch(client, db_
     })
     job = client.get(f"/config-jobs/{resp.json()['jobId']}").json()
     assert job["subChanges"][0]["rejectionReason"] == "ENDPOINT_UNREACHABLE"
+
+
+def test_config_change_rejects_a_stale_active_endpoint_live_without_an_explicit_discover_call(client, db_session_factory, monkeypatch):
+    """The heartbeat-aging check (OPEN_ITEMS.md section 2) is computed live
+    at this gate now, the same "no scheduler exists anywhere in this
+    build" pattern already used for DME's producer health and A1 Related's
+    service supervision — so a stale endpoint is caught here even though
+    nothing ever called POST /o1-adaptor-endpoints/discover first.
+    """
+    stale = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10)
+    _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heartbeat_at=stale)
+    monkeypatch.setattr("app.main.send_edit_config", lambda *a, **kw: pytest.fail("should not dispatch to a stale endpoint"))
+
+    resp = client.post("/config-jobs", json={
+        "requestedBy": "operator", "scope": "cell",
+        "changes": [{"managedElementRef": "ME-1", "attributeChanges": {"adminState": "UNLOCKED"}}],
+    })
+    job = client.get(f"/config-jobs/{resp.json()['jobId']}").json()
+    assert job["subChanges"][0]["rejectionReason"] == "ENDPOINT_UNREACHABLE"
+
+
+def test_config_change_proceeds_for_a_freshly_heartbeated_active_endpoint(client, db_session_factory, monkeypatch):
+    fresh = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=5)
+    _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heartbeat_at=fresh)
+    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id: True)
+
+    resp = client.post("/config-jobs", json={
+        "requestedBy": "operator", "scope": "cell",
+        "changes": [{"managedElementRef": "ME-1", "attributeChanges": {"adminState": "UNLOCKED"}}],
+    })
+    job = client.get(f"/config-jobs/{resp.json()['jobId']}").json()
+    assert job["subChanges"][0]["status"] == "APPLIED"
+
+
+def test_discover_endpoints_ages_a_stale_active_endpoint_to_degraded(client, db_session_factory):
+    stale = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10)
+    _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heartbeat_at=stale)
+
+    resp = client.post("/o1-adaptor-endpoints/discover")
+    assert resp.status_code == 200
+    assert resp.json() == {"checked": 1}
+
+    db = db_session_factory()
+    ep = db.query(O1AdaptorEndpoint).filter_by(managed_element_ref="ME-1").one()
+    assert ep.health_status == "DEGRADED"
+    db.close()
+
+
+def test_discover_endpoints_leaves_a_fresh_active_endpoint_alone(client, db_session_factory):
+    fresh = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=5)
+    _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heartbeat_at=fresh)
+
+    client.post("/o1-adaptor-endpoints/discover")
+
+    db = db_session_factory()
+    ep = db.query(O1AdaptorEndpoint).filter_by(managed_element_ref="ME-1").one()
+    assert ep.health_status == "ACTIVE"
+    db.close()
+
+
+def test_discover_endpoints_ignores_an_endpoint_that_has_never_heartbeated(client, db_session_factory):
+    """last_heartbeat_at stays NULL until the first POST .../heartbeat call
+    — must not be treated as "infinitely stale" (None minus now would also
+    raise, not just compare wrong).
+    """
+    _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heartbeat_at=None)
+
+    resp = client.post("/o1-adaptor-endpoints/discover")
+    assert resp.status_code == 200
+
+    db = db_session_factory()
+    ep = db.query(O1AdaptorEndpoint).filter_by(managed_element_ref="ME-1").one()
+    assert ep.health_status == "ACTIVE"
+    db.close()
 
 
 def test_health_endpoint_answers_the_callback_url_subscribe_pm_registers(client):

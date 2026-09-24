@@ -123,8 +123,23 @@ the ambiguity into code.
   caught and fixed before merge) — `InvokerRegistration` keeps only a
   salted `scrypt` hash, `IssuedAccessToken` only a SHA-256 hash of the
   token itself.
-- **RAN NF OAM's MnS Registry discovery is a heartbeat-aging stub**, not
-  real registry polling.
+- ~~**RAN NF OAM's MnS Registry discovery is a heartbeat-aging stub**, not
+  real registry polling.~~ — **closed, partially.** Real MnS Registry NRM
+  polling stays out of scope (no such external registry exists in this
+  build to poll — the same declared elision as OAuth2's Keycloak and O1's
+  full ntsim-ng simulator). What's closed: staleness is now computed
+  live at `write_configuration_changes`'s own gate (`_age_endpoint_health`,
+  shared with the bulk `/discover` sweep), the same "no scheduler exists
+  anywhere in this build" pattern already used for DME's producer health
+  and A1 Related's service supervision — a stale `ACTIVE` endpoint is
+  caught and rejected (`ENDPOINT_UNREACHABLE`) the moment a config write
+  is attempted against it, not only if something had separately polled
+  `/discover` first. Writing real tests for this (previously zero — only
+  the FSM transition itself was unit-tested, never the route) surfaced
+  the third occurrence of the naive-vs-aware `DateTime(timezone=True)`
+  SQLite portability gap (first hit by A1 Related, then SME): fixed with
+  `smo_shared.timeutil.as_utc`, the same helper both of those already
+  use.
 - ~~**No persisted OpenAPI spec files anywhere** — relying entirely on
   FastAPI's live `/docs` generation rather than committed contracts.~~ —
   **closed.** Added `docs/openapi/<module>.json` for all fourteen
@@ -210,8 +225,8 @@ Per-module unit test counts:
 | rapp-mgmt | 19 |
 | ran-analytics | 22 |
 | nfo | 23 |
-| ran-nf-oam | 29 |
 | onboarding | 30 |
+| ran-nf-oam | 34 |
 | focom | 37 |
 | a1-related | 43 |
 | sme | 47 |
@@ -1586,6 +1601,19 @@ own §1/§2 items stand as-is.
   mirror each other's namespace-stripping technique). Added a
   regression test proving entity expansion is rejected, not parsed.
   440 tests total, up from 439 (`mock-o1-adaptor`: 5 -> 6).
+- Continuing to revisit previously-declared Phase-1 boundaries per
+  explicit direction, closed §2's "RAN NF OAM's MnS Registry discovery
+  is a heartbeat-aging stub" — partially: real MnS Registry NRM polling
+  stays out of scope (no such registry exists in this build), but
+  staleness is now computed live at `write_configuration_changes`'s own
+  gate, not only via the separate `/discover` sweep — the same "no
+  scheduler exists anywhere in this build" pattern as DME's producer
+  health and A1 Related's service supervision. Writing real tests for
+  this route (previously zero) surfaced the third occurrence of the
+  naive-vs-aware `DateTime(timezone=True)` SQLite portability gap
+  (first hit by A1 Related, then SME) — fixed with the same
+  `smo_shared.timeutil.as_utc` helper. 445 tests total, up from 440
+  (`ran-nf-oam` alone: 29 -> 34).
 
 ## Suggested next pass (priority order)
 
