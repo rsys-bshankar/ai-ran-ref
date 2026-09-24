@@ -145,7 +145,7 @@ Per-module unit test counts:
 | ran-nf-oam | 29 |
 | sme | 29 |
 | onboarding | 30 |
-| a1-related | 30 |
+| a1-related | 32 |
 | focom | 37 |
 | ai-ml-workflow | 49 |
 | dme | 55 |
@@ -528,11 +528,23 @@ own §1/§2 items stand as-is.
   `policy_type_id`/`near_rt_ric_id`/`creator_id` (the closest concept
   this model has to "service" is `creator_id` — the rApp that created
   the policy — since there's no separate service identifier).
-- No policy-type detail retrieval (`GET /policy-types/{id}`) —
+- ~~No policy-type detail retrieval (`GET /policy-types/{id}`) —
   `QueryPolicyTypes` returns a hardcoded Python set (`KNOWN_POLICY_TYPES`),
   never sourced from or synced with an actual RIC; `nearRtRicId` is
   accepted but never used to filter or query anything real. No RIC
-  repository (`/rics`) concept exists at all.
+  repository (`/rics`) concept exists at all.~~ — **closed, partially.**
+  Added `GET /policy-types/{id}` (the reference's own
+  `GetPolicyTypeDefinition`, `pms-api-v3.json`), 404 on an unknown type,
+  else a real `PolicyTypeObject` (`policySchema`/`statusSchema`). The
+  `policySchema` returned is an honest empty placeholder
+  (`{"type": "object"}`), not a fabricated A1TD schema this build was
+  never given — the same "unknown real content, permissive placeholder"
+  pattern already used for `ran-nf-oam`'s/`a1-related`'s own DME type
+  registrations. `KNOWN_POLICY_TYPES` never being sourced from a real
+  RIC, and the reference's separate RIC repository (`GET /rics`), stay
+  out of scope — this build models no near-RT-RIC entity or inventory
+  beyond the single A1 mock, so there's nothing real to attach a `/rics`
+  route to without inventing one from nothing.
 - ~~**`SubscribePolicyStatus`/`UnsubscribePolicyStatus` are pure no-ops
   with zero delivery anywhere in the stack** — confirmed against the
   real mechanism: the reference PMS passes a per-policy
@@ -1283,6 +1295,16 @@ own §1/§2 items stand as-is.
   this build; `enableDme` is stored and returned faithfully, just not
   acted on. 387 tests total, up from 380 (`ai-ml-workflow` alone: 42 ->
   49).
+- A1 Related's missing policy-type detail retrieval (§5) closed,
+  partially: added `GET /policy-types/{id}` (the reference's own
+  `GetPolicyTypeDefinition`), 404 on an unknown type, else a real
+  `PolicyTypeObject`. `policySchema` is an honest empty placeholder
+  (`{"type": "object"}`), not a fabricated A1TD schema this build was
+  never given. `KNOWN_POLICY_TYPES` never being sourced from a real
+  RIC, and the reference's separate RIC repository (`GET /rics`), stay
+  out of scope — this build models no near-RT-RIC entity or inventory
+  beyond the single A1 mock. 389 tests total, up from 387 (`a1-related`
+  alone: 30 -> 32).
 
 ## Suggested next pass (priority order)
 

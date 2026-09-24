@@ -74,6 +74,21 @@ def test_query_policy_types_returns_known_catalog(client):
     assert "ORAN_QoSandTSP_6.0.1" in names
 
 
+def test_get_policy_type_returns_a_policy_schema(client):
+    """OPEN_ITEMS.md section 5: no policy-type detail retrieval existed
+    at all — the reference's own GetPolicyTypeDefinition
+    (GET /policy-types/{policyTypeId}, pms-api-v3.json).
+    """
+    resp = client.get("/policy-types/ORAN_QoSandTSP_6.0.1")
+    assert resp.status_code == 200
+    assert resp.json()["policySchema"] == {"type": "object"}
+
+
+def test_get_unknown_policy_type_is_404(client):
+    resp = client.get("/policy-types/NOT_A_REAL_TYPE")
+    assert resp.status_code == 404
+
+
 def test_create_policy_unknown_type_rejected(client):
     resp = client.post("/policies", json={"policyTypeId": "NOT_A_REAL_TYPE", "policyObject": {"x": 1}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
     assert resp.status_code == 422

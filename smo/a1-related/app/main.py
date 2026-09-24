@@ -11,7 +11,7 @@ build.
 import uuid
 
 import httpx
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -50,6 +50,29 @@ class SubscriptionRequest(BaseModel):
 @app.get("/policy-types")
 def query_policy_types(near_rt_ric_id: str | None = None):
     return [{"policyTypeId": t, "nearRtRicId": near_rt_ric_id or "mock-near-rt-ric-001"} for t in KNOWN_POLICY_TYPES]
+
+
+@app.get("/policy-types/{policy_type_id}")
+def get_policy_type(policy_type_id: str):
+    """OPEN_ITEMS.md section 5: the reference's own GetPolicyTypeDefinition
+    (`GET /policy-types/{policyTypeId}`, pms-api-v3.json) — 404 on an
+    unknown type, else a real `PolicyTypeObject` (`policySchema` — the
+    JSON Schema every A1 Policy Instance of this type must satisfy —
+    plus an optional `statusSchema`). `KNOWN_POLICY_TYPES` is this
+    build's own hardcoded type-id catalog (never sourced from or synced
+    with an actual RIC — that stays out of scope, along with the
+    reference's separate RIC repository, `GET /rics`, which has no
+    concept to attach to here at all: this build models no near-RT-RIC
+    entity or inventory beyond the single A1 mock). `policySchema` is
+    an honest empty placeholder (`{"type": "object"}`), not a
+    fabricated A1TD schema this build was never given — the same
+    "unknown real content, permissive placeholder instead of invented
+    detail" pattern already used for `ran-nf-oam`'s/`a1-related`'s own
+    DME type registrations (`dataProductionSchema: {}`).
+    """
+    if policy_type_id not in KNOWN_POLICY_TYPES:
+        raise HTTPException(status_code=404, detail=f"unknown policyTypeId {policy_type_id}")
+    return {"policySchema": {"type": "object"}, "statusSchema": None}
 
 
 @app.post("/policies", status_code=201)
