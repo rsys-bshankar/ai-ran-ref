@@ -2332,6 +2332,34 @@ own §1/§2 items stand as-is.
   "bring every module into the demo" portion of the six-item sequence
   — AI/ML Workflow, RAN Analytics, SO SMOS, and SA SMOS are now all
   either demoed or in progress. Next: SO SMOS and SA SMOS.
+- **Demo: SO SMOS.** Fifth of the six-item follow-up sequence. SO
+  SMOS's own dispatch table (`dispatch.py`, SO/SA SMOS LLD section 1)
+  — `stepType`/`targetModule` pairs routed over the real `R1Client` to
+  whichever downstream module actually owns that step — and its
+  fail-fast execution semantics (section 1.1: the first failed step
+  halts the order; every step after it stays `PENDING`, never
+  attempted) were both already real and already unit-tested, but no
+  demo phase had ever submitted a real multi-step order at all. New
+  `DEMO_RUNBOOK.md` section: submit a 3-step order (`INFRA` →
+  FOCOM, `POLICY` → A1 Related with a policy type A1 Related
+  genuinely doesn't recognize, `TRAINING` → AI/ML Workflow) — step 1
+  `COMPLETED` (a real new FOCOM `Resource` row), step 2 `FAILED` (A1
+  Related's own real `POLICY_TYPE_NOT_SUPPORTED` rejection, correctly
+  surfaced as a real `DownstreamError` rather than the historical bug
+  `dispatch.py`'s own docstring documents — a downstream error
+  response previously recorded as `COMPLETED` with the error body as
+  the "result"), step 3 `PENDING` (never dispatched — the real
+  fail-fast halt). Confirm via `GET /orders/{id}`, then **cancel** —
+  exercising the real fix for a genuine bug `cancel_order`'s own
+  docstring documents (mutating a plain JSON column's list in place is
+  invisible to SQLAlchemy's change tracking, so the old route silently
+  never persisted the cancellation at all) — turning the still-`PENDING`
+  step `CANCELLED` while leaving the `COMPLETED`/`FAILED` steps
+  untouched. `tests_integration/test_demo_runbook.py` gained a matching
+  step. No code, schema, or OpenAPI-spec change — confirmed via a full
+  local Postgres 16 pass (59 tables, 0 mismatches) and the
+  live-schema-match check, both green. Unit-test counts unchanged;
+  `tests_integration` stays at 16. Next: SA SMOS, the last item.
 
 ## Suggested next pass (priority order)
 

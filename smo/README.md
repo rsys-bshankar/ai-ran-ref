@@ -862,6 +862,18 @@ confirm the report is queryable → unsubscribe.
 code, schema, or OpenAPI-spec change. This completes bringing every
 module the six-item sequence named into the demo.
 
+**Demo: SO SMOS.** SO SMOS's own real dispatch table and fail-fast
+execution semantics were already implemented and unit-tested, but no
+demo phase had ever submitted a real multi-step order. New section:
+submit a 3-step order (`INFRA` → FOCOM, `POLICY` → A1 Related with an
+unrecognized policy type, `TRAINING` → AI/ML Workflow) — step 1
+`COMPLETED`, step 2 `FAILED` (a real downstream rejection), step 3
+`PENDING` (the real fail-fast halt, never dispatched). Confirm via
+`GET /orders/{id}`, then cancel — turning the `PENDING` step
+`CANCELLED` while leaving the others untouched.
+`tests_integration/test_demo_runbook.py` gained a matching step. No
+code, schema, or OpenAPI-spec change.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style

@@ -486,7 +486,38 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     unsubscribed = mesh["ran-analytics"].delete(f"/subscriptions/{subscription_id}")
     assert unsubscribed.status_code == 204
 
-    # step 15: retire — terminate then delete
+    # step 15: SO SMOS — a real multi-step order dispatched over the real
+    # R1 client to two different downstream modules (FOCOM, A1 Related),
+    # proving the real fail-fast halt (a genuine downstream rejection
+    # halts the order; the never-attempted step stays PENDING), then
+    # cancel to turn the PENDING step CANCELLED.
+    order = mesh["so-smos"].post("/orders", json={
+        "scope": "demo-multi-step-order",
+        "steps": [
+            {"stepType": "INFRA", "targetModule": "FOCOM", "spec": {"resourceTypeId": "gpu-l40", "description": "SO SMOS provisioned node"}},
+            {"stepType": "POLICY", "targetModule": "A1_RELATED", "policyTypeId": "NOT_A_REAL_POLICY_TYPE",
+             "policyObject": {"scope": {"cellId": "demo-cell-1"}}, "nearRtRicId": "mock-near-rt-ric-001"},
+            {"stepType": "TRAINING", "targetModule": "AI_ML_WORKFLOW", "producerId": "hello-world-rapp"},
+        ],
+    })
+    assert order.status_code == 202
+    order_id = order.json()["orderId"]
+    steps = order.json()["steps"]
+    assert steps[0]["status"] == "COMPLETED"
+    assert steps[1]["status"] == "FAILED"
+    assert steps[2]["status"] == "PENDING"
+
+    order_status = mesh["so-smos"].get(f"/orders/{order_id}")
+    assert order_status.json()["steps"][2]["status"] == "PENDING"
+
+    cancelled = mesh["so-smos"].post(f"/orders/{order_id}/cancel")
+    assert cancelled.status_code == 200
+    cancelled_steps = cancelled.json()["steps"]
+    assert cancelled_steps[0]["status"] == "COMPLETED"
+    assert cancelled_steps[1]["status"] == "FAILED"
+    assert cancelled_steps[2]["status"] == "CANCELLED"
+
+    # step 16: retire — terminate then delete
     term = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/terminate")
     assert term.status_code == 200
     assert term.json()["state"] == "UNDEPLOYED"
