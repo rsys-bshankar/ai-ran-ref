@@ -718,6 +718,23 @@ C (FOCOM resource management) and Phase D (Policy Mgmt intent
 automation), per explicit user direction to build the large/structural
 triage into the pilot demo's use case one phase at a time.
 
+**Pilot demo, Phase C: FOCOM resource management.** Unlike Phase B, no
+code gap here — FOCOM's provision/deprovision/subscribe routes and their
+notification delivery were already real and already fully unit-tested;
+`DEMO_RUNBOOK.md` just never called them. New section: subscribe to
+inventory changes filtered by resource type, provision a matching
+resource (confirmed via the real pool drill-down), deprovision it — each
+mutation fires a real outbound notification. The live walkthrough's
+callback points at a placeholder host with no listener in this compose
+stack, matching the same honesty pattern already used for the DME
+producer callbacks earlier in the runbook, and says so explicitly.
+`tests_integration/test_demo_runbook.py` gained a step that actually
+proves the notification fires by intercepting the exact `httpx.post`
+call FOCOM's own code makes (same technique already used for the sample
+CSAR fetch), asserting the real CREATE/DELETE payloads round-trip. No
+code, schema, or OpenAPI-spec change. Next: Phase D (Policy Mgmt intent
+automation), the last of the three.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style

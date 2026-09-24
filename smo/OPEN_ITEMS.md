@@ -2048,6 +2048,38 @@ own §1/§2 items stand as-is.
   FOCOM resource management; Phase D: Policy Mgmt intent automation) per
   explicit user direction to dig into the large/structural triage further
   by building it into the pilot demo's use case.
+- **Pilot demo, Phase C: FOCOM resource management.** Second of the three
+  sequential demo-expansion passes. Unlike Phase B, this needed no code
+  gap closed — FOCOM's `POST /resources/provision`, `DELETE
+  /resources/{id}`, `POST /inventory/subscriptions`, and
+  `_notify_inventory_subscribers` were already real and already fully
+  unit-tested (PR #68's `InventorySubscription.callback`/
+  `consumerSubscriptionId` rename among them); `DEMO_RUNBOOK.md` simply
+  never exercised them. Added a new runbook section: subscribe to
+  inventory changes filtered to a resource type, provision a matching
+  resource (confirmed via the real `GET /resource-pools/{id}/resources`
+  drill-down), then deprovision it — each mutation fires a real
+  `_notify_inventory_subscribers` call. The live walkthrough's callback
+  points at a placeholder host with no real listener in this compose
+  stack (same honesty pattern already used for the DME producer
+  callbacks registered earlier in the runbook) and says so explicitly,
+  noting delivery is deliberately best-effort
+  (`test_inventory_notification_delivery_survives_unreachable_subscriber`
+  already proves an unreachable subscriber never surfaces as a 500).
+  `tests_integration/test_demo_runbook.py` gained a step that actually
+  proves the notification fires — intercepting the exact `httpx.post`
+  call FOCOM's own `_notify_inventory_subscribers` makes (same technique
+  already used for the sample CSAR fetch earlier in this test), not a
+  reimplementation of the notification logic, and asserting the real
+  CREATE/DELETE payloads (`resourceId`, `resourceTypeId`,
+  `consumerSubscriptionId`) round-trip correctly. No code, schema, or
+  OpenAPI-spec change — confirmed via a full local Postgres 16 pass
+  (`check_migration_matches_models.py`: 58 tables, 0 mismatches) and
+  `tests_integration/test_openapi_specs.py`'s own live-schema-match
+  check, both green. Unit-test count unchanged at 462 (`focom` already
+  covered this logic); `tests_integration` stays at 16 (one test grew a
+  step, no new test file). Next: Phase D (Policy Mgmt intent
+  automation), the last of the three.
 
 ## Suggested next pass (priority order)
 
