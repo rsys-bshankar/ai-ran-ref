@@ -6,6 +6,7 @@ serving, MLModelCoordinationGroup's Shape A is fully built, and
 clearedNodeGroups resolves MultiNode Q2's deployment-targeting gap.
 """
 
+import re
 import uuid
 
 from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 
-from .models import AIMLModel, InferenceJob, MLMFSubscription, MLModelCoordinationGroup, ModelArtifact, ModelChangeSubscription, PerformanceReport, TrainingJob
+from .models import AIMLModel, FeatureGroup, InferenceJob, MLMFSubscription, MLModelCoordinationGroup, ModelArtifact, ModelChangeSubscription, PerformanceReport, TrainingJob
 from .statemachine import AIML_MODEL_FSM, INFERENCE_JOB_FSM, InferenceEvent, InferenceState, ModelEvent, ModelState, should_trigger_group_retrain
 
 app = FastAPI(title="AI/ML Workflow SMOS")
@@ -69,6 +70,22 @@ class UpdateModelRequest(BaseModel):
     inputDataType: str | None = None
     outputDataType: str | None = None
     targetEnvironments: list[dict] | None = None
+
+
+class CreateFeatureGroupRequest(BaseModel):
+    featureGroupName: str
+    featureList: str
+    datalakeSource: str
+    host: str
+    port: str
+    bucket: str
+    token: str
+    dbOrg: str
+    measurement: str
+    enableDme: bool = False
+    measuredObjClass: str | None = None
+    dmePort: str | None = None
+    sourceName: str | None = None
 
 
 @app.post("/models", status_code=201)
@@ -431,6 +448,57 @@ def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = 
                 # stop — nothing ever fired RETRAIN on a single member model.
                 result["retrainedModelIds"] = [str(mid) for mid in _trigger_group_retrain(db, group)]
     return result
+
+
+@app.post("/feature-groups", status_code=201)
+def create_feature_group(body: CreateFeatureGroupRequest, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: no feature-group/feature-store concept
+    existed at all. Matches the reference's own
+    CreateFeatureGroup (featuregroup_controller.py): name must be
+    `\\w+` (word characters only) and 3-63 characters long — the same
+    rule the reference applies to both TrainingJob and FeatureGroup
+    names — and a duplicate `featureGroupName` 409s, matching
+    `DBException` ("already exist") there. `enableDme`'s real
+    DME job creation (a raw PUT to
+    data-consumer/v1/info-jobs/{featureGroupName} on the feature
+    group's own host:port, trainingmgr_operations.create_dme_filtered_data_job)
+    is a deliberate elision — `enableDme` is stored and returned
+    faithfully, just not acted on, the same no-real-southbound-compute
+    pattern as elsewhere in this build.
+    """
+    if not re.fullmatch(r"\w+", body.featureGroupName) or not (3 <= len(body.featureGroupName) <= 63):
+        raise framework_error(FrameworkError.FEATURE_GROUP_NAME_INVALID, detail=f"featureGroupName {body.featureGroupName!r} must be 3-63 word characters")
+    group = FeatureGroup(
+        feature_group_name=body.featureGroupName, feature_list=body.featureList, datalake_source=body.datalakeSource,
+        host=body.host, port=body.port, bucket=body.bucket, token=body.token, db_org=body.dbOrg,
+        measurement=body.measurement, enable_dme=body.enableDme, measured_obj_class=body.measuredObjClass,
+        dme_port=body.dmePort, source_name=body.sourceName,
+    )
+    db.add(group)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise framework_error(FrameworkError.FEATURE_GROUP_ALREADY_REGISTERED, detail=f"feature group {body.featureGroupName!r} already exists")
+    return _feature_group_view(group)
+
+
+@app.get("/feature-groups")
+def list_feature_groups(db: Session = Depends(get_session)):
+    return {"featureGroups": [_feature_group_view(g) for g in db.scalars(select(FeatureGroup)).all()]}
+
+
+def _feature_group_view(g: FeatureGroup) -> dict:
+    # FeatureGroupSchema (the reference's own marshmallow schema) has no
+    # exclude list, unlike TrainingJobSchema's — every column, token
+    # included, round-trips through its GET/POST responses faithfully.
+    return {
+        "featureGroupId": str(g.feature_group_id), "featureGroupName": g.feature_group_name,
+        "featureList": g.feature_list, "datalakeSource": g.datalake_source, "host": g.host, "port": g.port,
+        "bucket": g.bucket, "token": g.token, "dbOrg": g.db_org, "measurement": g.measurement,
+        "enableDme": g.enable_dme, "measuredObjClass": g.measured_obj_class, "dmePort": g.dme_port,
+        "sourceName": g.source_name,
+    }
 
 
 def _trigger_group_retrain(db: Session, group: MLModelCoordinationGroup) -> list[uuid.UUID]:

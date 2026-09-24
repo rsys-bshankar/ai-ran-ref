@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**380 tests total, all passing** as of this build: 370 unit tests across
+**387 tests total, all passing** as of this build: 377 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -379,7 +379,15 @@ route pair matching the reference's own `update-model-metrics`/
 tracking stays deliberately unadopted — replacing this build's
 existing flat `status` field with a step state machine would be a
 bigger rework of already-shipped behavior, not a purely additive
-field.
+field. `ai-ml-workflow` went from 42 tests to 49 in the next pass:
+closed its missing feature-group/feature-store concept, partially — added
+a real `FeatureGroup` entity with `POST`/`GET /feature-groups` (the
+reference's own `CreateFeatureGroup`/`GetFeatureGroup`, its only two
+routes). Real Cassandra-backed feature storage and the reference's
+`enableDme`-triggered real DME job creation stay deliberately
+unadopted, the same no-real-southbound-compute elision as elsewhere in
+this build — `enableDme` is stored and returned faithfully, just not
+acted on.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

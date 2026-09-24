@@ -155,3 +155,37 @@ class InferenceJob(Base):
     model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id", ondelete="CASCADE"))  # NEW section 5: deregister_model's cascade
     status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
     notification_destination: Mapped[str | None] = mapped_column(String)
+
+
+class FeatureGroup(Base):
+    """OPEN_ITEMS.md section 5: no feature-group/feature-store concept
+    existed at all — the reference's own FeatureGroup
+    (aiml-fw-awmf-tm's trainingmgr/models/featuregroup.py), registered
+    through its own Training Manager sub-service, co-located with
+    TrainingJob in the same real repo this build's ai-ml-workflow
+    module maps to. Real Cassandra-backed feature storage (the ADOPT
+    target, aiml-fw-athp-sdk-feature-store) and the reference's own
+    enable_dme-triggered real DME PUT
+    (data-consumer/v1/info-jobs/{featureGroupName},
+    trainingmgr_operations.create_dme_filtered_data_job) are both
+    deliberate elisions here, consistent with this build's
+    no-real-southbound-compute design elsewhere — `enable_dme` is
+    still stored and returned faithfully, just not acted on.
+    """
+
+    __tablename__ = "feature_group"
+
+    feature_group_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    feature_group_name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    feature_list: Mapped[str] = mapped_column(String, nullable=False)
+    datalake_source: Mapped[str] = mapped_column(String, nullable=False)
+    host: Mapped[str] = mapped_column(String, nullable=False)
+    port: Mapped[str] = mapped_column(String, nullable=False)
+    bucket: Mapped[str] = mapped_column(String, nullable=False)
+    token: Mapped[str] = mapped_column(String, nullable=False)
+    db_org: Mapped[str] = mapped_column(String, nullable=False)
+    measurement: Mapped[str] = mapped_column(String, nullable=False)
+    enable_dme: Mapped[bool] = mapped_column(nullable=False, default=False)
+    measured_obj_class: Mapped[str | None] = mapped_column(String)
+    dme_port: Mapped[str | None] = mapped_column(String)
+    source_name: Mapped[str | None] = mapped_column(String)
