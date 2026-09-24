@@ -264,7 +264,25 @@ own §1/§2 items stand as-is.
   `domainName`, `interfaceDescriptions`, `custOperations`, etc.).
 - `register_service` accepts any `apf_id` with no check that it's an
   actual registered publisher — a direct consequence of provider
-  enrolment being unmodeled (see below).
+  enrolment being unmodeled (see below). **Investigated, not closed:**
+  the reference's own gate (`publishservice.go`'s
+  `PostApfIdServiceApis`/`GetApfIdServiceApis`, both calling
+  `serviceRegister.IsPublishingFunctionRegistered(apfId)` and 403'ing
+  otherwise) checks `apfId` against a real Provider (APF) enrolment
+  registry populated by `providermanagement`/`providermanagementapi` —
+  a subsystem the very next bullet already, deliberately, declares
+  structurally out of scope. This build's `ServiceProfile.producer_id`
+  (the `apf_id` equivalent) has no backing registry anywhere to check
+  against — confirmed by inspection, not assumption. Closing this
+  honestly would mean building a real provider-enrolment subsystem
+  first, which is a materially bigger, more consequential change than
+  this bullet on its own (it would un-declare an explicit, already-cited
+  architectural boundary, not just add a field or a route) — out of
+  scope for a "thinner than reference" pass. A tautological check (e.g.
+  auto-registering any `apf_id` the first time it's seen, then checking
+  against that) was considered and rejected: it would report success
+  without providing the real guarantee the reference's own check
+  exists for, which is worse than an honest, documented gap.
 - *Structurally out of scope, confirmed by direct inspection*: API
   Invoker onboarding, Provider (APF/AEF/AMF) enrolment, and the
   Security/token API are real CAPIF subsystems the reference implements
