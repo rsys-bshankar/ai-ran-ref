@@ -1,0 +1,13 @@
+{
+  "_comment": "smo/sme's real ServiceRegistration shape (POST /published-apis/v1/{apfId}/service-apis). apfId in the URL path must match the provider registered in Files/Sme/providers/provider.json.",
+  "serviceName": "helloworld-api",
+  "producerId": "hello-world-rapp",
+  "endpoint": "http://hello-world-rapp:8080/helloworld/v1",
+  "version": "v1",
+  "fullApiVersions": ["v1"],
+  "serviceCapabilities": {"resource": "helloworld", "operations": ["GET"]},
+  "selectionCriteria": {},
+  "moduleScope": "hello-world-rapp",
+  "allowedConsumers": ["hello-world-rapp"],
+  "aefProfiles": [{"aefId": "hello-world-rapp-aef", "interfaceDescription": {"ipv4Addr": "hello-world-rapp", "port": 8080}}]
+}

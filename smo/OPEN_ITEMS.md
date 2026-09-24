@@ -1712,14 +1712,48 @@ own §1/§2 items stand as-is.
   No code changes in this pass — `SPEC_AUDIT.md` itself names which
   findings are small/closeable-now vs. moderate/breaking vs.
   large/structural-and-deliberate.
-- **Next up, per explicit direction**: a fresh audit pass against the
-  O-RAN-SC Repo Blueprint's 18 shortlisted repos (§5 already covered
-  all 18 once; this revisits for anything missed or changed since,
-  especially given everything closed in this session since §5 finished
-  — OAuth2, the O1 mock, heartbeat-aging, FOCOM's inventory wiring).
-  Once both audits are fully landed, the goal shifts to identifying and
-  closing whatever's still missing for a pilot demo of a sample rApp's
-  full lifecycle.
+- Ran the second audit: a fresh pass against the O-RAN-SC Repo
+  Blueprint's 18 shortlisted repos, focused on what changed since §5
+  finished (OAuth2, the O1 mock, heartbeat-aging, FOCOM's inventory
+  wiring) rather than re-deriving §5 from scratch. SME's own real
+  findings (documented above) were the substantive result — grepped
+  `oam`/`smo-o1`/`sim-o1-interface`'s source for a real MnS Registry
+  discovery/registration protocol to further ground RAN NF OAM's
+  heartbeat-aging elision against: none exists, confirming that elision
+  stays correctly scoped, not a missed closeable gap. Same for FOCOM's
+  `/inventory`: `pti-o2` has no combined inventory endpoint to ground
+  it against beyond what the O2IMS spec audit already found.
+- **Per explicit direction, prepared a real pilot-demo artifact and
+  runbook** rather than more spec-gap closures (the user's own call:
+  only close SPEC_AUDIT.md's gaps if one turns out to be demo-blocking
+  — none were, one different real bug was found instead). Adapted the
+  real O-RAN-SC reference's own sample package
+  (`nonrtric-plt-rappmanager/sample-rapp-generator/rapp-all`) into
+  `smo/samples/hello-world-rapp/` (+ `build_csar.py`, producing the
+  committed `hello-world-rapp.csar`) — a real, valid CSAR for this
+  build's own `Onboarding` validator, with real SME/DME registration
+  bodies matching this build's actual request shapes. Doing this
+  surfaced a real, previously undetected bug:
+  `_validate_package`'s required-file check used
+  `Definitions/acm_composition.json`, a path that doesn't exist
+  anywhere in the real reference — the actual constant
+  (`RappCsarPathProvider.ACM_COMPOSITION_JSON_LOCATION`,
+  `FileExistenceValidator.java`) is
+  `Files/Acm/definition/compositions.json`. This build's own test
+  fixture had independently guessed the same wrong path, so the tests
+  agreed with the implementation and neither ever caught it — only
+  checking against the real reference's sample package did. Fixed both
+  the validator and the fixture. `smo/DEMO_RUNBOOK.md` now documents
+  the full onboard → deploy → bootstrap (SME/DME registration, OAuth2)
+  → operate → retire sequence with real, copy-pasteable commands
+  against a live `docker compose up` (this build's own sandbox still
+  cannot run one — the runbook is explicit about that and about why
+  every command routes through `docker compose exec r1-termination`,
+  since only that service publishes a host port). Two new permanent
+  integration tests prove the whole sequence for real:
+  `test_real_demo_csar_onboards_and_deploys` (the CSAR alone) and
+  `test_full_runbook_sequence_succeeds` (every single runbook command,
+  in order). 448 tests total, up from 446 (`tests_integration`: 14 -> 16).
 
 ## Suggested next pass (priority order)
 

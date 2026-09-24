@@ -1,0 +1,12 @@
+{
+  "name": "hello-world-rapp-composition",
+  "version": "1.0.0",
+  "compositionId": "6f2f6c5e-6b0a-4e1a-9d3a-2a6e6d6f0002",
+  "elements": {
+    "helloworld-chart": {
+      "type": "org.onap.policy.clamp.acm.HelmAutomationCompositionElement",
+      "definition": "helloworld",
+      "description": "Deploys hello-world-chart-0.1.0.tgz onto the single Phase-1 cluster"
+    }
+  }
+}

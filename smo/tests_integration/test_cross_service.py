@@ -13,6 +13,49 @@ Run with: pytest smo/tests_integration -q
 """
 
 import uuid
+from pathlib import Path
+
+
+def test_real_demo_csar_onboards_and_deploys(mesh, loaded_apps, shared_engine, monkeypatch):
+    """smo/samples/hello-world-rapp.csar — the real, spec-shaped sample
+    package smo/DEMO_RUNBOOK.md walks a live docker-compose deployment
+    through — must keep onboarding and deploying for real, through
+    _validate_package's actual (unstubbed) zip-parsing, not a mocked
+    stand-in. Regression guard for the real bug this exposed: the
+    reference's own FileExistenceValidator requires
+    Files/Acm/definition/compositions.json (RappCsarPathProvider.
+    ACM_COMPOSITION_JSON_LOCATION), not Definitions/acm_composition.json
+    — the path this build's own validator and test fixture both
+    originally guessed wrong, which would have rejected every real CSAR
+    the reference itself produces.
+    """
+    csar_bytes = (Path(__file__).resolve().parent.parent / "samples" / "hello-world-rapp.csar").read_bytes()
+
+    class FakeResp:
+        content = csar_bytes
+        def raise_for_status(self):
+            pass
+
+    import httpx
+    real_get = httpx.get  # the mesh's own installed dispatcher — must still handle every other call
+
+    def fake_get(location, timeout=None, **kwargs):
+        if location == "http://example/hello-world-rapp.csar":
+            return FakeResp()
+        return real_get(location, timeout=timeout, **kwargs)
+
+    monkeypatch.setattr(loaded_apps["onboarding"].httpx, "get", fake_get)
+
+    onboard = mesh["onboarding"].post("/packages", json={"location": "http://example/hello-world-rapp.csar"})
+    package_id = onboard.json()["packageId"]
+
+    status = mesh["onboarding"].get(f"/packages/{package_id}/onboarding-status")
+    assert status.json()["state"] == "AVAILABLE"
+    assert status.json()["nfDeploymentDescriptorId"] is not None
+
+    create = mesh["rapp-mgmt"].post("/instances", json={"packageId": package_id, "config": {}})
+    assert create.status_code == 202
+    assert create.json()["instanceId"]
 
 
 def test_nfo_instantiate_actually_resolves_cluster_through_focom(mesh):

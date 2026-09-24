@@ -1,0 +1,5 @@
+{
+  "_comment": "smo/sme's real InvokerRegistrationRequest shape (POST /invoker-registrations). Same flattened identity as the provider — this build treats apiInvokerId == consumerId == rAppId.",
+  "apiInvokerId": "hello-world-rapp",
+  "onboardingSecret": "demo-onboarding-secret-change-me"
+}

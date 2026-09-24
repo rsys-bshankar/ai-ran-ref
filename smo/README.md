@@ -59,6 +59,12 @@ smo/
                           contract change now shows up as a diff, caught
                           if it drifts by tests_integration/test_openapi_specs.py
   scripts/                 one-off tooling, e.g. generate_openapi_specs.py
+  samples/hello-world-rapp.csar  a real, valid sample rApp package — see
+                          DEMO_RUNBOOK.md
+  DEMO_RUNBOOK.md          real, copy-pasteable commands walking a live
+                          docker compose up through a sample rApp's full
+                          onboard -> deploy -> bootstrap -> operate ->
+                          retire lifecycle
   docker-compose.yml       Phase 1 deployment topology (SMO Design v1.3
                           section 4), including the isolated a1_mock_net
                           network segment
@@ -121,8 +127,8 @@ PYTHONPATH=shared python scripts/generate_openapi_specs.py
 docker compose config --quiet
 ```
 
-**446 tests total, all passing** as of this build: 432 unit tests across
-all fourteen modules plus the two mocks, and 14 integration tests proving
+**448 tests total, all passing** as of this build: 432 unit tests across
+all fourteen modules plus the two mocks, and 16 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
 below), upgrade auto-rollback, the `PARTIAL_SUCCESS` decomposed-PATCH
@@ -543,7 +549,26 @@ the live Postgres schema once the real migration is applied, wired into
 that CI job. Verified by reproducing both original bugs directly against
 a real local Postgres 16 instance and confirming the script catches
 each with a precise error, then restoring a clean migration and
-confirming it passes.
+confirming it passes. Two further passes then produced `SPEC_AUDIT.md`
+(a deep comparison against the formal specs in `specs/`, distinct from
+this file's own source-code audits) and a delta pass against the
+O-RAN-SC repos, both summarized in `OPEN_ITEMS.md`. Per explicit
+direction, the pass after that built a real pilot-demo artifact instead
+of chasing more spec gaps: `smo/samples/hello-world-rapp.csar`, adapted
+from the real O-RAN-SC reference's own sample package
+(`nonrtric-plt-rappmanager/sample-rapp-generator/rapp-all`), and
+`smo/DEMO_RUNBOOK.md`, a real command-by-command walkthrough of the
+full onboard → deploy → bootstrap → operate → retire lifecycle against
+a live `docker compose up`. Building the sample package this way (not a
+synthetic fixture) surfaced a real bug neither this build's own
+validator nor its own test fixture had ever caught, because both had
+independently guessed the same wrong path: `_validate_package` required
+`Definitions/acm_composition.json`, which doesn't exist anywhere in the
+real reference — the actual required path
+(`RappCsarPathProvider.ACM_COMPOSITION_JSON_LOCATION`) is
+`Files/Acm/definition/compositions.json`. Fixed, and now proven by two
+new permanent integration tests that run the real CSAR and the full
+runbook sequence end to end. `tests_integration` went from 14 tests to 16.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

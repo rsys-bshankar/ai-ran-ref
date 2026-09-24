@@ -1,0 +1,32 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: >
+  Hello World rApp — a minimal, real-shaped sample package for this
+  build's own pilot demo of the full rApp lifecycle (onboard, deploy,
+  activate, operate, retire). Adapted from the real O-RAN-SC reference's
+  own sample package (nonrtric-plt-rappmanager/sample-rapp-generator/
+  rapp-all), trimmed to one Helm artifact and this build's own R1
+  service shapes — see smo/DEMO_RUNBOOK.md for the walkthrough.
+
+topology_template:
+  node_templates:
+    applicationServiceDescriptor:
+      type: tosca.nodes.asd
+      description: "hello-world-rapp"
+      properties:
+        descriptor_id: 6f2f6c5e-6b0a-4e1a-9d3a-2a6e6d6f6f6f
+        descriptor_invariant_id: 6f2f6c5e-6b0a-4e1a-9d3a-2a6e6d6f0001
+        descriptor_version: "1.0"
+        schema_version: "2.0"
+        function_description: "Hello World rApp — demo of the full lifecycle"
+        provider: "ai-ran-ref"
+        application_name: hello-world-rapp
+        application_version: "1.0"
+      artifacts:
+        helloworld:
+          type: tosca.artifacts.asd.deploymentItem
+          file: "Artifacts/Deployment/HELM/hello-world-chart-0.1.0.tgz"
+          properties:
+            artifact_type: helm_chart
+            target_server: chartmuseum
+            item_id: 1

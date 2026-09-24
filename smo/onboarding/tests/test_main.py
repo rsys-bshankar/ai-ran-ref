@@ -115,14 +115,19 @@ def test_onboard_routes_to_failed_on_a_real_malformed_zip(client, monkeypatch):
 def _real_package_bytes(include_acm_composition=True) -> bytes:
     """A minimal but genuinely well-formed CSAR — TOSCA-Metadata/TOSCA.meta
     pointing at a real Definitions/ entry, optionally with the reference's
-    required Definitions/acm_composition.json alongside it.
+    required composition file alongside it, at its real path
+    (`RappCsarPathProvider.ACM_COMPOSITION_JSON_LOCATION`,
+    `FileExistenceValidator.java`): Files/Acm/definition/compositions.json
+    — not Definitions/acm_composition.json, which this fixture and
+    _validate_package both got wrong before being checked against the
+    reference's real sample package.
     """
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("TOSCA-Metadata/TOSCA.meta", "Entry-Definitions: Definitions/main.yaml\n")
         z.writestr("Definitions/main.yaml", "tosca_definitions_version: tosca_simple_yaml_1_3\n")
         if include_acm_composition:
-            z.writestr("Definitions/acm_composition.json", "{}")
+            z.writestr("Files/Acm/definition/compositions.json", "{}")
     return buf.getvalue()
 
 
@@ -149,7 +154,7 @@ def test_onboard_routes_to_failed_when_location_does_not_end_with_csar(client, m
 
 def test_onboard_routes_to_failed_when_acm_composition_json_is_missing(client, monkeypatch):
     """OPEN_ITEMS.md section 5: the reference's own FileExistenceValidator
-    requires Definitions/acm_composition.json alongside
+    requires Files/Acm/definition/compositions.json alongside
     TOSCA-Metadata/TOSCA.meta — previously never checked, a package
     missing it onboarded successfully anyway.
     """
