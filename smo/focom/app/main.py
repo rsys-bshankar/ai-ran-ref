@@ -50,14 +50,31 @@ class SubscribeInventoryRequest(BaseModel):
 
 
 @app.get("/inventory")
-def query_inventory(resource_type: str = ""):
+def query_inventory(resource_type: str = "", db: Session = Depends(get_session)):
     """QueryInventory — Phase 1: a single degenerate cluster, per
     D-DEPLOY-FOCOM-1. NFO's Instantiate calls this before placing a
     workload (NFO+FOCOM LLD section 4).
+
+    OPEN_ITEMS.md section 2's "FOCOM's hardcoded single-cluster stub":
+    the §5 pass below gave FOCOM a real ResourceType/ResourcePool/
+    DeploymentManager schema and wired every drill-down route
+    (`/resource-pools`, `/deployment-managers`, ...) to it, but left this
+    route — the one thing NFO's real Instantiate call actually depends
+    on — still a hardcoded literal, disconnected from that schema
+    entirely. Now sourced from the same seeded row every other route
+    reads, so there's one real topology, not a schema plus a stale
+    literal that happens to agree with it today. `resource_type` is
+    still only echoed back, not validated against a known `ResourceType`
+    — Phase 1 has exactly one degenerate cluster regardless of what's
+    requested, matching NFO's own graceful fallback on any non-2xx
+    response rather than a hard rejection.
     """
+    _ensure_phase1_topology(db)
+    dm = db.get(DeploymentManager, PHASE1_DEPLOYMENT_MANAGER_ID)
+    pool = db.get(ResourcePool, PHASE1_POOL_ID)
     return {
-        "clusterId": PHASE1_CLUSTER_ID,
-        "resourcePools": [{"resourcePoolId": "pool-0", "resourceTypeId": resource_type or "generic"}],
+        "clusterId": dm.name,
+        "resourcePools": [{"resourcePoolId": pool.resource_pool_id, "resourceTypeId": resource_type or PHASE1_RESOURCE_TYPE_ID}],
     }
 
 

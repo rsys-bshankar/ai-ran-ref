@@ -203,7 +203,7 @@
     },
     "/inventory": {
       "get": {
-        "description": "QueryInventory \u2014 Phase 1: a single degenerate cluster, per\nD-DEPLOY-FOCOM-1. NFO's Instantiate calls this before placing a\nworkload (NFO+FOCOM LLD section 4).",
+        "description": "QueryInventory \u2014 Phase 1: a single degenerate cluster, per\nD-DEPLOY-FOCOM-1. NFO's Instantiate calls this before placing a\nworkload (NFO+FOCOM LLD section 4).\n\nOPEN_ITEMS.md section 2's \"FOCOM's hardcoded single-cluster stub\":\nthe \u00a75 pass below gave FOCOM a real ResourceType/ResourcePool/\nDeploymentManager schema and wired every drill-down route\n(`/resource-pools`, `/deployment-managers`, ...) to it, but left this\nroute \u2014 the one thing NFO's real Instantiate call actually depends\non \u2014 still a hardcoded literal, disconnected from that schema\nentirely. Now sourced from the same seeded row every other route\nreads, so there's one real topology, not a schema plus a stale\nliteral that happens to agree with it today. `resource_type` is\nstill only echoed back, not validated against a known `ResourceType`\n\u2014 Phase 1 has exactly one degenerate cluster regardless of what's\nrequested, matching NFO's own graceful fallback on any non-2xx\nresponse rather than a hard rejection.",
         "operationId": "query_inventory_inventory_get",
         "parameters": [
           {

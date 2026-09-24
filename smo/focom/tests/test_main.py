@@ -226,6 +226,27 @@ def test_query_inventory_defaults_resource_type_to_generic(client):
     assert resp.json()["resourcePools"][0]["resourceTypeId"] == "generic"
 
 
+def test_query_inventory_reflects_the_real_seeded_deployment_manager_row(client, db_session):
+    """OPEN_ITEMS.md section 2: /inventory used to be a hardcoded literal,
+    entirely disconnected from the real ResourcePool/DeploymentManager
+    schema every drill-down route already reads. Proves it's genuinely
+    DB-backed now, not a literal that merely happens to agree with the
+    seeded row's values: mutate the row directly, and /inventory must
+    reflect the mutation, not the original PHASE1_CLUSTER_ID/POOL_ID
+    constants.
+    """
+    client.get("/deployment-managers")  # triggers _ensure_phase1_topology's lazy seed
+
+    db = db_session()
+    dm = db.get(DeploymentManager, PHASE1_DEPLOYMENT_MANAGER_ID)
+    dm.name = "renamed-cluster"
+    db.commit()
+    db.close()
+
+    resp = client.get("/inventory")
+    assert resp.json()["clusterId"] == "renamed-cluster"
+
+
 def test_query_alarms_returns_empty_list_when_none_ingested(client):
     resp = client.get("/alarms")
     assert resp.json() == []
