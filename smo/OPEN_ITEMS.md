@@ -147,7 +147,7 @@ Per-module unit test counts:
 | onboarding | 30 |
 | a1-related | 30 |
 | focom | 37 |
-| ai-ml-workflow | 42 |
+| ai-ml-workflow | 49 |
 | dme | 55 |
 
 Plus 10 cross-service integration tests in `tests_integration/`.
@@ -730,9 +730,25 @@ own §1/§2 items stand as-is.
   bigger, riskier rework of already-shipped behavior (every existing
   caller reads/writes a flat `status`), not a purely additive field;
   left for a future pass rather than attempted here.
-- No feature-group/feature-store concept exists at all — the reference
+- ~~No feature-group/feature-store concept exists at all — the reference
   has a first-class `FeatureGroup` entity with its own CRUD and a real
-  SDK querying by trainingjob/feature name.
+  SDK querying by trainingjob/feature name.~~ — **closed, partially.**
+  Added a real `FeatureGroup` entity with `POST`/`GET /feature-groups`
+  (the reference's own `CreateFeatureGroup`/`GetFeatureGroup`,
+  `featuregroup_controller.py` — its only two routes; the reference
+  itself has no delete route either). Faithfully matches the
+  reference's own name validation (`\w+`, 3-63 characters) and
+  duplicate-name 409. Deliberately **not** adopted: the reference's
+  real Cassandra-backed feature store (`aiml-fw-athp-sdk-feature-store`,
+  a separate ADOPT-only repo) and its `enableDme`-triggered real DME
+  job creation (a raw PUT to
+  `data-consumer/v1/info-jobs/{featureGroupName}` on the feature
+  group's own host:port) — both are the same no-real-southbound-compute
+  elision already documented throughout this build; `enableDme` is
+  stored and returned faithfully, just not acted on. The real SDK
+  querying by trainingjob/feature name has nothing in this build's own
+  scope to attach to (no consumer of `FeatureGroup` data exists here
+  either, same as the reference's own separation of concerns).
 - ~~No uniqueness/conflict check on `(model_type, version)` — duplicate
   registrations silently succeed where the reference 409s.~~ —
   **closed.** Added a real `UniqueConstraint(model_type, version)` to
@@ -1257,6 +1273,16 @@ own §1/§2 items stand as-is.
   a step state machine is a bigger rework of already-shipped behavior,
   not a purely additive field. 380 tests total, up from 376
   (`ai-ml-workflow` alone: 38 -> 42).
+- AI/ML Workflow's missing feature-group/feature-store concept (§5)
+  closed, partially: added a real `FeatureGroup` entity with
+  `POST`/`GET /feature-groups` (the reference's own `CreateFeatureGroup`/
+  `GetFeatureGroup` — its only two routes). Real Cassandra-backed
+  feature storage and the reference's `enableDme`-triggered real DME
+  job creation stay deliberately unadopted — the same
+  no-real-southbound-compute elision already documented throughout
+  this build; `enableDme` is stored and returned faithfully, just not
+  acted on. 387 tests total, up from 380 (`ai-ml-workflow` alone: 42 ->
+  49).
 
 ## Suggested next pass (priority order)
 

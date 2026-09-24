@@ -15,7 +15,7 @@ from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import AIMLModel, InferenceJob, MLMFSubscription, MLModelCoordinationGroup, ModelArtifact, ModelChangeSubscription, PerformanceReport, TrainingJob
+from app.models import AIMLModel, FeatureGroup, InferenceJob, MLMFSubscription, MLModelCoordinationGroup, ModelArtifact, ModelChangeSubscription, PerformanceReport, TrainingJob
 from app.statemachine import ModelState
 
 
@@ -29,7 +29,7 @@ def db_session_factory():
     Base.metadata.create_all(engine, tables=[
         AIMLModel.__table__, TrainingJob.__table__, MLModelCoordinationGroup.__table__,
         MLMFSubscription.__table__, PerformanceReport.__table__, ModelArtifact.__table__,
-        ModelChangeSubscription.__table__, InferenceJob.__table__,
+        ModelChangeSubscription.__table__, InferenceJob.__table__, FeatureGroup.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -483,3 +483,79 @@ def test_delete_model_cascades_its_artifacts_and_training_jobs(client, db_sessio
         assert session.query(MLMFSubscription).filter(MLMFSubscription.model_id == model_id).count() == 0
         assert session.query(InferenceJob).filter(InferenceJob.model_id == model_id).count() == 0
         assert session.query(PerformanceReport).filter(PerformanceReport.subscription_id == subscription_id).count() == 0
+
+
+def _feature_group_body(feature_group_name="cellCounters", **extra):
+    return {
+        "featureGroupName": feature_group_name, "featureList": "throughput,latency", "datalakeSource": "influxdb",
+        "host": "influxdb.smo", "port": "8086", "bucket": "ran-metrics", "token": "secret-token",
+        "dbOrg": "smo-org", "measurement": "cell_kpis", **extra,
+    }
+
+
+def test_create_feature_group_returns_its_fields(client):
+    """OPEN_ITEMS.md section 5: no feature-group/feature-store concept
+    existed at all — the reference's own FeatureGroup
+    (aiml-fw-awmf-tm's featuregroup.py/featuregroup_controller.py).
+    """
+    resp = client.post("/feature-groups", json=_feature_group_body())
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["featureGroupName"] == "cellCounters"
+    assert body["featureList"] == "throughput,latency"
+    assert body["enableDme"] is False
+    assert "featureGroupId" in body
+
+
+def test_create_feature_group_rejects_a_duplicate_name(client):
+    """CreateFeatureGroup's own DBException("already exist") path, 409."""
+    first = client.post("/feature-groups", json=_feature_group_body())
+    assert first.status_code == 201
+
+    resp = client.post("/feature-groups", json=_feature_group_body())
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "FEATURE_GROUP_ALREADY_REGISTERED"
+
+
+def test_create_feature_group_rejects_a_name_that_is_too_short(client):
+    """The reference's own name-length check: 3-63 characters."""
+    resp = client.post("/feature-groups", json=_feature_group_body(feature_group_name="ab"))
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["title"] == "FEATURE_GROUP_NAME_INVALID"
+
+
+def test_create_feature_group_rejects_a_name_with_non_word_characters(client):
+    """The reference's own PATTERN = \\w+ — no hyphens, spaces, or dots."""
+    resp = client.post("/feature-groups", json=_feature_group_body(feature_group_name="cell-counters"))
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["title"] == "FEATURE_GROUP_NAME_INVALID"
+
+
+def test_list_feature_groups_returns_registered_groups(client):
+    client.post("/feature-groups", json=_feature_group_body(feature_group_name="cellCounters"))
+    client.post("/feature-groups", json=_feature_group_body(feature_group_name="handoverCounters"))
+
+    resp = client.get("/feature-groups")
+    assert resp.status_code == 200
+    names = {g["featureGroupName"] for g in resp.json()["featureGroups"]}
+    assert names == {"cellCounters", "handoverCounters"}
+
+
+def test_list_feature_groups_returns_empty_list_when_none_registered(client):
+    resp = client.get("/feature-groups")
+    assert resp.json() == {"featureGroups": []}
+
+
+def test_create_feature_group_stores_enable_dme_and_dme_fields(client):
+    """enableDme is stored and returned faithfully — the real DME job
+    creation it would trigger in the reference is a deliberate elision,
+    not silently dropped data.
+    """
+    resp = client.post("/feature-groups", json=_feature_group_body(
+        enableDme=True, sourceName="ran-nf-oam", dmePort="8000", measuredObjClass="NRCellDU",
+    ))
+    body = resp.json()
+    assert body["enableDme"] is True
+    assert body["sourceName"] == "ran-nf-oam"
+    assert body["dmePort"] == "8000"
+    assert body["measuredObjClass"] == "NRCellDU"

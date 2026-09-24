@@ -502,6 +502,25 @@ CREATE TABLE inference_job (
   notification_destination TEXT
 );
 
+-- NEW section 5: the reference's own FeatureGroup (aiml-fw-awmf-tm) — no
+-- feature-group/feature-store concept existed at all before this pass.
+CREATE TABLE feature_group (
+  feature_group_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  feature_group_name  TEXT NOT NULL UNIQUE,
+  feature_list          TEXT NOT NULL,
+  datalake_source         TEXT NOT NULL,
+  host                      TEXT NOT NULL,
+  port                        TEXT NOT NULL,
+  bucket                        TEXT NOT NULL,
+  token                           TEXT NOT NULL,
+  db_org                            TEXT NOT NULL,
+  measurement                         TEXT NOT NULL,
+  enable_dme                            BOOLEAN NOT NULL DEFAULT false,
+  measured_obj_class                       TEXT,
+  dme_port                                   TEXT,
+  source_name                                  TEXT
+);
+
 -- ============================================================
 -- AI/ML Content: RAN Analytics  (RAN Analytics LLD section 4)
 -- ============================================================
