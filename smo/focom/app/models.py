@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, Uuid
+from sqlalchemy import ARRAY, DateTime, Float, ForeignKey, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -31,6 +31,18 @@ class ResourceType(Base):
     vendor: Mapped[str | None] = mapped_column(String)
     model: Mapped[str | None] = mapped_column(String)
     version: Mapped[str | None] = mapped_column(String)
+    # SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's ResourceType
+    # requires these five fields — dictionary refs, a "physicality" enum,
+    # a functional-role enum, and vendor extensions — entirely absent
+    # from this model. Nullable: no route in this build registers a
+    # ResourceType with this much detail (only provision_resource's
+    # auto-registration on an unrecognized resourceTypeId, which never
+    # had this data either).
+    alarm_dictionary_id: Mapped[str | None] = mapped_column(String)
+    performance_dictionary_id: Mapped[str | None] = mapped_column(String)
+    resource_kind: Mapped[str | None] = mapped_column(String)
+    resource_class: Mapped[str | None] = mapped_column(String)
+    extensions: Mapped[list | None] = mapped_column(JSON)
 
 
 class ResourcePool(Base):
@@ -58,6 +70,13 @@ class Resource(Base):
     resource_pool_id: Mapped[str] = mapped_column(String, ForeignKey("resource_pool.resource_pool_id"), nullable=False)
     parent_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     description: Mapped[str | None] = mapped_column(String)
+    # SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's Resource requires
+    # globalAssetId/tags/groups, all absent — nullable, all optional in
+    # the real spec too (globalAssetId "required only if" reportable;
+    # tags/groups have no minItems).
+    global_asset_id: Mapped[str | None] = mapped_column(String)
+    tags: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
+    groups: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
 
 
 class DeploymentManager(Base):
@@ -68,6 +87,15 @@ class DeploymentManager(Base):
     description: Mapped[str | None] = mapped_column(String)
     o_cloud_id: Mapped[str] = mapped_column(String, nullable=False)
     service_uri: Mapped[str | None] = mapped_column(String)
+    # SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml requires these three
+    # (arrays of globalLocationId / AttributeValuePair / AttributeValuePair
+    # respectively) — entirely absent from this model. Nullable: no route
+    # in this build registers a DeploymentManager with this much detail
+    # (only the Phase 1 seed in _ensure_phase1_topology, which has no
+    # real capacity/capability introspection to report).
+    supported_locations: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
+    capabilities: Mapped[list | None] = mapped_column(JSON)
+    capacity: Mapped[list | None] = mapped_column(JSON)
 
 
 class OCloudAlarm(Base):

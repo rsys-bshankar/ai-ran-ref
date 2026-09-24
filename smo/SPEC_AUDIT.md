@@ -290,9 +290,11 @@ same-shape PR like this session's others:
    (`OPEN_ITEMS.md`'s pass-history log).
 6. ~~Policy Mgmt: add `DELETE /intents/{id}`.~~ — **closed** (same
    pass as item 5; cascades to `IntentReport`).
-7. FOCOM: add the five missing `ResourceType` fields, three missing
+7. ~~FOCOM: add the five missing `ResourceType` fields, three missing
    `DeploymentManager` fields, and `Resource`'s
-   `tags`/`groups`/`globalAssetId` as nullable columns.
+   `tags`/`groups`/`globalAssetId` as nullable columns.~~ — **closed**
+   (`OPEN_ITEMS.md`'s pass-history log; `resourceKind`/`resourceClass`
+   got real `CHECK` constraints too).
 8. FOCOM: rename `InventorySubscription`'s wire field `callbackUri` →
    `callback` (or explicitly document the deviation) and add
    `consumerSubscriptionId` passthrough.
