@@ -367,7 +367,35 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     del_service = mesh["a1-related"].delete("/services/hello-world-rapp")
     assert del_service.status_code == 204
 
-    # step 12: retire — terminate then delete
+    # step 12: SME Trusted Invokers — register a real security context
+    # for the invoker registered in step 4, confirm default redaction,
+    # confirm real values on request, revoke, confirm removal.
+    register_ti = mesh["sme"].put(f"/trusted-invokers/{invoker['apiInvokerId']}", json={
+        "notificationDestination": "http://demo-consumer:9000/security-notify",
+        "securityInfo": [{"aefId": "hello-world-rapp", "apiId": "helloworld-api", "authenticationInfo": "demo-auth-info",
+                           "authorizationInfo": "demo-authz-info", "prefSecurityMethods": ["OAUTH"]}],
+    })
+    assert register_ti.status_code == 201
+    assert register_ti.json()["securityInfo"][0]["selSecurityMethod"] == "OAUTH"
+
+    redacted = mesh["sme"].get(f"/trusted-invokers/{invoker['apiInvokerId']}")
+    assert redacted.status_code == 200
+    assert redacted.json()["securityInfo"][0]["authenticationInfo"] == ""
+    assert redacted.json()["securityInfo"][0]["authorizationInfo"] == ""
+
+    revealed = mesh["sme"].get(f"/trusted-invokers/{invoker['apiInvokerId']}", params={"authentication_info": True, "authorization_info": True})
+    assert revealed.json()["securityInfo"][0]["authenticationInfo"] == "demo-auth-info"
+    assert revealed.json()["securityInfo"][0]["authorizationInfo"] == "demo-authz-info"
+
+    revoke = mesh["sme"].post(f"/trusted-invokers/{invoker['apiInvokerId']}/delete", json={
+        "aefId": "hello-world-rapp", "apiIds": ["helloworld-api"], "apiInvokerId": invoker["apiInvokerId"], "cause": "UNEXPECTED_REASON",
+    })
+    assert revoke.status_code == 204
+
+    gone = mesh["sme"].get(f"/trusted-invokers/{invoker['apiInvokerId']}")
+    assert gone.status_code == 404
+
+    # step 13: retire — terminate then delete
     term = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/terminate")
     assert term.status_code == 200
     assert term.json()["state"] == "UNDEPLOYED"
