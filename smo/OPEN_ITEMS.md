@@ -156,7 +156,15 @@ the ambiguity into code.
   spec for that route inherently flaky. Fixed with an explicit
   `operation_id="proxy"` (not referenced by any client in this build, so
   pinning it is a pure stability fix).
-- **FOCOM's hardcoded single-cluster stub.**
+- ~~**FOCOM's hardcoded single-cluster stub.**~~ — **closed, partially.**
+  The single-cluster *topology* itself stays Phase 1's declared scope
+  (D-DEPLOY-FOCOM-1) — this build never claimed to model more than one
+  cluster. What was still genuinely a stub: the §5 pass below gave FOCOM
+  a real `ResourceType`/`ResourcePool`/`DeploymentManager` schema and
+  wired every drill-down route to it, but left `GET /inventory` — the
+  one thing NFO's real Instantiate call actually depends on — as a
+  hardcoded literal that never touched that schema at all. Now sourced
+  from the same seeded row every other route reads.
 - ~~**NFO's Heal/Scale operations are stubs.**~~ — **closed**, and stale
   by the time this line was reached: closed already by the NFO+FOCOM §5
   pass below (real 7-state lifecycle, Heal/Scale now drive real state
@@ -227,7 +235,7 @@ Per-module unit test counts:
 | nfo | 23 |
 | onboarding | 30 |
 | ran-nf-oam | 34 |
-| focom | 37 |
+| focom | 38 |
 | a1-related | 43 |
 | sme | 47 |
 | ai-ml-workflow | 49 |
@@ -1614,6 +1622,14 @@ own §1/§2 items stand as-is.
   (first hit by A1 Related, then SME) — fixed with the same
   `smo_shared.timeutil.as_utc` helper. 445 tests total, up from 440
   (`ran-nf-oam` alone: 29 -> 34).
+- Continuing per explicit direction to revisit "other items like that",
+  closed §2's "FOCOM's hardcoded single-cluster stub" — partially: the
+  single-cluster topology itself stays Phase 1's declared scope, but
+  `GET /inventory` (the one route NFO's real Instantiate call actually
+  depends on) was still a hardcoded literal never touching the real
+  `ResourceType`/`ResourcePool`/`DeploymentManager` schema the §5 pass
+  gave every drill-down route — now sourced from the same seeded row.
+  446 tests total, up from 445 (`focom` alone: 37 -> 38).
 
 ## Suggested next pass (priority order)
 

@@ -111,7 +111,7 @@ PYTHONPATH=shared python -m pytest tests_integration/ -v
 PYTHONPATH=shared python scripts/generate_openapi_specs.py
 ```
 
-**445 tests total, all passing** as of this build: 431 unit tests across
+**446 tests total, all passing** as of this build: 432 unit tests across
 all fourteen modules plus the two mocks, and 14 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -508,7 +508,15 @@ health and A1 Related's service supervision. Writing real route-level
 tests for this (previously zero) surfaced the third occurrence of the
 naive-vs-aware `DateTime(timezone=True)` SQLite portability gap — fixed
 with the same `as_utc` helper A1 Related and SME already use.
-`ran-nf-oam` went from 29 tests to 34.
+`ran-nf-oam` went from 29 tests to 34. Continuing to revisit "other
+items like that", the next pass closed "FOCOM's hardcoded single-cluster
+stub" — partially: the single-cluster topology itself stays Phase 1's
+declared scope, but `GET /inventory` (the one route NFO's real
+Instantiate call actually depends on) was still a hardcoded literal
+that never touched the real `ResourceType`/`ResourcePool`/
+`DeploymentManager` schema a §5 pass had already given every drill-down
+route — now sourced from the same seeded row every other route reads.
+`focom` went from 37 tests to 38.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
