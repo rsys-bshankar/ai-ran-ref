@@ -224,7 +224,7 @@ CREATE TABLE o1_adaptor_endpoint (
   adaptor_uri       TEXT NOT NULL,
   protocol_support  TEXT[] NOT NULL,
   registered_via    TEXT NOT NULL DEFAULT 'MNS_REGISTRY_NRM',
-  health_status     TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (health_status IN ('ACTIVE','DEGRADED','UNREACHABLE')),
+  health_status     TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (health_status IN ('DISCOVERED','ACTIVE','DEGRADED','UNREACHABLE')),  -- DISCOVERED: the endpoint FSM's own starting state (register_o1_adaptor_endpoint); without it every registration failed this CHECK
   last_heartbeat_at TIMESTAMPTZ,
   UNIQUE (managed_element_ref)
 );
