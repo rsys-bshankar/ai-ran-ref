@@ -96,6 +96,7 @@ smo/
 cd smo
 docker compose up --build
 # R1 Termination on :8080 — every rApp-facing call goes through it
+# Operator GUI on :3000 — see gui/README.md (set GUI_ADMIN_PASSWORD first)
 # Postgres on :5432, seeded from migrations/001_init.sql
 # mock-near-rt-ric has no published port — reachable only from a1-related,
 # on the isolated a1_mock_net network (closes RT-7)

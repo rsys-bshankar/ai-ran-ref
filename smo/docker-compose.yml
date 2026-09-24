@@ -141,6 +141,32 @@ services:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
+  # ---------------------------------------------------------------- operator GUI
+  # Browser -> gui (nginx, the only published GUI port) -> gui-bff -> R1
+  # Termination -> modules. gui-bff publishes nothing and authenticates to R1
+  # with its own SME-issued OAuth2 token; neither joins a1_mock_net.
+  gui-bff:
+    build: { context: ., args: { MODULE: gui-bff } }
+    depends_on: [r1-termination, sme]
+    environment:
+      R1_URL: http://r1-termination:8000
+      GUI_DATABASE_URL: sqlite:////data/gui-bff.db
+      # Secrets come from the shell / an .env file, never from git. Unset
+      # GUI_JWT_SECRET: random per boot. Unset GUI_ADMIN_PASSWORD: a random
+      # admin password is generated and logged once (docker compose logs gui-bff).
+      GUI_JWT_SECRET: ${GUI_JWT_SECRET:-}
+      GUI_ADMIN_PASSWORD: ${GUI_ADMIN_PASSWORD:-}
+      GUI_OPERATOR_PASSWORD: ${GUI_OPERATOR_PASSWORD:-}
+      GUI_VIEWER_PASSWORD: ${GUI_VIEWER_PASSWORD:-}
+      GUI_COOKIE_SECURE: ${GUI_COOKIE_SECURE:-true}
+    volumes:
+      - gui_bff_data:/data   # GUI users, audit log, the BFF's SME invoker credential
+
+  gui:
+    build: { context: ./gui }
+    depends_on: [gui-bff]
+    ports: ["3000:8080"]
+
 networks:
   default:
   a1_mock_net:
@@ -149,3 +175,4 @@ networks:
 volumes:
   smo_pgdata:
   smo_packages:
+  gui_bff_data:

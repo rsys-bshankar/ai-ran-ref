@@ -1,0 +1,6 @@
+[project]
+name = "smo-gui-bff"
+version = "0.1.0"
+description = "SMO Operator GUI backend-for-frontend: auth, RBAC proxy to R1 Termination, health aggregation"
+requires-python = ">=3.11"
+dependencies = ["fastapi", "uvicorn[standard]", "sqlalchemy", "httpx", "pydantic", "python-multipart"]
