@@ -11,7 +11,7 @@ section 2.3).
 import uuid
 
 import httpx
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 
-from .models import EVENT_TYPES, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile
+from .models import EVENT_TYPES, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile
 
 app = FastAPI(title="SME — Service Management and Exposure")
 
@@ -46,6 +46,42 @@ class EventSubscriptionRequest(BaseModel):
     apiIds: list[str] | None = None
 
 
+class ProviderRegistrationRequest(BaseModel):
+    apfId: str
+    providerDomainInfo: str | None = None
+
+
+@app.post("/provider-registrations", status_code=201)
+def register_provider(body: ProviderRegistrationRequest, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: Provider (APF) enrolment
+    (`PostRegistrations`, `providermanagement.go`) — the real registry
+    `register_service`'s own `apf_id` check needs, entirely absent
+    before this pass. Idempotent update-in-place on a re-registration of
+    the same `apfId`, the same shape `register_service`'s own
+    same-producer re-registration already uses — the reference's real
+    domain/function-id collision detection doesn't apply here, since
+    this build has no separate provider-domain concept to collide on.
+    """
+    provider = db.get(ProviderRegistration, body.apfId)
+    if provider is None:
+        provider = ProviderRegistration(apf_id=body.apfId)
+        db.add(provider)
+    provider.provider_domain_info = body.providerDomainInfo
+    db.commit()
+    return {"apfId": provider.apf_id}
+
+
+@app.delete("/provider-registrations/{apf_id}", status_code=204)
+def deregister_provider(apf_id: str, db: Session = Depends(get_session)):
+    """DeleteRegistrationsRegistrationId, providermanagement.go — idempotent,
+    matching the reference's own delete-if-present-else-still-204 shape.
+    """
+    provider = db.get(ProviderRegistration, apf_id)
+    if provider is not None:
+        db.delete(provider)
+        db.commit()
+
+
 @app.post("/published-apis/v1/{apf_id}/service-apis", status_code=201)
 def register_service(apf_id: str, body: ServiceRegistration, db: Session = Depends(get_session)):
     """RegisterService. apfId == producerId == rAppId (Foundational Platform
@@ -55,7 +91,17 @@ def register_service(apf_id: str, body: ServiceRegistration, db: Session = Depen
     unique. The SAME producer re-registering the same name updates in
     place (idempotent); a DIFFERENT producer registering that name is
     SERVICE_NAME_CONFLICT.
+
+    OPEN_ITEMS.md section 5: previously accepted any apf_id with no check
+    that it's an actual registered publisher. The reference's own gate
+    (`PostApfIdServiceApis`, `publishservice.go`:
+    `serviceRegister.IsPublishingFunctionRegistered(apfId)`, 403
+    otherwise) is now real, backed by ProviderRegistration —
+    register_provider above.
     """
+    if db.get(ProviderRegistration, apf_id) is None:
+        raise framework_error(FrameworkError.APF_NOT_REGISTERED, detail=f"{apf_id} is not a registered publishing function")
+
     existing = db.scalar(select(ServiceProfile).where(ServiceProfile.service_name == body.serviceName))
     if existing is not None and existing.producer_id != apf_id:
         raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail=f"{body.serviceName} already registered by a different producer")
@@ -96,7 +142,18 @@ def deregister_service(apf_id: str, service_id: uuid.UUID, db: Session = Depends
 
 @app.get("/published-apis/v1/{apf_id}/service-apis")
 def query_own_services(apf_id: str, db: Session = Depends(get_session)):
+    """GetApfIdServiceApis, publishservice.go — mirrors the reference's own
+    branch exactly: an apf_id with existing services always gets them back
+    (a real producer's own row set wins regardless of its current
+    enrolment state — the reference's own map-lookup-first shape), and
+    only an apf_id with zero services falls back to the same
+    IsPublishingFunctionRegistered gate register_service now uses, to
+    distinguish "a real publisher with nothing registered yet" (empty
+    list) from "not a publisher at all" (404).
+    """
     rows = db.scalars(select(ServiceProfile).where(ServiceProfile.producer_id == apf_id)).all()
+    if not rows and db.get(ProviderRegistration, apf_id) is None:
+        raise HTTPException(status_code=404, detail=f"{apf_id} is not a registered publishing function")
     return [_service_view(r) for r in rows]
 
 

@@ -45,6 +45,15 @@ CREATE TABLE service_event_subscription (
   api_ids               TEXT[]  -- NEW section 5: CAPIFEventFilter.apiIds
 );
 
+-- NEW section 5: Provider (APF) enrolment (providermanagement.go's own
+-- POST/DELETE /registrations) — the real registry register_service's own
+-- apf_id check needs. apf_id is this build's own flattened identity
+-- (apfId == producerId == rAppId), not a separate provider-domain-id.
+CREATE TABLE provider_registration (
+  apf_id                 TEXT PRIMARY KEY,
+  provider_domain_info     TEXT
+);
+
 -- ============================================================
 -- Foundational Platform: DME  (Foundational Platform LLD section 3.8)
 -- ============================================================

@@ -118,8 +118,11 @@ def test_register_analytics_producer_publishes_sme_service_registration(client, 
     client.post("/producers", params={"producer_id": "rapp-mdaf-2", "analytics_type": "failure-prediction"},
                 json={"dme_input_types": [dme_type], "output_schema": {"type": "object"}})
 
-    assert len(calls) == 1
-    path, payload = calls[0]
+    assert len(calls) == 2
+    enroll_path, enroll_payload = calls[0]
+    assert enroll_path == "/sme/provider-registrations"
+    assert enroll_payload == {"apfId": "rapp-mdaf-2"}
+    path, payload = calls[1]
     assert path == "/sme/published-apis/v1/rapp-mdaf-2/service-apis"
     assert payload["serviceName"] == "mdaf.failure-prediction"
     assert payload["producerId"] == "rapp-mdaf-2"

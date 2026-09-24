@@ -143,8 +143,8 @@ Per-module unit test counts:
 | ran-analytics | 22 |
 | nfo | 23 |
 | ran-nf-oam | 29 |
-| sme | 29 |
 | onboarding | 30 |
+| sme | 37 |
 | focom | 37 |
 | a1-related | 43 |
 | ai-ml-workflow | 49 |
@@ -262,34 +262,50 @@ own §1/§2 items stand as-is.
   (`aefId`, `protocol`, `dataFormat`, per-version `resources[].commType`)
   — not the full CAPIF `AefProfile`/`Resource` schema (`aefLocation`,
   `domainName`, `interfaceDescriptions`, `custOperations`, etc.).
-- `register_service` accepts any `apf_id` with no check that it's an
+- ~~`register_service` accepts any `apf_id` with no check that it's an
   actual registered publisher — a direct consequence of provider
-  enrolment being unmodeled (see below). **Investigated, not closed:**
-  the reference's own gate (`publishservice.go`'s
-  `PostApfIdServiceApis`/`GetApfIdServiceApis`, both calling
-  `serviceRegister.IsPublishingFunctionRegistered(apfId)` and 403'ing
-  otherwise) checks `apfId` against a real Provider (APF) enrolment
-  registry populated by `providermanagement`/`providermanagementapi` —
-  a subsystem the very next bullet already, deliberately, declares
-  structurally out of scope. This build's `ServiceProfile.producer_id`
-  (the `apf_id` equivalent) has no backing registry anywhere to check
-  against — confirmed by inspection, not assumption. Closing this
-  honestly would mean building a real provider-enrolment subsystem
-  first, which is a materially bigger, more consequential change than
-  this bullet on its own (it would un-declare an explicit, already-cited
-  architectural boundary, not just add a field or a route) — out of
-  scope for a "thinner than reference" pass. A tautological check (e.g.
-  auto-registering any `apf_id` the first time it's seen, then checking
-  against that) was considered and rejected: it would report success
-  without providing the real guarantee the reference's own check
-  exists for, which is worse than an honest, documented gap.
-- *Structurally out of scope, confirmed by direct inspection*: API
-  Invoker onboarding, Provider (APF/AEF/AMF) enrolment, and the
-  Security/token API are real CAPIF subsystems the reference implements
-  that this build assumes pre-established: not gaps, a declared
-  boundary. `accesscontrolpolicyapi`/`routinginfoapi`/`auditingapi`/
-  `loggingapi` are unimplemented in the reference itself too — nothing
-  to catch up to there.
+  enrolment being unmodeled.~~ — **closed.** An earlier pass investigated
+  this and stopped short, reasoning that closing it honestly would mean
+  un-declaring the very next bullet's "Provider enrolment: structurally
+  out of scope" boundary — too big a change for a thinner-than-reference
+  pass. Revisited and built for real: added a real, minimal Provider
+  (APF) enrolment registry (`ProviderRegistration`,
+  `POST`/`DELETE /provider-registrations`, the reference's own
+  `providermanagement.go`'s `ProviderManager`/`PostRegistrations`/
+  `DeleteRegistrationsRegistrationId`), scoped to exactly what this
+  build's own flattened identity needs — `apf_id` alone (`apfId ==
+  producerId == rAppId`, `register_service`'s own established
+  equivalence), not the reference's full three-tier provider-domain ->
+  APF/AEF/AMF-function hierarchy, which nothing else in this build
+  models either. `register_service` and `query_own_services` now both
+  enforce the reference's own real gate
+  (`serviceRegister.IsPublishingFunctionRegistered(apfId)`,
+  `publishservice.go`) — 403/404 for an unenrolled `apf_id`, mirroring
+  `PostApfIdServiceApis`/`GetApfIdServiceApis` exactly, including the
+  reference's own "existing services always win over current enrolment
+  state" branch on the GET side. This is a real, breaking change to an
+  already-shipped route's contract, not just an addition: RAN
+  Analytics' `register_analytics_producer` (SME's only cross-module
+  caller) now enrols its producer with SME before publishing its
+  service, the same real two-step CAPIF dance the reference itself
+  requires — verified against the real, in-process cross-service
+  integration suite, not just a mock. Deliberately **not** adopted: the
+  reference's own provider-domain/function-id split, its PUT
+  (update-with-function-diffing) semantics, and its
+  cross-provider-domain function-id collision detection — none of that
+  has an equivalent concept in this build to attach to, the same
+  "flatten to what this build's own identity model needs" adaptation
+  already used for `aefProfiles`/`DMEType.collection_spec` elsewhere.
+- *Now only partially out of scope, revised by direct inspection*: API
+  Invoker onboarding and the Security/token API remain real CAPIF
+  subsystems the reference implements that this build assumes
+  pre-established — not gaps, a declared boundary.
+  `accesscontrolpolicyapi`/`routinginfoapi`/`auditingapi`/`loggingapi`
+  are unimplemented in the reference itself too — nothing to catch up
+  to there. Provider enrolment itself is no longer fully out of scope
+  (see above) — only its AEF/AMF function roles and provider-domain
+  concept stay unmodeled, since this build has no separate exposing- or
+  management-function identity anywhere else to attach them to.
 
 ### DME (`dme/`) — vs `nonrtric-plt-informationcoordinatorservice` (ICS)
 
@@ -1425,6 +1441,23 @@ own §1/§2 items stand as-is.
   accepts in the first place — echoing them back would mean inventing
   descriptor data, not exposing something this build already computes.
   407 tests total, up from 405 (`rapp-mgmt` alone: 17 -> 19).
+- SME's `register_service` accepting any `apf_id` (§5) closed for real,
+  on a second look: added a minimal, real Provider (APF) enrolment
+  registry (`ProviderRegistration`, `POST`/`DELETE
+  /provider-registrations`, the reference's own `providermanagement.go`)
+  scoped to this build's own flattened `apf_id` identity, not the
+  reference's full provider-domain/APF-AEF-AMF hierarchy. `register_service`
+  and `query_own_services` now both enforce the reference's own real
+  gate (`IsPublishingFunctionRegistered`) — 403/404 for an unenrolled
+  `apf_id`. This changes an already-shipped route's contract: RAN
+  Analytics' `register_analytics_producer` (SME's only cross-module
+  caller) now enrols before publishing, verified against the real
+  cross-service integration suite, not just mocks. An earlier pass on
+  this same item stopped short, reasoning the fix would "un-declare an
+  explicit architectural boundary" — revisited and built once actually
+  attempted, since the minimal `apf_id`-only registry needed turned out
+  smaller than that earlier assessment feared. 415 tests total, up from
+  407 (`sme` alone: 29 -> 37).
 
 ## Suggested next pass (priority order)
 

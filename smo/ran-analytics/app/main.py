@@ -38,6 +38,12 @@ def register_analytics_producer(producer_id: str, analytics_type: str, dme_input
     prod.dme_input_types = dme_input_types
     prod.output_schema = output_schema
     db.commit()
+    # OPEN_ITEMS.md section 5: SME's register_service now requires the
+    # apf_id to be a registered publishing function (Provider (APF)
+    # enrolment) — this producer must enrol before it can publish itself
+    # as an SME service, the same real two-step CAPIF dance the reference
+    # itself requires.
+    R1Client().post("/sme/provider-registrations", json={"apfId": producer_id})
     R1Client().post("/sme/published-apis/v1/{}/service-apis".format(producer_id), json={
         "serviceName": f"mdaf.{analytics_type}", "producerId": producer_id, "endpoint": "internal",
         "version": "1.0", "serviceCapabilities": {"analyticsType": analytics_type}, "moduleScope": "ran-analytics",

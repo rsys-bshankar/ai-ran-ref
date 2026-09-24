@@ -54,6 +54,24 @@ class ServiceAuthzPolicy(Base):
     service: Mapped["ServiceProfile"] = relationship(back_populates="authz_policy")
 
 
+class ProviderRegistration(Base):
+    """OPEN_ITEMS.md section 5: the reference's own Provider (APF) enrolment
+    (`providermanagement.go`'s `ProviderManager`, `POST`/`DELETE
+    /registrations`) — the real registry `register_service`'s own
+    `IsPublishingFunctionRegistered` gate needs, which this build never
+    modeled at all before this pass. `apf_id` is this build's own
+    flattened identity (`apfId == producerId == rAppId`, already
+    established by `register_service`'s own docstring) — no separate
+    provider-domain-id/function-id split, since nothing else in this
+    build tracks that CAPIF three-tier (domain -> APF/AEF/AMF functions)
+    hierarchy either.
+    """
+    __tablename__ = "provider_registration"
+
+    apf_id: Mapped[str] = mapped_column(String, primary_key=True)
+    provider_domain_info: Mapped[str | None] = mapped_column(String)
+
+
 class ServiceEventSubscription(Base):
     __tablename__ = "service_event_subscription"
 

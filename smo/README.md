@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**407 tests total, all passing** as of this build: 397 unit tests across
+**415 tests total, all passing** as of this build: 405 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -429,7 +429,16 @@ list route and single-field sub-resources did). Genuinely exposes the
 real NFO `workloadRef` and caller-supplied `configuration`; the
 reference's own nested ACM/SME/DME resource records stay out of scope,
 since they're the caller-supplied deploy descriptor `CreateInstance`
-never accepts in the first place.
+never accepts in the first place. `sme` went from 29 tests to 37 in the
+next pass: closed `register_service`'s missing `apf_id` check for
+real, on a second look — added a minimal Provider (APF) enrolment
+registry scoped to this build's own flattened `apf_id` identity, not
+the reference's full provider-domain/APF-AEF-AMF hierarchy.
+`register_service`/`query_own_services` now both enforce the
+reference's own real `IsPublishingFunctionRegistered` gate. This
+changes an already-shipped route's contract: RAN Analytics' only
+cross-module call into SME now enrols before publishing, verified
+against the real cross-service integration suite.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
