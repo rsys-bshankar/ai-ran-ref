@@ -931,7 +931,94 @@ print(r.status_code)
 "
 ```
 
-## 14. Retire it — Terminate, then Delete
+## 14. RAN Analytics (optional) — register a producer, subscribe, publish a real report
+
+Independent of the sample rApp instance above — the last of the four
+modules never touched by any demo phase before this pass. Real
+producer registration (which itself does the same real two-step CAPIF
+dance as step 4: SME provider enrolment then service publish), a real
+subscription, and a real report-publish that genuinely notifies its
+subscriber.
+
+Register an analytics producer:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ran-analytics:8000/producers',
+                params={'producer_id': 'hello-world-rapp', 'analytics_type': 'coverage-issue-analysis'},
+                json={'dme_input_types': [], 'output_schema': {'type': 'object', 'properties': {'issue': {'type': 'string'}}}})
+print(r.status_code, r.json())
+"
+```
+
+`hello-world-rapp` was already SME-enrolled in step 4 — this
+re-registers the same provider (idempotent) and publishes a second,
+distinct service (`mdaf.coverage-issue-analysis`) for it, the same
+real cross-module wiring `register_analytics_producer` always does.
+Confirm it's a real, queryable registration:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://ran-analytics:8000/producers', params={'analytics_type': 'coverage-issue-analysis'})
+print(r.status_code, r.json())
+"
+```
+
+Subscribe, with a real notification destination:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ran-analytics:8000/subscriptions', params={
+    'analytics_type': 'coverage-issue-analysis', 'requested_by': 'sa-smos',
+    'notification_destination': 'http://demo-consumer:9000/analytics-reports',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `subscriptionId`, then publish a report:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ran-analytics:8000/reports', params={'analytics_type': 'coverage-issue-analysis'},
+                json={'output': {'issue': 'demo-cell-1 coverage hole detected'}, 'input_sources': []})
+print(r.status_code, r.json())
+"
+```
+
+`publish_report` fired a real notification to
+`http://demo-consumer:9000/analytics-reports` — no real listener
+exists at that address in this compose stack (same honesty pattern as
+FOCOM's/Policy Mgmt's/A1 Related's placeholder callbacks above), so
+watch `ran-analytics`'s own logs for the delivery attempt;
+`tests_integration/test_demo_runbook.py` proves the real dispatch
+fires with the correct `reportId`/`output` payload, by intercepting
+the exact `httpx.post` call `_notify_report_subscribers` makes.
+Confirm the report is queryable:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://ran-analytics:8000/reports', params={'analytics_type': 'coverage-issue-analysis'})
+print(r.status_code, r.json())
+"
+```
+
+Unsubscribe:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://ran-analytics:8000/subscriptions/<subscriptionId>')
+print(r.status_code)
+"
+```
+
+## 15. Retire it — Terminate, then Delete
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -955,7 +1042,7 @@ print(r.status_code)
 — onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
 loop, FOCOM resource management, FOCOM FCAPS, Policy Mgmt intent
 automation, A1 Policy Management, SME Trusted Invokers, AI/ML Workflow,
-retire — is now complete against a
+RAN Analytics, retire — is now complete against a
 real running
 stack.
 

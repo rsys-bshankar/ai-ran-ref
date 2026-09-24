@@ -850,6 +850,18 @@ transitions) → download the artifact back and confirm the bytes match
 → deregister. `tests_integration/test_demo_runbook.py` gained a
 matching step. No code, schema, or OpenAPI-spec change.
 
+**Demo: RAN Analytics.** The last of four modules never touched by any
+demo phase. New section: register an analytics producer (the same
+real two-step CAPIF dance as step 4 — SME provider enrolment, then a
+second, distinct service publish) → subscribe with a real
+`notificationDestination` → publish a report, firing a real
+notification (proven the same way as the FOCOM/Policy Mgmt/A1 Related
+demo notifications, by intercepting the exact `httpx.post` call) →
+confirm the report is queryable → unsubscribe.
+`tests_integration/test_demo_runbook.py` gained a matching step. No
+code, schema, or OpenAPI-spec change. This completes bringing every
+module the six-item sequence named into the demo.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style

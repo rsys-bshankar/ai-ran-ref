@@ -2309,6 +2309,29 @@ own §1/§2 items stand as-is.
   local Postgres 16 pass (59 tables, 0 mismatches) and the
   live-schema-match check, both green. Unit-test counts unchanged;
   `tests_integration` stays at 16.
+- **Demo: RAN Analytics.** Fourth of the six-item follow-up sequence,
+  and the last of four modules never touched by any demo phase. New
+  `DEMO_RUNBOOK.md` section: register an analytics producer
+  (`POST /producers`) — the same real two-step CAPIF dance as step 4
+  (SME provider enrolment, idempotent on the already-enrolled
+  `hello-world-rapp`, then a second, distinct service publish,
+  `mdaf.coverage-issue-analysis`) — confirmed via `GET /producers` →
+  subscribe with a real `notificationDestination`
+  (`POST /subscriptions`) → publish a report (`POST /reports`), which
+  fires a real notification via `_notify_report_subscribers` (the same
+  real best-effort delivery already closed in OPEN_ITEMS.md section 5)
+  → confirm the report is queryable (`GET /reports`) → unsubscribe.
+  `tests_integration/test_demo_runbook.py` gained a matching step,
+  proving the real dispatch fires with the correct `reportId`/`output`
+  payload by intercepting the exact `httpx.post` call
+  `_notify_report_subscribers` makes (same technique as FOCOM/Policy
+  Mgmt/A1 Related). No code, schema, or OpenAPI-spec change —
+  confirmed via a full local Postgres 16 pass (59 tables, 0
+  mismatches) and the live-schema-match check, both green. Unit-test
+  counts unchanged; `tests_integration` stays at 16. This closes the
+  "bring every module into the demo" portion of the six-item sequence
+  — AI/ML Workflow, RAN Analytics, SO SMOS, and SA SMOS are now all
+  either demoed or in progress. Next: SO SMOS and SA SMOS.
 
 ## Suggested next pass (priority order)
 
