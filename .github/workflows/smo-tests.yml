@@ -81,3 +81,19 @@ jobs:
           count=$(psql -h localhost -U smo -d smo -t -c "select count(*) from information_schema.tables where table_schema='public'")
           echo "Tables created: $count"
           [ "$count" -ge 30 ]
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install shared library + service dependencies
+        working-directory: smo
+        run: |
+          pip install -e shared
+          pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic python-multipart jsonschema defusedxml
+
+      - name: Every ORM-declared column actually exists in the migration, with matching nullability
+        working-directory: smo
+        env:
+          SMO_DATABASE_URL: postgresql+psycopg://smo:smo@localhost:5432/smo
+        run: python scripts/check_migration_matches_models.py

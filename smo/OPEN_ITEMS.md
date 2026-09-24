@@ -67,7 +67,17 @@ the ambiguity into code.
   ever caught because SQLite's unit tests build their schema from the
   ORM models directly, never from this file, and the migration-Postgres
   CI job only checks table *count*, not columns. Verified fixed against
-  a real local Postgres 16 instance.
+  a real local Postgres 16 instance. ~~That root cause itself~~ —
+  **closed**: `scripts/check_migration_matches_models.py`, wired into
+  the `migration-postgres` CI job, now applies the real migration,
+  loads every module's ORM models onto the shared `Base`, and compares
+  column presence + nullability per table against the live Postgres
+  schema — the exact two checks that would have caught both bugs above
+  automatically. Verified against a real local Postgres 16 instance:
+  reproduced both original bugs directly (dropped the column, added the
+  `NOT NULL` back) and confirmed the script fails with the precise
+  error for each, then restored a clean migration and confirmed it
+  passes (58 tables, 0 mismatches).
 - ~~**No real southbound integrations beyond the A1 mock** — O1 Adaptor
   `PATCH` calls, actual `docker run` invocations, etc. are all elided in
   favor of recording the correct state transition.~~ — **closed,
@@ -1651,6 +1661,19 @@ own §1/§2 items stand as-is.
   stale service count (15 -> 17, `mock-o1-adaptor` and others had been
   added since it was last written). No test-count change (a CI-only
   addition, not a pytest one) — still 446 tests.
+- Continuing "other items like that": closed §2's own documented root
+  cause for the two real `rapp_instance` Postgres-schema bugs found
+  earlier — "the migration-Postgres CI job only checks table *count*,
+  not columns." Added `scripts/check_migration_matches_models.py`
+  (loads every module's ORM models onto the shared `Base`, compares
+  column presence + nullability against the live Postgres schema after
+  the real migration is applied) and wired it into the
+  `migration-postgres` CI job. Verified against a real local Postgres
+  16 instance by reproducing both original bugs directly (dropped
+  `pending_upgrade_instance_id`, re-added `oauth_client_id`'s `NOT
+  NULL`) and confirming the script fails with the exact error for each,
+  then restoring a clean migration and confirming it passes (58 tables,
+  0 mismatches). No pytest changes — still 446 tests.
 
 ## Suggested next pass (priority order)
 

@@ -529,6 +529,16 @@ structure — used to be purely manual. A new `docker-compose-config` CI
 job now runs `docker compose config --quiet` automatically on every
 push/PR (no daemon needed for that, just parsing and rendering), the
 same drift-check philosophy already used for the OpenAPI specs.
+Continuing "other items like that", the next pass closed the
+migration-Postgres CI job's own documented root cause for the two
+`rapp_instance` schema bugs found earlier (table *count* only, never
+columns): `scripts/check_migration_matches_models.py` now loads every
+module's ORM models and compares column presence + nullability against
+the live Postgres schema once the real migration is applied, wired into
+that CI job. Verified by reproducing both original bugs directly against
+a real local Postgres 16 instance and confirming the script catches
+each with a precise error, then restoring a clean migration and
+confirming it passes.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
