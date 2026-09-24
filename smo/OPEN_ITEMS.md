@@ -1883,6 +1883,58 @@ own §1/§2 items stand as-is.
   items are moderate/breaking-shape or large/structural, each already
   flagged as needing a deliberate follow-up pass or a confirmed
   Phase-1 scope cut, not a quick fix.
+- **Reviewed `SPEC_AUDIT.md`'s large/structural items (confirmed
+  Phase-1 scope cuts) against `DEMO_RUNBOOK.md`'s actual pilot demo,
+  per explicit direction** — a demo-relevance triage, not more code.
+  Five of six are out of scope: RAN NF OAM and Policy Mgmt are never
+  called anywhere in the runbook, and FOCOM appears only as a single
+  read-only `GET /inventory` call. The sixth — SME's missing "Trusted
+  Invokers" security-context subsystem — is the one item the demo
+  actually walks through live: the invoker-registration step has the
+  client self-assert its own `apiInvokerId` and `onboardingSecret`,
+  exactly the weaker trust model a real Trusted Invokers registry
+  would exist to check against. Not worth building before the demo,
+  but a one-line live disclosure was added right at that step in
+  `DEMO_RUNBOOK.md` in the same pass, since it's the only
+  large/structural gap with real audience-facing exposure. Doc-only —
+  no code changed, no test count change.
+- **`SPEC_AUDIT.md`'s first moderate/breaking-shape item: Policy
+  Mgmt's Intent-to-RMIH matching used an invented top-level `intentType`
+  field with no shared vocabulary with the spec, and conflated it with
+  `intentMgmtPurpose` (a semantically unrelated real spec field).**
+  `TS28312_IntentNrm.yaml`'s real matching-relevant field is each
+  expectation's own `expectationObject.objectType`
+  (`IntentExpectation` → `ExpectationObject`, a closed 5-value enum:
+  RAN_SUBNETWORK/EDGE_SERVICE_SUPPORT/5GC_SUBNETWORK/RADIO_SERVICE/
+  SUBNETWORK) matched against each `IntentHandlingFunction`'s declared
+  `IntentHandlingCapability.supportedExpectationObjectType` (a closed
+  4-value subset of the same enum, no SUBNETWORK). `CreateIntent`'s
+  matching now reads `expectations[].expectationObject.objectType`
+  straight out of the already-accepted, already-opaque `expectations`
+  list — no deeper TS 28.312 expectation grammar needed for this one
+  field — instead of a request-level `intentType` string; a single
+  Intent can carry several expectations, so a match against any one of
+  their object types now dispatches. `RegisterIntentHandlingFunction`'s
+  capability dicts now read `supportedExpectationObjectType` (kept as
+  a plain dict, not a full typed sub-schema, matching this build's own
+  pre-existing looseness there — only the matched-on key changed).
+  `intentMgmtPurpose` (the spec's real, unrelated workflow-procedure
+  enum: FEASIBILITYCHECK/FEASIBILITYCHECK_WITH_RECOMMENDATIONS/
+  FULFILMENT_WITHOUT_NEGOTIATION/EXPLORATION/FULFILMENT_WITH_NEGOTIATION,
+  spec default `FULFILMENT_WITHOUT_NEGOTIATION`) is now a real,
+  independently-settable `CreateIntent` field with that same spec
+  default, no longer overloaded to carry the matching value; the
+  `intent_mgmt_purpose` column got a real Postgres `CHECK` constraint
+  for the 5 real values, verified to reject an invalid one against a
+  real local instance. Confirmed via a repo-wide grep that no other
+  module in this codebase ever called Policy Mgmt's `/intents` or
+  `/intent-handling-functions` with the old field names — the blast
+  radius is entirely contained within `policy-mgmt/`'s own routes and
+  tests, the same "moderate, breaking wire-shape, but safely fixable
+  in one PR" assessment `SPEC_AUDIT.md` itself gave this item.
+  Verified against a real local Postgres 16 instance (migration
+  applies cleanly, `check_migration_matches_models.py` passes, 58
+  tables). 470 tests total, up from 467 (`policy-mgmt`: 15 -> 18).
 
 ## Suggested next pass (priority order)
 

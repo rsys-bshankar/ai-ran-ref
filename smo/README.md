@@ -127,7 +127,7 @@ PYTHONPATH=shared python scripts/generate_openapi_specs.py
 docker compose config --quiet
 ```
 
-**467 tests total, all passing** as of this build: 451 unit tests across
+**470 tests total, all passing** as of this build: 454 unit tests across
 all fourteen modules plus the two mocks, and 16 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -635,6 +635,32 @@ list — every small/scoped, non-breaking spec gap that pass identified
 is now closed. What remains there is moderate/breaking-shape or
 large/structural, each already flagged as needing a deliberate
 follow-up pass or a confirmed Phase-1 scope cut.
+
+Next, per explicit direction: triaged `SPEC_AUDIT.md`'s large/structural
+items (confirmed Phase-1 scope cuts) against what `DEMO_RUNBOOK.md`'s
+pilot demo actually calls, rather than a general risk assessment. Five
+of six are out of scope — RAN NF OAM and Policy Mgmt are never called
+in the runbook, and FOCOM appears only as one read-only `GET /inventory`
+call. The sixth, SME's missing "Trusted Invokers" security subsystem,
+is the one gap the demo walks through live (the invoker-registration
+step has the client self-assert its own `apiInvokerId`/
+`onboardingSecret`) — not worth building before the demo, but a
+one-line disclosure was added right at that step. Doc-only, no test
+count change.
+
+Then the first moderate/breaking-shape item: Policy Mgmt's
+Intent-to-RMIH matching used an invented top-level `intentType` field
+with no shared vocabulary with `TS28312_IntentNrm.yaml`, and conflated
+it with `intentMgmtPurpose` (a semantically unrelated real spec field
+— a workflow-procedure enum). Matching now reads the spec's real
+field, each expectation's own `expectationObject.objectType`, straight
+out of the already-accepted `expectations` list, matched against each
+RMIH's declared `supportedExpectationObjectType` capability;
+`intentMgmtPurpose` is now a real, independently-settable field with
+the spec's own default and a real Postgres `CHECK` constraint for its
+5 real values. A repo-wide grep confirmed no other module ever called
+these routes with the old field names, so the blast radius stayed
+entirely inside `policy-mgmt/`. `policy-mgmt` went from 15 tests to 18.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

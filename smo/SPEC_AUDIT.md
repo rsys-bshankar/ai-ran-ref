@@ -304,13 +304,26 @@ same-shape PR like this session's others:
 
 Moderate/breaking-shape items (worth a deliberate follow-up pass, not
 a quick fix, since each changes a request/response contract a real
-caller or test already depends on): Policy Mgmt's matching-field
-rename (`intentType` → `supportedExpectationObjectType`), FOCOM's
-`GET /inventory` reshape toward `OCloud` (touches NFO's caller
-contract), SME's invoker-onboarding trust-model fix (would need a real
-design decision on whether to actually flip to server-generated
-identity/secret, a bigger behavior change than this session's usual
-scoped fixes).
+caller or test already depends on):
+
+1. ~~Policy Mgmt's matching-field rename (`intentType` →
+   `supportedExpectationObjectType`).~~ — **closed**
+   (`OPEN_ITEMS.md`'s pass-history log). Matching now reads
+   `TS28312_IntentNrm.yaml`'s real field, each expectation's own
+   `expectationObject.objectType`, straight out of the already-opaque
+   `expectations` list, against each RMIH's declared
+   `supportedExpectationObjectType`; `intentMgmtPurpose` (previously
+   conflated with the matching field) is now a real, independently
+   settable field with the spec's own default and a real Postgres
+   `CHECK` constraint. A repo-wide grep confirmed no other module ever
+   called these routes with the old field names, so the blast radius
+   stayed entirely inside `policy-mgmt/`.
+2. FOCOM's `GET /inventory` reshape toward `OCloud` (touches NFO's
+   caller contract).
+3. SME's invoker-onboarding trust-model fix (would need a real design
+   decision on whether to actually flip to server-generated
+   identity/secret, a bigger behavior change than this session's usual
+   scoped fixes).
 
 Large/structural items are, on inspection, essentially all *confirmed*
 Phase-1 scope cuts rather than newly discovered bugs — real subsystems

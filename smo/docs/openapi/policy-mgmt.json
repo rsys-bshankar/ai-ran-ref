@@ -44,16 +44,17 @@
             ],
             "title": "Intenthandlingscope"
           },
-          "intentType": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+          "intentMgmtPurpose": {
+            "default": "FULFILMENT_WITHOUT_NEGOTIATION",
+            "enum": [
+              "FEASIBILITYCHECK",
+              "FEASIBILITYCHECK_WITH_RECOMMENDATIONS",
+              "FULFILMENT_WITHOUT_NEGOTIATION",
+              "EXPLORATION",
+              "FULFILMENT_WITH_NEGOTIATION"
             ],
-            "title": "Intenttype"
+            "title": "Intentmgmtpurpose",
+            "type": "string"
           },
           "priority": {
             "default": 1,
@@ -365,7 +366,7 @@
         "summary": "Query Intents"
       },
       "post": {
-        "description": "CreateIntent \u2014 closes the matching/dispatch gap between this and\nRegisterIntentHandlingFunction: previously an RMIH was never notified\nof a new Intent it could fulfil at all. Matching is capability-tag\nbased, the same pragmatic shape as DME's own opaque-schema handling\nelsewhere in this build \u2014 intentType is checked for membership across\neach registered RMIH's intent_handling_capability_list, not a deep\nTS 28.312 expectation match (that grammar isn't in this build's\nsource corpus, same limitation intent_expectations already has).\nDispatch is best-effort: a callback failure never blocks CreateIntent\nitself succeeding.",
+        "description": "CreateIntent \u2014 closes the matching/dispatch gap between this and\nRegisterIntentHandlingFunction: previously an RMIH was never notified\nof a new Intent it could fulfil at all.\n\nSPEC_AUDIT.md items 2-3: matching is now grounded in the real spec's\nown matching-relevant field \u2014 each expectation's\n`expectationObject.objectType` \u2014 read straight out of the\nalready-accepted, already-opaque `expectations` list (no deeper\nTS 28.312 expectation grammar needed for this one field), rather than\nan invented top-level `intentType` string with no shared vocabulary\nwith the spec, or `intentMgmtPurpose` (a different, workflow-procedure\nfield). Dispatch is best-effort: a callback failure never blocks\nCreateIntent itself succeeding.",
         "operationId": "create_intent_intents_post",
         "requestBody": {
           "content": {
