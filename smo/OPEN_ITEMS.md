@@ -1794,6 +1794,20 @@ own §1/§2 items stand as-is.
   `psql` insert confirmed the `operation` `CHECK` constraint genuinely
   rejects an invalid value). 453 tests total, up from 449 (`ran-nf-oam`:
   35 -> 37; `mock-o1-adaptor`: 6 -> 8).
+- **`SPEC_AUDIT.md` item 4: RAN NF OAM's `PMSubscription` was missing
+  `granularityPeriod`** — `TS28550_PerfMeasJobCtrlMnS.yaml`'s
+  `measJobCreation-RequestType` carries it (the sampling interval, in
+  seconds) alongside `reportingPeriod`/`schedule`/`priority`;
+  `subscribe_pm`'s own docstring already confirms the rest of that
+  job-control shape is a deliberate scope cut (a DME-producer
+  registration wrapper, not a real clause-8 PM job), but this one field
+  is needed by any real PM subscription regardless of wrapper shape,
+  and was fully absent. Nullable, optional param on `POST
+  /pm-subscriptions`, returned on the response body — no existing
+  caller's request shape changes. Verified against a real local
+  Postgres 16 instance (migration applies cleanly,
+  `check_migration_matches_models.py` passes, 58 tables). 455 tests
+  total, up from 453 (`ran-nf-oam`: 37 -> 39).
 
 ## Suggested next pass (priority order)
 

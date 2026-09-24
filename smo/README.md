@@ -127,7 +127,7 @@ PYTHONPATH=shared python scripts/generate_openapi_specs.py
 docker compose config --quiet
 ```
 
-**453 tests total, all passing** as of this build: 437 unit tests across
+**455 tests total, all passing** as of this build: 439 unit tests across
 all fourteen modules plus the two mocks, and 16 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -588,7 +588,14 @@ caller is unaffected. Fixing this surfaced a real bug in
 `attribute_changes` payload unconditionally, which would have wrongly
 rejected a legitimate delete (a delete carries none by design) — now
 only rejected for the other operations. `ran-nf-oam` went from 35 tests
-to 37, `mock-o1-adaptor` from 6 to 8.
+to 37, `mock-o1-adaptor` from 6 to 8. Next: item 4, `PMSubscription` was
+missing `granularityPeriod` (`TS28550_PerfMeasJobCtrlMnS.yaml`'s
+sampling-interval field) — `subscribe_pm`'s own docstring already
+confirms the rest of that job-control shape (schedule/priority/
+reportingPeriod) is a deliberate scope cut, but this one field is
+needed regardless of wrapper shape and was fully absent. Nullable,
+optional request param, no existing caller's shape changes.
+`ran-nf-oam` went from 37 tests to 39.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

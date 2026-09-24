@@ -292,7 +292,10 @@ CREATE TABLE pm_subscription (
   managed_element_ref  TEXT NOT NULL REFERENCES managed_entity(managed_element_ref),
   counter_type          TEXT NOT NULL,
   delivery_method         TEXT NOT NULL CHECK (delivery_method IN ('pull','push','stream')),
-  southbound_engine         TEXT NOT NULL CHECK (southbound_engine IN ('ProvMnS','PMJobControl','FileDataReporting','StreamingDataReporting'))
+  southbound_engine         TEXT NOT NULL CHECK (southbound_engine IN ('ProvMnS','PMJobControl','FileDataReporting','StreamingDataReporting')),
+  -- SPEC_AUDIT.md item 4: TS28550_PerfMeasJobCtrlMnS.yaml's granularityPeriod
+  -- (the sampling interval, in seconds), previously absent entirely.
+  granularity_period      INTEGER
 );
 
 CREATE TABLE software_management_job (

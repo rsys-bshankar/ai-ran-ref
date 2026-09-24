@@ -643,7 +643,7 @@
     },
     "/pm-subscriptions": {
       "post": {
-        "description": "SubscribePM \u2014 RAN NF OAM LLD section 3.5: this is a DME-producer\nregistration wrapper, NOT a clause-8 API call. No R1AP endpoint exists\nfor PM at all; that's the spec's own documented design intent.",
+        "description": "SubscribePM \u2014 RAN NF OAM LLD section 3.5: this is a DME-producer\nregistration wrapper, NOT a clause-8 API call. No R1AP endpoint exists\nfor PM at all; that's the spec's own documented design intent.\n\ngranularityPeriod (SPEC_AUDIT.md item 4, TS28550_PerfMeasJobCtrlMnS.yaml's\nmeasJobCreation-RequestType) \u2014 the one real job-control field worth\ncarrying despite the wrapper scope cut; everything else on that\nschema (schedule/priority/multi-instance/reportingPeriod) stays out.",
         "operationId": "subscribe_pm_pm_subscriptions_post",
         "parameters": [
           {
@@ -671,6 +671,22 @@
             "schema": {
               "title": "Delivery Method",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "granularity_period",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Granularity Period"
             }
           }
         ],

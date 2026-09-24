@@ -199,13 +199,20 @@ def clear_alarm(alarm_id: uuid.UUID, clear_user_id: str | None = None, db: Sessi
 
 
 @app.post("/pm-subscriptions")
-def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: str, db: Session = Depends(get_session)):
+def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: str, granularity_period: int | None = None,
+                  db: Session = Depends(get_session)):
     """SubscribePM — RAN NF OAM LLD section 3.5: this is a DME-producer
     registration wrapper, NOT a clause-8 API call. No R1AP endpoint exists
     for PM at all; that's the spec's own documented design intent.
+
+    granularityPeriod (SPEC_AUDIT.md item 4, TS28550_PerfMeasJobCtrlMnS.yaml's
+    measJobCreation-RequestType) — the one real job-control field worth
+    carrying despite the wrapper scope cut; everything else on that
+    schema (schedule/priority/multi-instance/reportingPeriod) stays out.
     """
     engine = {"pull": "ProvMnS", "push": "PMJobControl", "stream": "StreamingDataReporting"}.get(delivery_method, "FileDataReporting")
-    sub = PMSubscription(managed_element_ref=managed_element_ref, counter_type=counter_type, delivery_method=delivery_method, southbound_engine=engine)
+    sub = PMSubscription(managed_element_ref=managed_element_ref, counter_type=counter_type, delivery_method=delivery_method,
+                          southbound_engine=engine, granularity_period=granularity_period)
     db.add(sub)
     db.commit()
 
@@ -216,7 +223,7 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
         "dataProductionSchema": {}, "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
         "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs",
     })
-    return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine}
+    return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine, "granularityPeriod": sub.granularity_period}
 
 
 @app.get("/health")

@@ -283,7 +283,8 @@ same-shape PR like this session's others:
    handler rejected any empty `attribute_changes` payload
    unconditionally, which would have wrongly rejected a legitimate
    delete (`OPEN_ITEMS.md`'s pass-history log).
-4. RAN NF OAM: add `granularity_period` to `PMSubscription`.
+4. ~~RAN NF OAM: add `granularity_period` to `PMSubscription`.~~ —
+   **closed** (`OPEN_ITEMS.md`'s pass-history log).
 5. Policy Mgmt: constrain `intent_handling_scope` to the real 2-value
    enum and actually use it as a pre-filter.
 6. Policy Mgmt: add `DELETE /intents/{id}`.
