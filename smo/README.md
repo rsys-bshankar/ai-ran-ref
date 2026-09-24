@@ -127,7 +127,7 @@ PYTHONPATH=shared python scripts/generate_openapi_specs.py
 docker compose config --quiet
 ```
 
-**470 tests total, all passing** as of this build: 454 unit tests across
+**473 tests total, all passing** as of this build: 457 unit tests across
 all fourteen modules plus the two mocks, and 16 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -661,6 +661,22 @@ the spec's own default and a real Postgres `CHECK` constraint for its
 5 real values. A repo-wide grep confirmed no other module ever called
 these routes with the old field names, so the blast radius stayed
 entirely inside `policy-mgmt/`. `policy-mgmt` went from 15 tests to 18.
+
+Then the second moderate item: FOCOM's `GET /inventory` returned an ad
+hoc `{clusterId, resourcePools:[...]}` shape matching no real O2IMS
+schema. Reshaped toward `OCloud`, the spec's own real aggregate root —
+`oCloudId`/`name`/`description`/`resourceTypes`/`deploymentManagers`
+now come from FOCOM's own real, already-seeded topology;
+`locations`/`oCloudSites` (required in the real spec) are honestly
+empty rather than fabricated, since FOCOM has no `OCloudSite`/
+`Location` concept at all. `resource_type` now genuinely filters
+`resourceTypes` against a known `ResourceType` instead of being an
+unvalidated echo. First checked NFO's real `Instantiate` caller
+precisely to scope the blast radius: it reads exactly one key
+(`clusterId` → now `oCloudId`), with the same graceful fallback kept;
+NFO's own, unrelated `clusterId` response field for its own callers
+was left untouched. No migration change. `focom` went from 45 tests
+to 48.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

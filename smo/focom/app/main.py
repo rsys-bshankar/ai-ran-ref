@@ -57,30 +57,48 @@ class SubscribeInventoryRequest(BaseModel):
 
 @app.get("/inventory")
 def query_inventory(resource_type: str = "", db: Session = Depends(get_session)):
-    """QueryInventory — Phase 1: a single degenerate cluster, per
-    D-DEPLOY-FOCOM-1. NFO's Instantiate calls this before placing a
-    workload (NFO+FOCOM LLD section 4).
+    """QueryInventory — SPEC_AUDIT.md item 8 (formerly moderate item 2 of
+    the "Moderate/breaking-shape items" list): reshaped toward the real
+    O2IMS `OCloud` schema (`ORAN.O2ims.Inventory.yaml`), the spec's own
+    aggregate root — this route previously returned an ad hoc
+    `{clusterId, resourcePools:[...]}` shape matching neither `OCloud`
+    nor any wrapped list.
 
-    OPEN_ITEMS.md section 2's "FOCOM's hardcoded single-cluster stub":
-    the §5 pass below gave FOCOM a real ResourceType/ResourcePool/
-    DeploymentManager schema and wired every drill-down route
-    (`/resource-pools`, `/deployment-managers`, ...) to it, but left this
-    route — the one thing NFO's real Instantiate call actually depends
-    on — still a hardcoded literal, disconnected from that schema
-    entirely. Now sourced from the same seeded row every other route
-    reads, so there's one real topology, not a schema plus a stale
-    literal that happens to agree with it today. `resource_type` is
-    still only echoed back, not validated against a known `ResourceType`
-    — Phase 1 has exactly one degenerate cluster regardless of what's
-    requested, matching NFO's own graceful fallback on any non-2xx
-    response rather than a hard rejection.
+    `oCloudId`/`name`/`description`/`resourceTypes`/`deploymentManagers`
+    are populated from this build's own real, already-seeded topology
+    (the same rows every drill-down route already reads — no new
+    fabricated data). `locations`/`oCloudSites` are required
+    (`minItems: 1`) in the real spec, but genuinely empty here: FOCOM
+    has no `OCloudSite`/`Location` concept at all (a confirmed
+    large/structural scope cut, `SPEC_AUDIT.md`'s FOCOM section), so
+    they're honestly empty rather than fabricated —
+    `globalCloudId`/`infrastructureManagementServicesEndPoint`/
+    `smoRegistrationService` are `None` for the same reason.
+
+    `resource_type`, if given, now genuinely filters `resourceTypes` to
+    the matching entry (or an empty list if none is registered) — real
+    validation against a known `ResourceType`, closing this route's own
+    previously-documented gap ("still only echoed back, not validated").
+    NFO's real Instantiate caller (NFO+FOCOM LLD section 4) reads
+    `oCloudId`, not this filtered list, so this has no effect on it
+    either way.
     """
     _ensure_phase1_topology(db)
     dm = db.get(DeploymentManager, PHASE1_DEPLOYMENT_MANAGER_ID)
-    pool = db.get(ResourcePool, PHASE1_POOL_ID)
+    resource_types = db.scalars(select(ResourceType)).all()
+    if resource_type:
+        resource_types = [t for t in resource_types if t.resource_type_id == resource_type]
     return {
-        "clusterId": dm.name,
-        "resourcePools": [{"resourcePoolId": pool.resource_pool_id, "resourceTypeId": resource_type or PHASE1_RESOURCE_TYPE_ID}],
+        "oCloudId": dm.o_cloud_id,
+        "name": dm.name,
+        "description": dm.description,
+        "resourceTypes": [_resource_type_view(t) for t in resource_types],
+        "deploymentManagers": [_deployment_manager_view(dm)],
+        "locations": [],
+        "oCloudSites": [],
+        "globalCloudId": None,
+        "infrastructureManagementServicesEndPoint": None,
+        "smoRegistrationService": None,
     }
 
 

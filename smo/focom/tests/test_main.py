@@ -42,18 +42,46 @@ def client(db_session):
 
 
 def test_query_inventory_returns_degenerate_cluster(client):
-    resp = client.get("/inventory")
-    assert resp.json()["clusterId"] == PHASE1_CLUSTER_ID
-
-
-def test_query_inventory_echoes_requested_resource_type(client):
-    """NFO+FOCOM LLD section 4: NFO's Instantiate passes resource_type
-    through to shape the returned resource pool — this is the query
-    parameter name NFO must use (resource_type, not resourceType; a
-    silent bug this exact mismatch caused before it was fixed).
+    """SPEC_AUDIT.md item 8: /inventory reshaped toward the real O2IMS
+    OCloud schema — oCloudId, not the previously invented clusterId.
     """
+    resp = client.get("/inventory")
+    assert resp.json()["oCloudId"] == PHASE1_CLUSTER_ID
+
+
+def test_query_inventory_includes_the_real_seeded_resource_type_and_deployment_manager(client):
+    resp = client.get("/inventory")
+    body = resp.json()
+    assert [t["resourceTypeId"] for t in body["resourceTypes"]] == [PHASE1_RESOURCE_TYPE_ID]
+    assert [d["deploymentManagerId"] for d in body["deploymentManagers"]] == [PHASE1_DEPLOYMENT_MANAGER_ID]
+
+
+def test_query_inventory_has_no_fabricated_location_data(client):
+    """SPEC_AUDIT.md item 8: the real spec requires locations/oCloudSites
+    (minItems: 1) but FOCOM has no OCloudSite/Location concept at all —
+    honestly empty rather than fabricated.
+    """
+    body = client.get("/inventory").json()
+    assert body["locations"] == []
+    assert body["oCloudSites"] == []
+
+
+def test_query_inventory_filters_resource_types_by_the_requested_type(client):
+    """NFO+FOCOM LLD section 4: NFO's Instantiate passes resource_type
+    through — this is the query parameter name NFO must use
+    (resource_type, not resourceType; a silent bug this exact mismatch
+    caused before it was fixed). SPEC_AUDIT.md item 8: now a real filter
+    against a known ResourceType, not just an unvalidated echo.
+    """
+    client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"})
+
     resp = client.get("/inventory", params={"resource_type": "gpu-l40"})
-    assert resp.json()["resourcePools"][0]["resourceTypeId"] == "gpu-l40"
+    assert [t["resourceTypeId"] for t in resp.json()["resourceTypes"]] == ["gpu-l40"]
+
+
+def test_query_inventory_filters_to_empty_for_an_unregistered_resource_type(client):
+    resp = client.get("/inventory", params={"resource_type": "does-not-exist"})
+    assert resp.json()["resourceTypes"] == []
 
 
 def test_subscribe_inventory_changes_returns_subscription_id(client):
@@ -250,13 +278,13 @@ def test_query_performance_returns_empty_list_when_none_seeded(client):
     assert resp.json() == []
 
 
-def test_query_inventory_defaults_resource_type_to_generic(client):
-    """The no-resource_type fallback ("generic") was only ever exercised
-    implicitly through test_query_inventory_returns_degenerate_cluster,
-    which never actually checked resourcePools' resourceTypeId.
+def test_query_inventory_defaults_to_every_registered_resource_type(client):
+    """No resource_type given — the no-filter path returns every
+    registered ResourceType, which after the Phase 1 seed is just
+    "generic".
     """
     resp = client.get("/inventory")
-    assert resp.json()["resourcePools"][0]["resourceTypeId"] == "generic"
+    assert [t["resourceTypeId"] for t in resp.json()["resourceTypes"]] == [PHASE1_RESOURCE_TYPE_ID]
 
 
 def test_query_inventory_reflects_the_real_seeded_deployment_manager_row(client, db_session):
@@ -273,11 +301,14 @@ def test_query_inventory_reflects_the_real_seeded_deployment_manager_row(client,
     db = db_session()
     dm = db.get(DeploymentManager, PHASE1_DEPLOYMENT_MANAGER_ID)
     dm.name = "renamed-cluster"
+    dm.o_cloud_id = "renamed-ocloud"
     db.commit()
     db.close()
 
     resp = client.get("/inventory")
-    assert resp.json()["clusterId"] == "renamed-cluster"
+    assert resp.json()["oCloudId"] == "renamed-ocloud"
+    assert resp.json()["name"] == "renamed-cluster"
+    assert resp.json()["deploymentManagers"][0]["name"] == "renamed-cluster"
 
 
 def test_query_alarms_returns_empty_list_when_none_ingested(client):

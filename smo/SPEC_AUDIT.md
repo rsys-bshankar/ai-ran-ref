@@ -318,8 +318,15 @@ caller or test already depends on):
    `CHECK` constraint. A repo-wide grep confirmed no other module ever
    called these routes with the old field names, so the blast radius
    stayed entirely inside `policy-mgmt/`.
-2. FOCOM's `GET /inventory` reshape toward `OCloud` (touches NFO's
-   caller contract).
+2. ~~FOCOM's `GET /inventory` reshape toward `OCloud` (touches NFO's
+   caller contract).~~ — **closed** (`OPEN_ITEMS.md`'s pass-history
+   log). `oCloudId`/`name`/`description`/`resourceTypes`/
+   `deploymentManagers` now come from FOCOM's own real topology;
+   `locations`/`oCloudSites` are honestly empty (no `OCloudSite`/
+   `Location` concept exists) rather than fabricated. NFO's real
+   `Instantiate` caller — the one real cross-module dependency —
+   was checked first and updated to read `oCloudId` in place of the
+   old `clusterId`, with the exact same graceful fallback kept.
 3. SME's invoker-onboarding trust-model fix (would need a real design
    decision on whether to actually flip to server-generated
    identity/secret, a bigger behavior change than this session's usual
