@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**387 tests total, all passing** as of this build: 377 unit tests across
+**389 tests total, all passing** as of this build: 379 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -387,7 +387,14 @@ routes). Real Cassandra-backed feature storage and the reference's
 `enableDme`-triggered real DME job creation stay deliberately
 unadopted, the same no-real-southbound-compute elision as elsewhere in
 this build — `enableDme` is stored and returned faithfully, just not
-acted on.
+acted on. `a1-related` went from 30 tests to 32 in the next pass:
+closed its missing policy-type detail retrieval gap, partially — added
+`GET /policy-types/{id}` (the reference's own `GetPolicyTypeDefinition`),
+404 on an unknown type, else a real `PolicyTypeObject`. `policySchema`
+is an honest empty placeholder rather than a fabricated A1TD schema
+this build was never given; the reference's separate RIC repository
+(`GET /rics`) stays out of scope, since this build models no
+near-RT-RIC entity or inventory beyond the single A1 mock.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
