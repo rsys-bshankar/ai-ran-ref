@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
+from smo_shared.timeutil import as_utc
 
 from .models import Alarm, CMSchemaCache, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from .netconf_client import send_edit_config
@@ -80,7 +81,13 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
                                          rejection_reason="ENDPOINT_UNREACHABLE"))
             continue
         endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id)
-        if endpoint.health_status == "UNREACHABLE":
+        # Live-computed staleness at the point health is actually consulted —
+        # the same "no scheduler exists anywhere in this build" pattern as
+        # DME's producer health and A1 Related's service supervision sweep —
+        # rather than depending on something having already called
+        # POST /o1-adaptor-endpoints/discover first.
+        _age_endpoint_health(endpoint, datetime.datetime.now(datetime.UTC))
+        if endpoint.health_status in ("UNREACHABLE", "DEGRADED"):
             db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
                                          managed_function_ref=change.get("managedFunctionRef"),
                                          attribute_changes=change["attributeChanges"], status="REJECTED",
@@ -246,17 +253,37 @@ def advance_software_job(job_id: uuid.UUID, succeeded: bool, db: Session = Depen
     return {"jobId": str(job.job_id), "status": job.status, "phase": job.phase}
 
 
+def _age_endpoint_health(ep: O1AdaptorEndpoint, now: datetime.datetime) -> None:
+    """Ages a single endpoint's health status in place if it has missed its
+    heartbeat window. Shared by the bulk `/discover` sweep below and by
+    write_configuration_changes's own gate, so staleness is caught the
+    moment it's actually consulted, not only when something has separately
+    polled `/discover` first — no scheduler exists anywhere in this build
+    (same elision as DME's producer health / A1 Related's service
+    supervision), so a live-computed check at the point of use is this
+    build's substitute for a periodic sweep.
+    """
+    if ep.health_status == "ACTIVE" and ep.last_heartbeat_at and now - as_utc(ep.last_heartbeat_at) > MISSED_HEARTBEAT_THRESHOLD:
+        ep.health_status = ENDPOINT_HEALTH_FSM.fire(EndpointHealth.ACTIVE, EndpointEvent.MISSED_HEARTBEATS)
+
+
 @app.post("/o1-adaptor-endpoints/discover")
 def discover_endpoints(db: Session = Depends(get_session)):
     """RAN NF OAM LLD section 1.2/5.2 — the endpoint discovery loop, meant
-    to run on a timer against the MnS Registry NRM. Phase 1: heartbeat
-    aging is evaluated here rather than a live registry poll.
+    to run on a timer against the MnS Registry NRM. Phase 1: still a
+    heartbeat-aging stub rather than real registry polling — there is no
+    real MnS Registry NRM in this build to poll — but staleness is no
+    longer only visible through this route: write_configuration_changes's
+    own gate now ages an endpoint live at dispatch time too (see
+    `_age_endpoint_health`), so a stale endpoint can't silently pass a
+    write attempt just because nothing called this route first. This route
+    stays as the bulk equivalent of a registry poll — check every endpoint
+    at once, e.g. from an operator dashboard or an external timer.
     """
     endpoints = db.scalars(select(O1AdaptorEndpoint)).all()
     now = datetime.datetime.now(datetime.UTC)
     for ep in endpoints:
-        if ep.health_status == "ACTIVE" and ep.last_heartbeat_at and now - ep.last_heartbeat_at > MISSED_HEARTBEAT_THRESHOLD:
-            ep.health_status = ENDPOINT_HEALTH_FSM.fire(EndpointHealth.ACTIVE, EndpointEvent.MISSED_HEARTBEATS)
+        _age_endpoint_health(ep, now)
     db.commit()
     return {"checked": len(endpoints)}
 

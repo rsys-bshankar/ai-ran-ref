@@ -555,7 +555,7 @@
     },
     "/o1-adaptor-endpoints/discover": {
       "post": {
-        "description": "RAN NF OAM LLD section 1.2/5.2 \u2014 the endpoint discovery loop, meant\nto run on a timer against the MnS Registry NRM. Phase 1: heartbeat\naging is evaluated here rather than a live registry poll.",
+        "description": "RAN NF OAM LLD section 1.2/5.2 \u2014 the endpoint discovery loop, meant\nto run on a timer against the MnS Registry NRM. Phase 1: still a\nheartbeat-aging stub rather than real registry polling \u2014 there is no\nreal MnS Registry NRM in this build to poll \u2014 but staleness is no\nlonger only visible through this route: write_configuration_changes's\nown gate now ages an endpoint live at dispatch time too (see\n`_age_endpoint_health`), so a stale endpoint can't silently pass a\nwrite attempt just because nothing called this route first. This route\nstays as the bulk equivalent of a registry poll \u2014 check every endpoint\nat once, e.g. from an operator dashboard or an external timer.",
         "operationId": "discover_endpoints_o1_adaptor_endpoints_discover_post",
         "responses": {
           "200": {
