@@ -496,7 +496,49 @@ print(r.status_code, r.json())
 "
 ```
 
-Retract the Intent, then deregister the RMIH — symmetric teardown,
+**A real negative case** — `intentHandlingScope` is a genuine pre-filter
+(`_matching_rmihs`), not decoration: register a second RMIH with the
+*same* declared capability (`RAN_SUBNETWORK`) but a *different*
+declared scope (`CN`-only):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://policy-mgmt:8000/intent-handling-functions', json={
+    'rmihId': 'sa-smos', 'smeServiceId': 'sa-smos-svc',
+    'capabilities': [{'supportedExpectationObjectType': 'RAN_SUBNETWORK'}],
+    'notificationCallbackUri': 'http://sa-smos:8000/intents/notify',
+    'intentHandlingScope': ['CN'],
+})
+print(r.status_code, r.json())
+"
+```
+
+Create a second, `RAN`-scoped Intent with the identical
+`RAN_SUBNETWORK` expectation object type both RMIHs declare support
+for:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://policy-mgmt:8000/intents', json={
+    'expectations': [{'expectationObject': {'objectType': 'RAN_SUBNETWORK'}}],
+    'rmioId': 'hello-world-rapp', 'intentHandlingScope': 'RAN',
+})
+print(r.status_code, r.json())
+"
+```
+
+Only `so-smos` (declared `RAN` scope) is dispatched a notification —
+`sa-smos`'s matching *capability* is correctly never enough on its own,
+because its declared `CN`-only scope fails the pre-filter before the
+capability check ever runs. Watch `policy-mgmt`'s own logs: exactly one
+delivery attempt, to `so-smos:8000/intents/notify`, never to
+`sa-smos:8000/intents/notify`. `tests_integration/test_demo_runbook.py`
+asserts this precisely — one notification, not two, and to the right
+RMIH.
+
+Retract both Intents, then deregister both RMIHs — symmetric teardown,
 same pattern as FOCOM's provision/deprovision above:
 
 ```bash
@@ -504,8 +546,12 @@ docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.delete('http://policy-mgmt:8000/intents/<intentId>')
 print(r.status_code)
-r2 = httpx.delete('http://policy-mgmt:8000/intent-handling-functions/so-smos')
+r2 = httpx.delete('http://policy-mgmt:8000/intents/<secondIntentId>')
 print(r2.status_code)
+r3 = httpx.delete('http://policy-mgmt:8000/intent-handling-functions/so-smos')
+print(r3.status_code)
+r4 = httpx.delete('http://policy-mgmt:8000/intent-handling-functions/sa-smos')
+print(r4.status_code)
 "
 ```
 

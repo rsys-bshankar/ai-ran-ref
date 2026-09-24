@@ -780,6 +780,17 @@ exact `httpx.post` call). Retract both policies and deregister the
 service. `tests_integration/test_demo_runbook.py` gained a matching
 step. No code, schema, or OpenAPI-spec change.
 
+**Demo depth: Policy Mgmt's real `intentHandlingScope` negative case.**
+The existing Policy Mgmt demo section only showed the positive match;
+`_matching_rmihs`' own real scope pre-filter was already implemented
+and unit-tested but never demonstrated. Extended the section: register
+a second RMIH with the same capability but a different (`CN`-only)
+scope, create a second `RAN`-scoped Intent, and show only the
+`RAN`-scoped RMIH is notified — the scope-mismatched one is correctly
+skipped despite its matching capability. `tests_integration/
+test_demo_runbook.py` gained a matching step asserting both outcomes.
+No code, schema, or OpenAPI-spec change.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style
