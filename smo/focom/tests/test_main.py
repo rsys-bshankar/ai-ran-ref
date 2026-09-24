@@ -298,6 +298,20 @@ def test_get_unknown_resource_type_is_404(client):
     assert resp.status_code == 404
 
 
+def test_resource_type_view_exposes_the_new_spec_fields(client):
+    """SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's ResourceType
+    requires alarmDictionaryId/performanceDictionaryId/resourceKind/
+    resourceClass/extensions — entirely absent from this model before.
+    No route in this build sets them yet, so they're null on the
+    Phase 1 seed, but the view now at least exposes the real fields.
+    """
+    resp = client.get(f"/resource-types/{PHASE1_RESOURCE_TYPE_ID}")
+    body = resp.json()
+    for field in ("alarmDictionaryId", "performanceDictionaryId", "resourceKind", "resourceClass", "extensions"):
+        assert field in body
+        assert body[field] is None
+
+
 def test_provision_with_unrecognized_type_auto_registers_it(client):
     """provision_resource never validated resourceTypeId before this
     pass — auto-registering an unrecognized one preserves that, rather
@@ -347,6 +361,31 @@ def test_list_pool_resources_reflects_provisioned_resource(client):
     assert resources[0]["resourceTypeId"] == "gpu-l40"
 
 
+def test_provision_resource_persists_global_asset_id_tags_and_groups(client):
+    """SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's Resource requires
+    globalAssetId/tags/groups — previously not even readable from
+    provision_resource's already-untyped spec dict, let alone persisted.
+    """
+    provisioned = client.post("/resources/provision", json={
+        "resourceTypeId": "gpu-l40", "globalAssetId": "SN-12345", "tags": ["gpu", "edge"], "groups": ["site-a"],
+    }).json()
+
+    resp = client.get(f"/resource-pools/{PHASE1_POOL_ID}/resources")
+    resource = resp.json()[0]
+    assert resource["resourceId"] == provisioned["resourceId"]
+    assert resource["globalAssetId"] == "SN-12345"
+    assert resource["tags"] == ["gpu", "edge"]
+    assert resource["groups"] == ["site-a"]
+
+
+def test_provision_resource_without_optional_spec_fields_leaves_them_null(client):
+    client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"})
+    resource = client.get(f"/resource-pools/{PHASE1_POOL_ID}/resources").json()[0]
+    assert resource["globalAssetId"] is None
+    assert resource["tags"] is None
+    assert resource["groups"] is None
+
+
 def test_deprovisioned_resource_no_longer_listed(client):
     provisioned = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()
     client.delete(f"/resources/{provisioned['resourceId']}")
@@ -375,6 +414,20 @@ def test_get_deployment_manager_by_id(client):
 def test_get_unknown_deployment_manager_is_404(client):
     resp = client.get("/deployment-managers/does-not-exist")
     assert resp.status_code == 404
+
+
+def test_deployment_manager_view_exposes_the_new_spec_fields(client):
+    """SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's DeploymentManager
+    requires supportedLocations/capabilities/capacity — entirely absent
+    from this model before. No route in this build sets them yet
+    (only the Phase 1 seed, which has no real capacity introspection),
+    so they're null, but the view now at least exposes the real fields.
+    """
+    resp = client.get(f"/deployment-managers/{PHASE1_DEPLOYMENT_MANAGER_ID}")
+    body = resp.json()
+    for field in ("supportedLocations", "capabilities", "capacity"):
+        assert field in body
+        assert body[field] is None
 
 
 def test_topology_export_includes_phase1_seeded_entities(client):

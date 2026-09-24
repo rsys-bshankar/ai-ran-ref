@@ -1834,6 +1834,31 @@ own §1/§2 items stand as-is.
   the usual migration-applies-cleanly /
   `check_migration_matches_models.py` / 58-tables checks). 460 tests
   total, up from 455 (`policy-mgmt`: 10 -> 15).
+- **`SPEC_AUDIT.md` item 7: FOCOM's `ResourceType`/`DeploymentManager`/
+  `Resource` were all missing real O2IMS fields.**
+  `ORAN.O2ims.Inventory.yaml` requires `ResourceType.alarmDictionaryId`/
+  `performanceDictionaryId`/`resourceKind`/`resourceClass`/`extensions`
+  (none existed); `DeploymentManager.supportedLocations`/`capabilities`/
+  `capacity` (none existed); `Resource.globalAssetId`/`tags`/`groups`
+  (none existed). All added as nullable columns — no route in this
+  build registers a `ResourceType` or `DeploymentManager` with this
+  much detail (only `provision_resource`'s auto-registration and the
+  Phase 1 topology seed, neither of which ever had this data), so
+  they're exposed in each view but null by default; `resource_kind`/
+  `resource_class` got real Postgres `CHECK` constraints for the
+  spec's own closed enums (UNDEFINED/PHYSICAL/LOGICAL and
+  UNDEFINED/COMPUTE/NETWORKING/STORAGE), verified to reject an invalid
+  value against a real local instance. `Resource`'s three fields are
+  the one exception actually wired to a caller:
+  `provision_resource`'s already-untyped `spec` dict now also reads
+  `globalAssetId`/`tags`/`groups` from it, the same "make the field
+  actually settable, not just schema-only" pattern this session's
+  other closed items already established. Verified against a real
+  local Postgres 16 instance (migration applies cleanly,
+  `check_migration_matches_models.py` passes, 58 tables; manual
+  inserts round-tripped every new column, including the two `CHECK`
+  constraints genuinely rejecting an invalid value). 464 tests total,
+  up from 460 (`focom`: 38 -> 42).
 
 ## Suggested next pass (priority order)
 

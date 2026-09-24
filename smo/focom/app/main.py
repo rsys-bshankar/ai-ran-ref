@@ -288,7 +288,11 @@ def provision_resource(spec: dict, db: Session = Depends(get_session)):
     resource_type_id = spec.get("resourceTypeId") or PHASE1_RESOURCE_TYPE_ID
     if db.get(ResourceType, resource_type_id) is None:
         db.add(ResourceType(resource_type_id=resource_type_id, name=resource_type_id))
-    resource = Resource(resource_type_id=resource_type_id, resource_pool_id=PHASE1_POOL_ID, description=spec.get("description"))
+    # SPEC_AUDIT.md item 7: globalAssetId/tags/groups — real
+    # ORAN.O2ims.Inventory.yaml Resource fields, previously not even
+    # readable from this already-untyped spec dict, let alone persisted.
+    resource = Resource(resource_type_id=resource_type_id, resource_pool_id=PHASE1_POOL_ID, description=spec.get("description"),
+                         global_asset_id=spec.get("globalAssetId"), tags=spec.get("tags"), groups=spec.get("groups"))
     db.add(resource)
     db.commit()
     _notify_inventory_subscribers(db, "CREATE", str(resource.resource_id), resource_type_id)
@@ -337,7 +341,9 @@ def query_ocloud_performance(resource_ref: str | None = None, db: Session = Depe
 
 def _resource_type_view(t: ResourceType) -> dict:
     return {"resourceTypeId": t.resource_type_id, "name": t.name, "description": t.description,
-            "vendor": t.vendor, "model": t.model, "version": t.version}
+            "vendor": t.vendor, "model": t.model, "version": t.version,
+            "alarmDictionaryId": t.alarm_dictionary_id, "performanceDictionaryId": t.performance_dictionary_id,
+            "resourceKind": t.resource_kind, "resourceClass": t.resource_class, "extensions": t.extensions}
 
 
 def _resource_pool_view(p: ResourcePool) -> dict:
@@ -346,9 +352,11 @@ def _resource_pool_view(p: ResourcePool) -> dict:
 
 def _resource_view(r: Resource) -> dict:
     return {"resourceId": str(r.resource_id), "resourceTypeId": r.resource_type_id, "resourcePoolId": r.resource_pool_id,
-            "parentId": str(r.parent_id) if r.parent_id else None, "description": r.description}
+            "parentId": str(r.parent_id) if r.parent_id else None, "description": r.description,
+            "globalAssetId": r.global_asset_id, "tags": r.tags, "groups": r.groups}
 
 
 def _deployment_manager_view(d: DeploymentManager) -> dict:
     return {"deploymentManagerId": d.deployment_manager_id, "name": d.name, "description": d.description,
-            "oCloudId": d.o_cloud_id, "serviceUri": d.service_uri}
+            "oCloudId": d.o_cloud_id, "serviceUri": d.service_uri,
+            "supportedLocations": d.supported_locations, "capabilities": d.capabilities, "capacity": d.capacity}

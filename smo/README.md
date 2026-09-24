@@ -127,7 +127,7 @@ PYTHONPATH=shared python scripts/generate_openapi_specs.py
 docker compose config --quiet
 ```
 
-**460 tests total, all passing** as of this build: 444 unit tests across
+**464 tests total, all passing** as of this build: 448 unit tests across
 all fourteen modules plus the two mocks, and 16 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -608,7 +608,18 @@ behavior changes). `DELETE /intents/{id}` closes the gap where an RMIO
 could only deactivate an Intent, never retract it — cascades to
 `IntentReport` the same way this build's other owned-child deletes
 already do, verified for real against a local Postgres 16 instance.
-`policy-mgmt` went from 10 tests to 15.
+`policy-mgmt` went from 10 tests to 15. Next: item 7,
+`ORAN.O2ims.Inventory.yaml` requires several fields none of FOCOM's
+`ResourceType`/`DeploymentManager`/`Resource` models had at all —
+dictionary refs and closed enums on the first, capacity/capability
+arrays on the second, `globalAssetId`/`tags`/`groups` on the third.
+All added as nullable columns (no route registers a `ResourceType` or
+`DeploymentManager` in enough detail to set most of them), with real
+`CHECK` constraints for `resourceKind`/`resourceClass`'s closed enums.
+`Resource`'s three fields are the one exception actually wired to a
+caller: `provision_resource`'s already-untyped spec dict now reads
+`globalAssetId`/`tags`/`groups` from it too. `focom` went from 38
+tests to 42.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

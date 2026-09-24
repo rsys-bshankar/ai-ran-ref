@@ -433,7 +433,14 @@ CREATE TABLE resource_type (
   description         TEXT,
   vendor               TEXT,
   model                 TEXT,
-  version               TEXT
+  version               TEXT,
+  -- SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's ResourceType
+  -- requires these five fields, entirely absent before.
+  alarm_dictionary_id       TEXT,
+  performance_dictionary_id  TEXT,
+  resource_kind                TEXT CHECK (resource_kind IN ('UNDEFINED','PHYSICAL','LOGICAL')),
+  resource_class                TEXT CHECK (resource_class IN ('UNDEFINED','COMPUTE','NETWORKING','STORAGE')),
+  extensions                     JSONB
 );
 
 CREATE TABLE resource_pool (
@@ -448,7 +455,12 @@ CREATE TABLE resource (
   resource_type_id   TEXT NOT NULL REFERENCES resource_type(resource_type_id),
   resource_pool_id   TEXT NOT NULL REFERENCES resource_pool(resource_pool_id),
   parent_id            UUID,
-  description           TEXT
+  description           TEXT,
+  -- SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's Resource requires
+  -- these three, entirely absent before.
+  global_asset_id         TEXT,
+  tags                      TEXT[],
+  groups                     TEXT[]
 );
 
 CREATE TABLE deployment_manager (
@@ -456,7 +468,12 @@ CREATE TABLE deployment_manager (
   name                     TEXT NOT NULL,
   description                TEXT,
   o_cloud_id                  TEXT NOT NULL,
-  service_uri                  TEXT
+  service_uri                  TEXT,
+  -- SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's DeploymentManager
+  -- requires these three, entirely absent before.
+  supported_locations             TEXT[],
+  capabilities                     JSONB,
+  capacity                          JSONB
 );
 
 -- ============================================================
