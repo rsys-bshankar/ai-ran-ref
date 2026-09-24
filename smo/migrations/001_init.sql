@@ -635,7 +635,10 @@ CREATE TABLE intent (
   intent_id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_label                   TEXT,
   intent_expectations            JSONB NOT NULL,   -- opaque; TS 28.312 text not in this project's corpus
-  intent_mgmt_purpose               TEXT,
+  -- SPEC_AUDIT.md item 3: this column previously stored the invented
+  -- top-level `intentType` matching field; now stores the spec's real
+  -- IntentMgmtPurpose (a workflow-procedure enum, unrelated to matching).
+  intent_mgmt_purpose               TEXT CHECK (intent_mgmt_purpose IN ('FEASIBILITYCHECK','FEASIBILITYCHECK_WITH_RECOMMENDATIONS','FULFILMENT_WITHOUT_NEGOTIATION','EXPLORATION','FULFILMENT_WITH_NEGOTIATION')),
   intent_admin_state                  TEXT NOT NULL DEFAULT 'ACTIVATED' CHECK (intent_admin_state IN ('ACTIVATED','DEACTIVATED')),
   intent_priority                       INTEGER NOT NULL DEFAULT 1 CHECK (intent_priority BETWEEN 1 AND 100),
   intent_preemption_capability             BOOLEAN NOT NULL DEFAULT false,
