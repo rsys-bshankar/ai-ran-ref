@@ -809,6 +809,17 @@ already-confirmed out of scope; bringing AI/ML Workflow, RAN Analytics,
 SO SMOS, or SA SMOS into the demo is a genuine scope question, not a
 mechanical pickup — left for explicit direction.
 
+**Demo depth: FOCOM FCAPS, reversing the earlier "out of scope"
+triage per explicit user direction.** FOCOM's alarm/performance routes
+(a distinct domain from RAN NF OAM's RAN-function alarms) were already
+real, Postgres-backed, and unit-tested but never in the demo. Extended
+the FOCOM section: real infrastructure alarm ingest and query, then a
+performance query — genuinely filterable but empty in a fresh stack,
+disclosed honestly (no `POST /performance` route exists in this build
+at all; real metrics would arrive via O2ims's own collection
+mechanism, not a stub). `tests_integration/test_demo_runbook.py`
+gained a matching step. No code, schema, or OpenAPI-spec change.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style
