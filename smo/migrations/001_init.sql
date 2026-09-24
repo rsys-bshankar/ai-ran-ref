@@ -62,6 +62,10 @@ CREATE TABLE provider_registration (
 -- credentials directly.
 CREATE TABLE invoker_registration (
   api_invoker_id            TEXT PRIMARY KEY,
+  -- SPEC_AUDIT.md SME item 1: the real CAPIF core's onboarding is
+  -- public-key-based -- the client's own apiInvokerPublicKey, stored
+  -- but not yet cryptographically used anywhere in this build.
+  public_key                 TEXT NOT NULL,
   onboarding_secret_hash       TEXT NOT NULL
 );
 

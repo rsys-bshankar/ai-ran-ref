@@ -54,14 +54,16 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     })
     assert prov.status_code == 201
 
-    inv_reg = mesh["sme"].post("/invoker-registrations", json={
-        "apiInvokerId": "hello-world-rapp", "onboardingSecret": "demo-onboarding-secret-change-me",
-    })
+    # SPEC_AUDIT.md SME item 1: apiInvokerId/onboardingSecret are now
+    # server-generated, not client-supplied — the client submits its
+    # own public key instead.
+    inv_reg = mesh["sme"].post("/invoker-registrations", json={"apiInvokerPublicKey": "demo-rapp-public-key"})
     assert inv_reg.status_code == 201
+    invoker = inv_reg.json()
 
     token = mesh["sme"].post("/oauth2/token", json={
-        "grant_type": "client_credentials", "client_id": "hello-world-rapp",
-        "client_secret": "demo-onboarding-secret-change-me",
+        "grant_type": "client_credentials", "client_id": invoker["apiInvokerId"],
+        "client_secret": invoker["onboardingSecret"],
     })
     assert token.status_code == 200
     assert token.json()["token_type"] == "Bearer"

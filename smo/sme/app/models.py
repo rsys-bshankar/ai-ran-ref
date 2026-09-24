@@ -79,20 +79,30 @@ class InvokerRegistration(Base):
     the Security/token API (`securityservice.go`'s
     `PostSecuritiesSecurityIdToken`, gated on
     `IsInvokerRegistered`/`VerifyInvokerSecret`), which this build never
-    modeled at all. `api_invoker_id` is this build's own flattened
-    identity (the same `== consumerId == rAppId` equivalence
-    `ProviderRegistration.apf_id` already established for producers) —
-    `onboarding_secret` is self-asserted at registration time, since this
-    build has no real onboarding ceremony (CSR, admin approval) anywhere;
-    it's still a genuine, checked secret at token-issuance time, not a
-    rubber stamp. Security review: never stored in cleartext — only a
-    salted `scrypt` hash (`onboarding_secret_hash`, `salt:digest` hex),
-    so a DB leak (backup, SQL injection elsewhere, a dump) can't hand out
-    reusable client credentials directly.
+    modeled at all.
+
+    SPEC_AUDIT.md SME item 1: the real CAPIF core's
+    `APIInvokerEnrolmentDetails`/`OnboardingInformation` onboarding is
+    public-key-based — the client supplies `apiInvokerPublicKey`
+    (`public_key` here); the server *generates* both `api_invoker_id`
+    and the onboarding secret and hands them back
+    (`invokermanagementapi/typeupdate.go`'s `createId`/
+    `getOnboardingSecret`). This build previously took both as
+    client-supplied input instead — a self-asserted identity and a
+    client-chosen secret, the weaker trust direction the real spec
+    documents `apiInvokerId` as "shall not be present" in the client's
+    own request. Flipped to match. `public_key` is stored but not yet
+    cryptographically used anywhere (no signature verification exists
+    in this build); `onboarding_secret_hash` is still a genuine, checked
+    secret at token-issuance time, never stored in cleartext — only a
+    salted `scrypt` hash (`salt:digest` hex), so a DB leak (backup, SQL
+    injection elsewhere, a dump) can't hand out reusable client
+    credentials directly.
     """
     __tablename__ = "invoker_registration"
 
     api_invoker_id: Mapped[str] = mapped_column(String, primary_key=True)
+    public_key: Mapped[str] = mapped_column(String, nullable=False)
     onboarding_secret_hash: Mapped[str] = mapped_column(String, nullable=False)
 
 

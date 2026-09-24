@@ -121,8 +121,7 @@ def deregister_provider(apf_id: str, db: Session = Depends(get_session)):
 
 
 class InvokerRegistrationRequest(BaseModel):
-    apiInvokerId: str
-    onboardingSecret: str
+    apiInvokerPublicKey: str
 
 
 @app.post("/invoker-registrations", status_code=201)
@@ -130,17 +129,28 @@ def register_invoker(body: InvokerRegistrationRequest, db: Session = Depends(get
     """OPEN_ITEMS.md section 2: API Invoker onboarding
     (`invokermanagement.go`'s `InvokerManager`) — the real registry the
     Security/token API's own `IsInvokerRegistered`/`VerifyInvokerSecret`
-    gate needs, entirely absent before this pass. Idempotent
-    update-in-place on a re-registration of the same `apiInvokerId`, the
-    same shape `register_provider`/`register_service` already use.
+    gate needs, entirely absent before this pass.
+
+    SPEC_AUDIT.md SME item 1: the real CAPIF onboarding flow is
+    public-key-based — the client supplies `apiInvokerPublicKey`; the
+    server *generates* both `apiInvokerId` and `onboardingSecret` and
+    returns them (`apiInvokerId` "shall not be present" in the real
+    client request at all). Previously both were taken as
+    client-supplied input — a self-asserted identity and a
+    client-chosen secret — flipped to match the real trust direction.
+    Every call always mints a new invoker now (no more
+    update-in-place on a re-registration of the same id, since there's
+    no client-supplied id to match an existing row against — the same
+    real behavior the reference's own onboarding endpoint has: it
+    always creates, never updates, an onboarded invoker).
     """
-    inv = db.get(InvokerRegistration, body.apiInvokerId)
-    if inv is None:
-        inv = InvokerRegistration(api_invoker_id=body.apiInvokerId)
-        db.add(inv)
-    inv.onboarding_secret_hash = _hash_secret(body.onboardingSecret)
+    api_invoker_id = f"api-invoker-{uuid.uuid4()}"
+    onboarding_secret = secrets.token_urlsafe(32)
+    inv = InvokerRegistration(api_invoker_id=api_invoker_id, public_key=body.apiInvokerPublicKey,
+                               onboarding_secret_hash=_hash_secret(onboarding_secret))
+    db.add(inv)
     db.commit()
-    return {"apiInvokerId": inv.api_invoker_id}
+    return {"apiInvokerId": inv.api_invoker_id, "onboardingSecret": onboarding_secret}
 
 
 class AccessTokenRequest(BaseModel):

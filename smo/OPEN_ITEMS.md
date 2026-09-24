@@ -1963,6 +1963,53 @@ own §1/§2 items stand as-is.
   out of this specific audit item's scope). No migration change — this
   was a route-shape change only. 473 tests total, up from 470
   (`focom`: 45 -> 48).
+- **`SPEC_AUDIT.md`'s third and last moderate/breaking-shape item: SME's
+  invoker onboarding had the trust direction backwards, per explicit
+  user direction to implement the real fix rather than leave it
+  documented.** The real CAPIF core's `APIInvokerEnrolmentDetails`/
+  `OnboardingInformation` onboarding is public-key-based
+  (`invokermanagementapi/typevalidation.go` requires
+  `OnboardingInformation.ApiInvokerPublicKey`; `typeupdate.go`'s
+  `createId`/`getOnboardingSecret` mint `apiInvokerId`/
+  `onboardingSecret` server-side and hand them back) — this build
+  previously took both `apiInvokerId` and `onboardingSecret` as
+  **client-supplied** input instead, a self-asserted identity and a
+  client-chosen secret. `InvokerRegistrationRequest` now takes only
+  `apiInvokerPublicKey`; `register_invoker` mints a real server-side
+  `apiInvokerId` (`f"api-invoker-{uuid.uuid4()}"`) and a real random
+  `onboardingSecret` (`secrets.token_urlsafe(32)`, still hashed at
+  rest, never stored in cleartext) and returns both — matching the
+  real onboarding endpoint's own behavior of always minting a new
+  invoker rather than updating an existing one in place.
+  `InvokerRegistration` gained a `public_key` column (stored, though
+  not yet cryptographically used anywhere in this build — no
+  signature verification exists at all). Confirmed via a repo-wide
+  grep that no other module's code ever referenced `apiInvokerId`/
+  `api_invoker_id` — only SME's own routes/tests and
+  `DEMO_RUNBOOK.md`'s own script, both updated in this same pass:
+  the runbook's invoker-registration step now submits a public key
+  and instructs the operator to carry the returned `apiInvokerId`/
+  `onboardingSecret` into the OAuth2 token call, the same
+  note-and-carry-forward pattern already used for `packageId`/
+  `instanceId` elsewhere in the runbook; its own "worth calling out
+  live" disclosure (added when this gap was still open, in the
+  large/structural demo-relevance triage pass) is updated to reflect
+  that this part is now fixed, while item 2 (the real CAPIF core's
+  separate "Trusted Invokers" security-context registry, a genuine
+  additional subsystem) remains open and is still named. Verified
+  against a real local Postgres 16 instance (migration applies
+  cleanly, `check_migration_matches_models.py` passes, 58 tables; a
+  manual insert round-tripped the new `public_key` column). 475 tests
+  total, up from 473 (`sme`: 47 -> 49).
+
+  This closes every item on `SPEC_AUDIT.md`'s "Moderate/breaking-shape
+  items" list — all three are now done, alongside the earlier
+  "genuinely closeable now" small/scoped list. What remains in
+  `SPEC_AUDIT.md` is large/structural: confirmed Phase-1 scope cuts
+  (real MSAC RBAC, DN/typed addressing, file/streaming transport,
+  FOCOM's Provisioning/Artifacts/Cluster/Infrastructure categories,
+  CAPIF's Trusted Invokers registry), each already triaged against the
+  pilot demo in the earlier demo-relevance pass.
 
 ## Suggested next pass (priority order)
 
