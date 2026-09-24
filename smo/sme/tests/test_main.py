@@ -13,13 +13,23 @@ from sqlalchemy.pool import StaticPool
 from smo_shared.db import Base, get_session
 
 from app.main import app
-from app.models import ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile
+from app.models import ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile
+
+# Every test in this file registers services under one of these three
+# identities — pre-enrolling them here (via the real POST
+# /provider-registrations route, not a data shortcut) keeps every existing
+# register_service call site unchanged now that it requires a registered
+# publishing function (OPEN_ITEMS.md section 5), the same way a test suite
+# logs in a fixture user once rather than re-testing login in every test.
+KNOWN_TEST_PUBLISHERS = ["rapp-1", "rapp-2", "rapp-3"]
 
 
 @pytest.fixture
 def db_session_factory():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[ServiceProfile.__table__, ServiceAuthzPolicy.__table__, ServiceEventSubscription.__table__])
+    Base.metadata.create_all(engine, tables=[
+        ServiceProfile.__table__, ServiceAuthzPolicy.__table__, ServiceEventSubscription.__table__, ProviderRegistration.__table__,
+    ])
     return sessionmaker(bind=engine)
 
 
@@ -33,7 +43,10 @@ def client(db_session_factory):
             session.close()
 
     app.dependency_overrides[get_session] = override_get_session
-    yield TestClient(app)
+    test_client = TestClient(app)
+    for apf_id in KNOWN_TEST_PUBLISHERS:
+        test_client.post("/provider-registrations", json={"apfId": apf_id})
+    yield test_client
     app.dependency_overrides.clear()
 
 
@@ -407,3 +420,77 @@ def test_notify_service_change_survives_unreachable_subscriber(client, monkeypat
     })
     resp = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body())  # must not raise
     assert resp.status_code == 201
+
+
+def test_register_service_without_enrollment_is_forbidden(client):
+    """OPEN_ITEMS.md section 5: register_service used to accept any apf_id
+    with no check that it's an actual registered publisher. The
+    reference's own gate (PostApfIdServiceApis: 403, "api is only
+    available for publishers") is now real.
+    """
+    resp = client.post("/published-apis/v1/rapp-unregistered/service-apis", json=register_body(producer="rapp-unregistered"))
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["title"] == "APF_NOT_REGISTERED"
+
+
+def test_register_provider_then_register_service_succeeds(client):
+    resp = client.post("/provider-registrations", json={"apfId": "rapp-99", "providerDomainInfo": "test rApp"})
+    assert resp.status_code == 201
+    assert resp.json() == {"apfId": "rapp-99"}
+
+    resp = client.post("/published-apis/v1/rapp-99/service-apis", json=register_body(producer="rapp-99", service_name="rapp-99-service"))
+    assert resp.status_code == 201
+
+
+def test_register_provider_is_idempotent_update_in_place(client):
+    client.post("/provider-registrations", json={"apfId": "rapp-99", "providerDomainInfo": "first"})
+    resp = client.post("/provider-registrations", json={"apfId": "rapp-99", "providerDomainInfo": "second"})
+    assert resp.status_code == 201
+    # still registered, still usable — a re-registration is an update, not a conflict
+    resp = client.post("/published-apis/v1/rapp-99/service-apis", json=register_body(producer="rapp-99", service_name="rapp-99-service"))
+    assert resp.status_code == 201
+
+
+def test_deregister_provider_removes_it(client):
+    client.post("/provider-registrations", json={"apfId": "rapp-99"})
+    resp = client.delete("/provider-registrations/rapp-99")
+    assert resp.status_code == 204
+
+    resp = client.post("/published-apis/v1/rapp-99/service-apis", json=register_body(producer="rapp-99", service_name="rapp-99-service"))
+    assert resp.status_code == 403
+
+
+def test_deregister_unknown_provider_is_idempotent(client):
+    resp = client.delete("/provider-registrations/does-not-exist")
+    assert resp.status_code == 204
+
+
+def test_query_own_services_without_enrollment_is_404(client):
+    """GetApfIdServiceApis, publishservice.go: an apf_id with zero services
+    and no enrolment is genuinely "not a publisher", not just "no
+    services yet".
+    """
+    resp = client.get("/published-apis/v1/rapp-unregistered/service-apis")
+    assert resp.status_code == 404
+
+
+def test_query_own_services_with_enrollment_and_no_services_is_empty_list(client):
+    client.post("/provider-registrations", json={"apfId": "rapp-99"})
+    resp = client.get("/published-apis/v1/rapp-99/service-apis")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_query_own_services_returns_existing_services_even_after_deregistration(client):
+    """publishservice.go's own GetApfIdServiceApis checks the published-
+    services map FIRST, falling back to the enrolment gate only when it's
+    empty — an apf_id with existing services always gets them back,
+    regardless of its current enrolment state.
+    """
+    client.post("/provider-registrations", json={"apfId": "rapp-99"})
+    client.post("/published-apis/v1/rapp-99/service-apis", json=register_body(producer="rapp-99", service_name="rapp-99-service"))
+    client.delete("/provider-registrations/rapp-99")
+
+    resp = client.get("/published-apis/v1/rapp-99/service-apis")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
