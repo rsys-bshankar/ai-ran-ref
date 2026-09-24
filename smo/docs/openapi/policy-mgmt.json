@@ -29,6 +29,21 @@
             "title": "Expectations",
             "type": "array"
           },
+          "intentHandlingScope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "RAN",
+                  "CN"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intenthandlingscope"
+          },
           "intentType": {
             "anyOf": [
               {
@@ -111,6 +126,24 @@
             },
             "title": "Capabilities",
             "type": "array"
+          },
+          "intentHandlingScope": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "RAN",
+                    "CN"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intenthandlingscope"
           },
           "notificationCallbackUri": {
             "title": "Notificationcallbackuri",
@@ -368,6 +401,38 @@
       }
     },
     "/intents/{intent_id}": {
+      "delete": {
+        "description": "SPEC_AUDIT.md item 5: no DELETE /intents/{id} existed at all \u2014\nan RMIO had no way to ever retract an Intent it created, only\ndeactivate it (UpdateIntentAdminState). Symmetric with\nderegister_intent_handling_function's own idempotent shape below.",
+        "operationId": "delete_intent_intents__intent_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Intent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Intent"
+      },
       "get": {
         "description": "NEW \u2014 v1.3 had CreateIntent and subscribe/publish, but no read\noperation at all (Policy Mgmt LLD section 1).",
         "operationId": "query_intent_intents__intent_id__get",

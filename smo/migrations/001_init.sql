@@ -623,7 +623,11 @@ CREATE TABLE intent (
 
 CREATE TABLE intent_report (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  intent_id            UUID NOT NULL REFERENCES intent(intent_id),   -- was intent_reference (bare string) pre-LLD
+  -- ON DELETE CASCADE: SPEC_AUDIT.md item 5's new DELETE /intents/{id} —
+  -- matches this build's established cascade-delete-child pattern
+  -- (rapp_instance, aiml_model, write_config_job, ...) rather than leaving
+  -- an FK violation on the first real delete of an intent with reports.
+  intent_id            UUID NOT NULL REFERENCES intent(intent_id) ON DELETE CASCADE,   -- was intent_reference (bare string) pre-LLD
   intent_fulfilment_report JSONB,
   intent_conflict_reports    JSONB,
   last_updated_time            TIMESTAMPTZ NOT NULL DEFAULT now()

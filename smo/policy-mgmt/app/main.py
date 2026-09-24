@@ -7,6 +7,7 @@ DeregisterIntentHandlingFunction restores register/deregister symmetry.
 """
 
 import uuid
+from typing import Literal
 
 import httpx
 from fastapi import Depends, FastAPI
@@ -28,6 +29,12 @@ class CreateIntentRequest(BaseModel):
     priority: int = 1
     rmioId: str = ""
     intentType: str | None = None
+    # SPEC_AUDIT.md item 5 (formerly 1): TS28312_IntentNrm.yaml's
+    # IntentHandlingScope is a closed 2-value enum (RAN/CN) — not persisted
+    # on Intent itself in the real spec either (it's IntentHandlingFunction's
+    # own declared coverage), used here purely as an optional match-time
+    # pre-filter alongside intentType.
+    intentHandlingScope: Literal["RAN", "CN"] | None = None
 
 
 class AdminStateRequest(BaseModel):
@@ -46,6 +53,10 @@ class RegisterRmihRequest(BaseModel):
     smeServiceId: str
     capabilities: list[dict]
     notificationCallbackUri: str
+    # SPEC_AUDIT.md item 5: TS28312_IntentNrm.yaml's IntentHandlingScope is
+    # a closed 2-value enum (RAN/CN) — was untyped JSON, never set by any
+    # caller. None means "no declared scope restriction" (matches anything).
+    intentHandlingScope: list[Literal["RAN", "CN"]] | None = None
 
 
 @app.post("/intents", status_code=201)
@@ -67,7 +78,7 @@ def create_intent(body: CreateIntentRequest, db: Session = Depends(get_session))
     db.commit()
 
     if body.intentType:
-        for fn in _matching_rmihs(db, body.intentType):
+        for fn in _matching_rmihs(db, body.intentType, body.intentHandlingScope):
             try:
                 httpx.post(fn.notification_callback_uri, json={
                     "intentId": str(intent.intent_id), "intentType": body.intentType,
@@ -78,9 +89,19 @@ def create_intent(body: CreateIntentRequest, db: Session = Depends(get_session))
     return {"intentId": str(intent.intent_id)}
 
 
-def _matching_rmihs(db: Session, intent_type: str) -> list[IntentHandlingFunction]:
-    return [fn for fn in db.scalars(select(IntentHandlingFunction)).all()
-            if any(cap.get("intentType") == intent_type for cap in fn.intent_handling_capability_list)]
+def _matching_rmihs(db: Session, intent_type: str, scope: str | None = None) -> list[IntentHandlingFunction]:
+    """Capability-tag matching (unchanged), plus SPEC_AUDIT.md item 5's
+    intentHandlingScope pre-filter: an RMIH with a declared scope that
+    doesn't cover the intent's requested scope is skipped before the
+    capability check even runs. An RMIH with no declared scope (None,
+    the pre-existing default — matches anything) is unaffected, and a
+    request with no requested scope skips the filter entirely, so every
+    caller predating this field keeps its exact prior behavior.
+    """
+    candidates = db.scalars(select(IntentHandlingFunction)).all()
+    if scope is not None:
+        candidates = [fn for fn in candidates if not fn.intent_handling_scope or scope in fn.intent_handling_scope]
+    return [fn for fn in candidates if any(cap.get("intentType") == intent_type for cap in fn.intent_handling_capability_list)]
 
 
 @app.get("/intents/{intent_id}")
@@ -113,6 +134,19 @@ def update_intent_admin_state(intent_id: uuid.UUID, body: AdminStateRequest, db:
     return _intent_view(intent)
 
 
+@app.delete("/intents/{intent_id}", status_code=204)
+def delete_intent(intent_id: uuid.UUID, db: Session = Depends(get_session)):
+    """SPEC_AUDIT.md item 5: no DELETE /intents/{id} existed at all —
+    an RMIO had no way to ever retract an Intent it created, only
+    deactivate it (UpdateIntentAdminState). Symmetric with
+    deregister_intent_handling_function's own idempotent shape below.
+    """
+    intent = db.get(Intent, intent_id)
+    if intent is not None:
+        db.delete(intent)
+        db.commit()
+
+
 @app.post("/intent-reports", status_code=201)
 def publish_intent_report(body: IntentReportRequest, db: Session = Depends(get_session)):
     report = IntentReport(intent_id=body.intentId, intent_fulfilment_report=body.fulfilmentReport, intent_conflict_reports=body.conflictReports)
@@ -131,10 +165,10 @@ def register_intent_handling_function(body: RegisterRmihRequest, db: Session = D
     if not is_framework_internal_identity(body.rmihId):
         raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail="external callers may never hold an rmihId (D-SEC-POLICY-1)")
     fn = IntentHandlingFunction(rmih_id=body.rmihId, sme_service_id=body.smeServiceId, intent_handling_capability_list=body.capabilities,
-                                 notification_callback_uri=body.notificationCallbackUri)
+                                 notification_callback_uri=body.notificationCallbackUri, intent_handling_scope=body.intentHandlingScope)
     db.add(fn)
     db.commit()
-    return {"rmihId": fn.rmih_id}
+    return {"rmihId": fn.rmih_id, "intentHandlingScope": fn.intent_handling_scope}
 
 
 @app.delete("/intent-handling-functions/{rmih_id}", status_code=204)

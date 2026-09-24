@@ -24,7 +24,7 @@ class IntentReport(Base):
     __tablename__ = "intent_report"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    intent_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("intent.intent_id"))  # was intent_reference (bare string) pre-LLD
+    intent_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("intent.intent_id", ondelete="CASCADE"))  # was intent_reference (bare string) pre-LLD; NEW: delete_intent's cascade
     intent_fulfilment_report: Mapped[dict | None] = mapped_column(JSON)
     intent_conflict_reports: Mapped[list | None] = mapped_column(JSON)
     last_updated_time: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))

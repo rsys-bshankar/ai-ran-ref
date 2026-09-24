@@ -90,6 +90,88 @@ def test_deregister_intent_handling_function_symmetric_with_register(client):
     assert resp.status_code == 204
 
 
+def test_register_intent_handling_function_persists_and_rejects_invalid_scope(client):
+    """SPEC_AUDIT.md item 5: TS28312_IntentNrm.yaml's IntentHandlingScope
+    is a closed 2-value enum (RAN/CN), previously untyped JSON never set
+    by any caller.
+    """
+    resp = client.post("/intent-handling-functions", json={
+        "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{}],
+        "notificationCallbackUri": "http://so-smos:8000/intents/notify", "intentHandlingScope": ["RAN"],
+    })
+    assert resp.status_code == 201
+    assert resp.json()["intentHandlingScope"] == ["RAN"]
+
+    invalid = client.post("/intent-handling-functions", json={
+        "rmihId": "sa-smos", "smeServiceId": "svc-2", "capabilities": [{}],
+        "notificationCallbackUri": "http://sa-smos:8000/intents/notify", "intentHandlingScope": ["NOT_A_REAL_SCOPE"],
+    })
+    assert invalid.status_code == 422
+
+
+def test_create_intent_scope_pre_filters_matching_rmihs(client, monkeypatch):
+    """SPEC_AUDIT.md item 5: intentHandlingScope was previously never
+    read at match time either — an RMIH declaring RAN-only scope must
+    not be dispatched a CN-scoped Intent even if its intentType matches.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/intent-handling-functions", json={
+        "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"intentType": "COVERAGE_OPTIMIZATION"}],
+        "notificationCallbackUri": "http://so-smos:8000/intents/notify", "intentHandlingScope": ["RAN"],
+    })
+    client.post("/intent-handling-functions", json={
+        "rmihId": "sa-smos", "smeServiceId": "svc-2", "capabilities": [{"intentType": "COVERAGE_OPTIMIZATION"}],
+        "notificationCallbackUri": "http://sa-smos:8000/intents/notify", "intentHandlingScope": ["CN"],
+    })
+
+    client.post("/intents", json={
+        "expectations": [], "rmioId": "rapp-1", "intentType": "COVERAGE_OPTIMIZATION", "intentHandlingScope": "CN",
+    })
+
+    assert len(calls) == 1
+    assert calls[0][0] == "http://sa-smos:8000/intents/notify"
+
+
+def test_create_intent_scope_matches_an_rmih_with_no_declared_scope(client, monkeypatch):
+    """An RMIH with no declared intentHandlingScope (the pre-existing
+    default) still matches any requested scope — this field is a
+    pre-filter, not a requirement.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    client.post("/intent-handling-functions", json={
+        "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"intentType": "COVERAGE_OPTIMIZATION"}],
+        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
+    })
+    client.post("/intents", json={
+        "expectations": [], "rmioId": "rapp-1", "intentType": "COVERAGE_OPTIMIZATION", "intentHandlingScope": "CN",
+    })
+    assert len(calls) == 1
+
+
+def test_delete_intent_removes_it_and_its_reports(client):
+    """SPEC_AUDIT.md item 5: no DELETE /intents/{id} existed at all —
+    an RMIO could only deactivate an Intent, never retract it. Cascades
+    to IntentReport the same way this build's other owned-child deletes
+    already do (rapp_instance, aiml_model, ...).
+    """
+    intent = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1"}).json()
+    client.post("/intent-reports", json={"intentId": intent["intentId"], "fulfilmentReport": {"met": True}})
+
+    resp = client.delete(f"/intents/{intent['intentId']}")
+    assert resp.status_code == 204
+    remaining = client.get("/intents").json()
+    assert intent["intentId"] not in [i["intentId"] for i in remaining]
+
+
+def test_delete_intent_is_idempotent_for_an_unknown_id(client):
+    resp = client.delete("/intents/00000000-0000-0000-0000-000000000000")
+    assert resp.status_code == 204
+
+
 def test_publish_intent_report(client):
     intent = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1"}).json()
     resp = client.post("/intent-reports", json={"intentId": intent["intentId"], "fulfilmentReport": {"met": True}})
