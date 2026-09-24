@@ -89,7 +89,39 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/health": {
+      "get": {
+        "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel,\nso every module answers one \u2014 previously only ran-nf-oam/a1-related\ndid (as their own DME producer-health callback URL).",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
+      }
+    },
     "/orders": {
+      "get": {
+        "description": "List read over ServiceOrder \u2014 only GET-by-id existed. Each order's\nown steps come back whole, same as query_order_status.",
+        "operationId": "list_service_orders_orders_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Service Orders"
+      },
       "post": {
         "operationId": "submit_service_order_orders_post",
         "requestBody": {

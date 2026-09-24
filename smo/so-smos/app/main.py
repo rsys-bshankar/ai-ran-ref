@@ -9,6 +9,7 @@ import uuid
 
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
@@ -18,6 +19,16 @@ from .dispatch import execute_order
 from .models import ServiceOrder
 
 app = FastAPI(title="SO SMOS")
+
+
+@app.get("/health")
+def health_check():
+    """Liveness probe. The GUI BFF's GET /modules/status fans out to
+    /<module>/health through R1 Termination for every module in parallel,
+    so every module answers one — previously only ran-nf-oam/a1-related
+    did (as their own DME producer-health callback URL).
+    """
+    return {"status": "healthy"}
 
 
 class SubmitOrderRequest(BaseModel):
@@ -59,3 +70,11 @@ def cancel_order(order_id: uuid.UUID, db: Session = Depends(get_session)):
     order.steps = [{**step, "status": "CANCELLED"} if step["status"] == "PENDING" else step for step in order.steps]
     db.commit()
     return {"orderId": str(order.order_id), "steps": order.steps}
+
+
+@app.get("/orders")
+def list_service_orders(db: Session = Depends(get_session)):
+    """List read over ServiceOrder — only GET-by-id existed. Each order's
+    own steps come back whole, same as query_order_status."""
+    return [{"orderId": str(o.order_id), "scope": o.scope, "steps": o.steps, "homingDecision": o.homing_decision,
+             "rmihRegistration": o.rmih_registration} for o in db.scalars(select(ServiceOrder)).all()]

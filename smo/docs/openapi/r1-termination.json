@@ -79,6 +79,23 @@
         "summary": "Bootstrap"
       }
     },
+    "/health": {
+      "get": {
+        "description": "R1 Termination's own liveness probe \u2014 declared ahead of the\ncatch-all proxy route so it is answered here, unauthenticated, rather\nthan 404ing as an unknown prefix. Every backend module's own /health\nis reached through the proxy as /<module>/health (token-gated like\nany other proxied call); the GUI BFF's GET /modules/status probes both.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
+      }
+    },
     "/{full_path}": {
       "delete": {
         "description": "OPEN_ITEMS.md section 2: explicit operation_id, not FastAPI's\nauto-derived one \u2014 generate_unique_id() picks\nlist(route.methods)[0].lower() for its default, and route.methods is\na plain set, so the auto id (and the \"Duplicate Operation ID\"\nwarning it triggers) was non-deterministic across process runs\n(PYTHONHASHSEED-dependent set iteration order) purely because this\none route serves five methods. Surfaced by adding a persisted\nOpenAPI spec (docs/openapi/) with a CI check that the committed file\nmatches the live schema \u2014 a non-deterministic operationId made that\ncheck itself flaky. operation_id isn't referenced by any client in\nthis build, so pinning it to a fixed string is a pure stability fix,\nnot a behavior change.",

@@ -62,7 +62,39 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/health": {
+      "get": {
+        "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel,\nso every module answers one \u2014 previously only ran-nf-oam/a1-related\ndid (as their own DME producer-health callback URL).",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
+      }
+    },
     "/monitors": {
+      "get": {
+        "description": "List read over AssuranceMonitor \u2014 previously write-only, so the\nthresholds being evaluated were invisible to an operator.",
+        "operationId": "list_assurance_monitors_monitors_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Assurance Monitors"
+      },
       "post": {
         "operationId": "register_assurance_monitor_monitors_post",
         "parameters": [
@@ -150,6 +182,44 @@
           }
         },
         "summary": "Register Assurance Monitor"
+      }
+    },
+    "/monitors/{monitor_id}": {
+      "get": {
+        "operationId": "get_assurance_monitor_monitors__monitor_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "monitor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Monitor Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assurance Monitor"
       }
     },
     "/monitors/{monitor_id}/escalate": {
@@ -306,6 +376,68 @@
           }
         },
         "summary": "Execute Remedial Action"
+      }
+    },
+    "/remedial-actions": {
+      "get": {
+        "description": "Every RemedialAction row, optionally per-monitor or per-outcome \u2014\n`outcome=ESCALATED` is the operator's escalation queue (the GUI\ndashboard's SA SMOS tile).",
+        "operationId": "list_remedial_actions_remedial_actions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "monitor_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Monitor Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outcome"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Remedial Actions"
       }
     }
   }

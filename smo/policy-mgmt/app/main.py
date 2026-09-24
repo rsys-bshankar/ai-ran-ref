@@ -24,6 +24,16 @@ from .models import Intent, IntentHandlingFunction, IntentReport
 app = FastAPI(title="Policy Management & Info SMOS")
 
 
+@app.get("/health")
+def health_check():
+    """Liveness probe. The GUI BFF's GET /modules/status fans out to
+    /<module>/health through R1 Termination for every module in parallel,
+    so every module answers one — previously only ran-nf-oam/a1-related
+    did (as their own DME producer-health callback URL).
+    """
+    return {"status": "healthy"}
+
+
 class CreateIntentRequest(BaseModel):
     expectations: list[dict]
     priority: int = 1
@@ -229,3 +239,23 @@ def deregister_intent_handling_function(rmih_id: str, db: Session = Depends(get_
 def _intent_view(i: Intent) -> dict:
     return {"intentId": str(i.intent_id), "intentAdminState": i.intent_admin_state,
             "intentPriority": i.intent_priority, "rmioId": i.rmio_id, "intentMgmtPurpose": i.intent_mgmt_purpose}
+
+
+@app.get("/intent-handling-functions")
+def list_intent_handling_functions(db: Session = Depends(get_session)):
+    """List read over registered RMIHs (GUI pass) — which handlers an
+    Intent can actually be dispatched to was otherwise invisible."""
+    return [{"rmihId": fn.rmih_id, "smeServiceId": fn.sme_service_id, "capabilities": fn.intent_handling_capability_list,
+             "notificationCallbackUri": fn.notification_callback_uri, "intentHandlingScope": fn.intent_handling_scope}
+            for fn in db.scalars(select(IntentHandlingFunction)).all()]
+
+
+@app.get("/intent-reports")
+def list_intent_reports(intent_id: uuid.UUID | None = None, db: Session = Depends(get_session)):
+    """Read side of publish_intent_report — fulfilment/conflict reports
+    were write-only."""
+    stmt = select(IntentReport)
+    if intent_id:
+        stmt = stmt.where(IntentReport.intent_id == intent_id)
+    return [{"reportId": str(r.id), "intentId": str(r.intent_id), "fulfilmentReport": r.intent_fulfilment_report,
+             "conflictReports": r.intent_conflict_reports, "lastUpdatedTime": r.last_updated_time.isoformat()} for r in db.scalars(stmt).all()]

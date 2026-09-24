@@ -22,6 +22,16 @@ from .models import MDAFProducer, MDAFReport, MDASubscription
 app = FastAPI(title="RAN Analytics SMOS (MDAF)")
 
 
+@app.get("/health")
+def health_check():
+    """Liveness probe. The GUI BFF's GET /modules/status fans out to
+    /<module>/health through R1 Termination for every module in parallel,
+    so every module answers one — previously only ran-nf-oam/a1-related
+    did (as their own DME producer-health callback URL).
+    """
+    return {"status": "healthy"}
+
+
 @app.post("/producers", status_code=201)
 def register_analytics_producer(producer_id: str, analytics_type: str, dme_input_types: list[uuid.UUID], output_schema: dict, db: Session = Depends(get_session)):
     """RegisterAnalyticsProducer — an update-in-place upsert on

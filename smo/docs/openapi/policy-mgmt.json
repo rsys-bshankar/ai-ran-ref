@@ -216,7 +216,39 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/health": {
+      "get": {
+        "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel,\nso every module answers one \u2014 previously only ran-nf-oam/a1-related\ndid (as their own DME producer-health callback URL).",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
+      }
+    },
     "/intent-handling-functions": {
+      "get": {
+        "description": "List read over registered RMIHs (GUI pass) \u2014 which handlers an\nIntent can actually be dispatched to was otherwise invisible.",
+        "operationId": "list_intent_handling_functions_intent_handling_functions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Intent Handling Functions"
+      },
       "post": {
         "description": "RegisterIntentHandlingFunction \u2014 rejected if caller is external\n(D-SEC-POLICY-1, unchanged). identity.py's helper distinguishes an\nrApp caller (always rejected here) from a framework-internal SMO\nmodule (SO SMOS / SA SMOS, the only legitimate callers).",
         "operationId": "register_intent_handling_function_intent_handling_functions_post",
@@ -287,6 +319,50 @@
       }
     },
     "/intent-reports": {
+      "get": {
+        "description": "Read side of publish_intent_report \u2014 fulfilment/conflict reports\nwere write-only.",
+        "operationId": "list_intent_reports_intent_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "intent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Intent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Intent Reports"
+      },
       "post": {
         "operationId": "publish_intent_report_intent_reports_post",
         "requestBody": {

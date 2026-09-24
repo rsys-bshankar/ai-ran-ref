@@ -375,6 +375,23 @@
         "summary": "Unsubscribe Events"
       }
     },
+    "/health": {
+      "get": {
+        "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel,\nso every module answers one \u2014 previously only ran-nf-oam/a1-related\ndid (as their own DME producer-health callback URL).",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
+      }
+    },
     "/invoker-registrations": {
       "post": {
         "description": "OPEN_ITEMS.md section 2: API Invoker onboarding\n(`invokermanagement.go`'s `InvokerManager`) \u2014 the real registry the\nSecurity/token API's own `IsInvokerRegistered`/`VerifyInvokerSecret`\ngate needs, entirely absent before this pass.\n\nSPEC_AUDIT.md SME item 1: the real CAPIF onboarding flow is\npublic-key-based \u2014 the client supplies `apiInvokerPublicKey`; the\nserver *generates* both `apiInvokerId` and `onboardingSecret` and\nreturns them (`apiInvokerId` \"shall not be present\" in the real\nclient request at all). Previously both were taken as\nclient-supplied input \u2014 a self-asserted identity and a\nclient-chosen secret \u2014 flipped to match the real trust direction.\nEvery call always mints a new invoker now (no more\nupdate-in-place on a re-registration of the same id, since there's\nno client-supplied id to match an existing row against \u2014 the same\nreal behavior the reference's own onboarding endpoint has: it\nalways creates, never updates, an onboarded invoker).",

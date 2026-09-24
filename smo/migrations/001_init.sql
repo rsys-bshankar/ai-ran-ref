@@ -203,13 +203,15 @@ CREATE TABLE rapp_fault_report (
   -- meaning once its rapp_instance row is gone.
   instance_id    UUID NOT NULL REFERENCES rapp_instance(instance_id) ON DELETE CASCADE,
   severity         TEXT NOT NULL CHECK (severity IN ('critical','major','minor','warning')),
-  description        TEXT
+  description        TEXT,
+  reported_at          TIMESTAMPTZ NOT NULL DEFAULT now()   -- NEW (GUI pass): GET /instances/{id}/faults orders on it
 );
 
 CREATE TABLE rapp_performance_report (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   instance_id    UUID NOT NULL REFERENCES rapp_instance(instance_id) ON DELETE CASCADE,  -- NEW section 5: delete_instance's cascade
-  metrics          JSONB NOT NULL
+  metrics          JSONB NOT NULL,
+  reported_at        TIMESTAMPTZ NOT NULL DEFAULT now()   -- NEW (GUI pass): GET /instances/{id}/performance orders on it
 );
 
 -- ============================================================

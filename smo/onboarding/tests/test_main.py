@@ -362,3 +362,20 @@ def test_deprime_succeeds_once_usage_registration_is_stopped(client, monkeypatch
     assert resp.json()["state"] == "AVAILABLE"
 
 
+def test_health_check_answers_the_gui_bff_liveness_probe(client):
+    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "healthy"}
+
+
+def test_query_packages_exposes_identity_fields_for_the_gui(client, db_session_factory):
+    """GUI pass: the package list only carried id/state, so an operator
+    couldn't tell packages apart by name/version."""
+    with db_session_factory() as session:
+        session.add(ApplicationPackage(package_id=uuid.uuid4(), application_type="rApp", name="hello-world", version="1.0.0",
+                                        vendor="acme", state="AVAILABLE", manifest_ref="m"))
+        session.commit()
+    [pkg] = client.get("/packages").json()
+    assert (pkg["name"], pkg["version"], pkg["vendor"], pkg["applicationType"]) == ("hello-world", "1.0.0", "acme", "rApp")
+    assert pkg["nfDeploymentDescriptorId"] is None

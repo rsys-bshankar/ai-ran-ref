@@ -801,3 +801,10 @@ def test_register_dme_type_succeeds_even_if_a_subscriber_is_unreachable(client, 
 
     resp = client.post("/production-capabilities", json=register_type_body())
     assert resp.status_code == 201  # must not raise despite the unreachable subscriber
+
+
+def test_health_check_answers_the_gui_bff_liveness_probe(client):
+    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "healthy"}

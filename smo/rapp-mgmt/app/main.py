@@ -24,6 +24,16 @@ from .upgrade import resolve_upgrade, start_upgrade
 app = FastAPI(title="rApp Management SMOS")
 
 
+@app.get("/health")
+def health_check():
+    """Liveness probe. The GUI BFF's GET /modules/status fans out to
+    /<module>/health through R1 Termination for every module in parallel,
+    so every module answers one — previously only ran-nf-oam/a1-related
+    did (as their own DME producer-health callback URL).
+    """
+    return {"status": "healthy"}
+
+
 class CreateInstanceRequest(BaseModel):
     packageId: uuid.UUID
     config: dict = {}
@@ -240,3 +250,28 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
         "workloadRef": inst.workload_ref, "configuration": inst.configuration,
         "pendingUpgradeInstanceId": str(inst.pending_upgrade_instance_id) if inst.pending_upgrade_instance_id else None,
     }
+
+
+@app.get("/instances/{instance_id}/performance")
+def list_performance_reports(instance_id: uuid.UUID, limit: int = 100, db: Session = Depends(get_session)):
+    """Read side of report_performance above — previously write-only, so
+    an operator had no way to see what an rApp had reported at all.
+    Newest first, capped by `limit` (the GUI's KPI sparkline only ever
+    wants the recent tail).
+    """
+    if db.get(RAppInstance, instance_id) is None:
+        raise HTTPException(status_code=404, detail="no such RAppInstance")
+    rows = db.scalars(select(RAppPerformanceReport).where(RAppPerformanceReport.instance_id == instance_id)
+                      .order_by(RAppPerformanceReport.reported_at.desc()).limit(limit)).all()
+    return [{"reportId": str(r.id), "metrics": r.metrics, "reportedAt": r.reported_at.isoformat()} for r in rows]
+
+
+@app.get("/instances/{instance_id}/faults")
+def list_fault_reports(instance_id: uuid.UUID, limit: int = 100, db: Session = Depends(get_session)):
+    """Read side of report_fault above, same shape as list_performance_reports."""
+    if db.get(RAppInstance, instance_id) is None:
+        raise HTTPException(status_code=404, detail="no such RAppInstance")
+    rows = db.scalars(select(RAppFaultReport).where(RAppFaultReport.instance_id == instance_id)
+                      .order_by(RAppFaultReport.reported_at.desc()).limit(limit)).all()
+    return [{"faultId": str(r.id), "severity": r.severity, "description": r.description,
+             "reportedAt": r.reported_at.isoformat()} for r in rows]

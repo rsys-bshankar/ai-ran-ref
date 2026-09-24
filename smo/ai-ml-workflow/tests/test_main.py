@@ -559,3 +559,68 @@ def test_create_feature_group_stores_enable_dme_and_dme_fields(client):
     assert body["sourceName"] == "ran-nf-oam"
     assert body["dmePort"] == "8000"
     assert body["measuredObjClass"] == "NRCellDU"
+
+
+def test_health_check_answers_the_gui_bff_liveness_probe(client):
+    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "healthy"}
+
+
+def test_list_training_jobs_filters_by_model_and_status(client, db_session_factory):
+    """GUI pass: only a per-id status read existed for training jobs."""
+    model_a = _make_model(db_session_factory, ModelState.REGISTERED)
+    with db_session_factory() as session:
+        session.add(AIMLModel(model_id=(model_b := uuid.uuid4()), registration_id="r", model_type="t", version="2.0", state=ModelState.REGISTERED))
+        session.commit()
+    job_a = client.post("/training-jobs", json={"modelId": str(model_a), "producerId": "rapp-1"}).json()["trainingJobId"]
+    client.post("/training-jobs", json={"modelId": str(model_b), "producerId": "rapp-1"})
+
+    assert len(client.get("/training-jobs").json()) == 2
+    only_a = client.get("/training-jobs", params={"model_id": str(model_a)}).json()
+    assert [j["trainingJobId"] for j in only_a] == [job_a]
+    assert only_a[0]["status"] == "RUNNING" and only_a[0]["modelId"] == str(model_a)
+
+    client.delete(f"/training-jobs/{job_a}")
+    assert [j["trainingJobId"] for j in client.get("/training-jobs", params={"status": "CANCELLED"}).json()] == [job_a]
+
+
+def test_list_inference_jobs_filters_by_model(client, db_session_factory):
+    model_id = _make_model(db_session_factory, ModelState.ACTIVE)
+    job_id = client.post(f"/models/{model_id}/inference-jobs").json()["inferenceJobId"]
+
+    listed = client.get("/inference-jobs", params={"model_id": str(model_id)}).json()
+    assert listed == [{"inferenceJobId": job_id, "modelId": str(model_id), "status": "RUNNING", "notificationDestination": None}]
+    assert client.get("/inference-jobs", params={"status": "COMPLETED"}).json() == []
+
+
+def test_list_coordination_groups_returns_members(client, db_session_factory):
+    model_id = _make_model(db_session_factory, ModelState.ACTIVE)
+    group_id = client.post("/coordination-groups", json={"memberModelIds": [str(model_id)]}).json()["groupId"]
+
+    groups = client.get("/coordination-groups").json()
+    assert [(g["groupId"], g["memberModelIds"]) for g in groups] == [(group_id, [str(model_id)])]
+
+
+def test_list_mlmf_subscriptions_and_their_reports_newest_first(client, db_session_factory):
+    """GUI pass: MLMF subscriptions/reports were write-only."""
+    model_id = _make_model(db_session_factory, ModelState.ACTIVE)
+    sub_id = client.post("/mlmf/subscriptions", params={"model_id": str(model_id), "dme_type_id": str(uuid.uuid4())},
+                          json={"metric_types": ["accuracy"], "guard_kpi_floor": {"accuracy": 0.9}}).json()["subscriptionId"]
+    client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.95})
+    client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5})
+
+    subs = client.get("/mlmf/subscriptions", params={"model_id": str(model_id)}).json()
+    assert [(s["subscriptionId"], s["guardKpiFloor"]) for s in subs] == [(sub_id, {"accuracy": 0.9})]
+
+    reports = client.get(f"/mlmf/subscriptions/{sub_id}/reports").json()
+    assert [(r["metrics"]["accuracy"], r["breachedFloor"]) for r in reports] == [(0.5, True), (0.95, False)]
+
+    breached = client.get("/mlmf/reports", params={"breached_only": True}).json()
+    assert [r["metrics"]["accuracy"] for r in breached] == [0.5]
+    assert len(client.get("/mlmf/reports").json()) == 2
+
+
+def test_list_mlmf_reports_404_on_an_unknown_subscription(client):
+    assert client.get(f"/mlmf/subscriptions/{uuid.uuid4()}/reports").status_code == 404

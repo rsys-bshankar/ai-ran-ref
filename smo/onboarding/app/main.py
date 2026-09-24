@@ -54,6 +54,16 @@ from .statemachine import ONBOARDING_FSM, PackageEvent, PackageState
 app = FastAPI(title="Software Package Onboarding SMOS")
 
 
+@app.get("/health")
+def health_check():
+    """Liveness probe. The GUI BFF's GET /modules/status fans out to
+    /<module>/health through R1 Termination for every module in parallel,
+    so every module answers one — previously only ran-nf-oam/a1-related
+    did (as their own DME producer-health callback URL).
+    """
+    return {"status": "healthy"}
+
+
 class OnboardRequest(BaseModel):
     location: str
     applicationType: str = "rApp"
@@ -263,7 +273,12 @@ def register_usage_stop(package_id: uuid.UUID, registration_id: uuid.UUID, db: S
 def _package_view(pkg: ApplicationPackage) -> dict:
     return {
         "packageId": str(pkg.package_id),
+        "name": pkg.name,
+        "version": pkg.version,
+        "vendor": pkg.vendor,
+        "applicationType": pkg.application_type,
         "state": pkg.state,
         "toscaEntryDefinitions": pkg.tosca_entry_definitions,
         "signatureVerified": pkg.signature_verified,
+        "nfDeploymentDescriptorId": str(pkg.nf_deployment_descriptor_id) if pkg.nf_deployment_descriptor_id else None,
     }

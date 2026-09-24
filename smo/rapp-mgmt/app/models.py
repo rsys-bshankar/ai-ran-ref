@@ -29,6 +29,9 @@ class RAppFaultReport(Base):
     instance_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("rapp_instance.instance_id", ondelete="CASCADE"))  # NEW section 5: delete_instance's cascade
     severity: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(String)
+    # NEW (GUI pass): GET /instances/{id}/faults returns these newest-first;
+    # with no timestamp there was no stable order to return them in at all.
+    reported_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.UTC))
 
 
 class RAppPerformanceReport(Base):
@@ -37,3 +40,4 @@ class RAppPerformanceReport(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     instance_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("rapp_instance.instance_id", ondelete="CASCADE"))  # NEW section 5: delete_instance's cascade
     metrics: Mapped[dict] = mapped_column(JSON, nullable=False)
+    reported_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.UTC))  # NEW (GUI pass), same reason as RAppFaultReport's
