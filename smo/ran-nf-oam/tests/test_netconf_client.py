@@ -14,6 +14,16 @@ def test_build_edit_config_rpc_embeds_target_and_attributes():
     assert 'message-id="msg-1"' in rpc
     assert 'ref="ME-1"' in rpc
     assert "<adminState>UNLOCKED</adminState>" in rpc
+    assert 'operation="merge"' in rpc  # RFC 6241's own default, explicit here
+
+
+def test_build_edit_config_rpc_emits_the_requested_operation():
+    """SPEC_AUDIT.md item 3: RFC 6241 section 7.2's edit-config operation
+    attribute (merge/replace/create/delete/remove), previously never
+    emitted at all — every write was implicitly a merge.
+    """
+    rpc = build_edit_config_rpc("msg-1", "ME-1", {}, operation="delete")
+    assert 'ref="ME-1" operation="delete"' in rpc
 
 
 class FakeResponse:

@@ -22,7 +22,7 @@ def _reset_mock_state():
     _applied_changes.clear()
 
 
-def _edit_config_rpc(message_id: str, ref: str, attribute_changes: dict) -> str:
+def _edit_config_rpc(message_id: str, ref: str, attribute_changes: dict, operation: str = "merge") -> str:
     """Mirrors ran-nf-oam/app/netconf_client.py's own build_edit_config_rpc
     exactly — this module's whole job is to answer exactly what that real
     client sends, not a hand-picked simplification of it.
@@ -31,7 +31,7 @@ def _edit_config_rpc(message_id: str, ref: str, attribute_changes: dict) -> str:
     return (
         f'<rpc message-id="{message_id}" xmlns="{NETCONF_BASE_NS}">'
         f"<edit-config><target><running/></target>"
-        f'<config><managed-object ref="{ref}">{config_body}</managed-object></config>'
+        f'<config><managed-object ref="{ref}" operation="{operation}">{config_body}</managed-object></config>'
         f"</edit-config></rpc>"
     )
 
@@ -69,6 +69,31 @@ def test_edit_config_with_empty_changes_is_rejected():
     assert _local_tag(root) == "rpc-reply"
     assert not any(_local_tag(c) == "ok" for c in root)
     assert any(_local_tag(c) == "rpc-error" for c in root)
+
+
+def test_edit_config_delete_with_empty_payload_is_accepted():
+    """SPEC_AUDIT.md item 3: RFC 6241 section 7.2's edit-config `operation`
+    attribute — a delete legitimately carries no attribute_changes at
+    all, unlike a merge/replace/create, so it must not be rejected for
+    emptiness the way test_edit_config_with_empty_changes_is_rejected
+    (an implicit merge) correctly is.
+    """
+    client.post("/edit-config", content=_edit_config_rpc("105", "ME-1", {"adminState": "UNLOCKED"}))
+    rpc = _edit_config_rpc("106", "ME-1", {}, operation="delete")
+    resp = client.post("/edit-config", content=rpc, headers={"Content-Type": "application/xml"})
+    assert resp.status_code == 200
+    root = ET.fromstring(resp.text)
+    assert any(_local_tag(c) == "ok" for c in root)
+
+    resp = client.get("/edit-config/ME-1")
+    assert resp.json() == {"managedObjectRef": "ME-1", "attributeChanges": None}
+
+
+def test_edit_config_remove_with_empty_payload_is_also_accepted():
+    rpc = _edit_config_rpc("107", "ME-1", {}, operation="remove")
+    resp = client.post("/edit-config", content=rpc, headers={"Content-Type": "application/xml"})
+    root = ET.fromstring(resp.text)
+    assert any(_local_tag(c) == "ok" for c in root)
 
 
 def test_edit_config_with_malformed_xml_is_rejected():

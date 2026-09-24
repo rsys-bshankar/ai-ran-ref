@@ -100,6 +100,13 @@ class WriteConfigSubChange(Base):
     managed_element_ref: Mapped[str] = mapped_column(String, nullable=False)
     managed_function_ref: Mapped[str | None] = mapped_column(String)
     attribute_changes: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # SPEC_AUDIT.md item 3: TS28532_ProvMnS.yaml defines four distinct MOI
+    # lifecycle operations (create/replace/merge/delete) but this sub-change
+    # had no operation-type field at all — every write was implicitly a
+    # merge. Grounded in RFC 6241 section 7.2's real edit-config `operation`
+    # attribute (this build's actually-implemented southbound protocol,
+    # netconf_client.py) rather than ProvMnS's HTTP-verb-level framing.
+    operation: Mapped[str] = mapped_column(String, nullable=False, default="merge")
     status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
     rejection_reason: Mapped[str | None] = mapped_column(String)
 

@@ -64,7 +64,7 @@
   "paths": {
     "/edit-config": {
       "post": {
-        "description": "Mirrors netconf_client.py's own build_edit_config_rpc/send_edit_config\nexactly: parses the real <rpc><edit-config>...</edit-config></rpc>\nrequest, replies <rpc-reply><ok/></rpc-reply> (RFC 6241 section 4.2) on\nsuccess. REJECTED (a real <rpc-error>, same as a real NETCONF agent\nrefusing a request) when the managed-object ref is missing or its\nconfig body is empty \u2014 the same \"empty payload is a real, testable\nrejection trigger\" pattern mock-near-rt-ric's own create_policy\nalready established for an empty policyObject.",
+        "description": "Mirrors netconf_client.py's own build_edit_config_rpc/send_edit_config\nexactly: parses the real <rpc><edit-config>...</edit-config></rpc>\nrequest, replies <rpc-reply><ok/></rpc-reply> (RFC 6241 section 4.2) on\nsuccess. REJECTED (a real <rpc-error>, same as a real NETCONF agent\nrefusing a request) when the managed-object ref is missing, or its\nconfig body is empty for any operation other than delete/remove \u2014 a\ndelete legitimately carries no attribute_changes at all (RFC 6241\nsection 7.2's `operation` attribute), so rejecting it for emptiness\nwould be wrong. Non-delete/remove emptiness rejection is the same\n\"empty payload is a real, testable rejection trigger\" pattern\nmock-near-rt-ric's own create_policy already established for an\nempty policyObject.",
         "operationId": "edit_config_edit_config_post",
         "responses": {
           "200": {
