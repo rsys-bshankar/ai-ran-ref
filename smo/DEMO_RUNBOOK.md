@@ -339,7 +339,71 @@ print(r2.status_code, r2.json())
 `ackUserId`/`clearUserId`/`changedAt` all populated — a full fault
 lifecycle against real, persisted rows, not a mock.
 
-## 8. Retire it — Terminate, then Delete
+## 8. FOCOM resource management (optional) — provision, subscribe, observe a real notification
+
+Independent of the sample rApp instance above — this shows FOCOM's O2IMS
+inventory-subscription mechanism firing for real: subscribe to inventory
+changes for a resource type, then provision and deprovision a resource
+of that type and see each one actually attempted against the
+subscriber's callback.
+
+Subscribe first, filtered to a resource type this walkthrough will use:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://focom:8000/inventory/subscriptions', json={
+    'callback': 'http://demo-consumer:9000/inventory-events',
+    'resourceTypeId': 'gpu-l40', 'consumerSubscriptionId': 'demo-sub-1',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `subscriptionId`. Provision a matching resource:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://focom:8000/resources/provision', json={'resourceTypeId': 'gpu-l40', 'description': 'demo GPU node'})
+print(r.status_code, r.json())
+"
+```
+
+`resourceId` in the response is a real, persisted `Resource` row —
+confirm it with the pool drill-down:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://focom:8000/resource-pools/pool-0/resources')
+print(r.status_code, r.json())
+"
+```
+
+Provisioning fired a real `CREATE` notification at `_notify_inventory_
+subscribers` — `focom`'s own logs show the delivery attempt to
+`http://demo-consumer:9000/inventory-events` (there's no real listener
+container in this compose stack at that address, so the attempt fails
+DNS resolution and is silently dropped — delivery is deliberately
+best-effort, the same behavior `test_inventory_notification_delivery_
+survives_unreachable_subscriber` proves won't ever surface as a 500 to
+the caller). `tests_integration/test_demo_runbook.py` proves the outbound
+call itself — method, URL, and body — really fires, by intercepting it at
+the same `httpx.post` call FOCOM's own code makes, rather than
+re-implementing the notification logic.
+
+Deprovision it — this fires a matching `DELETE` notification the same way:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://focom:8000/resources/<resourceId>')
+print(r.status_code, r.json())
+"
+```
+
+## 9. Retire it — Terminate, then Delete
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -361,7 +425,8 @@ print(r.status_code)
 
 204 with an empty body — the instance row is gone. The full lifecycle
 — onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
-loop, retire — is now complete against a real running stack.
+loop, FOCOM resource management, retire — is now complete against a
+real running stack.
 
 ## Known rough edges for a live walkthrough
 

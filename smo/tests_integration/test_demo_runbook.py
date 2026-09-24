@@ -139,7 +139,51 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert cleared.json()["severity"] == "cleared"
     assert cleared.json()["clearUserId"] == "demo-operator"
 
-    # step 8: retire — terminate then delete
+    # step 8: FOCOM resource management — subscribe to inventory changes,
+    # provision a matching resource, observe the real outbound CREATE
+    # notification, deprovision it, observe the real DELETE notification.
+    # Intercepted at the same httpx.post call FOCOM's own code makes
+    # (_notify_inventory_subscribers), same technique as fake_get above —
+    # proves the real, unmodified notification code path fires, not a
+    # reimplementation of it.
+    notifications = []
+    real_post = httpx.post
+
+    def fake_post(location, json=None, timeout=None, **kwargs):
+        if location == "http://demo-consumer:9000/inventory-events":
+            notifications.append(json)
+            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
+        return real_post(location, json=json, timeout=timeout, **kwargs)
+
+    monkeypatch.setattr(loaded_apps["focom"].httpx, "post", fake_post)
+
+    sub = mesh["focom"].post("/inventory/subscriptions", json={
+        "callback": "http://demo-consumer:9000/inventory-events",
+        "resourceTypeId": "gpu-l40", "consumerSubscriptionId": "demo-sub-1",
+    })
+    assert sub.status_code == 201
+
+    provisioned = mesh["focom"].post("/resources/provision", json={"resourceTypeId": "gpu-l40", "description": "demo GPU node"})
+    assert provisioned.status_code == 200
+    resource_id = provisioned.json()["resourceId"]
+
+    pool_resources = mesh["focom"].get("/resource-pools/pool-0/resources")
+    assert any(r["resourceId"] == resource_id for r in pool_resources.json())
+
+    assert len(notifications) == 1
+    assert notifications[0]["notificationEventType"] == "CREATE"
+    assert notifications[0]["resourceId"] == resource_id
+    assert notifications[0]["resourceTypeId"] == "gpu-l40"
+    assert notifications[0]["consumerSubscriptionId"] == "demo-sub-1"
+
+    deprovisioned = mesh["focom"].delete(f"/resources/{resource_id}")
+    assert deprovisioned.status_code == 200
+
+    assert len(notifications) == 2
+    assert notifications[1]["notificationEventType"] == "DELETE"
+    assert notifications[1]["resourceId"] == resource_id
+
+    # step 9: retire — terminate then delete
     term = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/terminate")
     assert term.status_code == 200
     assert term.json()["state"] == "UNDEPLOYED"
