@@ -139,7 +139,7 @@ Per-module unit test counts:
 | sa-smos | 12 |
 | so-smos | 13 |
 | mock-near-rt-ric | 16 |
-| rapp-mgmt | 17 |
+| rapp-mgmt | 19 |
 | ran-analytics | 22 |
 | nfo | 23 |
 | ran-nf-oam | 29 |
@@ -437,17 +437,24 @@ own §1/§2 items stand as-is.
   no ASD descriptor concept to parse, the same elision already
   documented for `RappInstance`'s nested ACM/SME/DME resource records
   below.
-- No resource-provenance detail endpoints — the reference's
+- ~~No resource-provenance detail endpoints — the reference's
   `GET /rapps/{id}` and `GET /rapps/{id}/instance/{id}` return nested
   ACM/SME/DME resource records (composition IDs, provider-function IDs,
   producer/consumer type lists); ours returns only flat
-  `{packageId, state, ...}`/`{instanceId, packageId, state}`. *Confirmed
-  tied to the same out-of-scope boundary below*: the reference's nested
-  records are the caller-supplied ACM/SME/DME deploy descriptor this
-  build's `CreateInstance` never accepts in the first place (real
-  ACM/Helm/K8s deployment is the declared elision) — implementing this
-  would mean echoing back invented descriptor data, not exposing
-  something this build already computes.
+  `{packageId, state, ...}`/`{instanceId, packageId, state}`.~~ —
+  **closed, partially.** Added `GET /instances/{id}` — previously not
+  even a single-instance detail read existed at all, only the list
+  route and single-field sub-resources (`config`). The reference's own
+  nested ACM/SME/DME resource records stay out of scope, unchanged:
+  they're the caller-supplied deploy descriptor this build's
+  `CreateInstance` never accepts in the first place (real ACM/Helm/K8s
+  deployment is the declared elision) — echoing them back would mean
+  inventing descriptor data, not exposing something this build already
+  computes. What the new route does genuinely expose: `workloadRef`
+  (the real NFO `nfDeploymentId` `CreateInstance` received back — the
+  one real resource reference this build tracks) and the caller-supplied
+  `configuration`, alongside the identity/state fields `list_instances`
+  already returns.
 - ~~No standalone delete-after-undeploy for an instance, distinct from
   `terminate`.~~ — **closed.** Adopted the reference's own split
   (`RappService.undeployRappInstance`/`deleteRappInstance`, DEPLOYED ->
@@ -1389,6 +1396,17 @@ own §1/§2 items stand as-is.
   portability gap (naive vs. tz-aware datetimes), the first one this
   build's first elapsed-time computation ever hit. 405 tests total, up
   from 394 (`a1-related` alone: 32 -> 43).
+- rApp Management's missing resource-provenance detail endpoints (§5)
+  closed, partially: added `GET /instances/{id}` — previously not even
+  a single-instance detail read existed at all, only the list route and
+  single-field sub-resources (`config`). Genuinely exposes
+  `workloadRef` (the real NFO `nfDeploymentId` `CreateInstance` received
+  back) and the caller-supplied `configuration`. The reference's own
+  nested ACM/SME/DME resource records stay out of scope, unchanged:
+  they're the caller-supplied deploy descriptor `CreateInstance` never
+  accepts in the first place — echoing them back would mean inventing
+  descriptor data, not exposing something this build already computes.
+  407 tests total, up from 405 (`rapp-mgmt` alone: 17 -> 19).
 
 ## Suggested next pass (priority order)
 

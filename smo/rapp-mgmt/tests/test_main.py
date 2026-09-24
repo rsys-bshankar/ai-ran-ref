@@ -324,3 +324,31 @@ def test_delete_instance_cascades_fault_and_performance_reports(client, db_sessi
 def test_delete_unknown_instance_is_404(client):
     resp = client.delete(f"/instances/{uuid.uuid4()}")
     assert resp.status_code == 404
+
+
+def test_get_instance_returns_real_workload_ref_and_configuration(client, monkeypatch):
+    """OPEN_ITEMS.md section 5: no single-instance detail read existed at
+    all. Exposes what this build genuinely computes — the real NFO
+    workloadRef and the caller-supplied configuration — not the
+    reference's own nested ACM/SME/DME resource records, which stay out
+    of scope since CreateInstance never accepts that descriptor.
+    """
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {"replicas": 3}}).json()
+
+    resp = client.get(f"/instances/{created['instanceId']}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["instanceId"] == created["instanceId"]
+    assert body["state"] == "DEPLOYING"
+    assert body["configuration"] == {"replicas": 3}
+    assert body["workloadRef"]  # the fake NFO deployment id from _route_r1_get_post
+    assert body["pendingUpgradeInstanceId"] is None
+
+
+def test_get_unknown_instance_is_404(client):
+    resp = client.get(f"/instances/{uuid.uuid4()}")
+    assert resp.status_code == 404
