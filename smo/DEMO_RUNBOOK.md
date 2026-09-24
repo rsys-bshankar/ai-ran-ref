@@ -403,7 +403,81 @@ print(r.status_code, r.json())
 "
 ```
 
-## 9. Retire it — Terminate, then Delete
+## 9. Policy Mgmt intent automation (optional) — register, dispatch, retract
+
+Independent of the sample rApp instance above — this shows Policy Mgmt's
+real Intent-to-RMIH dispatch mechanism firing: an SMO-internal RAN
+Management Intent Handler (RMIH) declares what it can fulfil, an rApp
+expresses an Intent, and Policy Mgmt matches and notifies the right RMIH
+automatically.
+
+Register an RMIH. Per D-SEC-POLICY-1, only an SMO-internal module may
+hold an `rmihId` — an rApp UUID is rejected — so this uses `so-smos`,
+the same identity SO SMOS registers under in the real deployment:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://policy-mgmt:8000/intent-handling-functions', json={
+    'rmihId': 'so-smos', 'smeServiceId': 'so-smos-svc',
+    'capabilities': [{'supportedExpectationObjectType': 'RAN_SUBNETWORK'}],
+    'notificationCallbackUri': 'http://so-smos:8000/intents/notify',
+    'intentHandlingScope': ['RAN'],
+})
+print(r.status_code, r.json())
+"
+```
+
+Create an Intent whose `expectationObject.objectType` matches that
+RMIH's declared capability (`TS28312_IntentNrm.yaml`'s own field — not
+an invented top-level type string):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://policy-mgmt:8000/intents', json={
+    'expectations': [{'expectationObject': {'objectType': 'RAN_SUBNETWORK'}}],
+    'rmioId': 'hello-world-rapp', 'intentHandlingScope': 'RAN',
+})
+print(r.status_code, r.json())
+"
+```
+
+`CreateIntent` matched the Intent's requested `RAN_SUBNETWORK` object
+type against every registered RMIH's declared capabilities (pre-filtered
+by `intentHandlingScope`) and dispatched a real notification to
+`so-smos`'s own callback — `so-smos:8000/intents/notify` has no route
+that accepts it yet (dispatch is deliberately best-effort, same pattern
+as FOCOM's inventory notifications above), so watch `policy-mgmt`'s own
+logs for the attempted delivery. `tests_integration/test_demo_runbook.py`
+proves the real dispatch fires with the correct `intentId`/
+`expectationObjectTypes` payload, by intercepting the exact `httpx.post`
+call `create_intent` makes.
+
+Note the `intentId`, then confirm the persisted Intent:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://policy-mgmt:8000/intents/<intentId>')
+print(r.status_code, r.json())
+"
+```
+
+Retract the Intent, then deregister the RMIH — symmetric teardown,
+same pattern as FOCOM's provision/deprovision above:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://policy-mgmt:8000/intents/<intentId>')
+print(r.status_code)
+r2 = httpx.delete('http://policy-mgmt:8000/intent-handling-functions/so-smos')
+print(r2.status_code)
+"
+```
+
+## 10. Retire it — Terminate, then Delete
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -425,8 +499,8 @@ print(r.status_code)
 
 204 with an empty body — the instance row is gone. The full lifecycle
 — onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
-loop, FOCOM resource management, retire — is now complete against a
-real running stack.
+loop, FOCOM resource management, Policy Mgmt intent automation, retire —
+is now complete against a real running stack.
 
 ## Known rough edges for a live walkthrough
 
