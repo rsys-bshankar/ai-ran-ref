@@ -19,8 +19,8 @@ mock-near-rt-ric's own "give the real caller something real to call, not
 a full protocol implementation" scope.
 """
 
-import xml.etree.ElementTree as ET
-
+import defusedxml.ElementTree as ET
+from defusedxml.common import DefusedXmlException
 from fastapi import FastAPI, Request, Response
 
 app = FastAPI(title="Mock O1 Adaptor (NETCONF test double)")
@@ -43,8 +43,11 @@ async def edit_config(request: Request) -> Response:
     """
     body = await request.body()
     try:
+        # defusedxml (not stdlib ET) — this body is attacker-reachable over
+        # HTTP, so entity expansion / external-entity XML needs to be
+        # rejected the same way malformed XML is, not parsed.
         root = ET.fromstring(body)
-    except ET.ParseError:
+    except (ET.ParseError, DefusedXmlException):
         return _reply(message_id="0", ok=False, error_tag="malformed-message")
 
     message_id = root.attrib.get("message-id", "0")

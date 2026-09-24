@@ -201,7 +201,7 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| mock-o1-adaptor | 5 |
+| mock-o1-adaptor | 6 |
 | policy-mgmt | 10 |
 | sa-smos | 12 |
 | so-smos | 13 |
@@ -1575,6 +1575,17 @@ own §1/§2 items stand as-is.
   raw XML POST, the first non-JSON caller this harness ever had) —
   fixed. 439 tests total, up from 432 (`mock-o1-adaptor`: new module, 5
   tests; integration suite 12 -> 14).
+- A GitHub Advanced Security (CodeQL) review on that PR caught a real
+  finding before merge: `mock-o1-adaptor`'s `/edit-config` parsed an
+  attacker-reachable HTTP body with stdlib `xml.etree.ElementTree`,
+  vulnerable to XML internal entity expansion (CWE-611). Fixed by
+  switching to `defusedxml.ElementTree` there, plus the same fix in
+  `netconf_client.py`'s reply parsing (the identical vulnerability
+  class at the same protocol boundary, not itself CodeQL-flagged since
+  it predates this PR's diff, but fixed for consistency — both already
+  mirror each other's namespace-stripping technique). Added a
+  regression test proving entity expansion is rejected, not parsed.
+  440 tests total, up from 439 (`mock-o1-adaptor`: 5 -> 6).
 
 ## Suggested next pass (priority order)
 

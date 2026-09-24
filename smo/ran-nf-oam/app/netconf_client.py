@@ -10,9 +10,9 @@ transport, matching this build's all-HTTP-JSON pragmatism everywhere else
 cm_schema_cache fetch path is untouched.
 """
 
-import xml.etree.ElementTree as ET
-
+import defusedxml.ElementTree as ET
 import httpx
+from defusedxml.common import DefusedXmlException
 
 NETCONF_BASE_NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
 
@@ -43,8 +43,12 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
     if resp.status_code >= 300:
         return False
     try:
+        # defusedxml (not stdlib ET) — the O1 Adaptor's reply is a response
+        # from a southbound network endpoint, not a value this process
+        # controls; reject entity-expansion / external-entity XML the same
+        # way an unparseable reply is already rejected.
         root = ET.fromstring(resp.text)
-    except ET.ParseError:
+    except (ET.ParseError, DefusedXmlException):
         return False
     if root.tag.rsplit("}", 1)[-1] != "rpc-reply":
         return False

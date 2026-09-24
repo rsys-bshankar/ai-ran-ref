@@ -111,7 +111,7 @@ PYTHONPATH=shared python -m pytest tests_integration/ -v
 PYTHONPATH=shared python scripts/generate_openapi_specs.py
 ```
 
-**439 tests total, all passing** as of this build: 425 unit tests across
+**440 tests total, all passing** as of this build: 426 unit tests across
 all fourteen modules plus the two mocks, and 14 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -488,7 +488,14 @@ separate bug in the harness itself: `tests_integration/mesh.py`'s
 `dispatch()` only ever forwarded a JSON body, silently dropping any raw
 `content=` kwarg (`netconf_client.py`'s XML POST was the first non-JSON
 caller this harness ever had) — fixed. `mock-o1-adaptor` is a new
-module: 5 tests; the integration suite went from 12 to 14.
+module: 5 tests; the integration suite went from 12 to 14. A GitHub
+Advanced Security (CodeQL) review on that PR then caught a real finding:
+`mock-o1-adaptor`'s `/edit-config` parsed an attacker-reachable HTTP body
+with stdlib `xml.etree.ElementTree`, vulnerable to XML internal entity
+expansion (CWE-611) — fixed by switching to `defusedxml.ElementTree`
+there and, for the same vulnerability class at the same protocol
+boundary, in `netconf_client.py`'s reply parsing too. `mock-o1-adaptor`
+went from 5 tests to 6.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

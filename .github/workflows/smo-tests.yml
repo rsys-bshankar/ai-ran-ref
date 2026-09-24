@@ -22,7 +22,7 @@ jobs:
         working-directory: smo
         run: |
           pip install -e shared
-          pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic python-multipart jsonschema pytest
+          pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic python-multipart jsonschema pytest defusedxml
 
       - name: Run each module's unit test suite
         working-directory: smo

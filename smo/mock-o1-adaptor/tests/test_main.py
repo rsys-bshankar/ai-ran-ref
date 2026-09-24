@@ -82,3 +82,23 @@ def test_query_last_applied_for_unknown_ref_returns_none():
     resp = client.get("/edit-config/does-not-exist")
     assert resp.status_code == 200
     assert resp.json() == {"managedObjectRef": "does-not-exist", "attributeChanges": None}
+
+
+def test_edit_config_rejects_entity_expansion_instead_of_parsing_it():
+    """CodeQL finding (CWE-611): this endpoint parses an attacker-reachable
+    HTTP body, so a billion-laughs-style internal entity must be rejected
+    the same way malformed XML already is, not expanded.
+    """
+    malicious = (
+        '<?xml version="1.0"?>'
+        "<!DOCTYPE rpc [<!ENTITY boom \"" + ("x" * 1000) + "\">]>"
+        f'<rpc message-id="104" xmlns="{NETCONF_BASE_NS}">'
+        "<edit-config><target><running/></target>"
+        '<config><managed-object ref="ME-1"><adminState>&boom;</adminState></managed-object></config>'
+        "</edit-config></rpc>"
+    )
+    resp = client.post("/edit-config", content=malicious, headers={"Content-Type": "application/xml"})
+    assert resp.status_code == 200
+    root = ET.fromstring(resp.text)
+    assert any(_local_tag(c) == "rpc-error" for c in root)
+    assert _applied_changes == {}
