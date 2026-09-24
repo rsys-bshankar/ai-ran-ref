@@ -127,7 +127,7 @@ PYTHONPATH=shared python scripts/generate_openapi_specs.py
 docker compose config --quiet
 ```
 
-**473 tests total, all passing** as of this build: 457 unit tests across
+**475 tests total, all passing** as of this build: 459 unit tests across
 all fourteen modules plus the two mocks, and 16 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -677,6 +677,24 @@ precisely to scope the blast radius: it reads exactly one key
 NFO's own, unrelated `clusterId` response field for its own callers
 was left untouched. No migration change. `focom` went from 45 tests
 to 48.
+
+Last, per explicit user direction to implement rather than just
+document: SME's invoker onboarding had the trust direction backwards.
+The real CAPIF core's onboarding is public-key-based — the client
+submits `apiInvokerPublicKey`; the server generates and returns both
+`apiInvokerId` and `onboardingSecret`. `InvokerRegistrationRequest`
+now takes only the public key; `register_invoker` mints a real
+server-side id and a real random secret (still hashed at rest) and
+returns both, matching the real endpoint's own "always mint a new
+invoker" behavior rather than updating one in place.
+`InvokerRegistration` gained a `public_key` column. A repo-wide grep
+confirmed only SME's own routes/tests and `DEMO_RUNBOOK.md`'s own
+script ever referenced the old client-supplied fields — both updated;
+the runbook's own earlier "worth calling out live" disclosure is now
+updated to reflect the fix, while the real CAPIF core's separate
+"Trusted Invokers" registry (a genuine additional subsystem) stays
+named as still open. This closes every item on `SPEC_AUDIT.md`'s
+"Moderate/breaking-shape items" list. `sme` went from 47 tests to 49.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

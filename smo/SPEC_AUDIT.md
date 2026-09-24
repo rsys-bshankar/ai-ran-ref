@@ -327,10 +327,20 @@ caller or test already depends on):
    `Instantiate` caller — the one real cross-module dependency —
    was checked first and updated to read `oCloudId` in place of the
    old `clusterId`, with the exact same graceful fallback kept.
-3. SME's invoker-onboarding trust-model fix (would need a real design
+3. ~~SME's invoker-onboarding trust-model fix (would need a real design
    decision on whether to actually flip to server-generated
    identity/secret, a bigger behavior change than this session's usual
-   scoped fixes).
+   scoped fixes).~~ — **closed**, per explicit user direction to
+   implement it (`OPEN_ITEMS.md`'s pass-history log). Flipped:
+   `InvokerRegistrationRequest` now takes only `apiInvokerPublicKey`;
+   `register_invoker` mints a real server-side `apiInvokerId` and
+   random `onboardingSecret` and returns both, matching the real
+   CAPIF core's own onboarding direction. Item 2 above (the real
+   CAPIF core's separate "Trusted Invokers" security-context
+   registry) remains open — a genuine additional subsystem, not just
+   this onboarding-flow gap.
+
+This closes every item on this "Moderate/breaking-shape items" list.
 
 Large/structural items are, on inspection, essentially all *confirmed*
 Phase-1 scope cuts rather than newly discovered bugs — real subsystems

@@ -498,10 +498,43 @@ def test_query_own_services_returns_existing_services_even_after_deregistration(
     assert len(resp.json()) == 1
 
 
-def test_register_invoker_creates_it(client):
-    resp = client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
+def _register_invoker(client, public_key="pk-1"):
+    """SPEC_AUDIT.md SME item 1: the real CAPIF onboarding flow is
+    public-key-based — the client supplies apiInvokerPublicKey; the
+    server generates and returns both apiInvokerId and
+    onboardingSecret. Every test that needs a registered invoker now
+    goes through this real round trip rather than asserting a
+    client-chosen id/secret straight into existence.
+    """
+    resp = client.post("/invoker-registrations", json={"apiInvokerPublicKey": public_key})
     assert resp.status_code == 201
-    assert resp.json() == {"apiInvokerId": "rapp-invoker-1"}
+    return resp.json()
+
+
+def test_register_invoker_generates_id_and_secret_server_side(client):
+    """SPEC_AUDIT.md SME item 1: apiInvokerId/onboardingSecret were
+    previously client-supplied (a self-asserted identity, a
+    client-chosen secret) — the weaker trust direction the real CAPIF
+    core's own schema explicitly forbids ("apiInvokerId shall not be
+    present" in the client's request). Both are now server-generated.
+    """
+    body = _register_invoker(client, public_key="pk-1")
+    assert body["apiInvokerId"].startswith("api-invoker-")
+    assert body["onboardingSecret"]
+
+
+def test_register_invoker_generates_a_distinct_id_and_secret_each_call(client):
+    first = _register_invoker(client, public_key="pk-1")
+    second = _register_invoker(client, public_key="pk-1")  # same public key, still a genuinely new onboarding
+    assert first["apiInvokerId"] != second["apiInvokerId"]
+    assert first["onboardingSecret"] != second["onboardingSecret"]
+
+
+def test_register_invoker_persists_the_submitted_public_key(client, db_session_factory):
+    body = _register_invoker(client, public_key="the-real-public-key")
+    with db_session_factory() as session:
+        stored = session.get(InvokerRegistration, body["apiInvokerId"])
+    assert stored.public_key == "the-real-public-key"
 
 
 def test_onboarding_secret_is_never_stored_in_cleartext(client, db_session_factory):
@@ -509,10 +542,10 @@ def test_onboarding_secret_is_never_stored_in_cleartext(client, db_session_facto
     injection elsewhere, a dump) must never hand out a reusable client
     credential directly.
     """
-    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
+    body = _register_invoker(client)
     with db_session_factory() as session:
-        stored = session.get(InvokerRegistration, "rapp-invoker-1").onboarding_secret_hash
-    assert "s3cret" not in stored
+        stored = session.get(InvokerRegistration, body["apiInvokerId"]).onboarding_secret_hash
+    assert body["onboardingSecret"] not in stored
     assert ":" in stored  # salt_hex:digest_hex
 
 
@@ -520,8 +553,10 @@ def test_access_token_is_never_stored_in_cleartext(client, db_session_factory):
     """Same finding: the raw bearer token is returned to the caller once
     and must never be recoverable from a DB leak either.
     """
-    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
-    token = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "rapp-invoker-1", "client_secret": "s3cret"}).json()["access_token"]
+    inv = _register_invoker(client)
+    token = client.post("/oauth2/token", json={
+        "grant_type": "client_credentials", "client_id": inv["apiInvokerId"], "client_secret": inv["onboardingSecret"],
+    }).json()["access_token"]
     with db_session_factory() as session:
         stored_hashes = [row.access_token_hash for row in session.query(IssuedAccessToken).all()]
     assert token not in stored_hashes
@@ -530,8 +565,10 @@ def test_access_token_is_never_stored_in_cleartext(client, db_session_factory):
 
 
 def test_issue_token_succeeds_for_a_registered_invoker(client):
-    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
-    resp = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "rapp-invoker-1", "client_secret": "s3cret"})
+    inv = _register_invoker(client)
+    resp = client.post("/oauth2/token", json={
+        "grant_type": "client_credentials", "client_id": inv["apiInvokerId"], "client_secret": inv["onboardingSecret"],
+    })
     assert resp.status_code == 200
     body = resp.json()
     assert body["token_type"] == "Bearer"
@@ -546,28 +583,32 @@ def test_issue_token_rejects_unregistered_invoker(client):
 
 
 def test_issue_token_rejects_wrong_secret(client):
-    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
-    resp = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "rapp-invoker-1", "client_secret": "wrong"})
+    inv = _register_invoker(client)
+    resp = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": inv["apiInvokerId"], "client_secret": "wrong"})
     assert resp.status_code == 400
     assert resp.json()["error"] == "unauthorized_client"
 
 
 def test_issue_token_rejects_unsupported_grant_type(client):
-    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
-    resp = client.post("/oauth2/token", json={"grant_type": "authorization_code", "client_id": "rapp-invoker-1", "client_secret": "s3cret"})
+    inv = _register_invoker(client)
+    resp = client.post("/oauth2/token", json={
+        "grant_type": "authorization_code", "client_id": inv["apiInvokerId"], "client_secret": inv["onboardingSecret"],
+    })
     assert resp.status_code == 400
     assert resp.json()["error"] == "unsupported_grant_type"
 
 
 def test_introspect_active_token_reports_active_with_client_id(client):
-    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
-    token = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "rapp-invoker-1", "client_secret": "s3cret"}).json()["access_token"]
+    inv = _register_invoker(client)
+    token = client.post("/oauth2/token", json={
+        "grant_type": "client_credentials", "client_id": inv["apiInvokerId"], "client_secret": inv["onboardingSecret"],
+    }).json()["access_token"]
 
     resp = client.post("/oauth2/introspect", json={"token": token})
     assert resp.status_code == 200
     body = resp.json()
     assert body["active"] is True
-    assert body["client_id"] == "rapp-invoker-1"
+    assert body["client_id"] == inv["apiInvokerId"]
 
 
 def test_introspect_unknown_token_is_inactive(client):
@@ -577,8 +618,10 @@ def test_introspect_unknown_token_is_inactive(client):
 
 
 def test_introspect_expired_token_is_inactive(client, db_session_factory):
-    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
-    token = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "rapp-invoker-1", "client_secret": "s3cret"}).json()["access_token"]
+    inv = _register_invoker(client)
+    token = client.post("/oauth2/token", json={
+        "grant_type": "client_credentials", "client_id": inv["apiInvokerId"], "client_secret": inv["onboardingSecret"],
+    }).json()["access_token"]
 
     from app.main import _hash_token
 
