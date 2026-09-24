@@ -3,7 +3,10 @@
 Repo code, generated from the LLDs of all fourteen SMO modules (companion to
 `SMO Design Document v1.3`, the `AI-RAN Framework Consolidated Reference`,
 and the `O-RAN-SC Repo Inventory` — see the session's Design blueprint for
-the architecture pyramid and repo-adoption map this build follows).
+the architecture pyramid and repo-adoption map this build follows). The
+formal specs this build is grounded against — 3GPP 5G Core OpenAPI, O-RAN
+O1/O2 YANG and information models — live as sibling reference material in
+[`../specs/`](../specs/README.md).
 
 ## Stack
 

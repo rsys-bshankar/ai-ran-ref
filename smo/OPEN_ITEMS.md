@@ -1674,6 +1674,27 @@ own §1/§2 items stand as-is.
   NULL`) and confirming the script fails with the exact error for each,
   then restoring a clean migration and confirming it passes (58 tables,
   0 mismatches). No pytest changes — still 446 tests.
+- Per explicit direction, moved the repo root's seven spec directories
+  (`5G_APIs/`, `O-RAN-WG4-MP-YANGs/`, `O-RAN-WG5-O-CU-MP-YANGs/`,
+  `O-RAN-WG5-O-DU-MP-YANGs/`, `O-RAN-WG10-IMDM-YANGs/`,
+  `O-RAN-WG10-O1NRM-YANGs/`, `o-cloud-im/`) into a new `specs/` folder
+  parallel to `smo/`, with `specs/README.md` cataloging what's there and
+  which files are relevant to which `smo/` module (notably: ~95
+  `TS28xxx` 3GPP management-plane specs out of `5G_APIs/`'s ~540 total,
+  and `o-cloud-im/resources/ORAN.O2ims.*.yaml` — the real O2IMS spec
+  FOCOM's inventory routes have so far only been audited against
+  `pti-o2`'s Python implementation of, never the formal spec itself).
+  No code changes; groundwork for the next item, not a closure.
+- **Next up, per explicit direction**: a deep audit of `smo/` against
+  (a) these formal specs in `specs/` (a different, complementary ground
+  truth from the O-RAN-SC source-code audits §5 already did) and (b)
+  another pass against the O-RAN-SC Repo Blueprint's 18 shortlisted
+  repos (§5 already covered all 18 once; this revisits for anything
+  missed or changed since, especially given everything closed in this
+  session since §5 finished — OAuth2, the O1 mock, heartbeat-aging,
+  FOCOM's inventory wiring). Once both audits land, the goal shifts to
+  identifying and closing whatever's still missing for a pilot demo of
+  a sample rApp's full lifecycle.
 
 ## Suggested next pass (priority order)
 
