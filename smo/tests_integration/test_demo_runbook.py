@@ -123,6 +123,25 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     applied = mesh["mock-o1-adaptor"].get("/edit-config/demo-o-du-1")
     assert applied.json()["attributeChanges"] == {"adminState": "UNLOCKED"}
 
+    # A real partial failure: one healthy, registered ME alongside one
+    # that was never registered settles the job as PARTIAL_SUCCESS, not
+    # an all-or-nothing outcome — WriteConfigurationChanges' own real
+    # per-ME dispatch gate (ENDPOINT_UNREACHABLE), not a scripted one.
+    partial_job = mesh["ran-nf-oam"].post("/config-jobs", json={
+        "requestedBy": "hello-world-rapp", "scope": "cell",
+        "changes": [
+            {"managedElementRef": "demo-o-du-1", "attributeChanges": {"adminState": "LOCKED"}},
+            {"managedElementRef": "demo-o-du-2-never-registered", "attributeChanges": {"adminState": "LOCKED"}},
+        ],
+    })
+    assert partial_job.status_code == 202
+    partial_status = mesh["ran-nf-oam"].get(f"/config-jobs/{partial_job.json()['jobId']}")
+    assert partial_status.json()["status"] == "PARTIAL_SUCCESS"
+    sub_changes_by_me = {sc["managedElementRef"]: sc for sc in partial_status.json()["subChanges"]}
+    assert sub_changes_by_me["demo-o-du-1"]["status"] == "APPLIED"
+    assert sub_changes_by_me["demo-o-du-2-never-registered"]["status"] == "REJECTED"
+    assert sub_changes_by_me["demo-o-du-2-never-registered"]["rejectionReason"] == "ENDPOINT_UNREACHABLE"
+
     alarm = mesh["ran-nf-oam"].post("/alarms/ingest", params={
         "source_alarm_id": "demo-alarm-1", "managed_element_ref": "demo-o-du-1",
         "severity": "major", "alarm_type": "EQUIPMENT_ALARM",

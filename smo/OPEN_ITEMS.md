@@ -2114,6 +2114,30 @@ own §1/§2 items stand as-is.
   both green. Unit-test count unchanged at 462; `tests_integration`
   stays at 16. This closes out all three demo-expansion phases (B, C,
   D) confirmed with the user for this pilot demo pass.
+- **Pilot demo depth: RAN NF OAM's real `PARTIAL_SUCCESS` decomposed-CM-write
+  failure path.** A full pass through §5 found nothing left to close —
+  every concrete completeness gap across all seven module groups is now
+  struck through. Redirected (per explicit user direction) to deepening
+  the existing demo phases instead of inventing new backlog. `README.md`
+  already named `WriteConfigurationChanges`' real per-ME decompose/
+  aggregate behavior (RAN NF OAM LLD section 5.1) as a tested-but-never-
+  demoed feature — `write_configuration_changes` genuinely settles a
+  job as `PARTIAL_SUCCESS` (not all-or-nothing) when a multi-ME batch
+  mixes a healthy, registered ME with one that was never registered
+  (`ENDPOINT_UNREACHABLE`, the same real per-ME dispatch gate every
+  closed-loop step already passes through). Extended `DEMO_RUNBOOK.md`'s
+  existing "RAN NF OAM closed-loop" section (§7) with this walkthrough
+  — dispatch a batch touching `demo-o-du-1` (already registered earlier
+  in the same section) and a never-registered `demo-o-du-2` ref, observe
+  the job settle `PARTIAL_SUCCESS` with per-sub-change `APPLIED`/
+  `REJECTED` outcomes — rather than adding a new top-level phase, since
+  it deepens Phase B's own existing narrative. `tests_integration/
+  test_demo_runbook.py` gained a matching step. No code, schema, or
+  OpenAPI-spec change — confirmed via a full local Postgres 16 pass (58
+  tables, 0 mismatches) and the live-schema-match check, both green.
+  `ran-nf-oam` unit-test count unchanged at 42 (the FSM's
+  `PARTIAL_SUCCESS` aggregation was already unit-tested);
+  `tests_integration` stays at 16 (one test grew a step).
 
 ## Suggested next pass (priority order)
 

@@ -310,6 +310,38 @@ print(r2.status_code, r2.json())
 `status` should be `COMPLETED`, the sub-change `APPLIED`, and the mock
 adaptor's own record shows the real applied attribute change.
 
+**A real partial failure** — `WriteConfigurationChanges` decomposes a
+multi-ME request into independent per-ME sub-changes and aggregates
+their outcomes (RAN NF OAM LLD section 5.1); a batch touching one
+healthy, registered ME and one ME that was never registered genuinely
+settles as `PARTIAL_SUCCESS`, not an all-or-nothing failure:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ran-nf-oam:8000/config-jobs', json={
+    'requestedBy': 'hello-world-rapp', 'scope': 'cell',
+    'changes': [
+        {'managedElementRef': 'demo-o-du-1', 'attributeChanges': {'adminState': 'LOCKED'}},
+        {'managedElementRef': 'demo-o-du-2-never-registered', 'attributeChanges': {'adminState': 'LOCKED'}},
+    ],
+})
+print(r.status_code, r.json())
+r2 = httpx.get(f'http://ran-nf-oam:8000/config-jobs/{r.json()[\"jobId\"]}')
+print(r2.status_code, r2.json())
+"
+```
+
+The job's own `status` is `PARTIAL_SUCCESS`; `subChanges` shows
+`demo-o-du-1` genuinely `APPLIED` (the real NETCONF RPC fired again,
+setting `adminState` back to `LOCKED`) alongside
+`demo-o-du-2-never-registered` `REJECTED` with `rejectionReason:
+ENDPOINT_UNREACHABLE` — no `O1AdaptorEndpoint` was ever registered for
+it, the same real per-ME dispatch gate the closed-loop steps above
+already went through successfully. This is the honest operational case
+a bulk RAN configuration push actually hits (one node in a batch is
+down or never onboarded), not a scripted failure.
+
 **Raise, acknowledge, and clear a fault alarm** on the same ME:
 
 ```bash

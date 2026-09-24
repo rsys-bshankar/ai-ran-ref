@@ -753,6 +753,18 @@ dispatch fires by intercepting the exact `httpx.post` call
 closes out all three demo-expansion phases confirmed with the user for
 this pilot demo pass.
 
+**Demo depth: RAN NF OAM's real `PARTIAL_SUCCESS` failure path.** With
+`OPEN_ITEMS.md` §5 fully closed, the next pass deepens an existing demo
+section rather than adding a new one. `WriteConfigurationChanges`
+genuinely decomposes a multi-ME batch into independent per-ME
+sub-changes and aggregates them — a batch mixing a healthy, registered
+ME with one that was never registered settles as `PARTIAL_SUCCESS`, not
+all-or-nothing (`ENDPOINT_UNREACHABLE` on the missing one, the same
+real per-ME dispatch gate the closed-loop walkthrough already exercises).
+Extended `DEMO_RUNBOOK.md`'s "RAN NF OAM closed-loop" section with this
+walkthrough and added a matching integration-test step. No code,
+schema, or OpenAPI-spec change.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style
