@@ -8,6 +8,7 @@ operations are dormant (section 0) — not implemented in this reference
 build.
 """
 
+import datetime
 import uuid
 
 import httpx
@@ -21,7 +22,7 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 
 from .a1_termination_client import A1TerminationClient
-from .models import A1EIType, A1Policy, PolicyStatusSubscription
+from .models import A1EIType, A1Policy, A1ServiceRegistration, PolicyStatusSubscription
 
 app = FastAPI(title="A1 Related SMOS")
 
@@ -216,6 +217,137 @@ def unsubscribe_policy_status(subscription_id: uuid.UUID, db: Session = Depends(
     if sub is not None:
         db.delete(sub)
         db.commit()
+
+
+class ServiceRegistrationRequest(BaseModel):
+    serviceId: str
+    callbackUrl: str | None = None
+    keepAliveIntervalSeconds: int = 0  # 0 == supervision disabled, per the reference's own schema
+
+
+def _as_utc(dt: datetime.datetime) -> datetime.datetime:
+    """SQLite's DateTime(timezone=True) columns round-trip as naive
+    datetimes even though every value here is written from
+    datetime.now(datetime.UTC); Postgres returns them tz-aware already.
+    Treat a naive value as UTC rather than the local system timezone
+    Python would otherwise assume, or every elapsed-time computation
+    below would crash comparing a naive and an aware datetime under the
+    unit tests' SQLite engine.
+    """
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=datetime.UTC)
+
+
+def _seconds_since_activity(svc: A1ServiceRegistration) -> float:
+    return (datetime.datetime.now(datetime.UTC) - _as_utc(svc.last_activity_at)).total_seconds()
+
+
+def _sweep_stale_service(db: Session, svc: A1ServiceRegistration, a1t: A1TerminationClient) -> bool:
+    """A1 Related LLD/OPEN_ITEMS.md section 5: the reference's own Service
+    Registry and Supervision contract (pms-api-v3.json's keepAliveService/
+    ServiceStatus) — "An unavailable service will be automatically
+    deregistered and its policies will be deleted." No scheduler exists
+    anywhere in this build (the same elision already documented for DME's
+    producer health — computed live, at read time, rather than via a
+    periodic poll), so a stale service is swept lazily, the moment it's
+    next read via GET /services, instead of on a timer. Returns True if
+    swept. Policies are torn down the same way delete_policy itself does
+    it — a real southbound a1t.delete_policy call per policy, not just a
+    local row delete.
+    """
+    if svc.keep_alive_interval_seconds <= 0 or _seconds_since_activity(svc) <= svc.keep_alive_interval_seconds:
+        return False
+    for p in db.scalars(select(A1Policy).where(A1Policy.creator_id == svc.service_id)).all():
+        a1t.delete_policy(p.near_rt_ric_policy_id)
+        db.delete(p)
+    db.delete(svc)
+    db.commit()
+    return True
+
+
+def _service_status_view(svc: A1ServiceRegistration) -> dict:
+    return {
+        "serviceId": svc.service_id, "callbackUrl": svc.callback_url,
+        "keepAliveIntervalSeconds": svc.keep_alive_interval_seconds,
+        "timeSinceLastActivitySeconds": int(_seconds_since_activity(svc)),
+    }
+
+
+@app.put("/services")
+def register_service(body: ServiceRegistrationRequest, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: Service Registry and Supervision
+    (putService, pms-api-v3.json) — entirely absent before this pass, not
+    just thin. Register-or-update in place: re-registering an
+    already-known serviceId updates its callbackUrl/
+    keepAliveIntervalSeconds and resets its activity clock, the same
+    idempotent shape SME's own register_service already uses, rather
+    than conflicting. "A1 Policy instances can also be created for
+    unregistered services" per the reference's own description — this
+    build already allows that (create_policy has never required a
+    registered creatorId), so nothing there needed to change.
+    """
+    svc = db.get(A1ServiceRegistration, body.serviceId)
+    if svc is None:
+        svc = A1ServiceRegistration(service_id=body.serviceId)
+        db.add(svc)
+    svc.callback_url = body.callbackUrl
+    svc.keep_alive_interval_seconds = body.keepAliveIntervalSeconds
+    svc.last_activity_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+    return {}
+
+
+@app.get("/services")
+def query_services(service_id: str | None = None, db: Session = Depends(get_session), a1t: A1TerminationClient = Depends(get_a1_termination_client)):
+    """getServices, pms-api-v3.json — get one registered service, or all
+    of them. Also the read path that actually enforces supervision (see
+    _sweep_stale_service): a stale match is deregistered on its way out
+    rather than ever being returned as still-registered.
+    """
+    stmt = select(A1ServiceRegistration)
+    if service_id is not None:
+        stmt = stmt.where(A1ServiceRegistration.service_id == service_id)
+    live = [s for s in db.scalars(stmt).all() if not _sweep_stale_service(db, s, a1t)]
+    if service_id is not None:
+        if not live:
+            raise HTTPException(status_code=404, detail=f"unknown serviceId {service_id}")
+        return _service_status_view(live[0])
+    return {"serviceList": [_service_status_view(s) for s in live]}
+
+
+@app.delete("/services/{service_id}", status_code=204)
+def unregister_service(service_id: str, db: Session = Depends(get_session), a1t: A1TerminationClient = Depends(get_a1_termination_client)):
+    """deleteService, pms-api-v3.json: "Only registered services can be
+    unregistered. All A1 Policy Instances for the previously registered
+    service will be removed." creator_id is this build's own identity
+    for "the service that created a policy" (query_policies' own
+    docstring already established this equivalence) — every A1Policy row
+    with a matching creator_id is genuinely torn down here, via the same
+    real southbound a1t.delete_policy call delete_policy itself uses.
+    """
+    svc = db.get(A1ServiceRegistration, service_id)
+    if svc is None:
+        raise HTTPException(status_code=404, detail=f"unknown serviceId {service_id}")
+    for p in db.scalars(select(A1Policy).where(A1Policy.creator_id == service_id)).all():
+        a1t.delete_policy(p.near_rt_ric_policy_id)
+        db.delete(p)
+    db.delete(svc)
+    db.commit()
+
+
+@app.put("/services/{service_id}/keepalive")
+def keepalive_service(service_id: str, db: Session = Depends(get_session)):
+    """keepAliveService, pms-api-v3.json — the heartbeat a registered
+    service invokes regularly to reset its own supervision clock; a
+    service that never calls this (or re-registers via PUT /services)
+    within its own keepAliveIntervalSeconds is swept the next time
+    GET /services reads it (see _sweep_stale_service).
+    """
+    svc = db.get(A1ServiceRegistration, service_id)
+    if svc is None:
+        raise HTTPException(status_code=404, detail=f"unknown serviceId {service_id}")
+    svc.last_activity_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+    return {}
 
 
 @app.post("/ei-types/register")

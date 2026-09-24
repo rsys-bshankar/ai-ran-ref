@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**394 tests total, all passing** as of this build: 384 unit tests across
+**405 tests total, all passing** as of this build: 395 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -410,6 +410,19 @@ fixed with both a DB-level cascade and explicit application cleanup,
 verified against a real local Postgres 16 instance.
 `CreateInstance`'s already-shipped immediate-deploy behavior is a
 separate, already-cited design decision and stays untouched.
+`a1-related` went from 32 tests to 43 in the next pass: closed its
+missing service registration/supervision gap — this module's own
+reference clone has no real Java source to ground against, only its
+OpenAPI spec (`pms-api-v3.json`), but that spec's `ServiceRegistrationInfo`/
+`ServiceStatus`/`/services*` routes are themselves real, authoritative
+wire-contract content. Added `PUT`/`GET /services`, `DELETE
+/services/{id}`, and `PUT /services/{id}/keepalive`; unregistering a
+service — or the lazy keepalive-timeout sweep, since no scheduler
+exists anywhere in this build — genuinely deletes its A1 policies via
+the same real southbound call `delete_policy` itself uses. The
+reference's own `RICStatus` callback stays out of scope, since this
+build has no RIC-availability concept independent of the single A1
+mock.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
@@ -423,7 +436,17 @@ project-wide, not just worked around locally: `JSON`'s default
 and `ARRAY(Uuid)`'s SQLite JSON fallback needs a UUID-aware JSON encoder
 (the stdlib `json` module can't serialize a raw `uuid.UUID`) — both
 handled by `make_test_engine()`, so no individual test file needs to
-rediscover either issue.
+rediscover either issue. A third gap surfaced by `a1-related`'s service
+registration/supervision (§5) — the first place this build ever computed
+an elapsed time: SQLite round-trips a `DateTime(timezone=True)` column as
+a naive `datetime` (no `tzinfo`), while Postgres returns one already
+tz-aware; subtracting `datetime.now(datetime.UTC)` from a naive value
+raises `TypeError`. Handled locally in `a1-related/app/main.py`'s
+`_as_utc()` (treat a naive value as UTC, since that's what's always
+written), not in `make_test_engine()` — this one isn't SQLite-serializer
+machinery, it's a per-column read-time normalization any future
+elapsed-time computation on a `DateTime(timezone=True)` column will need
+to repeat.
 
 ### Real bugs this pass found (not hypothetical — each had a failing test until fixed)
 

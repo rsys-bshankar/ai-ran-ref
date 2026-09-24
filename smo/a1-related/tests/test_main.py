@@ -2,6 +2,7 @@
 Run with: pytest smo/a1-related/tests -q
 """
 
+import datetime
 import uuid
 
 import pytest
@@ -14,7 +15,7 @@ from smo_shared.db import Base, get_session
 
 from app.a1_termination_client import A1TerminationClient
 from app.main import app, get_a1_termination_client
-from app.models import A1EIType, A1Policy, PolicyStatusSubscription
+from app.models import A1EIType, A1Policy, A1ServiceRegistration, PolicyStatusSubscription
 
 
 class FakeA1Termination(A1TerminationClient):
@@ -45,14 +46,24 @@ class FakeA1Termination(A1TerminationClient):
 
 
 @pytest.fixture
-def client():
+def engine():
     # StaticPool: plain "sqlite://" opens a NEW blank in-memory DB per pooled
     # connection, and FastAPI's per-request get_session override would grab a
     # different connection than the one create_all ran on ("no such table").
     # One shared connection for the whole test, matching the real deployment's
     # one-shared-Postgres-instance topology closely enough for a unit test.
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[A1Policy.__table__, PolicyStatusSubscription.__table__, A1EIType.__table__])
+    e = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(e, tables=[A1Policy.__table__, PolicyStatusSubscription.__table__, A1EIType.__table__, A1ServiceRegistration.__table__])
+    return e
+
+
+@pytest.fixture
+def db_session_factory(engine):
+    return sessionmaker(bind=engine)
+
+
+@pytest.fixture
+def client(engine):
     TestSession = sessionmaker(bind=engine)
 
     def override_get_session():
@@ -445,3 +456,154 @@ def test_query_policies_with_no_matching_filter_returns_empty_list(client):
 
     resp = client.get("/policies", params={"near_rt_ric_id": "ric-does-not-exist"})
     assert resp.json() == []
+
+
+def test_register_service_creates_it(client):
+    resp = client.put("/services", json={"serviceId": "rapp-1", "callbackUrl": "http://rapp-1/callback", "keepAliveIntervalSeconds": 60})
+    assert resp.status_code == 200
+
+    resp = client.get("/services", params={"service_id": "rapp-1"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["serviceId"] == "rapp-1"
+    assert body["callbackUrl"] == "http://rapp-1/callback"
+    assert body["keepAliveIntervalSeconds"] == 60
+    assert body["timeSinceLastActivitySeconds"] < 5
+
+
+def test_register_service_is_idempotent_update_in_place(client):
+    """The same identity-space equivalence query_policies' own docstring
+    already established: re-registering an already-known serviceId
+    updates it, the same shape as SME's own register_service, not a
+    conflict.
+    """
+    client.put("/services", json={"serviceId": "rapp-1", "keepAliveIntervalSeconds": 30})
+    resp = client.put("/services", json={"serviceId": "rapp-1", "callbackUrl": "http://new/callback", "keepAliveIntervalSeconds": 90})
+    assert resp.status_code == 200
+
+    body = client.get("/services", params={"service_id": "rapp-1"}).json()
+    assert body["callbackUrl"] == "http://new/callback"
+    assert body["keepAliveIntervalSeconds"] == 90
+
+
+def test_query_services_lists_all_registered(client):
+    client.put("/services", json={"serviceId": "rapp-1"})
+    client.put("/services", json={"serviceId": "rapp-2"})
+
+    resp = client.get("/services")
+    assert resp.status_code == 200
+    ids = {s["serviceId"] for s in resp.json()["serviceList"]}
+    assert ids == {"rapp-1", "rapp-2"}
+
+
+def test_query_unknown_service_is_404(client):
+    resp = client.get("/services", params={"service_id": "does-not-exist"})
+    assert resp.status_code == 404
+
+
+def test_keepalive_resets_activity_clock(client, db_session_factory):
+    client.put("/services", json={"serviceId": "rapp-1", "keepAliveIntervalSeconds": 60})
+    with db_session_factory() as session:
+        svc = session.get(A1ServiceRegistration, "rapp-1")
+        svc.last_activity_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=50)
+        session.commit()
+
+    resp = client.put("/services/rapp-1/keepalive")
+    assert resp.status_code == 200
+
+    body = client.get("/services", params={"service_id": "rapp-1"}).json()
+    assert body["timeSinceLastActivitySeconds"] < 5
+
+
+def test_keepalive_on_unknown_service_is_404(client):
+    resp = client.put("/services/does-not-exist/keepalive")
+    assert resp.status_code == 404
+
+
+def test_unregister_service_removes_it(client):
+    client.put("/services", json={"serviceId": "rapp-1"})
+    resp = client.delete("/services/rapp-1")
+    assert resp.status_code == 204
+    assert client.get("/services", params={"service_id": "rapp-1"}).status_code == 404
+
+
+def test_unregister_unknown_service_is_404(client):
+    resp = client.delete("/services/does-not-exist")
+    assert resp.status_code == 404
+
+
+def test_unregister_service_deletes_its_policies_via_southbound_call(client):
+    """deleteService, pms-api-v3.json: "All A1 Policy Instances for the
+    previously registered service will be removed" — creator_id is this
+    build's identity for "the service", and deletion goes through the
+    same real southbound a1t.delete_policy call delete_policy itself
+    uses, not just a local row drop.
+    """
+    calls = []
+
+    class RecordingA1Termination(FakeA1Termination):
+        def delete_policy(self, policy_id):
+            calls.append(policy_id)
+
+    shared = RecordingA1Termination()
+    app.dependency_overrides[get_a1_termination_client] = lambda: shared
+
+    client.put("/services", json={"serviceId": "rapp-1"})
+    client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
+    client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell2"}, "nearRtRicId": "ric1", "creatorId": "rapp-other"})
+
+    resp = client.delete("/services/rapp-1")
+    assert resp.status_code == 204
+    assert calls == ["mock-nrt-policy-1"]  # only rapp-1's own policy, not rapp-other's
+
+    remaining = client.get("/policies", params={"creator_id": "rapp-1"}).json()
+    assert remaining == []
+    still_there = client.get("/policies", params={"creator_id": "rapp-other"}).json()
+    assert len(still_there) == 1
+
+
+def test_stale_service_is_auto_deregistered_and_its_policies_deleted(client, db_session_factory):
+    """The reference's own supervision contract (ServiceStatus's own
+    keepAliveIntervalSeconds description): "When a service fails to
+    invoke this 'keepalive' call within the configured time, the service
+    is considered unavailable. An unavailable service will be
+    automatically deregistered and its policies will be deleted." No
+    scheduler exists anywhere in this build, so the sweep happens lazily
+    on the next GET /services read (_sweep_stale_service) instead of on
+    a timer.
+    """
+    calls = []
+
+    class RecordingA1Termination(FakeA1Termination):
+        def delete_policy(self, policy_id):
+            calls.append(policy_id)
+
+    shared = RecordingA1Termination()
+    app.dependency_overrides[get_a1_termination_client] = lambda: shared
+
+    client.put("/services", json={"serviceId": "rapp-1", "keepAliveIntervalSeconds": 30})
+    client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
+    with db_session_factory() as session:
+        svc = session.get(A1ServiceRegistration, "rapp-1")
+        svc.last_activity_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=31)  # just past the deadline
+        session.commit()
+
+    resp = client.get("/services", params={"service_id": "rapp-1"})
+    assert resp.status_code == 404  # swept, not just stale-but-still-listed
+
+    assert calls == ["mock-nrt-policy-1"]
+    assert client.get("/policies", params={"creator_id": "rapp-1"}).json() == []
+
+
+def test_service_with_supervision_disabled_never_goes_stale(client, db_session_factory):
+    """keepAliveIntervalSeconds == 0 means supervision is disabled per the
+    reference's own schema — no amount of inactivity should sweep it.
+    """
+    client.put("/services", json={"serviceId": "rapp-1", "keepAliveIntervalSeconds": 0})
+    with db_session_factory() as session:
+        svc = session.get(A1ServiceRegistration, "rapp-1")
+        svc.last_activity_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=365)
+        session.commit()
+
+    resp = client.get("/services", params={"service_id": "rapp-1"})
+    assert resp.status_code == 200
