@@ -139,7 +139,7 @@ CREATE TABLE rapp_instance (
   instance_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   package_id               UUID NOT NULL REFERENCES application_package(package_id),
   state                       TEXT NOT NULL DEFAULT 'DEPLOYING'
-                                 CHECK (state IN ('DEPLOYING','RUNNING','UPGRADING','TERMINATING','FAULTED')),
+                                 CHECK (state IN ('DEPLOYING','RUNNING','UPGRADING','UNDEPLOYED','FAULTED')),
   configuration                   JSONB,
   workload_ref                      TEXT,
   -- Nullable, not NOT NULL as originally written: _revoke_credential
@@ -161,14 +161,17 @@ CREATE TABLE rapp_instance (
 
 CREATE TABLE rapp_fault_report (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  instance_id    UUID NOT NULL REFERENCES rapp_instance(instance_id),
+  -- ON DELETE CASCADE: NEW section 5, delete_instance's cascade (matches
+  -- dme_delivery_schema's own already-cascading FK) — this table has no
+  -- meaning once its rapp_instance row is gone.
+  instance_id    UUID NOT NULL REFERENCES rapp_instance(instance_id) ON DELETE CASCADE,
   severity         TEXT NOT NULL CHECK (severity IN ('critical','major','minor','warning')),
   description        TEXT
 );
 
 CREATE TABLE rapp_performance_report (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  instance_id    UUID NOT NULL REFERENCES rapp_instance(instance_id),
+  instance_id    UUID NOT NULL REFERENCES rapp_instance(instance_id) ON DELETE CASCADE,  -- NEW section 5: delete_instance's cascade
   metrics          JSONB NOT NULL
 );
 

@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**389 tests total, all passing** as of this build: 379 unit tests across
+**394 tests total, all passing** as of this build: 384 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -394,7 +394,22 @@ closed its missing policy-type detail retrieval gap, partially — added
 is an honest empty placeholder rather than a fabricated A1TD schema
 this build was never given; the reference's separate RIC repository
 (`GET /rics`) stays out of scope, since this build models no
-near-RT-RIC entity or inventory beyond the single A1 mock.
+near-RT-RIC entity or inventory beyond the single A1 mock. `rapp-mgmt`
+went from 12 tests to 17 in the next pass: closed its missing
+standalone delete-after-undeploy gap — adopted the reference's own
+`undeployRappInstance`/`deleteRappInstance` split (DEPLOYED ->
+UNDEPLOYING -> UNDEPLOYED, delete only legal once UNDEPLOYED).
+`TERMINATE` now only tears the workload down and lands in a terminal
+`UNDEPLOYED` state (replacing the old `TERMINATING` name) with the
+instance row still present; a new `DELETE /instances/{id}` removes it,
+409'ing otherwise. Also found and fixed while wiring this in: neither
+`rapp_fault_report` nor `rapp_performance_report` had an `ON DELETE
+CASCADE` on their `instance_id` FK — the same bug class already found
+in DME's `deregister_producer`/AI-ML Workflow's `deregister_model` —
+fixed with both a DB-level cascade and explicit application cleanup,
+verified against a real local Postgres 16 instance.
+`CreateInstance`'s already-shipped immediate-deploy behavior is a
+separate, already-cited design decision and stays untouched.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

@@ -24,7 +24,7 @@ class InstanceState(StrEnum):
     DEPLOYING = "DEPLOYING"
     RUNNING = "RUNNING"
     UPGRADING = "UPGRADING"
-    TERMINATING = "TERMINATING"
+    UNDEPLOYED = "UNDEPLOYED"
     FAULTED = "FAULTED"
 
 
@@ -78,9 +78,9 @@ def build_rapp_instance_fsm() -> StateMachine[InstanceState, InstanceEvent]:
     fsm.add(InstanceState.DEPLOYING, InstanceEvent.BOOTSTRAP_OK, InstanceState.RUNNING)
     fsm.add(InstanceState.DEPLOYING, InstanceEvent.BOOTSTRAP_FAILED, InstanceState.FAULTED)
     fsm.add(InstanceState.RUNNING, InstanceEvent.START_UPGRADE, InstanceState.UPGRADING)
-    fsm.add(InstanceState.UPGRADING, InstanceEvent.UPGRADE_COMMIT, InstanceState.TERMINATING, action=_revoke_credential)
+    fsm.add(InstanceState.UPGRADING, InstanceEvent.UPGRADE_COMMIT, InstanceState.UNDEPLOYED, action=_revoke_credential)
     fsm.add(InstanceState.UPGRADING, InstanceEvent.UPGRADE_ROLLBACK, InstanceState.RUNNING)
-    fsm.add(InstanceState.RUNNING, InstanceEvent.TERMINATE, InstanceState.TERMINATING, action=_terminate_side_effects)
+    fsm.add(InstanceState.RUNNING, InstanceEvent.TERMINATE, InstanceState.UNDEPLOYED, action=_terminate_side_effects)
     fsm.add(InstanceState.RUNNING, InstanceEvent.CRASH, InstanceState.FAULTED, action=_reconsider_dme_registration)
     fsm.add(InstanceState.FAULTED, InstanceEvent.RECOVER, InstanceState.DEPLOYING)
     return fsm

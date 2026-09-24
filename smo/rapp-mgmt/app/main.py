@@ -8,7 +8,7 @@ and UpgradeInstance's auto-rollback made precise (upgrade.py).
 import uuid
 
 import httpx
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -129,16 +129,51 @@ def terminate_instance(instance_id: uuid.UUID, db: Session = Depends(get_session
     PackageUsageRegistration — the actual fix for Onboarding's
     cascade-delete guard, previously unreachable from ordinary rApp
     deployment since nothing called usage/stop.
+
+    OPEN_ITEMS.md section 5: this used to delete the instance row
+    outright, in the same call — undeploy and delete collapsed into one
+    irreversible step, with no way to observe an instance post-teardown
+    or to delete one that was already torn down some other way (e.g.
+    CRASH). The reference's own split (`RappService.undeployRappInstance`/
+    `deleteRappInstance`, DEPLOYED -> UNDEPLOYING -> UNDEPLOYED, delete
+    only legal from UNDEPLOYED) is adopted here: TERMINATE now only tears
+    the workload down (this action) and lands in the terminal UNDEPLOYED
+    state with the row still present; removing the row itself is the
+    separate `delete_instance` below.
     """
     inst = db.get(RAppInstance, instance_id)
-    package_id, registration_id = inst.package_id, inst.package_usage_registration_id
+    registration_id = inst.package_usage_registration_id
     inst.state = RAPP_INSTANCE_FSM.fire(InstanceState(inst.state), InstanceEvent.TERMINATE, instance=inst)
     db.commit()
+    if registration_id is not None:
+        R1Client().post(f"/onboarding/packages/{inst.package_id}/usage/{registration_id}/stop")
+    return {"instanceId": str(inst.instance_id), "state": inst.state}
+
+
+@app.delete("/instances/{instance_id}", status_code=204)
+def delete_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """DeleteRappInstance — the reference's own standalone delete, distinct
+    from undeploy (`RappService.deleteRappInstance`'s guard: "Unable to
+    delete rApp instance %s as it is not in UNDEPLOYED state"). Only legal
+    once TERMINATE has already landed the instance in UNDEPLOYED — a
+    running or faulted instance can't be deleted out from under itself.
+
+    Also closes the same FK-cascade bug class already found and fixed for
+    DME's `deregister_producer`/AI-ML Workflow's `deregister_model`: the
+    instance's `rapp_fault_report`/`rapp_performance_report` rows had no
+    `ON DELETE CASCADE` (fixed alongside this), so this cleans them up
+    explicitly as a second, directly-testable line of defense.
+    """
+    inst = db.get(RAppInstance, instance_id)
+    if inst is None:
+        raise HTTPException(status_code=404, detail="no such RAppInstance")
+    if inst.state != InstanceState.UNDEPLOYED:
+        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_UNDEPLOYED,
+                               detail=f"instance {instance_id} is not UNDEPLOYED (state={inst.state})")
+    db.query(RAppFaultReport).filter(RAppFaultReport.instance_id == instance_id).delete()
+    db.query(RAppPerformanceReport).filter(RAppPerformanceReport.instance_id == instance_id).delete()
     db.delete(inst)
     db.commit()
-    if registration_id is not None:
-        R1Client().post(f"/onboarding/packages/{package_id}/usage/{registration_id}/stop")
-    return {"status": "terminated"}
 
 
 @app.get("/instances/{instance_id}/config")
