@@ -2138,6 +2138,38 @@ own §1/§2 items stand as-is.
   `ran-nf-oam` unit-test count unchanged at 42 (the FSM's
   `PARTIAL_SUCCESS` aggregation was already unit-tested);
   `tests_integration` stays at 16 (one test grew a step).
+- **Pilot demo depth: a whole new module, A1 Policy Management.** A1
+  Related + `mock-near-rt-ric` were entirely absent from the demo —
+  `DEMO_RUNBOOK.md` never called either module at all, despite both
+  having real, already-tested mapping-store, southbound-dispatch, and
+  duplicate-rejection logic. Per the same "deepen the demo, don't
+  invent backlog" direction as the item above, added a full new
+  `DEMO_RUNBOOK.md` section: register a supervised service (`PUT
+  /services`), list real policy types, create an A1 Policy — a genuine
+  round trip through `A1TerminationClient` to the mock Near-RT RIC,
+  settling `ENFORCED` — subscribe to its status, then create a *second*
+  policy with byte-identical content under the same type and observe
+  the mock's own real content-fingerprint check (adopted from the real
+  near-rt-ric-simulator's `calcFingerprint`) reject it (`REJECTED`,
+  "duplicate policy content for this type") — a genuine RIC-side
+  rejection, not a scripted one. Then update the first policy to an
+  empty object, triggering the mock's own real `REJECTED`-on-empty rule
+  — a genuine `ENFORCED -> REJECTED` transition that fires
+  `_notify_policy_status_subscribers`' real notification (PR #71's-era
+  `SubscribePolicyStatus` fix), observed the same way FOCOM's and
+  Policy Mgmt's demo notifications are: intercepted at the exact
+  `httpx.post` call the module's own code makes. Finally retract both
+  policies and deregister the service (which would itself
+  cascade-delete any remaining policies, the same real southbound
+  `a1t.delete_policy` call `delete_policy` itself uses).
+  `tests_integration/test_demo_runbook.py` gained a matching step
+  proving the whole sequence — including both the duplicate rejection
+  and the status-change notification — against real routes end to end.
+  No code, schema, or OpenAPI-spec change — confirmed via a full local
+  Postgres 16 pass (58 tables, 0 mismatches) and the live-schema-match
+  check, both green. Unit-test counts unchanged (`a1-related`: 43,
+  `mock-near-rt-ric`: 16 — both already covered this logic);
+  `tests_integration` stays at 16.
 
 ## Suggested next pass (priority order)
 

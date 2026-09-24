@@ -509,7 +509,124 @@ print(r2.status_code)
 "
 ```
 
-## 10. Retire it — Terminate, then Delete
+## 10. A1 Policy Management (optional) — register, enforce, a real duplicate rejection, retract
+
+Independent of the sample rApp instance above — this exercises a whole
+module the runbook has never touched: A1 Related's real mapping-store
+role, a genuine round trip to the mock Near-RT RIC, and its real
+duplicate-policy-content rejection.
+
+Register as a supervised service (per `pms-api-v3.json`'s
+`putService`; `keepAliveIntervalSeconds: 0` disables supervision for
+this walkthrough — a positive value would need repeated keepalive
+calls or the service gets swept and its policies torn down):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.put('http://a1-related:8000/services', json={'serviceId': 'hello-world-rapp', 'keepAliveIntervalSeconds': 0})
+print(r.status_code, r.json())
+"
+```
+
+Real policy types (this build's own hardcoded A1TD catalog sample):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://a1-related:8000/policy-types')
+print(r.status_code, r.json())
+"
+```
+
+Create an A1 Policy — a real round trip to the mock Near-RT RIC
+(`A1TerminationClient.create_policy`), not a local stub:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://a1-related:8000/policies', json={
+    'policyTypeId': 'ORAN_QoSandTSP_6.0.1',
+    'policyObject': {'scope': {'cellId': 'demo-cell-1'}, 'qosObjectives': {'gfbr': 100}},
+    'nearRtRicId': 'mock-near-rt-ric-001', 'creatorId': 'hello-world-rapp',
+})
+print(r.status_code, r.json())
+"
+```
+
+`enforcementStatus` is `ENFORCED` — the mock Near-RT RIC genuinely
+accepted it. Subscribe to status changes on it:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://a1-related:8000/policies/subscriptions', json={
+    'notificationDestination': 'http://demo-consumer:9000/policy-status',
+    'policyIdList': ['<policyId>'],
+})
+print(r.status_code, r.json())
+"
+```
+
+**A real duplicate-policy rejection** — create a second policy with the
+exact same type and content as the first; the mock Near-RT RIC's own
+content-fingerprint check (adopted from the real near-rt-ric-simulator's
+`calcFingerprint`) rejects it, not a scripted failure:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://a1-related:8000/policies', json={
+    'policyTypeId': 'ORAN_QoSandTSP_6.0.1',
+    'policyObject': {'scope': {'cellId': 'demo-cell-1'}, 'qosObjectives': {'gfbr': 100}},
+    'nearRtRicId': 'mock-near-rt-ric-001', 'creatorId': 'hello-world-rapp',
+})
+print(r.status_code, r.json())
+"
+```
+
+`enforcementStatus` is `REJECTED` — A1 Related still stores the mapping
+(so it's queryable), but the RIC-side content collision is real, not
+simulated locally by A1 Related itself.
+
+Now update the first policy to an empty object — the mock's own
+`REJECTED`-on-empty rule fires a genuine `ENFORCED -> REJECTED`
+transition, which is exactly what the subscription above exists to
+observe:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.put('http://a1-related:8000/policies/<policyId>', json={})
+print(r.status_code, r.json())
+"
+```
+
+`enforcementStatus` is now `REJECTED`, and because it genuinely changed
+from `ENFORCED`, `_notify_policy_status_subscribers` fired a real POST
+to `http://demo-consumer:9000/policy-status` — no real listener exists
+at that address in this compose stack (same honesty pattern as FOCOM's
+and Policy Mgmt's placeholder callbacks above), so watch `a1-related`'s
+own logs for the delivery attempt;
+`tests_integration/test_demo_runbook.py` proves the real dispatch fires
+by intercepting the exact `httpx.post` call.
+
+Retract everything — delete both policies, then deregister the service
+(which would itself cascade-delete any policies still attached to it):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://a1-related:8000/policies/<policyId>')
+print(r.status_code)
+r2 = httpx.delete('http://a1-related:8000/policies/<duplicatePolicyId>')
+print(r2.status_code)
+r3 = httpx.delete('http://a1-related:8000/services/hello-world-rapp')
+print(r3.status_code)
+"
+```
+
+## 11. Retire it — Terminate, then Delete
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -531,8 +648,9 @@ print(r.status_code)
 
 204 with an empty body — the instance row is gone. The full lifecycle
 — onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
-loop, FOCOM resource management, Policy Mgmt intent automation, retire —
-is now complete against a real running stack.
+loop, FOCOM resource management, Policy Mgmt intent automation, A1
+Policy Management, retire — is now complete against a real running
+stack.
 
 ## Known rough edges for a live walkthrough
 

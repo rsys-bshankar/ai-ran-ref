@@ -765,6 +765,21 @@ Extended `DEMO_RUNBOOK.md`'s "RAN NF OAM closed-loop" section with this
 walkthrough and added a matching integration-test step. No code,
 schema, or OpenAPI-spec change.
 
+**Demo depth: a whole new module, A1 Policy Management.** A1 Related
+and `mock-near-rt-ric` were entirely absent from the demo despite
+having real, already-tested logic. New `DEMO_RUNBOOK.md` section:
+register a service, list real policy types, create an A1 Policy — a
+genuine round trip through `A1TerminationClient` to the mock Near-RT
+RIC, settling `ENFORCED` — subscribe to its status, then create a
+byte-identical second policy and observe the mock's own real
+content-fingerprint check reject it (`REJECTED`). Update the first
+policy to an empty object to trigger a genuine `ENFORCED -> REJECTED`
+transition, firing a real status-change notification (proven the same
+way as the FOCOM/Policy Mgmt demo notifications, by intercepting the
+exact `httpx.post` call). Retract both policies and deregister the
+service. `tests_integration/test_demo_runbook.py` gained a matching
+step. No code, schema, or OpenAPI-spec change.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style
