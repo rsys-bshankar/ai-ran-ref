@@ -791,6 +791,24 @@ skipped despite its matching capability. `tests_integration/
 test_demo_runbook.py` gained a matching step asserting both outcomes.
 No code, schema, or OpenAPI-spec change.
 
+**Demo depth: Onboarding's real duplicate-content validation failure.**
+Last of four confidently-in-scope demo-depth passes. Every prior demo
+onboards exactly one package and only shows the success path;
+`_validate_package`'s duplicate-content check (matching
+`integrity_hash`) was already implemented and unit-tested but never
+demonstrated. Extended the onboarding section: onboard the exact same
+CSAR a second time — `OnboardPackage` still returns `202` synchronously
+(this endpoint never rejects synchronously), and `onboarding-status`
+shows the second package genuinely `FAILED` while the first stays
+`AVAILABLE`, untouched. `tests_integration/test_demo_runbook.py` gained
+a matching step. No code, schema, or OpenAPI-spec change.
+
+This closes the confidently-in-scope portion of the post-§5 demo-gap
+list. FOCOM FCAPS depth and SME's Trusted Invokers registry are each
+already-confirmed out of scope; bringing AI/ML Workflow, RAN Analytics,
+SO SMOS, or SA SMOS into the demo is a genuine scope question, not a
+mechanical pickup — left for explicit direction.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style
