@@ -207,11 +207,15 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # Intercepted at the same httpx.post call create_intent makes,
     # same technique as FOCOM's step above.
     intent_notifications = []
+    sa_smos_notifications = []
     real_post_2 = httpx.post
 
     def fake_post_2(location, json=None, timeout=None, **kwargs):
         if location == "http://so-smos:8000/intents/notify":
             intent_notifications.append(json)
+            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
+        if location == "http://sa-smos:8000/intents/notify":
+            sa_smos_notifications.append(json)
             raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
         return real_post_2(location, json=json, timeout=timeout, **kwargs)
 
@@ -240,11 +244,39 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert get_intent.status_code == 200
     assert get_intent.json()["intentAdminState"] == "ACTIVATED"
 
+    # A real negative case: a second RMIH with the same capability but a
+    # different declared scope (CN-only) must NOT be notified of a
+    # RAN-scoped Intent, even though its capability matches — proves
+    # intentHandlingScope is a genuine pre-filter (_matching_rmihs), not
+    # decoration.
+    rmih2 = mesh["policy-mgmt"].post("/intent-handling-functions", json={
+        "rmihId": "sa-smos", "smeServiceId": "sa-smos-svc",
+        "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
+        "notificationCallbackUri": "http://sa-smos:8000/intents/notify",
+        "intentHandlingScope": ["CN"],
+    })
+    assert rmih2.status_code == 201
+
+    intent2 = mesh["policy-mgmt"].post("/intents", json={
+        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}],
+        "rmioId": "hello-world-rapp", "intentHandlingScope": "RAN",
+    })
+    assert intent2.status_code == 201
+    intent2_id = intent2.json()["intentId"]
+
+    assert len(intent_notifications) == 2  # so-smos notified again, for this second intent
+    assert intent_notifications[1]["intentId"] == intent2_id
+    assert sa_smos_notifications == []  # sa-smos never notified — CN-only scope filtered it out
+
     del_intent = mesh["policy-mgmt"].delete(f"/intents/{intent_id}")
     assert del_intent.status_code == 204
+    del_intent2 = mesh["policy-mgmt"].delete(f"/intents/{intent2_id}")
+    assert del_intent2.status_code == 204
 
     del_rmih = mesh["policy-mgmt"].delete("/intent-handling-functions/so-smos")
     assert del_rmih.status_code == 204
+    del_rmih2 = mesh["policy-mgmt"].delete("/intent-handling-functions/sa-smos")
+    assert del_rmih2.status_code == 204
 
     # step 10: A1 Policy Management — register a service, create a real
     # policy against the mock Near-RT RIC, observe a real duplicate-

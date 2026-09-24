@@ -2170,6 +2170,29 @@ own §1/§2 items stand as-is.
   check, both green. Unit-test counts unchanged (`a1-related`: 43,
   `mock-near-rt-ric`: 16 — both already covered this logic);
   `tests_integration` stays at 16.
+- **Pilot demo depth: Policy Mgmt's real `intentHandlingScope` negative
+  case.** Third demo-depth pass. `DEMO_RUNBOOK.md`'s existing Policy
+  Mgmt section only ever demonstrated the positive match; `_matching_
+  rmihs`' own real scope pre-filter (SPEC_AUDIT.md item 5, PR #71) —
+  an RMIH with a declared scope that doesn't cover the intent's
+  requested scope is skipped before the capability check even runs —
+  was already implemented and unit-tested
+  (`test_create_intent_scope_pre_filters_matching_rmihs`) but never
+  shown. Extended `DEMO_RUNBOOK.md`'s "Policy Mgmt intent automation"
+  section with a genuine negative case: register a second RMIH
+  declaring the *same* `RAN_SUBNETWORK` capability as the first but a
+  *different*, `CN`-only scope, then create a second, `RAN`-scoped
+  Intent — only the `RAN`-scoped RMIH is notified; the `CN`-scoped one
+  is correctly skipped despite its matching capability, proving the
+  scope field is a genuine pre-filter rather than decoration.
+  `tests_integration/test_demo_runbook.py` gained a matching step,
+  asserting both that the matching RMIH IS notified and that the
+  scope-mismatched one is NOT — intercepted at the same `httpx.post`
+  call `create_intent` makes, extended to watch both RMIHs' callback
+  URLs. No code, schema, or OpenAPI-spec change — confirmed via a full
+  local Postgres 16 pass (58 tables, 0 mismatches) and the
+  live-schema-match check, both green. Unit-test counts unchanged;
+  `tests_integration` stays at 16.
 
 ## Suggested next pass (priority order)
 
