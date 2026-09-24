@@ -83,7 +83,10 @@ def instantiate(body: InstantiateRequest, db: Session = Depends(get_session)):
 
     r1 = R1Client()
     inv_resp = r1.get("/focom/inventory", params={"resource_type": body.requiredResourceTypeId or ""})
-    cluster_id = inv_resp.json().get("clusterId", "phase1-degenerate-cluster") if inv_resp.status_code == 200 else "phase1-degenerate-cluster"
+    # SPEC_AUDIT.md item 8: FOCOM's /inventory reshaped toward the real
+    # O2IMS OCloud schema — oCloudId, not the previously invented
+    # clusterId. Same graceful fallback on any non-2xx response.
+    cluster_id = inv_resp.json().get("oCloudId", "phase1-degenerate-cluster") if inv_resp.status_code == 200 else "phase1-degenerate-cluster"
 
     deployment = NFDeployment(
         nf_deployment_descriptor_id=body.nfDeploymentDescriptorId,

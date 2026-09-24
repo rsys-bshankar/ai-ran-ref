@@ -1935,6 +1935,34 @@ own §1/§2 items stand as-is.
   Verified against a real local Postgres 16 instance (migration
   applies cleanly, `check_migration_matches_models.py` passes, 58
   tables). 470 tests total, up from 467 (`policy-mgmt`: 15 -> 18).
+- **`SPEC_AUDIT.md`'s second moderate/breaking-shape item: FOCOM's
+  `GET /inventory` returned an ad hoc `{clusterId, resourcePools:[...]}`
+  shape matching neither `OCloud` (O2IMS's real aggregate root) nor any
+  other real schema.** Reshaped toward `ORAN.O2ims.Inventory.yaml`'s
+  real `OCloud`: `oCloudId`/`name`/`description`/`resourceTypes`/
+  `deploymentManagers` now come from this build's own real,
+  already-seeded topology (no new fabricated data); `locations`/
+  `oCloudSites` (required, `minItems: 1`, in the real spec) are
+  honestly empty rather than fabricated, since FOCOM has no
+  `OCloudSite`/`Location` concept at all (a confirmed large/structural
+  scope cut, already documented in `SPEC_AUDIT.md`'s FOCOM section) —
+  same for `globalCloudId`/`infrastructureManagementServicesEndPoint`/
+  `smoRegistrationService`, all `None`. `resource_type` now genuinely
+  filters `resourceTypes` against a known `ResourceType` instead of
+  being an unvalidated echo, closing a previously-documented honesty
+  gap in the same route ("still only echoed back, not validated").
+  First checked NFO's real `Instantiate` code (NFO+FOCOM LLD section 4,
+  the one real cross-module caller `SPEC_AUDIT.md` itself flagged) to
+  scope the blast radius precisely: it reads exactly one key,
+  `clusterId`, with a graceful fallback on any non-2xx response — now
+  reads `oCloudId` the same way, keeping the exact same fallback
+  behavior. NFO's *own* `clusterId` response field (a separate,
+  NFO-owned wire contract for NFO's own callers, unrelated to O2IMS
+  compliance) was deliberately left untouched, and so was
+  `/resources/provision`'s own `clusterId` field (a different route,
+  out of this specific audit item's scope). No migration change — this
+  was a route-shape change only. 473 tests total, up from 470
+  (`focom`: 45 -> 48).
 
 ## Suggested next pass (priority order)
 

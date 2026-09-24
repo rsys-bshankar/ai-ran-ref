@@ -66,7 +66,7 @@ def _create_descriptor(client) -> str:
 
 
 def _instantiate(client, monkeypatch, name="nf-1", descriptor_id=None, cluster_id="c1"):
-    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"clusterId": cluster_id}))
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"oCloudId": cluster_id}))
     descriptor_id = descriptor_id or _create_descriptor(client)
     return client.post("/deployments", json={"nfDeploymentDescriptorId": descriptor_id, "name": name})
 
@@ -129,7 +129,7 @@ def test_instantiate_rejects_unknown_descriptor(client, monkeypatch):
     a descriptorId that doesn't exist must be rejected up front, not
     only surface as a later, unrelated failure.
     """
-    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"clusterId": "c1"}))
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"oCloudId": "c1"}))
     resp = client.post("/deployments", json={"nfDeploymentDescriptorId": str(uuid.uuid4()), "name": "nf-1"})
     assert resp.status_code == 422
     assert resp.json()["detail"]["title"] == "NFDEPLOYMENT_DESCRIPTOR_NOT_FOUND"
@@ -149,7 +149,7 @@ def test_instantiate_rejects_descriptor_already_deployed(client, monkeypatch):
     """The reference's own _check_duplication: a descriptor may only be
     deployed once.
     """
-    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"clusterId": "c1"}))
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"oCloudId": "c1"}))
     descriptor_id = _create_descriptor(client)
     client.post("/deployments", json={"nfDeploymentDescriptorId": descriptor_id, "name": "nf-1"})
 
