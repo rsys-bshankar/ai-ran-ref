@@ -1,0 +1,768 @@
+{
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WriteConfigRequest": {
+        "properties": {
+          "changes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "msacRole": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Msacrole"
+          },
+          "requestedBy": {
+            "title": "Requestedby",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestedBy",
+          "scope",
+          "changes"
+        ],
+        "title": "WriteConfigRequest",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "RAN NF OAM SMOS",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/alarms": {
+      "get": {
+        "operationId": "query_alarms_alarms_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Alarms"
+      }
+    },
+    "/alarms/ingest": {
+      "post": {
+        "description": "alarmId is ALWAYS a fresh UUID minted here, never the raising ME's\nnative ID \u2014 RAN NF OAM LLD section 3.3, closing R1UCR's own flagged,\nunresolved collision risk under a fleet of N MEs.\n\nprobableCause/specificProblem/rootCauseIndicator/correlatedNotifications/\nproposedRepairActions (OPEN_ITEMS.md section 5): the standard fault\nfields 3GPP TS 28.532 FaultMnS's NotifyNewAlarm carries, previously\nentirely absent from this alarm model.",
+        "operationId": "ingest_alarm_alarms_ingest_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source_alarm_id",
+            "required": true,
+            "schema": {
+              "title": "Source Alarm Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": true,
+            "schema": {
+              "title": "Severity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "correlation_group",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Correlation Group"
+            }
+          },
+          {
+            "in": "query",
+            "name": "probable_cause",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Probable Cause"
+            }
+          },
+          {
+            "in": "query",
+            "name": "specific_problem",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Specific Problem"
+            }
+          },
+          {
+            "in": "query",
+            "name": "root_cause_indicator",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Root Cause Indicator",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "correlated_notifications",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "title": "Correlated Notifications",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "proposed_repair_actions",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Proposed Repair Actions"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest Alarm"
+      }
+    },
+    "/alarms/{alarm_id}/ack": {
+      "patch": {
+        "operationId": "change_alarm_ack_state_alarms__alarm_id__ack_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alarm_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alarm Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "new_state",
+            "required": true,
+            "schema": {
+              "title": "New State",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Alarm Ack State"
+      }
+    },
+    "/alarms/{alarm_id}/clear": {
+      "patch": {
+        "description": "OPEN_ITEMS.md section 5: no alarm-cleared lifecycle existed at\nall \u2014 `/alarms/{id}/ack` only ever toggled ack_state, so an alarm\nthat stopped recurring on the NF had no way to ever be marked\nresolved. Matches the reference's own NotifyClearedAlarm shape:\nsetting severity to 'cleared' (already a valid value in this\nbuild's own CHECK constraint) rather than a separate state field.",
+        "operationId": "clear_alarm_alarms__alarm_id__clear_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alarm_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alarm Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "clear_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Clear User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Alarm"
+      }
+    },
+    "/config-jobs": {
+      "post": {
+        "description": "WriteConfigurationChanges \u2014 RAN NF OAM LLD section 5.1's full\nsequence: MSAC gate, schema check (cache-or-fetch), decompose into\nsub_changes, PATCH each independently, aggregate.",
+        "operationId": "write_configuration_changes_config_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Write Configuration Changes"
+      }
+    },
+    "/config-jobs/{job_id}": {
+      "get": {
+        "operationId": "query_write_config_job_status_config_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Write Config Job Status"
+      }
+    },
+    "/dme-jobs": {
+      "post": {
+        "description": "DME's own job-push callback (OPEN_ITEMS.md section 5): DME's\ncreate_data_job now actually POSTs the job to jobCallbackUrl on\ncreate \u2014 subscribe_pm registers this exact URL, so this closes the\nsame class of dangling-callback bug the /health route closed for\nthe health-supervision URL. Phase 1: acks only, no real per-job\nstate tracked producer-side.",
+        "operationId": "receive_dme_job_dme_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Receive Dme Job"
+      }
+    },
+    "/dme-jobs/{data_job_id}": {
+      "delete": {
+        "operationId": "stop_dme_job_dme_jobs__data_job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_job_id",
+            "required": true,
+            "schema": {
+              "title": "Data Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop Dme Job"
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Producer health-supervision callback (OPEN_ITEMS.md section 5):\nsubscribe_pm registers this exact URL with DME as its\nproducerHealthCallbackUrl, but no route ever answered it \u2014 a health\npoller hitting the registered callback would 404 against a producer\nthis module itself just told DME was healthy. A plain liveness\ncheck: reachable and 200 means this RAN NF OAM instance is up.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
+      }
+    },
+    "/o1-adaptor-endpoints/discover": {
+      "post": {
+        "description": "RAN NF OAM LLD section 1.2/5.2 \u2014 the endpoint discovery loop, meant\nto run on a timer against the MnS Registry NRM. Phase 1: heartbeat\naging is evaluated here rather than a live registry poll.",
+        "operationId": "discover_endpoints_o1_adaptor_endpoints_discover_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Discover Endpoints"
+      }
+    },
+    "/o1-adaptor-endpoints/{endpoint_id}/heartbeat": {
+      "post": {
+        "operationId": "endpoint_heartbeat_o1_adaptor_endpoints__endpoint_id__heartbeat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Endpoint Heartbeat"
+      }
+    },
+    "/pm-subscriptions": {
+      "post": {
+        "description": "SubscribePM \u2014 RAN NF OAM LLD section 3.5: this is a DME-producer\nregistration wrapper, NOT a clause-8 API call. No R1AP endpoint exists\nfor PM at all; that's the spec's own documented design intent.",
+        "operationId": "subscribe_pm_pm_subscriptions_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "counter_type",
+            "required": true,
+            "schema": {
+              "title": "Counter Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "delivery_method",
+            "required": true,
+            "schema": {
+              "title": "Delivery Method",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Subscribe Pm"
+      }
+    },
+    "/software-management-jobs": {
+      "post": {
+        "operationId": "software_update_software_management_jobs_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ru_instance_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ru Instance Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Software Update"
+      }
+    },
+    "/software-management-jobs/{job_id}/advance": {
+      "post": {
+        "operationId": "advance_software_job_software_management_jobs__job_id__advance_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "succeeded",
+            "required": true,
+            "schema": {
+              "title": "Succeeded",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Advance Software Job"
+      }
+    }
+  }
+}

@@ -1,0 +1,631 @@
+{
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "SubscribeInventoryRequest": {
+        "properties": {
+          "callbackUri": {
+            "title": "Callbackuri",
+            "type": "string"
+          },
+          "resourceTypeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resourcetypeid"
+          }
+        },
+        "required": [
+          "callbackUri"
+        ],
+        "title": "SubscribeInventoryRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "FOCOM SMOS (O2ims)",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/alarms": {
+      "get": {
+        "operationId": "query_ocloud_alarms_alarms_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Query Ocloud Alarms"
+      }
+    },
+    "/alarms/ingest": {
+      "post": {
+        "operationId": "ingest_ocloud_alarm_alarms_ingest_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resource_ref",
+            "required": true,
+            "schema": {
+              "title": "Resource Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": true,
+            "schema": {
+              "title": "Severity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest Ocloud Alarm"
+      }
+    },
+    "/deployment-managers": {
+      "get": {
+        "operationId": "list_deployment_managers_deployment_managers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Deployment Managers"
+      }
+    },
+    "/deployment-managers/{deployment_manager_id}": {
+      "get": {
+        "operationId": "get_deployment_manager_deployment_managers__deployment_manager_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_manager_id",
+            "required": true,
+            "schema": {
+              "title": "Deployment Manager Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Deployment Manager"
+      }
+    },
+    "/inventory": {
+      "get": {
+        "description": "QueryInventory \u2014 Phase 1: a single degenerate cluster, per\nD-DEPLOY-FOCOM-1. NFO's Instantiate calls this before placing a\nworkload (NFO+FOCOM LLD section 4).",
+        "operationId": "query_inventory_inventory_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resource_type",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Resource Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Inventory"
+      }
+    },
+    "/inventory/subscriptions": {
+      "post": {
+        "operationId": "subscribe_inventory_changes_inventory_subscriptions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeInventoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Subscribe Inventory Changes"
+      }
+    },
+    "/inventory/subscriptions/{subscription_id}": {
+      "delete": {
+        "operationId": "unsubscribe_inventory_changes_inventory_subscriptions__subscription_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unsubscribe Inventory Changes"
+      }
+    },
+    "/performance": {
+      "get": {
+        "operationId": "query_ocloud_performance_performance_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resource_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Ref"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Ocloud Performance"
+      }
+    },
+    "/resource-pools": {
+      "get": {
+        "operationId": "list_resource_pools_resource_pools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Resource Pools"
+      }
+    },
+    "/resource-pools/{resource_pool_id}": {
+      "get": {
+        "operationId": "get_resource_pool_resource_pools__resource_pool_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_pool_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Pool Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Resource Pool"
+      }
+    },
+    "/resource-pools/{resource_pool_id}/resources": {
+      "get": {
+        "operationId": "list_pool_resources_resource_pools__resource_pool_id__resources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_pool_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Pool Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Pool Resources"
+      }
+    },
+    "/resource-types": {
+      "get": {
+        "description": "OPEN_ITEMS.md section 5: no per-resource-type/pool/resource\ndrill-down endpoints existed at all \u2014 the reference exposes\n/resourceTypes, /resourceTypes/{id}, /resourcePools/{id}/resources,\n/deploymentManagers/{id} as distinct operations; FOCOM collapsed\neverything into one /inventory route with nothing behind it.",
+        "operationId": "list_resource_types_resource_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Resource Types"
+      }
+    },
+    "/resource-types/{resource_type_id}": {
+      "get": {
+        "operationId": "get_resource_type_resource_types__resource_type_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_type_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Type Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Resource Type"
+      }
+    },
+    "/resources/provision": {
+      "post": {
+        "description": "Previously returned a random UUID and persisted nothing at all \u2014\nOPEN_ITEMS.md section 5's \"no model shape to extend later\" gap. Now\ncreates a real Resource row in the Phase 1 pool, so the new\nGET /resource-pools/{id}/resources drill-down actually has\nsomething behind it. An unrecognized resourceTypeId is\nauto-registered as a new ResourceType rather than rejected \u2014 Phase\n1 never validated this field, and rejecting it now would be a\nscope-creeping behavior change, not just a schema addition.",
+        "operationId": "provision_resource_resources_provision_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Spec",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Provision Resource"
+      }
+    },
+    "/resources/{resource_id}": {
+      "delete": {
+        "operationId": "deprovision_resource_resources__resource_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deprovision Resource"
+      }
+    },
+    "/resources/{resource_id}/status": {
+      "get": {
+        "operationId": "monitor_resource_resources__resource_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Monitor Resource"
+      }
+    },
+    "/topology": {
+      "get": {
+        "description": "OPEN_ITEMS.md section 5: the Blueprint names \"FOCOM's placement as\na TEIV data source\" as a confirmed integration point, but FOCOM had\nno typed entity/relationship model and no /topology-shaped endpoint\nat all \u2014 not even a stub. This exports FOCOM's real ResourceType/\nResourcePool/DeploymentManager/Resource rows in the wire shape the\nreference's own focom-to-teiv-adapter produces (entities keyed by\n\"<prefix>:<EntityType>\" with {id, attributes}; relationships keyed by\n\"<prefix>:<A>_<REL>_<B>\" with {id, aSide, bSide, sourceIds} \u2014 see\nEntityAndRelationshipModel.java / TeivIdBuilder.java).\n\nThe real adapter derives OCloudNamespace/NodeCluster entities from\nlive FocomProvisioningRequest/O2ims Kubernetes CRDs and pushes them\nover Kafka as CloudEvents \u2014 direct kubeconfig access, CRD reads, and\na message broker are all structurally out of scope for this\ndocker-run-based Phase 1 (same elision as the rest of this module).\nSo this exports FOCOM's own actual inventory instead, as a pull-based\nGET, using only the module's real foreign keys (resource -> type,\nresource -> pool, resource -> parent) rather than inventing\nrelationships this schema doesn't actually track.",
+        "operationId": "export_topology_topology_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Export Topology"
+      }
+    }
+  }
+}
