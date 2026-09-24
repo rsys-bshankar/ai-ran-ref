@@ -97,7 +97,49 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     perf = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/performance", json={"greeting": "hello world", "requestsServed": 1})
     assert perf.status_code == 200
 
-    # step 7: retire — terminate then delete
+    # step 7: RAN NF OAM closed-loop — register a managed element, dispatch
+    # a real CM write, raise/ack/clear a fault alarm
+    reg = mesh["ran-nf-oam"].post("/o1-adaptor-endpoints", json={
+        "managedElementRef": "demo-o-du-1", "adaptorUri": "http://mock-o1-adaptor:8000/edit-config",
+        "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU",
+    })
+    assert reg.status_code == 201
+    assert reg.json()["healthStatus"] == "DISCOVERED"
+    endpoint_id = reg.json()["endpointId"]
+
+    hb = mesh["ran-nf-oam"].post(f"/o1-adaptor-endpoints/{endpoint_id}/heartbeat")
+    assert hb.status_code == 200
+    assert hb.json()["healthStatus"] == "ACTIVE"
+
+    job = mesh["ran-nf-oam"].post("/config-jobs", json={
+        "requestedBy": "hello-world-rapp", "scope": "cell",
+        "changes": [{"managedElementRef": "demo-o-du-1", "attributeChanges": {"adminState": "UNLOCKED"}}],
+    })
+    assert job.status_code == 202
+    job_status = mesh["ran-nf-oam"].get(f"/config-jobs/{job.json()['jobId']}")
+    assert job_status.json()["status"] == "COMPLETED"
+    assert job_status.json()["subChanges"][0]["status"] == "APPLIED"
+
+    applied = mesh["mock-o1-adaptor"].get("/edit-config/demo-o-du-1")
+    assert applied.json()["attributeChanges"] == {"adminState": "UNLOCKED"}
+
+    alarm = mesh["ran-nf-oam"].post("/alarms/ingest", params={
+        "source_alarm_id": "demo-alarm-1", "managed_element_ref": "demo-o-du-1",
+        "severity": "major", "alarm_type": "EQUIPMENT_ALARM",
+    })
+    assert alarm.status_code == 200
+    alarm_id = alarm.json()["alarmId"]
+
+    ack = mesh["ran-nf-oam"].patch(f"/alarms/{alarm_id}/ack", params={"new_state": "ACKNOWLEDGED", "ack_user_id": "demo-operator"})
+    assert ack.status_code == 200
+    assert ack.json()["ackState"] == "ACKNOWLEDGED"
+
+    cleared = mesh["ran-nf-oam"].patch(f"/alarms/{alarm_id}/clear", params={"clear_user_id": "demo-operator"})
+    assert cleared.status_code == 200
+    assert cleared.json()["severity"] == "cleared"
+    assert cleared.json()["clearUserId"] == "demo-operator"
+
+    # step 8: retire — terminate then delete
     term = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/terminate")
     assert term.status_code == 200
     assert term.json()["state"] == "UNDEPLOYED"

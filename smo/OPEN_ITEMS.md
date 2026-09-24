@@ -2010,6 +2010,44 @@ own §1/§2 items stand as-is.
   FOCOM's Provisioning/Artifacts/Cluster/Infrastructure categories,
   CAPIF's Trusted Invokers registry), each already triaged against the
   pilot demo in the earlier demo-relevance pass.
+- **Pilot demo, Phase B: RAN NF OAM closed-loop.** Per the demo-relevance
+  triage's own conclusion — that the higher-leverage move for a Phase-1
+  pilot is exercising already-real, already-tested capabilities the demo
+  never actually calls, rather than building the confirmed-out-of-scope
+  large/structural items — `DEMO_RUNBOOK.md` never demonstrated RAN NF
+  OAM's real CM-write or alarm lifecycle at all. Building that surfaced a
+  genuine, previously undiscovered gap: `statemachine.py`'s
+  `EndpointHealth` FSM and `WriteConfigurationChanges`/alarm routes were
+  all real and fully unit-tested, but **no route anywhere ever created an
+  `O1AdaptorEndpoint`/`ManagedEntity` row** — the `EndpointEvent.
+  DEREGISTERED`/`RE_REGISTERED` transitions exist in the FSM but are never
+  fired by anything, `docker-compose.yml`'s own comment on
+  `mock-o1-adaptor` names this exact gap, and
+  `docs/call-flows/03-config-write-with-schema-check.md` documents the
+  real LLD design intent (each ME's O1 Adaptor self-registers into the
+  MnS Registry NRM, Option A, LLD section 1) as never implemented as an
+  HTTP route — `OPEN_ITEMS.md` had already confirmed the full MnS
+  Registry NRM polling mechanism itself as an elided Phase-1 scope cut,
+  but even the minimal self-registration entry point was missing. Closed
+  with a new `POST /o1-adaptor-endpoints` route (`ran-nf-oam/app/main.py`)
+  that creates both rows and starts the endpoint at the FSM's real
+  `DISCOVERED` state (matching `build_endpoint_health_fsm()`'s own
+  starting state, not `ACTIVE` — a first heartbeat is still required to
+  reach `ACTIVE`, exactly as the existing heartbeat tests already
+  expected). No schema change beyond the route itself — both tables
+  already existed. `DEMO_RUNBOOK.md` gained a new "RAN NF OAM closed-loop"
+  section (register endpoint → heartbeat to `ACTIVE` → dispatch a real
+  `POST /config-jobs` CM write → confirm via both the job status and the
+  mock O1 Adaptor's own applied-config endpoint → ingest an alarm → ack →
+  clear), and `tests_integration/test_demo_runbook.py` gained a matching
+  step proving the whole sequence against real routes end to end. 478
+  tests total, up from 475 (`ran-nf-oam`: 39 -> 42). Verified against a
+  real local Postgres 16 instance (no schema/model change, so
+  `check_migration_matches_models.py` passes as expected — 58 tables, 0
+  mismatches). First of three sequential demo-expansion passes (Phase C:
+  FOCOM resource management; Phase D: Policy Mgmt intent automation) per
+  explicit user direction to dig into the large/structural triage further
+  by building it into the pilot demo's use case.
 
 ## Suggested next pass (priority order)
 

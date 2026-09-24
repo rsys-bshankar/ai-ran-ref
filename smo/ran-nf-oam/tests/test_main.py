@@ -218,6 +218,58 @@ def test_discover_endpoints_ignores_an_endpoint_that_has_never_heartbeated(clien
     db.close()
 
 
+def test_register_o1_adaptor_endpoint_creates_endpoint_and_managed_entity(client, db_session_factory):
+    """RAN NF OAM LLD section 1's own design intent ("per ME's O1 Adaptor
+    registers itself into the MnS Registry NRM") previously had no real
+    route anywhere in this build — the whole registry could only ever be
+    populated by a test fixture reaching directly into the DB.
+    """
+    resp = client.post("/o1-adaptor-endpoints", json={
+        "managedElementRef": "ME-2", "adaptorUri": "http://mock-o1-adaptor:8000/edit-config",
+        "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU",
+    })
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["managedElementRef"] == "ME-2"
+    assert body["healthStatus"] == "DISCOVERED"
+
+    db = db_session_factory()
+    ep = db.query(O1AdaptorEndpoint).filter_by(managed_element_ref="ME-2").one()
+    assert ep.adaptor_uri == "http://mock-o1-adaptor:8000/edit-config"
+    assert ep.protocol_support == ["NETCONF"]
+    me = db.get(ManagedEntity, "ME-2")
+    assert me.entity_type == "O-DU"
+    assert me.o1_protocol == "NETCONF"
+    assert me.o1_adaptor_endpoint_id == ep.endpoint_id
+    db.close()
+
+
+def test_register_o1_adaptor_endpoint_starts_discovered_not_active(client, db_session_factory):
+    """A fresh registration hasn't heartbeated yet — DISCOVERED is the
+    FSM's own real starting state, not the model column's own default
+    (ACTIVE, kept for other callers' test convenience).
+    """
+    client.post("/o1-adaptor-endpoints", json={
+        "managedElementRef": "ME-3", "adaptorUri": "http://mock-o1-adaptor:8000/edit-config",
+        "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-CU",
+    })
+    db = db_session_factory()
+    ep = db.query(O1AdaptorEndpoint).filter_by(managed_element_ref="ME-3").one()
+    assert ep.health_status == "DISCOVERED"
+    db.close()
+
+
+def test_registered_endpoint_can_then_heartbeat_to_active(client, db_session_factory):
+    reg = client.post("/o1-adaptor-endpoints", json={
+        "managedElementRef": "ME-4", "adaptorUri": "http://mock-o1-adaptor:8000/edit-config",
+        "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU",
+    }).json()
+
+    resp = client.post(f"/o1-adaptor-endpoints/{reg['endpointId']}/heartbeat")
+    assert resp.status_code == 200
+    assert resp.json()["healthStatus"] == "ACTIVE"
+
+
 def test_subscribe_pm_persists_and_returns_granularity_period(client, db_session_factory, monkeypatch):
     """SPEC_AUDIT.md item 4: TS28550_PerfMeasJobCtrlMnS.yaml's
     granularityPeriod (the sampling interval), previously absent

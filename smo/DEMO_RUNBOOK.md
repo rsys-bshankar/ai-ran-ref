@@ -246,7 +246,100 @@ print(r.status_code, r.json())
 "
 ```
 
-## 7. Retire it — Terminate, then Delete
+## 7. RAN NF OAM closed-loop (optional) — a real CM write and fault lifecycle
+
+Independent of the sample rApp instance above — this shows the
+platform's own RAN-facing capability: a managed RAN function actually
+being reconfigured and reporting a fault, the core "AI-RAN" story.
+Register a managed element behind the mock O1 Adaptor (this build's own
+NETCONF-shaped test double for a real O1 network element,
+`mock-o1-adaptor:8000/edit-config` — `docker-compose.yml`'s own comment
+on that service names this exact gap: no ME had ever been registered
+against it until now):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ran-nf-oam:8000/o1-adaptor-endpoints', json={
+    'managedElementRef': 'demo-o-du-1', 'adaptorUri': 'http://mock-o1-adaptor:8000/edit-config',
+    'protocolSupport': ['NETCONF'], 'o1Protocol': 'NETCONF', 'entityType': 'O-DU',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the returned `endpointId` — health starts `DISCOVERED`. Heartbeat
+it to `ACTIVE` (a real O1 Adaptor would do this on its own timer):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ran-nf-oam:8000/o1-adaptor-endpoints/<endpointId>/heartbeat')
+print(r.status_code, r.json())
+"
+```
+
+**Dispatch a real CM write** — `WriteConfigurationChanges` decomposes
+this into a real NETCONF `<edit-config>` RPC sent to the mock O1
+Adaptor (`netconf_client.py`), not a stub:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ran-nf-oam:8000/config-jobs', json={
+    'requestedBy': 'hello-world-rapp', 'scope': 'cell',
+    'changes': [{'managedElementRef': 'demo-o-du-1', 'attributeChanges': {'adminState': 'UNLOCKED'}}],
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `jobId`. Confirm the sub-change actually reached the mock O1
+Adaptor and applied:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://ran-nf-oam:8000/config-jobs/<jobId>')
+print(r.status_code, r.json())
+r2 = httpx.get('http://mock-o1-adaptor:8000/edit-config/demo-o-du-1')
+print(r2.status_code, r2.json())
+"
+```
+
+`status` should be `COMPLETED`, the sub-change `APPLIED`, and the mock
+adaptor's own record shows the real applied attribute change.
+
+**Raise, acknowledge, and clear a fault alarm** on the same ME:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ran-nf-oam:8000/alarms/ingest', params={
+    'source_alarm_id': 'demo-alarm-1', 'managed_element_ref': 'demo-o-du-1',
+    'severity': 'major', 'alarm_type': 'EQUIPMENT_ALARM',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `alarmId`, then acknowledge and clear it:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.patch('http://ran-nf-oam:8000/alarms/<alarmId>/ack', params={'new_state': 'ACKNOWLEDGED', 'ack_user_id': 'demo-operator'})
+print(r.status_code, r.json())
+r2 = httpx.patch('http://ran-nf-oam:8000/alarms/<alarmId>/clear', params={'clear_user_id': 'demo-operator'})
+print(r2.status_code, r2.json())
+"
+```
+
+`severity` on the cleared alarm should read `cleared`, with
+`ackUserId`/`clearUserId`/`changedAt` all populated — a full fault
+lifecycle against real, persisted rows, not a mock.
+
+## 8. Retire it — Terminate, then Delete
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -267,8 +360,8 @@ print(r.status_code)
 ```
 
 204 with an empty body — the instance row is gone. The full lifecycle
-— onboard, deploy, bootstrap, register, operate, retire — is now
-complete against a real running stack.
+— onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
+loop, retire — is now complete against a real running stack.
 
 ## Known rough edges for a live walkthrough
 

@@ -14,6 +14,64 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "RegisterO1AdaptorEndpointRequest": {
+        "properties": {
+          "adaptorUri": {
+            "title": "Adaptoruri",
+            "type": "string"
+          },
+          "entityType": {
+            "title": "Entitytype",
+            "type": "string"
+          },
+          "managedElementRef": {
+            "title": "Managedelementref",
+            "type": "string"
+          },
+          "managedFunctionRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Managedfunctionref"
+          },
+          "o1Protocol": {
+            "title": "O1Protocol",
+            "type": "string"
+          },
+          "protocolSupport": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Protocolsupport",
+            "type": "array"
+          },
+          "vendorName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendorname"
+          }
+        },
+        "required": [
+          "managedElementRef",
+          "adaptorUri",
+          "protocolSupport",
+          "o1Protocol",
+          "entityType"
+        ],
+        "title": "RegisterO1AdaptorEndpointRequest",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -584,6 +642,43 @@
           }
         },
         "summary": "Health Check"
+      }
+    },
+    "/o1-adaptor-endpoints": {
+      "post": {
+        "description": "RAN NF OAM LLD section 1's own design intent (Option A,\n`docs/call-flows/03-config-write-with-schema-check.md`: \"per ME's O1\nAdaptor registers itself into the MnS Registry NRM\") had no concrete\nself-registration route anywhere in this build \u2014 the entire\n`O1AdaptorEndpoint`/`ManagedEntity` registry could previously only\never be populated by a test fixture reaching directly into the DB,\nnever by any real caller; even `endpoint_heartbeat` below implicitly\nassumed the row it pings already existed. `docker-compose.yml`'s own\ncomment on `mock-o1-adaptor` names this precisely: a real ME's\n`adaptor_uri` \"would point at http://mock-o1-adaptor:8000/edit-config\nonce one is ever registered against this service\" \u2014 until now, none\never was.\n\nReal MnS Registry NRM polling stays out of scope (no such registry\nexists in this build, OPEN_ITEMS.md's confirmed elision) \u2014 this is\nthe same honest, lighter self-registration-POST substitute already\nused everywhere else in this build (DME's producer registration,\nSME's provider/invoker registration): the O1 Adaptor itself POSTs\nits own existence here instead of a registry polling it.\n`health_status` starts at `DISCOVERED`, the FSM's own real starting\nstate (`statemachine.py`'s `ENDPOINT_HEALTH_FSM`) \u2014 not the model's\ncolumn default `ACTIVE` (chosen for other callers' test\nconvenience) \u2014 since a fresh registration hasn't heartbeated yet.",
+        "operationId": "register_o1_adaptor_endpoint_o1_adaptor_endpoints_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterO1AdaptorEndpointRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register O1 Adaptor Endpoint"
       }
     },
     "/o1-adaptor-endpoints/discover": {
