@@ -213,3 +213,30 @@ def list_instances(state: str | None = None, db: Session = Depends(get_session))
     if state:
         stmt = stmt.where(RAppInstance.state == state)
     return [{"instanceId": str(i.instance_id), "packageId": str(i.package_id), "state": i.state} for i in db.scalars(stmt).all()]
+
+
+@app.get("/instances/{instance_id}")
+def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 5: no single-instance detail read existed at
+    all — only the list route above and single-field sub-resources
+    (config via get_config/set_config). The reference's own
+    GET .../instance/{id} returns nested ACM/SME/DME resource records
+    (composition IDs, provider-function IDs, producer/consumer type
+    lists) — that part stays out of scope, unchanged: CreateInstance
+    never accepts that caller-supplied deploy descriptor in the first
+    place (real ACM/Helm/K8s deployment is the declared elision), so
+    echoing it back would mean inventing descriptor data, not exposing
+    something this build already computes. What this genuinely does
+    expose: workloadRef (the real NFO nfDeploymentId CreateInstance
+    received back — the one real resource reference this build tracks)
+    and the caller-supplied configuration, alongside the identity/state
+    fields list_instances already returns.
+    """
+    inst = db.get(RAppInstance, instance_id)
+    if inst is None:
+        raise HTTPException(status_code=404, detail="no such RAppInstance")
+    return {
+        "instanceId": str(inst.instance_id), "packageId": str(inst.package_id), "state": inst.state,
+        "workloadRef": inst.workload_ref, "configuration": inst.configuration,
+        "pendingUpgradeInstanceId": str(inst.pending_upgrade_instance_id) if inst.pending_upgrade_instance_id else None,
+    }

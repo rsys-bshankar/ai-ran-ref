@@ -96,7 +96,7 @@ done
 PYTHONPATH=shared python -m pytest tests_integration/ -v
 ```
 
-**405 tests total, all passing** as of this build: 395 unit tests across
+**407 tests total, all passing** as of this build: 397 unit tests across
 all fourteen modules plus the mock, and 10 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -422,7 +422,14 @@ exists anywhere in this build — genuinely deletes its A1 policies via
 the same real southbound call `delete_policy` itself uses. The
 reference's own `RICStatus` callback stays out of scope, since this
 build has no RIC-availability concept independent of the single A1
-mock.
+mock. `rapp-mgmt` went from 17 tests to 19 in the next pass: closed its
+missing resource-provenance detail gap, partially — added
+`GET /instances/{id}`, which previously didn't exist at all (only the
+list route and single-field sub-resources did). Genuinely exposes the
+real NFO `workloadRef` and caller-supplied `configuration`; the
+reference's own nested ACM/SME/DME resource records stay out of scope,
+since they're the caller-supplied deploy descriptor `CreateInstance`
+never accepts in the first place.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
