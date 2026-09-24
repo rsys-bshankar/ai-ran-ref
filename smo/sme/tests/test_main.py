@@ -2,6 +2,7 @@
 Run with: pytest smo/sme/tests -q
 """
 
+import datetime
 import uuid
 
 import pytest
@@ -13,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 from smo_shared.db import Base, get_session
 
 from app.main import app
-from app.models import ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile
+from app.models import InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile
 
 # Every test in this file registers services under one of these three
 # identities — pre-enrolling them here (via the real POST
@@ -29,6 +30,7 @@ def db_session_factory():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine, tables=[
         ServiceProfile.__table__, ServiceAuthzPolicy.__table__, ServiceEventSubscription.__table__, ProviderRegistration.__table__,
+        InvokerRegistration.__table__, IssuedAccessToken.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -494,3 +496,69 @@ def test_query_own_services_returns_existing_services_even_after_deregistration(
     resp = client.get("/published-apis/v1/rapp-99/service-apis")
     assert resp.status_code == 200
     assert len(resp.json()) == 1
+
+
+def test_register_invoker_creates_it(client):
+    resp = client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
+    assert resp.status_code == 201
+    assert resp.json() == {"apiInvokerId": "rapp-invoker-1"}
+
+
+def test_issue_token_succeeds_for_a_registered_invoker(client):
+    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
+    resp = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "rapp-invoker-1", "client_secret": "s3cret"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["token_type"] == "Bearer"
+    assert body["expires_in"] == 3600
+    assert body["access_token"]
+
+
+def test_issue_token_rejects_unregistered_invoker(client):
+    resp = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "does-not-exist", "client_secret": "whatever"})
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "invalid_client"
+
+
+def test_issue_token_rejects_wrong_secret(client):
+    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
+    resp = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "rapp-invoker-1", "client_secret": "wrong"})
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "unauthorized_client"
+
+
+def test_issue_token_rejects_unsupported_grant_type(client):
+    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
+    resp = client.post("/oauth2/token", json={"grant_type": "authorization_code", "client_id": "rapp-invoker-1", "client_secret": "s3cret"})
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "unsupported_grant_type"
+
+
+def test_introspect_active_token_reports_active_with_client_id(client):
+    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
+    token = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "rapp-invoker-1", "client_secret": "s3cret"}).json()["access_token"]
+
+    resp = client.post("/oauth2/introspect", json={"token": token})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["active"] is True
+    assert body["client_id"] == "rapp-invoker-1"
+
+
+def test_introspect_unknown_token_is_inactive(client):
+    resp = client.post("/oauth2/introspect", json={"token": "not-a-real-token"})
+    assert resp.status_code == 200
+    assert resp.json() == {"active": False}
+
+
+def test_introspect_expired_token_is_inactive(client, db_session_factory):
+    client.post("/invoker-registrations", json={"apiInvokerId": "rapp-invoker-1", "onboardingSecret": "s3cret"})
+    token = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": "rapp-invoker-1", "client_secret": "s3cret"}).json()["access_token"]
+
+    with db_session_factory() as session:
+        rec = session.get(IssuedAccessToken, token)
+        rec.expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)
+        session.commit()
+
+    resp = client.post("/oauth2/introspect", json={"token": token})
+    assert resp.json() == {"active": False}

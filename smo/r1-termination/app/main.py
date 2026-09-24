@@ -85,6 +85,9 @@ async def proxy(full_path: str, request: Request):
     if backend is None:
         return JSONResponse(status_code=404, content={"title": "NO_ROUTE", "status": 404})
 
+    if not await _authorized(request):
+        return JSONResponse(status_code=401, content={"title": "UNAUTHORIZED", "status": 401})
+
     # Strip the module prefix before forwarding — no backend service's own
     # routes carry it (e.g. SME's real route is /published-apis/v1/...,
     # never /sme/published-apis/v1/...). Forwarding the prefix through
@@ -92,10 +95,9 @@ async def proxy(full_path: str, request: Request):
     # building the cross-service integration test harness.
     rest_of_path = segments[1] if len(segments) > 1 else ""
 
-    # TLS is terminated at the ingress in front of this container (Phase 1: docker-compose
-    # network boundary); OAuth2.0 validation happens here before forwarding, per
-    # SMO Design v1.3 section 3.3's route table (auth: oauth2 on every backend route
-    # except /bootstrap).
+    # TLS is terminated at the ingress in front of this container (Phase 1:
+    # docker-compose network boundary) — everything past _authorized above
+    # is just forwarding the already-authenticated request.
     body = await request.body()
     async with httpx.AsyncClient() as client:
         upstream = await client.request(
@@ -106,3 +108,36 @@ async def proxy(full_path: str, request: Request):
             content=body,
         )
     return Response(content=upstream.content, status_code=upstream.status_code, headers=dict(upstream.headers))
+
+
+async def _authorized(request: Request) -> bool:
+    """OPEN_ITEMS.md section 2: "No real OAuth2/token enforcement at R1
+    Termination — only a comment and a tokenEndPoint URI in the bootstrap
+    response; no actual validation code path." This is that path, per
+    SMO Design v1.3 section 3.3's route table (auth: oauth2 on every
+    backend route except /bootstrap, which never calls this).
+
+    The reference's own token validation is self-contained signature
+    verification against a real, externally-issued signed JWT (Keycloak
+    — an external IdP this build doesn't run, the same
+    no-real-southbound-integration elision as everywhere else); SME's
+    own /oauth2/token issues an opaque token instead (see its own
+    docstring), so the honest substitute here is RFC 7662 token
+    INTROSPECTION — asking SME whether the token is still active — on
+    every proxied request. This is a security gate, not a best-effort
+    side effect: unlike this build's usual "unreachable callback never
+    fails the primary operation" pattern (DME/A1 Related notifications),
+    SME being unreachable here fails CLOSED (unauthorized), not open.
+    """
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return False
+    token = auth[len("bearer "):].strip()
+    if not token:
+        return False
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.request("POST", f"{ROUTES['/sme']}/oauth2/introspect", json={"token": token})
+        except httpx.HTTPError:
+            return False
+    return resp.status_code == 200 and resp.json().get("active") is True

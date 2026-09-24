@@ -1,6 +1,46 @@
 {
   "components": {
     "schemas": {
+      "AccessTokenRequest": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Secret"
+          },
+          "grant_type": {
+            "title": "Grant Type",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          }
+        },
+        "required": [
+          "grant_type",
+          "client_id"
+        ],
+        "title": "AccessTokenRequest",
+        "type": "object"
+      },
       "EventSubscriptionRequest": {
         "properties": {
           "apiIds": {
@@ -52,6 +92,37 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IntrospectRequest": {
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "IntrospectRequest",
+        "type": "object"
+      },
+      "InvokerRegistrationRequest": {
+        "properties": {
+          "apiInvokerId": {
+            "title": "Apiinvokerid",
+            "type": "string"
+          },
+          "onboardingSecret": {
+            "title": "Onboardingsecret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "apiInvokerId",
+          "onboardingSecret"
+        ],
+        "title": "InvokerRegistrationRequest",
         "type": "object"
       },
       "ProviderRegistrationRequest": {
@@ -307,6 +378,117 @@
           }
         },
         "summary": "Unsubscribe Events"
+      }
+    },
+    "/invoker-registrations": {
+      "post": {
+        "description": "OPEN_ITEMS.md section 2: API Invoker onboarding\n(`invokermanagement.go`'s `InvokerManager`) \u2014 the real registry the\nSecurity/token API's own `IsInvokerRegistered`/`VerifyInvokerSecret`\ngate needs, entirely absent before this pass. Idempotent\nupdate-in-place on a re-registration of the same `apiInvokerId`, the\nsame shape `register_provider`/`register_service` already use.",
+        "operationId": "register_invoker_invoker_registrations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvokerRegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Invoker"
+      }
+    },
+    "/oauth2/introspect": {
+      "post": {
+        "description": "RFC 7662 \u2014 the honest substitute for the reference's own\nself-contained signed-JWT validation (see issue_access_token's own\ndocstring for why this build issues opaque tokens instead). R1\nTermination calls this on every proxied request to decide whether to\nforward it; an unauthenticated internal call, matching the same\nnetwork-isolation reasoning /bootstrap's own docstring already gives\nfor staying unauthenticated itself (SME<->R1 Termination traffic\nnever leaves the docker-compose network).",
+        "operationId": "introspect_token_oauth2_introspect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntrospectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Introspect Token"
+      }
+    },
+    "/oauth2/token": {
+      "post": {
+        "description": "OPEN_ITEMS.md section 2: \"no actual validation code path\" for\nR1 Termination's advertised tokenEndPoint \u2014 this is that endpoint,\nfinally real. Mirrors `PostSecuritiesSecurityIdToken`\n(`securityservice.go`)'s real request/response shape (`client_id`/\n`client_secret`/`grant_type`/`scope`, `access_token`/`expires_in`/\n`token_type`/`scope`) and its real two checks\n(`IsInvokerRegistered`, `VerifyInvokerSecret`) \u2014 400 on either\nfailure, same as the reference. The reference then delegates actual\nJWT signing to an external Keycloak instance; this build has no real\nIdP, so it issues its own opaque, server-tracked token instead (see\n`IssuedAccessToken`). Per-scope AEF/API validation\n(`IsFunctionRegistered`/`IsAPIPublished`) stays out of scope \u2014 this\nbuild elides fine-grained AuthZ throughout (e.g. `create_policy`'s\nown docstring), so `scope` is accepted and echoed back, never\nchecked against what's actually published.",
+        "operationId": "issue_access_token_oauth2_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccessTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Access Token"
       }
     },
     "/provider-registrations": {

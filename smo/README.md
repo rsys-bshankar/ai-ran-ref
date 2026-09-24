@@ -106,7 +106,7 @@ PYTHONPATH=shared python -m pytest tests_integration/ -v
 PYTHONPATH=shared python scripts/generate_openapi_specs.py
 ```
 
-**417 tests total, all passing** as of this build: 405 unit tests across
+**430 tests total, all passing** as of this build: 418 unit tests across
 all fourteen modules plus the mock, and 12 integration tests proving real
 cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -460,7 +460,16 @@ HTTP methods) got a non-deterministic `operationId` from FastAPI's own
 `generate_unique_id()`, which picks the first element of a plain `set`
 — hash-seed-dependent, so the "committed" schema would never have
 stayed stable. Fixed with an explicit `operation_id`. Integration
-suite: 10 tests to 12.
+suite: 10 tests to 12. Per the user's explicit direction to revisit
+previously-declared Phase-1 boundaries, the next pass closed "no real
+OAuth2/token enforcement at R1 Termination," partially: a real, minimal
+API Invoker registry, a real `POST /oauth2/token` (client_credentials,
+genuinely checked secret), and `POST /oauth2/introspect` (RFC 7662 —
+the honest substitute for the reference's own externally-signed-JWT
+validation, which needs a Keycloak instance this build doesn't run). R1
+Termination now genuinely enforces this on every proxied request,
+failing closed if SME is unreachable. `sme` went from 37 tests to 45;
+`r1-termination` from 10 to 15.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
@@ -479,12 +488,14 @@ registration/supervision (§5) — the first place this build ever computed
 an elapsed time: SQLite round-trips a `DateTime(timezone=True)` column as
 a naive `datetime` (no `tzinfo`), while Postgres returns one already
 tz-aware; subtracting `datetime.now(datetime.UTC)` from a naive value
-raises `TypeError`. Handled locally in `a1-related/app/main.py`'s
-`_as_utc()` (treat a naive value as UTC, since that's what's always
-written), not in `make_test_engine()` — this one isn't SQLite-serializer
-machinery, it's a per-column read-time normalization any future
-elapsed-time computation on a `DateTime(timezone=True)` column will need
-to repeat.
+raises `TypeError`. Originally handled locally in
+`a1-related/app/main.py`'s own `_as_utc()` (treat a naive value as UTC,
+since that's what's always written); needed a second time by `sme`'s
+issued-access-token expiry check, so now lives in
+`shared/smo_shared/timeutil.py`'s `as_utc()` instead — not in
+`make_test_engine()`, since this isn't SQLite-serializer machinery, it's
+a per-column read-time normalization any future elapsed-time computation
+on a `DateTime(timezone=True)` column needs to call.
 
 ### Real bugs this pass found (not hypothetical — each had a failing test until fixed)
 

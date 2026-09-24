@@ -54,6 +54,24 @@ CREATE TABLE provider_registration (
   provider_domain_info     TEXT
 );
 
+-- NEW section 2: API Invoker onboarding (invokermanagement.go) — the
+-- real registry the Security/token API's own IsInvokerRegistered/
+-- VerifyInvokerSecret gate needs.
+CREATE TABLE invoker_registration (
+  api_invoker_id       TEXT PRIMARY KEY,
+  onboarding_secret       TEXT NOT NULL
+);
+
+-- NEW section 2: opaque, server-tracked bearer tokens — the honest
+-- substitute for the reference's own externally-signed JWT (Keycloak,
+-- an external IdP this build doesn't run). Validated by R1 Termination
+-- via POST /oauth2/introspect on every proxied request.
+CREATE TABLE issued_access_token (
+  access_token       TEXT PRIMARY KEY,
+  api_invoker_id       TEXT NOT NULL,
+  expires_at             TIMESTAMPTZ NOT NULL
+);
+
 -- ============================================================
 -- Foundational Platform: DME  (Foundational Platform LLD section 3.8)
 -- ============================================================

@@ -71,9 +71,36 @@ the ambiguity into code.
 - **No real southbound integrations beyond the A1 mock** — O1 Adaptor
   `PATCH` calls, actual `docker run` invocations, etc. are all elided in
   favor of recording the correct state transition.
-- **No real OAuth2/token enforcement at R1 Termination** — only a comment
-  and a `tokenEndPoint` URI in the bootstrap response; no actual
-  validation code path.
+- ~~**No real OAuth2/token enforcement at R1 Termination** — only a
+  comment and a `tokenEndPoint` URI in the bootstrap response; no actual
+  validation code path.~~ — **closed, partially.** The reference's own
+  Security/token API (`securityservice.go`'s
+  `PostSecuritiesSecurityIdToken`) needs a real API Invoker onboarding
+  registry (`invokermanagement.go`) as its own prerequisite — also
+  entirely unmodeled before this pass. Added both, minimally: a real
+  `InvokerRegistration` (`POST /invoker-registrations`, this build's own
+  flattened `apiInvokerId == consumerId == rAppId` identity, the same
+  adaptation `ProviderRegistration` already made for producers) and a
+  real `POST /oauth2/token` (client_credentials grant, genuinely checked
+  `client_id`/`client_secret` against that registry — 400 on either
+  failure, matching the reference's own two checks). The reference then
+  delegates actual JWT signing to an external Keycloak instance; this
+  build has no real IdP (the same no-real-southbound-integration elision
+  as everywhere else), so it issues its own opaque, server-tracked
+  bearer token instead, validated by a new `POST /oauth2/introspect`
+  (RFC 7662 — the honest substitute for self-contained JWT signature
+  verification). R1 Termination's gateway now genuinely enforces this on
+  every proxied request (`/bootstrap` stays the one exception, per its
+  own already-documented no-auth design) — a real, breaking change to an
+  already-shipped route, fully handled: it fails CLOSED if SME is
+  unreachable (a security gate, not a best-effort notification), and the
+  cross-service integration suite is unaffected since it deliberately
+  bypasses R1 Termination's own proxy mechanics (`tests_integration/mesh.py`'s
+  own documented scope choice). Deliberately **not** adopted: per-scope
+  AEF/API validation at token-issuance time (`IsFunctionRegistered`/
+  `IsAPIPublished`) — this build elides fine-grained AuthZ throughout, so
+  `scope` is accepted and echoed back, never checked against what's
+  actually published.
 - **RAN NF OAM's MnS Registry discovery is a heartbeat-aging stub**, not
   real registry polling.
 - ~~**No persisted OpenAPI spec files anywhere** — relying entirely on
@@ -152,19 +179,19 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
-| r1-termination | 10 |
 | policy-mgmt | 10 |
 | sa-smos | 12 |
 | so-smos | 13 |
+| r1-termination | 15 |
 | mock-near-rt-ric | 16 |
 | rapp-mgmt | 19 |
 | ran-analytics | 22 |
 | nfo | 23 |
 | ran-nf-oam | 29 |
 | onboarding | 30 |
-| sme | 37 |
 | focom | 37 |
 | a1-related | 43 |
+| sme | 45 |
 | ai-ml-workflow | 49 |
 | dme | 55 |
 
@@ -1490,6 +1517,21 @@ own §1/§2 items stand as-is.
   had already been closed by the NFO+FOCOM §5 pass and was never marked
   as such. 417 tests total, up from 415 (2 new integration tests; no
   module's unit count changed).
+- Per the user's explicit direction to revisit previously-declared
+  Phase-1 boundaries rather than stop, closed §2's "no real OAuth2/token
+  enforcement at R1 Termination," partially: a real, minimal API Invoker
+  registry (`InvokerRegistration`) plus a real `POST /oauth2/token`
+  (client_credentials, genuinely checked secret) and `POST
+  /oauth2/introspect` (RFC 7662 — the honest substitute for the
+  reference's own externally-signed-JWT/Keycloak validation, an external
+  IdP this build doesn't run). R1 Termination's gateway now genuinely
+  enforces this on every proxied request, failing closed if SME is
+  unreachable; the cross-service integration suite is unaffected since
+  it deliberately bypasses R1 Termination's own proxy mechanics. Also
+  extracted `smo_shared/timeutil.py`'s `as_utc()` from A1 Related's own
+  local copy, now needed a second time for `IssuedAccessToken`'s expiry
+  check. 430 tests total, up from 417 (`sme` alone: 37 -> 45;
+  `r1-termination` alone: 10 -> 15).
 
 ## Suggested next pass (priority order)
 
