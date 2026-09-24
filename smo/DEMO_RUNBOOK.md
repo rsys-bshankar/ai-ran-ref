@@ -1018,7 +1018,72 @@ print(r.status_code)
 "
 ```
 
-## 15. Retire it — Terminate, then Delete
+## 15. SO SMOS (optional) — a real multi-step order, fail-fast, cancel
+
+Independent of the sample rApp instance above — this exercises SO
+SMOS's own real dispatch table (SO/SA SMOS LLD section 1): a single
+order's steps are dispatched in sequence to whichever downstream
+module each `stepType`/`targetModule` pair maps to, over the real R1
+client — not a placeholder. Section 1.1's own design decision is
+**fail-fast**: the first failed step halts the order; every step after
+it stays `PENDING`, never attempted; completed steps are not
+auto-rolled-back (no compensating-transaction mechanism exists in
+Phase 1).
+
+Submit a 3-step order — a real `FOCOM` provision, a `POLICY` step
+against a policy type A1 Related doesn't recognize (a genuine
+downstream rejection, not a scripted one), and a `TRAINING` step that
+should never actually be attempted:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://so-smos:8000/orders', json={
+    'scope': 'demo-multi-step-order',
+    'steps': [
+        {'stepType': 'INFRA', 'targetModule': 'FOCOM', 'spec': {'resourceTypeId': 'gpu-l40', 'description': 'SO SMOS provisioned node'}},
+        {'stepType': 'POLICY', 'targetModule': 'A1_RELATED', 'policyTypeId': 'NOT_A_REAL_POLICY_TYPE',
+         'policyObject': {'scope': {'cellId': 'demo-cell-1'}}, 'nearRtRicId': 'mock-near-rt-ric-001'},
+        {'stepType': 'TRAINING', 'targetModule': 'AI_ML_WORKFLOW', 'producerId': 'hello-world-rapp'},
+    ],
+})
+print(r.status_code, r.json())
+"
+```
+
+The response shows all three steps' real outcomes in one call: step 1
+`COMPLETED` (a genuine new `Resource` row now exists in FOCOM), step 2
+`FAILED` (A1 Related's own real `POLICY_TYPE_NOT_SUPPORTED` rejection,
+surfaced as `DownstreamError` — SO SMOS's own dispatch layer
+distinguishes this from a transport failure, per its own docstring on
+a real bug this caught: a downstream error response was previously
+recorded as `COMPLETED` with the error body as the "result"), and step
+3 `PENDING` — the order halted before `AI_ML_WORKFLOW` was ever
+dispatched to. Note the `orderId`, then confirm the persisted state:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://so-smos:8000/orders/<orderId>')
+print(r.status_code, r.json())
+"
+```
+
+**Cancel** the order — the real, genuinely-tested fix (this route used
+to silently never persist the cancellation at all, since mutating a
+plain JSON column's list in place is invisible to SQLAlchemy's change
+tracking) turns the still-`PENDING` step `CANCELLED`, leaving the
+already-`COMPLETED`/`FAILED` steps untouched:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://so-smos:8000/orders/<orderId>/cancel')
+print(r.status_code, r.json())
+"
+```
+
+## 16. Retire it — Terminate, then Delete
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1042,7 +1107,7 @@ print(r.status_code)
 — onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
 loop, FOCOM resource management, FOCOM FCAPS, Policy Mgmt intent
 automation, A1 Policy Management, SME Trusted Invokers, AI/ML Workflow,
-RAN Analytics, retire — is now complete against a
+RAN Analytics, SO SMOS, retire — is now complete against a
 real running
 stack.
 
