@@ -246,7 +246,68 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     del_rmih = mesh["policy-mgmt"].delete("/intent-handling-functions/so-smos")
     assert del_rmih.status_code == 204
 
-    # step 10: retire — terminate then delete
+    # step 10: A1 Policy Management — register a service, create a real
+    # policy against the mock Near-RT RIC, observe a real duplicate-
+    # content rejection, observe a real status-change notification,
+    # retract. Intercepted at the same httpx.post call
+    # _notify_policy_status_subscribers makes, same technique as steps
+    # 8-9 above.
+    policy_notifications = []
+    real_post_3 = httpx.post
+
+    def fake_post_3(location, json=None, timeout=None, **kwargs):
+        if location == "http://demo-consumer:9000/policy-status":
+            policy_notifications.append(json)
+            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
+        return real_post_3(location, json=json, timeout=timeout, **kwargs)
+
+    monkeypatch.setattr(loaded_apps["a1-related"].httpx, "post", fake_post_3)
+
+    service = mesh["a1-related"].put("/services", json={"serviceId": "hello-world-rapp", "keepAliveIntervalSeconds": 0})
+    assert service.status_code == 200
+
+    policy_types = mesh["a1-related"].get("/policy-types")
+    assert policy_types.status_code == 200
+    assert any(t["policyTypeId"] == "ORAN_QoSandTSP_6.0.1" for t in policy_types.json())
+
+    policy_object = {"scope": {"cellId": "demo-cell-1"}, "qosObjectives": {"gfbr": 100}}
+    policy = mesh["a1-related"].post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": policy_object,
+        "nearRtRicId": "mock-near-rt-ric-001", "creatorId": "hello-world-rapp",
+    })
+    assert policy.status_code == 201
+    assert policy.json()["enforcementStatus"] == "ENFORCED"
+    policy_id = policy.json()["policyId"]
+
+    sub = mesh["a1-related"].post("/policies/subscriptions", json={
+        "notificationDestination": "http://demo-consumer:9000/policy-status", "policyIdList": [policy_id],
+    })
+    assert sub.status_code == 201
+
+    duplicate = mesh["a1-related"].post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": policy_object,
+        "nearRtRicId": "mock-near-rt-ric-001", "creatorId": "hello-world-rapp",
+    })
+    assert duplicate.status_code == 201
+    assert duplicate.json()["enforcementStatus"] == "REJECTED"
+    duplicate_policy_id = duplicate.json()["policyId"]
+
+    updated = mesh["a1-related"].put(f"/policies/{policy_id}", json={})
+    assert updated.status_code == 200
+    assert updated.json()["enforcementStatus"] == "REJECTED"
+
+    assert len(policy_notifications) == 1
+    assert policy_notifications[0]["policyId"] == policy_id
+    assert policy_notifications[0]["enforcementStatus"] == "REJECTED"
+
+    del_policy = mesh["a1-related"].delete(f"/policies/{policy_id}")
+    assert del_policy.status_code == 204
+    del_duplicate = mesh["a1-related"].delete(f"/policies/{duplicate_policy_id}")
+    assert del_duplicate.status_code == 204
+    del_service = mesh["a1-related"].delete("/services/hello-world-rapp")
+    assert del_service.status_code == 204
+
+    # step 11: retire — terminate then delete
     term = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/terminate")
     assert term.status_code == 200
     assert term.json()["state"] == "UNDEPLOYED"
