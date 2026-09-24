@@ -218,6 +218,38 @@ def test_discover_endpoints_ignores_an_endpoint_that_has_never_heartbeated(clien
     db.close()
 
 
+def test_subscribe_pm_persists_and_returns_granularity_period(client, db_session_factory, monkeypatch):
+    """SPEC_AUDIT.md item 4: TS28550_PerfMeasJobCtrlMnS.yaml's
+    granularityPeriod (the sampling interval), previously absent
+    entirely from PMSubscription — subscribe_pm's own docstring already
+    confirms the rest of that job-control shape (schedule/priority/
+    reportingPeriod) is a deliberate scope cut, but this one field is
+    needed by any real PM subscription regardless of wrapper shape.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: calls.append((path, json)))
+
+    resp = client.post("/pm-subscriptions", params={
+        "managed_element_ref": "ME-1", "counter_type": "PRB.Usage", "delivery_method": "pull", "granularity_period": 900,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["granularityPeriod"] == 900
+
+    db = db_session_factory()
+    sub = db.get(PMSubscription, uuid.UUID(resp.json()["subscriptionId"]))
+    assert sub.granularity_period == 900
+
+
+def test_subscribe_pm_without_granularity_period_defaults_to_null(client, db_session_factory, monkeypatch):
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+
+    resp = client.post("/pm-subscriptions", params={
+        "managed_element_ref": "ME-1", "counter_type": "PRB.Usage", "delivery_method": "pull",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["granularityPeriod"] is None
+
+
 def test_health_endpoint_answers_the_callback_url_subscribe_pm_registers(client):
     """OPEN_ITEMS.md section 5: subscribe_pm registers
     http://ran-nf-oam:8000/health as this producer's health-supervision

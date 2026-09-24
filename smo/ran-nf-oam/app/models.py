@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, JSON, String, Uuid
+from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, Integer, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -119,6 +119,15 @@ class PMSubscription(Base):
     counter_type: Mapped[str] = mapped_column(String, nullable=False)
     delivery_method: Mapped[str] = mapped_column(String, nullable=False)
     southbound_engine: Mapped[str] = mapped_column(String, nullable=False)
+    # SPEC_AUDIT.md item 4 (formerly 7): TS28550_PerfMeasJobCtrlMnS.yaml's
+    # measJobCreation-RequestType carries a granularityPeriod (the sampling
+    # interval, in seconds) alongside reportingPeriod/schedule/priority —
+    # subscribe_pm's own docstring already confirms most of that job-control
+    # shape is a deliberate scope cut (this is a DME-producer registration
+    # wrapper, not a real clause-8 PM job), but granularityPeriod is needed
+    # by any real PM subscription regardless of wrapper shape, and was
+    # fully absent. Nullable: optional in the real spec too.
+    granularity_period: Mapped[int | None] = mapped_column(Integer)
 
 
 class SoftwareManagementJob(Base):
