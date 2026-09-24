@@ -139,6 +139,14 @@ def terminate(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
         db.commit()
         return
     db.query(NFOCloudResource).filter_by(nf_deployment_id=nf_deployment_id).delete()
+    # LCMOperation.nf_deployment_id has a real FK, same as NFOCloudResource
+    # above — deleting the deployment without clearing its own operation
+    # history (including the TERMINATE row just added, still uncommitted)
+    # violates it. Never caught before: SQLite's test harness doesn't
+    # enforce FKs by default, so this only surfaced against a real
+    # Postgres instance, on a deployment with any prior LCMOperation row
+    # (every deployment always has at least one, from Instantiate).
+    db.query(LCMOperation).filter_by(nf_deployment_id=nf_deployment_id).delete()
     db.delete(d)
     db.commit()
 
