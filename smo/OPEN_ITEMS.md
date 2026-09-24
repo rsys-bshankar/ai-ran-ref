@@ -2290,6 +2290,25 @@ own §1/§2 items stand as-is.
   changed). Verified against a real local Postgres 16 instance (59
   tables, up from 58, 0 mismatches; a manual insert round-tripped the
   new JSONB `security_info` column). `sme` went from 49 tests to 66.
+- **Demo: AI/ML Workflow.** Third of the six-item follow-up sequence,
+  and the first of four modules never touched by any demo phase at
+  all. New `DEMO_RUNBOOK.md` section: register a model with real
+  metadata (`POST /models`, `REGISTERED`) → request training
+  (`POST /training-jobs`, fires the real `TRAIN` FSM event,
+  `REGISTERED -> TRAINING`) → upload a real artifact (`POST
+  /models/{id}/artifact`, genuinely round-trips through a
+  Postgres-backed `ModelArtifact` row — real S3 storage is the one
+  deliberate elision) → write real training metrics (`POST
+  /training-jobs/{id}/model-metrics`) → advance the model through its
+  real lifecycle FSM (`TRAINING_COMPLETE` → `VALIDATION_COMPLETE` →
+  `CERTIFY` → `LOAD` → `ACTIVATE`, five genuine transitions, not a
+  fast-forward) → download the artifact back and confirm the bytes
+  match → deregister (real cascade cleanup of the artifact/training-job
+  rows). `tests_integration/test_demo_runbook.py` gained a matching
+  step. No code, schema, or OpenAPI-spec change — confirmed via a full
+  local Postgres 16 pass (59 tables, 0 mismatches) and the
+  live-schema-match check, both green. Unit-test counts unchanged;
+  `tests_integration` stays at 16.
 
 ## Suggested next pass (priority order)
 
