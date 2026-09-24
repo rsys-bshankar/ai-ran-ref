@@ -127,7 +127,7 @@ PYTHONPATH=shared python scripts/generate_openapi_specs.py
 docker compose config --quiet
 ```
 
-**455 tests total, all passing** as of this build: 439 unit tests across
+**460 tests total, all passing** as of this build: 444 unit tests across
 all fourteen modules plus the two mocks, and 16 integration tests proving
 real cross-service wiring. Notably including: the cascade-delete guard (now
 actually reachable via `usage/start`/`usage/stop` — see "Real bugs"
@@ -595,7 +595,20 @@ confirms the rest of that job-control shape (schedule/priority/
 reportingPeriod) is a deliberate scope cut, but this one field is
 needed regardless of wrapper shape and was fully absent. Nullable,
 optional request param, no existing caller's shape changes.
-`ran-nf-oam` went from 37 tests to 39.
+`ran-nf-oam` went from 37 tests to 39. Next: items 5-6, Policy Mgmt's
+`intentHandlingScope` was untyped JSON never set or read, and `DELETE
+/intents/{id}` didn't exist at all. `TS28312_IntentNrm.yaml`'s
+`IntentHandlingScope` is a closed 2-value enum (RAN/CN) — now a
+Pydantic `Literal` on both `RegisterIntentHandlingFunction` (a real 422
+on an invalid value) and, as a new optional field, `CreateIntent`,
+where it pre-filters the existing `intentType` capability match (an
+RMIH whose declared scope doesn't cover the request is skipped; one
+with no declared scope still matches anything, so no existing caller's
+behavior changes). `DELETE /intents/{id}` closes the gap where an RMIO
+could only deactivate an Intent, never retract it — cascades to
+`IntentReport` the same way this build's other owned-child deletes
+already do, verified for real against a local Postgres 16 instance.
+`policy-mgmt` went from 10 tests to 15.
 
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 

@@ -1808,6 +1808,32 @@ own §1/§2 items stand as-is.
   Postgres 16 instance (migration applies cleanly,
   `check_migration_matches_models.py` passes, 58 tables). 455 tests
   total, up from 453 (`ran-nf-oam`: 37 -> 39).
+- **`SPEC_AUDIT.md` items 5-6: Policy Mgmt's `intentHandlingScope`
+  was untyped JSON never set or read, and `DELETE /intents/{id}` didn't
+  exist at all.** `TS28312_IntentNrm.yaml`'s `IntentHandlingScope` is a
+  closed 2-value enum (RAN/CN) on `IntentHandlingFunction-Single`; now
+  a Pydantic `Literal["RAN","CN"]` list on `RegisterIntentHandlingFunction`
+  (a real 422 on an invalid value, verified), threaded onto the model
+  (previously accepted by the model but never settable by any caller)
+  — and now actually consulted: `CreateIntent` gained the same closed
+  enum as an optional `intentHandlingScope` request field, used as a
+  pre-filter in `_matching_rmihs` alongside the existing `intentType`
+  capability match (an RMIH with a declared scope that doesn't cover
+  the request is skipped before the capability check even runs; an
+  RMIH with no declared scope, the pre-existing default, still matches
+  anything — no existing caller's behavior changes). `DELETE
+  /intents/{id}` closes the gap where an RMIO could only deactivate an
+  Intent (`UpdateIntentAdminState`), never retract it — idempotent on
+  an unknown id, matching `deregister_intent_handling_function`'s own
+  shape. Cascades to `IntentReport` (`intent_report.intent_id` gained
+  `ON DELETE CASCADE`, matching this build's established owned-child
+  delete pattern already used for `rapp_instance`/`aiml_model`/
+  `write_config_job`) — verified for real: inserted an `intent_report`
+  row against a real local Postgres 16 instance, deleted its parent
+  `intent` row directly, confirmed the report row was gone too (plus
+  the usual migration-applies-cleanly /
+  `check_migration_matches_models.py` / 58-tables checks). 460 tests
+  total, up from 455 (`policy-mgmt`: 10 -> 15).
 
 ## Suggested next pass (priority order)
 
