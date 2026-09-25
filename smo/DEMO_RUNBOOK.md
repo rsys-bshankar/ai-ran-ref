@@ -1203,7 +1203,42 @@ print(r.status_code, r.json())
 "
 ```
 
-## 17. Retire it — Terminate, then Delete
+## 17. Retire it — package priming lifecycle, Terminate, then Delete
+
+**Prime the package** — the reference's real
+`COMMISSIONED -> PRIMING -> PRIMED` lifecycle (our `AVAILABLE` plays
+the `COMMISSIONED` role), previously entirely absent from this
+runbook. Real ACM/DME/SME resource pre-provisioning behind it is out
+of scope, so both transitions fire within this one request:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://onboarding:8000/packages/<packageId>/prime')
+print(r.status_code, r.json())
+"
+```
+
+`state` is now `PRIMED`.
+
+**A real deprime refusal** — attempt to deprime it while the sample
+rApp's own instance (from step 3) is still deployed against it. This
+is the reference's own `deprimeRapp` guard ("Unable to deprime as
+there are active rapp instances"), backed by a real query against
+`PackageUsageRegistration`, not a scripted failure:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://onboarding:8000/packages/<packageId>/deprime')
+print(r.status_code, r.json())
+"
+```
+
+`409`, with `detail.title` = `SERVICE_NAME_CONFLICT` — the package
+stays `PRIMED`.
+
+Now terminate the instance:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1213,7 +1248,23 @@ print(r.status_code, r.json())
 "
 ```
 
-`state` should be `UNDEPLOYED`. Then the real, separate delete:
+`state` should be `UNDEPLOYED`. `TerminateInstance` also calls
+Onboarding's real `usage/stop` internally (rApp Mgmt LLD), closing the
+active usage registration the deprime guard above was reading.
+
+**Deprime again** — now genuinely succeeds, the same guard this time
+passing for real, not just a state flag flipped by hand:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://onboarding:8000/packages/<packageId>/deprime')
+print(r.status_code, r.json())
+"
+```
+
+`state` is back to `AVAILABLE`. Then the real, separate delete of the
+instance:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1227,9 +1278,8 @@ print(r.status_code)
 — onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
 loop, FOCOM resource management, FOCOM FCAPS, Policy Mgmt intent
 automation, A1 Policy Management, SME Trusted Invokers, AI/ML Workflow,
-RAN Analytics, SO SMOS, SA SMOS, retire — is now complete against a
-real running
-stack.
+RAN Analytics, SO SMOS, SA SMOS, package priming, retire — is now
+complete against a real running stack.
 
 ## Known rough edges for a live walkthrough
 

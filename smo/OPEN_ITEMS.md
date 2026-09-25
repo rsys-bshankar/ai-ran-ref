@@ -2423,59 +2423,90 @@ own §1/§2 items stand as-is.
   tests green. This closes the entire six-item follow-up sequence:
   FOCOM FCAPS depth, SME Trusted Invokers, AI/ML Workflow, RAN
   Analytics, SO SMOS, and SA SMOS are now all demoed.
+- **§5 audit: every module's repo-audited completeness gap confirmed
+  closed.** Before picking a new §5 item per the user's explicit
+  direction ("the remaining §5 O-RAN-SC completeness gaps
+  (module-by-module, each independently scoped)"), re-read every
+  module's §5 section end to end to find the next one. Result: there
+  isn't one. Every bulleted gap across SME, DME, Onboarding + rApp
+  Management, RAN NF OAM, A1 Related, NFO + FOCOM, AI/ML Workflow, and
+  RAN Analytics is already struck through and marked **closed** (a
+  `grep` for any un-struck `- **` bullet in §5 confirms it — the only
+  hit is RAN Analytics' own explanatory "Confirms the Blueprint's
+  BUILD verdict" note, not a gap). §5 is fully closed, not just
+  "mostly." Pivoted to the second half of the same instruction instead
+  — more demo depth on an already-demoed module (see below).
+- **Demo depth: Onboarding's package priming lifecycle.** Real
+  `AVAILABLE -> PRIMING -> PRIMED -> DEPRIMING` lifecycle (§5, closed
+  an earlier pass) had never appeared in the demo runbook at all.
+  Extended §17 (Retire): prime the sample rApp's own package → a
+  genuine deprime refusal while its instance is still deployed (the
+  reference's own `deprimeRapp` guard, a real
+  `PackageUsageRegistration` query) → terminate the instance (which
+  itself calls Onboarding's real `usage/stop`) → deprime again, now
+  genuinely succeeding → delete the instance.
+  `tests_integration/test_demo_runbook.py` gained a matching step. No
+  code, schema, or OpenAPI-spec change to the app itself — but
+  grounding this against real Postgres surfaced a second, subtler
+  `tests_integration/` test-harness bug beyond the savepoint fix PR #86
+  already made: `expire_on_commit=True`'s default meant an outer
+  Session's own post-commit attribute read (rapp-mgmt's
+  `terminate_instance` building a URL from `inst.package_id` right
+  after committing `inst.state`) silently opened a *second*,
+  never-explicitly-committed implicit transaction on that Session; a
+  nested cross-service commit landing inside that window (Onboarding's
+  real `usage/stop`) got silently discarded the moment the outer
+  Session closed — no error, the deprime guard just kept seeing a
+  never-stopped registration. Confirmed purely a test-harness artifact
+  (the identical sequence already passes against a real local Postgres
+  instance) and fixed with `expire_on_commit=False` on
+  `tests_integration/conftest.py`'s `TestSession`. See `README.md`'s
+  "Real bugs this pass found" for both this pass's harness bug and
+  PR #86's two app bugs plus its first harness bug. Verified: full
+  local Postgres 16 pass (59 tables, 0 mismatches), live-schema-match
+  check green, all 16 modules' unit test suites green (unchanged, 480
+  total — no model/schema touched), all 16 integration tests green.
 
 ## Suggested next pass (priority order)
 
-1. **§5's repo-audited completeness gaps are now the priority backlog** —
-   unlike §1's remaining items, every one of these is concrete, scoped,
-   and buildable without a stakeholder call: a real reference
-   implementation was read and a specific missing operation/field/behavior
-   named. Within §5, the standout items — genuinely broken or misleading
-   as shipped, not just "thinner than the reference" — are worth taking
-   first:
-   - ~~`ran-nf-oam`'s and `a1-related`'s dangling `/health` callbacks
-     (`subscribe_pm` and `register_ei_type` each register a URL that
-     404s) — a one-route fix, done for both in the same pass since it's
-     the identical bug class.~~ — **closed.** Grepped every module for
-     the same pattern (`producerHealthCallbackUrl`/`health_callback`
-     self-registered against DME with no matching `/health` route) —
-     confirmed no other module has it; this bug class is fully closed
-     across the build, not just these two.
-   - ~~`a1-related`'s `SubscribePolicyStatus`/`UnsubscribePolicyStatus`
-     being complete no-ops with zero delivery anywhere in the stack.~~ —
-     **closed.** Real best-effort delivery on status change now exists;
-     `subscriptionScope`'s `OWN`/`OTHERS` filtering remains unhonored
-     (needs subscriber identity this build doesn't track — noted in §5
-     as a documented partial, not silently dropped).
-   - ~~`focom`'s `subscribe_inventory_changes` not actually subscribing
-     to anything (no callback param, no storage, no delivery).~~ —
-     **closed.** Real best-effort delivery on provision/deprovision;
-     the original type-unknown-at-delete partial is also resolved now
-     that a real `ResourceType`/`ResourcePool` schema exists (see
-     below).
-   - ~~`sme`'s `notify_service_change` never being called from the
-     routes that should trigger it (the delivery logic exists, it's
-     just dead code).~~ — **closed.** Wired into
-     `register_service`/`deregister_service`; also fixed the
-     function's own claimed-but-unenforced authz gate while wiring it
-     in.
-
-   All four standout items are now closed. Every module's missing
-   GET-by-id/list/query endpoints — `dme`, `a1-related`, `focom`,
-   `ai-ml-workflow`, and finally `ran-analytics` — are now closed too;
-   that recurring theme across §5 is done. Each module's remaining §5
-   items are independently pickable, module by module.
-2. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
+1. **§5 is now fully closed — confirmed, not assumed** (see the
+   "§5 audit" entry above). Every module's repo-audited completeness
+   gap has been read end to end and is struck through. Do not
+   re-survey it again without new O-RAN-SC reference content landing;
+   there is nothing left to pick there.
+2. **More demo depth is the best-scoped remaining backlog.** Real,
+   already-implemented functionality with zero demo visibility, ranked
+   by how self-contained each one is to add:
+   - `dme`'s type-subscription mechanism (`POST`/`GET`/
+     `DELETE /type-subscriptions`, §5-closed) — a consumer subscribing
+     to a `DmeType`'s registration/removal, never exercised.
+   - `nfo`+`focom`'s TEIV topology export (`GET /topology`, §5-closed)
+     — never called anywhere in the runbook.
+   - `sme`'s per-`apiId` event-subscription filtering (`SubscribeEvents`
+     `apiIds`, §5-closed) — only the type-only filtering path has ever
+     been demoed.
+   - `a1-related`'s service supervision sweep with a real, non-zero
+     `keepAliveIntervalSeconds` (§5-closed) — step 11 only ever
+     demoed `keepAliveIntervalSeconds: 0` (supervision disabled); the
+     real lazy-sweep-on-read auto-deregistration path has never fired
+     in the demo.
+   - `ai-ml-workflow`'s `FeatureGroup` CRUD (`POST`/`GET
+     /feature-groups`, §5-closed) — a whole entity added, never
+     touched by any demo phase.
+   - `sa-smos`'s `MLModelCoordinationGroup`-scoped remedial action (a
+     group-scoped `AssuranceMonitor` always dispatching a group
+     retrain via AI/ML Workflow, regardless of `actionType` —
+     already real and unit-tested) — only the `targetOrderId` path has
+     ever been demoed.
+3. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
    the alarm-storm correlation algorithm, and A1-ML operations — are not
    stakeholder-answerable the way the rest of that section was: the
    first two genuinely need real data (noise-floor data; a real
    correlation algorithm) that would otherwise be fabricated, and the
    third only needs revisiting if A1-ML's out-of-scope decision itself
    changes. Not blocked on a call, blocked on data or a scope change.
-3. `mock-near-rt-ric`/`r1-termination`/`policy-mgmt` (10 tests each) are
-   now the shallowest test-covered modules; `nfo`'s own real gap (the
-   thin deployment state machine, closed this pass) is done, not just a
-   coverage number. An earlier survey of the remaining shallow tier
-   found only 1-2 minor edge-case gaps each — already close to
-   thoroughly covered. Diminishing returns as a coverage pass; §5's
-   remaining items are a better next target.
+4. `mock-near-rt-ric`/`r1-termination`/`policy-mgmt` (10 tests each) are
+   the shallowest test-covered modules; an earlier survey of the
+   remaining shallow tier found only 1-2 minor edge-case gaps each —
+   already close to thoroughly covered. Diminishing returns as a
+   coverage pass; more demo depth (above) is a better next target.

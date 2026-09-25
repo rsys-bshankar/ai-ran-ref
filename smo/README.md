@@ -902,6 +902,35 @@ below for all three. This closes the entire six-item follow-up
 sequence: FOCOM FCAPS depth, SME Trusted Invokers, AI/ML Workflow, RAN
 Analytics, SO SMOS, and SA SMOS are now all demoed.
 
+**Demo depth: Onboarding's package priming lifecycle.** With the
+six-item sequence done, and `OPEN_ITEMS.md` §5's full repo-audited
+completeness backlog now confirmed fully closed (every module — SME,
+DME, Onboarding+rApp Mgmt, RAN NF OAM, A1 Related, NFO+FOCOM, AI/ML
+Workflow, RAN Analytics — checked directly, not one open item left),
+this picks up the "more demo depth" thread instead. Onboarding's real
+`AVAILABLE -> PRIMING -> PRIMED -> DEPRIMING` lifecycle (our
+`AVAILABLE` playing the reference's `COMMISSIONED` role) was built in
+an earlier pass but had never appeared in the demo at all. Extended
+§17 (Retire): prime the sample rApp's own package → attempt to
+deprime it while its instance is still deployed, a genuine refusal
+(the reference's own `deprimeRapp` guard, a real query against
+`PackageUsageRegistration`, not a scripted failure) → terminate the
+instance (which itself calls Onboarding's real `usage/stop`) → deprime
+again, now genuinely succeeding, the same guard passing for real →
+delete the instance. `tests_integration/test_demo_runbook.py` gained a
+matching step. No code, schema, or OpenAPI-spec change to the app
+itself.
+
+Grounding this against real Postgres surfaced a second, subtler
+test-harness bug beyond the one PR #86 already fixed — see "Real bugs"
+below (`tests_integration/conftest.py`'s `expire_on_commit=False` fix):
+a nested cross-service commit could be silently discarded by an outer
+Session's own implicit rollback on close, with no error of any kind,
+purely a SQLite `StaticPool`-sharing artifact. Confirmed and fixed the
+same way as before — the identical sequence already passed cleanly
+against a real local Postgres instance before this test-harness fix
+even landed.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style
@@ -1078,6 +1107,25 @@ Writing the tests, not just the code, is what surfaced these:
   one shared Connection via `join_transaction_mode="create_savepoint"`,
   so nested Sessions share the one real transaction through SAVEPOINT
   nesting instead of colliding.
+- **That same savepoint fix had a second, subtler hole in it** — a
+  nested cross-service commit could still be silently discarded, with
+  no error at all. Root cause: SQLAlchemy's default
+  `expire_on_commit=True` means any attribute read on an outer
+  Session's object *after* its own `commit()` (e.g. rapp-mgmt's
+  `terminate_instance` building a URL from `inst.package_id` right
+  after committing `inst.state`) silently opens a *second* implicit
+  transaction (a new, unreleased savepoint) on that same Session. If a
+  nested cross-service call then commits — releasing its own savepoint
+  into that still-open second one, since savepoints stack — before the
+  outer Session is closed, `Session.close()`'s own implicit rollback of
+  that never-explicitly-committed second savepoint takes the nested
+  commit down with it. Caught concretely: Onboarding's real deprime
+  guard kept refusing even after `TerminateInstance`'s own real
+  `usage/stop` call had genuinely returned `200`. Confirmed purely a
+  test-harness artifact the same way as the bug above (the identical
+  prime/deprime/terminate sequence already passes against a real local
+  Postgres instance). Fixed with `expire_on_commit=False` on
+  `tests_integration/conftest.py`'s `TestSession`.
 
 ## What's deliberately incomplete
 

@@ -561,10 +561,28 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert cancelled_steps[1]["status"] == "FAILED"
     assert cancelled_steps[2]["status"] == "CANCELLED"
 
-    # step 17: retire — terminate then delete
+    # step 17: retire — the real package priming lifecycle (COMMISSIONED-
+    # equivalent AVAILABLE -> PRIMING -> PRIMED), a genuine deprime
+    # refusal while the sample rApp's own instance is still deployed
+    # (the reference's own deprimeRapp guard, a real query against
+    # PackageUsageRegistration), terminate (which itself calls
+    # Onboarding's real usage/stop), then deprime succeeding for real,
+    # then terminate/delete.
+    primed = mesh["onboarding"].post(f"/packages/{package_id}/prime")
+    assert primed.status_code == 200
+    assert primed.json()["state"] == "PRIMED"
+
+    blocked_deprime = mesh["onboarding"].post(f"/packages/{package_id}/deprime")
+    assert blocked_deprime.status_code == 409
+    assert blocked_deprime.json()["detail"]["title"] == "SERVICE_NAME_CONFLICT"
+
     term = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/terminate")
     assert term.status_code == 200
     assert term.json()["state"] == "UNDEPLOYED"
+
+    deprimed = mesh["onboarding"].post(f"/packages/{package_id}/deprime")
+    assert deprimed.status_code == 200
+    assert deprimed.json()["state"] == "AVAILABLE"
 
     delete = mesh["rapp-mgmt"].delete(f"/instances/{instance_id}")
     assert delete.status_code == 204
