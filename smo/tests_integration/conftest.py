@@ -97,8 +97,24 @@ def mesh(loaded_apps, db_connection, monkeypatch):
     `db_connection`'s own docstring for why every per-request Session
     binds to that one shared connection rather than `shared_engine`
     directly.
+
+    `expire_on_commit=False` closes a second, subtler bug the savepoint
+    fix alone didn't: SQLAlchemy's default `expire_on_commit=True` means
+    any attribute read on an outer Session's object AFTER its own
+    commit() (e.g. rapp-mgmt's `terminate_instance` building a URL from
+    `inst.package_id` right after committing `inst.state`) silently
+    starts a SECOND implicit transaction on that Session — a new,
+    unreleased savepoint. If a nested cross-service call then commits
+    (releasing ITS OWN savepoint into that still-open second one) before
+    the outer Session is closed, `Session.close()`'s own implicit
+    rollback of that never-explicitly-committed second savepoint takes
+    the nested commit down with it — silently, no exception, the nested
+    write just never happened as far as any later Session can see. Caught
+    the same way as the fix above: confirmed purely a test-harness
+    artifact (the identical onboarding-prime/deprime/terminate sequence
+    passes against a real local Postgres instance) before fixing it here.
     """
-    TestSession = sessionmaker(bind=db_connection, join_transaction_mode="create_savepoint")
+    TestSession = sessionmaker(bind=db_connection, join_transaction_mode="create_savepoint", expire_on_commit=False)
 
     def override_get_session():
         session = TestSession()
