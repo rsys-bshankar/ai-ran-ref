@@ -20,6 +20,16 @@ from .models import DeploymentManager, InventorySubscription, OCloudAlarm, OClou
 
 app = FastAPI(title="FOCOM SMOS (O2ims)")
 
+
+@app.get("/health")
+def health_check():
+    """Liveness probe. The GUI BFF's GET /modules/status fans out to
+    /<module>/health through R1 Termination for every module in parallel,
+    so every module answers one — previously only ran-nf-oam/a1-related
+    did (as their own DME producer-health callback URL).
+    """
+    return {"status": "healthy"}
+
 PHASE1_CLUSTER_ID = "phase1-degenerate-cluster"
 PHASE1_RESOURCE_TYPE_ID = "generic"
 PHASE1_POOL_ID = "pool-0"

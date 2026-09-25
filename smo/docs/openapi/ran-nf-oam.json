@@ -160,6 +160,7 @@
   "paths": {
     "/alarms": {
       "get": {
+        "description": "`severity` filter (GUI pass) \u2014 the alarm console filters by ME and\nby perceivedSeverity; `severity=cleared` isolates the cleared history.",
         "operationId": "query_alarms_alarms_get",
         "parameters": [
           {
@@ -176,6 +177,22 @@
                 }
               ],
               "title": "Managed Element Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
             }
           }
         ],
@@ -482,6 +499,48 @@
       }
     },
     "/config-jobs": {
+      "get": {
+        "operationId": "list_write_config_jobs_config_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Write Config Jobs"
+      },
       "post": {
         "description": "WriteConfigurationChanges \u2014 RAN NF OAM LLD section 5.1's full\nsequence: MSAC gate, schema check (cache-or-fetch), decompose into\nsub_changes, PATCH each independently, aggregate.",
         "operationId": "write_configuration_changes_config_jobs_post",
@@ -645,6 +704,48 @@
       }
     },
     "/o1-adaptor-endpoints": {
+      "get": {
+        "operationId": "list_o1_adaptor_endpoints_o1_adaptor_endpoints_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "health_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Health Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List O1 Adaptor Endpoints"
+      },
       "post": {
         "description": "RAN NF OAM LLD section 1's own design intent (Option A,\n`docs/call-flows/03-config-write-with-schema-check.md`: \"per ME's O1\nAdaptor registers itself into the MnS Registry NRM\") had no concrete\nself-registration route anywhere in this build \u2014 the entire\n`O1AdaptorEndpoint`/`ManagedEntity` registry could previously only\never be populated by a test fixture reaching directly into the DB,\nnever by any real caller; even `endpoint_heartbeat` below implicitly\nassumed the row it pings already existed. `docker-compose.yml`'s own\ncomment on `mock-o1-adaptor` names this precisely: a real ME's\n`adaptor_uri` \"would point at http://mock-o1-adaptor:8000/edit-config\nonce one is ever registered against this service\" \u2014 until now, none\never was.\n\nReal MnS Registry NRM polling stays out of scope (no such registry\nexists in this build, OPEN_ITEMS.md's confirmed elision) \u2014 this is\nthe same honest, lighter self-registration-POST substitute already\nused everywhere else in this build (DME's producer registration,\nSME's provider/invoker registration): the O1 Adaptor itself POSTs\nits own existence here instead of a registry polling it.\n`health_status` starts at `DISCOVERED`, the FSM's own real starting\nstate (`statemachine.py`'s `ENDPOINT_HEALTH_FSM`) \u2014 not the model's\ncolumn default `ACTIVE` (chosen for other callers' test\nconvenience) \u2014 since a fresh registration hasn't heartbeated yet.",
         "operationId": "register_o1_adaptor_endpoint_o1_adaptor_endpoints_post",
@@ -737,6 +838,48 @@
       }
     },
     "/pm-subscriptions": {
+      "get": {
+        "operationId": "list_pm_subscriptions_pm_subscriptions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Pm Subscriptions"
+      },
       "post": {
         "description": "SubscribePM \u2014 RAN NF OAM LLD section 3.5: this is a DME-producer\nregistration wrapper, NOT a clause-8 API call. No R1AP endpoint exists\nfor PM at all; that's the spec's own documented design intent.\n\ngranularityPeriod (SPEC_AUDIT.md item 4, TS28550_PerfMeasJobCtrlMnS.yaml's\nmeasJobCreation-RequestType) \u2014 the one real job-control field worth\ncarrying despite the wrapper scope cut; everything else on that\nschema (schedule/priority/multi-instance/reportingPeriod) stays out.",
         "operationId": "subscribe_pm_pm_subscriptions_post",
@@ -809,6 +952,48 @@
       }
     },
     "/software-management-jobs": {
+      "get": {
+        "operationId": "list_software_management_jobs_software_management_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Software Management Jobs"
+      },
       "post": {
         "operationId": "software_update_software_management_jobs_post",
         "parameters": [

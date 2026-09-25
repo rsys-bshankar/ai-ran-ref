@@ -72,3 +72,20 @@ def test_cancel_order_marks_only_pending_steps_cancelled(client, monkeypatch):
     resp = client.post(f"/orders/{created['orderId']}/cancel")
     statuses = [s["status"] for s in resp.json()["steps"]]
     assert statuses == ["COMPLETED", "FAILED", "CANCELLED"]
+
+
+def test_health_check_answers_the_gui_bff_liveness_probe(client):
+    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "healthy"}
+
+
+def test_list_orders_returns_every_persisted_order(client, monkeypatch):
+    """GUI pass: only GET /orders/{id} existed."""
+    monkeypatch.setattr("app.main.execute_order", lambda r1, steps: [{**s, "status": "COMPLETED", "result": {}} for s in steps])
+    assert client.get("/orders").json() == []
+    created = client.post("/orders", json={"scope": "policy-rollout", "steps": [{"stepType": "POLICY", "targetModule": "A1_RELATED"}]}).json()
+
+    listed = client.get("/orders").json()
+    assert [(o["orderId"], o["scope"], o["steps"]) for o in listed] == [(created["orderId"], "policy-rollout", created["steps"])]

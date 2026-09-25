@@ -193,3 +193,29 @@ def test_escalate_to_operator(client):
     resp = client.post(f"/monitors/{monitor['monitorId']}/escalate", params={"reason": "no auto-remediation available"})
     assert resp.status_code == 200
     assert resp.json()["outcome"] == "ESCALATED"
+
+
+def test_health_check_answers_the_gui_bff_liveness_probe(client):
+    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "healthy"}
+
+
+def test_list_and_get_monitors(client):
+    """GUI pass: AssuranceMonitor was write-only."""
+    monitor_id = client.post("/monitors", json={"accuracy": 0.9}).json()["monitorId"]
+    assert [(m["monitorId"], m["thresholds"]) for m in client.get("/monitors").json()] == [(monitor_id, {"accuracy": 0.9})]
+    assert client.get(f"/monitors/{monitor_id}").json()["monitorId"] == monitor_id
+    assert client.get(f"/monitors/{uuid.uuid4()}").status_code == 404
+
+
+def test_list_remedial_actions_filters_escalations(client):
+    monitor_id = client.post("/monitors", json={}).json()["monitorId"]
+    resolved = client.post(f"/monitors/{monitor_id}/remedial-actions", params={"action_type": "CONFIG_CHANGE"}).json()
+    escalated = client.post(f"/monitors/{monitor_id}/escalate", params={"reason": "manual"}).json()
+
+    assert {a["actionId"] for a in client.get("/remedial-actions").json()} == {resolved["actionId"], escalated["actionId"]}
+    queue = client.get("/remedial-actions", params={"outcome": "ESCALATED"}).json()
+    assert [a["actionId"] for a in queue] == [escalated["actionId"]]
+    assert client.get("/remedial-actions", params={"monitor_id": str(uuid.uuid4())}).json() == []

@@ -1,0 +1,274 @@
+[
+  {
+    "method": "GET",
+    "pattern": "^/ai-ml-workflow/feature-groups$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/onboarding/packages$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/onboarding/packages/[^/]+/(prime|deprime|deprecate|cancel-delete)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/onboarding/packages/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/rapp-mgmt/instances$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/rapp-mgmt/instances/[^/]+/config$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/rapp-mgmt/instances/[^/]+/(upgrade|upgrade/resolve|recover|bootstrap-complete)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/rapp-mgmt/instances/[^/]+/terminate$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/rapp-mgmt/instances/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/rapp-mgmt/instances/[^/]+/(performance|fault)$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ai-ml-workflow/models$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/ai-ml-workflow/models/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ai-ml-workflow/models/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ai-ml-workflow/models/[^/]+/advance$",
+    "role": "admin",
+    "queryMatch": {
+      "event": "DEPRECATE"
+    }
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ai-ml-workflow/models/[^/]+/(advance|artifact|deploy|inference-jobs)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ai-ml-workflow/inference-jobs/[^/]+/resolve$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ai-ml-workflow/training-jobs$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ai-ml-workflow/training-jobs/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ai-ml-workflow/training-jobs/[^/]+/model-metrics$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ai-ml-workflow/(coordination-groups|feature-groups|mlmf/subscriptions)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ai-ml-workflow/mlmf/subscriptions/[^/]+/reports$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PATCH",
+    "pattern": "^/ran-nf-oam/alarms/[^/]+/ack$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "PATCH",
+    "pattern": "^/ran-nf-oam/alarms/[^/]+/clear$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/alarms/ingest$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/(config-jobs|pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/software-management-jobs/[^/]+/advance$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/a1-related/policies$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/a1-related/policies/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/a1-related/policies/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/nfo/deployments/[^/]+/(heal|scale)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/nfo/deployments/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/focom/resources/provision$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/focom/resources/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/focom/alarms/ingest$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/policy-mgmt/intents$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "PATCH",
+    "pattern": "^/policy-mgmt/intents/[^/]+/admin-state$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/policy-mgmt/intents/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-analytics/subscriptions$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-analytics/subscriptions/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/so-smos/orders$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/so-smos/orders/[^/]+/cancel$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/sa-smos/monitors$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/sa-smos/monitors/[^/]+/(evaluate|escalate)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/sa-smos/monitors/[^/]+/remedial-actions$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "GET",
+    "pattern": "^/(sme|dme|onboarding|rapp\\-mgmt|ran\\-nf\\-oam|a1\\-related|nfo|focom|ai\\-ml\\-workflow|ran\\-analytics|policy\\-mgmt|so\\-smos|sa\\-smos)(/.*)?$",
+    "role": "viewer",
+    "queryMatch": {}
+  }
+]

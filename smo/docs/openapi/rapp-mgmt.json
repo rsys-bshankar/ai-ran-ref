@@ -96,6 +96,23 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/health": {
+      "get": {
+        "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel,\nso every module answers one \u2014 previously only ran-nf-oam/a1-related\ndid (as their own DME producer-health callback URL).",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
+      }
+    },
     "/instances": {
       "get": {
         "operationId": "list_instances_instances_get",
@@ -428,7 +445,103 @@
         "summary": "Report Fault"
       }
     },
+    "/instances/{instance_id}/faults": {
+      "get": {
+        "description": "Read side of report_fault above, same shape as list_performance_reports.",
+        "operationId": "list_fault_reports_instances__instance_id__faults_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Fault Reports"
+      }
+    },
     "/instances/{instance_id}/performance": {
+      "get": {
+        "description": "Read side of report_performance above \u2014 previously write-only, so\nan operator had no way to see what an rApp had reported at all.\nNewest first, capped by `limit` (the GUI's KPI sparkline only ever\nwants the recent tail).",
+        "operationId": "list_performance_reports_instances__instance_id__performance_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Performance Reports"
+      },
       "post": {
         "operationId": "report_performance_instances__instance_id__performance_post",
         "parameters": [

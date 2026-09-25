@@ -24,7 +24,8 @@ MLModelCoordinationGroup x SA SMOS convergence item).
 
 import uuid
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
@@ -34,6 +35,16 @@ from smo_shared.r1_client import R1Client
 from .models import AssuranceMonitor, RemedialAction
 
 app = FastAPI(title="SA SMOS")
+
+
+@app.get("/health")
+def health_check():
+    """Liveness probe. The GUI BFF's GET /modules/status fans out to
+    /<module>/health through R1 Termination for every module in parallel,
+    so every module answers one — previously only ran-nf-oam/a1-related
+    did (as their own DME producer-health callback URL).
+    """
+    return {"status": "healthy"}
 
 
 @app.post("/monitors", status_code=201)
@@ -133,3 +144,40 @@ def _resolve_deployed_nf(r1: R1Client, target_order_id: uuid.UUID | None) -> str
         if step.get("stepType") == "DEPLOY" and step.get("status") == "COMPLETED":
             return step.get("result", {}).get("nfDeploymentId")
     return None
+
+
+@app.get("/monitors")
+def list_assurance_monitors(db: Session = Depends(get_session)):
+    """List read over AssuranceMonitor — previously write-only, so the
+    thresholds being evaluated were invisible to an operator."""
+    return [_monitor_view(m) for m in db.scalars(select(AssuranceMonitor)).all()]
+
+
+@app.get("/monitors/{monitor_id}")
+def get_assurance_monitor(monitor_id: uuid.UUID, db: Session = Depends(get_session)):
+    monitor = db.get(AssuranceMonitor, monitor_id)
+    if monitor is None:
+        raise HTTPException(status_code=404, detail="no such AssuranceMonitor")
+    return _monitor_view(monitor)
+
+
+@app.get("/remedial-actions")
+def list_remedial_actions(monitor_id: uuid.UUID | None = None, outcome: str | None = None, db: Session = Depends(get_session)):
+    """Every RemedialAction row, optionally per-monitor or per-outcome —
+    `outcome=ESCALATED` is the operator's escalation queue (the GUI
+    dashboard's SA SMOS tile)."""
+    stmt = select(RemedialAction)
+    if monitor_id:
+        stmt = stmt.where(RemedialAction.monitor_id == monitor_id)
+    if outcome:
+        stmt = stmt.where(RemedialAction.outcome == outcome)
+    return [{"actionId": str(a.action_id), "monitorId": str(a.monitor_id), "actionType": a.action_type,
+             "autoExecuted": a.auto_executed, "outcome": a.outcome} for a in db.scalars(stmt).all()]
+
+
+def _monitor_view(m: AssuranceMonitor) -> dict:
+    return {"monitorId": str(m.monitor_id),
+            "targetOrderId": str(m.target_order_id) if m.target_order_id else None,
+            "targetCoordinationGroupId": str(m.target_coordination_group_id) if m.target_coordination_group_id else None,
+            "analyticsSubscriptionId": str(m.analytics_subscription_id) if m.analytics_subscription_id else None,
+            "thresholds": m.requirement_thresholds}

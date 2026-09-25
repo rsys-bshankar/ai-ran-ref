@@ -24,6 +24,16 @@ from .statemachine import AIML_MODEL_FSM, INFERENCE_JOB_FSM, InferenceEvent, Inf
 app = FastAPI(title="AI/ML Workflow SMOS")
 
 
+@app.get("/health")
+def health_check():
+    """Liveness probe. The GUI BFF's GET /modules/status fans out to
+    /<module>/health through R1 Termination for every module in parallel,
+    so every module answers one — previously only ran-nf-oam/a1-related
+    did (as their own DME producer-health callback URL).
+    """
+    return {"status": "healthy"}
+
+
 class RegisterModelRequest(BaseModel):
     modelType: str
     version: str
@@ -448,6 +458,87 @@ def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = 
                 # stop — nothing ever fired RETRAIN on a single member model.
                 result["retrainedModelIds"] = [str(mid) for mid in _trigger_group_retrain(db, group)]
     return result
+
+
+@app.get("/training-jobs")
+def list_training_jobs(model_id: uuid.UUID | None = None, status: str | None = None, db: Session = Depends(get_session)):
+    """List read for RequestTraining's jobs — previously only a
+    per-id status read existed, so an operator could never see which
+    jobs were running without already holding every trainingJobId.
+    """
+    stmt = select(TrainingJob)
+    if model_id:
+        stmt = stmt.where(TrainingJob.model_id == model_id)
+    if status:
+        stmt = stmt.where(TrainingJob.status == status)
+    return [_training_job_view(j) for j in db.scalars(stmt).all()]
+
+
+@app.get("/inference-jobs")
+def list_inference_jobs(model_id: uuid.UUID | None = None, status: str | None = None, db: Session = Depends(get_session)):
+    """Same gap as list_training_jobs, for MLEF's InferenceJob."""
+    stmt = select(InferenceJob)
+    if model_id:
+        stmt = stmt.where(InferenceJob.model_id == model_id)
+    if status:
+        stmt = stmt.where(InferenceJob.status == status)
+    return [{"inferenceJobId": str(j.inference_job_id), "modelId": str(j.model_id), "status": j.status,
+             "notificationDestination": j.notification_destination} for j in db.scalars(stmt).all()]
+
+
+@app.get("/coordination-groups")
+def list_coordination_groups(db: Session = Depends(get_session)):
+    """Read side of create_coordination_group — groups were write-only."""
+    return [{"groupId": str(g.group_id), "groupType": g.group_type,
+             "memberModelIds": [str(m) for m in g.member_model_ids], "memberUseCases": g.member_use_cases or [],
+             "sharedFeaturePipelineRef": g.shared_feature_pipeline_ref, "retrainPropagation": g.retrain_propagation}
+            for g in db.scalars(select(MLModelCoordinationGroup)).all()]
+
+
+@app.get("/mlmf/subscriptions")
+def list_performance_subscriptions(model_id: uuid.UUID | None = None, db: Session = Depends(get_session)):
+    """MLMF's subscriptions were write-only too (LLD section 2 only ever
+    specified Subscribe/Report)."""
+    stmt = select(MLMFSubscription)
+    if model_id:
+        stmt = stmt.where(MLMFSubscription.model_id == model_id)
+    return [{"subscriptionId": str(sub.subscription_id), "modelId": str(sub.model_id), "metricTypes": sub.metric_types,
+             "dmeTypeId": str(sub.dme_type_id), "guardKpiFloor": sub.guard_kpi_floor} for sub in db.scalars(stmt).all()]
+
+
+@app.get("/mlmf/subscriptions/{subscription_id}/reports")
+def list_performance_reports(subscription_id: uuid.UUID, limit: int = 100, db: Session = Depends(get_session)):
+    """Read side of report_performance — newest first, so the GUI can
+    chart a model's recent metrics against its guardKpiFloor."""
+    if db.get(MLMFSubscription, subscription_id) is None:
+        raise HTTPException(status_code=404, detail="no such MLMF subscription")
+    rows = db.scalars(select(PerformanceReport).where(PerformanceReport.subscription_id == subscription_id)
+                      .order_by(PerformanceReport.reported_at.desc()).limit(limit)).all()
+    return [_performance_report_view(r) for r in rows]
+
+
+@app.get("/mlmf/reports")
+def list_recent_performance_reports(breached_only: bool = False, limit: int = 50, db: Session = Depends(get_session)):
+    """Fleet-wide recent MLMF reports, newest first — the dashboard's
+    view across every model, without first listing every subscription."""
+    stmt = select(PerformanceReport)
+    if breached_only:
+        stmt = stmt.where(PerformanceReport.breached_floor.is_(True))
+    rows = db.scalars(stmt.order_by(PerformanceReport.reported_at.desc()).limit(limit)).all()
+    return [_performance_report_view(r) for r in rows]
+
+
+def _training_job_view(j: TrainingJob) -> dict:
+    return {"trainingJobId": str(j.training_job_id), "modelId": str(j.model_id) if j.model_id else None,
+            "modelCoordinationGroupId": str(j.model_coordination_group_id) if j.model_coordination_group_id else None,
+            "producerId": j.producer_id, "status": j.status, "runId": j.run_id,
+            "trainingDataset": j.training_dataset, "validationDataset": j.validation_dataset,
+            "modelMetrics": j.model_metrics}
+
+
+def _performance_report_view(r: PerformanceReport) -> dict:
+    return {"reportId": str(r.id), "subscriptionId": str(r.subscription_id), "metrics": r.metrics,
+            "breachedFloor": r.breached_floor, "reportedAt": r.reported_at.isoformat()}
 
 
 @app.post("/feature-groups", status_code=201)

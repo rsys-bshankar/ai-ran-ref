@@ -581,6 +581,21 @@
   "openapi": "3.1.0",
   "paths": {
     "/coordination-groups": {
+      "get": {
+        "description": "Read side of create_coordination_group \u2014 groups were write-only.",
+        "operationId": "list_coordination_groups_coordination_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Coordination Groups"
+      },
       "post": {
         "description": "AI/ML Workflow LLD section 4.5's call flow, step 1: register the\ngroup as a sibling of individual model registrations.",
         "operationId": "create_coordination_group_coordination_groups_post",
@@ -668,6 +683,85 @@
         "summary": "Create Feature Group"
       }
     },
+    "/health": {
+      "get": {
+        "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel,\nso every module answers one \u2014 previously only ran-nf-oam/a1-related\ndid (as their own DME producer-health callback URL).",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
+      }
+    },
+    "/inference-jobs": {
+      "get": {
+        "description": "Same gap as list_training_jobs, for MLEF's InferenceJob.",
+        "operationId": "list_inference_jobs_inference_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Inference Jobs"
+      }
+    },
     "/inference-jobs/{inference_job_id}/resolve": {
       "post": {
         "operationId": "resolve_inference_inference_jobs__inference_job_id__resolve_post",
@@ -753,7 +847,100 @@
         "summary": "Query Inference Status"
       }
     },
+    "/mlmf/reports": {
+      "get": {
+        "description": "Fleet-wide recent MLMF reports, newest first \u2014 the dashboard's\nview across every model, without first listing every subscription.",
+        "operationId": "list_recent_performance_reports_mlmf_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "breached_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Breached Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Recent Performance Reports"
+      }
+    },
     "/mlmf/subscriptions": {
+      "get": {
+        "description": "MLMF's subscriptions were write-only too (LLD section 2 only ever\nspecified Subscribe/Report).",
+        "operationId": "list_performance_subscriptions_mlmf_subscriptions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Performance Subscriptions"
+      },
       "post": {
         "description": "MLMF \u2014 new sub-function, AI/ML Workflow LLD section 2. Distinct\ndomain from RAN Analytics' MDAF (model performance, not RAN behavior).",
         "operationId": "subscribe_performance_monitoring_mlmf_subscriptions_post",
@@ -813,6 +1000,53 @@
       }
     },
     "/mlmf/subscriptions/{subscription_id}/reports": {
+      "get": {
+        "description": "Read side of report_performance \u2014 newest first, so the GUI can\nchart a model's recent metrics against its guardKpiFloor.",
+        "operationId": "list_performance_reports_mlmf_subscriptions__subscription_id__reports_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Performance Reports"
+      },
       "post": {
         "operationId": "report_performance_mlmf_subscriptions__subscription_id__reports_post",
         "parameters": [
@@ -1313,6 +1547,66 @@
       }
     },
     "/training-jobs": {
+      "get": {
+        "description": "List read for RequestTraining's jobs \u2014 previously only a\nper-id status read existed, so an operator could never see which\njobs were running without already holding every trainingJobId.",
+        "operationId": "list_training_jobs_training_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Training Jobs"
+      },
       "post": {
         "description": "RequestTraining \u2014 exactly one of modelId/modelCoordinationGroupId,\nenforced at the DB layer (exactly_one_target constraint) and checked\nhere for a clean error.\n\nmodelId-targeted requests also drive the model's own FSM:\nREGISTERED -> TRAINING (TRAIN, the very first cycle) or\nACTIVE -> TRAINING (RETRAIN, an ordinary retrain). This used to\nalways fire TRAIN regardless of the model's actual state, which\ncrashed with an unhandled IllegalTransition on every retrain attempt\n(TRAIN is only legal from REGISTERED). A model already TRAINING (an\nunresolved prior job) is treated as the operator's explicit decision\nto supersede it: the orphaned job is marked CANCELLED rather than\nleft silently RUNNING and unreachable, which is what the old\nunconditional `model.training_job_id = job.training_job_id`\nassignment did.",
         "operationId": "request_training_training_jobs_post",

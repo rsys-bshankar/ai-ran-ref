@@ -25,6 +25,16 @@ from .models import DELIVERY_METHODS, DataJob, DataOffer, DMEType, DMETypeSubscr
 app = FastAPI(title="DME — Data Management and Exposure")
 
 
+@app.get("/health")
+def health_check():
+    """Liveness probe. The GUI BFF's GET /modules/status fans out to
+    /<module>/health through R1 Termination for every module in parallel,
+    so every module answers one — previously only ran-nf-oam/a1-related
+    did (as their own DME producer-health callback URL).
+    """
+    return {"status": "healthy"}
+
+
 class DMETypeRegistration(BaseModel):
     namespace: str
     name: str

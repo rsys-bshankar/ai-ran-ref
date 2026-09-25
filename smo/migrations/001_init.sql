@@ -216,13 +216,15 @@ CREATE TABLE rapp_fault_report (
   -- meaning once its rapp_instance row is gone.
   instance_id    UUID NOT NULL REFERENCES rapp_instance(instance_id) ON DELETE CASCADE,
   severity         TEXT NOT NULL CHECK (severity IN ('critical','major','minor','warning')),
-  description        TEXT
+  description        TEXT,
+  reported_at          TIMESTAMPTZ NOT NULL DEFAULT now()   -- NEW (GUI pass): GET /instances/{id}/faults orders on it
 );
 
 CREATE TABLE rapp_performance_report (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   instance_id    UUID NOT NULL REFERENCES rapp_instance(instance_id) ON DELETE CASCADE,  -- NEW section 5: delete_instance's cascade
-  metrics          JSONB NOT NULL
+  metrics          JSONB NOT NULL,
+  reported_at        TIMESTAMPTZ NOT NULL DEFAULT now()   -- NEW (GUI pass): GET /instances/{id}/performance orders on it
 );
 
 -- ============================================================
@@ -235,7 +237,7 @@ CREATE TABLE o1_adaptor_endpoint (
   adaptor_uri       TEXT NOT NULL,
   protocol_support  TEXT[] NOT NULL,
   registered_via    TEXT NOT NULL DEFAULT 'MNS_REGISTRY_NRM',
-  health_status     TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (health_status IN ('ACTIVE','DEGRADED','UNREACHABLE')),
+  health_status     TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (health_status IN ('DISCOVERED','ACTIVE','DEGRADED','UNREACHABLE')),  -- DISCOVERED: the endpoint FSM's own starting state (register_o1_adaptor_endpoint); without it every registration failed this CHECK
   last_heartbeat_at TIMESTAMPTZ,
   UNIQUE (managed_element_ref)
 );

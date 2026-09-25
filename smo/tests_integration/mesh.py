@@ -82,5 +82,12 @@ def install(monkeypatch, mesh: ServiceMesh) -> None:
     """
     import httpx
 
+    from smo_shared import r1_client
+
     for verb in ("get", "post", "put", "delete"):
         monkeypatch.setattr(httpx, verb, (lambda v: lambda url, **kw: mesh.dispatch(v, url, **kw))(verb))
+    # The mesh dispatches straight to each module, bypassing R1 Termination's
+    # token gate along with the rest of its gateway mechanics (see the module
+    # docstring) — so R1Client's SME token acquisition is skipped too. The
+    # token flow itself is covered by shared/tests/test_r1_client.py.
+    monkeypatch.setattr(r1_client, "_module_token", lambda base_url, refresh=False: None)

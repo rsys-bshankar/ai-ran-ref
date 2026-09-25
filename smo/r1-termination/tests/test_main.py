@@ -236,3 +236,16 @@ def test_dme_push_and_pull_prefixes_route_to_dme_without_colliding(monkeypatch):
     recorder2 = _install_recording_client(monkeypatch)
     client.get("/dme/some/path", headers=AUTH_HEADERS)
     assert recorder2.calls[0]["url"] == f"{ROUTES['/dme']}/some/path"
+
+
+def test_own_health_check_is_answered_locally_without_authorization(monkeypatch):
+    """GUI pass: /health is R1's own route, declared ahead of the catch-all
+    proxy — it must never be proxied or token-gated (an unknown prefix
+    used to 404 here)."""
+    def boom(*a, **kw):
+        raise AssertionError("R1's own /health must not make any upstream call")
+
+    monkeypatch.setattr("app.main.httpx.AsyncClient", boom)
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "healthy"}

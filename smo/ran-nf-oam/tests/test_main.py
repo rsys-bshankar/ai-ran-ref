@@ -476,3 +476,46 @@ def test_clear_alarm_without_clear_user_id_leaves_it_null(client, db_session_fac
     assert resp.status_code == 200
     assert resp.json()["clearUserId"] is None
     assert resp.json()["clearedAt"] is not None
+
+
+# ---------------------------------------------------------------- list reads (GUI pass)
+
+def test_query_alarms_filters_by_severity_and_exposes_raised_at(client, db_session_factory):
+    _make_me(db_session_factory)
+    client.post("/alarms/ingest", params={"source_alarm_id": "a1", "managed_element_ref": "ME-1", "severity": "major"})
+    minor = client.post("/alarms/ingest", params={"source_alarm_id": "a2", "managed_element_ref": "ME-1", "severity": "minor"}).json()
+
+    only_minor = client.get("/alarms", params={"severity": "minor"}).json()
+    assert [a["alarmId"] for a in only_minor] == [minor["alarmId"]]
+    assert only_minor[0]["raisedAt"]
+
+    client.patch(f"/alarms/{minor['alarmId']}/clear")
+    assert [a["alarmId"] for a in client.get("/alarms", params={"severity": "cleared"}).json()] == [minor["alarmId"]]
+
+
+def test_list_pm_subscriptions(client, db_session_factory, monkeypatch):
+    _make_me(db_session_factory)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    sub = client.post("/pm-subscriptions", params={"managed_element_ref": "ME-1", "counter_type": "DRB.UEThpDl",
+                                                    "delivery_method": "push", "granularity_period": 900}).json()
+
+    listed = client.get("/pm-subscriptions").json()
+    assert [(s["subscriptionId"], s["southboundEngine"], s["granularityPeriod"]) for s in listed] == [(sub["subscriptionId"], "PMJobControl", 900)]
+    assert client.get("/pm-subscriptions", params={"managed_element_ref": "ME-2"}).json() == []
+
+
+def test_list_o1_adaptor_endpoints_filters_by_health(client, db_session_factory):
+    _make_me(db_session_factory, health="DEGRADED")
+    listed = client.get("/o1-adaptor-endpoints").json()
+    assert [(e["managedElementRef"], e["healthStatus"]) for e in listed] == [("ME-1", "DEGRADED")]
+    assert client.get("/o1-adaptor-endpoints", params={"health_status": "ACTIVE"}).json() == []
+
+
+def test_list_config_and_software_jobs(client, db_session_factory, monkeypatch):
+    _make_me(db_session_factory, last_heartbeat_at=datetime.datetime.now(datetime.UTC))
+    monkeypatch.setattr("app.main.send_edit_config", lambda *a, **kw: None)
+    job = client.post("/config-jobs", json={"requestedBy": "op", "scope": "cell", "changes": []}).json()
+    swm = client.post("/software-management-jobs", params={"managed_element_ref": "ME-1"}).json()
+
+    assert [j["jobId"] for j in client.get("/config-jobs").json()] == [job["jobId"]]
+    assert [(j["jobId"], j["phase"]) for j in client.get("/software-management-jobs").json()] == [(swm["jobId"], swm["phase"])]

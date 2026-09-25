@@ -129,6 +129,49 @@
   "openapi": "3.1.0",
   "paths": {
     "/deployments": {
+      "get": {
+        "description": "List read over NFDeployment \u2014 every other deployment route is\nkeyed by an id the caller already holds, so there was no way to see\nthe workload fleet (or which deployments sit ABNORMAL) at all.",
+        "operationId": "list_deployments_deployments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Deployments"
+      },
       "post": {
         "description": "Instantiate \u2014 NFO+FOCOM LLD section 4: FOCOM's inventory is queried\nto resolve clusterId before the workload is placed, rather than the\nPhase 1 degenerate cluster being assumed implicitly. OPEN_ITEMS.md\nsection 5: now also enforces the reference's own real guards before\ncreating anything \u2014 _check_dependencies (the descriptor must exist)\nand _check_duplication (no two deployments may share a name, and a\ndescriptor may only be deployed once).",
         "operationId": "instantiate_deployments_post",
@@ -389,6 +432,23 @@
           }
         },
         "summary": "Create Descriptor"
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel,\nso every module answers one \u2014 previously only ran-nf-oam/a1-related\ndid (as their own DME producer-health callback URL).",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
       }
     },
     "/operations/{operation_id}": {

@@ -213,6 +213,23 @@
         "summary": "Get Deployment Manager"
       }
     },
+    "/health": {
+      "get": {
+        "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel,\nso every module answers one \u2014 previously only ran-nf-oam/a1-related\ndid (as their own DME producer-health callback URL).",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
+      }
+    },
     "/inventory": {
       "get": {
         "description": "QueryInventory \u2014 SPEC_AUDIT.md item 8 (formerly moderate item 2 of\nthe \"Moderate/breaking-shape items\" list): reshaped toward the real\nO2IMS `OCloud` schema (`ORAN.O2ims.Inventory.yaml`), the spec's own\naggregate root \u2014 this route previously returned an ad hoc\n`{clusterId, resourcePools:[...]}` shape matching neither `OCloud`\nnor any wrapped list.\n\n`oCloudId`/`name`/`description`/`resourceTypes`/`deploymentManagers`\nare populated from this build's own real, already-seeded topology\n(the same rows every drill-down route already reads \u2014 no new\nfabricated data). `locations`/`oCloudSites` are required\n(`minItems: 1`) in the real spec, but genuinely empty here: FOCOM\nhas no `OCloudSite`/`Location` concept at all (a confirmed\nlarge/structural scope cut, `SPEC_AUDIT.md`'s FOCOM section), so\nthey're honestly empty rather than fabricated \u2014\n`globalCloudId`/`infrastructureManagementServicesEndPoint`/\n`smoRegistrationService` are `None` for the same reason.\n\n`resource_type`, if given, now genuinely filters `resourceTypes` to\nthe matching entry (or an empty list if none is registered) \u2014 real\nvalidation against a known `ResourceType`, closing this route's own\npreviously-documented gap (\"still only echoed back, not validated\").\nNFO's real Instantiate caller (NFO+FOCOM LLD section 4) reads\n`oCloudId`, not this filtered list, so this has no effect on it\neither way.",

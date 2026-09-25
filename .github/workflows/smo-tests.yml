@@ -7,6 +7,11 @@ on:
   pull_request:
     paths: ["smo/**", ".github/workflows/smo-tests.yml"]
 
+# Every job only checks out and runs tests: the GITHUB_TOKEN needs nothing
+# beyond reading the repository.
+permissions:
+  contents: read
+
 jobs:
   unit-and-integration:
     name: Unit + integration tests (SQLite)
@@ -36,9 +41,50 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Run the shared library's tests (R1Client's OAuth2 client flow)
+        working-directory: smo/shared
+        run: PYTHONPATH=. python -m pytest tests/ -v
+
       - name: Run cross-service integration tests
         working-directory: smo
         run: PYTHONPATH=shared python -m pytest tests_integration/ -v
+
+  gui-bff:
+    name: Operator GUI BFF tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install fastapi "uvicorn[standard]" sqlalchemy httpx pydantic python-multipart pytest
+
+      - name: Run the BFF test suite
+        working-directory: smo/gui-bff
+        run: PYTHONPATH=. python -m pytest tests/ -v
+
+  gui:
+    name: Operator GUI (typecheck, Vitest, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: smo/gui/package-lock.json
+
+      - name: Install, typecheck, test, build
+        working-directory: smo/gui
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npx vite build
 
   docker-compose-config:
     name: docker-compose.yml is structurally valid

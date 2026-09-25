@@ -19,6 +19,18 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI(title="R1 Termination")
 
+
+@app.get("/health")
+def health_check():
+    """R1 Termination's own liveness probe — declared ahead of the
+    catch-all proxy route so it is answered here, unauthenticated, rather
+    than 404ing as an unknown prefix. Every backend module's own /health
+    is reached through the proxy as /<module>/health (token-gated like
+    any other proxied call); the GUI BFF's GET /modules/status probes both.
+    """
+    return {"status": "healthy"}
+
+
 # path prefix -> backend service, per Foundational Platform LLD section 4.2
 ROUTES = {
     "/sme": os.environ.get("SME_URL", "http://sme:8000"),

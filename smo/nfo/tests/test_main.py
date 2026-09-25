@@ -377,3 +377,21 @@ def test_query_resources_for_unknown_deployment_is_empty(client):
     resp = client.get(f"/deployments/{uuid.uuid4()}/resources")
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+def test_health_check_answers_the_gui_bff_liveness_probe(client):
+    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "healthy"}
+
+
+def test_list_deployments_filters_by_state(client, monkeypatch):
+    """GUI pass: every deployment route was keyed by an id the caller already held."""
+    assert client.get("/deployments").json() == []
+    created = _instantiate(client, monkeypatch, name="d1").json()
+
+    listed = client.get("/deployments").json()
+    assert [(d["nfDeploymentId"], d["name"], d["state"]) for d in listed] == [(created["nfDeploymentId"], "d1", created["state"])]
+    assert client.get("/deployments", params={"state": created["state"]}).json() == listed
+    assert client.get("/deployments", params={"state": "ABNORMAL"}).json() == []

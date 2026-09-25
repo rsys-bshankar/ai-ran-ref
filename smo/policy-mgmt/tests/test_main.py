@@ -289,3 +289,29 @@ def test_create_intent_stores_and_returns_intent_mgmt_purpose(client):
 def test_create_intent_rejects_an_invalid_intent_mgmt_purpose(client):
     resp = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "intentMgmtPurpose": "NOT_A_REAL_PURPOSE"})
     assert resp.status_code == 422
+
+
+def test_health_check_answers_the_gui_bff_liveness_probe(client):
+    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "healthy"}
+
+
+def test_list_intent_handling_functions(client):
+    """GUI pass: registered RMIHs were invisible."""
+    client.post("/intent-handling-functions", json={
+        "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
+        "notificationCallbackUri": "http://so-smos:8000/intents", "intentHandlingScope": ["RAN"],
+    })
+    listed = client.get("/intent-handling-functions").json()
+    assert [(f["rmihId"], f["intentHandlingScope"]) for f in listed] == [("so-smos", ["RAN"])]
+
+
+def test_list_intent_reports_filters_by_intent(client):
+    intent_id = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1"}).json()["intentId"]
+    client.post("/intent-reports", json={"intentId": intent_id, "fulfilmentReport": {"state": "FULFILLED"}})
+
+    reports = client.get("/intent-reports", params={"intent_id": intent_id}).json()
+    assert [r["fulfilmentReport"] for r in reports] == [{"state": "FULFILLED"}]
+    assert reports[0]["lastUpdatedTime"]

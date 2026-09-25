@@ -568,3 +568,10 @@ def test_topology_export_reflects_child_resource_relationship(client, db_session
     assert len(child_of) == 1
     assert child_of[0]["aSide"] == f"urn:oran:smo:teiv:Resource:{child_id}"
     assert child_of[0]["bSide"] == f"urn:oran:smo:teiv:Resource:{parent_id}"
+
+
+def test_health_check_answers_the_gui_bff_liveness_probe(client):
+    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "healthy"}

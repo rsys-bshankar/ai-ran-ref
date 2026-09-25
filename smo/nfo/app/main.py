@@ -30,6 +30,16 @@ from .statemachine import DeploymentEvent, DeploymentState, NFO_FSM
 app = FastAPI(title="NFO SMOS (O2dms)")
 
 
+@app.get("/health")
+def health_check():
+    """Liveness probe. The GUI BFF's GET /modules/status fans out to
+    /<module>/health through R1 Termination for every module in parallel,
+    so every module answers one — previously only ran-nf-oam/a1-related
+    did (as their own DME producer-health callback URL).
+    """
+    return {"status": "healthy"}
+
+
 class InstantiateRequest(BaseModel):
     nfDeploymentDescriptorId: uuid.UUID
     name: str
@@ -219,3 +229,17 @@ def query_operation_status(operation_id: uuid.UUID, db: Session = Depends(get_se
 def query_cluster_placement(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
     d = db.get(NFDeployment, nf_deployment_id)
     return {"nfDeploymentId": str(d.nf_deployment_id), "clusterId": d.cluster_id}
+
+
+@app.get("/deployments")
+def list_deployments(state: str | None = None, db: Session = Depends(get_session)):
+    """List read over NFDeployment — every other deployment route is
+    keyed by an id the caller already holds, so there was no way to see
+    the workload fleet (or which deployments sit ABNORMAL) at all.
+    """
+    stmt = select(NFDeployment)
+    if state:
+        stmt = stmt.where(NFDeployment.state == state)
+    return [{"nfDeploymentId": str(d.nf_deployment_id), "name": d.name, "state": d.state, "clusterId": d.cluster_id,
+             "nfDeploymentDescriptorId": str(d.nf_deployment_descriptor_id), "workloadRef": d.workload_ref,
+             "requiredResourceTypeId": d.required_resource_type_id} for d in db.scalars(stmt).all()]

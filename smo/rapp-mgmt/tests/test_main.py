@@ -352,3 +352,64 @@ def test_get_instance_returns_real_workload_ref_and_configuration(client, monkey
 def test_get_unknown_instance_is_404(client):
     resp = client.get(f"/instances/{uuid.uuid4()}")
     assert resp.status_code == 404
+
+
+def test_health_check_answers_the_gui_bff_liveness_probe(client):
+    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "healthy"}
+
+
+def _make_instance(db_session_factory, state=InstanceState.RUNNING) -> uuid.UUID:
+    instance_id = uuid.uuid4()
+    with db_session_factory() as session:
+        session.add(RAppInstance(instance_id=instance_id, package_id=uuid.uuid4(), state=state))
+        session.commit()
+    return instance_id
+
+
+def test_list_performance_reports_returns_newest_first(client, db_session_factory):
+    """GUI pass: POST /instances/{id}/performance was write-only."""
+    instance_id = _make_instance(db_session_factory)
+    client.post(f"/instances/{instance_id}/performance", json={"throughputMbps": 10})
+    client.post(f"/instances/{instance_id}/performance", json={"throughputMbps": 20})
+
+    resp = client.get(f"/instances/{instance_id}/performance")
+    assert resp.status_code == 200
+    reports = resp.json()
+    assert [r["metrics"]["throughputMbps"] for r in reports] == [20, 10]
+    assert all(r["reportedAt"] for r in reports)
+
+    assert len(client.get(f"/instances/{instance_id}/performance", params={"limit": 1}).json()) == 1
+
+
+def test_list_fault_reports_returns_recorded_faults(client, db_session_factory):
+    instance_id = _make_instance(db_session_factory)
+    client.post(f"/instances/{instance_id}/fault", params={"severity": "minor", "description": "slow"})
+
+    resp = client.get(f"/instances/{instance_id}/faults")
+    assert resp.status_code == 200
+    assert [(f["severity"], f["description"]) for f in resp.json()] == [("minor", "slow")]
+
+
+def test_list_reports_404_on_an_unknown_instance(client):
+    assert client.get(f"/instances/{uuid.uuid4()}/performance").status_code == 404
+    assert client.get(f"/instances/{uuid.uuid4()}/faults").status_code == 404
+
+
+def test_create_instance_records_workload_ref_from_nfos_202(client, db_session_factory, monkeypatch):
+    """NFO's Instantiate answers 202 Accepted; the old 200-only check left
+    workloadRef empty on every real deployment."""
+    fake_get, fake_post = _route_r1_get_post()
+    nf_deployment_id = str(uuid.uuid4())
+
+    def post_202_from_nfo(self, path, json=None, **kw):
+        if "/nfo/deployments" in path:
+            return FakeR1Response(202, {"nfDeploymentId": nf_deployment_id, "state": "RUNNING"})
+        return fake_post(self, path, json=json, **kw)
+
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", post_202_from_nfo)
+    instance_id = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()["instanceId"]
+    assert client.get(f"/instances/{instance_id}").json()["workloadRef"] == nf_deployment_id
