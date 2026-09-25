@@ -34,7 +34,8 @@ docker compose up --build
 |---|---|---|
 | `R1_URL` | `http://r1-termination:8000` | The only southbound the BFF talks to |
 | `SME_URL` | discovered via R1 `/bootstrap` | Override the SME token endpoint base |
-| `GUI_ADMIN_PASSWORD` | random, logged **once** on first boot | Seeds user `admin` on first boot only |
+| `GUI_ADMIN_PASSWORD` | random, written to `GUI_INITIAL_PASSWORD_FILE` | Seeds user `admin` on first boot only |
+| `GUI_INITIAL_PASSWORD_FILE` | `/data/initial-admin-password` in compose | Where a generated admin password goes (mode 0600, never logged): `docker compose exec gui-bff cat /data/initial-admin-password`; delete it after changing the password |
 | `GUI_OPERATOR_PASSWORD` / `GUI_VIEWER_PASSWORD` | unset → user not created | Seed users `operator` / `viewer` |
 | `GUI_JWT_SECRET` | random per boot (sessions end on restart) | HS256 session signing key |
 | `GUI_COOKIE_SECURE` | `true` | Set `false` only for plain-http access by a non-localhost name |

@@ -162,12 +162,21 @@ def test_logout_clears_the_session(app):
     assert client.get("/api/me").status_code == 401
 
 
-def test_seed_needs_no_password_in_git(db):
-    """No GUI_ADMIN_PASSWORD set: admin is still seeded (random password,
-    logged once), operator/viewer are not."""
-    seed_users(db, Settings(r1_url=R1, jwt_secret="x"))
+def test_seed_needs_no_password_in_git(db, tmp_path, caplog):
+    """No GUI_ADMIN_PASSWORD set: admin is still seeded, with a random
+    password written to an owner-only file and never logged; operator/viewer
+    are not seeded."""
+    password_file = tmp_path / "initial-admin-password"
+    cfg = Settings(r1_url=R1, jwt_secret="x", cookie_secure=False, initial_password_file=str(password_file))
+    with caplog.at_level("DEBUG"):
+        seed_users(db, cfg)
     with db.session() as s:
         assert [u.username for u in s.query(GuiUser).all()] == ["admin"]
+    generated = password_file.read_text().strip()
+    assert oct(password_file.stat().st_mode & 0o777) == "0o600"
+    assert generated not in caplog.text and str(password_file) in caplog.text
+    app = create_app(cfg, db=db, gateway=R1Gateway(R1, db, transport=httpx.MockTransport(FakeSmo().handler)))
+    assert TestClient(app).post("/api/login", json={"username": "admin", "password": generated}).status_code == 200
 
 
 def test_seeding_never_touches_an_existing_user_table(db, cfg):
@@ -302,6 +311,17 @@ def test_proxy_strips_hop_by_hop_and_upstream_set_cookie(app):
     assert "upstream=1" not in resp.headers.get("set-cookie", "")
 
 
+def test_smo_auth_failure_detail_does_not_leak_exception_text(cfg, db):
+    def sme_down(request):
+        raise httpx.ConnectError("refused: internal-host-10.0.0.7:8000")
+
+    seed_users(db, cfg)
+    app = create_app(cfg, db=db, gateway=R1Gateway(R1, db, transport=httpx.MockTransport(sme_down)))
+    resp = login(app, "viewer").get("/api/smo/onboarding/packages")
+    assert resp.status_code == 502 and resp.json()["title"] == "SMO_AUTH_FAILED"
+    assert "internal-host" not in resp.text and "ConnectError" not in resp.text
+
+
 def test_proxy_passes_upstream_errors_through(app, smo):
     smo.next_response = httpx.Response(409, json={"title": "MODEL_NOT_CERTIFIED"})
     resp = login(app, "operator").post("/api/smo/rapp-mgmt/instances", json={"packageId": "p"})
@@ -352,7 +372,7 @@ def test_modules_status_probes_every_module_via_r1(app, smo):
     body = login(app, "viewer").get("/api/modules/status").json()
     by_module = {m["module"]: m for m in body["modules"]}
     assert list(by_module) == STATUS_MODULES and len(STATUS_MODULES) == 14
-    assert by_module["nfo"]["healthy"] is False and by_module["nfo"]["error"] == "ConnectError"
+    assert by_module["nfo"]["healthy"] is False and by_module["nfo"]["error"] == "unreachable"
     assert all(m["healthy"] for name, m in by_module.items() if name != "nfo")
     assert all(isinstance(m["latencyMs"], float) for m in body["modules"])
 
@@ -368,7 +388,7 @@ def test_modules_status_reports_smo_auth_failure_without_crashing(cfg, db):
     body = login(app, "viewer").get("/api/modules/status").json()
     by_module = {m["module"]: m for m in body["modules"]}
     assert by_module["r1-termination"]["healthy"] is True
-    assert by_module["sme"]["healthy"] is False and by_module["sme"]["error"].startswith("auth:")
+    assert by_module["sme"]["healthy"] is False and by_module["sme"]["error"] == "auth: no SMO access token"
 
 
 # ---------------------------------------------------------------- admin

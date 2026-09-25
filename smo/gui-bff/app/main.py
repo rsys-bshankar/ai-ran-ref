@@ -23,6 +23,7 @@ import asyncio
 import hmac
 import json
 import logging
+import os
 import re
 import secrets
 import time
@@ -93,14 +94,26 @@ def seed_users(db: Database, cfg: Settings) -> None:
         admin_password = cfg.admin_password
         if not admin_password:
             admin_password = secrets.token_urlsafe(12)
-            log.warning("GUI_ADMIN_PASSWORD not set: seeded user 'admin' with generated password %s "
-                        "(shown once; change it under Admin > Users)", admin_password)
+            _write_initial_password(cfg.initial_password_file, admin_password)
+            log.warning("GUI_ADMIN_PASSWORD not set: seeded user 'admin' with a generated password, written to %s "
+                        "(mode 0600). Sign in, change it under Admin > Users, then delete the file.",
+                        cfg.initial_password_file)
         seeds = [("admin", admin_password, Role.ADMIN), ("operator", cfg.operator_password, Role.OPERATOR),
                  ("viewer", cfg.viewer_password, Role.VIEWER)]
         for username, password, role in seeds:
             if password:
                 s.add(GuiUser(username=username, password_hash=hash_password(password), role=role))
         s.commit()
+
+
+def _write_initial_password(path: str, password: str) -> None:
+    """Owner-only file on the BFF's own volume. The log and stdout never
+    carry the password (CodeQL py/clear-text-logging-sensitive-data).
+    """
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(password + "\n")
+    os.chmod(path, 0o600)   # O_CREAT's mode doesn't apply to an existing file
 
 
 @dataclass
@@ -292,9 +305,11 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
                     resp = await gw.request("GET", f"/{module}/health", timeout=cfg.health_timeout_seconds)
                 healthy, status_code, error = resp.status_code == 200, resp.status_code, None
             except SmoAuthError as exc:
-                healthy, status_code, error = False, None, f"auth: {exc}"
+                log.warning("health probe %s: SMO token unavailable: %s", module, exc)
+                healthy, status_code, error = False, None, "auth: no SMO access token"
             except httpx.HTTPError as exc:
-                healthy, status_code, error = False, None, exc.__class__.__name__
+                log.warning("health probe %s failed: %r", module, exc)
+                healthy, status_code, error = False, None, "unreachable"
             return {"module": module, "healthy": healthy, "latencyMs": round((time.perf_counter() - started) * 1000, 1),
                     "statusCode": status_code, "error": error}
 
@@ -337,11 +352,13 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         except SmoAuthError as exc:
             if mutating:
                 audit("PROXY", session.user, method=request.method, path=path, status_code=502, detail=f"auth: {exc}")
-            return _problem(502, "SMO_AUTH_FAILED", str(exc))
+            log.warning("proxy %s %s: SMO token unavailable: %s", request.method, path, exc)
+            return _problem(502, "SMO_AUTH_FAILED", "the BFF could not obtain an SMO access token from SME")
         except httpx.HTTPError as exc:
             if mutating:
                 audit("PROXY", session.user, method=request.method, path=path, status_code=502, detail=exc.__class__.__name__)
-            return _problem(502, "R1_UNREACHABLE", exc.__class__.__name__)
+            log.warning("proxy %s %s: R1 Termination unreachable: %r", request.method, path, exc)
+            return _problem(502, "R1_UNREACHABLE", "R1 Termination did not answer")
 
         if mutating:
             query_text = "&".join(f"{k}={v}" for k, v in params)

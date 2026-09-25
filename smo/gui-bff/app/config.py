@@ -1,9 +1,9 @@
 """GUI BFF settings — all from the environment, nothing secret in git.
 
 GUI_JWT_SECRET / GUI_ADMIN_PASSWORD may be left unset for a throwaway demo:
-the BFF then generates a random value at boot and says so in its log (the
-admin password is printed exactly once, on the boot that seeds it). A real
-deployment sets both.
+the BFF then generates a random value at boot. A generated admin password is
+written to GUI_INITIAL_PASSWORD_FILE (mode 0600), never logged; the log only
+says where it is. A real deployment sets both.
 """
 
 import os
@@ -30,6 +30,9 @@ class Settings:
     # a non-localhost hostname (e.g. a lab VM reached by IP).
     cookie_secure: bool = field(default_factory=lambda: _bool("GUI_COOKIE_SECURE", True))
     admin_password: str = field(default_factory=lambda: os.environ.get("GUI_ADMIN_PASSWORD", ""))
+    # Where a generated admin password is written (mode 0600) when
+    # GUI_ADMIN_PASSWORD is unset — never to the log.
+    initial_password_file: str = field(default_factory=lambda: os.environ.get("GUI_INITIAL_PASSWORD_FILE", "./initial-admin-password"))
     operator_password: str = field(default_factory=lambda: os.environ.get("GUI_OPERATOR_PASSWORD", ""))
     viewer_password: str = field(default_factory=lambda: os.environ.get("GUI_VIEWER_PASSWORD", ""))
     health_timeout_seconds: float = field(default_factory=lambda: float(os.environ.get("GUI_HEALTH_TIMEOUT_SECONDS", "3")))
