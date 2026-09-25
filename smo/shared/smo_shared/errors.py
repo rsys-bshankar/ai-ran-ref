@@ -59,6 +59,10 @@ class FrameworkError:
     NFDEPLOYMENT_ILLEGAL_OPERATION = ("NFDEPLOYMENT_ILLEGAL_OPERATION", 409)
     # Onboarding/rApp Mgmt LLD section 5-6
     RAPP_INSTANCE_NOT_UNDEPLOYED = ("RAPP_INSTANCE_NOT_UNDEPLOYED", 409)
+    # SME Trusted Invokers (CAPIF core securityapi)
+    INVOKER_NOT_REGISTERED = ("INVOKER_NOT_REGISTERED", 400)
+    TRUSTED_INVOKER_NOT_FOUND = ("TRUSTED_INVOKER_NOT_FOUND", 404)
+    SECURITY_CONTEXT_INVALID = ("SECURITY_CONTEXT_INVALID", 422)
 
 
 def framework_error(code: tuple[str, int], detail: str | None = None) -> HTTPException:

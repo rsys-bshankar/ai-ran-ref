@@ -14,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 from smo_shared.db import Base, get_session
 
 from app.main import app
-from app.models import InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile
+from app.models import InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile, TrustedInvoker
 
 # Every test in this file registers services under one of these three
 # identities — pre-enrolling them here (via the real POST
@@ -30,7 +30,7 @@ def db_session_factory():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine, tables=[
         ServiceProfile.__table__, ServiceAuthzPolicy.__table__, ServiceEventSubscription.__table__, ProviderRegistration.__table__,
-        InvokerRegistration.__table__, IssuedAccessToken.__table__,
+        InvokerRegistration.__table__, IssuedAccessToken.__table__, TrustedInvoker.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -632,6 +632,178 @@ def test_introspect_expired_token_is_inactive(client, db_session_factory):
 
     resp = client.post("/oauth2/introspect", json={"token": token})
     assert resp.json() == {"active": False}
+
+
+def _register_trusted_invoker(client, api_invoker_id, aef_id="aef-1", api_id="api-1", pref_methods=None):
+    return client.put(f"/trusted-invokers/{api_invoker_id}", json={
+        "notificationDestination": "http://consumer/security-notify",
+        "securityInfo": [{"aefId": aef_id, "apiId": api_id, "authenticationInfo": "auth-info", "authorizationInfo": "authz-info",
+                           "prefSecurityMethods": pref_methods or ["OAUTH"]}],
+    })
+
+
+def test_register_trusted_invoker_rejects_unregistered_invoker(client):
+    resp = _register_trusted_invoker(client, "does-not-exist")
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["title"] == "INVOKER_NOT_REGISTERED"
+
+
+def test_register_trusted_invoker_succeeds_for_registered_invoker(client):
+    inv = _register_invoker(client)
+    resp = _register_trusted_invoker(client, inv["apiInvokerId"])
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["apiInvokerId"] == inv["apiInvokerId"]
+    assert body["notificationDestination"] == "http://consumer/security-notify"
+    assert body["securityInfo"][0]["selSecurityMethod"] == "OAUTH"
+
+
+def test_register_trusted_invoker_rejects_missing_notification_destination(client):
+    inv = _register_invoker(client)
+    resp = client.put(f"/trusted-invokers/{inv['apiInvokerId']}", json={
+        "notificationDestination": "", "securityInfo": [{"prefSecurityMethods": ["OAUTH"]}],
+    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SECURITY_CONTEXT_INVALID"
+
+
+def test_register_trusted_invoker_rejects_empty_security_info(client):
+    inv = _register_invoker(client)
+    resp = client.put(f"/trusted-invokers/{inv['apiInvokerId']}", json={"notificationDestination": "http://consumer/notify", "securityInfo": []})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SECURITY_CONTEXT_INVALID"
+
+
+def test_register_trusted_invoker_rejects_missing_pref_security_methods(client):
+    inv = _register_invoker(client)
+    resp = client.put(f"/trusted-invokers/{inv['apiInvokerId']}", json={
+        "notificationDestination": "http://consumer/notify", "securityInfo": [{"aefId": "aef-1", "prefSecurityMethods": []}],
+    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SECURITY_CONTEXT_INVALID"
+
+
+def test_register_trusted_invoker_is_idempotent_replace_on_re_put(client):
+    inv = _register_invoker(client)
+    _register_trusted_invoker(client, inv["apiInvokerId"], pref_methods=["OAUTH"])
+    resp = _register_trusted_invoker(client, inv["apiInvokerId"], pref_methods=["PSK"])
+    assert resp.status_code == 201
+    assert resp.json()["securityInfo"][0]["selSecurityMethod"] == "PSK"
+    assert len(resp.json()["securityInfo"]) == 1
+
+
+def test_get_trusted_invoker_returns_404_for_unregistered(client):
+    resp = client.get("/trusted-invokers/does-not-exist")
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["title"] == "TRUSTED_INVOKER_NOT_FOUND"
+
+
+def test_get_trusted_invoker_redacts_authentication_and_authorization_info_by_default(client):
+    inv = _register_invoker(client)
+    _register_trusted_invoker(client, inv["apiInvokerId"])
+    resp = client.get(f"/trusted-invokers/{inv['apiInvokerId']}")
+    assert resp.status_code == 200
+    info = resp.json()["securityInfo"][0]
+    assert info["authenticationInfo"] == ""
+    assert info["authorizationInfo"] == ""
+
+
+def test_get_trusted_invoker_reveals_authentication_and_authorization_info_when_requested(client):
+    inv = _register_invoker(client)
+    _register_trusted_invoker(client, inv["apiInvokerId"])
+    resp = client.get(f"/trusted-invokers/{inv['apiInvokerId']}", params={"authentication_info": True, "authorization_info": True})
+    info = resp.json()["securityInfo"][0]
+    assert info["authenticationInfo"] == "auth-info"
+    assert info["authorizationInfo"] == "authz-info"
+
+
+def test_deregister_trusted_invoker_removes_it(client, db_session_factory):
+    inv = _register_invoker(client)
+    _register_trusted_invoker(client, inv["apiInvokerId"])
+    resp = client.delete(f"/trusted-invokers/{inv['apiInvokerId']}")
+    assert resp.status_code == 204
+    with db_session_factory() as session:
+        assert session.get(TrustedInvoker, inv["apiInvokerId"]) is None
+
+
+def test_deregister_unknown_trusted_invoker_is_idempotent(client):
+    resp = client.delete("/trusted-invokers/does-not-exist")
+    assert resp.status_code == 204
+
+
+def test_update_trusted_invoker_requires_existing_context(client):
+    inv = _register_invoker(client)
+    resp = client.post(f"/trusted-invokers/{inv['apiInvokerId']}/update", json={
+        "notificationDestination": "http://consumer/notify", "securityInfo": [{"prefSecurityMethods": ["OAUTH"]}],
+    })
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["title"] == "TRUSTED_INVOKER_NOT_FOUND"
+
+
+def test_update_trusted_invoker_does_not_re_check_invoker_registration(client, db_session_factory):
+    """The reference's own PostTrustedInvokersApiInvokerIdUpdate never
+    re-checks invoker registration, only that a trusted-invoker context
+    already exists — mirrored here.
+    """
+    inv = _register_invoker(client)
+    _register_trusted_invoker(client, inv["apiInvokerId"])
+    with db_session_factory() as session:
+        session.query(InvokerRegistration).filter_by(api_invoker_id=inv["apiInvokerId"]).delete()
+        session.commit()
+
+    resp = client.post(f"/trusted-invokers/{inv['apiInvokerId']}/update", json={
+        "notificationDestination": "http://consumer/notify-v2", "securityInfo": [{"prefSecurityMethods": ["PSK"]}],
+    })
+    assert resp.status_code == 200
+    assert resp.json()["notificationDestination"] == "http://consumer/notify-v2"
+
+
+def test_revoke_trusted_invoker_removes_matching_entry_by_aef_id(client):
+    inv = _register_invoker(client)
+    client.put(f"/trusted-invokers/{inv['apiInvokerId']}", json={
+        "notificationDestination": "http://consumer/notify",
+        "securityInfo": [
+            {"aefId": "aef-1", "apiId": "api-1", "prefSecurityMethods": ["OAUTH"]},
+            {"aefId": "aef-2", "apiId": "api-2", "prefSecurityMethods": ["OAUTH"]},
+        ],
+    })
+    resp = client.post(f"/trusted-invokers/{inv['apiInvokerId']}/delete", json={
+        "aefId": "aef-1", "apiIds": ["nonexistent"], "apiInvokerId": inv["apiInvokerId"], "cause": "UNEXPECTED_REASON",
+    })
+    assert resp.status_code == 204
+
+    remaining = client.get(f"/trusted-invokers/{inv['apiInvokerId']}")
+    assert len(remaining.json()["securityInfo"]) == 1
+    assert remaining.json()["securityInfo"][0]["aefId"] == "aef-2"
+
+
+def test_revoke_trusted_invoker_deletes_whole_record_when_no_entries_remain(client, db_session_factory):
+    inv = _register_invoker(client)
+    _register_trusted_invoker(client, inv["apiInvokerId"], aef_id="aef-1", api_id="api-1")
+    resp = client.post(f"/trusted-invokers/{inv['apiInvokerId']}/delete", json={
+        "aefId": "aef-1", "apiIds": ["api-1"], "apiInvokerId": inv["apiInvokerId"], "cause": "OVERLIMIT_USAGE",
+    })
+    assert resp.status_code == 204
+    with db_session_factory() as session:
+        assert session.get(TrustedInvoker, inv["apiInvokerId"]) is None
+
+
+def test_revoke_trusted_invoker_returns_404_for_unregistered(client):
+    resp = client.post("/trusted-invokers/does-not-exist/delete", json={
+        "apiIds": ["api-1"], "apiInvokerId": "does-not-exist", "cause": "OVERLIMIT_USAGE",
+    })
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["title"] == "TRUSTED_INVOKER_NOT_FOUND"
+
+
+def test_revoke_trusted_invoker_rejects_empty_api_ids(client):
+    inv = _register_invoker(client)
+    _register_trusted_invoker(client, inv["apiInvokerId"])
+    resp = client.post(f"/trusted-invokers/{inv['apiInvokerId']}/delete", json={
+        "apiIds": [], "apiInvokerId": inv["apiInvokerId"], "cause": "OVERLIMIT_USAGE",
+    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SECURITY_CONTEXT_INVALID"
 
 
 def test_health_check_answers_the_gui_bff_liveness_probe(client):

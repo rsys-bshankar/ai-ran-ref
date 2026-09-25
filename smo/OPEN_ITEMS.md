@@ -2228,6 +2228,201 @@ own §1/§2 items stand as-is.
   question (none were ever part of the original rApp-lifecycle
   narrative), not a mechanical pickup — left for explicit user
   direction rather than assumed.
+- **Pilot demo depth: FOCOM FCAPS, per explicit user direction to
+  reverse the earlier "out of scope" triage.** `DEMO_RUNBOOK.md`'s
+  FOCOM section only ever touched inventory/resource-provisioning
+  routes; FOCOM's own alarm and performance routes (a distinct domain
+  from RAN NF OAM's RAN-function alarms, NFO+FOCOM LLD section 1) were
+  already real, already Postgres-backed, and already unit-tested but
+  never in the demo at all. Extended the FOCOM section: real
+  infrastructure alarm ingest (`POST /alarms/ingest`) against the
+  Phase 1 degenerate cluster, confirmed via `GET /alarms`, then
+  `GET /performance` — genuinely queryable and filterable
+  (`test_performance_metrics_filterable_by_resource` already covers
+  this), but returns `[]` in a fresh stack, disclosed honestly rather
+  than glossed over: there is no `POST /performance` route in this
+  build at all — real O-Cloud performance metrics would arrive via
+  O2ims's own collection mechanism, the same "no real southbound
+  collection pipeline exists" elision already documented for RAN NF
+  OAM's PM subscriptions, not a stub or a bug. `tests_integration/
+  test_demo_runbook.py` gained a matching step. No code, schema, or
+  OpenAPI-spec change — confirmed via a full local Postgres 16 pass
+  (58 tables, 0 mismatches) and the live-schema-match check, both
+  green. Unit-test counts unchanged; `tests_integration` stays at 16.
+- **SME's real "Trusted Invokers" security-context registry**
+  (SPEC_AUDIT.md SME item 2, and the large/structural triage's item
+  6) — per explicit user direction to build this real subsystem after
+  all, reversing the earlier "disproportionate for a scoped fix"
+  assessment. Added the real `PUT`/`GET`/`DELETE
+  /trusted-invokers/{apiInvokerId}` plus revocation (`POST .../delete`),
+  matching `capifcore/internal/securityservice/security.go`'s own
+  routes: `PUT` gated on the invoker already being registered
+  (`INVOKER_NOT_REGISTERED`, 400), real body validation
+  (`notificationDestination`/`securityInfo`/each entry's
+  `prefSecurityMethods` required, `SECURITY_CONTEXT_INVALID`, 422),
+  `GET`'s real `authenticationInfo`/`authorizationInfo` redaction
+  (empty string unless explicitly requested via query params, matching
+  the reference's own `checkParams`), and revocation's real per-entry
+  removal by `aefId`/`apiIds` match with whole-record cleanup once no
+  entries remain (implementing the reference's own stated filter
+  semantics directly, not its own Go loop, which mutates a slice by a
+  stale index mid-iteration — a real bug in `capifcore` itself, not
+  behavior worth reproducing). Confirmed by inspection that CAPIF
+  core's own token-issuance path (`PostSecuritiesSecurityIdToken`)
+  never reads `trustedInvokers` at all — this is a standalone registry
+  a real AEF (resource server) would consult directly, so no existing
+  SME route (`/oauth2/token`, `/oauth2/introspect`) needed rewiring.
+  `PrepareNewSecurityContext`'s own real cross-check against a
+  published AEF's declared security methods has no equivalent data
+  source in this build (no per-AEF security-method catalog was ever
+  modeled, even after `aefProfiles` was added) — adapted honestly:
+  `selSecurityMethod` is the invoker's own first declared preference,
+  not a fabricated AEF-side match. New `TrustedInvoker` model
+  (`security_info` as one JSON list per invoker, the same "flatten to
+  what this build's own identity model needs" adaptation already used
+  for `aefProfiles`/`DMEType.collection_spec`), new `trusted_invoker`
+  table (`migrations/001_init.sql`), 3 new `FrameworkError` codes.
+  `DEMO_RUNBOOK.md` gained a new section reusing step 4's real
+  invoker registration: register a security context, confirm default
+  redaction, confirm real values on request, revoke, confirm the whole
+  record is gone. `tests_integration/test_demo_runbook.py` gained a
+  matching step. `docs/openapi/sme.json` regenerated (only spec that
+  changed). Verified against a real local Postgres 16 instance (59
+  tables, up from 58, 0 mismatches; a manual insert round-tripped the
+  new JSONB `security_info` column). `sme` went from 49 tests to 66.
+- **Demo: AI/ML Workflow.** Third of the six-item follow-up sequence,
+  and the first of four modules never touched by any demo phase at
+  all. New `DEMO_RUNBOOK.md` section: register a model with real
+  metadata (`POST /models`, `REGISTERED`) → request training
+  (`POST /training-jobs`, fires the real `TRAIN` FSM event,
+  `REGISTERED -> TRAINING`) → upload a real artifact (`POST
+  /models/{id}/artifact`, genuinely round-trips through a
+  Postgres-backed `ModelArtifact` row — real S3 storage is the one
+  deliberate elision) → write real training metrics (`POST
+  /training-jobs/{id}/model-metrics`) → advance the model through its
+  real lifecycle FSM (`TRAINING_COMPLETE` → `VALIDATION_COMPLETE` →
+  `CERTIFY` → `LOAD` → `ACTIVATE`, five genuine transitions, not a
+  fast-forward) → download the artifact back and confirm the bytes
+  match → deregister (real cascade cleanup of the artifact/training-job
+  rows). `tests_integration/test_demo_runbook.py` gained a matching
+  step. No code, schema, or OpenAPI-spec change — confirmed via a full
+  local Postgres 16 pass (59 tables, 0 mismatches) and the
+  live-schema-match check, both green. Unit-test counts unchanged;
+  `tests_integration` stays at 16.
+- **Demo: RAN Analytics.** Fourth of the six-item follow-up sequence,
+  and the last of four modules never touched by any demo phase. New
+  `DEMO_RUNBOOK.md` section: register an analytics producer
+  (`POST /producers`) — the same real two-step CAPIF dance as step 4
+  (SME provider enrolment, idempotent on the already-enrolled
+  `hello-world-rapp`, then a second, distinct service publish,
+  `mdaf.coverage-issue-analysis`) — confirmed via `GET /producers` →
+  subscribe with a real `notificationDestination`
+  (`POST /subscriptions`) → publish a report (`POST /reports`), which
+  fires a real notification via `_notify_report_subscribers` (the same
+  real best-effort delivery already closed in OPEN_ITEMS.md section 5)
+  → confirm the report is queryable (`GET /reports`) → unsubscribe.
+  `tests_integration/test_demo_runbook.py` gained a matching step,
+  proving the real dispatch fires with the correct `reportId`/`output`
+  payload by intercepting the exact `httpx.post` call
+  `_notify_report_subscribers` makes (same technique as FOCOM/Policy
+  Mgmt/A1 Related). No code, schema, or OpenAPI-spec change —
+  confirmed via a full local Postgres 16 pass (59 tables, 0
+  mismatches) and the live-schema-match check, both green. Unit-test
+  counts unchanged; `tests_integration` stays at 16. This closes the
+  "bring every module into the demo" portion of the six-item sequence
+  — AI/ML Workflow, RAN Analytics, SO SMOS, and SA SMOS are now all
+  either demoed or in progress. Next: SO SMOS and SA SMOS.
+- **Demo: SO SMOS.** Fifth of the six-item follow-up sequence. SO
+  SMOS's own dispatch table (`dispatch.py`, SO/SA SMOS LLD section 1)
+  — `stepType`/`targetModule` pairs routed over the real `R1Client` to
+  whichever downstream module actually owns that step — and its
+  fail-fast execution semantics (section 1.1: the first failed step
+  halts the order; every step after it stays `PENDING`, never
+  attempted) were both already real and already unit-tested, but no
+  demo phase had ever submitted a real multi-step order at all. New
+  `DEMO_RUNBOOK.md` section: submit a 3-step order (`INFRA` →
+  FOCOM, `POLICY` → A1 Related with a policy type A1 Related
+  genuinely doesn't recognize, `TRAINING` → AI/ML Workflow) — step 1
+  `COMPLETED` (a real new FOCOM `Resource` row), step 2 `FAILED` (A1
+  Related's own real `POLICY_TYPE_NOT_SUPPORTED` rejection, correctly
+  surfaced as a real `DownstreamError` rather than the historical bug
+  `dispatch.py`'s own docstring documents — a downstream error
+  response previously recorded as `COMPLETED` with the error body as
+  the "result"), step 3 `PENDING` (never dispatched — the real
+  fail-fast halt). Confirm via `GET /orders/{id}`, then **cancel** —
+  exercising the real fix for a genuine bug `cancel_order`'s own
+  docstring documents (mutating a plain JSON column's list in place is
+  invisible to SQLAlchemy's change tracking, so the old route silently
+  never persisted the cancellation at all) — turning the still-`PENDING`
+  step `CANCELLED` while leaving the `COMPLETED`/`FAILED` steps
+  untouched. `tests_integration/test_demo_runbook.py` gained a matching
+  step. No code, schema, or OpenAPI-spec change — confirmed via a full
+  local Postgres 16 pass (59 tables, 0 mismatches) and the
+  live-schema-match check, both green. Unit-test counts unchanged;
+  `tests_integration` stays at 16. Next: SA SMOS, the last item.
+- **Demo: SA SMOS.** Sixth and last of the six-item follow-up sequence.
+  `RECONNECT` needed a real, `RUNNING` `NFDeployment` distinct from the
+  sample rApp's own (NFO's real duplication guard means a descriptor
+  can only be deployed once), so the new section deploys a second one:
+  a fresh `NFDeploymentDescriptor` against the already-onboarded
+  package, then a real SO SMOS `DEPLOY` order targeting it — the same
+  dispatch table §16 (SO SMOS, renumbered from §15 to make room) uses.
+  Registers an `AssuranceMonitor` on that order, evaluates a real
+  threshold breach, then both real remedial-action outcomes:
+  `RECONNECT` resolves the concrete `nfDeploymentId` via a live SO SMOS
+  order lookup and dispatches NFO's real `Heal` (`RESOLVED`), and
+  `ROLLBACK` genuinely returns `ROLLBACK_HISTORY_UNAVAILABLE` (501).
+  `tests_integration/test_demo_runbook.py` gained a matching step,
+  placed *before* the existing SO SMOS step (see below for why).
+  Grounding this surfaced three real bugs, none hypothetical — each had
+  a failing test (or a failing real-Postgres run) until fixed:
+  1. **`Onboarding.OnboardPackage` called NFO's real `CreateDescriptor`
+     before its own `ApplicationPackage` row was committed** (`flush()`,
+     not `commit()`) — NFO's `NFDeploymentDescriptor.package_id` has a
+     real FK, and under real Postgres's own READ COMMITTED isolation
+     that row is invisible to NFO's own separate connection until
+     committed: a real `ForeignKeyViolation` on *every* onboard, in
+     production, never once caught by SQLite's own single-shared-
+     connection test harness (which gives every nested session an
+     accidental dirty-read view of every other session's uncommitted
+     work). Fixed by committing the package row before calling NFO.
+  2. **NFO's `Terminate` never cleared a deployment's own
+     `LCMOperation` history before deleting it** — same real FK
+     shape as `NFOCloudResource`'s (already explicitly cleaned up
+     first); every deployment has at least one `LCMOperation` row (from
+     `Instantiate`), so this was a real `ForeignKeyViolation` on *every*
+     real terminate, not an edge case. SQLite's own test harness never
+     enforces FKs by default, so nothing had caught it either. Fixed by
+     clearing `LCMOperation` rows alongside `NFOCloudResource`.
+  3. **`tests_integration/`'s own shared SQLite test engine let a
+     cross-service call chain three deep (so-smos -> nfo -> focom)
+     silently corrupt itself** — a second such dispatch in one test hit
+     a genuine `StaleDataError`: `StaticPool` funnels every nested
+     FastAPI request's own `Session` onto the one physical connection,
+     and an inner Session's commit was silently committing an outer
+     Session's not-yet-committed work too. Confirmed purely a
+     test-harness artifact (the identical sequence passes cleanly
+     against a real local Postgres instance) by running it there
+     directly. Fixed with SQLAlchemy's own documented pysqlite
+     workaround (`shared/smo_shared/testing.py`) plus rebinding every
+     Session in `tests_integration/conftest.py`'s `mesh`/
+     `db_connection` fixtures (and the 4 places in
+     `test_cross_service.py` that opened their own direct `Session` to
+     peek at persisted rows) to one shared Connection via
+     `join_transaction_mode="create_savepoint"`, so nested Sessions
+     share the one real transaction through SAVEPOINT nesting instead
+     of colliding. Also why SA SMOS's new runbook section is placed
+     *before* SO SMOS's own (§15, not after) — SO SMOS's existing
+     section doesn't itself touch NFO, so this reordering isn't load-
+     bearing for correctness now that the harness fix is in, but it's
+     kept since it mirrors the dependency (the second real deployment
+     SA SMOS needs) more naturally.
+  Verified: full local Postgres 16 pass (59 tables, 0 mismatches),
+  live-schema-match check green, all 16 modules' unit test suites green
+  (`nfo` 23 → 24, one new test for bug 2 above), all 16 integration
+  tests green. This closes the entire six-item follow-up sequence:
+  FOCOM FCAPS depth, SME Trusted Invokers, AI/ML Workflow, RAN
+  Analytics, SO SMOS, and SA SMOS are now all demoed.
 
 ## Suggested next pass (priority order)
 

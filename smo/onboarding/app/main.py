@@ -84,13 +84,17 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
         state=PackageState.ONBOARDING,
     )
     db.add(pkg)
-    # Committed, not just flushed, before the pipeline runs: NFO's
-    # CreateDescriptor (below) writes from its own process and connection,
-    # and its nf_deployment_descriptor.package_id FK can only see a
-    # committed application_package row — an uncommitted one made every
-    # real onboarding fail with a ForeignKeyViolation. It also makes the
-    # ONBOARDING state observable while validation runs, as the async
-    # contract describes.
+    # A real commit, not just flush() — _create_nf_deployment_descriptor
+    # below calls NFO over a real network hop (a separate service, its own
+    # DB connection in production), and NFO's own NFDeploymentDescriptor
+    # row has a real FK on application_package.package_id. flush() only
+    # makes this row visible within THIS session's own uncommitted
+    # transaction; under Postgres's real READ COMMITTED isolation, NFO's
+    # separate connection can't see it yet, so its own INSERT would hit a
+    # genuine ForeignKeyViolation — a real bug (masked in this build's own
+    # SQLite test harness, whose single shared StaticPool connection gives
+    # every nested session an accidental dirty-read view of this session's
+    # uncommitted work).
     db.commit()
 
     try:

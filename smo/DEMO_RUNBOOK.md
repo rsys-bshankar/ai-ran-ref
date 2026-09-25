@@ -473,7 +473,51 @@ print(r.status_code, r.json())
 "
 ```
 
-## 9. Policy Mgmt intent automation (optional) — register, dispatch, retract
+**FOCOM FCAPS** — a distinct domain from RAN NF OAM's RAN-function
+alarms (NFO+FOCOM LLD section 1): infrastructure/O-Cloud host alarms
+and performance. Ingest a real infrastructure alarm against the Phase 1
+degenerate cluster:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://focom:8000/alarms/ingest', params={'resource_ref': 'phase1-degenerate-cluster', 'severity': 'critical'})
+print(r.status_code, r.json())
+"
+```
+
+Confirm it's queryable:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://focom:8000/alarms')
+print(r.status_code, r.json())
+"
+```
+
+Performance metrics are also genuinely queryable, filterable by
+`resource_ref`:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://focom:8000/performance')
+print(r.status_code, r.json())
+"
+```
+
+This returns `[]` in a fresh stack — honestly, not a bug: there is no
+`POST /performance` route in this build at all, matching the same
+"no real southbound collection pipeline" elision already documented for
+RAN NF OAM's PM subscriptions — real O-Cloud performance metrics would
+arrive via O2ims's own collection mechanism, not an rApp-facing write.
+The route itself, and its filter, are real and already unit-tested
+(`test_performance_metrics_filterable_by_resource`); nothing here is
+stubbed, there is simply nothing to collect from in a docker-run-based
+Phase 1.
+
+## 10. Policy Mgmt intent automation (optional) — register, dispatch, retract
 
 Independent of the sample rApp instance above — this shows Policy Mgmt's
 real Intent-to-RMIH dispatch mechanism firing: an SMO-internal RAN
@@ -593,7 +637,7 @@ print(r4.status_code)
 "
 ```
 
-## 10. A1 Policy Management (optional) — register, enforce, a real duplicate rejection, retract
+## 11. A1 Policy Management (optional) — register, enforce, a real duplicate rejection, retract
 
 Independent of the sample rApp instance above — this exercises a whole
 module the runbook has never touched: A1 Related's real mapping-store
@@ -710,7 +754,456 @@ print(r3.status_code)
 "
 ```
 
-## 11. Retire it — Terminate, then Delete
+## 12. SME Trusted Invokers (optional) — register, query, revoke a real security context
+
+Independent of the sample rApp instance above — this exercises the real
+CAPIF core's second, separate security mechanism beyond OAuth2 token
+issuance (`capifcore/internal/securityservice/security.go`): a per-AEF
+security context a real AEF (resource server) would consult directly,
+not something the token endpoint itself ever reads. Previously entirely
+absent from this build (SPEC_AUDIT.md SME item 2).
+
+Reuse the `apiInvokerId` from step 4's invoker registration. Register a
+security context for it — this genuinely requires the invoker already
+be onboarded:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.put('http://sme:8000/trusted-invokers/<apiInvokerId>', json={
+    'notificationDestination': 'http://demo-consumer:9000/security-notify',
+    'securityInfo': [{'aefId': 'hello-world-rapp', 'apiId': 'helloworld-api', 'authenticationInfo': 'demo-auth-info',
+                       'authorizationInfo': 'demo-authz-info', 'prefSecurityMethods': ['OAUTH']}],
+})
+print(r.status_code, r.json())
+"
+```
+
+`201` — `selSecurityMethod` is the invoker's own first preferred method
+(this build has no real per-AEF security-method catalog to cross-check
+against, honestly, the same "unknown real content, permissive
+placeholder" pattern used elsewhere). Query it back — by default,
+`authenticationInfo`/`authorizationInfo` are redacted:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://sme:8000/trusted-invokers/<apiInvokerId>')
+print(r.status_code, r.json())
+"
+```
+
+Both fields come back as empty strings. Ask for them explicitly:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://sme:8000/trusted-invokers/<apiInvokerId>', params={'authentication_info': True, 'authorization_info': True})
+print(r.status_code, r.json())
+"
+```
+
+Now the real values come back. **Revoke** the context for this one
+AEF — a real, partial removal, not a full delete:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sme:8000/trusted-invokers/<apiInvokerId>/delete', json={
+    'aefId': 'hello-world-rapp', 'apiIds': ['helloworld-api'], 'apiInvokerId': '<apiInvokerId>', 'cause': 'UNEXPECTED_REASON',
+})
+print(r.status_code)
+"
+```
+
+Since that was the only `securityInfo` entry, the whole trusted-invoker
+record is now gone — confirm with a 404:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://sme:8000/trusted-invokers/<apiInvokerId>')
+print(r.status_code, r.json())
+"
+```
+
+## 13. AI/ML Workflow (optional) — register, train, upload/download a real artifact, advance to ACTIVE
+
+Independent of the sample rApp instance above — a whole module never
+touched by this runbook before. Real MLModel lifecycle FSM (SMO Design
+v1.3 section 3.8), a real training-job round trip, and real artifact
+bytes that genuinely round-trip through Postgres, not a stub.
+
+Register a model with real metadata:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/models', json={
+    'modelType': 'hello-world-anomaly-detector', 'version': '1.0.0',
+    'description': 'Demo anomaly-detection model for the hello-world rApp',
+    'author': 'hello-world-rapp', 'owner': 'hello-world-rapp',
+    'inputDataType': 'application/json', 'outputDataType': 'application/json',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `modelId` — `state` is `REGISTERED`. Request training against
+it — a real FSM transition (`REGISTERED -> TRAINING`, `TRAIN`):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/training-jobs', json={
+    'modelId': '<modelId>', 'producerId': 'hello-world-rapp',
+    'runId': 'demo-run-1', 'trainingDataset': 's3://demo/hello-world-train',
+    'validationDataset': 's3://demo/hello-world-val',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `trainingJobId`. Confirm the model really moved to `TRAINING`:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://ai-ml-workflow:8000/models/<modelId>')
+print(r.status_code, r.json())
+"
+```
+
+**Upload a real model artifact** — the bytes genuinely round-trip
+through a Postgres-backed `ModelArtifact` row, not a discarded stub
+(real S3 storage is the one deliberate elision here):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/models/<modelId>/artifact',
+                files={'file': ('hello-world-model.zip', b'demo-model-weights-bytes', 'application/zip')})
+print(r.status_code, r.json())
+"
+```
+
+Note `artifactVersion` (1). Write real training metrics, matching the
+reference's own whole-body-replace semantics:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/training-jobs/<trainingJobId>/model-metrics', json={'accuracy': 0.94, 'f1Score': 0.91})
+print(r.status_code, r.json())
+"
+```
+
+**Advance the model through its real lifecycle FSM** — each step is a
+genuine state transition, not a fast-forward:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+for event in ['TRAINING_COMPLETE', 'VALIDATION_COMPLETE', 'CERTIFY', 'LOAD', 'ACTIVATE']:
+    r = httpx.post('http://ai-ml-workflow:8000/models/<modelId>/advance', params={'event': event})
+    print(event, '->', r.status_code, r.json()['state'])
+"
+```
+
+Ending state is `ACTIVE`. Download the artifact back and confirm the
+bytes really match what was uploaded:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://ai-ml-workflow:8000/models/<modelId>/artifact/1')
+print(r.status_code, r.content == b'demo-model-weights-bytes')
+"
+```
+
+Deregister — real cascade cleanup of the artifact and training-job rows:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://ai-ml-workflow:8000/models/<modelId>')
+print(r.status_code)
+"
+```
+
+## 14. RAN Analytics (optional) — register a producer, subscribe, publish a real report
+
+Independent of the sample rApp instance above — the last of the four
+modules never touched by any demo phase before this pass. Real
+producer registration (which itself does the same real two-step CAPIF
+dance as step 4: SME provider enrolment then service publish), a real
+subscription, and a real report-publish that genuinely notifies its
+subscriber.
+
+Register an analytics producer:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ran-analytics:8000/producers',
+                params={'producer_id': 'hello-world-rapp', 'analytics_type': 'coverage-issue-analysis'},
+                json={'dme_input_types': [], 'output_schema': {'type': 'object', 'properties': {'issue': {'type': 'string'}}}})
+print(r.status_code, r.json())
+"
+```
+
+`hello-world-rapp` was already SME-enrolled in step 4 — this
+re-registers the same provider (idempotent) and publishes a second,
+distinct service (`mdaf.coverage-issue-analysis`) for it, the same
+real cross-module wiring `register_analytics_producer` always does.
+Confirm it's a real, queryable registration:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://ran-analytics:8000/producers', params={'analytics_type': 'coverage-issue-analysis'})
+print(r.status_code, r.json())
+"
+```
+
+Subscribe, with a real notification destination:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ran-analytics:8000/subscriptions', params={
+    'analytics_type': 'coverage-issue-analysis', 'requested_by': 'sa-smos',
+    'notification_destination': 'http://demo-consumer:9000/analytics-reports',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `subscriptionId`, then publish a report:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ran-analytics:8000/reports', params={'analytics_type': 'coverage-issue-analysis'},
+                json={'output': {'issue': 'demo-cell-1 coverage hole detected'}, 'input_sources': []})
+print(r.status_code, r.json())
+"
+```
+
+`publish_report` fired a real notification to
+`http://demo-consumer:9000/analytics-reports` — no real listener
+exists at that address in this compose stack (same honesty pattern as
+FOCOM's/Policy Mgmt's/A1 Related's placeholder callbacks above), so
+watch `ran-analytics`'s own logs for the delivery attempt;
+`tests_integration/test_demo_runbook.py` proves the real dispatch
+fires with the correct `reportId`/`output` payload, by intercepting
+the exact `httpx.post` call `_notify_report_subscribers` makes.
+Confirm the report is queryable:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://ran-analytics:8000/reports', params={'analytics_type': 'coverage-issue-analysis'})
+print(r.status_code, r.json())
+"
+```
+
+Unsubscribe:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://ran-analytics:8000/subscriptions/<subscriptionId>')
+print(r.status_code)
+"
+```
+
+## 15. SA SMOS (optional) — a real assurance monitor, a genuine `RECONNECT` heal, and a genuine `ROLLBACK` refusal
+
+Independent of the sample rApp instance above — the last of the
+six-item follow-up sequence. SA SMOS's own real remedial-action
+dispatch (SO/SA SMOS LLD section 2.1) was already implemented and
+unit-tested, but no demo phase had ever exercised it. `RECONNECT`
+needs a genuine, `RUNNING` `NFDeployment` to reconnect — the sample
+rApp's own deployment (step 3) can't be reused, since NFO's real
+duplication guard means a `NFDeploymentDescriptor` may only be
+deployed once — so this creates a second, independent deployment of
+the same already-onboarded package first, via SO SMOS's own real
+dispatch table (the next section exercises it further).
+
+Create a second `NFDeploymentDescriptor` against the package onboarded
+in step 2 (`CreateDescriptor` has no per-package uniqueness
+constraint — only *deploying* the same descriptor twice is rejected):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://nfo:8000/descriptors', json={
+    'packageId': '<packageId>', 'name': 'sa-smos-demo-descriptor',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the new `nfDeploymentDescriptorId`, then submit a real SO SMOS
+order with a single `DEPLOY` step targeting it — the same dispatch
+table the next section exercises further, this time reaching NFO's
+real `Instantiate`:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://so-smos:8000/orders', json={
+    'scope': 'sa-smos-demo-deploy',
+    'steps': [
+        {'stepType': 'DEPLOY', 'targetModule': 'NFO', 'nfDeploymentDescriptorId': '<newDescriptorId>', 'name': 'sa-smos-demo-deployment'},
+    ],
+})
+print(r.status_code, r.json())
+"
+```
+
+The single step is `COMPLETED`; its `result` carries a real
+`nfDeploymentId` in state `RUNNING` (NFO's own `INSTANTIATE_COMPLETE`
+transition, the same as the sample rApp's own deployment). Note the
+`orderId`.
+
+Register an `AssuranceMonitor` scoped to that order:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sa-smos:8000/monitors', params={'target_order_id': '<orderId>'}, json={'latency': 100})
+print(r.status_code, r.json())
+"
+```
+
+Note the `monitorId`. Evaluate it against a real metrics sample that
+breaches the threshold:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sa-smos:8000/monitors/<monitorId>/evaluate', json={'latency': 80})
+print(r.status_code, r.json())
+"
+```
+
+`breaches` shows `{'latency': 100}` — a real threshold comparison, not
+a stub.
+
+**A genuine `RECONNECT`** — `ExecuteRemedialAction` resolves the
+monitor's `target_order_id` back into a concrete `nfDeploymentId` by
+reading SO SMOS's own order record (`_resolve_deployed_nf`, finding
+the `DEPLOY` step's `COMPLETED` result) and dispatches NFO's real
+`Heal`:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sa-smos:8000/monitors/<monitorId>/remedial-actions', params={'action_type': 'RECONNECT'})
+print(r.status_code, r.json())
+"
+```
+
+`outcome` is `RESOLVED` — NFO's `Heal` route genuinely fired (from
+`RUNNING`, idempotent, matching the reference's absence of a real
+"unhealthy" concept — see `nfo/app/main.py`'s own `heal()` docstring)
+and recorded a real `LCMOperation` row.
+
+**A genuine `ROLLBACK` refusal** — this is not a generic "ambiguous
+meaning" stub. rApp Management's own `UpgradeInstance` deletes the
+previous `RAppInstance` row on a successful commit, so no
+package-version history survives to roll back to at all:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sa-smos:8000/monitors/<monitorId>/remedial-actions', params={'action_type': 'ROLLBACK'})
+print(r.status_code, r.json())
+"
+```
+
+`501`, with `detail.title` = `ROLLBACK_HISTORY_UNAVAILABLE` and a
+concrete explanation, not a generic error.
+
+Retire the second deployment — NFO's real `Terminate` (from `RUNNING`,
+this build's Phase 1 elision completes the delete synchronously):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://nfo:8000/deployments/<nfDeploymentId>')
+print(r.status_code)
+"
+```
+
+## 16. SO SMOS (optional) — a real multi-step order, fail-fast, cancel
+
+Independent of the sample rApp instance above — this exercises SO
+SMOS's own real dispatch table (SO/SA SMOS LLD section 1): a single
+order's steps are dispatched in sequence to whichever downstream
+module each `stepType`/`targetModule` pair maps to, over the real R1
+client — not a placeholder. Section 1.1's own design decision is
+**fail-fast**: the first failed step halts the order; every step after
+it stays `PENDING`, never attempted; completed steps are not
+auto-rolled-back (no compensating-transaction mechanism exists in
+Phase 1).
+
+Submit a 3-step order — a real `FOCOM` provision, a `POLICY` step
+against a policy type A1 Related doesn't recognize (a genuine
+downstream rejection, not a scripted one), and a `TRAINING` step that
+should never actually be attempted:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://so-smos:8000/orders', json={
+    'scope': 'demo-multi-step-order',
+    'steps': [
+        {'stepType': 'INFRA', 'targetModule': 'FOCOM', 'spec': {'resourceTypeId': 'gpu-l40', 'description': 'SO SMOS provisioned node'}},
+        {'stepType': 'POLICY', 'targetModule': 'A1_RELATED', 'policyTypeId': 'NOT_A_REAL_POLICY_TYPE',
+         'policyObject': {'scope': {'cellId': 'demo-cell-1'}}, 'nearRtRicId': 'mock-near-rt-ric-001'},
+        {'stepType': 'TRAINING', 'targetModule': 'AI_ML_WORKFLOW', 'producerId': 'hello-world-rapp'},
+    ],
+})
+print(r.status_code, r.json())
+"
+```
+
+The response shows all three steps' real outcomes in one call: step 1
+`COMPLETED` (a genuine new `Resource` row now exists in FOCOM), step 2
+`FAILED` (A1 Related's own real `POLICY_TYPE_NOT_SUPPORTED` rejection,
+surfaced as `DownstreamError` — SO SMOS's own dispatch layer
+distinguishes this from a transport failure, per its own docstring on
+a real bug this caught: a downstream error response was previously
+recorded as `COMPLETED` with the error body as the "result"), and step
+3 `PENDING` — the order halted before `AI_ML_WORKFLOW` was ever
+dispatched to. Note the `orderId`, then confirm the persisted state:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://so-smos:8000/orders/<orderId>')
+print(r.status_code, r.json())
+"
+```
+
+**Cancel** the order — the real, genuinely-tested fix (this route used
+to silently never persist the cancellation at all, since mutating a
+plain JSON column's list in place is invisible to SQLAlchemy's change
+tracking) turns the still-`PENDING` step `CANCELLED`, leaving the
+already-`COMPLETED`/`FAILED` steps untouched:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://so-smos:8000/orders/<orderId>/cancel')
+print(r.status_code, r.json())
+"
+```
+
+## 17. Retire it — Terminate, then Delete
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -732,8 +1225,10 @@ print(r.status_code)
 
 204 with an empty body — the instance row is gone. The full lifecycle
 — onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
-loop, FOCOM resource management, Policy Mgmt intent automation, A1
-Policy Management, retire — is now complete against a real running
+loop, FOCOM resource management, FOCOM FCAPS, Policy Mgmt intent
+automation, A1 Policy Management, SME Trusted Invokers, AI/ML Workflow,
+RAN Analytics, SO SMOS, SA SMOS, retire — is now complete against a
+real running
 stack.
 
 ## Known rough edges for a live walkthrough

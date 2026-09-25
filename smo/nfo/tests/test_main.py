@@ -180,6 +180,26 @@ def test_terminate_from_running_also_removes_its_resource_link(client, monkeypat
         assert remaining == []
 
 
+def test_terminate_removes_its_lcm_operation_history(client, monkeypatch, db_session_factory):
+    """LCMOperation.nf_deployment_id has a real FK, same as
+    NFOCloudResource above — SQLite's own test harness never enforces
+    FKs by default, so a real Postgres instance is what actually caught
+    this: every deployment has at least one LCMOperation row (from
+    Instantiate), so deleting the deployment without clearing its own
+    operation history — including the TERMINATE row Terminate itself
+    just added — genuinely violates the constraint there.
+    """
+    created = _instantiate(client, monkeypatch).json()
+    nf_deployment_id = uuid.UUID(created["nfDeploymentId"])
+
+    del_resp = client.delete(f"/deployments/{nf_deployment_id}")
+    assert del_resp.status_code == 204
+
+    with db_session_factory() as session:
+        remaining = session.query(LCMOperation).filter_by(nf_deployment_id=nf_deployment_id).all()
+        assert remaining == []
+
+
 def test_terminate_again_on_already_terminating_deployment_is_a_noop(client, monkeypatch, db_session_factory):
     """Mirrors the reference's own `elif ... Uninstalling: pass` — a
     second Terminate call while one is already mid-flight must not

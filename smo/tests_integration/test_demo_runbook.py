@@ -216,7 +216,21 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert notifications[1]["notificationEventType"] == "DELETE"
     assert notifications[1]["resourceId"] == resource_id
 
-    # step 9: Policy Mgmt intent automation — register an RMIH, create a
+    # FOCOM FCAPS — a distinct domain from RAN NF OAM's RAN-function
+    # alarms: real infrastructure/O-Cloud alarm ingest + query, plus
+    # performance query (no ingest route exists in this build — real
+    # O2ims collection elision — so it's asserted empty, honestly, not
+    # skipped).
+    alarm = mesh["focom"].post("/alarms/ingest", params={"resource_ref": "phase1-degenerate-cluster", "severity": "critical"})
+    assert alarm.status_code == 200
+    alarms = mesh["focom"].get("/alarms")
+    assert any(a["resourceRef"] == "phase1-degenerate-cluster" and a["severity"] == "critical" for a in alarms.json())
+
+    performance = mesh["focom"].get("/performance")
+    assert performance.status_code == 200
+    assert performance.json() == []
+
+    # step 10: Policy Mgmt intent automation — register an RMIH, create a
     # matching Intent, observe the real dispatch notification, retract.
     # Intercepted at the same httpx.post call create_intent makes,
     # same technique as FOCOM's step above.
@@ -292,7 +306,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     del_rmih2 = mesh["policy-mgmt"].delete("/intent-handling-functions/sa-smos")
     assert del_rmih2.status_code == 204
 
-    # step 10: A1 Policy Management — register a service, create a real
+    # step 11: A1 Policy Management — register a service, create a real
     # policy against the mock Near-RT RIC, observe a real duplicate-
     # content rejection, observe a real status-change notification,
     # retract. Intercepted at the same httpx.post call
@@ -353,7 +367,201 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     del_service = mesh["a1-related"].delete("/services/hello-world-rapp")
     assert del_service.status_code == 204
 
-    # step 11: retire — terminate then delete
+    # step 12: SME Trusted Invokers — register a real security context
+    # for the invoker registered in step 4, confirm default redaction,
+    # confirm real values on request, revoke, confirm removal.
+    register_ti = mesh["sme"].put(f"/trusted-invokers/{invoker['apiInvokerId']}", json={
+        "notificationDestination": "http://demo-consumer:9000/security-notify",
+        "securityInfo": [{"aefId": "hello-world-rapp", "apiId": "helloworld-api", "authenticationInfo": "demo-auth-info",
+                           "authorizationInfo": "demo-authz-info", "prefSecurityMethods": ["OAUTH"]}],
+    })
+    assert register_ti.status_code == 201
+    assert register_ti.json()["securityInfo"][0]["selSecurityMethod"] == "OAUTH"
+
+    redacted = mesh["sme"].get(f"/trusted-invokers/{invoker['apiInvokerId']}")
+    assert redacted.status_code == 200
+    assert redacted.json()["securityInfo"][0]["authenticationInfo"] == ""
+    assert redacted.json()["securityInfo"][0]["authorizationInfo"] == ""
+
+    revealed = mesh["sme"].get(f"/trusted-invokers/{invoker['apiInvokerId']}", params={"authentication_info": True, "authorization_info": True})
+    assert revealed.json()["securityInfo"][0]["authenticationInfo"] == "demo-auth-info"
+    assert revealed.json()["securityInfo"][0]["authorizationInfo"] == "demo-authz-info"
+
+    revoke = mesh["sme"].post(f"/trusted-invokers/{invoker['apiInvokerId']}/delete", json={
+        "aefId": "hello-world-rapp", "apiIds": ["helloworld-api"], "apiInvokerId": invoker["apiInvokerId"], "cause": "UNEXPECTED_REASON",
+    })
+    assert revoke.status_code == 204
+
+    gone = mesh["sme"].get(f"/trusted-invokers/{invoker['apiInvokerId']}")
+    assert gone.status_code == 404
+
+    # step 13: AI/ML Workflow — register a model, request training, upload
+    # a real artifact, write metrics, advance the real lifecycle FSM to
+    # ACTIVE, download the artifact back, deregister.
+    model = mesh["ai-ml-workflow"].post("/models", json={
+        "modelType": "hello-world-anomaly-detector", "version": "1.0.0",
+        "description": "Demo anomaly-detection model for the hello-world rApp",
+        "author": "hello-world-rapp", "owner": "hello-world-rapp",
+        "inputDataType": "application/json", "outputDataType": "application/json",
+    })
+    assert model.status_code == 201
+    model_id = model.json()["modelId"]
+    assert model.json()["state"] == "REGISTERED"
+
+    training = mesh["ai-ml-workflow"].post("/training-jobs", json={
+        "modelId": model_id, "producerId": "hello-world-rapp", "runId": "demo-run-1",
+        "trainingDataset": "s3://demo/hello-world-train", "validationDataset": "s3://demo/hello-world-val",
+    })
+    assert training.status_code == 201
+    training_job_id = training.json()["trainingJobId"]
+
+    training_state = mesh["ai-ml-workflow"].get(f"/models/{model_id}")
+    assert training_state.json()["state"] == "TRAINING"
+
+    artifact_bytes = b"demo-model-weights-bytes"
+    artifact = mesh["ai-ml-workflow"].post(f"/models/{model_id}/artifact",
+                                            files={"file": ("hello-world-model.zip", artifact_bytes, "application/zip")})
+    assert artifact.status_code == 201
+    assert artifact.json()["artifactVersion"] == 1
+
+    metrics = mesh["ai-ml-workflow"].post(f"/training-jobs/{training_job_id}/model-metrics", json={"accuracy": 0.94, "f1Score": 0.91})
+    assert metrics.status_code == 200
+    assert metrics.json()["modelMetrics"] == {"accuracy": 0.94, "f1Score": 0.91}
+
+    for event in ["TRAINING_COMPLETE", "VALIDATION_COMPLETE", "CERTIFY", "LOAD", "ACTIVATE"]:
+        advanced = mesh["ai-ml-workflow"].post(f"/models/{model_id}/advance", params={"event": event})
+        assert advanced.status_code == 200
+    assert advanced.json()["state"] == "ACTIVE"
+
+    downloaded = mesh["ai-ml-workflow"].get(f"/models/{model_id}/artifact/1")
+    assert downloaded.status_code == 200
+    assert downloaded.content == artifact_bytes
+
+    deregistered = mesh["ai-ml-workflow"].delete(f"/models/{model_id}")
+    assert deregistered.status_code == 204
+
+    # step 14: RAN Analytics — register a producer (real cross-module SME
+    # enrolment + service publish), subscribe with a real notification
+    # destination, publish a report, observe the real notification fire
+    # (same intercept technique as FOCOM/Policy Mgmt/A1 Related above),
+    # unsubscribe.
+    analytics_notifications = []
+    real_post_4 = httpx.post
+
+    def fake_post_4(location, json=None, timeout=None, **kwargs):
+        if location == "http://demo-consumer:9000/analytics-reports":
+            analytics_notifications.append(json)
+            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
+        return real_post_4(location, json=json, timeout=timeout, **kwargs)
+
+    monkeypatch.setattr(loaded_apps["ran-analytics"].httpx, "post", fake_post_4)
+
+    producer = mesh["ran-analytics"].post("/producers",
+        params={"producer_id": "hello-world-rapp", "analytics_type": "coverage-issue-analysis"},
+        json={"dme_input_types": [], "output_schema": {"type": "object", "properties": {"issue": {"type": "string"}}}})
+    assert producer.status_code == 201
+
+    producers = mesh["ran-analytics"].get("/producers", params={"analytics_type": "coverage-issue-analysis"})
+    assert any(p["producerId"] == "hello-world-rapp" for p in producers.json())
+
+    subscription = mesh["ran-analytics"].post("/subscriptions", params={
+        "analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos",
+        "notification_destination": "http://demo-consumer:9000/analytics-reports",
+    })
+    assert subscription.status_code == 201
+    subscription_id = subscription.json()["subscriptionId"]
+
+    report = mesh["ran-analytics"].post("/reports", params={"analytics_type": "coverage-issue-analysis"},
+        json={"output": {"issue": "demo-cell-1 coverage hole detected"}, "input_sources": []})
+    assert report.status_code == 201
+    report_id = report.json()["reportId"]
+
+    assert len(analytics_notifications) == 1
+    assert analytics_notifications[0]["reportId"] == report_id
+    assert analytics_notifications[0]["output"] == {"issue": "demo-cell-1 coverage hole detected"}
+
+    reports = mesh["ran-analytics"].get("/reports", params={"analytics_type": "coverage-issue-analysis"})
+    assert any(r["reportId"] == report_id for r in reports.json())
+
+    unsubscribed = mesh["ran-analytics"].delete(f"/subscriptions/{subscription_id}")
+    assert unsubscribed.status_code == 204
+
+    # step 15: SA SMOS — a real assurance monitor, a genuine RECONNECT
+    # heal (resolving a concrete nfDeploymentId via a live SO SMOS order
+    # lookup), and a genuine ROLLBACK refusal. RECONNECT needs a real,
+    # RUNNING NFDeployment distinct from the sample rApp's own deployment
+    # above (NFO's real duplication guard means a descriptor can only be
+    # deployed once), so this creates a second descriptor against the
+    # same already-onboarded package, then deploys it via a real SO SMOS
+    # order (SO SMOS's own dispatch table, exercised further by step 16
+    # below).
+    descriptor2 = mesh["nfo"].post("/descriptors", json={"packageId": package_id, "name": "sa-smos-demo-descriptor"})
+    assert descriptor2.status_code == 201
+    descriptor2_id = descriptor2.json()["nfDeploymentDescriptorId"]
+
+    deploy_order = mesh["so-smos"].post("/orders", json={
+        "scope": "sa-smos-demo-deploy",
+        "steps": [
+            {"stepType": "DEPLOY", "targetModule": "NFO", "nfDeploymentDescriptorId": descriptor2_id, "name": "sa-smos-demo-deployment"},
+        ],
+    })
+    assert deploy_order.status_code == 202
+    deploy_steps = deploy_order.json()["steps"]
+    assert deploy_steps[0]["status"] == "COMPLETED"
+    assert deploy_steps[0]["result"]["state"] == "RUNNING"
+    sa_smos_order_id = deploy_order.json()["orderId"]
+    nf_deployment_id = deploy_steps[0]["result"]["nfDeploymentId"]
+
+    monitor = mesh["sa-smos"].post("/monitors", params={"target_order_id": sa_smos_order_id}, json={"latency": 100})
+    assert monitor.status_code == 201
+    monitor_id = monitor.json()["monitorId"]
+
+    evaluated = mesh["sa-smos"].post(f"/monitors/{monitor_id}/evaluate", json={"latency": 80})
+    assert evaluated.json()["breaches"] == {"latency": 100}
+
+    reconnect = mesh["sa-smos"].post(f"/monitors/{monitor_id}/remedial-actions", params={"action_type": "RECONNECT"})
+    assert reconnect.status_code == 201
+    assert reconnect.json()["outcome"] == "RESOLVED"
+
+    rollback = mesh["sa-smos"].post(f"/monitors/{monitor_id}/remedial-actions", params={"action_type": "ROLLBACK"})
+    assert rollback.status_code == 501
+    assert rollback.json()["detail"]["title"] == "ROLLBACK_HISTORY_UNAVAILABLE"
+
+    terminate_second = mesh["nfo"].delete(f"/deployments/{nf_deployment_id}")
+    assert terminate_second.status_code == 204
+
+    # step 16: SO SMOS — a real multi-step order dispatched over the real
+    # R1 client to two different downstream modules (FOCOM, A1 Related),
+    # proving the real fail-fast halt (a genuine downstream rejection
+    # halts the order; the never-attempted step stays PENDING), then
+    # cancel to turn the PENDING step CANCELLED.
+    order = mesh["so-smos"].post("/orders", json={
+        "scope": "demo-multi-step-order",
+        "steps": [
+            {"stepType": "INFRA", "targetModule": "FOCOM", "spec": {"resourceTypeId": "gpu-l40", "description": "SO SMOS provisioned node"}},
+            {"stepType": "POLICY", "targetModule": "A1_RELATED", "policyTypeId": "NOT_A_REAL_POLICY_TYPE",
+             "policyObject": {"scope": {"cellId": "demo-cell-1"}}, "nearRtRicId": "mock-near-rt-ric-001"},
+            {"stepType": "TRAINING", "targetModule": "AI_ML_WORKFLOW", "producerId": "hello-world-rapp"},
+        ],
+    })
+    assert order.status_code == 202
+    order_id = order.json()["orderId"]
+    steps = order.json()["steps"]
+    assert steps[0]["status"] == "COMPLETED"
+    assert steps[1]["status"] == "FAILED"
+    assert steps[2]["status"] == "PENDING"
+
+    order_status = mesh["so-smos"].get(f"/orders/{order_id}")
+    assert order_status.json()["steps"][2]["status"] == "PENDING"
+
+    cancelled = mesh["so-smos"].post(f"/orders/{order_id}/cancel")
+    assert cancelled.status_code == 200
+    cancelled_steps = cancelled.json()["steps"]
+    assert cancelled_steps[0]["status"] == "COMPLETED"
+    assert cancelled_steps[1]["status"] == "FAILED"
+    assert cancelled_steps[2]["status"] == "CANCELLED"
+
+    # step 17: retire — terminate then delete
     term = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/terminate")
     assert term.status_code == 200
     assert term.json()["state"] == "UNDEPLOYED"
