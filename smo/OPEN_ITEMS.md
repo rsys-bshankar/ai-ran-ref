@@ -2360,6 +2360,69 @@ own §1/§2 items stand as-is.
   local Postgres 16 pass (59 tables, 0 mismatches) and the
   live-schema-match check, both green. Unit-test counts unchanged;
   `tests_integration` stays at 16. Next: SA SMOS, the last item.
+- **Demo: SA SMOS.** Sixth and last of the six-item follow-up sequence.
+  `RECONNECT` needed a real, `RUNNING` `NFDeployment` distinct from the
+  sample rApp's own (NFO's real duplication guard means a descriptor
+  can only be deployed once), so the new section deploys a second one:
+  a fresh `NFDeploymentDescriptor` against the already-onboarded
+  package, then a real SO SMOS `DEPLOY` order targeting it — the same
+  dispatch table §16 (SO SMOS, renumbered from §15 to make room) uses.
+  Registers an `AssuranceMonitor` on that order, evaluates a real
+  threshold breach, then both real remedial-action outcomes:
+  `RECONNECT` resolves the concrete `nfDeploymentId` via a live SO SMOS
+  order lookup and dispatches NFO's real `Heal` (`RESOLVED`), and
+  `ROLLBACK` genuinely returns `ROLLBACK_HISTORY_UNAVAILABLE` (501).
+  `tests_integration/test_demo_runbook.py` gained a matching step,
+  placed *before* the existing SO SMOS step (see below for why).
+  Grounding this surfaced three real bugs, none hypothetical — each had
+  a failing test (or a failing real-Postgres run) until fixed:
+  1. **`Onboarding.OnboardPackage` called NFO's real `CreateDescriptor`
+     before its own `ApplicationPackage` row was committed** (`flush()`,
+     not `commit()`) — NFO's `NFDeploymentDescriptor.package_id` has a
+     real FK, and under real Postgres's own READ COMMITTED isolation
+     that row is invisible to NFO's own separate connection until
+     committed: a real `ForeignKeyViolation` on *every* onboard, in
+     production, never once caught by SQLite's own single-shared-
+     connection test harness (which gives every nested session an
+     accidental dirty-read view of every other session's uncommitted
+     work). Fixed by committing the package row before calling NFO.
+  2. **NFO's `Terminate` never cleared a deployment's own
+     `LCMOperation` history before deleting it** — same real FK
+     shape as `NFOCloudResource`'s (already explicitly cleaned up
+     first); every deployment has at least one `LCMOperation` row (from
+     `Instantiate`), so this was a real `ForeignKeyViolation` on *every*
+     real terminate, not an edge case. SQLite's own test harness never
+     enforces FKs by default, so nothing had caught it either. Fixed by
+     clearing `LCMOperation` rows alongside `NFOCloudResource`.
+  3. **`tests_integration/`'s own shared SQLite test engine let a
+     cross-service call chain three deep (so-smos -> nfo -> focom)
+     silently corrupt itself** — a second such dispatch in one test hit
+     a genuine `StaleDataError`: `StaticPool` funnels every nested
+     FastAPI request's own `Session` onto the one physical connection,
+     and an inner Session's commit was silently committing an outer
+     Session's not-yet-committed work too. Confirmed purely a
+     test-harness artifact (the identical sequence passes cleanly
+     against a real local Postgres instance) by running it there
+     directly. Fixed with SQLAlchemy's own documented pysqlite
+     workaround (`shared/smo_shared/testing.py`) plus rebinding every
+     Session in `tests_integration/conftest.py`'s `mesh`/
+     `db_connection` fixtures (and the 4 places in
+     `test_cross_service.py` that opened their own direct `Session` to
+     peek at persisted rows) to one shared Connection via
+     `join_transaction_mode="create_savepoint"`, so nested Sessions
+     share the one real transaction through SAVEPOINT nesting instead
+     of colliding. Also why SA SMOS's new runbook section is placed
+     *before* SO SMOS's own (§15, not after) — SO SMOS's existing
+     section doesn't itself touch NFO, so this reordering isn't load-
+     bearing for correctness now that the harness fix is in, but it's
+     kept since it mirrors the dependency (the second real deployment
+     SA SMOS needs) more naturally.
+  Verified: full local Postgres 16 pass (59 tables, 0 mismatches),
+  live-schema-match check green, all 16 modules' unit test suites green
+  (`nfo` 23 → 24, one new test for bug 2 above), all 16 integration
+  tests green. This closes the entire six-item follow-up sequence:
+  FOCOM FCAPS depth, SME Trusted Invokers, AI/ML Workflow, RAN
+  Analytics, SO SMOS, and SA SMOS are now all demoed.
 
 ## Suggested next pass (priority order)
 

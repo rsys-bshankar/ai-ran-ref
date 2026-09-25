@@ -214,7 +214,7 @@ def test_onboarding_to_rapp_management_status_check(mesh):
     assert create.status_code == 409  # rApp Mgmt correctly refuses — the package never reached AVAILABLE
 
 
-def test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_descriptor(mesh, loaded_apps, shared_engine, monkeypatch):
+def test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_descriptor(mesh, loaded_apps, db_connection, monkeypatch):
     """The actual fix for OPEN_ITEMS.md's top item: NFO's CreateDescriptor
     (NFO+FOCOM LLD section 2) is now called from OnboardPackage once
     validation succeeds, and rApp Management's CreateInstance now passes
@@ -245,7 +245,7 @@ def test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_de
 
     NFDeploymentDescriptor = loaded_apps["nfo"].NFDeploymentDescriptor
     NFDeployment = loaded_apps["nfo"].NFDeployment
-    with Session(shared_engine) as session:
+    with Session(bind=db_connection, join_transaction_mode="create_savepoint") as session:
         descriptor = session.get(NFDeploymentDescriptor, uuid.UUID(nf_deployment_descriptor_id))
         assert descriptor is not None
         assert str(descriptor.package_id) == package_id
@@ -253,7 +253,7 @@ def test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_de
     create = mesh["rapp-mgmt"].post("/instances", json={"packageId": package_id, "config": {}})
     assert create.status_code == 202
 
-    with Session(shared_engine) as session:
+    with Session(bind=db_connection, join_transaction_mode="create_savepoint") as session:
         deployment = session.scalar(
             select(NFDeployment).where(NFDeployment.nf_deployment_descriptor_id == uuid.UUID(nf_deployment_descriptor_id))
         )
@@ -261,7 +261,7 @@ def test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_de
         assert deployment.state == "RUNNING"
 
 
-def test_ran_nf_oam_config_write_reaches_a_real_mock_o1_adaptor(mesh, loaded_apps, shared_engine):
+def test_ran_nf_oam_config_write_reaches_a_real_mock_o1_adaptor(mesh, loaded_apps, db_connection):
     """OPEN_ITEMS.md section 2: "no real southbound integrations beyond
     the A1 mock" — RAN NF OAM LLD section 5.1's PATCH step
     (netconf_client.py) always dispatched a real RFC 6241 <edit-config>
@@ -279,7 +279,7 @@ def test_ran_nf_oam_config_write_reaches_a_real_mock_o1_adaptor(mesh, loaded_app
     ManagedEntity = loaded_apps["ran-nf-oam"].ManagedEntity
     O1AdaptorEndpoint = loaded_apps["ran-nf-oam"].O1AdaptorEndpoint
 
-    with Session(shared_engine) as session:
+    with Session(bind=db_connection, join_transaction_mode="create_savepoint") as session:
         endpoint = O1AdaptorEndpoint(
             managed_element_ref="ME-integration-1", adaptor_uri="http://mock-o1-adaptor:8000/edit-config",
             protocol_support=["NETCONF"],
@@ -310,7 +310,7 @@ def test_ran_nf_oam_config_write_reaches_a_real_mock_o1_adaptor(mesh, loaded_app
     assert applied.json()["attributeChanges"] == {"adminState": "UNLOCKED"}
 
 
-def test_ran_nf_oam_config_write_rejected_by_mock_o1_adaptor_is_recorded(mesh, loaded_apps, shared_engine):
+def test_ran_nf_oam_config_write_rejected_by_mock_o1_adaptor_is_recorded(mesh, loaded_apps, db_connection):
     """The other real outcome: mock-o1-adaptor's own rejection (an empty
     attributeChanges payload — the same real, testable trigger its own
     unit tests use) must surface as a genuine REJECTED sub_change, not a
@@ -321,7 +321,7 @@ def test_ran_nf_oam_config_write_rejected_by_mock_o1_adaptor_is_recorded(mesh, l
     ManagedEntity = loaded_apps["ran-nf-oam"].ManagedEntity
     O1AdaptorEndpoint = loaded_apps["ran-nf-oam"].O1AdaptorEndpoint
 
-    with Session(shared_engine) as session:
+    with Session(bind=db_connection, join_transaction_mode="create_savepoint") as session:
         endpoint = O1AdaptorEndpoint(
             managed_element_ref="ME-integration-2", adaptor_uri="http://mock-o1-adaptor:8000/edit-config",
             protocol_support=["NETCONF"],

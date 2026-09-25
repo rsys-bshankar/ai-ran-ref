@@ -52,13 +52,53 @@ def shared_engine(loaded_apps):
 
 
 @pytest.fixture
-def mesh(loaded_apps, shared_engine, monkeypatch):
+def db_connection(shared_engine):
+    """One shared Connection, inside one open outer transaction this
+    fixture rolls back at teardown — not a bare `shared_engine`. A
+    cross-service call chain three deep (so-smos -> nfo -> focom, each a
+    real nested FastAPI request) means three separate Session objects
+    live at once, all funneled onto this engine's one StaticPool
+    connection (smo_shared/testing.py). Each grabbing its OWN
+    transaction on that one physical connection is a real bug, caught by
+    a genuine `StaleDataError` on a second real cross-service order
+    dispatch: an inner Session's commit was silently committing the
+    outer Session's not-yet-committed work too (invisible with
+    pysqlite's legacy auto-transaction behavior, until testing.py's own
+    pysqlite fix turned it into an outright `OperationalError`, "cannot
+    start a transaction within a transaction" — confirming this, not a
+    proper fix on its own). Every Session in this test — whether `mesh`'s
+    own per-request ones or a test's own direct `Session(bind=
+    db_connection, join_transaction_mode="create_savepoint")` peek —
+    must bind to THIS connection so they all share the one real
+    transaction via SAVEPOINT nesting (SQLAlchemy's own documented fix
+    for this shape of fixture): a nested Session's own commit then only
+    releases its savepoint, never an outer Session's still-open work.
+    Confirmed this was purely a test-harness artifact, not a real app
+    bug: the identical sequence already passes against a real local
+    Postgres instance, where every Session gets its own real connection.
+    """
+    connection = shared_engine.connect()
+    outer_transaction = connection.begin()
+    yield connection
+    # clean slate for the next test — nothing this test did was ever
+    # really committed (it all happened inside savepoints under this
+    # one still-open outer transaction), so rolling it back is both
+    # correct and simpler than a per-table DELETE sweep.
+    outer_transaction.rollback()
+    connection.close()
+
+
+@pytest.fixture
+def mesh(loaded_apps, db_connection, monkeypatch):
     """Function-scoped: fresh DB rows and a fresh mesh per test, but the
     same loaded app objects and engine across the whole session — the
     apps themselves are stateless (all state lives in the DB), so
-    reloading them per test would just be wasted work.
+    reloading them per test would just be wasted work. See
+    `db_connection`'s own docstring for why every per-request Session
+    binds to that one shared connection rather than `shared_engine`
+    directly.
     """
-    TestSession = sessionmaker(bind=shared_engine)
+    TestSession = sessionmaker(bind=db_connection, join_transaction_mode="create_savepoint")
 
     def override_get_session():
         session = TestSession()
@@ -79,8 +119,3 @@ def mesh(loaded_apps, shared_engine, monkeypatch):
 
     for main_module in loaded_apps.values():
         main_module.app.dependency_overrides.clear()
-
-    # clean slate for the next test — same engine (schema persists), rows cleared
-    with shared_engine.begin() as conn:
-        for table in reversed(Base.metadata.sorted_tables):
-            conn.execute(table.delete())

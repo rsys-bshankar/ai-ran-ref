@@ -1018,7 +1018,127 @@ print(r.status_code)
 "
 ```
 
-## 15. SO SMOS (optional) — a real multi-step order, fail-fast, cancel
+## 15. SA SMOS (optional) — a real assurance monitor, a genuine `RECONNECT` heal, and a genuine `ROLLBACK` refusal
+
+Independent of the sample rApp instance above — the last of the
+six-item follow-up sequence. SA SMOS's own real remedial-action
+dispatch (SO/SA SMOS LLD section 2.1) was already implemented and
+unit-tested, but no demo phase had ever exercised it. `RECONNECT`
+needs a genuine, `RUNNING` `NFDeployment` to reconnect — the sample
+rApp's own deployment (step 3) can't be reused, since NFO's real
+duplication guard means a `NFDeploymentDescriptor` may only be
+deployed once — so this creates a second, independent deployment of
+the same already-onboarded package first, via SO SMOS's own real
+dispatch table (the next section exercises it further).
+
+Create a second `NFDeploymentDescriptor` against the package onboarded
+in step 2 (`CreateDescriptor` has no per-package uniqueness
+constraint — only *deploying* the same descriptor twice is rejected):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://nfo:8000/descriptors', json={
+    'packageId': '<packageId>', 'name': 'sa-smos-demo-descriptor',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the new `nfDeploymentDescriptorId`, then submit a real SO SMOS
+order with a single `DEPLOY` step targeting it — the same dispatch
+table the next section exercises further, this time reaching NFO's
+real `Instantiate`:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://so-smos:8000/orders', json={
+    'scope': 'sa-smos-demo-deploy',
+    'steps': [
+        {'stepType': 'DEPLOY', 'targetModule': 'NFO', 'nfDeploymentDescriptorId': '<newDescriptorId>', 'name': 'sa-smos-demo-deployment'},
+    ],
+})
+print(r.status_code, r.json())
+"
+```
+
+The single step is `COMPLETED`; its `result` carries a real
+`nfDeploymentId` in state `RUNNING` (NFO's own `INSTANTIATE_COMPLETE`
+transition, the same as the sample rApp's own deployment). Note the
+`orderId`.
+
+Register an `AssuranceMonitor` scoped to that order:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sa-smos:8000/monitors', params={'target_order_id': '<orderId>'}, json={'latency': 100})
+print(r.status_code, r.json())
+"
+```
+
+Note the `monitorId`. Evaluate it against a real metrics sample that
+breaches the threshold:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sa-smos:8000/monitors/<monitorId>/evaluate', json={'latency': 80})
+print(r.status_code, r.json())
+"
+```
+
+`breaches` shows `{'latency': 100}` — a real threshold comparison, not
+a stub.
+
+**A genuine `RECONNECT`** — `ExecuteRemedialAction` resolves the
+monitor's `target_order_id` back into a concrete `nfDeploymentId` by
+reading SO SMOS's own order record (`_resolve_deployed_nf`, finding
+the `DEPLOY` step's `COMPLETED` result) and dispatches NFO's real
+`Heal`:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sa-smos:8000/monitors/<monitorId>/remedial-actions', params={'action_type': 'RECONNECT'})
+print(r.status_code, r.json())
+"
+```
+
+`outcome` is `RESOLVED` — NFO's `Heal` route genuinely fired (from
+`RUNNING`, idempotent, matching the reference's absence of a real
+"unhealthy" concept — see `nfo/app/main.py`'s own `heal()` docstring)
+and recorded a real `LCMOperation` row.
+
+**A genuine `ROLLBACK` refusal** — this is not a generic "ambiguous
+meaning" stub. rApp Management's own `UpgradeInstance` deletes the
+previous `RAppInstance` row on a successful commit, so no
+package-version history survives to roll back to at all:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sa-smos:8000/monitors/<monitorId>/remedial-actions', params={'action_type': 'ROLLBACK'})
+print(r.status_code, r.json())
+"
+```
+
+`501`, with `detail.title` = `ROLLBACK_HISTORY_UNAVAILABLE` and a
+concrete explanation, not a generic error.
+
+Retire the second deployment — NFO's real `Terminate` (from `RUNNING`,
+this build's Phase 1 elision completes the delete synchronously):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://nfo:8000/deployments/<nfDeploymentId>')
+print(r.status_code)
+"
+```
+
+## 16. SO SMOS (optional) — a real multi-step order, fail-fast, cancel
 
 Independent of the sample rApp instance above — this exercises SO
 SMOS's own real dispatch table (SO/SA SMOS LLD section 1): a single
@@ -1083,7 +1203,7 @@ print(r.status_code, r.json())
 "
 ```
 
-## 16. Retire it — Terminate, then Delete
+## 17. Retire it — Terminate, then Delete
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1107,7 +1227,7 @@ print(r.status_code)
 — onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
 loop, FOCOM resource management, FOCOM FCAPS, Policy Mgmt intent
 automation, A1 Policy Management, SME Trusted Invokers, AI/ML Workflow,
-RAN Analytics, SO SMOS, retire — is now complete against a
+RAN Analytics, SO SMOS, SA SMOS, retire — is now complete against a
 real running
 stack.
 

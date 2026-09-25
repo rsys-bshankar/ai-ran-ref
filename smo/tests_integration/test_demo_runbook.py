@@ -486,7 +486,51 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     unsubscribed = mesh["ran-analytics"].delete(f"/subscriptions/{subscription_id}")
     assert unsubscribed.status_code == 204
 
-    # step 15: SO SMOS — a real multi-step order dispatched over the real
+    # step 15: SA SMOS — a real assurance monitor, a genuine RECONNECT
+    # heal (resolving a concrete nfDeploymentId via a live SO SMOS order
+    # lookup), and a genuine ROLLBACK refusal. RECONNECT needs a real,
+    # RUNNING NFDeployment distinct from the sample rApp's own deployment
+    # above (NFO's real duplication guard means a descriptor can only be
+    # deployed once), so this creates a second descriptor against the
+    # same already-onboarded package, then deploys it via a real SO SMOS
+    # order (SO SMOS's own dispatch table, exercised further by step 16
+    # below).
+    descriptor2 = mesh["nfo"].post("/descriptors", json={"packageId": package_id, "name": "sa-smos-demo-descriptor"})
+    assert descriptor2.status_code == 201
+    descriptor2_id = descriptor2.json()["nfDeploymentDescriptorId"]
+
+    deploy_order = mesh["so-smos"].post("/orders", json={
+        "scope": "sa-smos-demo-deploy",
+        "steps": [
+            {"stepType": "DEPLOY", "targetModule": "NFO", "nfDeploymentDescriptorId": descriptor2_id, "name": "sa-smos-demo-deployment"},
+        ],
+    })
+    assert deploy_order.status_code == 202
+    deploy_steps = deploy_order.json()["steps"]
+    assert deploy_steps[0]["status"] == "COMPLETED"
+    assert deploy_steps[0]["result"]["state"] == "RUNNING"
+    sa_smos_order_id = deploy_order.json()["orderId"]
+    nf_deployment_id = deploy_steps[0]["result"]["nfDeploymentId"]
+
+    monitor = mesh["sa-smos"].post("/monitors", params={"target_order_id": sa_smos_order_id}, json={"latency": 100})
+    assert monitor.status_code == 201
+    monitor_id = monitor.json()["monitorId"]
+
+    evaluated = mesh["sa-smos"].post(f"/monitors/{monitor_id}/evaluate", json={"latency": 80})
+    assert evaluated.json()["breaches"] == {"latency": 100}
+
+    reconnect = mesh["sa-smos"].post(f"/monitors/{monitor_id}/remedial-actions", params={"action_type": "RECONNECT"})
+    assert reconnect.status_code == 201
+    assert reconnect.json()["outcome"] == "RESOLVED"
+
+    rollback = mesh["sa-smos"].post(f"/monitors/{monitor_id}/remedial-actions", params={"action_type": "ROLLBACK"})
+    assert rollback.status_code == 501
+    assert rollback.json()["detail"]["title"] == "ROLLBACK_HISTORY_UNAVAILABLE"
+
+    terminate_second = mesh["nfo"].delete(f"/deployments/{nf_deployment_id}")
+    assert terminate_second.status_code == 204
+
+    # step 16: SO SMOS — a real multi-step order dispatched over the real
     # R1 client to two different downstream modules (FOCOM, A1 Related),
     # proving the real fail-fast halt (a genuine downstream rejection
     # halts the order; the never-attempted step stays PENDING), then
@@ -517,7 +561,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert cancelled_steps[1]["status"] == "FAILED"
     assert cancelled_steps[2]["status"] == "CANCELLED"
 
-    # step 16: retire — terminate then delete
+    # step 17: retire — terminate then delete
     term = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/terminate")
     assert term.status_code == 200
     assert term.json()["state"] == "UNDEPLOYED"

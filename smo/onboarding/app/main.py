@@ -74,7 +74,18 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
         state=PackageState.ONBOARDING,
     )
     db.add(pkg)
-    db.flush()
+    # A real commit, not just flush() — _create_nf_deployment_descriptor
+    # below calls NFO over a real network hop (a separate service, its own
+    # DB connection in production), and NFO's own NFDeploymentDescriptor
+    # row has a real FK on application_package.package_id. flush() only
+    # makes this row visible within THIS session's own uncommitted
+    # transaction; under Postgres's real READ COMMITTED isolation, NFO's
+    # separate connection can't see it yet, so its own INSERT would hit a
+    # genuine ForeignKeyViolation — a real bug (masked in this build's own
+    # SQLite test harness, whose single shared StaticPool connection gives
+    # every nested session an accidental dirty-read view of this session's
+    # uncommitted work).
+    db.commit()
 
     try:
         entry_definitions, artifacts, integrity_hash = _validate_package(body.location)
