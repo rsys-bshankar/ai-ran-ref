@@ -932,6 +932,24 @@ same way as before — the identical sequence already passed cleanly
 against a real local Postgres instance before this test-harness fix
 even landed.
 
+**Demo depth: DME's type-subscription mechanism.** Continuing the
+same "more demo depth" thread. ICS's own `/info-type-subscription`
+(`InfoTypeSubscriptions`/`ConsumerCallbacks`) — a consumer notified
+whenever any `DmeType` is registered or removed — was closed in an
+earlier §5 pass but had never appeared in the demo. New section:
+subscribe with a real `notificationDestination` → register a new DME
+type, firing a real `REGISTERED` notification
+(`_notify_type_subscribers`) → deregister the producer, tearing down
+both this new type and step 4's own `hello-world-metrics` and firing a
+matching `DEREGISTERED` notification for each → unsubscribe.
+`tests_integration/test_demo_runbook.py` gained a matching step,
+proving the real dispatch fires with the correct `infoTypeId`/
+`jobDataSchema`/`status` payload by intercepting the exact `httpx.post`
+call `_notify_type_subscribers` makes (same technique as every other
+notification demo in this runbook). No code, schema, or OpenAPI-spec
+change — confirmed via a full local Postgres 16 pass (59 tables, 0
+mismatches) and the live-schema-match check, both green.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style
