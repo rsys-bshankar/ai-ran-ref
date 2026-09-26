@@ -106,6 +106,28 @@ stakeholder decision, not code); and the three section 1 design
 decisions (blocked on real data/algorithm/scope input). Everything else
 large/structural is a **confirmed** Phase-1 scope cut, not a gap.
 
+**Phase 2 — AI Platform Service Decomposition (in progress, new
+direction).** Per an external architecture review (the "SMO Actions"
+documents) and explicit agreement to proceed: `ai-ml-workflow/` is being
+split into three real platform services matching TS 28.105's own NRM
+boundaries (**AIMgF** for lifecycle orchestration, **MLMR** for the
+model repository, **MLLF** for loading/activation), `ran-analytics/` is
+gaining a sibling **MDAF** service for TS 28.104-shaped analytics
+reporting, `policy-mgmt/` is being renamed to **Intent Service**
+(TS 28.312) — a correction found while starting this work: it already
+had no policy/rule/constraint code to leave behind, contrary to the
+review's own assumption — and a new **AI Runtime SDK** (`sdk/`) is being
+added so rApps stop calling module REST endpoints directly. This is a
+genuine, deliberate reversal of the Phase-1 scope choice `SPEC_AUDIT.md`
+documented for AI/ML Workflow and RAN Analytics, not a bug fix. Full
+architecture in `docs/architecture/AI_PLATFORM_BASELINE.md` and
+`docs/architecture/SERVICE_OWNERSHIP_MATRIX.md`; per-service detail in
+`docs/ownership/`. Sequenced in four waves — **Wave 0** (this
+architecture freeze, done), Wave 1 (service decomposition), Wave 2
+(AIMgF's own state machines and domain model), Wave 3 (R1 contracts and
+OpenAPI standardization) — each a separate, reviewable step; do not
+reorder them.
+
 ## Stack
 
 **Python 3.11 + FastAPI + SQLAlchemy + Pydantic**, one consistent stack
