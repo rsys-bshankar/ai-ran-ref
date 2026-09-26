@@ -359,10 +359,10 @@ function Flow08() {
 // ---------------------------------------------------------------- 09 intents
 
 function Flow09() {
-  const intents = useSmo<Intent[]>("/policy-mgmt/intents");
+  const intents = useSmo<Intent[]>("/intent-service/intents");
   const [intentId, setIntent, intent] = useSelection(intents.data, (i) => i.intentId);
-  const handlers = useSmo<Rmih[]>("/policy-mgmt/intent-handling-functions");
-  const reports = useSmo<IntentReport[]>(intentId ? "/policy-mgmt/intent-reports" : null, { intent_id: intentId });
+  const handlers = useSmo<Rmih[]>("/intent-service/intent-handling-functions");
+  const reports = useSmo<IntentReport[]>(intentId ? "/intent-service/intent-reports" : null, { intent_id: intentId });
   const steps = flow09(handlers.data ?? [], intent, reports.data ?? []);
   return (
     <>
@@ -374,9 +374,9 @@ function Flow09() {
         create: go("/policy#intents", "Create an intent"),
         dispatch: go("/policy#handlers", "Register a handler"),
         report: intentId && <ActionButton label="Publish fulfilment report (as so-smos)" title="Simulates the RMIH's report"
-          action={{ method: "POST", path: "/policy-mgmt/intent-reports", json: { intentId, fulfilmentReport: { fulfilmentStatus: "FULFILLED", reportedBy: "so-smos" } }, success: "Report published" }} />,
+          action={{ method: "POST", path: "/intent-service/intent-reports", json: { intentId, fulfilmentReport: { fulfilmentStatus: "FULFILLED", reportedBy: "so-smos" } }, success: "Report published" }} />,
         admin: intent?.rmioId === "smo-gui"
-          ? <ActionButton label="Deactivate" action={{ method: "PATCH", path: `/policy-mgmt/intents/${intentId}/admin-state`, json: { newState: "DEACTIVATED" }, success: "Intent DEACTIVATED" }} />
+          ? <ActionButton label="Deactivate" action={{ method: "PATCH", path: `/intent-service/intents/${intentId}/admin-state`, json: { newState: "DEACTIVATED" }, success: "Intent DEACTIVATED" }} />
           : <span className="muted small">Only the creating RMIO ({intent?.rmioId || "—"}) may change the admin state.</span>,
       }} />
     </>

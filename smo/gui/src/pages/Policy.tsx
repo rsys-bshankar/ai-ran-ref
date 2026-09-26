@@ -108,11 +108,11 @@ const OBJECT_TYPES = ["RAN_SUBNETWORK", "EDGE_SERVICE_SUPPORT", "5GC_SUBNETWORK"
 
 function Intents() {
   const [state, setState] = useState("");
-  const intents = useSmo<Intent[]>("/policy-mgmt/intents", { admin_state: state });
+  const intents = useSmo<Intent[]>("/intent-service/intents", { admin_state: state });
   const [selected, setSelected] = useState<Intent | null>(null);
   return (
     <>
-      <Can method="POST" path="/policy-mgmt/intents"><CreateIntent /></Can>
+      <Can method="POST" path="/intent-service/intents"><CreateIntent /></Can>
       <Card title="Intents" actions={<select value={state} onChange={(e) => setState(e.target.value)} aria-label="Admin state"><option value="">All</option><option>ACTIVATED</option><option>DEACTIVATED</option></select>}>
         <p className="muted small">Intents created here carry RMIO identity <code>smo-gui</code>; only an intent's creator may change its admin state.</p>
         <DataTable rows={intents.data} loading={intents.isLoading} error={intents.error} rowKey={(i) => i.intentId} empty="No intents."
@@ -131,7 +131,7 @@ function Intents() {
 }
 
 function IntentActions({ intent }: { intent: Intent }) {
-  const path = `/policy-mgmt/intents/${intent.intentId}`;
+  const path = `/intent-service/intents/${intent.intentId}`;
   const next = intent.intentAdminState === "ACTIVATED" ? "DEACTIVATED" : "ACTIVATED";
   return (
     <div className="row gap end">
@@ -160,7 +160,7 @@ function CreateIntent() {
         <Field label="Expectation targets (JSON array)" hint={parsedTargets ? undefined : <span className="text-bad">must be a JSON array</span>}><textarea rows={2} value={targets} onChange={(e) => setTargets(e.target.value)} spellCheck={false} /></Field>
       </div>
       <ActionButton label="Create intent" tone="primary" disabled={!parsedTargets} action={{
-        method: "POST", path: "/policy-mgmt/intents", success: "Intent created",
+        method: "POST", path: "/intent-service/intents", success: "Intent created",
         json: {
           expectations: [{ expectationVerb: "DELIVER", expectationObject: { objectType }, expectationTargets: parsedTargets ?? [] }],
           priority: Number(priority) || 1, intentMgmtPurpose: purpose, intentHandlingScope: scope || null,
@@ -171,13 +171,13 @@ function CreateIntent() {
 }
 
 function IntentDrawer({ intent, onClose }: { intent: Intent; onClose: () => void }) {
-  const reports = useSmo<IntentReport[]>("/policy-mgmt/intent-reports", { intent_id: intent.intentId });
+  const reports = useSmo<IntentReport[]>("/intent-service/intent-reports", { intent_id: intent.intentId });
   return (
     <Drawer title={<>Intent <Id value={intent.intentId} /></>} onClose={onClose}>
       <div className="row between"><StateBadge state={intent.intentAdminState} /><IntentActions intent={intent} /></div>
       <KeyValue items={[["Intent ID", <code>{intent.intentId}</code>], ["RMIO", intent.rmioId], ["Priority", intent.intentPriority], ["Purpose", intent.intentMgmtPurpose]]} />
       <h3>Fulfilment / conflict reports</h3>
-      <Can method="POST" path="/policy-mgmt/intent-reports"><PublishIntentReport intentId={intent.intentId} /></Can>
+      <Can method="POST" path="/intent-service/intent-reports"><PublishIntentReport intentId={intent.intentId} /></Can>
       {(reports.data ?? []).length === 0 ? <p className="muted">No reports published by a handler yet.</p> : reports.data!.map((r) => (
         <div key={r.reportId} className="report">
           <div className="muted small">{formatTime(r.lastUpdatedTime)}</div>
@@ -189,7 +189,7 @@ function IntentDrawer({ intent, onClose }: { intent: Intent; onClose: () => void
 }
 
 function Handlers() {
-  const handlers = useSmo<Rmih[]>("/policy-mgmt/intent-handling-functions");
+  const handlers = useSmo<Rmih[]>("/intent-service/intent-handling-functions");
   const [f, setF] = useState({ rmihId: "so-smos", smeServiceId: "so-smos-intent-handler", callback: "http://so-smos:8000/intents", types: "RAN_SUBNETWORK", scope: "RAN" });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(f.rmihId);
@@ -201,21 +201,21 @@ function Handlers() {
         { header: "Scope", render: (h) => h.intentHandlingScope?.join(", ") ?? "any" },
         { header: "Callback", render: (h) => <code className="small">{h.notificationCallbackUri}</code> },
         { header: "", className: "actions", render: (h) => <ActionButton label="Deregister" tone="danger" confirm={`Deregister ${h.rmihId}?`}
-          action={{ method: "DELETE", path: `/policy-mgmt/intent-handling-functions/${h.rmihId}`, success: "Handler deregistered" }} /> },
+          action={{ method: "DELETE", path: `/intent-service/intent-handling-functions/${h.rmihId}`, success: "Handler deregistered" }} /> },
       ]} />
-      <Can method="POST" path="/policy-mgmt/intent-handling-functions">
+      <Can method="POST" path="/intent-service/intent-handling-functions">
         <details className="admin-tools">
           <summary>Admin: register a handler on the framework's behalf</summary>
           <p className="muted small">An rApp identity (a UUID) is always refused: only SMO modules such as <code>so-smos</code> / <code>sa-smos</code> may hold an rmihId.</p>
           <div className="form grid cols-3 tight">
-            <Field label="RMIH ID" hint={uuidLike ? <span className="text-bad">an rApp id — Policy Mgmt will refuse it</span> : undefined}><input value={f.rmihId} onChange={set("rmihId")} /></Field>
+            <Field label="RMIH ID" hint={uuidLike ? <span className="text-bad">an rApp id — Intent Service will refuse it</span> : undefined}><input value={f.rmihId} onChange={set("rmihId")} /></Field>
             <Field label="SME service ID"><input value={f.smeServiceId} onChange={set("smeServiceId")} /></Field>
             <Field label="Notification callback"><input value={f.callback} onChange={set("callback")} /></Field>
             <Field label="Supported expectation object types" hint="Comma-separated: RAN_SUBNETWORK, EDGE_SERVICE_SUPPORT, 5GC_SUBNETWORK, RADIO_SERVICE"><input value={f.types} onChange={set("types")} /></Field>
             <Field label="Handling scope"><select value={f.scope} onChange={set("scope")}><option value="">any</option><option>RAN</option><option>CN</option></select></Field>
           </div>
           <ActionButton label="Register handler" disabled={!f.rmihId || !f.types} action={{
-            method: "POST", path: "/policy-mgmt/intent-handling-functions", success: "Handler registered",
+            method: "POST", path: "/intent-service/intent-handling-functions", success: "Handler registered",
             json: { rmihId: f.rmihId, smeServiceId: f.smeServiceId, notificationCallbackUri: f.callback,
               capabilities: splitList(f.types).map((t) => ({ supportedExpectationObjectType: t })), intentHandlingScope: f.scope ? [f.scope] : null },
           }} />
@@ -236,7 +236,7 @@ function PublishIntentReport({ intentId }: { intentId: string }) {
         <Field label="Conflicting intents" hint="Comma-separated intent ids"><input value={conflicts} onChange={(e) => setConflicts(e.target.value)} /></Field>
       </div>
       <ActionButton label="Publish report" action={{
-        method: "POST", path: "/policy-mgmt/intent-reports", success: "Report published",
+        method: "POST", path: "/intent-service/intent-reports", success: "Report published",
         json: { intentId, fulfilmentReport: { fulfilmentStatus: status, reportedBy: "so-smos" },
           conflictReports: splitList(conflicts).length ? splitList(conflicts).map((c) => ({ conflictingIntent: c })) : null },
       }} />

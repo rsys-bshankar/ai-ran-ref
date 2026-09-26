@@ -13,7 +13,7 @@ deliberately absent, so the GUI can't reach them at all.
 
 Some rules also pin request parameters to the caller's GUI identity rather
 than trusting what the browser sent: who acknowledged or cleared an alarm,
-SA SMOS's requester_is_admin flag, and the RMIO identity on Policy Mgmt
+SA SMOS's requester_is_admin flag, and the RMIO identity on Intent Service
 intents.
 """
 
@@ -35,10 +35,10 @@ RANK = {Role.VIEWER: 0, Role.OPERATOR: 1, Role.ADMIN: 2}
 # minus DME's push/pull aliases, which are rApp data-plane paths).
 MODULES = [
     "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "a1-related", "nfo", "focom",
-    "ai-ml-workflow", "ran-analytics", "policy-mgmt", "so-smos", "sa-smos",
+    "ai-ml-workflow", "ran-analytics", "intent-service", "so-smos", "sa-smos",
 ]
 
-# The RMIO identity every GUI-created intent carries. Policy Mgmt only lets
+# The RMIO identity every GUI-created intent carries. Intent Service only lets
 # an intent's own creator change its admin state, so pinning this on both
 # create and update means the GUI can manage exactly the intents it created.
 GUI_RMIO_ID = "smo-gui"
@@ -177,16 +177,17 @@ RULES: list[Rule] = [
     _rule("POST", "/focom/inventory/subscriptions", O),
     _rule("DELETE", "/focom/inventory/subscriptions/{id}", O),
 
-    # --- Policy Mgmt
-    _rule("POST", "/policy-mgmt/intents", O, json_overrides=lambda u: {"rmioId": GUI_RMIO_ID}),
-    _rule("PATCH", "/policy-mgmt/intents/{id}/admin-state", O, json_overrides=lambda u: {"requesterId": GUI_RMIO_ID}),
-    _rule("DELETE", "/policy-mgmt/intents/{id}", A),
+    # --- Intent Service (formerly Policy Mgmt — renamed in Wave 1 of the
+    # AI Platform Service Decomposition; see docs/ownership/INTENT_SERVICE_OWNERSHIP.md)
+    _rule("POST", "/intent-service/intents", O, json_overrides=lambda u: {"rmioId": GUI_RMIO_ID}),
+    _rule("PATCH", "/intent-service/intents/{id}/admin-state", O, json_overrides=lambda u: {"requesterId": GUI_RMIO_ID}),
+    _rule("DELETE", "/intent-service/intents/{id}", A),
     # RMIH registration is framework-internal only (D-SEC-POLICY-1: SO/SA SMOS
     # identities) and fulfilment reports come from an RMIH, so both are admin
     # acting on the framework's behalf (call flow 09)
-    _rule("POST", "/policy-mgmt/intent-handling-functions", A),
-    _rule("DELETE", "/policy-mgmt/intent-handling-functions/{id}", A),
-    _rule("POST", "/policy-mgmt/intent-reports", A),
+    _rule("POST", "/intent-service/intent-handling-functions", A),
+    _rule("DELETE", "/intent-service/intent-handling-functions/{id}", A),
+    _rule("POST", "/intent-service/intent-reports", A),
 
     # --- RAN Analytics
     _rule("POST", "/ran-analytics/subscriptions", O),

@@ -54,9 +54,10 @@ containment trees and FL/RL modeling) was confirmed as a **deliberate
 Phase-1 scope cut**, not a bug — both modules target the O-RAN-SC
 `aiml-fw`/`aiml-fw-apm` reference architecture instead, already
 confirmed in section 5. See "What's deliberately incomplete" below.
-Two open items are architectural, not code: Policy Mgmt's
-Intent-to-RMIH matching (producer-side push vs. the spec's implied
-consumer-side LDN selection), and — new this pass — RAN Analytics's
+Two open items are architectural, not code: Policy Mgmt's (now Intent
+Service's — see "Phase 2" below) Intent-to-RMIH matching (producer-side
+push vs. the spec's implied consumer-side LDN selection), and — new
+this pass — RAN Analytics's
 `analytics_type` enum constraint and missing threshold-based
 conditional reporting, both real but moderate/breaking, left for a
 deliberate follow-up rather than guessed at.
@@ -204,7 +205,7 @@ smo/
 | FOCOM | `focom/` | — |
 | AI/ML Workflow | `ai-ml-workflow/` | `AIMLModel` FSM, `InferenceJob` FSM, individual + coordination-group retrain propagation (a guard-KPI breach now actually fires `RETRAIN` on every `ACTIVE` group member, not just computes a bool) |
 | RAN Analytics | `ran-analytics/` | — |
-| Policy Mgmt & Info | `policy-mgmt/` | — |
+| Intent Service (formerly Policy Mgmt & Info — renamed in Wave 1 of the AI Platform Service Decomposition, see "Project status" above) | `intent-service/` | — |
 | SO SMOS | `so-smos/` | dispatch table, fail-fast execution |
 | SA SMOS | `sa-smos/` | remedial-action dispatch (`RECONNECT` resolved via SO SMOS order lookup + NFO Heal; a coordination-group-scoped monitor always dispatches a group retrain via AI/ML Workflow instead; `ROLLBACK` honestly unresolved — see below) |
 
@@ -227,7 +228,7 @@ pip install -e shared
 
 # per-module unit tests (each module in isolation, in-memory SQLite)
 for m in onboarding rapp-mgmt ran-nf-oam ai-ml-workflow so-smos a1-related \
-         sme dme r1-termination nfo focom ran-analytics policy-mgmt sa-smos \
+         sme dme r1-termination nfo focom ran-analytics intent-service sa-smos \
          mock-near-rt-ric mock-o1-adaptor; do
   (cd $m && PYTHONPATH=.:../shared python -m pytest tests/ -v)
 done

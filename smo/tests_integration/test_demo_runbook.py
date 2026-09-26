@@ -231,7 +231,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert performance.status_code == 200
     assert performance.json() == []
 
-    # step 10: Policy Mgmt intent automation — register an RMIH, create a
+    # step 10: Intent Service automation — register an RMIH, create a
     # matching Intent, observe the real dispatch notification, retract.
     # Intercepted at the same httpx.post call create_intent makes,
     # same technique as FOCOM's step above.
@@ -248,9 +248,9 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
             raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
         return real_post_2(location, json=json, timeout=timeout, **kwargs)
 
-    monkeypatch.setattr(loaded_apps["policy-mgmt"].httpx, "post", fake_post_2)
+    monkeypatch.setattr(loaded_apps["intent-service"].httpx, "post", fake_post_2)
 
-    rmih = mesh["policy-mgmt"].post("/intent-handling-functions", json={
+    rmih = mesh["intent-service"].post("/intent-handling-functions", json={
         "rmihId": "so-smos", "smeServiceId": "so-smos-svc",
         "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
         "notificationCallbackUri": "http://so-smos:8000/intents/notify",
@@ -258,7 +258,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     })
     assert rmih.status_code == 201
 
-    intent = mesh["policy-mgmt"].post("/intents", json={
+    intent = mesh["intent-service"].post("/intents", json={
         "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}],
         "rmioId": "hello-world-rapp", "intentHandlingScope": "RAN",
     })
@@ -269,7 +269,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert intent_notifications[0]["intentId"] == intent_id
     assert intent_notifications[0]["expectationObjectTypes"] == ["RAN_SUBNETWORK"]
 
-    get_intent = mesh["policy-mgmt"].get(f"/intents/{intent_id}")
+    get_intent = mesh["intent-service"].get(f"/intents/{intent_id}")
     assert get_intent.status_code == 200
     assert get_intent.json()["intentAdminState"] == "ACTIVATED"
 
@@ -278,7 +278,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # RAN-scoped Intent, even though its capability matches — proves
     # intentHandlingScope is a genuine pre-filter (_matching_rmihs), not
     # decoration.
-    rmih2 = mesh["policy-mgmt"].post("/intent-handling-functions", json={
+    rmih2 = mesh["intent-service"].post("/intent-handling-functions", json={
         "rmihId": "sa-smos", "smeServiceId": "sa-smos-svc",
         "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
         "notificationCallbackUri": "http://sa-smos:8000/intents/notify",
@@ -286,7 +286,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     })
     assert rmih2.status_code == 201
 
-    intent2 = mesh["policy-mgmt"].post("/intents", json={
+    intent2 = mesh["intent-service"].post("/intents", json={
         "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}],
         "rmioId": "hello-world-rapp", "intentHandlingScope": "RAN",
     })
@@ -297,14 +297,14 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert intent_notifications[1]["intentId"] == intent2_id
     assert sa_smos_notifications == []  # sa-smos never notified — CN-only scope filtered it out
 
-    del_intent = mesh["policy-mgmt"].delete(f"/intents/{intent_id}")
+    del_intent = mesh["intent-service"].delete(f"/intents/{intent_id}")
     assert del_intent.status_code == 204
-    del_intent2 = mesh["policy-mgmt"].delete(f"/intents/{intent2_id}")
+    del_intent2 = mesh["intent-service"].delete(f"/intents/{intent2_id}")
     assert del_intent2.status_code == 204
 
-    del_rmih = mesh["policy-mgmt"].delete("/intent-handling-functions/so-smos")
+    del_rmih = mesh["intent-service"].delete("/intent-handling-functions/so-smos")
     assert del_rmih.status_code == 204
-    del_rmih2 = mesh["policy-mgmt"].delete("/intent-handling-functions/sa-smos")
+    del_rmih2 = mesh["intent-service"].delete("/intent-handling-functions/sa-smos")
     assert del_rmih2.status_code == 204
 
     # step 11: A1 Policy Management — register a service, create a real
@@ -444,7 +444,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # step 14: RAN Analytics — register a producer (real cross-module SME
     # enrolment + service publish), subscribe with a real notification
     # destination, publish a report, observe the real notification fire
-    # (same intercept technique as FOCOM/Policy Mgmt/A1 Related above),
+    # (same intercept technique as FOCOM/Intent Service/A1 Related above),
     # unsubscribe.
     analytics_notifications = []
     real_post_4 = httpx.post

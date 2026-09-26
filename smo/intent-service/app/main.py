@@ -1,4 +1,8 @@
-"""Policy Management & Info SMOS (Intent common mechanism).
+"""Intent Service (formerly "Policy Management & Info SMOS" — renamed in
+Wave 1 of the AI Platform Service Decomposition: this module's own
+surface was already entirely Intent-shaped, with no policy/rule/
+constraint code to leave behind under the old name. See
+docs/ownership/INTENT_SERVICE_OWNERSHIP.md.
 
 SMO Design v1.3 section 3.12, extended by Policy Mgmt LLD sections 1-3:
 UpdateIntentAdminState and QueryIntent close operations v1.3 never had
@@ -21,7 +25,7 @@ from smo_shared.identity import is_framework_internal_identity
 
 from .models import Intent, IntentHandlingFunction, IntentReport
 
-app = FastAPI(title="Policy Management & Info SMOS")
+app = FastAPI(title="Intent Service")
 
 
 @app.get("/health")

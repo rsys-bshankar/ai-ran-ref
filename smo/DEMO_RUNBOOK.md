@@ -517,12 +517,12 @@ The route itself, and its filter, are real and already unit-tested
 stubbed, there is simply nothing to collect from in a docker-run-based
 Phase 1.
 
-## 10. Policy Mgmt intent automation (optional) — register, dispatch, retract
+## 10. Intent Service automation (optional) — register, dispatch, retract
 
-Independent of the sample rApp instance above — this shows Policy Mgmt's
-real Intent-to-RMIH dispatch mechanism firing: an SMO-internal RAN
+Independent of the sample rApp instance above — this shows Intent
+Service's real Intent-to-RMIH dispatch mechanism firing: an SMO-internal RAN
 Management Intent Handler (RMIH) declares what it can fulfil, an rApp
-expresses an Intent, and Policy Mgmt matches and notifies the right RMIH
+expresses an Intent, and Intent Service matches and notifies the right RMIH
 automatically.
 
 Register an RMIH. Per D-SEC-POLICY-1, only an SMO-internal module may
@@ -532,7 +532,7 @@ the same identity SO SMOS registers under in the real deployment:
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://policy-mgmt:8000/intent-handling-functions', json={
+r = httpx.post('http://intent-service:8000/intent-handling-functions', json={
     'rmihId': 'so-smos', 'smeServiceId': 'so-smos-svc',
     'capabilities': [{'supportedExpectationObjectType': 'RAN_SUBNETWORK'}],
     'notificationCallbackUri': 'http://so-smos:8000/intents/notify',
@@ -549,7 +549,7 @@ an invented top-level type string):
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://policy-mgmt:8000/intents', json={
+r = httpx.post('http://intent-service:8000/intents', json={
     'expectations': [{'expectationObject': {'objectType': 'RAN_SUBNETWORK'}}],
     'rmioId': 'hello-world-rapp', 'intentHandlingScope': 'RAN',
 })
@@ -562,7 +562,7 @@ type against every registered RMIH's declared capabilities (pre-filtered
 by `intentHandlingScope`) and dispatched a real notification to
 `so-smos`'s own callback — `so-smos:8000/intents/notify` has no route
 that accepts it yet (dispatch is deliberately best-effort, same pattern
-as FOCOM's inventory notifications above), so watch `policy-mgmt`'s own
+as FOCOM's inventory notifications above), so watch `intent-service`'s own
 logs for the attempted delivery. `tests_integration/test_demo_runbook.py`
 proves the real dispatch fires with the correct `intentId`/
 `expectationObjectTypes` payload, by intercepting the exact `httpx.post`
@@ -573,7 +573,7 @@ Note the `intentId`, then confirm the persisted Intent:
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.get('http://policy-mgmt:8000/intents/<intentId>')
+r = httpx.get('http://intent-service:8000/intents/<intentId>')
 print(r.status_code, r.json())
 "
 ```
@@ -586,7 +586,7 @@ declared scope (`CN`-only):
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://policy-mgmt:8000/intent-handling-functions', json={
+r = httpx.post('http://intent-service:8000/intent-handling-functions', json={
     'rmihId': 'sa-smos', 'smeServiceId': 'sa-smos-svc',
     'capabilities': [{'supportedExpectationObjectType': 'RAN_SUBNETWORK'}],
     'notificationCallbackUri': 'http://sa-smos:8000/intents/notify',
@@ -603,7 +603,7 @@ for:
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://policy-mgmt:8000/intents', json={
+r = httpx.post('http://intent-service:8000/intents', json={
     'expectations': [{'expectationObject': {'objectType': 'RAN_SUBNETWORK'}}],
     'rmioId': 'hello-world-rapp', 'intentHandlingScope': 'RAN',
 })
@@ -614,7 +614,7 @@ print(r.status_code, r.json())
 Only `so-smos` (declared `RAN` scope) is dispatched a notification —
 `sa-smos`'s matching *capability* is correctly never enough on its own,
 because its declared `CN`-only scope fails the pre-filter before the
-capability check ever runs. Watch `policy-mgmt`'s own logs: exactly one
+capability check ever runs. Watch `intent-service`'s own logs: exactly one
 delivery attempt, to `so-smos:8000/intents/notify`, never to
 `sa-smos:8000/intents/notify`. `tests_integration/test_demo_runbook.py`
 asserts this precisely — one notification, not two, and to the right
@@ -626,13 +626,13 @@ same pattern as FOCOM's provision/deprovision above:
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.delete('http://policy-mgmt:8000/intents/<intentId>')
+r = httpx.delete('http://intent-service:8000/intents/<intentId>')
 print(r.status_code)
-r2 = httpx.delete('http://policy-mgmt:8000/intents/<secondIntentId>')
+r2 = httpx.delete('http://intent-service:8000/intents/<secondIntentId>')
 print(r2.status_code)
-r3 = httpx.delete('http://policy-mgmt:8000/intent-handling-functions/so-smos')
+r3 = httpx.delete('http://intent-service:8000/intent-handling-functions/so-smos')
 print(r3.status_code)
-r4 = httpx.delete('http://policy-mgmt:8000/intent-handling-functions/sa-smos')
+r4 = httpx.delete('http://intent-service:8000/intent-handling-functions/sa-smos')
 print(r4.status_code)
 "
 ```
@@ -734,7 +734,7 @@ print(r.status_code, r.json())
 from `ENFORCED`, `_notify_policy_status_subscribers` fired a real POST
 to `http://demo-consumer:9000/policy-status` — no real listener exists
 at that address in this compose stack (same honesty pattern as FOCOM's
-and Policy Mgmt's placeholder callbacks above), so watch `a1-related`'s
+and Intent Service's placeholder callbacks above), so watch `a1-related`'s
 own logs for the delivery attempt;
 `tests_integration/test_demo_runbook.py` proves the real dispatch fires
 by intercepting the exact `httpx.post` call.
@@ -993,7 +993,7 @@ print(r.status_code, r.json())
 `publish_report` fired a real notification to
 `http://demo-consumer:9000/analytics-reports` — no real listener
 exists at that address in this compose stack (same honesty pattern as
-FOCOM's/Policy Mgmt's/A1 Related's placeholder callbacks above), so
+FOCOM's/Intent Service's/A1 Related's placeholder callbacks above), so
 watch `ran-analytics`'s own logs for the delivery attempt;
 `tests_integration/test_demo_runbook.py` proves the real dispatch
 fires with the correct `reportId`/`output` payload, by intercepting
@@ -1690,7 +1690,7 @@ print(r.status_code)
 
 204 with an empty body — the instance row is gone. The full lifecycle
 — onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
-loop, FOCOM resource management, FOCOM FCAPS, Policy Mgmt intent
+loop, FOCOM resource management, FOCOM FCAPS, Intent Service
 automation, A1 Policy Management, SME Trusted Invokers, AI/ML Workflow,
 RAN Analytics, SO SMOS, SA SMOS, package priming, retire — is now
 complete against a real running stack.

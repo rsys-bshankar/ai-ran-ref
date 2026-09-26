@@ -258,8 +258,8 @@ def test_remedial_action_admin_flag_is_derived_from_the_gui_role(app, smo):
 
 def test_gui_created_intents_carry_the_gui_rmio_identity(app, smo):
     client = login(app, "operator")
-    client.post("/api/smo/policy-mgmt/intents", json={"expectations": [], "rmioId": "spoofed-rapp"})
-    client.patch("/api/smo/policy-mgmt/intents/i-1/admin-state", json={"newState": "DEACTIVATED", "requesterId": "spoofed-rapp"})
+    client.post("/api/smo/intent-service/intents", json={"expectations": [], "rmioId": "spoofed-rapp"})
+    client.patch("/api/smo/intent-service/intents/i-1/admin-state", json={"newState": "DEACTIVATED", "requesterId": "spoofed-rapp"})
     assert json.loads(smo.proxied[0].content)["rmioId"] == "smo-gui"
     assert json.loads(smo.proxied[1].content) == {"newState": "DEACTIVATED", "requesterId": "smo-gui"}
 

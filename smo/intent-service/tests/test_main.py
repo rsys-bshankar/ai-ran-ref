@@ -1,5 +1,6 @@
-"""Tests for Policy Management & Info SMOS (Policy Mgmt LLD sections 1, 3).
-Run with: pytest smo/policy-mgmt/tests -q
+"""Tests for Intent Service (formerly Policy Management & Info SMOS —
+see app/main.py's own module docstring; Policy Mgmt LLD sections 1, 3).
+Run with: pytest smo/intent-service/tests -q
 """
 
 import pytest

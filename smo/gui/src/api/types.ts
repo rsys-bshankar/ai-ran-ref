@@ -50,7 +50,7 @@ export interface ConfigJobSummary { jobId: string; requestedBy: string; scope: s
 export interface ConfigJob { jobId: string; status: string; subChanges: { managedElementRef: string; operation: string; status: string; rejectionReason: string | null }[] }
 export interface SwmJob { jobId: string; managedElementRef: string; ruInstanceId: string | null; phase: string; status: string }
 
-// ---- A1 Related / Policy Mgmt
+// ---- A1 Related / Intent Service
 export interface A1Policy { policyId: string; policyTypeId: string; nearRtRicId: string; policyObject: Record<string, unknown>; enforcementStatus: string }
 export interface Intent { intentId: string; intentAdminState: string; intentPriority: number; rmioId: string; intentMgmtPurpose: string | null }
 export interface IntentReport { reportId: string; intentId: string; fulfilmentReport: Record<string, unknown> | null; conflictReports: unknown[] | null; lastUpdatedTime: string }

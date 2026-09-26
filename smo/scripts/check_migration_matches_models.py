@@ -45,7 +45,7 @@ from smo_shared.db import Base  # noqa: E402
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
     "a1-related", "nfo", "focom", "ai-ml-workflow", "ran-analytics",
-    "policy-mgmt", "so-smos", "sa-smos",
+    "intent-service", "so-smos", "sa-smos",
 ]
 
 

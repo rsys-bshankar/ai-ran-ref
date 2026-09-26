@@ -1,6 +1,6 @@
 # Call Flow: Intent Registration → Fulfilment Reporting → Admin-State Control
 
-Stitches together Policy Mgmt LLD sections 1-3: `QueryIntent` and
+Stitches together Intent Service (formerly Policy Mgmt) LLD sections 1-3: `QueryIntent` and
 `UpdateIntentAdminState` close operations v1.3 never had (`intentAdminState` existed with
 nothing that could change it), and `DeregisterIntentHandlingFunction` restores
 register/deregister symmetry `RegisterIntentHandlingFunction` alone left broken.
@@ -9,11 +9,11 @@ register/deregister symmetry `RegisterIntentHandlingFunction` alone left broken.
 sequenceDiagram
     actor SO as SO SMOS (framework-internal RMIH)
     participant R1 as R1 Termination
-    participant Policy as Policy Mgmt SMOS
+    participant Policy as Intent Service
     participant SME as SME
     actor RMIO as Intent-owning rApp (RMIO)
 
-    SO->>R1: POST /policy-mgmt/intent-handling-functions (rmihId, smeServiceId, capabilities)
+    SO->>R1: POST /intent-service/intent-handling-functions (rmihId, smeServiceId, capabilities)
     R1->>Policy: (proxied) RegisterIntentHandlingFunction
     Policy->>Policy: is_framework_internal_identity(rmihId)?
     alt caller is an ordinary rApp
@@ -23,7 +23,7 @@ sequenceDiagram
         Policy-->>SO: rmihId
     end
 
-    RMIO->>R1: POST /policy-mgmt/intents (expectations, priority, rmioId)
+    RMIO->>R1: POST /intent-service/intents (expectations, priority, rmioId)
     R1->>Policy: (proxied) CreateIntent
     Policy->>Policy: create Intent, intentAdminState=ACTIVATED (default)
     Policy-->>RMIO: intentId
@@ -31,17 +31,17 @@ sequenceDiagram
     Note over Policy,SO: RMIH discovers relevant Intents (Phase 1: elided — no<br/>subscription/notification wired from CreateIntent to an RMIH)
 
     loop RMIH's own fulfilment cycle
-        SO->>R1: POST /policy-mgmt/intent-reports (intentId, fulfilmentReport, conflictReports?)
+        SO->>R1: POST /intent-service/intent-reports (intentId, fulfilmentReport, conflictReports?)
         R1->>Policy: (proxied) PublishIntentReport
         Policy->>Policy: persist IntentReport, last_updated_time=now()
         Policy-->>SO: reportId
     end
 
-    RMIO->>R1: GET /policy-mgmt/intents/{id}
+    RMIO->>R1: GET /intent-service/intents/{id}
     R1->>Policy: (proxied) QueryIntent
     Policy-->>RMIO: intentAdminState, priority, ...
 
-    RMIO->>R1: PATCH /policy-mgmt/intents/{id}/admin-state (newState=DEACTIVATED, requesterId=rmioId)
+    RMIO->>R1: PATCH /intent-service/intents/{id}/admin-state (newState=DEACTIVATED, requesterId=rmioId)
     R1->>Policy: (proxied) UpdateIntentAdminState
     Policy->>Policy: check requesterId == intent.rmio_id
     alt requester is not the intent's own creator
@@ -51,7 +51,7 @@ sequenceDiagram
         Policy-->>RMIO: updated Intent
     end
 
-    SO->>R1: DELETE /policy-mgmt/intent-handling-functions/{rmihId}
+    SO->>R1: DELETE /intent-service/intent-handling-functions/{rmihId}
     R1->>Policy: (proxied) DeregisterIntentHandlingFunction
     Policy->>Policy: delete IntentHandlingFunction
 ```

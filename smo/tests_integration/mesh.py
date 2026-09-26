@@ -19,7 +19,7 @@ R1_PREFIX_TO_SERVICE = {
     "/onboarding": "onboarding", "/rapp-mgmt": "rapp-mgmt", "/ran-nf-oam": "ran-nf-oam",
     "/a1-related": "a1-related", "/nfo": "nfo", "/focom": "focom",
     "/ai-ml-workflow": "ai-ml-workflow", "/ran-analytics": "ran-analytics",
-    "/policy-mgmt": "policy-mgmt", "/so-smos": "so-smos", "/sa-smos": "sa-smos",
+    "/intent-service": "intent-service", "/so-smos": "so-smos", "/sa-smos": "sa-smos",
 }
 
 

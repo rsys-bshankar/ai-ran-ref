@@ -405,37 +405,37 @@
   },
   {
     "method": "POST",
-    "pattern": "^/policy-mgmt/intents$",
+    "pattern": "^/intent-service/intents$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "PATCH",
-    "pattern": "^/policy-mgmt/intents/[^/]+/admin-state$",
+    "pattern": "^/intent-service/intents/[^/]+/admin-state$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "DELETE",
-    "pattern": "^/policy-mgmt/intents/[^/]+$",
+    "pattern": "^/intent-service/intents/[^/]+$",
     "role": "admin",
     "queryMatch": {}
   },
   {
     "method": "POST",
-    "pattern": "^/policy-mgmt/intent-handling-functions$",
+    "pattern": "^/intent-service/intent-handling-functions$",
     "role": "admin",
     "queryMatch": {}
   },
   {
     "method": "DELETE",
-    "pattern": "^/policy-mgmt/intent-handling-functions/[^/]+$",
+    "pattern": "^/intent-service/intent-handling-functions/[^/]+$",
     "role": "admin",
     "queryMatch": {}
   },
   {
     "method": "POST",
-    "pattern": "^/policy-mgmt/intent-reports$",
+    "pattern": "^/intent-service/intent-reports$",
     "role": "admin",
     "queryMatch": {}
   },
@@ -495,7 +495,7 @@
   },
   {
     "method": "GET",
-    "pattern": "^/(sme|dme|onboarding|rapp\\-mgmt|ran\\-nf\\-oam|a1\\-related|nfo|focom|ai\\-ml\\-workflow|ran\\-analytics|policy\\-mgmt|so\\-smos|sa\\-smos)(/.*)?$",
+    "pattern": "^/(sme|dme|onboarding|rapp\\-mgmt|ran\\-nf\\-oam|a1\\-related|nfo|focom|ai\\-ml\\-workflow|ran\\-analytics|intent\\-service|so\\-smos|sa\\-smos)(/.*)?$",
     "role": "viewer",
     "queryMatch": {}
   }

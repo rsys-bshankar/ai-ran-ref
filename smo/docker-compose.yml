@@ -34,7 +34,7 @@ services:
       FOCOM_URL: http://focom:8000
       AI_ML_WORKFLOW_URL: http://ai-ml-workflow:8000
       RAN_ANALYTICS_URL: http://ran-analytics:8000
-      POLICY_MGMT_URL: http://policy-mgmt:8000
+      INTENT_SERVICE_URL: http://intent-service:8000
       SO_SMOS_URL: http://so-smos:8000
       SA_SMOS_URL: http://sa-smos:8000
 
@@ -122,8 +122,8 @@ services:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
-  policy-mgmt:
-    build: { context: ., args: { MODULE: policy-mgmt } }
+  intent-service:
+    build: { context: ., args: { MODULE: intent-service } }
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
 
