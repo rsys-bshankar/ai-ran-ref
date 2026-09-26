@@ -48,10 +48,10 @@ def client(db_session_factory):
     app.dependency_overrides.clear()
 
 
-def _make_model(db_session_factory, state) -> uuid.UUID:
+def _make_model(db_session_factory, state, model_type="t") -> uuid.UUID:
     model_id = uuid.uuid4()
     with db_session_factory() as session:
-        session.add(AIMLModel(model_id=model_id, registration_id=str(uuid.uuid4()), model_type="t", version="1.0", state=state))
+        session.add(AIMLModel(model_id=model_id, registration_id=str(uuid.uuid4()), model_type=model_type, version="1.0", state=state))
         session.commit()
     return model_id
 
@@ -596,11 +596,29 @@ def test_list_inference_jobs_filters_by_model(client, db_session_factory):
 
 
 def test_list_coordination_groups_returns_members(client, db_session_factory):
-    model_id = _make_model(db_session_factory, ModelState.ACTIVE)
-    group_id = client.post("/coordination-groups", json={"memberModelIds": [str(model_id)]}).json()["groupId"]
+    model_id_1 = _make_model(db_session_factory, ModelState.ACTIVE, model_type="t1")
+    model_id_2 = _make_model(db_session_factory, ModelState.ACTIVE, model_type="t2")
+    group_id = client.post("/coordination-groups", json={"memberModelIds": [str(model_id_1), str(model_id_2)]}).json()["groupId"]
 
     groups = client.get("/coordination-groups").json()
-    assert [(g["groupId"], g["memberModelIds"]) for g in groups] == [(group_id, [str(model_id)])]
+    assert [(g["groupId"], g["memberModelIds"]) for g in groups] == [(group_id, [str(model_id_1), str(model_id_2)])]
+
+
+def test_create_coordination_group_rejects_fewer_than_two_members(client, db_session_factory):
+    """The migration's own CHECK constraint (array_length >= 2) enforces
+    this at the DB layer, but SQLite's test schema (built from the ORM
+    models, which never mirrored the constraint) doesn't — so only a
+    real-Postgres run ever caught the unhandled IntegrityError this used
+    to raise. Pre-validated here now instead, matching RequestTraining's
+    own exactly_one_target pre-check.
+    """
+    model_id = _make_model(db_session_factory, ModelState.ACTIVE)
+    resp = client.post("/coordination-groups", json={"memberModelIds": [str(model_id)]})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "COORDINATION_GROUP_TOO_SMALL"
+
+    resp = client.post("/coordination-groups", json={"memberModelIds": []})
+    assert resp.status_code == 422
 
 
 def test_list_mlmf_subscriptions_and_their_reports_newest_first(client, db_session_factory):

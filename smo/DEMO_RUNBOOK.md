@@ -1379,7 +1379,92 @@ print(r.status_code, r.json())
 
 `400`, `detail.title` = `FEATURE_GROUP_NAME_INVALID`.
 
-## 20. Retire it — package priming lifecycle, Terminate, then Delete
+## 20. SA SMOS coordination-group remedial action (optional) — a real group retrain, `actionType`-independent
+
+Independent of the sample rApp instance above — SA SMOS's own
+`MLModelCoordinationGroup` convergence (OPEN_ITEMS.md section 1): a
+coordination-group-scoped `AssuranceMonitor` bypasses
+`CONFIG_CHANGE`/`SCALE`/`RECONNECT`/`ROLLBACK`'s NF-deployment meanings
+entirely — those don't map onto a model group at all — and always
+dispatches a real group retrain via AI/ML Workflow's `RequestTraining`
+instead, whatever `actionType` was requested. Already real and
+unit-tested, but never demonstrated: step 15's own `AssuranceMonitor`
+was `targetOrderId`-scoped throughout.
+
+Register two models to be the group's members — a coordination group of
+fewer than two members isn't a coordination of anything, and the
+migration's own `member_model_ids` CHECK constraint (`array_length >= 2`)
+enforces this at the DB layer:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+for i in range(2):
+    r = httpx.post('http://ai-ml-workflow:8000/models', json={
+        'modelType': f'demo-coordination-group-model-{i}', 'version': '1.0.0',
+        'author': 'hello-world-rapp', 'owner': 'hello-world-rapp',
+    })
+    print(r.status_code, r.json())
+"
+```
+
+Note both `modelId`s, then create a real coordination group with them:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/coordination-groups', json={'memberModelIds': ['<modelId1>', '<modelId2>']})
+print(r.status_code, r.json())
+"
+```
+
+A single-member `memberModelIds` 422s with `COORDINATION_GROUP_TOO_SMALL`
+— pre-validated here after this pass found the route 500ing against real
+Postgres instead (the DB's own CHECK constraint, never mirrored onto the
+ORM model, so no unit test running against SQLite had ever caught it).
+
+Note the `groupId`, then register an `AssuranceMonitor` scoped to it —
+`targetCoordinationGroupId`, not `targetOrderId`:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sa-smos:8000/monitors', params={'target_coordination_group_id': '<groupId>'}, json={})
+print(r.status_code, r.json())
+"
+```
+
+**Execute a remedial action** — `SCALE` on its own would always
+`ESCALATED` for an order-scoped monitor (NFO's own Phase 1 stub), but
+this monitor is group-scoped, so `execute_remedial_action` never even
+reaches that branch:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sa-smos:8000/monitors/<monitorId>/remedial-actions', params={'action_type': 'SCALE'})
+print(r.status_code, r.json())
+"
+```
+
+`outcome` is `RESOLVED` — SA SMOS dispatched a real
+`POST /ai-ml-workflow/training-jobs` with the group's own
+`modelCoordinationGroupId`, converging with AI/ML Workflow's own
+`groupRetrainTriggered` mechanism. Confirm the real `TrainingJob` row
+this created:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://ai-ml-workflow:8000/training-jobs', params={'status': 'RUNNING'})
+print(r.status_code, [j for j in r.json() if j['modelCoordinationGroupId'] == '<groupId>'])
+"
+```
+
+A real `TrainingJob` with `producerId: sa-smos` and this exact
+`modelCoordinationGroupId` — not a fabricated confirmation.
+
+## 21. Retire it — package priming lifecycle, Terminate, then Delete
 
 **Prime the package** — the reference's real
 `COMMISSIONED -> PRIMING -> PRIMED` lifecycle (our `AVAILABLE` plays

@@ -989,6 +989,29 @@ local Postgres 16 pass (59 tables, 0 mismatches), a live register/list/
 duplicate/invalid round trip against that same instance, and the
 live-schema-match check, all green.
 
+**Demo depth: SA SMOS's coordination-group remedial action.** Continuing
+the same "more demo depth" thread. SA SMOS's own `MLModelCoordinationGroup`
+convergence (OPEN_ITEMS.md section 1) had been real and unit-tested since
+an earlier pass, but never demonstrated: step 15's own `AssuranceMonitor`
+was `targetOrderId`-scoped throughout. New section: register two models →
+create a real coordination group → register a `targetCoordinationGroupId`-
+scoped `AssuranceMonitor` → execute a remedial action with any
+`actionType` (`SCALE`, which would always `ESCALATED` for an order-scoped
+monitor) → `outcome` is `RESOLVED` because `execute_remedial_action`
+checks the coordination-group target *first*, bypassing the NF-deployment
+`actionType` branching entirely, and dispatches a real
+`POST /ai-ml-workflow/training-jobs` instead → confirmed by querying the
+real resulting `TrainingJob` row. `tests_integration/test_demo_runbook.py`
+gained a matching step. Grounding this against real Postgres surfaced a
+real, previously-invisible bug — see "Real bugs" below:
+`create_coordination_group` had no pre-validation for the migration's own
+`>= 2 members` `CHECK` constraint, so a single-member group 500'd instead
+of 422ing. Fixed, with a new regression test; re-confirmed via a full
+local Postgres 16 pass (59 tables, 0 mismatches), a live two-model
+register/reject/create/monitor/remedial/confirm round trip against that
+same instance, and the live-schema-match check, all green. One OpenAPI
+spec change (`ai-ml-workflow.json`, the new error), regenerated.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style
@@ -1199,6 +1222,25 @@ Writing the tests, not just the code, is what surfaced these:
   Postgres at all. Found grounding the new FOCOM topology export demo
   below. Fixed with an explicit `db.flush()` between the two inserts,
   matching the pattern NFO's own `Instantiate` already uses.
+- **AI/ML Workflow's `create_coordination_group` had no pre-validation
+  for the migration's own `member_model_ids` `CHECK` constraint**
+  (`array_length(member_model_ids, 1) >= 2` — a coordination group of
+  fewer than two members isn't a coordination of anything). A
+  single-member (or empty) `memberModelIds` raised an unhandled
+  `IntegrityError` (a bare 500) instead of a clean error, the same class
+  of bug `RequestTraining`'s own `exactly_one_target` pre-check already
+  guards against elsewhere in this same module. The constraint was never
+  mirrored onto the ORM model (only the raw migration DDL has it), so
+  SQLite's schema — built straight from the ORM models — never enforced
+  it, and no unit test had ever caught it either; one existing unit test
+  (`test_list_coordination_groups_returns_members`) even created a
+  single-member group and passed, silently exercising behavior real
+  Postgres would reject. Found grounding the new SA SMOS
+  coordination-group remedial-action demo above. Fixed with a
+  `COORDINATION_GROUP_TOO_SMALL` (422) pre-check, matching
+  `RequestTraining`'s own pattern; the pre-existing test fixed to use two
+  distinct-`model_type` members, plus a new regression test for the
+  rejection itself.
 
 ## What's deliberately incomplete
 
