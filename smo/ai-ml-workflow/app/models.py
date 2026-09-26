@@ -118,6 +118,15 @@ class TrainingJob(Base):
     consumer_rapp_id: Mapped[str | None] = mapped_column(String)
     producer_rapp_id: Mapped[str | None] = mapped_column(String)
     model_metrics: Mapped[dict | None] = mapped_column(JSON)
+    # NEW SPEC_AUDIT.md: TS28.105 AI/ML NRM's own real, closed 4-value
+    # mLTrainingType enum on both MLModel and MLTrainingRequest —
+    # request_training already computes this exact INITIAL_TRAINING-vs-
+    # RE_TRAINING distinction internally (as a ModelEvent.TRAIN/RETRAIN
+    # FSM choice) but never stored or returned it anywhere.
+    # PRE_SPECIALISED_TRAINING/FINE_TUNING have no equivalent concept in
+    # this build, so only two of the spec's four values are ever
+    # produced here — an honest partial mapping, not a fabricated one.
+    ml_training_type: Mapped[str | None] = mapped_column(String)
 
 
 class ModelChangeSubscription(Base):

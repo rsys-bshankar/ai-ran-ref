@@ -307,12 +307,19 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
     if model is not None and model.state not in (ModelState.REGISTERED, ModelState.ACTIVE, ModelState.TRAINING):
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail=f"cannot (re)train a model in state {model.state}")
 
+    # TS28.105 AI/ML NRM's own real mLTrainingType — INITIAL_TRAINING the
+    # very first cycle (model still REGISTERED), RE_TRAINING every other
+    # case (an ordinary retrain, a job superseding an orphaned one, or a
+    # coordination-group convergence retrain, which is never a model's
+    # first cycle by definition).
+    ml_training_type = "INITIAL_TRAINING" if model is not None and model.state == ModelState.REGISTERED else "RE_TRAINING"
+
     job = TrainingJob(model_id=body.modelId, model_coordination_group_id=body.modelCoordinationGroupId,
                        producer_id=body.producerId, required_data=body.requiredData,
                        validation_criteria=body.validationCriteria, notification_uri=body.notificationUri,
                        status="RUNNING", run_id=body.runId, training_dataset=body.trainingDataset,
                        validation_dataset=body.validationDataset, consumer_rapp_id=body.consumerRappId,
-                       producer_rapp_id=body.producerRappId)
+                       producer_rapp_id=body.producerRappId, ml_training_type=ml_training_type)
     db.add(job)
     db.flush()
 
@@ -338,6 +345,7 @@ def query_training_job_status(training_job_id: uuid.UUID, db: Session = Depends(
         "trainingJobId": str(job.training_job_id), "status": job.status, "runId": job.run_id,
         "trainingDataset": job.training_dataset, "validationDataset": job.validation_dataset,
         "consumerRappId": job.consumer_rapp_id, "producerRappId": job.producer_rapp_id,
+        "mlTrainingType": job.ml_training_type,
     }
 
 
@@ -547,7 +555,7 @@ def _training_job_view(j: TrainingJob) -> dict:
             "modelCoordinationGroupId": str(j.model_coordination_group_id) if j.model_coordination_group_id else None,
             "producerId": j.producer_id, "status": j.status, "runId": j.run_id,
             "trainingDataset": j.training_dataset, "validationDataset": j.validation_dataset,
-            "modelMetrics": j.model_metrics}
+            "modelMetrics": j.model_metrics, "mlTrainingType": j.ml_training_type}
 
 
 def _performance_report_view(r: PerformanceReport) -> dict:
@@ -624,7 +632,7 @@ def _trigger_group_retrain(db: Session, group: MLModelCoordinationGroup) -> list
         member = db.get(AIMLModel, member_id)
         if member is None or member.state != ModelState.ACTIVE:
             continue
-        job = TrainingJob(model_id=member_id, producer_id="ai-ml-workflow:group-retrain", status="RUNNING")
+        job = TrainingJob(model_id=member_id, producer_id="ai-ml-workflow:group-retrain", status="RUNNING", ml_training_type="RE_TRAINING")
         db.add(job)
         db.flush()
         member.state = AIML_MODEL_FSM.fire(ModelState.ACTIVE, ModelEvent.RETRAIN)

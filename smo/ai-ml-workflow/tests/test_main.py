@@ -66,6 +66,25 @@ def test_request_training_on_registered_model_fires_train(client, db_session_fac
         assert model.state == ModelState.TRAINING
 
 
+def test_request_training_ml_training_type_initial_then_retrain(client, db_session_factory):
+    """TS28.105 AI/ML NRM's own real mLTrainingType (SPEC_AUDIT.md) —
+    INITIAL_TRAINING the very first cycle (model still REGISTERED),
+    RE_TRAINING every subsequent one. Already computed internally as an
+    FSM event choice, but never stored or returned until this.
+    """
+    model_id = _make_model(db_session_factory, ModelState.REGISTERED)
+    first_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    assert client.get(f"/training-jobs/{first_id}/status").json()["mlTrainingType"] == "INITIAL_TRAINING"
+
+    with db_session_factory() as session:
+        model = session.get(AIMLModel, model_id)
+        model.state = ModelState.ACTIVE
+        session.commit()
+
+    second_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    assert client.get(f"/training-jobs/{second_id}/status").json()["mlTrainingType"] == "RE_TRAINING"
+
+
 def test_request_training_stores_and_exposes_extended_fields(client, db_session_factory):
     """OPEN_ITEMS.md section 5: TrainingJob was far thinner than the
     reference's own TrainingJob (trainingmgr/models/trainingjob.py) —
