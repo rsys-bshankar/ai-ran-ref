@@ -213,7 +213,9 @@ export function flow07(instance: Instance | undefined, perf: PerfReport[], fault
     step("running", "Instance RUNNING (call flow 01)", "rApp Mgmt", s !== "DEPLOYING" || perf.length + faults.length > 0, `state ${s}`),
     step("perf", "ReportPerformance(metrics) — no state change", "rApp container → R1 → rApp Mgmt", perf.length > 0, perf.length ? `${perf.length} report(s)` : undefined),
     step("minor", "ReportFault(non-critical) — recorded only", "rApp container → rApp Mgmt", minor.length > 0, minor.length ? `${minor.length} fault(s)` : undefined),
-    step("crash", "ReportFault(critical) → FAULTED (CRASH)", "rApp container → rApp Mgmt", critical.length > 0 ? (s === "FAULTED" ? "failed" : true) : false,
+    // a crash is an expected branch of this flow, not a dead end: shown as a
+    // warning so RECOVER (the next step) stays actionable instead of blocked
+    step("crash", "ReportFault(critical) → FAULTED (CRASH)", "rApp container → rApp Mgmt", critical.length > 0 ? (s === "FAULTED" ? "warn" : true) : false,
       critical.length ? `${critical.length} critical fault(s)` : undefined),
     step("recover", "RECOVER → DEPLOYING → re-bootstrap → RUNNING", "Operator → rApp Mgmt",
       critical.length > 0 && s === "RUNNING" ? true : critical.length > 0 && s === "DEPLOYING" ? "warn" : false,

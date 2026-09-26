@@ -104,8 +104,12 @@ describe("flow 06 — the cascade-delete guard", () => {
 describe("flow 07 — fault reporting", () => {
   it("a critical fault leaves the instance FAULTED until recovered", () => {
     const crit = [{ faultId: "f", severity: "critical", description: null, reportedAt: "t" }];
-    expect(flow07(instance("FAULTED"), [], crit)[3].status).toBe("failed");
-    expect(flow07(instance("RUNNING"), [], crit)[4].status).toBe("done");
+    const perf = [{ reportId: "r", metrics: { x: 1 }, reportedAt: "t" }];
+    const faults = [...crit, { faultId: "m", severity: "minor", description: null, reportedAt: "t" }];
+    const faulted = flow07(instance("FAULTED"), perf, faults);
+    expect(faulted[3].status).toBe("warn");
+    expect(faulted[4].status).toBe("current");   // RECOVER stays actionable
+    expect(flow07(instance("RUNNING"), perf, faults)[4].status).toBe("done");
   });
 });
 

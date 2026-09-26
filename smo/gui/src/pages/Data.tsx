@@ -82,6 +82,7 @@ function RegisterDmeType() {
 function DataJobs({ types, typeName }: { types: DmeType[]; typeName: (id: string) => string }) {
   const { me } = useAuth();
   const jobs = useSmo<DataJob[]>("/dme/data-jobs");
+  const offers = useSmo<DataOffer[]>("/dme/offers");
   const [typeId, setTypeId] = useState("");
   const [mode, setMode] = useState("CONTINUOUS");
   const [method, setMethod] = useState("PULL_HTTP");
@@ -89,13 +90,20 @@ function DataJobs({ types, typeName }: { types: DmeType[]; typeName: (id: string
   const [def, setDef] = useState("{}");
   const parsed = parseJsonObject(def);
   const [shown, setShown] = useState<DataJob | null>(null);
+  const committed = [...new Set((offers.data ?? []).filter((o) => o.dmeTypeId === typeId && o.committedMethod).map((o) => o.committedMethod!))];
   return (
     <Card title="Data jobs (consumers)">
       <Can method="POST" path="/dme/data-jobs">
         <div className="form inline">
-          <Field label="Type"><select value={typeId} onChange={(e) => setTypeId(e.target.value)}><option value="">Choose…</option>{types.map((t) => <option key={t.dmeTypeId} value={t.dmeTypeId}>{t.typeName}</option>)}</select></Field>
+          <Field label="Type"><select value={typeId} onChange={(e) => {
+            setTypeId(e.target.value);
+            const c = offers.data?.find((o) => o.dmeTypeId === e.target.value && o.committedMethod)?.committedMethod;
+            if (c) setMethod(c);
+          }}><option value="">Choose…</option>{types.map((t) => <option key={t.dmeTypeId} value={t.dmeTypeId}>{t.typeName}</option>)}</select></Field>
           <Field label="Mode"><select value={mode} onChange={(e) => setMode(e.target.value)}><option>CONTINUOUS</option><option>ONE_TIME</option></select></Field>
-          <Field label="Delivery"><select value={method} onChange={(e) => setMethod(e.target.value)}>{DELIVERY_METHODS.map((m) => <option key={m}>{m}</option>)}</select></Field>
+          <Field label="Delivery" hint={typeId ? (committed.length ? `Committed by offers: ${committed.join(", ")}` : <span className="text-bad">No offer has committed a method for this type</span>) : undefined}>
+            <select value={method} onChange={(e) => setMethod(e.target.value)}>{DELIVERY_METHODS.map((m) => <option key={m}>{m}</option>)}</select>
+          </Field>
           <Field label="Consumer ID"><input value={consumer} onChange={(e) => setConsumer(e.target.value)} /></Field>
           <Field label="Job definition (JSON)" hint={parsed.ok ? undefined : <span className="text-bad">{parsed.error}</span>}><input value={def} onChange={(e) => setDef(e.target.value)} /></Field>
           <ActionButton label="Create job" tone="primary" disabled={!typeId || !parsed.ok} action={{

@@ -243,6 +243,8 @@ function Flow05() {
   const jobs = useSmo<DataJob[]>(dmeTypeId ? "/dme/data-jobs" : null, { dme_type_id: dmeTypeId });
   const dmeType = types.data?.find((t) => t.dmeTypeId === dmeTypeId);
   const steps = flow05(ei, dmeType, offers.data ?? [], jobs.data ?? []);
+  // DME only accepts a job whose delivery method an offer has committed to
+  const committed = offers.data?.find((o) => o.committedMethod)?.committedMethod ?? null;
   return (
     <>
       <Pick label="EI type" items={eiTypes.data} value={eiId} onChange={setEi} id={(t) => t.eiTypeId}
@@ -253,10 +255,12 @@ function Flow05() {
           method: "POST", path: "/dme/offers", success: "Offer created",
           json: { dmeTypeId, dataDeliveryMode: "CONTINUOUS", dataDeliveryMethods: ["PUSH_HTTP", "PULL_HTTP"], dataOfferTerminationNotificationUri: "http://producer.invalid/terminate" },
         }} />,
-        job: dmeTypeId && <ActionButton label="Create consumer data job (PULL_HTTP)" tone="primary" action={{
-          method: "POST", path: "/dme/data-jobs", success: "Data job created",
-          json: { dmeTypeId, dataDeliveryMode: "CONTINUOUS", dataDeliveryMethod: "PULL_HTTP", consumerId: "smo-gui" },
-        }} />,
+        job: dmeTypeId && (committed
+          ? <ActionButton label={`Create consumer data job (${committed})`} tone="primary" action={{
+              method: "POST", path: "/dme/data-jobs", success: "Data job created",
+              json: { dmeTypeId, dataDeliveryMode: "CONTINUOUS", dataDeliveryMethod: committed, consumerId: "smo-gui" },
+            }} />
+          : <span className="muted small">DME needs an offer with a committed delivery method first.</span>),
         consume: go("/data#dme", "DME data jobs"),
       }} />
     </>
