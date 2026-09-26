@@ -1274,7 +1274,44 @@ print(r.status_code)
 "
 ```
 
-## 18. Retire it — package priming lifecycle, Terminate, then Delete
+## 18. FOCOM topology export (optional) — TEIV entities and relationships from real inventory rows
+
+Independent of the sample rApp instance above — closed in an earlier
+§5 pass (the Blueprint names "FOCOM's placement as a TEIV data source"
+as a confirmed integration point) but never demonstrated. A real
+kubeconfig-driven `focom-to-teiv-adapter` pushing CloudEvents over
+Kafka is structurally out of scope for this docker-run Phase 1 (no
+message broker anywhere in this build); `GET /topology` is the honest
+pull-based substitute — the same real `ResourceType`/`ResourcePool`/
+`DeploymentManager`/`Resource` rows every other FOCOM drill-down route
+already reads, exported in the reference's own wire shape
+(`o-ran-smo-teiv-cloud:<EntityType>` keys, `{id, attributes}` for
+entities, `{id, aSide, bSide, sourceIds}` for relationships).
+
+By this point in the runbook, FOCOM already has real inventory beyond
+the seeded Phase 1 topology — step 15's `gpu-l40` `Resource` from SO
+SMOS's own `INFRA` step (never deprovisioned there):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://focom:8000/topology')
+print(r.status_code, r.json())
+"
+```
+
+`entities` includes a real `ResourceType` for both `generic` (Phase 1's
+own seeded type) and `gpu-l40` (auto-registered the moment step 15
+provisioned against it — `provision_resource`'s own real behavior, not
+this endpoint's), a `ResourcePool`, a `DeploymentManager`, and at least
+one real `Resource`. `relationships` are built only from this schema's
+real foreign keys — `RESOURCE_IS_OF_TYPE_RESOURCETYPE` and
+`RESOURCE_CONTAINED_IN_RESOURCEPOOL` for every `Resource` row, plus a
+`RESOURCE_CHILD_OF_RESOURCE` entry for any with a real `parentId` (none
+in this Phase 1 topology, so that key is genuinely absent rather than
+an empty placeholder) — never invented ones.
+
+## 19. Retire it — package priming lifecycle, Terminate, then Delete
 
 **Prime the package** — the reference's real
 `COMMISSIONED -> PRIMING -> PRIMED` lifecycle (our `AVAILABLE` plays
