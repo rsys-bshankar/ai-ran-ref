@@ -10,6 +10,93 @@ O1/O2 YANG and information models — live as sibling reference material in
 against those formal specs directly (distinct from `OPEN_ITEMS.md`
 section 5's audits against the O-RAN-SC source-code repos).
 
+## Project status
+
+Three separate audits, three separate ground truths, kept deliberately
+apart rather than merged into one score:
+
+| Audit | Ground truth | Status |
+|---|---|---|
+| `OPEN_ITEMS.md` section 5 | 18 cloned O-RAN-SC repos (ADOPT/REFERENCE source code) | **Fully closed** |
+| `SPEC_AUDIT.md` | Formal 3GPP/O-RAN specs in `../specs/` | **Closed for the 4 modules with a matching spec file** |
+| `OPEN_ITEMS.md` sections 1-4 | This build's own LLDs and internal completeness | **Closed except 3 stakeholder-blocked design decisions** |
+
+**O-RAN-SC source-code audit (section 5) — done.** Every module with an
+actual O-RAN-SC repo to diff against (SME, DME, Onboarding+rApp Mgmt,
+RAN NF OAM, A1 Related, NFO+FOCOM, AI/ML Workflow, RAN Analytics) had its
+real API surface compared route by route against that repo. Every real
+gap found is closed — confirmed by re-reading the section end to end, not
+assumed. R1 Termination, Policy Mgmt, SO SMOS, and SA SMOS have no
+O-RAN-SC repo match at all (a confirmed `BUILD` verdict at Blueprint
+time), so there is nothing upstream to audit completeness against for
+those four.
+
+**Formal-spec audit (`SPEC_AUDIT.md`) — done where a spec exists, but
+coverage is partial.** Only four modules had a directly relevant formal
+spec file already cataloged in `../specs/`: **RAN NF OAM** (TS28319/
+28111/28532/28550 + the O1NRM YANGs), **FOCOM** (the real O2IMS
+`o-cloud-im/` information model), **Policy Mgmt** (TS28312 IntentNrm),
+and **SME** (the real CAPIF core source, read closely for security/
+trust-model detail beyond section 5's own pass). For all four, every
+small and moderate closeable finding is closed (missing enum/column
+fields, field-name mismatches, FOCOM's `/inventory` reshape toward
+`OCloud`, Policy Mgmt's matching-field rename to
+`supportedExpectationObjectType`, SME's invoker-onboarding trust-model
+flip, SME's real Trusted Invokers registry), and every large/structural
+finding (MSAC RBAC, DN/typed O1 addressing, file/streaming transport,
+FOCOM's Provisioning/Artifacts/Cluster/Infrastructure categories) was
+confirmed as a **deliberate Phase-1 scope cut**, not a bug — see "What's
+deliberately incomplete" below. One open item is architectural, not
+code: Policy Mgmt's Intent-to-RMIH matching is producer-side push, but
+TS28312's own NRM containment model implies the spec's real answer is
+consumer-side LDN selection — a genuine design question for whoever owns
+that module's requirements, moot for `DEMO_RUNBOOK.md` (neither route is
+ever called there).
+
+Not yet audited against a formal spec at all, because no relevant spec
+file exists in `../specs/` yet: **DME** (ICS's own spec set isn't
+there), **A1 Related** (3GPP/O-RAN A1 specs aren't there — section 5's
+source-code audit remains the only ground truth), **Onboarding/rApp
+Mgmt** (TOSCA/rApp packaging specs aren't there), and **AI/ML
+Workflow**/**RAN Analytics** (no directly relevant O-RAN AI/ML formal
+spec exists). Also cataloged in `../specs/` but never compared against:
+the O-RAN WG4/WG5 O-RU/O-CU/O-DU management-plane YANGs — likely out of
+scope given this build's single-node topology, but genuinely
+unconfirmed, not assumed.
+
+**Internal completeness (`OPEN_ITEMS.md` sections 1-4) — closed except 3
+items blocked on data, not effort.** Section 2's repo/lifecycle gaps and
+section 3's call-flow gaps are closed; section 4's test-coverage
+priority item is closed (current counts: ~525 unit tests across the 16
+services, plus 5 in `shared/tests/`, 111 in `gui-bff/tests/`, and 29
+cross-service integration tests). Section 1's three design decisions
+remain open, but genuinely need a stakeholder's real data or a scope
+call rather than more engineering effort — see "What's deliberately
+incomplete" below.
+
+**Demo depth (`DEMO_RUNBOOK.md`) — the most recently closed backlog.**
+Seven previously-undemonstrated, already-implemented pieces of real
+functionality (Onboarding's package priming lifecycle, DME's
+type-subscription mechanism, FOCOM's TEIV topology export, AI/ML
+Workflow's feature groups, SA SMOS's coordination-group remedial action,
+SME's `apiId` event-subscription filtering, A1 Related's service
+supervision sweep) each got a runbook section and a matching
+`tests_integration/test_demo_runbook.py` step, each verified against a
+real local Postgres 16 instance rather than just SQLite — which is how 4
+genuine production bugs got caught that no unit test had ever touched
+(see "Real bugs this pass found" below). `OPEN_ITEMS.md`'s own
+"Suggested next pass" section confirms this list is now exhausted.
+
+**Bottom line — what's actually remaining:** extending the formal-spec
+audit to the five unaudited modules and the WG4/WG5 YANGs (real,
+unstarted work); Policy Mgmt's Intent-to-RMIH architecture question
+(needs a stakeholder decision); and the three section 1 design
+decisions (blocked on real data/algorithm/scope input). Everything else
+large/structural is a **confirmed** Phase-1 scope cut, not a gap. Unlike
+the backlog that produced the last dozen PRs, none of these three are
+independently pickable without something from whoever owns the relevant
+module's requirements.
+
 ## Stack
 
 **Python 3.11 + FastAPI + SQLAlchemy + Pydantic**, one consistent stack
@@ -1287,17 +1374,65 @@ Writing the tests, not just the code, is what surfaced these:
 ## What's deliberately incomplete
 
 Matching the LLDs' own honesty about open items rather than papering over
-them:
+them. See "Project status" above for how this fits the three-audit
+picture; this section is the itemized detail behind it.
 
+**Section 1 design decisions (`OPEN_ITEMS.md`) — blocked on data or a
+scope call, not on engineering effort:**
+
+- **`WEIGHTED_TRIGGERS`** (`ai-ml-workflow/`) — raises `NotImplementedError`;
+  needs real noise-floor data before it can be designed, not invented now.
+- **Alarm-storm correlation algorithm** (`ran-nf-oam/`) — flagged as
+  needing a real correlation algorithm; nothing implemented. Same
+  reasoning as `WEIGHTED_TRIGGERS`: a fabricated algorithm would be worse
+  than an honest gap.
 - **A1-ML operations** (`a1-related/`) — schema-dormant, no routes. Building
   them means implementing genuine A1AP behavior, out of this project's
-  declared scope categorically (see the A1 Related LLD section 0).
-- **`ROLLBACK`** (`sa-smos/app/main.py`) — raises a clear, specific error
-  (`ROLLBACK_HISTORY_UNAVAILABLE`) rather than picking one of several
-  plausible meanings: rApp Management's own upgrade machinery deletes the
-  prior `RAppInstance` row on a successful commit, so no version history
-  survives anywhere in this build to roll back to. `RECONNECT` is now
-  resolved (see the table above).
+  declared scope categorically (see the A1 Related LLD section 0). Only
+  needs revisiting if that scope decision itself changes.
+
+**Formal-spec audit gaps (`SPEC_AUDIT.md`) — real, unstarted work, not
+yet attempted for lack of a spec file:**
+
+- **DME** — ICS's own formal spec set isn't in `../specs/` yet.
+- **A1 Related** — the 3GPP/O-RAN A1 specs aren't in `../specs/` either;
+  the `sim-a1-interface`/`a1pms` source-code audit in `OPEN_ITEMS.md`
+  section 5 remains the only ground truth for this module.
+- **Onboarding/rApp Mgmt** — TOSCA/rApp packaging specs aren't in
+  `../specs/`.
+- **AI/ML Workflow, RAN Analytics** — no directly relevant O-RAN AI/ML
+  formal spec exists in `../specs/`.
+- **O-RAN WG4/WG5 O-RU/O-CU/O-DU management-plane YANGs** — present in
+  `../specs/` but never compared against. Likely out of scope given this
+  build's single-node topology, but genuinely unconfirmed.
+
+**One open architectural question, not a code gap:** Policy Mgmt's
+Intent-to-RMIH matching is producer-side push (`create_intent`'s own
+`_matching_rmihs`); TS28312 IntentNrm's NRM containment model
+(`IntentHandlingFunction-Single` *contains* `Intent`) implies the spec's
+real answer is consumer-side LDN selection instead — an MnS consumer
+picks and addresses an already-chosen RMIH when creating an Intent. A
+real, architecturally different, spec-grounded alternative worth a
+design note before treating the current mechanism as final. Moot for
+`DEMO_RUNBOOK.md` — neither `CreateIntent` nor
+`RegisterIntentHandlingFunction` is ever called there.
+
+**Confirmed, deliberate Phase-1 scope cuts — not gaps, not pickable as
+scoped PRs:**
+
+- **RAN NF OAM's MSAC gate** — a single optional `msac_role` string
+  checked for presence, not TS28319 MsacNrm's real per-data-node
+  Identity/Role/AccessRule ABAC/RBAC engine. A real subsystem, correctly
+  left out of Phase 1.
+- **RAN NF OAM's flat-string O1 addressing** — opaque strings
+  (`managed_element_ref`, `entity_type`) rather than real hierarchical
+  LDN with typed identityrefs; the 3GPP base ManagedElement/
+  ManagedFunction NRM module itself isn't even in `../specs/` yet to
+  fully compare against.
+- **RAN NF OAM's file/streaming transport machinery**
+  (`FileDataReportingMnS`/`StreamingDataMnS`) — `southbound_engine` is
+  just a chosen label; `subscribe_pm` is a DME-producer registration
+  wrapper by its own docstring, never a real clause-8 PM job-control API.
 - **RESTCONF-provisioned MEs in RAN NF OAM's `WriteConfigurationChanges`**
   (`ran-nf-oam/app/main.py`) — the confirmed dispatch protocol is NETCONF
   only; an ME with `o1_protocol=RESTCONF` is rejected with
@@ -1305,10 +1440,37 @@ them:
   itself is still sent as XML over plain HTTP, not real SSH/ncclient
   transport, matching this build's all-HTTP-JSON pragmatism everywhere
   else.
-- **`WEIGHTED_TRIGGERS`** (`ai-ml-workflow/`) — raises `NotImplementedError`;
-  needs real noise-floor data before it can be designed, not invented now.
+- **FOCOM's whole missing O2IMS resource categories**
+  (`ProvisioningRequest`'s real template-driven workflow,
+  `ArtifactResourceType`/`ArtifactResource`, `NodeCluster`/
+  `ClusterResource`, `Gateway`/`SiteNetwork`) and its **thin FCAPS
+  model relative to the real O2IMS spec** (a full `AlarmSubscription`/
+  notify path, a job/dictionary/state-machine Performance model) —
+  consistent with FOCOM's own documented single-degenerate-cluster
+  Phase-1 scope; no real hardware telemetry source exists in this build
+  to feed a deeper model honestly.
+- **`ROLLBACK`** (`sa-smos/app/main.py`) — raises a clear, specific error
+  (`ROLLBACK_HISTORY_UNAVAILABLE`) rather than picking one of several
+  plausible meanings: rApp Management's own upgrade machinery deletes the
+  prior `RAppInstance` row on a successful commit, so no version history
+  survives anywhere in this build to roll back to. `RECONNECT` is now
+  resolved (see the table above).
+- **SME's real CAPIF "Trusted Invokers" security-context subsystem** —
+  closed; see `SPEC_AUDIT.md`. Its own remaining gap
+  (`PrepareNewSecurityContext`'s real cross-check against a published
+  AEF's declared security methods) has no equivalent data source in this
+  build (no per-AEF security-method catalog was ever modeled) — adapted
+  honestly rather than fabricated.
 - Every module's actual southbound integration beyond A1 Related's mock
   Near-RT RIC and RAN NF OAM's NETCONF client (`docker run` invocations,
   etc.) is elided in favor of recording the correct state transition —
   this is a reference build of the SMO's own object model and
   orchestration logic, not a full O-RAN stack.
+- The full `docker-compose` stack (17 services) has never been run
+  end-to-end — no Docker daemon is available in this build's own CI
+  runners or any sandbox this project has run in. Only
+  `docker compose config` YAML parsing (validated automatically by CI's
+  `docker-compose-config` job) and direct pytest execution against each
+  service in isolation are verified; the network-isolation claim for
+  `a1_mock_net` is structurally correct in the compose file but
+  functionally unverified.
