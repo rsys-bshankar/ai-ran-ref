@@ -1311,7 +1311,75 @@ real foreign keys — `RESOURCE_IS_OF_TYPE_RESOURCETYPE` and
 in this Phase 1 topology, so that key is genuinely absent rather than
 an empty placeholder) — never invented ones.
 
-## 19. Retire it — package priming lifecycle, Terminate, then Delete
+## 19. AI/ML Workflow feature groups (optional) — register, list, a real duplicate-name rejection
+
+Independent of the sample rApp instance above — a whole entity added
+in an earlier §5 pass (the reference's own `CreateFeatureGroup`,
+`featuregroup_controller.py`) but never touched by any demo phase.
+Real Cassandra-backed feature-store queries and `enableDme`'s real DME
+job creation are deliberate elisions (the same no-real-southbound-
+compute pattern as the rest of this module) — this exercises the real
+part: registration, listing, and the reference's own name-validation
+and duplicate-name rejection.
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/feature-groups', json={
+    'featureGroupName': 'demo_coverage_features', 'featureList': 'rsrp,rsrq,sinr',
+    'datalakeSource': 'INFLUX', 'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket',
+    'token': 'demo-token', 'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `featureGroupId`. Confirm it's a real, queryable registration:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://ai-ml-workflow:8000/feature-groups')
+print(r.status_code, r.json())
+"
+```
+
+**A real duplicate-name rejection** — register the exact same
+`featureGroupName` again; the reference's own `DBException` ("already
+exist") fires for real, via a genuine `UniqueConstraint`, not a
+scripted check:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/feature-groups', json={
+    'featureGroupName': 'demo_coverage_features', 'featureList': 'rsrp,rsrq,sinr',
+    'datalakeSource': 'INFLUX', 'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket',
+    'token': 'demo-token', 'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
+})
+print(r.status_code, r.json())
+"
+```
+
+`409`, `detail.title` = `FEATURE_GROUP_ALREADY_REGISTERED`. Also a real
+rejection for an invalid name (the reference's own `\w+`, 3-63
+character rule, shared with `TrainingJob` names):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/feature-groups', json={
+    'featureGroupName': 'no spaces allowed', 'featureList': 'rsrp', 'datalakeSource': 'INFLUX',
+    'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket', 'token': 'demo-token',
+    'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
+})
+print(r.status_code, r.json())
+"
+```
+
+`400`, `detail.title` = `FEATURE_GROUP_NAME_INVALID`.
+
+## 20. Retire it — package priming lifecycle, Terminate, then Delete
 
 **Prime the package** — the reference's real
 `COMMISSIONED -> PRIMING -> PRIMED` lifecycle (our `AVAILABLE` plays

@@ -2502,6 +2502,17 @@ own §1/§2 items stand as-is.
   mismatches, plus a live provision+topology-export round trip),
   live-schema-match check green, all unit/integration test suites
   green.
+- **Demo depth: AI/ML Workflow's feature groups.** Third item off the
+  "more demo depth" list below. New section: register a feature group
+  with real InfluxDB-shaped connection details → confirm it's listed →
+  a real duplicate-name rejection (`FEATURE_GROUP_ALREADY_REGISTERED`,
+  a genuine `UniqueConstraint`) → a real invalid-name rejection
+  (`FEATURE_GROUP_NAME_INVALID`, the reference's own `\w+`, 3-63
+  character rule). `tests_integration/test_demo_runbook.py` gained a
+  matching step. No code, schema, or OpenAPI-spec change this time —
+  a live register/list/duplicate/invalid round trip against a real
+  local Postgres 16 instance found no issue, unlike the previous two
+  demo-depth passes.
 
 ## Suggested next pass (priority order)
 
@@ -2521,9 +2532,6 @@ own §1/§2 items stand as-is.
      demoed `keepAliveIntervalSeconds: 0` (supervision disabled); the
      real lazy-sweep-on-read auto-deregistration path has never fired
      in the demo.
-   - `ai-ml-workflow`'s `FeatureGroup` CRUD (`POST`/`GET
-     /feature-groups`, §5-closed) — a whole entity added, never
-     touched by any demo phase.
    - `sa-smos`'s `MLModelCoordinationGroup`-scoped remedial action (a
      group-scoped `AssuranceMonitor` always dispatching a group
      retrain via AI/ML Workflow, regardless of `actionType` —

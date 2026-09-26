@@ -971,6 +971,24 @@ own non-FK-enforcing test harness. Fixed with an explicit `db.flush()`
 between the two, matching the pattern NFO's own `Instantiate` already
 uses for its own dependent inserts.
 
+**Demo depth: AI/ML Workflow's feature groups.** Continuing the same
+"more demo depth" thread. The reference's own `FeatureGroup` entity
+(`CreateFeatureGroup`/`GetFeatureGroup`, `featuregroup_controller.py`
+— added in an earlier §5 pass) had never been touched by any demo
+phase. New section: register a feature group with real InfluxDB-shaped
+connection details → confirm it's listed → a real duplicate-name
+rejection (`FEATURE_GROUP_ALREADY_REGISTERED`, a genuine
+`UniqueConstraint`, not a scripted check) → a real invalid-name
+rejection (`FEATURE_GROUP_NAME_INVALID`, the reference's own `\w+`,
+3-63 character rule, shared with `TrainingJob` names). Real
+Cassandra-backed feature-store queries and `enableDme`'s real DME job
+creation stay the same deliberate elisions already documented for this
+module. `tests_integration/test_demo_runbook.py` gained a matching
+step. No code, schema, or OpenAPI-spec change — confirmed via a full
+local Postgres 16 pass (59 tables, 0 mismatches), a live register/list/
+duplicate/invalid round trip against that same instance, and the
+live-schema-match check, all green.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style
