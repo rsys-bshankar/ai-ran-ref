@@ -78,3 +78,22 @@ export interface DmeType { dmeTypeId: string; dmeTypeIdStruct: Record<string, st
 // ---- BFF admin
 export interface GuiUser { username: string; role: "viewer" | "operator" | "admin"; active: boolean; createdAt: string }
 export interface AuditEntry { id: number; at: string; username: string | null; role: string | null; action: string; method: string | null; path: string | null; statusCode: number | null; detail: string | null }
+
+// ---- GUI pass 2: DME, A1 EI/services, SME registries, onboarding/NFO detail
+export interface DataJob { dataJobId: string; dataDeliveryMode: string; dmeTypeId: string; productionJobDefinition: Record<string, unknown>; dataDeliveryMethod: string; deliveryDetails: Record<string, unknown>; consumerId: string; status: string }
+export interface DataOffer { offerId: string; dmeTypeId: string; dataDeliveryMethodsOffered: string[]; committedMethod: string | null; dataAvailabilityNotificationUri: string | null; dataOfferTerminationNotificationUri: string }
+export interface DmeTypeSubscription { subscriptionId: string; notificationDestination: string; owner: string }
+export interface EiType { eiTypeId: string; registeredBy: string; eiSourceDmeTypeId: string }
+export interface A1Service { serviceId: string; callbackUrl: string | null; keepAliveIntervalSeconds: number; timeSinceLastActivitySeconds?: number; [k: string]: unknown }
+export interface PolicyStatusSubscription { subscriptionId: string; notificationDestination: string; subscriptionScope: string | null; policyIdList: string[] | null; policyTypeIdList: string[] | null; nearRtRicIdList: string[] | null }
+export interface SmeProvider { apfId: string; providerDomainInfo: string | null; serviceCount: number }
+export interface SmeService { serviceId: string; serviceName: string; producerId: string; endpoint: string; version: string; fullApiVersions: string[]; serviceCapabilities: Record<string, unknown>; aefProfiles: Record<string, unknown>[] }
+export interface SmeInvoker { apiInvokerId: string; apiInvokerPublicKey: string; trusted: boolean }
+export interface TrustedInvoker { apiInvokerId: string; notificationDestination: string; requestTestNotification: boolean; securityInfo: Record<string, unknown>[] }
+export interface CapifEventSubscription { subscriptionId: string; subscriberId: string; eventTypes: string[]; callbackUri: string; apiIds: string[] | null }
+export interface PackageUsage { registrationId: string; consumerId: string; stoppedAt: string | null; active: boolean }
+export interface PackageArtifact { artifactId: string; path: string; accessUrl: string }
+export interface NfDescriptor { nfDeploymentDescriptorId: string; packageId: string; name: string; requiredResourceTypeId: string | null; workloadTemplate: Record<string, unknown> }
+export interface LcmOperation { operationId: string; operationType: string; status: string }
+export interface InventorySubscription { subscriptionId: string; callback: string; consumerSubscriptionId: string | null; resourceTypeId: string | null }
+export interface FeatureGroup { featureGroupId: string; featureGroupName: string; featureList: string; datalakeSource: string; host: string; port: string; bucket: string; dbOrg: string; measurement: string; enableDme: boolean; measuredObjClass: string | null; sourceName: string | null }

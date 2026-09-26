@@ -12,6 +12,7 @@ import { Admin } from "./pages/Admin";
 import { Aiml } from "./pages/Aiml";
 import { Alarms } from "./pages/Alarms";
 import { Dashboard } from "./pages/Dashboard";
+import { Flows } from "./pages/Flows";
 import { Infrastructure } from "./pages/Infrastructure";
 import { Kpis } from "./pages/Kpis";
 import { Login } from "./pages/Login";
@@ -49,6 +50,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/login" element={<Login />} />
               <Route element={<RequireAuth><Layout /></RequireAuth>}>
                 <Route index element={<Dashboard />} />
+                <Route path="flows" element={<Flows />} />
                 <Route path="rapps" element={<Rapps />} />
                 <Route path="aiml" element={<Aiml />} />
                 <Route path="alarms" element={<Alarms />} />

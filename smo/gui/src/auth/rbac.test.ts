@@ -56,7 +56,7 @@ describe("can", () => {
 
   it("denies everything without a role or for unexposed routes", () => {
     expect(can(RULES, undefined, "GET", "/nfo/deployments")).toBe(false);
-    expect(can(RULES, "admin", "POST", "/sme/invoker-registrations")).toBe(false);
+    expect(can(RULES, "admin", "POST", "/sme/oauth2/token")).toBe(false);
   });
 
   it("is first-match-wins, like the BFF", () => {
