@@ -16,6 +16,7 @@ export const NAV: { to: string; label: string; icon: string; minRole?: Role }[] 
   { to: "/kpis", label: "KPIs & Assurance", icon: "∿" },
   { to: "/policy", label: "Policy & Intents", icon: "⚖" },
   { to: "/infrastructure", label: "Infrastructure", icon: "▤" },
+  { to: "/data", label: "Data & Exposure", icon: "⇄" },
   { to: "/admin", label: "Admin", icon: "⚙", minRole: "admin" },
 ];
 

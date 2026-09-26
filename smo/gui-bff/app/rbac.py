@@ -119,7 +119,12 @@ RULES: list[Rule] = [
     _rule("PATCH", "/ran-nf-oam/alarms/{id}/clear", O,
           query_overrides=lambda u: {"clear_user_id": u.username}),
     _rule("POST", "/ran-nf-oam/alarms/ingest", A),                   # test-data injection
-    _rule("POST", "/ran-nf-oam/(config-jobs|pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)", O),
+    # CM writes: who asked, and the MSAC access tier that entire-RAN scope
+    # requires, come from the GUI identity (an admin holds the tier; an
+    # operator's entire-RAN write is refused by RAN NF OAM's own MSAC gate)
+    _rule("POST", "/ran-nf-oam/config-jobs", O,
+          json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}", "msacRole": "admin" if u.role == Role.ADMIN else None}),
+    _rule("POST", "/ran-nf-oam/(pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)", O),
     _rule("POST", "/ran-nf-oam/software-management-jobs/{id}/advance", O),
     _rule("POST", "/ran-nf-oam/o1-adaptor-endpoints/{id}/heartbeat", A),   # what the ME's adaptor sends: simulation
 

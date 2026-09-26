@@ -1,20 +1,25 @@
 import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
-import type { A1Policy, Intent, IntentReport, Rmih } from "../api/types";
+import type { A1Policy, A1Service, Intent, IntentReport, PolicyStatusSubscription, Rmih } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ActionButton, Can, Card, DataTable, Drawer, Field, Id, Json, KeyValue, PageHeader, StateBadge, Tabs, useHashTab } from "../components/ui";
-import { formatTime, parseJsonObject } from "../lib/domain";
+import { formatTime, parseJsonObject, splitList } from "../lib/domain";
 
-const TABS = ["a1", "intents", "handlers"] as const;
+const TABS = ["a1", "status-subs", "services", "intents", "handlers"] as const;
 
 export function Policy() {
   const [tab, setTab] = useHashTab(TABS, "a1");
   return (
     <>
       <PageHeader title="Policy & Intents" subtitle="A1 policies enforced at the Near-RT RIC, and TS 28.312 intents dispatched to intent handlers" />
-      <Tabs value={tab} onChange={setTab} tabs={[{ id: "a1", label: "A1 policies" }, { id: "intents", label: "Intents" }, { id: "handlers", label: "Intent handlers (RMIH)" }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[
+        { id: "a1", label: "A1 policies" }, { id: "status-subs", label: "Policy status subscriptions" }, { id: "services", label: "A1 services" },
+        { id: "intents", label: "Intents" }, { id: "handlers", label: "Intent handlers (RMIH)" },
+      ]} />
       {tab === "a1" && <A1Policies />}
+      {tab === "status-subs" && <StatusSubscriptions />}
+      {tab === "services" && <A1Services />}
       {tab === "intents" && <Intents />}
       {tab === "handlers" && <Handlers />}
     </>
@@ -172,6 +177,7 @@ function IntentDrawer({ intent, onClose }: { intent: Intent; onClose: () => void
       <div className="row between"><StateBadge state={intent.intentAdminState} /><IntentActions intent={intent} /></div>
       <KeyValue items={[["Intent ID", <code>{intent.intentId}</code>], ["RMIO", intent.rmioId], ["Priority", intent.intentPriority], ["Purpose", intent.intentMgmtPurpose]]} />
       <h3>Fulfilment / conflict reports</h3>
+      <Can method="POST" path="/policy-mgmt/intent-reports"><PublishIntentReport intentId={intent.intentId} /></Can>
       {(reports.data ?? []).length === 0 ? <p className="muted">No reports published by a handler yet.</p> : reports.data!.map((r) => (
         <div key={r.reportId} className="report">
           <div className="muted small">{formatTime(r.lastUpdatedTime)}</div>
@@ -184,6 +190,9 @@ function IntentDrawer({ intent, onClose }: { intent: Intent; onClose: () => void
 
 function Handlers() {
   const handlers = useSmo<Rmih[]>("/policy-mgmt/intent-handling-functions");
+  const [f, setF] = useState({ rmihId: "so-smos", smeServiceId: "so-smos-intent-handler", callback: "http://so-smos:8000/intents", types: "RAN_SUBNETWORK", scope: "RAN" });
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(f.rmihId);
   return (
     <Card title="Registered intent handlers" actions={<span className="muted small">Framework-internal only (SO SMOS / SA SMOS) — D-SEC-POLICY-1</span>}>
       <DataTable rows={handlers.data} loading={handlers.isLoading} error={handlers.error} rowKey={(h) => h.rmihId} empty="No intent handlers registered." columns={[
@@ -191,7 +200,105 @@ function Handlers() {
         { header: "Supported object types", render: (h) => h.capabilities.map((c) => String(c.supportedExpectationObjectType ?? "?")).join(", ") },
         { header: "Scope", render: (h) => h.intentHandlingScope?.join(", ") ?? "any" },
         { header: "Callback", render: (h) => <code className="small">{h.notificationCallbackUri}</code> },
+        { header: "", className: "actions", render: (h) => <ActionButton label="Deregister" tone="danger" confirm={`Deregister ${h.rmihId}?`}
+          action={{ method: "DELETE", path: `/policy-mgmt/intent-handling-functions/${h.rmihId}`, success: "Handler deregistered" }} /> },
       ]} />
+      <Can method="POST" path="/policy-mgmt/intent-handling-functions">
+        <details className="admin-tools">
+          <summary>Admin: register a handler on the framework's behalf</summary>
+          <p className="muted small">An rApp identity (a UUID) is always refused: only SMO modules such as <code>so-smos</code> / <code>sa-smos</code> may hold an rmihId.</p>
+          <div className="form grid cols-3 tight">
+            <Field label="RMIH ID" hint={uuidLike ? <span className="text-bad">an rApp id — Policy Mgmt will refuse it</span> : undefined}><input value={f.rmihId} onChange={set("rmihId")} /></Field>
+            <Field label="SME service ID"><input value={f.smeServiceId} onChange={set("smeServiceId")} /></Field>
+            <Field label="Notification callback"><input value={f.callback} onChange={set("callback")} /></Field>
+            <Field label="Supported expectation object types" hint="Comma-separated: RAN_SUBNETWORK, EDGE_SERVICE_SUPPORT, 5GC_SUBNETWORK, RADIO_SERVICE"><input value={f.types} onChange={set("types")} /></Field>
+            <Field label="Handling scope"><select value={f.scope} onChange={set("scope")}><option value="">any</option><option>RAN</option><option>CN</option></select></Field>
+          </div>
+          <ActionButton label="Register handler" disabled={!f.rmihId || !f.types} action={{
+            method: "POST", path: "/policy-mgmt/intent-handling-functions", success: "Handler registered",
+            json: { rmihId: f.rmihId, smeServiceId: f.smeServiceId, notificationCallbackUri: f.callback,
+              capabilities: splitList(f.types).map((t) => ({ supportedExpectationObjectType: t })), intentHandlingScope: f.scope ? [f.scope] : null },
+          }} />
+        </details>
+      </Can>
+    </Card>
+  );
+}
+
+function PublishIntentReport({ intentId }: { intentId: string }) {
+  const [status, setStatus] = useState("FULFILLED");
+  const [conflicts, setConflicts] = useState("");
+  return (
+    <details className="admin-tools">
+      <summary>Admin: publish a report as the handling RMIH</summary>
+      <div className="form inline">
+        <Field label="Fulfilment status"><select value={status} onChange={(e) => setStatus(e.target.value)}>{["FULFILLED", "NOT_FULFILLED", "DEGRADED", "SUSPENDED"].map((s) => <option key={s}>{s}</option>)}</select></Field>
+        <Field label="Conflicting intents" hint="Comma-separated intent ids"><input value={conflicts} onChange={(e) => setConflicts(e.target.value)} /></Field>
+      </div>
+      <ActionButton label="Publish report" action={{
+        method: "POST", path: "/policy-mgmt/intent-reports", success: "Report published",
+        json: { intentId, fulfilmentReport: { fulfilmentStatus: status, reportedBy: "so-smos" },
+          conflictReports: splitList(conflicts).length ? splitList(conflicts).map((c) => ({ conflictingIntent: c })) : null },
+      }} />
+    </details>
+  );
+}
+
+// ---------------------------------------------------------------- A1 status subscriptions / services
+
+function StatusSubscriptions() {
+  const subs = useSmo<PolicyStatusSubscription[]>("/a1-related/policies/subscriptions");
+  const [dest, setDest] = useState("");
+  const [scope, setScope] = useState("ALL");
+  const [types, setTypes] = useState("");
+  return (
+    <Card title="Policy enforcement-status subscriptions" actions={<span className="muted small">Notified best-effort whenever a policy's enforcement status changes</span>}>
+      <Can method="POST" path="/a1-related/policies/subscriptions">
+        <div className="form inline">
+          <Field label="Notification destination"><input value={dest} onChange={(e) => setDest(e.target.value)} placeholder="http://consumer:8000/policy-status" /></Field>
+          <Field label="Scope"><select value={scope} onChange={(e) => setScope(e.target.value)}><option>ALL</option><option value="">filtered</option></select></Field>
+          <Field label="Policy types" hint="Comma-separated, when filtered"><input value={types} onChange={(e) => setTypes(e.target.value)} disabled={scope === "ALL"} /></Field>
+          <ActionButton label="Subscribe" disabled={!dest} action={{
+            method: "POST", path: "/a1-related/policies/subscriptions", success: "Subscribed",
+            json: { notificationDestination: dest, subscriptionScope: scope || null, policyTypeIdList: scope ? null : splitList(types) },
+          }} />
+        </div>
+      </Can>
+      <DataTable rows={subs.data} loading={subs.isLoading} error={subs.error} rowKey={(s) => s.subscriptionId} empty="No status subscriptions." columns={[
+        { header: "Subscription", render: (s) => <Id value={s.subscriptionId} /> }, { header: "Destination", render: (s) => <code className="small">{s.notificationDestination}</code> },
+        { header: "Scope", render: (s) => s.subscriptionScope ?? [s.policyTypeIdList, s.policyIdList, s.nearRtRicIdList].flat().filter(Boolean).join(", ") },
+        { header: "", className: "actions", render: (s) => <ActionButton label="Unsubscribe" action={{ method: "DELETE", path: `/a1-related/policies/subscriptions/${s.subscriptionId}`, success: "Unsubscribed" }} /> },
+      ]} />
+    </Card>
+  );
+}
+
+function A1Services() {
+  const services = useSmo<{ serviceList: A1Service[] }>("/a1-related/services");
+  const [f, setF] = useState({ serviceId: "", callbackUrl: "", keepAliveIntervalSeconds: "0" });
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  return (
+    <Card title="A1-P service registry" actions={<span className="muted small">A service whose keep-alive lapses is removed along with its policies</span>}>
+      <DataTable rows={services.data?.serviceList} loading={services.isLoading} error={services.error} rowKey={(s) => s.serviceId} empty="No A1 services registered." columns={[
+        { header: "Service", render: (s) => <strong>{s.serviceId}</strong> }, { header: "Callback", render: (s) => s.callbackUrl ? <code className="small">{s.callbackUrl}</code> : "—" },
+        { header: "Keep-alive", render: (s) => s.keepAliveIntervalSeconds ? `${s.keepAliveIntervalSeconds} s` : "none" },
+        { header: "Idle", render: (s) => s.timeSinceLastActivitySeconds !== undefined ? `${s.timeSinceLastActivitySeconds} s` : "—" },
+        { header: "", className: "actions", render: (s) => <div className="row gap end">
+          <ActionButton label="Keep alive" action={{ method: "PUT", path: `/a1-related/services/${s.serviceId}/keepalive`, success: "Keep-alive sent" }} />
+          <ActionButton label="Unregister" tone="danger" confirm={`Unregister ${s.serviceId} and delete its policies?`} action={{ method: "DELETE", path: `/a1-related/services/${s.serviceId}`, success: "Service unregistered" }} />
+        </div> },
+      ]} />
+      <Can method="PUT" path="/a1-related/services">
+        <div className="form inline">
+          <Field label="Service ID"><input value={f.serviceId} onChange={set("serviceId")} /></Field>
+          <Field label="Callback URL"><input value={f.callbackUrl} onChange={set("callbackUrl")} /></Field>
+          <Field label="Keep-alive interval (s)" hint="0 = never expires"><input type="number" min={0} value={f.keepAliveIntervalSeconds} onChange={set("keepAliveIntervalSeconds")} /></Field>
+          <ActionButton label="Register service" disabled={!f.serviceId} action={{
+            method: "PUT", path: "/a1-related/services", success: "Service registered",
+            json: { serviceId: f.serviceId, callbackUrl: f.callbackUrl || null, keepAliveIntervalSeconds: Number(f.keepAliveIntervalSeconds) || 0 },
+          }} />
+        </div>
+      </Can>
     </Card>
   );
 }

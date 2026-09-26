@@ -2,30 +2,29 @@ import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
 import type {
-  ConfigJob, ConfigJobSummary, DeploymentManager, DmeType, NfDeployment, NfResource, O1Endpoint, OCloudResource, ResourcePool,
+  ConfigJob, ConfigJobSummary, DeploymentManager, InventorySubscription, LcmOperation, NfDeployment, NfDescriptor, NfResource, O1Endpoint, OCloudResource, ResourcePool,
   ResourceType, ServiceOrder, SwmJob, Topology,
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ActionButton, Can, Card, DataTable, Drawer, ErrorBox, Field, Id, Json, KeyValue, Modal, PageHeader, StateBadge, Tabs, useHashTab } from "../components/ui";
 import { formatTime, parseJsonObject, splitList } from "../lib/domain";
 
-const TABS = ["nfo", "ocloud", "topology", "o1", "orders", "data"] as const;
+const TABS = ["nfo", "ocloud", "topology", "o1", "orders"] as const;
 
 export function Infrastructure() {
   const [tab, setTab] = useHashTab(TABS, "nfo");
   return (
     <>
-      <PageHeader title="Infrastructure" subtitle="Workloads (NFO / O2dms), O-Cloud inventory (FOCOM / O2ims), O1 management, service orders and data types" />
+      <PageHeader title="Infrastructure" subtitle="Workloads (NFO / O2dms), O-Cloud inventory (FOCOM / O2ims), O1 management and service orders" />
       <Tabs value={tab} onChange={setTab} tabs={[
         { id: "nfo", label: "NF deployments" }, { id: "ocloud", label: "O-Cloud inventory" }, { id: "topology", label: "Topology" },
-        { id: "o1", label: "O1 endpoints & jobs" }, { id: "orders", label: "Service orders" }, { id: "data", label: "Data types (DME)" },
+        { id: "o1", label: "O1 endpoints & jobs" }, { id: "orders", label: "Service orders" }
       ]} />
       {tab === "nfo" && <Deployments />}
       {tab === "ocloud" && <OCloud />}
       {tab === "topology" && <TopologyView />}
       {tab === "o1" && <O1 />}
       {tab === "orders" && <Orders />}
-      {tab === "data" && <DataTypes />}
     </>
   );
 }
@@ -51,7 +50,20 @@ function Deployments() {
           ]} />
       </Card>
       {selected && <DeploymentDrawer d={selected} onClose={() => setSelected(null)} />}
+      <Descriptors />
     </>
+  );
+}
+
+function Descriptors() {
+  const descriptors = useSmo<NfDescriptor[]>("/nfo/descriptors");
+  return (
+    <Card title="NF deployment descriptors" actions={<span className="muted small">Created by Onboarding's validation pipeline from each package's TOSCA definitions</span>}>
+      <DataTable rows={descriptors.data} loading={descriptors.isLoading} error={descriptors.error} rowKey={(d) => d.nfDeploymentDescriptorId} empty="No descriptors." columns={[
+        { header: "Descriptor", render: (d) => <Id value={d.nfDeploymentDescriptorId} /> }, { header: "Name", render: (d) => <code>{d.name}</code> },
+        { header: "Package", render: (d) => <Id value={d.packageId} /> }, { header: "Resource type", render: (d) => d.requiredResourceTypeId ?? "—" },
+      ]} />
+    </Card>
   );
 }
 
@@ -68,12 +80,18 @@ function DeploymentActions({ d }: { d: NfDeployment }) {
 
 function DeploymentDrawer({ d, onClose }: { d: NfDeployment; onClose: () => void }) {
   const resources = useSmo<NfResource[]>(`/nfo/deployments/${d.nfDeploymentId}/resources`);
+  const ops = useSmo<LcmOperation[]>(`/nfo/deployments/${d.nfDeploymentId}/operations`);
   return (
     <Drawer title={d.name} onClose={onClose}>
       <div className="row between"><StateBadge state={d.state} /><DeploymentActions d={d} /></div>
       <KeyValue items={[
         ["Deployment ID", <code>{d.nfDeploymentId}</code>], ["Descriptor", <code>{d.nfDeploymentDescriptorId}</code>],
         ["Cluster (placement)", d.clusterId], ["Workload ref", d.workloadRef], ["Required resource type", d.requiredResourceTypeId],
+      ]} />
+      <h3>LCM operations</h3>
+      <DataTable rows={ops.data} error={ops.error} rowKey={(o) => o.operationId} empty="No operations recorded." columns={[
+        { header: "Operation", render: (o) => <code>{o.operationType}</code> }, { header: "Status", render: (o) => <StateBadge state={o.status} /> },
+        { header: "ID", render: (o) => <Id value={o.operationId} /> },
       ]} />
       <h3>O-Cloud resources</h3>
       <DataTable rows={resources.data} error={resources.error} rowKey={(r) => r.resourceLinkId} empty="No linked resources." columns={[
@@ -124,6 +142,7 @@ function OCloud() {
           </details>
         </Can>
       </Card>
+      <InventorySubscriptions />
       <Card title="Resource types">
         <DataTable rows={types.data} loading={types.isLoading} error={types.error} rowKey={(t) => t.resourceTypeId} columns={[
           { header: "Type", render: (t) => <><strong>{t.name}</strong> <code className="small">{t.resourceTypeId}</code></> },
@@ -132,6 +151,28 @@ function OCloud() {
         ]} />
       </Card>
     </>
+  );
+}
+
+function InventorySubscriptions() {
+  const subs = useSmo<InventorySubscription[]>("/focom/inventory/subscriptions");
+  const [callback, setCallback] = useState("");
+  const [typeId, setTypeId] = useState("");
+  return (
+    <Card title="Inventory-change subscriptions" actions={<span className="muted small">Notified on provision / deprovision (CREATE / DELETE)</span>}>
+      <Can method="POST" path="/focom/inventory/subscriptions">
+        <div className="form inline">
+          <Field label="Callback"><input value={callback} onChange={(e) => setCallback(e.target.value)} placeholder="http://consumer:8000/inventory-events" /></Field>
+          <Field label="Resource type filter"><input value={typeId} onChange={(e) => setTypeId(e.target.value)} placeholder="any" /></Field>
+          <ActionButton label="Subscribe" disabled={!callback} action={{ method: "POST", path: "/focom/inventory/subscriptions", json: { callback, resourceTypeId: typeId || null, consumerSubscriptionId: "smo-gui" }, success: "Subscribed to inventory changes" }} />
+        </div>
+      </Can>
+      <DataTable rows={subs.data} rowKey={(s) => s.subscriptionId} empty="No inventory subscriptions." columns={[
+        { header: "Subscription", render: (s) => <Id value={s.subscriptionId} /> }, { header: "Callback", render: (s) => <code className="small">{s.callback}</code> },
+        { header: "Resource type", render: (s) => s.resourceTypeId ?? "any" },
+        { header: "", className: "actions", render: (s) => <ActionButton label="Unsubscribe" action={{ method: "DELETE", path: `/focom/inventory/subscriptions/${s.subscriptionId}`, success: "Unsubscribed" }} /> },
+      ]} />
+    </Card>
   );
 }
 
@@ -183,6 +224,8 @@ function O1() {
           { header: "Protocols", render: (e) => e.protocolSupport.join(", ") },
           { header: "Health", render: (e) => <StateBadge state={e.healthStatus} /> },
           { header: "Last heartbeat", render: (e) => formatTime(e.lastHeartbeatAt) },
+          { header: "", className: "actions", render: (e) => <ActionButton label="Heartbeat" title="Simulates the ME's O1 adaptor heartbeat (DISCOVERED/DEGRADED → ACTIVE)"
+            action={{ method: "POST", path: `/ran-nf-oam/o1-adaptor-endpoints/${e.endpointId}/heartbeat`, success: `${e.managedElementRef} heartbeat` }} /> },
         ]} />
       </Card>
       <Card title="CM write jobs" actions={<Can method="POST" path="/ran-nf-oam/config-jobs"><button className="btn primary" onClick={() => setWriting(true)}>New config write</button></Can>}>
@@ -239,9 +282,9 @@ function RegisterEndpoint({ onClose }: { onClose: () => void }) {
 }
 
 function ConfigWrite({ endpoints, onClose }: { endpoints: O1Endpoint[]; onClose: () => void }) {
-  const { me } = useAuth();
+  const { role } = useAuth();
   const [scope, setScope] = useState("cell");
-  const [meRef, setMeRef] = useState("");
+  const [mes, setMes] = useState<string[]>([]);
   const [operation, setOperation] = useState("merge");
   const [attrs, setAttrs] = useState('{"administrativeState": "UNLOCKED"}');
   const parsed = parseJsonObject(attrs);
@@ -251,16 +294,24 @@ function ConfigWrite({ endpoints, onClose }: { endpoints: O1Endpoint[]; onClose:
       <form className="form" onSubmit={(e) => {
         e.preventDefault();
         if (!parsed.ok) return;
+        // requestedBy and msacRole are set by the BFF from your GUI identity
         action.mutate({ method: "POST", path: "/ran-nf-oam/config-jobs", success: "Config job submitted",
-          json: { requestedBy: `smo-gui:${me?.username}`, scope, changes: [{ managedElementRef: meRef, attributeChanges: parsed.value, operation }] } }, { onSuccess: onClose });
+          json: { scope, changes: mes.map((m) => ({ managedElementRef: m, attributeChanges: parsed.value, operation })) } }, { onSuccess: onClose });
       }}>
+        <p className="muted small">One job, decomposed into one NETCONF &lt;edit-config&gt; per managed element; mixed results aggregate to PARTIAL_SUCCESS (call flow 03).</p>
         <div className="grid cols-3 tight">
-          <Field label="Managed element"><select value={meRef} onChange={(e) => setMeRef(e.target.value)} required><option value="">Choose…</option>{endpoints.map((e) => <option key={e.endpointId}>{e.managedElementRef}</option>)}</select></Field>
-          <Field label="Scope"><input value={scope} onChange={(e) => setScope(e.target.value)} /></Field>
+          <Field label="Managed elements" hint="Ctrl/Cmd-click for several">
+            <select multiple size={Math.min(5, Math.max(2, endpoints.length))} value={mes} onChange={(e) => setMes([...e.target.selectedOptions].map((o) => o.value))} required>
+              {endpoints.map((e) => <option key={e.endpointId} value={e.managedElementRef}>{e.managedElementRef} ({e.healthStatus})</option>)}
+            </select>
+          </Field>
+          <Field label="Scope" hint={scope === "entire-RAN" && role !== "admin" ? <span className="text-bad">entire-RAN needs an MSAC tier: admins only</span> : undefined}>
+            <select value={scope} onChange={(e) => setScope(e.target.value)}><option>cell</option><option>site</option><option>cluster</option><option>entire-RAN</option></select>
+          </Field>
           <Field label="Operation"><select value={operation} onChange={(e) => setOperation(e.target.value)}>{["merge", "replace", "create", "delete", "remove"].map((o) => <option key={o}>{o}</option>)}</select></Field>
         </div>
-        <Field label="Attribute changes (JSON)" hint={parsed.ok ? undefined : <span className="text-bad">{parsed.error}</span>}><textarea rows={4} value={attrs} onChange={(e) => setAttrs(e.target.value)} spellCheck={false} /></Field>
-        <div className="row gap end"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!parsed.ok || action.isPending}>Submit</button></div>
+        <Field label="Attribute changes (JSON, applied to each)" hint={parsed.ok ? undefined : <span className="text-bad">{parsed.error}</span>}><textarea rows={4} value={attrs} onChange={(e) => setAttrs(e.target.value)} spellCheck={false} /></Field>
+        <div className="row gap end"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!parsed.ok || mes.length === 0 || action.isPending}>Submit</button></div>
       </form>
     </Modal>
   );
@@ -324,20 +375,6 @@ function SubmitOrder() {
         <Field label="Steps (JSON array)" hint={parsed ? undefined : <span className="text-bad">must be a JSON array</span>}><textarea rows={8} value={steps} onChange={(e) => setSteps(e.target.value)} spellCheck={false} /></Field>
       </div>
       <ActionButton label="Submit order" tone="primary" disabled={!parsed || !scope} action={{ method: "POST", path: "/so-smos/orders", json: { scope, steps: parsed ?? [] }, success: "Order executed" }} />
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------- DME
-
-function DataTypes() {
-  const types = useSmo<DmeType[]>("/dme/dme-types");
-  return (
-    <Card title="DME data types" actions={<span className="muted small">Type status is a live call to each producer's health callback</span>}>
-      <DataTable rows={types.data} loading={types.isLoading} error={types.error} rowKey={(t) => t.dmeTypeId} empty="No DME types registered." columns={[
-        { header: "Type", render: (t) => <code>{t.typeName}</code> }, { header: "ID", render: (t) => <Id value={t.dmeTypeId} /> },
-        { header: "Producer", render: (t) => t.producerId }, { header: "Status", render: (t) => <StateBadge state={t.typeStatus} /> },
-      ]} />
     </Card>
   );
 }

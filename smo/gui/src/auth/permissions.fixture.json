@@ -159,7 +159,13 @@
   },
   {
     "method": "POST",
-    "pattern": "^/ran-nf-oam/(config-jobs|pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)$",
+    "pattern": "^/ran-nf-oam/config-jobs$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/(pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)$",
     "role": "operator",
     "queryMatch": {}
   },

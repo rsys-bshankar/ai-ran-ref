@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 
 import { useSmo, useSmoAction } from "../api/hooks";
-import type { FaultReport, Instance, InstanceSummary, Package, PerfReport } from "../api/types";
+import type { FaultReport, Instance, InstanceSummary, Package, PackageArtifact, PackageUsage, PerfReport } from "../api/types";
 import { Sparkline } from "../components/charts";
 import {
   ActionButton, Can, Card, DataTable, Drawer, ErrorBox, Field, Id, Json, KeyValue, Modal, PageHeader, SeverityChip,
@@ -28,6 +29,7 @@ function Packages() {
   const [state, setState] = useState("");
   const packages = useSmo<Package[]>("/onboarding/packages", { state });
   const [deployFrom, setDeployFrom] = useState<Package | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
   return (
     <>
       <Can method="POST" path="/onboarding/packages"><OnboardForm /></Can>
@@ -37,7 +39,7 @@ function Packages() {
           {["ONBOARDING", "AVAILABLE", "PRIMED", "DEPRECATED", "DELETING", "FAILED"].map((s) => <option key={s}>{s}</option>)}
         </select>}>
         <DataTable rows={packages.data} loading={packages.isLoading} error={packages.error} rowKey={(p) => p.packageId}
-          empty="No packages onboarded yet."
+          empty="No packages onboarded yet." onRowClick={(p) => setDetail(p.packageId)} selectedKey={detail}
           columns={[
             { header: "Package", render: (p) => <><strong>{p.name}</strong> <span className="muted">{p.version}</span><div className="muted small">{p.vendor ?? ""} {p.applicationType}</div></> },
             { header: "ID", render: (p) => <Id value={p.packageId} /> },
@@ -47,7 +49,7 @@ function Packages() {
             {
               header: "", className: "actions", render: (p) => (
                 <div className="row gap end">
-                  {p.state === "AVAILABLE" && <Can method="POST" path="/rapp-mgmt/instances"><button className="btn primary" onClick={() => setDeployFrom(p)}>Deploy</button></Can>}
+                  {p.state === "AVAILABLE" && <Can method="POST" path="/rapp-mgmt/instances"><button className="btn primary" onClick={(e) => { e.stopPropagation(); setDeployFrom(p); }}>Deploy</button></Can>}
                   {packageActions(p.state).map((a) => (
                     <ActionButton key={a.action} label={a.label} tone={a.action === "delete" ? "danger" : "default"}
                       confirm={a.action === "delete" ? `Delete package ${p.name} ${p.version}?` : undefined}
@@ -61,7 +63,43 @@ function Packages() {
           ]} />
       </Card>
       {deployFrom && <CreateInstance pkg={deployFrom} onClose={() => setDeployFrom(null)} />}
+      {detail && packages.data?.find((p) => p.packageId === detail) && <PackageDrawer pkg={packages.data.find((p) => p.packageId === detail)!} onClose={() => setDetail(null)} />}
     </>
+  );
+}
+
+function PackageDrawer({ pkg, onClose }: { pkg: Package; onClose: () => void }) {
+  const base = `/onboarding/packages/${pkg.packageId}`;
+  const artifacts = useSmo<PackageArtifact[]>(`${base}/artifacts`);
+  const usage = useSmo<PackageUsage[]>(`${base}/usage`);
+  const instances = useSmo<InstanceSummary[]>("/rapp-mgmt/instances");
+  const active = (usage.data ?? []).filter((u) => u.active);
+  return (
+    <Drawer title={`${pkg.name} ${pkg.version}`} onClose={onClose}>
+      <div className="row between"><StateBadge state={pkg.state} /><Link className="btn small" to="/flows#06">Track in flow 06 →</Link></div>
+      <KeyValue items={[
+        ["Package ID", <code>{pkg.packageId}</code>], ["Vendor / type", `${pkg.vendor ?? "—"} / ${pkg.applicationType}`],
+        ["TOSCA entry definitions", pkg.toscaEntryDefinitions], ["Signature", pkg.signatureVerified ? "verified (dev cert)" : "unverified"],
+        ["NF deployment descriptor", pkg.nfDeploymentDescriptorId && <code>{pkg.nfDeploymentDescriptorId}</code>],
+        ["Instances", String((instances.data ?? []).filter((i) => i.packageId === pkg.packageId).length)],
+      ]} />
+      <h3>Artifacts</h3>
+      <DataTable rows={artifacts.data} error={artifacts.error} rowKey={(a) => a.artifactId} empty="No artifacts registered." columns={[
+        { header: "Path", render: (a) => <code className="small">{a.path}</code> }, { header: "Access URL", render: (a) => <code className="small clip">{a.accessUrl}</code> },
+      ]} />
+      <h3>Usage registrations (cascade-delete guard)</h3>
+      <p className="muted small">{active.length ? `${active.length} active registration(s): deprime and delete are blocked until they stop.` : "No active usage — delete and deprime are not blocked by usage."}</p>
+      <DataTable rows={usage.data} error={usage.error} rowKey={(u) => u.registrationId} empty="No usage registrations." columns={[
+        { header: "Consumer", render: (u) => <Id value={u.consumerId} /> },
+        { header: "State", render: (u) => u.active ? <StateBadge state="ACTIVE" /> : <>stopped {formatTime(u.stoppedAt)}</> },
+        { header: "", className: "actions", render: (u) => u.active && <ActionButton label="Stop" title="Simulates the consumer releasing the package"
+          action={{ method: "POST", path: `${base}/usage/${u.registrationId}/stop`, success: "Usage stopped" }} /> },
+      ]} />
+      <Can method="POST" path={`${base}/usage/start`}>
+        <div className="row gap"><ActionButton label="Register test usage" title="Simulates an instance holding this package, to exercise the guard"
+          action={{ method: "POST", path: `${base}/usage/start`, query: { consumer_id: "smo-gui-test" }, success: "Usage registered" }} /></div>
+      </Can>
+    </Drawer>
   );
 }
 
