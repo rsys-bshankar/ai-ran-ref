@@ -1012,6 +1012,24 @@ register/reject/create/monitor/remedial/confirm round trip against that
 same instance, and the live-schema-match check, all green. One OpenAPI
 spec change (`ai-ml-workflow.json`, the new error), regenerated.
 
+**Demo depth: SME's event-subscription `apiId` filtering.** Continuing
+the same "more demo depth" thread. `SubscribeEvents`' own `apiIds` filter
+(the reference's `CAPIFEventFilter`, `eventservice.go`'s
+`getMatchingSubs`) had been real and unit-tested since an earlier §5
+pass, but SME's whole event-subscription-and-notification mechanism —
+not just the `apiId` filter, the type-only filtering path too — had
+never appeared anywhere in this runbook at all. New section: subscribe
+one consumer unscoped (`SERVICE_API_UPDATE`, every service) and one
+scoped to `helloworld-api`'s own `serviceId` → register-then-update an
+unrelated service, which reaches only the unscoped consumer (the scoped
+one's own `apiIds` filter excludes it) → update `helloworld-api` itself,
+which reaches both. `tests_integration/test_demo_runbook.py` gained a
+matching step, intercepting the exact `httpx.post` calls the same way as
+the DME type-subscription step above. No code, schema, or OpenAPI-spec
+change this time — a live subscribe/register/update/confirm/unsubscribe
+round trip against a real local Postgres 16 instance found no issue,
+same as the AI/ML Workflow feature-groups pass.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style

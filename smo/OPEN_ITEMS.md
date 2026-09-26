@@ -2537,6 +2537,20 @@ own §1/§2 items stand as-is.
   create/monitor/remedial/confirm round trip against that same
   instance, live-schema-match check, and all unit/integration test
   suites, all green.
+- **Demo depth: SME's event-subscription `apiId` filtering.** Fifth item
+  off the "more demo depth" list below. `SubscribeEvents`'s own `apiIds`
+  filter was real and unit-tested since an earlier §5 pass, but SME's
+  whole event-subscription-and-notification mechanism had never appeared
+  anywhere in this runbook at all — not just the `apiId` filter, the
+  type-only path too. New section: subscribe one consumer unscoped and
+  one scoped to `helloworld-api`'s own `serviceId` → register-then-update
+  an unrelated service (reaches only the unscoped consumer) → update
+  `helloworld-api` itself (reaches both). `tests_integration/
+  test_demo_runbook.py` gained a matching step, intercepting the exact
+  `httpx.post` calls the same way as the DME type-subscription step. No
+  code, schema, or OpenAPI-spec change — a live subscribe/register/
+  update/confirm/unsubscribe round trip against a real local Postgres 16
+  instance found no issue.
 
 ## Suggested next pass (priority order)
 
@@ -2548,9 +2562,9 @@ own §1/§2 items stand as-is.
 2. **More demo depth is the best-scoped remaining backlog.** Real,
    already-implemented functionality with zero demo visibility, ranked
    by how self-contained each one is to add:
-   - `sme`'s per-`apiId` event-subscription filtering (`SubscribeEvents`
-     `apiIds`, §5-closed) — only the type-only filtering path has ever
-     been demoed.
+   - ~~`sme`'s per-`apiId` event-subscription filtering~~ — closed, this
+     pass (see the "Demo depth: SME's event-subscription `apiId`
+     filtering" entry above).
    - `a1-related`'s service supervision sweep with a real, non-zero
      `keepAliveIntervalSeconds` (§5-closed) — step 11 only ever
      demoed `keepAliveIntervalSeconds: 0` (supervision disabled); the

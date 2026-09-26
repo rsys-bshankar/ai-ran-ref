@@ -88,6 +88,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
         "fullApiVersions": ["v1"], "moduleScope": "hello-world-rapp",
     })
     assert svc.status_code == 201
+    helloworld_service_id = svc.json()["serviceId"]
 
     dme_prod = mesh["dme"].post("/production-capabilities", json={
         "namespace": "demo", "name": "hello-world-metrics", "version": "1.0",
@@ -695,7 +696,68 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert len(matching_jobs) == 1
     assert matching_jobs[0]["producerId"] == "sa-smos"
 
-    # step 21: retire — the real package priming lifecycle (COMMISSIONED-
+    # step 21: SME event-subscription apiId filtering — SubscribeEvents'
+    # own apiIds filter (real and unit-tested since an earlier pass) has
+    # never appeared anywhere in this runbook. A subscriber scoped to
+    # helloworld-api's own serviceId must not be notified about an
+    # unrelated service's events, but must be notified about
+    # helloworld-api's own. Intercepted the same way as DME's own
+    # type-subscription step above.
+    sme_notifications = []
+    real_post_sme = httpx.post
+
+    def fake_post_sme(location, json=None, timeout=None, **kwargs):
+        if location.startswith("http://demo-consumer:9000/sme-events-"):
+            sme_notifications.append((location, json))
+            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
+        return real_post_sme(location, json=json, timeout=timeout, **kwargs)
+
+    monkeypatch.setattr(loaded_apps["sme"].httpx, "post", fake_post_sme)
+
+    unscoped_sub = mesh["sme"].post("/capif-events/v1/consumer-unscoped/subscriptions", json={
+        "subscriberId": "consumer-unscoped", "eventTypes": ["SERVICE_API_UPDATE"],
+        "callbackUri": "http://demo-consumer:9000/sme-events-unscoped",
+    })
+    assert unscoped_sub.status_code == 201
+    unscoped_sub_id = unscoped_sub.json()["subscriptionId"]
+
+    scoped_sub = mesh["sme"].post("/capif-events/v1/consumer-scoped/subscriptions", json={
+        "subscriberId": "consumer-scoped", "eventTypes": ["SERVICE_API_UPDATE"],
+        "callbackUri": "http://demo-consumer:9000/sme-events-scoped", "apiIds": [helloworld_service_id],
+    })
+    assert scoped_sub.status_code == 201
+    scoped_sub_id = scoped_sub.json()["subscriptionId"]
+
+    other_svc = mesh["sme"].post("/published-apis/v1/hello-world-rapp/service-apis", json={
+        "serviceName": "other-api", "producerId": "hello-world-rapp",
+        "endpoint": "http://hello-world-rapp:8080/other/v1", "version": "1.0", "moduleScope": "hello-world-rapp",
+    })
+    assert other_svc.status_code == 201
+    other_svc_update = mesh["sme"].post("/published-apis/v1/hello-world-rapp/service-apis", json={
+        "serviceName": "other-api", "producerId": "hello-world-rapp",
+        "endpoint": "http://hello-world-rapp:8080/other/v1", "version": "2.0", "moduleScope": "hello-world-rapp",
+    })
+    assert other_svc_update.status_code == 201
+    # only consumer-unscoped's callback — consumer-scoped's own apiIds
+    # filter (scoped to helloworld-api, not other-api) excludes it.
+    assert [loc for loc, _ in sme_notifications] == ["http://demo-consumer:9000/sme-events-unscoped"]
+
+    helloworld_update = mesh["sme"].post("/published-apis/v1/hello-world-rapp/service-apis", json={
+        "serviceName": "helloworld-api", "producerId": "hello-world-rapp",
+        "endpoint": "http://hello-world-rapp:8080/helloworld/v1", "version": "v2",
+        "fullApiVersions": ["v1"], "moduleScope": "hello-world-rapp",
+    })
+    assert helloworld_update.status_code == 201
+    # both — this update matches consumer-scoped's own apiIds filter too.
+    assert sorted(loc for loc, _ in sme_notifications[1:]) == sorted([
+        "http://demo-consumer:9000/sme-events-scoped", "http://demo-consumer:9000/sme-events-unscoped",
+    ])
+    assert all(n[1]["serviceId"] == helloworld_service_id for n in sme_notifications[1:])
+
+    assert mesh["sme"].delete(f"/capif-events/v1/consumer-unscoped/subscriptions/{unscoped_sub_id}").status_code == 204
+    assert mesh["sme"].delete(f"/capif-events/v1/consumer-scoped/subscriptions/{scoped_sub_id}").status_code == 204
+
+    # step 22: retire — the real package priming lifecycle (COMMISSIONED-
     # equivalent AVAILABLE -> PRIMING -> PRIMED), a genuine deprime
     # refusal while the sample rApp's own instance is still deployed
     # (the reference's own deprimeRapp guard, a real query against

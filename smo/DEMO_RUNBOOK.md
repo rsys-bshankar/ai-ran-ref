@@ -1464,7 +1464,96 @@ print(r.status_code, [j for j in r.json() if j['modelCoordinationGroupId'] == '<
 A real `TrainingJob` with `producerId: sa-smos` and this exact
 `modelCoordinationGroupId` — not a fabricated confirmation.
 
-## 21. Retire it — package priming lifecycle, Terminate, then Delete
+## 21. SME event-subscription `apiId` filtering (optional) — a subscriber scoped to one service, not every service
+
+Independent of the sample rApp instance above — SME's own
+`SubscribeEvents` mechanism (the reference's `CAPIFEventFilter`,
+`eventservice.go`'s `getMatchingSubs`) has always filtered by
+`eventTypes`, real and unit-tested since an earlier pass, but never
+demonstrated at all: no `capif-events` subscription has appeared
+anywhere in this runbook until now. Of the reference's other filter
+dimensions (`apiId`/`apiInvokerId`/`aefId`), only `apiId` is
+meaningfully implementable here — it maps directly onto this build's
+own `serviceId`.
+
+Subscribe two consumers: `consumer-unscoped` gets every
+`SERVICE_API_UPDATE`, `consumer-scoped` only wants `helloworld-api`'s
+own (its `serviceId`, from step 4's own registration response):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sme:8000/capif-events/v1/consumer-unscoped/subscriptions', json={
+    'subscriberId': 'consumer-unscoped', 'eventTypes': ['SERVICE_API_UPDATE'],
+    'callbackUri': 'http://demo-consumer:9000/sme-events-unscoped',
+})
+print(r.status_code, r.json())
+r = httpx.post('http://sme:8000/capif-events/v1/consumer-scoped/subscriptions', json={
+    'subscriberId': 'consumer-scoped', 'eventTypes': ['SERVICE_API_UPDATE'],
+    'callbackUri': 'http://demo-consumer:9000/sme-events-scoped', 'apiIds': ['<helloworldServiceId>'],
+})
+print(r.status_code, r.json())
+"
+```
+
+Register an unrelated second service, then re-register it (`UPDATE`) —
+this fires, but only reaches `consumer-unscoped`; `consumer-scoped`'s
+own `apiIds` filter excludes it (`notify_service_change`'s
+`sub.api_ids and str(service.service_id) not in sub.api_ids` check):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sme:8000/published-apis/v1/hello-world-rapp/service-apis', json={
+    'serviceName': 'other-api', 'producerId': 'hello-world-rapp',
+    'endpoint': 'http://hello-world-rapp:8080/other/v1', 'version': '1.0', 'moduleScope': 'hello-world-rapp',
+})
+print(r.status_code, r.json())
+r = httpx.post('http://sme:8000/published-apis/v1/hello-world-rapp/service-apis', json={
+    'serviceName': 'other-api', 'producerId': 'hello-world-rapp',
+    'endpoint': 'http://hello-world-rapp:8080/other/v1', 'version': '2.0', 'moduleScope': 'hello-world-rapp',
+})
+print(r.status_code, r.json())
+"
+```
+
+No real listener exists at `http://demo-consumer:9000/...` in this
+compose stack (same honesty pattern as every other placeholder callback
+in this runbook), so watch `sme`'s own logs — exactly one attempted
+delivery, to `consumer-unscoped`'s callback only.
+`tests_integration/test_demo_runbook.py` proves this precisely by
+intercepting the exact `httpx.post` calls.
+
+Now re-register `helloworld-api` itself (`UPDATE`) — this one matches
+`consumer-scoped`'s own `apiIds` filter too, so **both** subscribers
+are notified:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://sme:8000/published-apis/v1/hello-world-rapp/service-apis', json={
+    'serviceName': 'helloworld-api', 'producerId': 'hello-world-rapp',
+    'endpoint': 'http://hello-world-rapp:8080/helloworld/v1', 'version': 'v2',
+    'fullApiVersions': ['v1'], 'moduleScope': 'hello-world-rapp',
+})
+print(r.status_code, r.json())
+"
+```
+
+Watch `sme`'s own logs again — two attempted deliveries this time, one
+to each callback. Unsubscribe both:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://sme:8000/capif-events/v1/consumer-unscoped/subscriptions/<unscopedSubscriptionId>')
+print(r.status_code)
+r = httpx.delete('http://sme:8000/capif-events/v1/consumer-scoped/subscriptions/<scopedSubscriptionId>')
+print(r.status_code)
+"
+```
+
+## 22. Retire it — package priming lifecycle, Terminate, then Delete
 
 **Prime the package** — the reference's real
 `COMMISSIONED -> PRIMING -> PRIMED` lifecycle (our `AVAILABLE` plays
