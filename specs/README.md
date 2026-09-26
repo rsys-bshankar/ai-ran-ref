@@ -26,7 +26,13 @@ different and complementary ground truth).
   `TS28532_ProvMnS.yaml`/`PerfMnS.yaml`/`FileDataReportingMnS.yaml`/
   `HeartbeatNtf.yaml`/`StreamingDataMnS.yaml` (RAN NF OAM's CM write and
   PM subscription surface), `TS28111_FaultNrm.yaml`/`FaultNotifications.yaml`
-  (RAN NF OAM's alarm handling), and `TS28541_NrNrm.yaml`/`5GcNrm.yaml`
+  (RAN NF OAM's alarm handling), `TS28105_AiMlNrm.yaml` (AI/ML
+  Workflow's own NRM — a full containment-tree model, audited in
+  `smo/SPEC_AUDIT.md` and confirmed structurally different from this
+  build's `aiml-fw`-shaped implementation), `TS28104_MdaNrm.yaml`/
+  `TS28104_MdaReport.yaml` (RAN Analytics's own Management Data
+  Analytics NRM, same audited-and-confirmed-different relationship to
+  `aiml-fw-apm`'s shape), and `TS28541_NrNrm.yaml`/`5GcNrm.yaml`
   (network resource modeling generally).
 - **`O-RAN-WG10-O1NRM-YANGs/`**, **`O-RAN-WG10-IMDM-YANGs/`** — O-RAN's
   own O1 Network Resource Model and Information/Data Model YANG modules.
@@ -45,5 +51,11 @@ different and complementary ground truth).
   Python implementation of this same interface, not this formal spec
   itself.
 
-No line-by-line comparison against these files has been done yet as of
-this note; `smo/OPEN_ITEMS.md` tracks that as upcoming work.
+A line-by-line comparison against six modules' most directly relevant
+files has been done — RAN NF OAM, FOCOM, Policy Mgmt, SME, AI/ML
+Workflow, and RAN Analytics; see `smo/SPEC_AUDIT.md` for the findings.
+Not yet compared against: DME/A1 Related/Onboarding+rApp Mgmt (no
+relevant spec file exists here for any of them) and the O-RAN WG4/WG5
+O-RU/O-CU/O-DU management-plane YANGs below (present, but RAN NF OAM's
+own audit above never touched them — likely out of scope given this
+build's single-node topology, but genuinely unconfirmed).
