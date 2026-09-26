@@ -32,7 +32,9 @@ services:
       A1_RELATED_URL: http://a1-related:8000
       NFO_URL: http://nfo:8000
       FOCOM_URL: http://focom:8000
-      AI_ML_WORKFLOW_URL: http://ai-ml-workflow:8000
+      AIMGF_URL: http://aimgf:8000
+      MLMR_URL: http://mlmr:8000
+      MLLF_URL: http://mllf:8000
       RAN_ANALYTICS_URL: http://ran-analytics:8000
       INTENT_SERVICE_URL: http://intent-service:8000
       SO_SMOS_URL: http://so-smos:8000
@@ -108,11 +110,21 @@ services:
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
 
-  ai-ml-workflow:
-    build: { context: ., args: { MODULE: ai-ml-workflow } }
+  mlmr:
+    build: { context: ., args: { MODULE: mlmr } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment: *db_env
+
+  aimgf:
+    build: { context: ., args: { MODULE: aimgf } }
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+
+  mllf:
+    build: { context: ., args: { MODULE: mllf } }
+    environment:
       R1_GATEWAY_URL: http://r1-termination:8000
 
   ran-analytics:

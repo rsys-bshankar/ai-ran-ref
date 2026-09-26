@@ -32,16 +32,16 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/rapp-mgmt/instances/i/recover", "operator"),
     ("POST", "/rapp-mgmt/instances/i/terminate", "admin"),
     ("DELETE", "/rapp-mgmt/instances/i", "admin"),
-    ("POST", "/ai-ml-workflow/training-jobs", "operator"),
-    ("POST", "/ai-ml-workflow/models/m/advance", "operator"),
-    ("DELETE", "/ai-ml-workflow/models/m", "admin"),
+    ("POST", "/aimgf/training-jobs", "operator"),
+    ("POST", "/aimgf/models/m/advance", "operator"),
+    ("DELETE", "/mlmr/models/m", "admin"),
     ("PATCH", "/ran-nf-oam/alarms/a/ack", "operator"),
     ("PATCH", "/ran-nf-oam/alarms/a/clear", "operator"),
     ("POST", "/ran-nf-oam/alarms/ingest", "admin"),
     ("POST", "/sa-smos/monitors/m/evaluate", "operator"),
     ("DELETE", "/a1-related/policies/p", "admin"),
     ("DELETE", "/nfo/deployments/d", "admin"),
-    ("GET", "/ai-ml-workflow/feature-groups", "operator"),
+    ("GET", "/aimgf/feature-groups", "operator"),
     # GUI pass 2
     ("POST", "/dme/data-jobs", "operator"),
     ("DELETE", "/dme/data-jobs/j", "operator"),
@@ -75,13 +75,13 @@ def test_minimum_role_per_route(method, path, minimum):
 
 
 def test_deprecate_is_admin_only_via_query_match():
-    assert allowed("POST", "/ai-ml-workflow/models/m/advance", "operator", event="ACTIVATE")
-    assert not allowed("POST", "/ai-ml-workflow/models/m/advance", "operator", event="DEPRECATE")
-    assert allowed("POST", "/ai-ml-workflow/models/m/advance", "admin", event="DEPRECATE")
+    assert allowed("POST", "/aimgf/models/m/advance", "operator", event="ACTIVATE")
+    assert not allowed("POST", "/aimgf/models/m/advance", "operator", event="DEPRECATE")
+    assert allowed("POST", "/aimgf/models/m/advance", "admin", event="DEPRECATE")
 
 
 def test_any_duplicated_value_triggers_the_query_match():
-    decision = decide("POST", "/ai-ml-workflow/models/m/advance", {"event": ["CERTIFY", "DEPRECATE"]}, Role.OPERATOR)
+    decision = decide("POST", "/aimgf/models/m/advance", {"event": ["CERTIFY", "DEPRECATE"]}, Role.OPERATOR)
     assert not decision.allowed and decision.required_role == Role.ADMIN
 
 

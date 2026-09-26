@@ -15,7 +15,9 @@ These need a call from whoever owns the relevant module's requirements
 before they can be implemented — inventing an answer now would just move
 the ambiguity into code.
 
-- **`WEIGHTED_TRIGGERS`** (`ai-ml-workflow/`) — currently raises
+- **`WEIGHTED_TRIGGERS`** (`aimgf/`, formerly `ai-ml-workflow/` — moved
+  unchanged in Wave 1 of the AI Platform Service Decomposition) —
+  currently raises
   `NotImplementedError`. Needs real noise-floor data to design the
   weighting function; the value would be fabricated without it.
 - **Alarm-storm correlation algorithm** (`ran-nf-oam/`) — flagged as
@@ -243,6 +245,7 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
+| mllf | 4 |
 | mock-o1-adaptor | 6 |
 | intent-service | 10 |
 | sa-smos | 12 |
@@ -252,13 +255,19 @@ Per-module unit test counts:
 | rapp-mgmt | 19 |
 | ran-analytics | 22 |
 | nfo | 23 |
+| mlmr | 25 |
 | onboarding | 30 |
 | ran-nf-oam | 34 |
 | focom | 38 |
+| aimgf | 39 |
 | a1-related | 43 |
 | sme | 47 |
-| ai-ml-workflow | 49 |
 | dme | 55 |
+
+`ai-ml-workflow`'s 49 tests were split across `mlmr`/`aimgf` (plus 4 new
+ones for `mllf`, whose one existing route — `request_model_deployment`
+— had never had dedicated unit coverage before Wave 1's split) in the
+AI Platform Service Decomposition's Wave 1.
 
 Plus 14 cross-service integration tests in `tests_integration/`.
 `mock-near-rt-ric`/`r1-termination`/`intent-service` (formerly `policy-mgmt`) (10 tests each) are

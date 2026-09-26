@@ -1,6 +1,6 @@
 """Shared fixtures for cross-service integration tests.
 
-Loads all fourteen modules (plus the mock Near-RT RIC) into one process
+Loads all sixteen modules (plus the mock Near-RT RIC) into one process
 via loader.py, wires every one to ONE shared test-DB engine — matching
 the real deployment's one-shared-Postgres-instance topology (Requirements
 v0.1 section 3) — and installs the in-process service mesh so R1Client
@@ -25,7 +25,7 @@ from mesh import ServiceMesh, install as install_mesh  # noqa: E402
 
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
-    "a1-related", "nfo", "focom", "ai-ml-workflow", "ran-analytics",
+    "a1-related", "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics",
     "intent-service", "so-smos", "sa-smos", "mock-near-rt-ric", "mock-o1-adaptor",
 ]
 

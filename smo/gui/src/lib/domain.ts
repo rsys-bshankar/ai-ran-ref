@@ -4,7 +4,7 @@
 import type { Alarm } from "../api/types";
 
 // ---------------------------------------------------------------- AI/ML model FSM
-// ai-ml-workflow/app/statemachine.py
+// aimgf/app/statemachine.py
 
 export const MODEL_PIPELINE = ["REGISTERED", "TRAINING", "TESTED", "EMULATED", "CERTIFIED", "LOADED", "ACTIVE"] as const;
 

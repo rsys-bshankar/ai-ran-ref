@@ -80,7 +80,7 @@ def test_ensure_ok_raises_downstream_error_on_4xx():
     (dispatch_config, {"scope": "cell-1", "changes": []}, "/ran-nf-oam/config-jobs"),
     (dispatch_deploy, {"nfDeploymentDescriptorId": "d1"}, "/nfo/deployments"),
     (dispatch_infra, {"spec": {"cpu": 4}}, "/focom/resources/provision"),
-    (dispatch_training, {"modelId": "m1"}, "/ai-ml-workflow/training-jobs"),
+    (dispatch_training, {"modelId": "m1"}, "/aimgf/training-jobs"),
     (dispatch_policy, {"policyTypeId": "t1", "policyObject": {}, "nearRtRicId": "ric1"}, "/a1-related/policies"),
 ])
 def test_each_dispatcher_posts_to_its_own_target_module(dispatcher, step, expected_path):

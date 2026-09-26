@@ -1,7 +1,7 @@
 """Minimal finite-state-machine base every module's lifecycle implementation
 extends. Deliberately small: this SMO's state machines (WriteConfigJob,
 SoftwareManagementJob, O1AdaptorEndpoint health, ApplicationPackage,
-RAppInstance, AIMLModel, InferenceJob) are all simple enough that a full FSM
+RAppInstance, MLModel, InferenceJob) are all simple enough that a full FSM
 framework would be more machinery than the problem needs — each one is just
 a set of (from_state, event) -> to_state transitions plus optional guards.
 """

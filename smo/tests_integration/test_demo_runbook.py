@@ -399,7 +399,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # step 13: AI/ML Workflow — register a model, request training, upload
     # a real artifact, write metrics, advance the real lifecycle FSM to
     # ACTIVE, download the artifact back, deregister.
-    model = mesh["ai-ml-workflow"].post("/models", json={
+    model = mesh["mlmr"].post("/models", json={
         "modelType": "hello-world-anomaly-detector", "version": "1.0.0",
         "description": "Demo anomaly-detection model for the hello-world rApp",
         "author": "hello-world-rapp", "owner": "hello-world-rapp",
@@ -409,36 +409,36 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     model_id = model.json()["modelId"]
     assert model.json()["state"] == "REGISTERED"
 
-    training = mesh["ai-ml-workflow"].post("/training-jobs", json={
+    training = mesh["aimgf"].post("/training-jobs", json={
         "modelId": model_id, "producerId": "hello-world-rapp", "runId": "demo-run-1",
         "trainingDataset": "s3://demo/hello-world-train", "validationDataset": "s3://demo/hello-world-val",
     })
     assert training.status_code == 201
     training_job_id = training.json()["trainingJobId"]
 
-    training_state = mesh["ai-ml-workflow"].get(f"/models/{model_id}")
+    training_state = mesh["mlmr"].get(f"/models/{model_id}")
     assert training_state.json()["state"] == "TRAINING"
 
     artifact_bytes = b"demo-model-weights-bytes"
-    artifact = mesh["ai-ml-workflow"].post(f"/models/{model_id}/artifact",
-                                            files={"file": ("hello-world-model.zip", artifact_bytes, "application/zip")})
+    artifact = mesh["mlmr"].post(f"/models/{model_id}/artifact",
+                                  files={"file": ("hello-world-model.zip", artifact_bytes, "application/zip")})
     assert artifact.status_code == 201
     assert artifact.json()["artifactVersion"] == 1
 
-    metrics = mesh["ai-ml-workflow"].post(f"/training-jobs/{training_job_id}/model-metrics", json={"accuracy": 0.94, "f1Score": 0.91})
+    metrics = mesh["aimgf"].post(f"/training-jobs/{training_job_id}/model-metrics", json={"accuracy": 0.94, "f1Score": 0.91})
     assert metrics.status_code == 200
     assert metrics.json()["modelMetrics"] == {"accuracy": 0.94, "f1Score": 0.91}
 
     for event in ["TRAINING_COMPLETE", "VALIDATION_COMPLETE", "CERTIFY", "LOAD", "ACTIVATE"]:
-        advanced = mesh["ai-ml-workflow"].post(f"/models/{model_id}/advance", params={"event": event})
+        advanced = mesh["aimgf"].post(f"/models/{model_id}/advance", params={"event": event})
         assert advanced.status_code == 200
     assert advanced.json()["state"] == "ACTIVE"
 
-    downloaded = mesh["ai-ml-workflow"].get(f"/models/{model_id}/artifact/1")
+    downloaded = mesh["mlmr"].get(f"/models/{model_id}/artifact/1")
     assert downloaded.status_code == 200
     assert downloaded.content == artifact_bytes
 
-    deregistered = mesh["ai-ml-workflow"].delete(f"/models/{model_id}")
+    deregistered = mesh["mlmr"].delete(f"/models/{model_id}")
     assert deregistered.status_code == 204
 
     # step 14: RAN Analytics — register a producer (real cross-module SME
@@ -638,19 +638,19 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
         "datalakeSource": "INFLUX", "host": "influx.demo", "port": "8086", "bucket": "demo-bucket",
         "token": "demo-token", "dbOrg": "demo-org", "measurement": "coverage_metrics",
     }
-    created_group = mesh["ai-ml-workflow"].post("/feature-groups", json=feature_group_body)
+    created_group = mesh["aimgf"].post("/feature-groups", json=feature_group_body)
     assert created_group.status_code == 201
     feature_group_id = created_group.json()["featureGroupId"]
 
-    listed_groups = mesh["ai-ml-workflow"].get("/feature-groups")
+    listed_groups = mesh["aimgf"].get("/feature-groups")
     assert listed_groups.status_code == 200
     assert any(g["featureGroupId"] == feature_group_id for g in listed_groups.json()["featureGroups"])
 
-    duplicate_group = mesh["ai-ml-workflow"].post("/feature-groups", json=feature_group_body)
+    duplicate_group = mesh["aimgf"].post("/feature-groups", json=feature_group_body)
     assert duplicate_group.status_code == 409
     assert duplicate_group.json()["detail"]["title"] == "FEATURE_GROUP_ALREADY_REGISTERED"
 
-    invalid_group = mesh["ai-ml-workflow"].post("/feature-groups", json={**feature_group_body, "featureGroupName": "no spaces allowed"})
+    invalid_group = mesh["aimgf"].post("/feature-groups", json={**feature_group_body, "featureGroupName": "no spaces allowed"})
     assert invalid_group.status_code == 400
     assert invalid_group.json()["detail"]["title"] == "FEATURE_GROUP_NAME_INVALID"
 
@@ -661,7 +661,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # step 15's own monitor was targetOrderId-scoped throughout).
     group_model_ids = []
     for i in range(2):
-        group_model = mesh["ai-ml-workflow"].post("/models", json={
+        group_model = mesh["mlmr"].post("/models", json={
             "modelType": f"demo-coordination-group-model-{i}", "version": "1.0.0",
             "author": "hello-world-rapp", "owner": "hello-world-rapp",
         })
@@ -674,11 +674,11 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # surface as an unhandled IntegrityError (bare 500) instead; SQLite's
     # test schema (built from the ORM models, which never mirrored the
     # constraint) never caught it, only a real-Postgres run did.
-    too_small = mesh["ai-ml-workflow"].post("/coordination-groups", json={"memberModelIds": [group_model_ids[0]]})
+    too_small = mesh["mlmr"].post("/coordination-groups", json={"memberModelIds": [group_model_ids[0]]})
     assert too_small.status_code == 422
     assert too_small.json()["detail"]["title"] == "COORDINATION_GROUP_TOO_SMALL"
 
-    coordination_group = mesh["ai-ml-workflow"].post("/coordination-groups", json={"memberModelIds": group_model_ids})
+    coordination_group = mesh["mlmr"].post("/coordination-groups", json={"memberModelIds": group_model_ids})
     assert coordination_group.status_code == 201
     group_id = coordination_group.json()["groupId"]
 
@@ -690,7 +690,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert group_remedial.status_code == 201
     assert group_remedial.json()["outcome"] == "RESOLVED"
 
-    running_jobs = mesh["ai-ml-workflow"].get("/training-jobs", params={"status": "RUNNING"})
+    running_jobs = mesh["aimgf"].get("/training-jobs", params={"status": "RUNNING"})
     assert running_jobs.status_code == 200
     matching_jobs = [j for j in running_jobs.json() if j["modelCoordinationGroupId"] == group_id]
     assert len(matching_jobs) == 1

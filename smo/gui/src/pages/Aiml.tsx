@@ -33,7 +33,7 @@ export function Aiml() {
 }
 
 export function useModelNames() {
-  const models = useSmo<Model[]>("/ai-ml-workflow/models");
+  const models = useSmo<Model[]>("/mlmr/models");
   return (id: string | null) => {
     const m = models.data?.find((x) => x.modelId === id);
     return m ? `${m.modelType} ${m.version}` : null;
@@ -44,14 +44,14 @@ export function useModelNames() {
 
 function Models() {
   const [modelType, setModelType] = useState("");
-  const models = useSmo<Model[]>("/ai-ml-workflow/models", { model_type: modelType });
+  const models = useSmo<Model[]>("/mlmr/models", { model_type: modelType });
   const [selected, setSelected] = useState<string | null>(null);
   const [registering, setRegistering] = useState(false);
   return (
     <>
       <Card title="Registered models" actions={<>
         <input placeholder="Filter by model type" value={modelType} onChange={(e) => setModelType(e.target.value)} aria-label="Filter by model type" />
-        <Can method="POST" path="/ai-ml-workflow/models"><button className="btn primary" onClick={() => setRegistering(true)}>Register model</button></Can>
+        <Can method="POST" path="/mlmr/models"><button className="btn primary" onClick={() => setRegistering(true)}>Register model</button></Can>
       </>}>
         <DataTable rows={models.data} loading={models.isLoading} error={models.error} rowKey={(m) => m.modelId}
           empty="No models registered." onRowClick={(m) => setSelected(m.modelId)} selectedKey={selected}
@@ -71,13 +71,13 @@ function Models() {
 }
 
 function ModelActions({ model }: { model: Model }) {
-  const base = `/ai-ml-workflow/models/${model.modelId}`;
+  const aimgfBase = `/aimgf/models/${model.modelId}`;
   return (
     <div className="row gap end">
       {modelActions(model.state).map((a) => a.kind === "train"
-        ? <ActionButton key="train" label={a.label} tone="primary" action={{ method: "POST", path: "/ai-ml-workflow/training-jobs", json: { modelId: model.modelId, producerId: "smo-gui" }, success: `${a.label}: training job started` }} />
+        ? <ActionButton key="train" label={a.label} tone="primary" action={{ method: "POST", path: "/aimgf/training-jobs", json: { modelId: model.modelId, producerId: "smo-gui" }, success: `${a.label}: training job started` }} />
         : <ActionButton key={a.event} label={a.label} tone={a.event === "DEPRECATE" ? "danger" : "primary"} confirm={a.event === "DEPRECATE" ? "Deprecate this model? This is terminal." : undefined}
-            action={{ method: "POST", path: `${base}/advance`, query: { event: a.event }, success: `${a.event} → done` }} />)}
+            action={{ method: "POST", path: `${aimgfBase}/advance`, query: { event: a.event }, success: `${a.event} → done` }} />)}
     </div>
   );
 }
@@ -89,7 +89,7 @@ function RegisterModel({ onClose }: { onClose: () => void }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const json = Object.fromEntries(Object.entries(form).map(([k, v]) => [k, v.trim() || null]));
-    action.mutate({ method: "POST", path: "/ai-ml-workflow/models", json, success: "Model registered" }, { onSuccess: onClose });
+    action.mutate({ method: "POST", path: "/mlmr/models", json, success: "Model registered" }, { onSuccess: onClose });
   };
   return (
     <Modal title="Register model" onClose={onClose}>
@@ -109,10 +109,12 @@ function RegisterModel({ onClose }: { onClose: () => void }) {
 }
 
 function ModelDrawer({ id, onClose }: { id: string; onClose: () => void }) {
-  const base = `/ai-ml-workflow/models/${id}`;
-  const model = useSmo<Model>(base);
-  const jobs = useSmo<TrainingJob[]>("/ai-ml-workflow/training-jobs", { model_id: id });
-  const inference = useSmo<InferenceJob[]>("/ai-ml-workflow/inference-jobs", { model_id: id });
+  const mlmrBase = `/mlmr/models/${id}`;
+  const aimgfBase = `/aimgf/models/${id}`;
+  const mllfBase = `/mllf/models/${id}`;
+  const model = useSmo<Model>(mlmrBase);
+  const jobs = useSmo<TrainingJob[]>("/aimgf/training-jobs", { model_id: id });
+  const inference = useSmo<InferenceJob[]>("/aimgf/inference-jobs", { model_id: id });
   const m = model.data;
   const latestArtifact = m?.artifactLocation ? Number(m.artifactLocation.split(":").pop()) : 0;
   const [editing, setEditing] = useState(false);
@@ -123,9 +125,9 @@ function ModelDrawer({ id, onClose }: { id: string; onClose: () => void }) {
         <FsmStepper state={m.state} />
         <div className="row between"><StateBadge state={m.state} /><ModelActions model={m} /></div>
         <div className="row gap">
-          <Can method="PUT" path={base}><button className="btn small" onClick={() => setEditing(true)}>Edit metadata</button></Can>
+          <Can method="PUT" path={mlmrBase}><button className="btn small" onClick={() => setEditing(true)}>Edit metadata</button></Can>
           <ActionButton label="Delete model" tone="danger" confirm={`Delete ${m.modelType} v${m.version} with its jobs, subscriptions and artifacts?`}
-            action={{ method: "DELETE", path: base, success: "Model deleted" }} onDone={onClose} />
+            action={{ method: "DELETE", path: mlmrBase, success: "Model deleted" }} onDone={onClose} />
         </div>
         <KeyValue items={[
           ["Model ID", <code>{m.modelId}</code>], ["Description", m.description], ["Author / owner", [m.author, m.owner].filter(Boolean).join(" / ") || null],
@@ -137,14 +139,14 @@ function ModelDrawer({ id, onClose }: { id: string; onClose: () => void }) {
         {latestArtifact > 0 ? (
           <ul className="plain-list">
             {Array.from({ length: latestArtifact }, (_, i) => latestArtifact - i).map((v) => (
-              <li key={v}><a href={`/api/smo${base}/artifact/${v}`} download>Download artifact v{v}</a></li>
+              <li key={v}><a href={`/api/smo${mlmrBase}/artifact/${v}`} download>Download artifact v{v}</a></li>
             ))}
           </ul>
         ) : <p className="muted">No artifact uploaded.</p>}
-        <Can method="POST" path={`${base}/artifact`}><ArtifactUpload modelId={id} /></Can>
+        <Can method="POST" path={`${mlmrBase}/artifact`}><ArtifactUpload modelId={id} /></Can>
 
-        {DEPLOYABLE_MODEL_STATES.includes(m.state) && <Can method="POST" path={`${base}/deploy`}><DeployNodeGroups model={m} /></Can>}
-        {m.state === "ACTIVE" && <div className="row gap"><ActionButton label="Request inference job" tone="primary" action={{ method: "POST", path: `${base}/inference-jobs`, success: "Inference job RUNNING" }} /></div>}
+        {DEPLOYABLE_MODEL_STATES.includes(m.state) && <Can method="POST" path={`${mllfBase}/deploy`}><DeployNodeGroups model={m} /></Can>}
+        {m.state === "ACTIVE" && <div className="row gap"><ActionButton label="Request inference job" tone="primary" action={{ method: "POST", path: `${aimgfBase}/inference-jobs`, success: "Inference job RUNNING" }} /></div>}
 
         <h3>Training jobs</h3>
         <TrainingTable rows={jobs.data} />
@@ -165,7 +167,7 @@ function ArtifactUpload({ modelId }: { modelId: string }) {
       if (!file) return;
       const body = new FormData();
       body.append("file", file);
-      action.mutate({ method: "POST", path: `/ai-ml-workflow/models/${modelId}/artifact`, body, success: `Uploaded ${file.name}` });
+      action.mutate({ method: "POST", path: `/mlmr/models/${modelId}/artifact`, body, success: `Uploaded ${file.name}` });
     }}>
       <Field label="Upload artifact (.zip)"><input type="file" accept=".zip,application/zip" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></Field>
       <button className="btn" disabled={!file || action.isPending}>Upload</button>
@@ -179,7 +181,7 @@ function DeployNodeGroups({ model }: { model: Model }) {
   return (
     <form className="form inline" onSubmit={(e) => {
       e.preventDefault();
-      action.mutate({ method: "POST", path: `/ai-ml-workflow/models/${model.modelId}/deploy`, json: splitList(groups), success: "Deployment targets cleared (MLLF)" });
+      action.mutate({ method: "POST", path: `/mllf/models/${model.modelId}/deploy`, json: splitList(groups), success: "Deployment targets cleared (MLLF)" });
     }}>
       <Field label="Deploy to node groups" hint="Comma-separated. Stamps clearedNodeGroups; requires CERTIFIED or later."><input value={groups} onChange={(e) => setGroups(e.target.value)} placeholder="edge-gpu-a, edge-gpu-b" /></Field>
       <button className="btn" disabled={!splitList(groups).length || action.isPending}>Deploy</button>
@@ -191,7 +193,7 @@ function DeployNodeGroups({ model }: { model: Model }) {
 
 function TrainingJobs() {
   const [status, setStatus] = useState("");
-  const jobs = useSmo<TrainingJob[]>("/ai-ml-workflow/training-jobs", { status });
+  const jobs = useSmo<TrainingJob[]>("/aimgf/training-jobs", { status });
   return (
     <Card title="Training jobs" actions={<select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status"><option value="">All</option>{["RUNNING", "COMPLETED", "CANCELLED", "FAILED"].map((s) => <option key={s}>{s}</option>)}</select>}>
       <p className="muted small">Completing a job is a model transition: advance the model with <em>Training complete</em>. Metrics are written back by the trainer (MLTF).</p>
@@ -213,11 +215,11 @@ function TrainingTable({ rows, loading, error }: { rows?: TrainingJob[]; loading
         { header: "Status", render: (j) => <StateBadge state={j.status} /> },
         { header: "Metrics", render: (j) => <div className="row gap">
           {j.modelMetrics && <button className="btn small" onClick={() => setMetricsFor(j)}>View</button>}
-          <Can method="POST" path={`/ai-ml-workflow/training-jobs/${j.trainingJobId}/model-metrics`}><button className="btn small" onClick={() => setWriteFor(j)}>{j.modelMetrics ? "Update" : "Write back"}</button></Can>
+          <Can method="POST" path={`/aimgf/training-jobs/${j.trainingJobId}/model-metrics`}><button className="btn small" onClick={() => setWriteFor(j)}>{j.modelMetrics ? "Update" : "Write back"}</button></Can>
           {!j.modelMetrics && <span className="muted">—</span>}
         </div> },
         { header: "", className: "actions", render: (j) => j.status === "RUNNING" && (
-          <ActionButton label="Cancel" confirm="Cancel this training job?" action={{ method: "DELETE", path: `/ai-ml-workflow/training-jobs/${j.trainingJobId}`, success: "Training job cancelled" }} />
+          <ActionButton label="Cancel" confirm="Cancel this training job?" action={{ method: "DELETE", path: `/aimgf/training-jobs/${j.trainingJobId}`, success: "Training job cancelled" }} />
         ) },
       ]} />
       {metricsFor && <Modal title="Model metrics" onClose={() => setMetricsFor(null)}><Json value={metricsFor.modelMetrics} /></Modal>}
@@ -228,7 +230,7 @@ function TrainingTable({ rows, loading, error }: { rows?: TrainingJob[]; loading
 
 function InferenceJobs() {
   const [status, setStatus] = useState("");
-  const jobs = useSmo<InferenceJob[]>("/ai-ml-workflow/inference-jobs", { status });
+  const jobs = useSmo<InferenceJob[]>("/aimgf/inference-jobs", { status });
   return (
     <Card title="Inference jobs (MLEF)" actions={<select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status"><option value="">All</option>{["RUNNING", "COMPLETED", "FAILED"].map((s) => <option key={s}>{s}</option>)}</select>}>
       <p className="muted small">Results are pulled through DME against the model's output data type; this view tracks job state only.</p>
@@ -246,8 +248,8 @@ function InferenceTable({ rows, loading, error }: { rows?: InferenceJob[]; loadi
       { header: "Status", render: (j) => <StateBadge state={j.status} /> },
       { header: "", className: "actions", render: (j) => j.status === "RUNNING" && (
         <div className="row gap end">
-          <ActionButton label="Completed" action={{ method: "POST", path: `/ai-ml-workflow/inference-jobs/${j.inferenceJobId}/resolve`, query: { succeeded: true }, success: "Inference COMPLETED" }} />
-          <ActionButton label="Failed" action={{ method: "POST", path: `/ai-ml-workflow/inference-jobs/${j.inferenceJobId}/resolve`, query: { succeeded: false }, success: "Inference FAILED" }} />
+          <ActionButton label="Completed" action={{ method: "POST", path: `/aimgf/inference-jobs/${j.inferenceJobId}/resolve`, query: { succeeded: true }, success: "Inference COMPLETED" }} />
+          <ActionButton label="Failed" action={{ method: "POST", path: `/aimgf/inference-jobs/${j.inferenceJobId}/resolve`, query: { succeeded: false }, success: "Inference FAILED" }} />
         </div>
       ) },
     ]} />
@@ -257,8 +259,8 @@ function InferenceTable({ rows, loading, error }: { rows?: InferenceJob[]; loadi
 // ---------------------------------------------------------------- coordination groups
 
 function Groups() {
-  const groups = useSmo<CoordinationGroup[]>("/ai-ml-workflow/coordination-groups");
-  const models = useSmo<Model[]>("/ai-ml-workflow/models");
+  const groups = useSmo<CoordinationGroup[]>("/mlmr/coordination-groups");
+  const models = useSmo<Model[]>("/mlmr/models");
   const modelName = useModelNames();
   const [members, setMembers] = useState<string[]>([]);
   const [useCases, setUseCases] = useState("");
@@ -266,11 +268,11 @@ function Groups() {
   const action = useSmoAction();
   return (
     <>
-      <Can method="POST" path="/ai-ml-workflow/coordination-groups">
+      <Can method="POST" path="/mlmr/coordination-groups">
         <Card title="New coordination group">
           <form className="form inline" onSubmit={(e) => {
             e.preventDefault();
-            action.mutate({ method: "POST", path: "/ai-ml-workflow/coordination-groups", json: { memberModelIds: members, memberUseCases: splitList(useCases), retrainPropagation: propagation }, success: "Coordination group created" },
+            action.mutate({ method: "POST", path: "/mlmr/coordination-groups", json: { memberModelIds: members, memberUseCases: splitList(useCases), retrainPropagation: propagation }, success: "Coordination group created" },
               { onSuccess: () => setMembers([]) });
           }}>
             <Field label="Member models" hint={members.length === 1 ? <span className="text-bad">Pick at least 2 models</span> : "Ctrl/Cmd-click to pick 2 or more"}>
@@ -290,7 +292,7 @@ function Groups() {
           { header: "Members", render: (g) => g.memberModelIds.map((id) => modelName(id) ?? id.slice(0, 8)).join(", ") },
           { header: "Use cases", render: (g) => g.memberUseCases.join(", ") || "—" },
           { header: "Propagation", render: (g) => g.retrainPropagation },
-          { header: "", className: "actions", render: (g) => <ActionButton label="Retrain group" action={{ method: "POST", path: "/ai-ml-workflow/training-jobs", json: { modelCoordinationGroupId: g.groupId, producerId: "smo-gui" }, success: "Group training job started" }} /> },
+          { header: "", className: "actions", render: (g) => <ActionButton label="Retrain group" action={{ method: "POST", path: "/aimgf/training-jobs", json: { modelCoordinationGroupId: g.groupId, producerId: "smo-gui" }, success: "Group training job started" }} /> },
         ]} />
       </Card>
     </>
@@ -300,12 +302,12 @@ function Groups() {
 // ---------------------------------------------------------------- MLMF
 
 export function Mlmf() {
-  const subs = useSmo<MlmfSubscription[]>("/ai-ml-workflow/mlmf/subscriptions");
+  const subs = useSmo<MlmfSubscription[]>("/aimgf/mlmf/subscriptions");
   const modelName = useModelNames();
   const [selected, setSelected] = useState<string | null>(null);
   return (
     <>
-      <Can method="POST" path="/ai-ml-workflow/mlmf/subscriptions"><SubscribeMlmf /></Can>
+      <Can method="POST" path="/aimgf/mlmf/subscriptions"><SubscribeMlmf /></Can>
       <Card title="MLMF subscriptions" actions={<span className="muted small">Model performance, distinct from RAN Analytics' MDAF</span>}>
         <DataTable rows={subs.data} loading={subs.isLoading} error={subs.error} rowKey={(s) => s.subscriptionId} empty="No MLMF subscriptions."
           onRowClick={(s) => setSelected(s.subscriptionId)} selectedKey={selected} columns={[
@@ -321,7 +323,7 @@ export function Mlmf() {
 }
 
 function MlmfReports({ sub }: { sub?: MlmfSubscription }) {
-  const reports = useSmo<MlmfReport[]>(sub ? `/ai-ml-workflow/mlmf/subscriptions/${sub.subscriptionId}/reports` : null, { limit: 100 });
+  const reports = useSmo<MlmfReport[]>(sub ? `/aimgf/mlmf/subscriptions/${sub.subscriptionId}/reports` : null, { limit: 100 });
   const [metrics, setMetrics] = useState("{}");
   const parsed = parseJsonObject(metrics);
   if (!sub) return null;
@@ -336,12 +338,12 @@ function MlmfReports({ sub }: { sub?: MlmfSubscription }) {
         { header: "Metrics", render: (r) => <code className="small">{JSON.stringify(r.metrics)}</code> },
         { header: "Floor", render: (r) => r.breachedFloor ? <span className="badge tone-bad">BREACHED</span> : <span className="badge tone-ok">ok</span> },
       ]} />
-      <Can method="POST" path={`/ai-ml-workflow/mlmf/subscriptions/${sub.subscriptionId}/reports`}>
+      <Can method="POST" path={`/aimgf/mlmf/subscriptions/${sub.subscriptionId}/reports`}>
         <details className="admin-tools">
           <summary>Admin: inject a performance report</summary>
           <p className="muted small">A report under a guard floor marks the model for retrain — and, for a coordination-group member, retrains every ACTIVE member.</p>
           <Field label="Metrics (JSON)"><textarea rows={2} value={metrics} onChange={(e) => setMetrics(e.target.value)} placeholder='{"accuracy": 0.82}' spellCheck={false} /></Field>
-          <ActionButton label="Report" disabled={!parsed.ok} action={{ method: "POST", path: `/ai-ml-workflow/mlmf/subscriptions/${sub.subscriptionId}/reports`, json: parsed.ok ? parsed.value : {}, success: "Report recorded" }} />
+          <ActionButton label="Report" disabled={!parsed.ok} action={{ method: "POST", path: `/aimgf/mlmf/subscriptions/${sub.subscriptionId}/reports`, json: parsed.ok ? parsed.value : {}, success: "Report recorded" }} />
         </details>
       </Can>
     </Card>
@@ -349,7 +351,7 @@ function MlmfReports({ sub }: { sub?: MlmfSubscription }) {
 }
 
 function SubscribeMlmf() {
-  const models = useSmo<Model[]>("/ai-ml-workflow/models");
+  const models = useSmo<Model[]>("/mlmr/models");
   const dmeTypes = useSmo<DmeType[]>("/dme/dme-types");
   const [modelId, setModelId] = useState("");
   const [dmeTypeId, setDmeTypeId] = useState("");
@@ -362,7 +364,7 @@ function SubscribeMlmf() {
       <form className="form inline" onSubmit={(e) => {
         e.preventDefault();
         if (!parsed.ok) return;
-        action.mutate({ method: "POST", path: "/ai-ml-workflow/mlmf/subscriptions", query: { model_id: modelId, dme_type_id: dmeTypeId },
+        action.mutate({ method: "POST", path: "/aimgf/mlmf/subscriptions", query: { model_id: modelId, dme_type_id: dmeTypeId },
           json: { metric_types: splitList(metricTypes), guard_kpi_floor: Object.keys(parsed.value).length ? parsed.value : null }, success: "MLMF subscription created" });
       }}>
         <Field label="Model"><select value={modelId} onChange={(e) => setModelId(e.target.value)} required><option value="">Choose…</option>{models.data?.map((m) => <option key={m.modelId} value={m.modelId}>{m.modelType} {m.version}</option>)}</select></Field>
@@ -391,7 +393,7 @@ function EditModel({ model, onClose }: { model: Model; onClose: () => void }) {
       <form className="form grid cols-2 tight" onSubmit={(e) => {
         e.preventDefault();
         // modelType/version are the model's identity: sent unchanged (UpdateModel rejects a change)
-        action.mutate({ method: "PUT", path: `/ai-ml-workflow/models/${model.modelId}`, success: "Model metadata updated",
+        action.mutate({ method: "PUT", path: `/mlmr/models/${model.modelId}`, success: "Model metadata updated",
           json: { modelType: model.modelType, version: model.version, clearedNodeGroups: model.clearedNodeGroups, targetEnvironments: model.targetEnvironments,
             ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.trim() || null])) } }, { onSuccess: onClose });
       }}>
@@ -417,7 +419,7 @@ function WriteMetrics({ job, onClose }: { job: TrainingJob; onClose: () => void 
       {!parsed.ok && <p className="text-bad small">{parsed.error}</p>}
       <div className="row gap end"><button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn primary" disabled={!parsed.ok || action.isPending} onClick={() => parsed.ok && action.mutate(
-          { method: "POST", path: `/ai-ml-workflow/training-jobs/${job.trainingJobId}/model-metrics`, json: parsed.value, success: "Metrics recorded" }, { onSuccess: onClose })}>Save</button>
+          { method: "POST", path: `/aimgf/training-jobs/${job.trainingJobId}/model-metrics`, json: parsed.value, success: "Metrics recorded" }, { onSuccess: onClose })}>Save</button>
       </div>
     </Modal>
   );
@@ -425,15 +427,15 @@ function WriteMetrics({ job, onClose }: { job: TrainingJob; onClose: () => void 
 
 function FeatureGroups() {
   const { can } = useAuth();
-  const allowed = can("GET", "/ai-ml-workflow/feature-groups");
-  const groups = useSmo<{ featureGroups: FeatureGroup[] }>(allowed ? "/ai-ml-workflow/feature-groups" : null);
+  const allowed = can("GET", "/aimgf/feature-groups");
+  const groups = useSmo<{ featureGroups: FeatureGroup[] }>(allowed ? "/aimgf/feature-groups" : null);
   const [f, setF] = useState({ featureGroupName: "", featureList: "", datalakeSource: "InfluxSource", host: "", port: "8086", bucket: "", token: "", dbOrg: "", measurement: "", sourceName: "" });
   const [enableDme, setEnableDme] = useState(false);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const valid = /^\w{3,63}$/.test(f.featureGroupName);
   return (
     <>
-      <Can method="POST" path="/ai-ml-workflow/feature-groups">
+      <Can method="POST" path="/aimgf/feature-groups">
         <Card title="New feature group">
           <div className="form grid cols-3 tight">
             <Field label="Name" hint={f.featureGroupName && !valid ? <span className="text-bad">3-63 word characters</span> : "3-63 word characters, unique"}><input value={f.featureGroupName} onChange={set("featureGroupName")} /></Field>
@@ -448,7 +450,7 @@ function FeatureGroups() {
             <label className="check"><input type="checkbox" checked={enableDme} onChange={(e) => setEnableDme(e.target.checked)} /> source via DME</label>
           </div>
           <ActionButton label="Create feature group" tone="primary" disabled={!valid || !f.featureList || !f.host || !f.bucket || !f.token || !f.dbOrg || !f.measurement}
-            action={{ method: "POST", path: "/ai-ml-workflow/feature-groups", json: { ...f, sourceName: f.sourceName || null, enableDme }, success: "Feature group created" }} />
+            action={{ method: "POST", path: "/aimgf/feature-groups", json: { ...f, sourceName: f.sourceName || null, enableDme }, success: "Feature group created" }} />
         </Card>
       </Can>
       {!allowed && <Card title="Feature groups"><p className="muted">Feature groups carry datalake credentials, so they're visible to operators and admins only.</p></Card>}

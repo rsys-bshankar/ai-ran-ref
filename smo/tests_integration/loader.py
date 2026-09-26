@@ -1,7 +1,7 @@
 """Loads multiple modules' FastAPI apps into ONE Python process for
 cross-service integration testing.
 
-Every one of the fourteen modules (plus the mock Near-RT RIC) uses the
+Every one of the sixteen modules (plus the mock Near-RT RIC) uses the
 identical top-level package name `app` — correct for how they actually
 run (one module per Docker container, per the Dockerfile's MODULE build
 arg, so no collision ever occurs in production). It's ONLY a problem for
@@ -25,7 +25,7 @@ SMO_ROOT = Path(__file__).resolve().parent.parent
 
 def load_app_module(module_dir: str) -> ModuleType:
     """Returns the freshly-loaded `app.main` module for `module_dir`
-    (e.g. "sme", "ai-ml-workflow"). The returned object's `.app` attribute
+    (e.g. "sme", "aimgf"). The returned object's `.app` attribute
     is that module's FastAPI instance — hold onto the RETURNED object;
     sys.modules['app.main'] itself gets overwritten by the next call.
     """

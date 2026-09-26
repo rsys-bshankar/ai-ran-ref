@@ -35,7 +35,7 @@ RANK = {Role.VIEWER: 0, Role.OPERATOR: 1, Role.ADMIN: 2}
 # minus DME's push/pull aliases, which are rApp data-plane paths).
 MODULES = [
     "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "a1-related", "nfo", "focom",
-    "ai-ml-workflow", "ran-analytics", "intent-service", "so-smos", "sa-smos",
+    "aimgf", "mlmr", "mllf", "ran-analytics", "intent-service", "so-smos", "sa-smos",
 ]
 
 # The RMIO identity every GUI-created intent carries. Intent Service only lets
@@ -81,7 +81,7 @@ V, O, A = Role.VIEWER, Role.OPERATOR, Role.ADMIN
 
 RULES: list[Rule] = [
     # --- the one sensitive read: feature groups carry datalake tokens
-    _rule("GET", "/ai-ml-workflow/feature-groups", O),
+    _rule("GET", "/aimgf/feature-groups", O),
 
     # --- Onboarding
     _rule("POST", "/onboarding/packages", O),
@@ -100,18 +100,26 @@ RULES: list[Rule] = [
     _rule("DELETE", "/rapp-mgmt/instances/{id}", A),
     _rule("POST", "/rapp-mgmt/instances/{id}/(performance|fault)", A),   # test-data injection
 
-    # --- AI/ML Workflow
-    _rule("POST", "/ai-ml-workflow/models", O),
-    _rule("PUT", "/ai-ml-workflow/models/{id}", O),
-    _rule("DELETE", "/ai-ml-workflow/models/{id}", A),
-    _rule("POST", "/ai-ml-workflow/models/{id}/advance", A, query_match={"event": "DEPRECATE"}),
-    _rule("POST", "/ai-ml-workflow/models/{id}/(advance|artifact|deploy|inference-jobs)", O),
-    _rule("POST", "/ai-ml-workflow/inference-jobs/{id}/resolve", O),
-    _rule("POST", "/ai-ml-workflow/training-jobs", O),
-    _rule("DELETE", "/ai-ml-workflow/training-jobs/{id}", O),        # cancel, not a hard delete
-    _rule("POST", "/ai-ml-workflow/training-jobs/{id}/model-metrics", O),
-    _rule("POST", "/ai-ml-workflow/(coordination-groups|feature-groups|mlmf/subscriptions)", O),
-    _rule("POST", "/ai-ml-workflow/mlmf/subscriptions/{id}/reports", A),  # test-data injection
+    # --- AI Platform (Wave 1 split of the former ai-ml-workflow: MLMR owns
+    # the model/artifact/coordination-group rows, AIMgF owns training/
+    # inference/MLMF/feature-groups, MLLF owns deploy). MLMR's own
+    # internal PATCH /models/{id}/lifecycle is deliberately absent — a
+    # machine-to-machine route only AIMgF/MLLF call, same as the SME/DME/
+    # NFO internal routes above.
+    _rule("POST", "/mlmr/models", O),
+    _rule("PUT", "/mlmr/models/{id}", O),
+    _rule("DELETE", "/mlmr/models/{id}", A),
+    _rule("POST", "/mlmr/models/{id}/artifact", O),
+    _rule("POST", "/mlmr/coordination-groups", O),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "DEPRECATE"}),
+    _rule("POST", "/aimgf/models/{id}/(advance|inference-jobs)", O),
+    _rule("POST", "/mllf/models/{id}/deploy", O),
+    _rule("POST", "/aimgf/inference-jobs/{id}/resolve", O),
+    _rule("POST", "/aimgf/training-jobs", O),
+    _rule("DELETE", "/aimgf/training-jobs/{id}", O),        # cancel, not a hard delete
+    _rule("POST", "/aimgf/training-jobs/{id}/model-metrics", O),
+    _rule("POST", "/aimgf/(feature-groups|mlmf/subscriptions)", O),
+    _rule("POST", "/aimgf/mlmf/subscriptions/{id}/reports", A),  # test-data injection
 
     # --- RAN NF OAM
     _rule("PATCH", "/ran-nf-oam/alarms/{id}/ack", O,

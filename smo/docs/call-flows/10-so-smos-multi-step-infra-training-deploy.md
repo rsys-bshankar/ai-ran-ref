@@ -9,7 +9,7 @@ sequenceDiagram
     actor Operator
     participant SO as SO SMOS
     participant Focom as FOCOM SMOS
-    participant AIML as AI/ML Workflow SMOS
+    participant AIML as AIMgF
     participant NFO as NFO SMOS
 
     Operator->>SO: SubmitServiceOrder(scope, steps: [INFRA->FOCOM, TRAINING->AI_ML_WORKFLOW, DEPLOY->NFO])
@@ -23,7 +23,7 @@ sequenceDiagram
 
     rect rgb(240, 255, 240)
     Note over SO,AIML: step 2 — TRAINING
-    SO->>AIML: dispatch_training: POST /ai-ml-workflow/training-jobs (modelId, producerId, requiredData, validationCriteria)
+    SO->>AIML: dispatch_training: POST /aimgf/training-jobs (modelId, producerId, requiredData, validationCriteria)
     alt training job accepted
         AIML-->>SO: 201 {trainingJobId} -> step[1].status = COMPLETED
     else step supplied both modelId and modelCoordinationGroupId, or neither

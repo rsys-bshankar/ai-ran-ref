@@ -18,7 +18,7 @@ R1_PREFIX_TO_SERVICE = {
     "/sme": "sme", "/dme": "dme", "/dme-push": "dme", "/dme-pull": "dme",
     "/onboarding": "onboarding", "/rapp-mgmt": "rapp-mgmt", "/ran-nf-oam": "ran-nf-oam",
     "/a1-related": "a1-related", "/nfo": "nfo", "/focom": "focom",
-    "/ai-ml-workflow": "ai-ml-workflow", "/ran-analytics": "ran-analytics",
+    "/aimgf": "aimgf", "/mlmr": "mlmr", "/mllf": "mllf", "/ran-analytics": "ran-analytics",
     "/intent-service": "intent-service", "/so-smos": "so-smos", "/sa-smos": "sa-smos",
 }
 
@@ -74,17 +74,19 @@ class ServiceMesh:
 
 
 def install(monkeypatch, mesh: ServiceMesh) -> None:
-    """Monkeypatches the plain httpx.get/post/put/delete module functions —
-    both smo_shared.r1_client.R1Client and a1-related's
+    """Monkeypatches the plain httpx.get/post/put/patch/delete module
+    functions — both smo_shared.r1_client.R1Client and a1-related's
     A1TerminationClient call these directly (`import httpx; httpx.post(...)`),
     so one patch at the httpx module level intercepts everything, regardless
-    of which module's code makes the call.
+    of which module's code makes the call. `patch` added for Wave 1's
+    MLMR `PATCH /models/{id}/lifecycle` cross-service write-back — the
+    first caller in this build that needed it.
     """
     import httpx
 
     from smo_shared import r1_client
 
-    for verb in ("get", "post", "put", "delete"):
+    for verb in ("get", "post", "put", "patch", "delete"):
         monkeypatch.setattr(httpx, verb, (lambda v: lambda url, **kw: mesh.dispatch(v, url, **kw))(verb))
     # The mesh dispatches straight to each module, bypassing R1 Termination's
     # token gate along with the rest of its gateway mechanics (see the module

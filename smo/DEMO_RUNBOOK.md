@@ -827,19 +827,25 @@ print(r.status_code, r.json())
 "
 ```
 
-## 13. AI/ML Workflow (optional) — register, train, upload/download a real artifact, advance to ACTIVE
+## 13. AI Platform: MLMR + AIMgF + MLLF (optional) — register, train, upload/download a real artifact, advance to ACTIVE, deploy
 
-Independent of the sample rApp instance above — a whole module never
-touched by this runbook before. Real MLModel lifecycle FSM (SMO Design
-v1.3 section 3.8), a real training-job round trip, and real artifact
-bytes that genuinely round-trip through Postgres, not a stub.
+Independent of the sample rApp instance above — a whole area never
+touched by this runbook before. Wave 1 of the AI Platform Service
+Decomposition split the former single `ai-ml-workflow` module into
+three real services — MLMR (model repository), AIMgF (lifecycle
+orchestration), MLLF (loading/deployment) — communicating with each
+other through R1 Termination exactly like every other cross-module call
+in this build (see `docs/architecture/SERVICE_OWNERSHIP_MATRIX.md`).
+Real MLModel lifecycle FSM (SMO Design v1.3 section 3.8, now living in
+AIMgF), a real training-job round trip, and real artifact bytes that
+genuinely round-trip through Postgres, not a stub.
 
-Register a model with real metadata:
+Register a model with real metadata (MLMR):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://ai-ml-workflow:8000/models', json={
+r = httpx.post('http://mlmr:8000/models', json={
     'modelType': 'hello-world-anomaly-detector', 'version': '1.0.0',
     'description': 'Demo anomaly-detection model for the hello-world rApp',
     'author': 'hello-world-rapp', 'owner': 'hello-world-rapp',
@@ -850,12 +856,14 @@ print(r.status_code, r.json())
 ```
 
 Note the `modelId` — `state` is `REGISTERED`. Request training against
-it — a real FSM transition (`REGISTERED -> TRAINING`, `TRAIN`):
+it (AIMgF) — a real FSM transition (`REGISTERED -> TRAINING`, `TRAIN`),
+with AIMgF reading and writing the model's state on MLMR's own row over
+R1 rather than a shared in-process ORM:
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://ai-ml-workflow:8000/training-jobs', json={
+r = httpx.post('http://aimgf:8000/training-jobs', json={
     'modelId': '<modelId>', 'producerId': 'hello-world-rapp',
     'runId': 'demo-run-1', 'trainingDataset': 's3://demo/hello-world-train',
     'validationDataset': 's3://demo/hello-world-val',
@@ -864,69 +872,86 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the `trainingJobId`. Confirm the model really moved to `TRAINING`:
+Note the `trainingJobId`. Confirm the model really moved to `TRAINING`
+(MLMR, the row AIMgF's own request_training call just updated):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.get('http://ai-ml-workflow:8000/models/<modelId>')
+r = httpx.get('http://mlmr:8000/models/<modelId>')
 print(r.status_code, r.json())
 "
 ```
 
-**Upload a real model artifact** — the bytes genuinely round-trip
+**Upload a real model artifact** (MLMR) — the bytes genuinely round-trip
 through a Postgres-backed `ModelArtifact` row, not a discarded stub
 (real S3 storage is the one deliberate elision here):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://ai-ml-workflow:8000/models/<modelId>/artifact',
+r = httpx.post('http://mlmr:8000/models/<modelId>/artifact',
                 files={'file': ('hello-world-model.zip', b'demo-model-weights-bytes', 'application/zip')})
 print(r.status_code, r.json())
 "
 ```
 
-Note `artifactVersion` (1). Write real training metrics, matching the
-reference's own whole-body-replace semantics:
+Note `artifactVersion` (1). Write real training metrics (AIMgF), matching
+the reference's own whole-body-replace semantics:
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://ai-ml-workflow:8000/training-jobs/<trainingJobId>/model-metrics', json={'accuracy': 0.94, 'f1Score': 0.91})
+r = httpx.post('http://aimgf:8000/training-jobs/<trainingJobId>/model-metrics', json={'accuracy': 0.94, 'f1Score': 0.91})
 print(r.status_code, r.json())
 "
 ```
 
-**Advance the model through its real lifecycle FSM** — each step is a
-genuine state transition, not a fast-forward:
+**Advance the model through its real lifecycle FSM** (AIMgF) — each step
+is a genuine state transition, not a fast-forward:
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
 for event in ['TRAINING_COMPLETE', 'VALIDATION_COMPLETE', 'CERTIFY', 'LOAD', 'ACTIVATE']:
-    r = httpx.post('http://ai-ml-workflow:8000/models/<modelId>/advance', params={'event': event})
+    r = httpx.post('http://aimgf:8000/models/<modelId>/advance', params={'event': event})
     print(event, '->', r.status_code, r.json()['state'])
 "
 ```
 
-Ending state is `ACTIVE`. Download the artifact back and confirm the
-bytes really match what was uploaded:
+Ending state is `ACTIVE`. **Deploy the model** (MLLF) — stamps
+`clearedNodeGroups` back onto MLMR's own row (LLD section 5, MultiNode
+Q2's targeting gap):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.get('http://ai-ml-workflow:8000/models/<modelId>/artifact/1')
+r = httpx.post('http://mllf:8000/models/<modelId>/deploy', json=['edge-gpu-a', 'edge-gpu-b'])
+print(r.status_code, r.json())
+"
+```
+
+Download the artifact back (MLMR) and confirm the bytes really match
+what was uploaded:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://mlmr:8000/models/<modelId>/artifact/1')
 print(r.status_code, r.content == b'demo-model-weights-bytes')
 "
 ```
 
-Deregister — real cascade cleanup of the artifact and training-job rows:
+Deregister (MLMR) — real Postgres `ON DELETE CASCADE` cleans up the
+artifact row (MLMR's own table) and, transitively, AIMgF's own
+training-job/inference-job/subscription rows, even though MLMR's own
+process never imports AIMgF's models — verified directly against this
+same live instance, not just asserted:
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.delete('http://ai-ml-workflow:8000/models/<modelId>')
+r = httpx.delete('http://mlmr:8000/models/<modelId>')
 print(r.status_code)
 "
 ```
@@ -1311,21 +1336,21 @@ real foreign keys — `RESOURCE_IS_OF_TYPE_RESOURCETYPE` and
 in this Phase 1 topology, so that key is genuinely absent rather than
 an empty placeholder) — never invented ones.
 
-## 19. AI/ML Workflow feature groups (optional) — register, list, a real duplicate-name rejection
+## 19. AIMgF feature groups (optional) — register, list, a real duplicate-name rejection
 
 Independent of the sample rApp instance above — a whole entity added
 in an earlier §5 pass (the reference's own `CreateFeatureGroup`,
 `featuregroup_controller.py`) but never touched by any demo phase.
 Real Cassandra-backed feature-store queries and `enableDme`'s real DME
 job creation are deliberate elisions (the same no-real-southbound-
-compute pattern as the rest of this module) — this exercises the real
+compute pattern as the rest of this service) — this exercises the real
 part: registration, listing, and the reference's own name-validation
 and duplicate-name rejection.
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://ai-ml-workflow:8000/feature-groups', json={
+r = httpx.post('http://aimgf:8000/feature-groups', json={
     'featureGroupName': 'demo_coverage_features', 'featureList': 'rsrp,rsrq,sinr',
     'datalakeSource': 'INFLUX', 'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket',
     'token': 'demo-token', 'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
@@ -1339,7 +1364,7 @@ Note the `featureGroupId`. Confirm it's a real, queryable registration:
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.get('http://ai-ml-workflow:8000/feature-groups')
+r = httpx.get('http://aimgf:8000/feature-groups')
 print(r.status_code, r.json())
 "
 ```
@@ -1352,7 +1377,7 @@ scripted check:
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://ai-ml-workflow:8000/feature-groups', json={
+r = httpx.post('http://aimgf:8000/feature-groups', json={
     'featureGroupName': 'demo_coverage_features', 'featureList': 'rsrp,rsrq,sinr',
     'datalakeSource': 'INFLUX', 'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket',
     'token': 'demo-token', 'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
@@ -1368,7 +1393,7 @@ character rule, shared with `TrainingJob` names):
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://ai-ml-workflow:8000/feature-groups', json={
+r = httpx.post('http://aimgf:8000/feature-groups', json={
     'featureGroupName': 'no spaces allowed', 'featureList': 'rsrp', 'datalakeSource': 'INFLUX',
     'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket', 'token': 'demo-token',
     'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
@@ -1386,21 +1411,21 @@ Independent of the sample rApp instance above — SA SMOS's own
 coordination-group-scoped `AssuranceMonitor` bypasses
 `CONFIG_CHANGE`/`SCALE`/`RECONNECT`/`ROLLBACK`'s NF-deployment meanings
 entirely — those don't map onto a model group at all — and always
-dispatches a real group retrain via AI/ML Workflow's `RequestTraining`
+dispatches a real group retrain via AIMgF's `RequestTraining`
 instead, whatever `actionType` was requested. Already real and
 unit-tested, but never demonstrated: step 15's own `AssuranceMonitor`
 was `targetOrderId`-scoped throughout.
 
-Register two models to be the group's members — a coordination group of
-fewer than two members isn't a coordination of anything, and the
-migration's own `member_model_ids` CHECK constraint (`array_length >= 2`)
-enforces this at the DB layer:
+Register two models to be the group's members (MLMR) — a coordination
+group of fewer than two members isn't a coordination of anything, and
+the migration's own `member_model_ids` CHECK constraint
+(`array_length >= 2`) enforces this at the DB layer:
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
 for i in range(2):
-    r = httpx.post('http://ai-ml-workflow:8000/models', json={
+    r = httpx.post('http://mlmr:8000/models', json={
         'modelType': f'demo-coordination-group-model-{i}', 'version': '1.0.0',
         'author': 'hello-world-rapp', 'owner': 'hello-world-rapp',
     })
@@ -1408,12 +1433,13 @@ for i in range(2):
 "
 ```
 
-Note both `modelId`s, then create a real coordination group with them:
+Note both `modelId`s, then create a real coordination group with them
+(MLMR):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://ai-ml-workflow:8000/coordination-groups', json={'memberModelIds': ['<modelId1>', '<modelId2>']})
+r = httpx.post('http://mlmr:8000/coordination-groups', json={'memberModelIds': ['<modelId1>', '<modelId2>']})
 print(r.status_code, r.json())
 "
 ```
@@ -1448,15 +1474,15 @@ print(r.status_code, r.json())
 ```
 
 `outcome` is `RESOLVED` — SA SMOS dispatched a real
-`POST /ai-ml-workflow/training-jobs` with the group's own
-`modelCoordinationGroupId`, converging with AI/ML Workflow's own
+`POST /aimgf/training-jobs` with the group's own
+`modelCoordinationGroupId`, converging with AIMgF's own
 `groupRetrainTriggered` mechanism. Confirm the real `TrainingJob` row
 this created:
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.get('http://ai-ml-workflow:8000/training-jobs', params={'status': 'RUNNING'})
+r = httpx.get('http://aimgf:8000/training-jobs', params={'status': 'RUNNING'})
 print(r.status_code, [j for j in r.json() if j['modelCoordinationGroupId'] == '<groupId>'])
 "
 ```

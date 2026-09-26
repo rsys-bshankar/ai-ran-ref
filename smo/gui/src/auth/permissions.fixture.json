@@ -1,7 +1,7 @@
 [
   {
     "method": "GET",
-    "pattern": "^/ai-ml-workflow/feature-groups$",
+    "pattern": "^/aimgf/feature-groups$",
     "role": "operator",
     "queryMatch": {}
   },
@@ -73,25 +73,37 @@
   },
   {
     "method": "POST",
-    "pattern": "^/ai-ml-workflow/models$",
+    "pattern": "^/mlmr/models$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "PUT",
-    "pattern": "^/ai-ml-workflow/models/[^/]+$",
+    "pattern": "^/mlmr/models/[^/]+$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "DELETE",
-    "pattern": "^/ai-ml-workflow/models/[^/]+$",
+    "pattern": "^/mlmr/models/[^/]+$",
     "role": "admin",
     "queryMatch": {}
   },
   {
     "method": "POST",
-    "pattern": "^/ai-ml-workflow/models/[^/]+/advance$",
+    "pattern": "^/mlmr/models/[^/]+/artifact$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/mlmr/coordination-groups$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/models/[^/]+/advance$",
     "role": "admin",
     "queryMatch": {
       "event": "DEPRECATE"
@@ -99,43 +111,49 @@
   },
   {
     "method": "POST",
-    "pattern": "^/ai-ml-workflow/models/[^/]+/(advance|artifact|deploy|inference-jobs)$",
+    "pattern": "^/aimgf/models/[^/]+/(advance|inference-jobs)$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "POST",
-    "pattern": "^/ai-ml-workflow/inference-jobs/[^/]+/resolve$",
+    "pattern": "^/mllf/models/[^/]+/deploy$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "POST",
-    "pattern": "^/ai-ml-workflow/training-jobs$",
+    "pattern": "^/aimgf/inference-jobs/[^/]+/resolve$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/training-jobs$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "DELETE",
-    "pattern": "^/ai-ml-workflow/training-jobs/[^/]+$",
+    "pattern": "^/aimgf/training-jobs/[^/]+$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "POST",
-    "pattern": "^/ai-ml-workflow/training-jobs/[^/]+/model-metrics$",
+    "pattern": "^/aimgf/training-jobs/[^/]+/model-metrics$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "POST",
-    "pattern": "^/ai-ml-workflow/(coordination-groups|feature-groups|mlmf/subscriptions)$",
+    "pattern": "^/aimgf/(feature-groups|mlmf/subscriptions)$",
     "role": "operator",
     "queryMatch": {}
   },
   {
     "method": "POST",
-    "pattern": "^/ai-ml-workflow/mlmf/subscriptions/[^/]+/reports$",
+    "pattern": "^/aimgf/mlmf/subscriptions/[^/]+/reports$",
     "role": "admin",
     "queryMatch": {}
   },
@@ -495,7 +513,7 @@
   },
   {
     "method": "GET",
-    "pattern": "^/(sme|dme|onboarding|rapp\\-mgmt|ran\\-nf\\-oam|a1\\-related|nfo|focom|ai\\-ml\\-workflow|ran\\-analytics|intent\\-service|so\\-smos|sa\\-smos)(/.*)?$",
+    "pattern": "^/(sme|dme|onboarding|rapp\\-mgmt|ran\\-nf\\-oam|a1\\-related|nfo|focom|aimgf|mlmr|mllf|ran\\-analytics|intent\\-service|so\\-smos|sa\\-smos)(/.*)?$",
     "role": "viewer",
     "queryMatch": {}
   }
