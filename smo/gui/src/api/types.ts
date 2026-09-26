@@ -10,6 +10,7 @@ export interface ModulesStatus { checkedAt: string; modules: ModuleStatus[] }
 export interface Package {
   packageId: string; name: string; version: string; vendor: string | null; applicationType: string;
   state: string; toscaEntryDefinitions: string | null; signatureVerified: boolean; nfDeploymentDescriptorId: string | null;
+  aiCapabilities: Record<string, unknown> | null;
 }
 export interface InstanceSummary { instanceId: string; packageId: string; state: string }
 export interface Instance extends InstanceSummary {

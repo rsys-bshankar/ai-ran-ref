@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -e /srv/shared
 COPY ${MODULE}/pyproject.toml* /srv/module/
 COPY ${MODULE}/app /srv/module/app
 WORKDIR /srv/module
-RUN pip install --no-cache-dir fastapi uvicorn[standard] sqlalchemy psycopg[binary] httpx pydantic python-multipart
+RUN pip install --no-cache-dir fastapi uvicorn[standard] sqlalchemy psycopg[binary] httpx pydantic python-multipart jsonschema pyyaml
 
 ENV PYTHONPATH=/srv/module
 EXPOSE 8000

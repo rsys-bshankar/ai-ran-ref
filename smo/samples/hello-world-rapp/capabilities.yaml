@@ -1,0 +1,16 @@
+capabilities:
+  provides:
+    - namespace: data
+      description: >-
+        Produces the hello-world-metrics DME type (Files/Dme/infoproducers/
+        producer.json), consumable via sdk.data.
+  consumes:
+    - namespace: data
+      description: >-
+        Consumes its own hello-world-metrics DME type as a data job
+        (Files/Dme/infoconsumers/consumer.json), via sdk.data.
+    - namespace: platform
+      description: >-
+        Registers as an SME provider domain (Files/Sme/providers/
+        provider.json) and publishes its service API set
+        (Files/Sme/serviceapis/api-set.json), via sdk.platform.

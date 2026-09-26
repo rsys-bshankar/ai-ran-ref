@@ -21,8 +21,13 @@ run for you.
 plus reference SME/DME registration bodies under `Files/Sme/`/`Files/Dme/`),
 adapted from the real O-RAN-SC reference's own sample package
 (`nonrtric-plt-rappmanager/sample-rapp-generator/rapp-all`) to satisfy
-this build's own `Onboarding` validator. See `smo/samples/build_csar.py`
-if you need to rebuild it after editing `smo/samples/hello-world-rapp/`.
+this build's own `Onboarding` validator. Since the Wave 1 rApp packaging
+extension (`docs/architecture/AI_PLATFORM_BASELINE.md`) it also carries
+root-level `manifest.yaml`/`capabilities.yaml` declaring its AI Platform
+capabilities — both optional, so onboarding a package without them (any
+CSAR built before this extension) is unaffected. See
+`smo/samples/build_csar.py` if you need to rebuild it after editing
+`smo/samples/hello-world-rapp/`.
 Proven to onboard and deploy for real (not just described) by
 `tests_integration/test_cross_service.py::test_real_demo_csar_onboards_and_deploys`.
 

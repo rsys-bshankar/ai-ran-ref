@@ -183,7 +183,13 @@ Frozen wave order — do not reorder without updating this document first:
 - **Wave 0** (this document + its siblings): architecture freeze. No code.
 - **Wave 1**: service decomposition — `aimgf`/`mlmr`/`mllf`/`mdaf`/
   `intent-service`/`sdk` created, existing callers migrated. Structure
-  and ownership, not new business logic.
+  and ownership, not new business logic. Also extends rApp packaging
+  with two new optional CSAR-root files, `manifest.yaml`/
+  `capabilities.yaml` (Onboarding's `_validate_package`,
+  `onboarding/app/main.py`), so a package can declare which of `sdk/`'s
+  six namespaces it consumes or provides — additive only, a package
+  without either file (every one built before this extension) onboards
+  unchanged.
 - **Wave 2**: AIMgF's own two state machines (Model Lifecycle, Runtime
   Lifecycle) and domain model, deepened past Wave 1's structural split.
 - **Wave 3**: R1 contracts (DME → MDAF → MLMR → AIMgF → MLLF → Intent

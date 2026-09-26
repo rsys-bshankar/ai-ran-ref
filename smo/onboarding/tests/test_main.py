@@ -112,7 +112,8 @@ def test_onboard_routes_to_failed_on_a_real_malformed_zip(client, monkeypatch):
     assert status.json()["state"] == "FAILED"
 
 
-def _real_package_bytes(include_acm_composition=True, definitions="tosca_definitions_version: tosca_simple_yaml_1_3\n") -> bytes:
+def _real_package_bytes(include_acm_composition=True, definitions="tosca_definitions_version: tosca_simple_yaml_1_3\n",
+                         manifest_yaml=None, capabilities_yaml=None) -> bytes:
     """A minimal but genuinely well-formed CSAR — TOSCA-Metadata/TOSCA.meta
     pointing at a real Definitions/ entry, optionally with the reference's
     required composition file alongside it, at its real path
@@ -121,6 +122,11 @@ def _real_package_bytes(include_acm_composition=True, definitions="tosca_definit
     — not Definitions/acm_composition.json, which this fixture and
     _validate_package both got wrong before being checked against the
     reference's real sample package.
+
+    `manifest_yaml`/`capabilities_yaml` (raw YAML text, root-level files)
+    are the Wave 1 rApp packaging extension — both optional, and omitted
+    by default, so every existing call site of this fixture keeps
+    covering the pre-extension, no-AI-capabilities case unchanged.
     """
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
@@ -128,6 +134,10 @@ def _real_package_bytes(include_acm_composition=True, definitions="tosca_definit
         z.writestr("Definitions/main.yaml", definitions)
         if include_acm_composition:
             z.writestr("Files/Acm/definition/compositions.json", "{}")
+        if manifest_yaml is not None:
+            z.writestr("manifest.yaml", manifest_yaml)
+        if capabilities_yaml is not None:
+            z.writestr("capabilities.yaml", capabilities_yaml)
     return buf.getvalue()
 
 
@@ -209,6 +219,83 @@ def test_onboard_keeps_placeholder_identity_when_the_asd_has_none(client, monkey
 
     pkg = next(p for p in client.get("/packages").json() if p["packageId"] == package_id)
     assert (pkg["state"], pkg["name"], pkg["version"], pkg["vendor"]) == ("AVAILABLE", "unresolved-until-validated", "0.0.0", None)
+
+
+def test_onboard_leaves_ai_capabilities_null_when_neither_file_is_present(client, monkeypatch):
+    """Every package this build produced before the Wave 1 rApp packaging
+    extension (and any package that simply doesn't declare AI Platform
+    capabilities) onboards exactly as before — aiCapabilities stays null,
+    not an empty dict or a validation failure.
+    """
+    _mock_fetch(monkeypatch, _real_package_bytes())
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+
+    package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+
+    pkg = next(p for p in client.get("/packages").json() if p["packageId"] == package_id)
+    assert pkg["state"] == "AVAILABLE"
+    assert pkg["aiCapabilities"] is None
+
+
+def test_onboard_parses_manifest_and_capabilities_yaml_when_present(client, monkeypatch):
+    """The positive case: a package declaring both root-level files (like
+    samples/hello-world-rapp/ after this pass) has its AI Platform
+    capability declaration parsed and stored.
+    """
+    manifest_yaml = "rappManifest:\n  manifestVersion: \"1.0\"\n  aiRuntimeSdkVersion: \"1.0\"\n"
+    capabilities_yaml = (
+        "capabilities:\n"
+        "  provides:\n"
+        "    - namespace: data\n"
+        "      description: produces hello-world-metrics\n"
+        "  consumes:\n"
+        "    - namespace: platform\n"
+        "      description: registers as an SME provider\n"
+    )
+    _mock_fetch(monkeypatch, _real_package_bytes(manifest_yaml=manifest_yaml, capabilities_yaml=capabilities_yaml))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+
+    package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+
+    pkg = next(p for p in client.get("/packages").json() if p["packageId"] == package_id)
+    assert pkg["state"] == "AVAILABLE"
+    assert pkg["aiCapabilities"] == {
+        "manifestVersion": "1.0", "aiRuntimeSdkVersion": "1.0",
+        "provides": [{"namespace": "data", "description": "produces hello-world-metrics"}],
+        "consumes": [{"namespace": "platform", "description": "registers as an SME provider"}],
+    }
+
+
+def test_onboard_parses_capabilities_yaml_alone_without_a_manifest(client, monkeypatch):
+    """The two files are independently optional — capabilities.yaml
+    without manifest.yaml still produces a partial aiCapabilities dict,
+    not a validation failure.
+    """
+    capabilities_yaml = "capabilities:\n  provides:\n    - namespace: models\n      description: registers a model\n"
+    _mock_fetch(monkeypatch, _real_package_bytes(capabilities_yaml=capabilities_yaml))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+
+    package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+
+    pkg = next(p for p in client.get("/packages").json() if p["packageId"] == package_id)
+    assert pkg["aiCapabilities"] == {
+        "consumes": [], "provides": [{"namespace": "models", "description": "registers a model"}],
+    }
+
+
+def test_onboard_routes_to_failed_on_malformed_capabilities_yaml(client, monkeypatch):
+    """A malformed manifest.yaml/capabilities.yaml is a package validation
+    failure like any other malformed package file (ONBOARD_VALIDATION_
+    FAILURES), not an unhandled 500 — the same discipline as the
+    malformed-zip and missing-composition-file cases above.
+    """
+    _mock_fetch(monkeypatch, _real_package_bytes(capabilities_yaml="capabilities: [unterminated"))
+
+    resp = client.post("/packages", json={"location": "http://example/pkg.csar"})
+    package_id = resp.json()["packageId"]
+
+    status = client.get(f"/packages/{package_id}/onboarding-status")
+    assert status.json()["state"] == "FAILED"
 
 
 def test_onboard_routes_to_failed_for_a_byte_identical_duplicate_package(client, monkeypatch):
