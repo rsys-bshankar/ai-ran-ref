@@ -257,6 +257,23 @@
         "summary": "Stop Dme Job"
       }
     },
+    "/ei-types": {
+      "get": {
+        "description": "(GUI pass 2) Registered EI types and the DME type each one wraps (call flow\n05). register_ei_type had no read side at all.",
+        "operationId": "list_ei_types_ei_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Ei Types"
+      }
+    },
     "/ei-types/register": {
       "post": {
         "description": "RegisterEIType \u2014 A1 Related LLD section 3: NOT a distinct R1AP call\n(clause 9 has no 9.2). This wraps DME's real RegisterDMEType, then\nrecords the EI bookkeeping entry.",
@@ -493,6 +510,21 @@
       }
     },
     "/policies/subscriptions": {
+      "get": {
+        "description": "(GUI pass 2) Policy-status subscriptions were write-only. Declared before\n/policies/{policy_id}: routes match in declaration order, so the UUID\nroute would otherwise capture \"subscriptions\" and fail validation.",
+        "operationId": "list_policy_status_subscriptions_policies_subscriptions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Policy Status Subscriptions"
+      },
       "post": {
         "description": "A1 Related LLD section 1.2: the schema v1.3 never had, closing the\nsame 'operation with no backing object' gap found elsewhere.",
         "operationId": "subscribe_policy_status_policies_subscriptions_post",

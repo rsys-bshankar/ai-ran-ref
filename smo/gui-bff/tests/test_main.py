@@ -264,6 +264,14 @@ def test_gui_created_intents_carry_the_gui_rmio_identity(app, smo):
     assert json.loads(smo.proxied[1].content) == {"newState": "DEACTIVATED", "requesterId": "smo-gui"}
 
 
+def test_cm_write_identity_and_msac_tier_come_from_the_gui_role(app, smo):
+    body = {"scope": "entire-RAN", "changes": [], "requestedBy": "someone", "msacRole": "admin"}
+    login(app, "operator").post("/api/smo/ran-nf-oam/config-jobs", json=body)
+    login(app, "admin").post("/api/smo/ran-nf-oam/config-jobs", json=body)
+    sent = [json.loads(r.content) for r in smo.proxied]
+    assert [(b["requestedBy"], b["msacRole"]) for b in sent] == [("smo-gui:operator", None), ("smo-gui:admin", "admin")]
+
+
 def test_role_change_applies_on_the_next_request(app, db):
     operator = login(app, "operator")
     assert operator.post("/api/smo/so-smos/orders", json={"scope": "s", "steps": []}).status_code == 200

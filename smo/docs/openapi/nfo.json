@@ -281,6 +281,45 @@
         "summary": "Heal"
       }
     },
+    "/deployments/{nf_deployment_id}/operations": {
+      "get": {
+        "description": "(GUI pass 2) A deployment's LCM operation history (Instantiate/Heal/Scale/\nTerminate); only a single operation id could be looked up before.",
+        "operationId": "list_deployment_operations_deployments__nf_deployment_id__operations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nf_deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Nf Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Deployment Operations"
+      }
+    },
     "/deployments/{nf_deployment_id}/placement": {
       "get": {
         "operationId": "query_cluster_placement_deployments__nf_deployment_id__placement_get",
@@ -398,6 +437,50 @@
       }
     },
     "/descriptors": {
+      "get": {
+        "description": "(GUI pass 2) NFDeploymentDescriptors created by Onboarding's validation pipeline.",
+        "operationId": "list_descriptors_descriptors_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "package_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Package Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Descriptors"
+      },
       "post": {
         "description": "CreateDescriptor \u2014 NFO+FOCOM LLD section 2: an NFDeploymentDescriptor\nderived from an onboarded package's TOSCA Definitions/, called from\nOnboarding's OnboardPackage flow once validation succeeds, closing the\ngap where nfDeploymentDescriptorId previously referenced nothing\nconcrete.",
         "operationId": "create_descriptor_descriptors_post",

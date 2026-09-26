@@ -270,6 +270,21 @@
       }
     },
     "/inventory/subscriptions": {
+      "get": {
+        "description": "(GUI pass 2) Inventory-change subscriptions were write-only.",
+        "operationId": "list_inventory_subscriptions_inventory_subscriptions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Inventory Subscriptions"
+      },
       "post": {
         "operationId": "subscribe_inventory_changes_inventory_subscriptions_post",
         "requestBody": {

@@ -808,3 +808,29 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}
+
+
+# ---------------------------------------------------------------- list reads (GUI pass 2)
+
+def test_list_data_jobs_filters_by_type_and_consumer(client):
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    other = client.post("/production-capabilities", json=register_type_body(name="Other")).json()
+    job = client.post("/data-jobs", json={"dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
+                                          "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1"}).json()
+    client.post("/data-jobs", json={"dataDeliveryMode": "ONE_TIME", "dmeTypeId": other["registrationId"],
+                                    "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-2"})
+
+    assert len(client.get("/data-jobs").json()) == 2
+    by_type = client.get("/data-jobs", params={"dme_type_id": reg["registrationId"]}).json()
+    assert [j["dataJobId"] for j in by_type] == [job["dataJobId"]]
+    assert [j["consumerId"] for j in client.get("/data-jobs", params={"consumer_id": "rapp-2"}).json()] == ["rapp-2"]
+
+
+def test_list_data_offers_filters_by_type(client):
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    offer = client.post("/offers", json={"dmeTypeId": reg["registrationId"], "dataDeliveryMode": "CONTINUOUS",
+                                          "dataDeliveryMethods": ["PUSH_HTTP"],
+                                          "dataOfferTerminationNotificationUri": "http://producer/terminate"}).json()
+    listed = client.get("/offers").json()
+    assert [o["offerId"] for o in listed] == [offer["offerId"]]
+    assert client.get("/offers", params={"dme_type_id": "00000000-0000-0000-0000-000000000000"}).json() == []

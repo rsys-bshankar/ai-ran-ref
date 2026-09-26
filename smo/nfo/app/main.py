@@ -243,3 +243,23 @@ def list_deployments(state: str | None = None, db: Session = Depends(get_session
     return [{"nfDeploymentId": str(d.nf_deployment_id), "name": d.name, "state": d.state, "clusterId": d.cluster_id,
              "nfDeploymentDescriptorId": str(d.nf_deployment_descriptor_id), "workloadRef": d.workload_ref,
              "requiredResourceTypeId": d.required_resource_type_id} for d in db.scalars(stmt).all()]
+
+
+@app.get("/descriptors")
+def list_descriptors(package_id: uuid.UUID | None = None, db: Session = Depends(get_session)):
+    """(GUI pass 2) NFDeploymentDescriptors created by Onboarding's validation pipeline."""
+    stmt = select(NFDeploymentDescriptor)
+    if package_id:
+        stmt = stmt.where(NFDeploymentDescriptor.package_id == package_id)
+    return [{"nfDeploymentDescriptorId": str(d.nf_deployment_descriptor_id), "packageId": str(d.package_id), "name": d.name,
+             "requiredResourceTypeId": d.required_resource_type_id, "workloadTemplate": d.workload_template}
+            for d in db.scalars(stmt).all()]
+
+
+@app.get("/deployments/{nf_deployment_id}/operations")
+def list_deployment_operations(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
+    """(GUI pass 2) A deployment's LCM operation history (Instantiate/Heal/Scale/
+    Terminate); only a single operation id could be looked up before.
+    """
+    return [{"operationId": str(o.operation_id), "operationType": o.operation_type, "status": o.status}
+            for o in db.scalars(select(LCMOperation).where(LCMOperation.nf_deployment_id == nf_deployment_id)).all()]

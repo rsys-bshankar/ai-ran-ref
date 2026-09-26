@@ -25,6 +25,18 @@
   },
   {
     "method": "POST",
+    "pattern": "^/onboarding/packages/[^/]+/usage/start$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/onboarding/packages/[^/]+/usage/[^/]+/stop$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/rapp-mgmt/instances$",
     "role": "operator",
     "queryMatch": {}
@@ -147,7 +159,13 @@
   },
   {
     "method": "POST",
-    "pattern": "^/ran-nf-oam/(config-jobs|pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)$",
+    "pattern": "^/ran-nf-oam/config-jobs$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/(pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)$",
     "role": "operator",
     "queryMatch": {}
   },
@@ -155,6 +173,12 @@
     "method": "POST",
     "pattern": "^/ran-nf-oam/software-management-jobs/[^/]+/advance$",
     "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/o1-adaptor-endpoints/[^/]+/heartbeat$",
+    "role": "admin",
     "queryMatch": {}
   },
   {
@@ -173,6 +197,168 @@
     "method": "DELETE",
     "pattern": "^/a1-related/policies/[^/]+$",
     "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/a1-related/policies/subscriptions$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/a1-related/policies/subscriptions/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/a1-related/ei-types/register$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/a1-related/ei-types/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/a1-related/services$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/a1-related/services/[^/]+/keepalive$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/a1-related/services/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/dme/data-jobs$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/dme/data-jobs/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/dme/data-jobs/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/dme/type-subscriptions$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/dme/type-subscriptions/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/dme/production-capabilities$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/dme/production-capabilities$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/dme/offers$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/dme/offers/[^/]+/notify$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/dme/offers/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/sme/provider-registrations$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/sme/provider-registrations/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/sme/published-apis/v1/[^/]+/service-apis$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/sme/published-apis/v1/[^/]+/service-apis/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/sme/invoker-registrations$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/sme/trusted-invokers/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/sme/trusted-invokers/[^/]+/(update|delete)$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/sme/trusted-invokers/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/sme/capif-events/v1/[^/]+/subscriptions$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/sme/capif-events/v1/[^/]+/subscriptions/[^/]+$",
+    "role": "operator",
     "queryMatch": {}
   },
   {
@@ -207,6 +393,18 @@
   },
   {
     "method": "POST",
+    "pattern": "^/focom/inventory/subscriptions$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/focom/inventory/subscriptions/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/policy-mgmt/intents$",
     "role": "operator",
     "queryMatch": {}
@@ -225,6 +423,24 @@
   },
   {
     "method": "POST",
+    "pattern": "^/policy-mgmt/intent-handling-functions$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/policy-mgmt/intent-handling-functions/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/policy-mgmt/intent-reports$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/ran-analytics/subscriptions$",
     "role": "operator",
     "queryMatch": {}
@@ -233,6 +449,18 @@
     "method": "DELETE",
     "pattern": "^/ran-analytics/subscriptions/[^/]+$",
     "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-analytics/producers$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-analytics/reports$",
+    "role": "admin",
     "queryMatch": {}
   },
   {

@@ -293,3 +293,21 @@ def _package_view(pkg: ApplicationPackage) -> dict:
         "signatureVerified": pkg.signature_verified,
         "nfDeploymentDescriptorId": str(pkg.nf_deployment_descriptor_id) if pkg.nf_deployment_descriptor_id else None,
     }
+
+
+@app.get("/packages/{package_id}/artifacts")
+def list_package_artifacts(package_id: uuid.UUID, db: Session = Depends(get_session)):
+    """(GUI pass 2) The artifacts registered during validation (Onboarding LLD section 1)."""
+    return [{"artifactId": str(a.artifact_id), "path": a.path, "accessUrl": a.access_url}
+            for a in db.scalars(select(Artifact).where(Artifact.package_id == package_id)).all()]
+
+
+@app.get("/packages/{package_id}/usage")
+def list_package_usage(package_id: uuid.UUID, db: Session = Depends(get_session)):
+    """(GUI pass 2) Usage registrations behind the cascade-delete guard (call flow 06):
+    any row still missing stoppedAt blocks deprime and delete, so the operator
+    can now see why a delete was refused.
+    """
+    return [{"registrationId": str(r.id), "consumerId": r.consumer_id,
+             "stoppedAt": r.stopped_at.isoformat() if r.stopped_at else None, "active": r.stopped_at is None}
+            for r in db.scalars(select(PackageUsageRegistration).where(PackageUsageRegistration.package_id == package_id)).all()]

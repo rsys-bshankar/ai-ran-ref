@@ -395,3 +395,12 @@ def test_list_deployments_filters_by_state(client, monkeypatch):
     assert [(d["nfDeploymentId"], d["name"], d["state"]) for d in listed] == [(created["nfDeploymentId"], "d1", created["state"])]
     assert client.get("/deployments", params={"state": created["state"]}).json() == listed
     assert client.get("/deployments", params={"state": "ABNORMAL"}).json() == []
+
+
+def test_list_descriptors_and_deployment_operations(client, monkeypatch):
+    """GUI pass 2: descriptors and a deployment's LCM operation history."""
+    created = _instantiate(client, monkeypatch, name="d1").json()
+    assert len(client.get("/descriptors").json()) == 1
+    client.post(f"/deployments/{created['nfDeploymentId']}/heal")
+    ops = client.get(f"/deployments/{created['nfDeploymentId']}/operations").json()
+    assert [o["operationType"] for o in ops] == ["INSTANTIATE", "HEAL"]

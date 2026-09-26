@@ -9,12 +9,14 @@ import { useToast } from "./Toast";
 
 export const NAV: { to: string; label: string; icon: string; minRole?: Role }[] = [
   { to: "/", label: "Dashboard", icon: "◧" },
+  { to: "/flows", label: "Lifecycle flows", icon: "⇉" },
   { to: "/rapps", label: "rApps", icon: "▣" },
   { to: "/aiml", label: "AI/ML", icon: "◈" },
   { to: "/alarms", label: "Alarms", icon: "⚠" },
   { to: "/kpis", label: "KPIs & Assurance", icon: "∿" },
   { to: "/policy", label: "Policy & Intents", icon: "⚖" },
   { to: "/infrastructure", label: "Infrastructure", icon: "▤" },
+  { to: "/data", label: "Data & Exposure", icon: "⇄" },
   { to: "/admin", label: "Admin", icon: "⚙", minRole: "admin" },
 ];
 

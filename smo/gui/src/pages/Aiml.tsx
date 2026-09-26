@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
-import type { CoordinationGroup, DmeType, InferenceJob, MlmfReport, MlmfSubscription, Model, TrainingJob } from "../api/types";
+import type { CoordinationGroup, DmeType, FeatureGroup, InferenceJob, MlmfReport, MlmfSubscription, Model, TrainingJob } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
 import { FsmStepper, Sparkline } from "../components/charts";
 import {
   ActionButton, Can, Card, DataTable, Drawer, ErrorBox, Field, Id, Json, KeyValue, Modal, PageHeader, StateBadge, Tabs,
@@ -9,7 +10,7 @@ import {
 } from "../components/ui";
 import { DEPLOYABLE_MODEL_STATES, formatTime, metricSeries, modelActions, numericMetricKeys, parseJsonObject, splitList } from "../lib/domain";
 
-const TABS = ["models", "training", "inference", "groups", "mlmf"] as const;
+const TABS = ["models", "training", "inference", "groups", "mlmf", "features"] as const;
 
 export function Aiml() {
   const [tab, setTab] = useHashTab(TABS, "models");
@@ -19,12 +20,14 @@ export function Aiml() {
       <Tabs value={tab} onChange={setTab} tabs={[
         { id: "models", label: "Models" }, { id: "training", label: "Training jobs" }, { id: "inference", label: "Inference jobs" },
         { id: "groups", label: "Coordination groups" }, { id: "mlmf", label: "Performance monitoring (MLMF)" },
+        { id: "features", label: "Feature groups" },
       ]} />
       {tab === "models" && <Models />}
       {tab === "training" && <TrainingJobs />}
       {tab === "inference" && <InferenceJobs />}
       {tab === "groups" && <Groups />}
       {tab === "mlmf" && <Mlmf />}
+      {tab === "features" && <FeatureGroups />}
     </>
   );
 }
@@ -112,12 +115,18 @@ function ModelDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const inference = useSmo<InferenceJob[]>("/ai-ml-workflow/inference-jobs", { model_id: id });
   const m = model.data;
   const latestArtifact = m?.artifactLocation ? Number(m.artifactLocation.split(":").pop()) : 0;
+  const [editing, setEditing] = useState(false);
   return (
     <Drawer title={m ? `${m.modelType} v${m.version}` : "Model"} onClose={onClose}>
       <ErrorBox error={model.error} />
       {m && <>
         <FsmStepper state={m.state} />
         <div className="row between"><StateBadge state={m.state} /><ModelActions model={m} /></div>
+        <div className="row gap">
+          <Can method="PUT" path={base}><button className="btn small" onClick={() => setEditing(true)}>Edit metadata</button></Can>
+          <ActionButton label="Delete model" tone="danger" confirm={`Delete ${m.modelType} v${m.version} with its jobs, subscriptions and artifacts?`}
+            action={{ method: "DELETE", path: base, success: "Model deleted" }} onDone={onClose} />
+        </div>
         <KeyValue items={[
           ["Model ID", <code>{m.modelId}</code>], ["Description", m.description], ["Author / owner", [m.author, m.owner].filter(Boolean).join(" / ") || null],
           ["Input → output", m.inputDataType || m.outputDataType ? `${m.inputDataType ?? "?"} → ${m.outputDataType ?? "?"}` : null],
@@ -142,6 +151,7 @@ function ModelDrawer({ id, onClose }: { id: string; onClose: () => void }) {
         <h3>Inference jobs</h3>
         <InferenceTable rows={inference.data} />
       </>}
+      {editing && m && <EditModel model={m} onClose={() => setEditing(false)} />}
     </Drawer>
   );
 }
@@ -193,6 +203,7 @@ function TrainingJobs() {
 function TrainingTable({ rows, loading, error }: { rows?: TrainingJob[]; loading?: boolean; error?: unknown }) {
   const modelName = useModelNames();
   const [metricsFor, setMetricsFor] = useState<TrainingJob | null>(null);
+  const [writeFor, setWriteFor] = useState<TrainingJob | null>(null);
   return (
     <>
       <DataTable rows={rows} loading={loading} error={error} rowKey={(j) => j.trainingJobId} empty="No training jobs." columns={[
@@ -200,12 +211,17 @@ function TrainingTable({ rows, loading, error }: { rows?: TrainingJob[]; loading
         { header: "Target", render: (j) => j.modelId ? (modelName(j.modelId) ?? <Id value={j.modelId} />) : <>group <Id value={j.modelCoordinationGroupId} /></> },
         { header: "Producer", render: (j) => j.producerId },
         { header: "Status", render: (j) => <StateBadge state={j.status} /> },
-        { header: "Metrics", render: (j) => j.modelMetrics ? <button className="btn small" onClick={() => setMetricsFor(j)}>View</button> : <span className="muted">—</span> },
+        { header: "Metrics", render: (j) => <div className="row gap">
+          {j.modelMetrics && <button className="btn small" onClick={() => setMetricsFor(j)}>View</button>}
+          <Can method="POST" path={`/ai-ml-workflow/training-jobs/${j.trainingJobId}/model-metrics`}><button className="btn small" onClick={() => setWriteFor(j)}>{j.modelMetrics ? "Update" : "Write back"}</button></Can>
+          {!j.modelMetrics && <span className="muted">—</span>}
+        </div> },
         { header: "", className: "actions", render: (j) => j.status === "RUNNING" && (
           <ActionButton label="Cancel" confirm="Cancel this training job?" action={{ method: "DELETE", path: `/ai-ml-workflow/training-jobs/${j.trainingJobId}`, success: "Training job cancelled" }} />
         ) },
       ]} />
       {metricsFor && <Modal title="Model metrics" onClose={() => setMetricsFor(null)}><Json value={metricsFor.modelMetrics} /></Modal>}
+      {writeFor && <WriteMetrics job={writeFor} onClose={() => setWriteFor(null)} />}
     </>
   );
 }
@@ -359,5 +375,90 @@ function SubscribeMlmf() {
         <button className="btn primary" disabled={!parsed.ok || action.isPending}>Subscribe</button>
       </form>
     </Card>
+  );
+}
+
+
+function EditModel({ model, onClose }: { model: Model; onClose: () => void }) {
+  const [f, setF] = useState({
+    description: model.description ?? "", author: model.author ?? "", owner: model.owner ?? "",
+    inputDataType: model.inputDataType ?? "", outputDataType: model.outputDataType ?? "",
+  });
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const action = useSmoAction();
+  return (
+    <Modal title={`Edit ${model.modelType} v${model.version}`} onClose={onClose}>
+      <form className="form grid cols-2 tight" onSubmit={(e) => {
+        e.preventDefault();
+        // modelType/version are the model's identity: sent unchanged (UpdateModel rejects a change)
+        action.mutate({ method: "PUT", path: `/ai-ml-workflow/models/${model.modelId}`, success: "Model metadata updated",
+          json: { modelType: model.modelType, version: model.version, clearedNodeGroups: model.clearedNodeGroups, targetEnvironments: model.targetEnvironments,
+            ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.trim() || null])) } }, { onSuccess: onClose });
+      }}>
+        <Field label="Description"><input value={f.description} onChange={set("description")} /></Field>
+        <Field label="Owner"><input value={f.owner} onChange={set("owner")} /></Field>
+        <Field label="Author"><input value={f.author} onChange={set("author")} /></Field>
+        <Field label="Input data type"><input value={f.inputDataType} onChange={set("inputDataType")} /></Field>
+        <Field label="Output data type"><input value={f.outputDataType} onChange={set("outputDataType")} /></Field>
+        <div className="row gap end span-2"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={action.isPending}>Save</button></div>
+      </form>
+    </Modal>
+  );
+}
+
+function WriteMetrics({ job, onClose }: { job: TrainingJob; onClose: () => void }) {
+  const [text, setText] = useState(JSON.stringify(job.modelMetrics ?? { accuracy: 0.93, loss: 0.12 }, null, 2));
+  const parsed = parseJsonObject(text);
+  const action = useSmoAction();
+  return (
+    <Modal title="Write back model metrics" onClose={onClose}>
+      <p className="muted small">What the trainer (MLTF) reports for job <Id value={job.trainingJobId} />. Replaces the stored metrics wholesale.</p>
+      <textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+      {!parsed.ok && <p className="text-bad small">{parsed.error}</p>}
+      <div className="row gap end"><button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" disabled={!parsed.ok || action.isPending} onClick={() => parsed.ok && action.mutate(
+          { method: "POST", path: `/ai-ml-workflow/training-jobs/${job.trainingJobId}/model-metrics`, json: parsed.value, success: "Metrics recorded" }, { onSuccess: onClose })}>Save</button>
+      </div>
+    </Modal>
+  );
+}
+
+function FeatureGroups() {
+  const { can } = useAuth();
+  const allowed = can("GET", "/ai-ml-workflow/feature-groups");
+  const groups = useSmo<{ featureGroups: FeatureGroup[] }>(allowed ? "/ai-ml-workflow/feature-groups" : null);
+  const [f, setF] = useState({ featureGroupName: "", featureList: "", datalakeSource: "InfluxSource", host: "", port: "8086", bucket: "", token: "", dbOrg: "", measurement: "", sourceName: "" });
+  const [enableDme, setEnableDme] = useState(false);
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const valid = /^\w{3,63}$/.test(f.featureGroupName);
+  return (
+    <>
+      <Can method="POST" path="/ai-ml-workflow/feature-groups">
+        <Card title="New feature group">
+          <div className="form grid cols-3 tight">
+            <Field label="Name" hint={f.featureGroupName && !valid ? <span className="text-bad">3-63 word characters</span> : "3-63 word characters, unique"}><input value={f.featureGroupName} onChange={set("featureGroupName")} /></Field>
+            <Field label="Features" hint="Comma-separated"><input value={f.featureList} onChange={set("featureList")} placeholder="pdcpBytesDl,pdcpBytesUl" /></Field>
+            <Field label="Datalake source"><input value={f.datalakeSource} onChange={set("datalakeSource")} /></Field>
+            <Field label="Host"><input value={f.host} onChange={set("host")} /></Field>
+            <Field label="Port"><input value={f.port} onChange={set("port")} /></Field>
+            <Field label="Bucket"><input value={f.bucket} onChange={set("bucket")} /></Field>
+            <Field label="Datalake token"><input type="password" autoComplete="off" value={f.token} onChange={set("token")} /></Field>
+            <Field label="DB org"><input value={f.dbOrg} onChange={set("dbOrg")} /></Field>
+            <Field label="Measurement"><input value={f.measurement} onChange={set("measurement")} /></Field>
+            <label className="check"><input type="checkbox" checked={enableDme} onChange={(e) => setEnableDme(e.target.checked)} /> source via DME</label>
+          </div>
+          <ActionButton label="Create feature group" tone="primary" disabled={!valid || !f.featureList || !f.host || !f.bucket || !f.token || !f.dbOrg || !f.measurement}
+            action={{ method: "POST", path: "/ai-ml-workflow/feature-groups", json: { ...f, sourceName: f.sourceName || null, enableDme }, success: "Feature group created" }} />
+        </Card>
+      </Can>
+      {!allowed && <Card title="Feature groups"><p className="muted">Feature groups carry datalake credentials, so they're visible to operators and admins only.</p></Card>}
+      {allowed && <Card title="Feature groups" actions={<span className="muted small">Operator-only view: groups hold datalake credentials, which are never displayed here</span>}>
+        <DataTable rows={groups.data?.featureGroups} loading={groups.isLoading} error={groups.error} rowKey={(g) => g.featureGroupId} empty="No feature groups." columns={[
+          { header: "Name", render: (g) => <strong>{g.featureGroupName}</strong> }, { header: "Features", render: (g) => <code className="small">{g.featureList}</code> },
+          { header: "Source", render: (g) => `${g.datalakeSource} ${g.host}:${g.port}` }, { header: "Bucket / measurement", render: (g) => `${g.bucket} / ${g.measurement}` },
+          { header: "DME", render: (g) => (g.enableDme ? "yes" : "no") },
+        ]} />
+      </Card>}
+    </>
   );
 }
