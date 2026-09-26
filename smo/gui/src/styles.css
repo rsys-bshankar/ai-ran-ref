@@ -63,6 +63,7 @@ h3 { font-size: 13px; margin: 18px 0 8px; text-transform: uppercase; letter-spac
 .center { text-align: center; }
 .text-bad { color: var(--bad); }
 .text-ok { color: var(--ok); }
+.text-warn { color: var(--warn); }
 .row { display: flex; align-items: center; }
 .row.gap { gap: 8px; }
 .row.between { justify-content: space-between; gap: 8px; }

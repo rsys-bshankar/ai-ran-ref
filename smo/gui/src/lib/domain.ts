@@ -50,6 +50,16 @@ export function packageActions(state: string): { action: "prime" | "deprime" | "
   }
 }
 
+// ---------------------------------------------------------------- A1 service supervision
+
+/** Seconds until a supervised A1 service's keep-alive lapses (a1-related's
+ * lazy sweep then deregisters it, and its policies, on the next registry
+ * read); null when the service isn't supervised (interval 0). */
+export function keepAliveRemaining(s: { keepAliveIntervalSeconds: number; timeSinceLastActivitySeconds?: number }): number | null {
+  if (!s.keepAliveIntervalSeconds) return null;
+  return Math.max(0, s.keepAliveIntervalSeconds - (s.timeSinceLastActivitySeconds ?? 0));
+}
+
 // ---------------------------------------------------------------- alarms
 
 export const SEVERITIES = ["critical", "major", "minor", "warning"] as const;

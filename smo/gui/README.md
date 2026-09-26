@@ -19,6 +19,9 @@ Browser ──► gui (nginx :3000) ──/api──► gui-bff ──Bearer (SM
   FastAPI endpoints (`../docs/openapi/<module>.json`) and doesn't
   reimplement any lifecycle logic.
 
+Screenshots of every page, tab and lifecycle flow, taken from a live
+walk-through: [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
+
 ## Run it
 
 With the whole stack:

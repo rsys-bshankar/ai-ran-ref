@@ -365,6 +365,7 @@ function EventSubscriptions() {
   const subs = useSmo<CapifEventSubscription[]>(subscriber ? `/sme/capif-events/v1/${subscriber}/subscriptions` : null);
   const [types, setTypes] = useState<string[]>(["SERVICE_API_AVAILABLE"]);
   const [cb, setCb] = useState("");
+  const [apiIds, setApiIds] = useState("");
   const base = `/sme/capif-events/v1/${subscriber}/subscriptions`;
   return (
     <Card title="CAPIF event subscriptions">
@@ -373,11 +374,13 @@ function EventSubscriptions() {
         <Can method="POST" path={base}>
           <Field label="Events"><select multiple size={3} value={types} onChange={(e) => setTypes([...e.target.selectedOptions].map((o) => o.value))}>{EVENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></Field>
           <Field label="Callback URI"><input value={cb} onChange={(e) => setCb(e.target.value)} placeholder="http://subscriber:8000/capif-events" /></Field>
-          <ActionButton label="Subscribe" disabled={!subscriber || !cb || types.length === 0} action={{ method: "POST", path: base, json: { subscriberId: subscriber, eventTypes: types, callbackUri: cb }, success: "Subscribed" }} />
+          <Field label="Only these services" hint="serviceIds from Published services, comma-separated; empty = every service"><input value={apiIds} onChange={(e) => setApiIds(e.target.value)} placeholder="all services" /></Field>
+          <ActionButton label="Subscribe" disabled={!subscriber || !cb || types.length === 0} action={{ method: "POST", path: base, json: { subscriberId: subscriber, eventTypes: types, callbackUri: cb, apiIds: splitList(apiIds).length ? splitList(apiIds) : null }, success: "Subscribed" }} />
         </Can>
       </div>
       <DataTable rows={subs.data} rowKey={(s) => s.subscriptionId} empty="No subscriptions for this subscriber." columns={[
         { header: "Subscription", render: (s) => <Id value={s.subscriptionId} /> }, { header: "Events", render: (s) => s.eventTypes.join(", ") },
+        { header: "Services", render: (s) => s.apiIds?.length ? s.apiIds.map((id) => <code key={id} className="small">{id} </code>) : <span className="muted">all</span> },
         { header: "Callback", render: (s) => <code className="small">{s.callbackUri}</code> },
         { header: "", className: "actions", render: (s) => <ActionButton label="Unsubscribe" action={{ method: "DELETE", path: `${base}/${s.subscriptionId}`, success: "Unsubscribed" }} /> },
       ]} />

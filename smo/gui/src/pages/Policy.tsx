@@ -4,7 +4,7 @@ import { useSmo, useSmoAction } from "../api/hooks";
 import type { A1Policy, A1Service, Intent, IntentReport, PolicyStatusSubscription, Rmih } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ActionButton, Can, Card, DataTable, Drawer, Field, Id, Json, KeyValue, PageHeader, StateBadge, Tabs, useHashTab } from "../components/ui";
-import { formatTime, parseJsonObject, splitList } from "../lib/domain";
+import { formatTime, keepAliveRemaining, parseJsonObject, splitList } from "../lib/domain";
 
 const TABS = ["a1", "status-subs", "services", "intents", "handlers"] as const;
 
@@ -278,11 +278,16 @@ function A1Services() {
   const [f, setF] = useState({ serviceId: "", callbackUrl: "", keepAliveIntervalSeconds: "0" });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   return (
-    <Card title="A1-P service registry" actions={<span className="muted small">A service whose keep-alive lapses is removed along with its policies</span>}>
+    <Card title="A1-P service registry" actions={<span className="muted small">A service whose keep-alive lapses is removed, with its policies, on the next registry read (this page re-reads every 15 s)</span>}>
       <DataTable rows={services.data?.serviceList} loading={services.isLoading} error={services.error} rowKey={(s) => s.serviceId} empty="No A1 services registered." columns={[
         { header: "Service", render: (s) => <strong>{s.serviceId}</strong> }, { header: "Callback", render: (s) => s.callbackUrl ? <code className="small">{s.callbackUrl}</code> : "—" },
         { header: "Keep-alive", render: (s) => s.keepAliveIntervalSeconds ? `${s.keepAliveIntervalSeconds} s` : "none" },
         { header: "Idle", render: (s) => s.timeSinceLastActivitySeconds !== undefined ? `${s.timeSinceLastActivitySeconds} s` : "—" },
+        { header: "Supervision", render: (s) => {
+          const left = keepAliveRemaining(s);
+          if (left === null) return <span className="muted">not supervised</span>;
+          return left > 0 ? <span className={left <= 10 ? "text-warn" : undefined}>expires in {left} s</span> : <StateBadge state="EXPIRED" />;
+        } },
         { header: "", className: "actions", render: (s) => <div className="row gap end">
           <ActionButton label="Keep alive" action={{ method: "PUT", path: `/a1-related/services/${s.serviceId}/keepalive`, success: "Keep-alive sent" }} />
           <ActionButton label="Unregister" tone="danger" confirm={`Unregister ${s.serviceId} and delete its policies?`} action={{ method: "DELETE", path: `/a1-related/services/${s.serviceId}`, success: "Service unregistered" }} />

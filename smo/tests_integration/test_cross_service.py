@@ -52,6 +52,8 @@ def test_real_demo_csar_onboards_and_deploys(mesh, loaded_apps, shared_engine, m
     status = mesh["onboarding"].get(f"/packages/{package_id}/onboarding-status")
     assert status.json()["state"] == "AVAILABLE"
     assert status.json()["nfDeploymentDescriptorId"] is not None
+    pkg = next(p for p in mesh["onboarding"].get("/packages").json() if p["packageId"] == package_id)
+    assert (pkg["name"], pkg["version"], pkg["vendor"]) == ("hello-world-rapp", "1.0", "ai-ran-ref")
 
     create = mesh["rapp-mgmt"].post("/instances", json={"packageId": package_id, "config": {}})
     assert create.status_code == 202
@@ -231,7 +233,7 @@ def test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_de
     # wiring this pass actually changed, not TOSCA zip mechanics.
     monkeypatch.setattr(
         loaded_apps["onboarding"], "_validate_package",
-        lambda location: ("Definitions/main.yaml", [], "deadbeef"),
+        lambda location: ("Definitions/main.yaml", [], "deadbeef", {}),
     )
 
     onboard = mesh["onboarding"].post("/packages", json={"location": "http://example/pkg.csar"})

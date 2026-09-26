@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { countBySeverity, metricSeries, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
+import { countBySeverity, keepAliveRemaining, metricSeries, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
 
 describe("model lifecycle", () => {
   it("maps each state to the FSM's next legal action", () => {
@@ -65,4 +65,10 @@ describe("form helpers", () => {
   it("splits comma/newline lists", () => {
     expect(splitList(" a, b\nc ,, ")).toEqual(["a", "b", "c"]);
   });
+});
+
+describe("keepAliveRemaining", () => {
+  it("is null for an unsupervised service", () => expect(keepAliveRemaining({ keepAliveIntervalSeconds: 0, timeSinceLastActivitySeconds: 99 })).toBeNull());
+  it("counts down from the interval", () => expect(keepAliveRemaining({ keepAliveIntervalSeconds: 30, timeSinceLastActivitySeconds: 12 })).toBe(18));
+  it("floors at zero once lapsed", () => expect(keepAliveRemaining({ keepAliveIntervalSeconds: 5, timeSinceLastActivitySeconds: 9 })).toBe(0));
 });

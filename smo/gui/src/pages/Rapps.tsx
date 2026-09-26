@@ -87,6 +87,23 @@ function PackageDrawer({ pkg, onClose }: { pkg: Package; onClose: () => void }) 
       <DataTable rows={artifacts.data} error={artifacts.error} rowKey={(a) => a.artifactId} empty="No artifacts registered." columns={[
         { header: "Path", render: (a) => <code className="small">{a.path}</code> }, { header: "Access URL", render: (a) => <code className="small clip">{a.accessUrl}</code> },
       ]} />
+      <h3>Priming</h3>
+      <p className="muted small">
+        {pkg.state === "PRIMED"
+          ? active.length
+            ? `PRIMED. Deprime is refused while ${active.length} usage registration(s) are active — terminate the instances using this package (or stop their usage) first.`
+            : "PRIMED. No active usage, so deprime will succeed (PRIMED → DEPRIMING → AVAILABLE)."
+          : pkg.state === "AVAILABLE"
+            ? "AVAILABLE (commissioned). Prime pre-provisions the package: AVAILABLE → PRIMING → PRIMED."
+            : `Priming applies to AVAILABLE packages; this one is ${pkg.state}.`}
+      </p>
+      {(pkg.state === "AVAILABLE" || pkg.state === "PRIMED") && (
+        <div className="row gap">
+          {pkg.state === "AVAILABLE"
+            ? <ActionButton label="Prime" action={{ method: "POST", path: `${base}/prime`, success: "Package primed" }} />
+            : <ActionButton label="Deprime" disabled={active.length > 0} title={active.length ? "Blocked by active usage" : undefined} action={{ method: "POST", path: `${base}/deprime`, success: "Package deprimed" }} />}
+        </div>
+      )}
       <h3>Usage registrations (cascade-delete guard)</h3>
       <p className="muted small">{active.length ? `${active.length} active registration(s): deprime and delete are blocked until they stop.` : "No active usage — delete and deprime are not blocked by usage."}</p>
       <DataTable rows={usage.data} error={usage.error} rowKey={(u) => u.registrationId} empty="No usage registrations." columns={[

@@ -273,14 +273,14 @@ function Groups() {
             action.mutate({ method: "POST", path: "/ai-ml-workflow/coordination-groups", json: { memberModelIds: members, memberUseCases: splitList(useCases), retrainPropagation: propagation }, success: "Coordination group created" },
               { onSuccess: () => setMembers([]) });
           }}>
-            <Field label="Member models" hint="Ctrl/Cmd-click to pick several">
+            <Field label="Member models" hint={members.length === 1 ? <span className="text-bad">Pick at least 2 models</span> : "Ctrl/Cmd-click to pick 2 or more"}>
               <select multiple value={members} onChange={(e) => setMembers([...e.target.selectedOptions].map((o) => o.value))} size={Math.min(5, Math.max(2, models.data?.length ?? 2))}>
                 {models.data?.map((m) => <option key={m.modelId} value={m.modelId}>{m.modelType} {m.version} ({m.state})</option>)}
               </select>
             </Field>
             <Field label="Use cases"><input value={useCases} onChange={(e) => setUseCases(e.target.value)} placeholder="energy-saving, mobility" /></Field>
             <Field label="Retrain propagation"><select value={propagation} onChange={(e) => setPropagation(e.target.value)}><option>ANY_MEMBER_TRIGGERS</option><option>MAJORITY_TRIGGERS</option></select></Field>
-            <button className="btn primary" disabled={members.length === 0 || action.isPending}>Create</button>
+            <button className="btn primary" disabled={members.length < 2 || action.isPending}>Create</button>
           </form>
         </Card>
       </Can>
@@ -367,7 +367,7 @@ function SubscribeMlmf() {
       }}>
         <Field label="Model"><select value={modelId} onChange={(e) => setModelId(e.target.value)} required><option value="">Choose…</option>{models.data?.map((m) => <option key={m.modelId} value={m.modelId}>{m.modelType} {m.version}</option>)}</select></Field>
         <Field label="DME type" hint="Data type the metrics arrive on">
-          <input list="dme-types" value={dmeTypeId} onChange={(e) => setDmeTypeId(e.target.value)} required placeholder="dmeTypeId (UUID)" pattern="[0-9a-fA-F-]{36}" />
+          <input list="dme-types" value={dmeTypeId} onChange={(e) => setDmeTypeId(e.target.value)} required placeholder="dmeTypeId (UUID)" pattern="[0-9a-fA-F\-]{36}" />
           <datalist id="dme-types">{dmeTypes.data?.map((t) => <option key={t.dmeTypeId} value={t.dmeTypeId}>{t.typeName}</option>)}</datalist>
         </Field>
         <Field label="Metric types"><input value={metricTypes} onChange={(e) => setMetricTypes(e.target.value)} /></Field>
