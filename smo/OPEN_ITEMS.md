@@ -2513,6 +2513,30 @@ own §1/§2 items stand as-is.
   a live register/list/duplicate/invalid round trip against a real
   local Postgres 16 instance found no issue, unlike the previous two
   demo-depth passes.
+- **Demo depth: SA SMOS's coordination-group remedial action.** Fourth
+  item off the "more demo depth" list below. New section: register two
+  models → create a real coordination group → register a
+  `targetCoordinationGroupId`-scoped `AssuranceMonitor` → execute a
+  remedial action (any `actionType`) → `RESOLVED`, via a real
+  `POST /ai-ml-workflow/training-jobs` dispatch (the coordination-group
+  target is checked before any `actionType` branching, so `SCALE`'s
+  usual order-scoped `ESCALATED` stub is never reached) → confirmed via
+  the real resulting `TrainingJob` row. `tests_integration/
+  test_demo_runbook.py` gained a matching step. Grounding this against
+  real Postgres found a real bug: `create_coordination_group` had no
+  pre-validation for the migration's own `member_model_ids >= 2` `CHECK`
+  constraint, so a single-member group 500'd (unhandled
+  `IntegrityError`) instead of a clean 422 — invisible to every unit
+  test since the constraint was never mirrored onto the ORM model, and
+  one existing unit test even created a single-member group and passed.
+  Fixed with a `COORDINATION_GROUP_TOO_SMALL` (422) pre-check, matching
+  `RequestTraining`'s own `exactly_one_target` pattern; the pre-existing
+  test fixed, a new regression test added. One OpenAPI spec change
+  (`ai-ml-workflow.json`), regenerated. Verified: full local Postgres 16
+  pass (59 tables, 0 mismatches), a live two-model register/reject/
+  create/monitor/remedial/confirm round trip against that same
+  instance, live-schema-match check, and all unit/integration test
+  suites, all green.
 
 ## Suggested next pass (priority order)
 
@@ -2532,11 +2556,9 @@ own §1/§2 items stand as-is.
      demoed `keepAliveIntervalSeconds: 0` (supervision disabled); the
      real lazy-sweep-on-read auto-deregistration path has never fired
      in the demo.
-   - `sa-smos`'s `MLModelCoordinationGroup`-scoped remedial action (a
-     group-scoped `AssuranceMonitor` always dispatching a group
-     retrain via AI/ML Workflow, regardless of `actionType` —
-     already real and unit-tested) — only the `targetOrderId` path has
-     ever been demoed.
+   - ~~`sa-smos`'s `MLModelCoordinationGroup`-scoped remedial action~~ —
+     closed, this pass (see the "Demo depth: SA SMOS's coordination-
+     group remedial action" entry above).
 3. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
    the alarm-storm correlation algorithm, and A1-ML operations — are not
    stakeholder-answerable the way the rest of that section was: the

@@ -259,7 +259,21 @@ def download_model_artifact(model_id: uuid.UUID, artifact_version: int, db: Sess
 def create_coordination_group(body: CreateCoordinationGroupRequest, db: Session = Depends(get_session)):
     """AI/ML Workflow LLD section 4.5's call flow, step 1: register the
     group as a sibling of individual model registrations.
+
+    A coordination group of fewer than two members isn't a coordination
+    of anything — the migration's own `member_model_ids` CHECK constraint
+    (array_length >= 2) already enforces this at the DB layer, but with
+    no pre-validation here it surfaced as an unhandled IntegrityError
+    (bare 500) rather than a clean error, exactly the class of bug
+    RequestTraining's own `exactly_one_target` pre-check (below) already
+    guards against. Found running this route against real Postgres —
+    SQLite's schema (built from the ORM models, which never mirrored
+    this constraint) never enforces it, so no unit test had ever caught
+    it either.
     """
+    if len(body.memberModelIds) < 2:
+        raise framework_error(FrameworkError.COORDINATION_GROUP_TOO_SMALL, detail="a coordination group needs at least 2 memberModelIds")
+
     group = MLModelCoordinationGroup(member_model_ids=body.memberModelIds, member_use_cases=body.memberUseCases,
                                       shared_feature_pipeline_ref=body.sharedFeaturePipelineRef,
                                       retrain_propagation=body.retrainPropagation)
