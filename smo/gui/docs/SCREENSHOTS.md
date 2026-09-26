@@ -39,6 +39,7 @@ and then visits every page and tab. It finished with no console errors and no
 
 | Page | Tabs |
 |------|------|
+| Login | [sign-in](screenshots/pages/login.png) |
 | Dashboard | [overview](screenshots/pages/dashboard.png) |
 | Lifecycle flows | [flow list](screenshots/pages/flows.png) |
 | rApps | [packages](screenshots/pages/rapps-packages.png) · [instances](screenshots/pages/rapps-instances.png) |
@@ -49,3 +50,29 @@ and then visits every page and tab. It finished with no console errors and no
 | Infrastructure | [NFO](screenshots/pages/infra-nfo.png) · [O-Cloud](screenshots/pages/infra-ocloud.png) · [topology (TEIV)](screenshots/pages/infra-topology.png) · [O1](screenshots/pages/infra-o1.png) · [service orders](screenshots/pages/infra-orders.png) |
 | Data & Exposure | [DME](screenshots/pages/data-dme.png) · [A1 EI](screenshots/pages/data-a1-ei.png) · [SME](screenshots/pages/data-sme.png) |
 | Admin | [users](screenshots/pages/admin-users.png) · [audit log](screenshots/pages/admin-audit.png) |
+
+## Drawers and dialogs
+
+| Screen | What it shows |
+|--------|---------------|
+| [Dashboard with open alarms](screenshots/details/dashboard-with-alarms.png) | Severity tiles and fleet counts once alarms are raised |
+| [Alarm](screenshots/details/alarm-drawer.png) | 3GPP TS 28.532 / 28.111 fault fields, lifecycle, Ack / Clear |
+| [rApp instance](screenshots/details/instance-drawer.png) | Instance detail and resource provenance, with lifecycle actions |
+| [AI/ML model](screenshots/details/model-drawer.png) | Pipeline stepper, metadata, artifact upload, training and inference jobs |
+| [NF deployment](screenshots/details/nfo-deployment-drawer.png) | NFO deployment, resources and LCM operations |
+| [Resource pool](screenshots/details/resource-pool-detail.png) | FOCOM pool with its resources |
+| [CM write job](screenshots/details/config-job-detail.png) | Per-managed-element sub-changes of a `PARTIAL_SUCCESS` job |
+| [Config write](screenshots/details/config-write-dialog.png) | Several MEs, scope selection, schema-checked changes |
+| [Intent](screenshots/details/intent-drawer.png) | Intent detail, fulfilment reports, admin state |
+| [Service order](screenshots/details/service-order-drawer.png) | SO SMOS order steps with their results |
+| [One-time invoker secret](screenshots/details/invoker-secret-dialog.png) | SME invoker onboarding: the secret is shown once and never again |
+
+## Role views
+
+Each screen is the same live state seen through a lower role. Actions the
+role can't perform aren't rendered, and the BFF refuses them anyway.
+
+| Role | Screens |
+|------|---------|
+| Viewer | [dashboard](screenshots/roles/viewer-dashboard.png) · [flow 06](screenshots/roles/viewer-flows-06.png) · [rApp packages](screenshots/roles/viewer-rapps-packages.png) · [SME](screenshots/roles/viewer-data-sme.png) |
+| Operator | [dashboard](screenshots/roles/operator-dashboard.png) · [rApp instances](screenshots/roles/operator-rapps-instances.png) · [DME](screenshots/roles/operator-data-dme.png) · [A1 policies](screenshots/roles/operator-policy-a1.png) |
