@@ -1,6 +1,6 @@
 # AI-RAN SMO — Phase 1 Reference Implementation
 
-Repo code, generated from the LLDs of all fourteen SMO modules (companion to
+Repo code, generated from the LLDs of all sixteen SMO modules (companion to
 `SMO Design Document v1.3`, the `AI-RAN Framework Consolidated Reference`,
 and the `O-RAN-SC Repo Inventory` — see the session's Design blueprint for
 the architecture pyramid and repo-adoption map this build follows). The
@@ -109,22 +109,24 @@ large/structural is a **confirmed** Phase-1 scope cut, not a gap.
 
 **Phase 2 — AI Platform Service Decomposition (in progress, new
 direction).** Per an external architecture review (the "SMO Actions"
-documents) and explicit agreement to proceed: `ai-ml-workflow/` is being
-split into three real platform services matching TS 28.105's own NRM
-boundaries (**AIMgF** for lifecycle orchestration, **MLMR** for the
-model repository, **MLLF** for loading/activation), `ran-analytics/` is
+documents) and explicit agreement to proceed: the former `ai-ml-workflow/`
+has been split into three real platform services matching TS 28.105's
+own NRM boundaries — **AIMgF** (`aimgf/`, lifecycle orchestration),
+**MLMR** (`mlmr/`, the model repository), **MLLF** (`mllf/`, loading/
+deployment) — and `policy-mgmt/` has been renamed to **Intent Service**
+(TS 28.312, `intent-service/`) — a correction found while starting this
+work: it already had no policy/rule/constraint code to leave behind,
+contrary to the review's own assumption. Still to come: `ran-analytics/`
 gaining a sibling **MDAF** service for TS 28.104-shaped analytics
-reporting, `policy-mgmt/` is being renamed to **Intent Service**
-(TS 28.312) — a correction found while starting this work: it already
-had no policy/rule/constraint code to leave behind, contrary to the
-review's own assumption — and a new **AI Runtime SDK** (`sdk/`) is being
-added so rApps stop calling module REST endpoints directly. This is a
-genuine, deliberate reversal of the Phase-1 scope choice `SPEC_AUDIT.md`
-documented for AI/ML Workflow and RAN Analytics, not a bug fix. Full
-architecture in `docs/architecture/AI_PLATFORM_BASELINE.md` and
+reporting, and a new **AI Runtime SDK** (`sdk/`) so rApps stop calling
+module REST endpoints directly. This is a genuine, deliberate reversal of
+the Phase-1 scope choice `SPEC_AUDIT.md` documented for AI/ML Workflow
+and RAN Analytics, not a bug fix. Full architecture in
+`docs/architecture/AI_PLATFORM_BASELINE.md` and
 `docs/architecture/SERVICE_OWNERSHIP_MATRIX.md`; per-service detail in
-`docs/ownership/`. Sequenced in four waves — **Wave 0** (this
-architecture freeze, done), Wave 1 (service decomposition), Wave 2
+`docs/ownership/`. Sequenced in four waves — **Wave 0** (architecture
+freeze, done), **Wave 1** (service decomposition, in progress — the
+`ai-ml-workflow`/`policy-mgmt` splits done, MDAF/`sdk/` remaining), Wave 2
 (AIMgF's own state machines and domain model), Wave 3 (R1 contracts and
 OpenAPI standardization) — each a separate, reviewable step; do not
 reorder them.
@@ -132,7 +134,7 @@ reorder them.
 ## Stack
 
 **Python 3.11 + FastAPI + SQLAlchemy + Pydantic**, one consistent stack
-across all fourteen services, rather than literally forking each ADOPT
+across all sixteen services, rather than literally forking each ADOPT
 repo's original language (Go for `nonrtric-plt-sme`, Java for the ICS
 reference, Python for `pti-o2`). The ADOPT repos stay the *pattern*
 references — TOSCA packaging, CAPIF resource shapes, O2ims route layout —
@@ -190,7 +192,7 @@ smo/
   Dockerfile               one Dockerfile, parameterized by MODULE build arg
 ```
 
-## The fourteen modules
+## The sixteen modules
 
 | Module | Directory | Lifecycle? |
 |---|---|---|
@@ -203,11 +205,13 @@ smo/
 | A1 Related | `a1-related/` | — (A1-ML dormant, out of scope — see the module's LLD section 0). Its real southbound dependency is `mock-near-rt-ric/`, on an isolated network segment. |
 | NFO | `nfo/` | `NFDeployment` |
 | FOCOM | `focom/` | — |
-| AI/ML Workflow | `ai-ml-workflow/` | `AIMLModel` FSM, `InferenceJob` FSM, individual + coordination-group retrain propagation (a guard-KPI breach now actually fires `RETRAIN` on every `ACTIVE` group member, not just computes a bool) |
+| AIMgF (formerly part of AI/ML Workflow — split out in Wave 1 of the AI Platform Service Decomposition, see "Project status" above) | `aimgf/` | `AIMLModel`/`InferenceJob` FSMs (statemachine.py), individual + coordination-group retrain propagation (a guard-KPI breach now actually fires `RETRAIN` on every `ACTIVE` group member, not just computes a bool) — reads/writes lifecycle state on MLMR's own row via R1 |
+| MLMR (formerly part of AI/ML Workflow — split out in Wave 1) | `mlmr/` | — (model repository: identity, metadata, artifacts, coordination groups; no lifecycle logic of its own) |
+| MLLF (formerly part of AI/ML Workflow — split out in Wave 1) | `mllf/` | — (deployment targeting only this wave — `POST /models/{id}/deploy`; no models of its own) |
 | RAN Analytics | `ran-analytics/` | — |
 | Intent Service (formerly Policy Mgmt & Info — renamed in Wave 1 of the AI Platform Service Decomposition, see "Project status" above) | `intent-service/` | — |
 | SO SMOS | `so-smos/` | dispatch table, fail-fast execution |
-| SA SMOS | `sa-smos/` | remedial-action dispatch (`RECONNECT` resolved via SO SMOS order lookup + NFO Heal; a coordination-group-scoped monitor always dispatches a group retrain via AI/ML Workflow instead; `ROLLBACK` honestly unresolved — see below) |
+| SA SMOS | `sa-smos/` | remedial-action dispatch (`RECONNECT` resolved via SO SMOS order lookup + NFO Heal; a coordination-group-scoped monitor always dispatches a group retrain via AIMgF instead; `ROLLBACK` honestly unresolved — see below) |
 
 ## Running it
 
@@ -227,7 +231,7 @@ docker compose up --build
 pip install -e shared
 
 # per-module unit tests (each module in isolation, in-memory SQLite)
-for m in onboarding rapp-mgmt ran-nf-oam ai-ml-workflow so-smos a1-related \
+for m in onboarding rapp-mgmt ran-nf-oam aimgf mlmr mllf so-smos a1-related \
          sme dme r1-termination nfo focom ran-analytics intent-service sa-smos \
          mock-near-rt-ric mock-o1-adaptor; do
   (cd $m && PYTHONPATH=.:../shared python -m pytest tests/ -v)
@@ -1412,7 +1416,7 @@ picture; this section is the itemized detail behind it.
 **Section 1 design decisions (`OPEN_ITEMS.md`) — blocked on data or a
 scope call, not on engineering effort:**
 
-- **`WEIGHTED_TRIGGERS`** (`ai-ml-workflow/`) — raises `NotImplementedError`;
+- **`WEIGHTED_TRIGGERS`** (`aimgf/`, formerly `ai-ml-workflow/`) — raises `NotImplementedError`;
   needs real noise-floor data before it can be designed, not invented now.
 - **Alarm-storm correlation algorithm** (`ran-nf-oam/`) — flagged as
   needing a real correlation algorithm; nothing implemented. Same

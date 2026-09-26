@@ -1,0 +1,806 @@
+{
+  "components": {
+    "schemas": {
+      "Body_upload_model_artifact_models__model_id__artifact_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_model_artifact_models__model_id__artifact_post",
+        "type": "object"
+      },
+      "CreateCoordinationGroupRequest": {
+        "properties": {
+          "memberModelIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Membermodelids",
+            "type": "array"
+          },
+          "memberUseCases": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Memberusecases",
+            "type": "array"
+          },
+          "retrainPropagation": {
+            "default": "ANY_MEMBER_TRIGGERS",
+            "title": "Retrainpropagation",
+            "type": "string"
+          },
+          "sharedFeaturePipelineRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharedfeaturepipelineref"
+          }
+        },
+        "required": [
+          "memberModelIds"
+        ],
+        "title": "CreateCoordinationGroupRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "RegisterModelRequest": {
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "inputDataType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputdatatype"
+          },
+          "modelType": {
+            "title": "Modeltype",
+            "type": "string"
+          },
+          "outputDataType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputdatatype"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "requiredResourceTypeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requiredresourcetypeid"
+          },
+          "targetEnvironments": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Targetenvironments",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "modelType",
+          "version"
+        ],
+        "title": "RegisterModelRequest",
+        "type": "object"
+      },
+      "UpdateLifecycleRequest": {
+        "description": "Internal, cross-service-only surface \u2014 called by AIMgF after it\nfires a lifecycle transition and by MLLF after a deploy request, never\nby a GUI or rApp directly (not listed in gui-bff/app/rbac.py's own\nmodule rules for exactly that reason). Every field is optional: each\ncaller only ever supplies the field(s) it owns the decision for.",
+        "properties": {
+          "clearedNodeGroups": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clearednodegroups"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "trainingJobId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trainingjobid"
+          }
+        },
+        "title": "UpdateLifecycleRequest",
+        "type": "object"
+      },
+      "UpdateModelRequest": {
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author"
+          },
+          "clearedNodeGroups": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clearednodegroups"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "inputDataType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputdatatype"
+          },
+          "integrityHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Integrityhash"
+          },
+          "modelType": {
+            "title": "Modeltype",
+            "type": "string"
+          },
+          "outputDataType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputdatatype"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "requiredResourceTypeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requiredresourcetypeid"
+          },
+          "targetEnvironments": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targetenvironments"
+          },
+          "trainingDataLineage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trainingdatalineage"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "modelType",
+          "version"
+        ],
+        "title": "UpdateModelRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "MLMR",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/coordination-groups": {
+      "get": {
+        "description": "Read side of create_coordination_group. Also AIMgF's own read path\nfor group-retrain propagation (report_performance) \u2014 it has no direct\nORM access to MLModelCoordinationGroup anymore, so it lists groups\nthrough this route and filters in Python, exactly as it did in-process\nbefore the split.",
+        "operationId": "list_coordination_groups_coordination_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Coordination Groups"
+      },
+      "post": {
+        "description": "AI/ML Workflow LLD section 4.5's call flow, step 1: register the\ngroup as a sibling of individual model registrations.\n\nA coordination group of fewer than two members isn't a coordination\nof anything \u2014 the migration's own `member_model_ids` CHECK constraint\n(array_length >= 2) already enforces this at the DB layer, but with\nno pre-validation here it surfaced as an unhandled IntegrityError\n(bare 500) rather than a clean error. Found running this route\nagainst real Postgres \u2014 SQLite's schema never enforces it, so no\nunit test had ever caught it either.",
+        "operationId": "create_coordination_group_coordination_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCoordinationGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Coordination Group"
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
+      }
+    },
+    "/models": {
+      "get": {
+        "operationId": "discover_models_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover Models"
+      },
+      "post": {
+        "description": "OPEN_ITEMS.md section 5: the reference's own RegisterModel\n(mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint\nviolation \u2014 this build accepted a duplicate (modelType, version)\nregistration silently, creating a second, indistinguishable row.\n\nAlso OPEN_ITEMS.md section 5: registration metadata was thin \u2014 no\nI/O data type schema, no author/owner, no TargetEnvironment\ndeclarations, all real fields on the reference's own\nModelRelatedInformation/ModelInformation/Metadata (modelInfo.go).\nRequired there; kept optional here, since this build's own\nRegisterModel was already permissive before this pass.",
+        "operationId": "register_model_models_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Model"
+      }
+    },
+    "/models/{model_id}": {
+      "delete": {
+        "description": "DeleteModel (mmes_apis.go). Only cleans up MLMR's own dependent\ntable (ModelArtifact) directly \u2014 before Wave 1's split, this route\nalso explicitly cleaned up TrainingJob/InferenceJob/\nModelChangeSubscription/MLMFSubscription/PerformanceReport, all of\nwhich now live in AIMgF's own process and are no longer importable\nhere. Those rows are still cleaned up: `migrations/001_init.sql`'s\nown `ON DELETE CASCADE` on every one of those FKs (added as\ndefense-in-depth alongside the original application-level cleanup,\nper OPEN_ITEMS.md section 5) already does this at the database level,\nwhich is authoritative here since every module shares one physical\nPostgres instance in this build's topology. That cascade is real\nagainst Postgres but NOT exercised by this module's own SQLite-backed\nunit tests (SQLite doesn't enforce FK constraints by default, and this\nmodule's own isolated test schema doesn't even declare AIMgF's tables)\n\u2014 verified separately against a live Postgres instance instead,\nthe same honest carve-out this codebase already uses elsewhere for a\nSQLite-only enforcement gap (e.g. the coordination group's own\n`member_model_ids` array-length CHECK constraint). Idempotent:\ndeleting an unknown id is a silent no-op, matching this module's\nother DELETE routes.",
+        "operationId": "deregister_model_models__model_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deregister Model"
+      },
+      "get": {
+        "description": "OPEN_ITEMS.md section 5: model CRUD was incomplete \u2014 only create\nand a type-filtered list existed, no GET-by-id at all. Also the read\nside AIMgF/MLLF call to learn a model's current state before deciding\nwhether a transition/deploy is legal.",
+        "operationId": "get_model_models__model_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Model"
+      },
+      "put": {
+        "description": "UpdateModel (mmes_apis.go) \u2014 404s on an unknown id, same as\nGetModelInfoById there. The reference also rejects a modelName/\nmodelVersion mismatch between the path's existing record and the\nbody with a 400 (\"model with id ... has different modelName and\nmodelVersion than provided\") rather than silently renaming it \u2014\n(model_type, version) is this build's own identity for the same\nreference ModelID composite key `register_model`'s uniqueness\nconstraint already treats as immutable identity, so this endpoint\nonly ever updates the metadata fields around it, never the identity\nitself. `state`/`trainingJobId`/`artifactLocation` stay out of this\nbody on purpose \u2014 those are owned by AIMgF/MLLF's own\n`PATCH .../lifecycle` and this module's own artifact-upload route,\nnot a generic PUT.",
+        "operationId": "update_model_models__model_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Model"
+      }
+    },
+    "/models/{model_id}/artifact": {
+      "post": {
+        "description": "UploadModel (aiml-fw-awmf-modelmgmtservice apis/mmes_apis.go) \u2014 the\nreference looks the model up first (404 if unregistered), validates a\n.zip suffix (415 otherwise), then stamps a fresh artifactVersion,\nseparate from modelVersion, auto-incremented per model. Real S3 storage\nis elided (see ModelArtifact's docstring); the bytes are stored for real\nhere instead of being discarded, so upload+download round-trip.",
+        "operationId": "upload_model_artifact_models__model_id__artifact_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_model_artifact_models__model_id__artifact_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Model Artifact"
+      }
+    },
+    "/models/{model_id}/artifact/{artifact_version}": {
+      "get": {
+        "description": "DownloadModel \u2014 same modelId+artifactVersion lookup as the reference's\nmodelName+modelVersion+artifactVersion modelKey.",
+        "operationId": "download_model_artifact_models__model_id__artifact__artifact_version__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "artifact_version",
+            "required": true,
+            "schema": {
+              "title": "Artifact Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Model Artifact"
+      }
+    },
+    "/models/{model_id}/lifecycle": {
+      "patch": {
+        "description": "Wave 1's minimal necessary cross-service plumbing: AIMgF owns the\ndecision of what `state`/`trainingJobId` a model moves to (its own\nFSM, per docs/ownership/AIMGF_OWNERSHIP.md) and MLLF owns\n`clearedNodeGroups` (docs/ownership/MLLF_OWNERSHIP.md) \u2014 but only MLMR\ncan write its own row. Not a generic PATCH: only these three fields,\nmatching exactly what used to be direct ORM writes from the same\nprocess before this split, no new business logic.",
+        "operationId": "update_model_lifecycle_models__model_id__lifecycle_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLifecycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Model Lifecycle"
+      }
+    }
+  }
+}

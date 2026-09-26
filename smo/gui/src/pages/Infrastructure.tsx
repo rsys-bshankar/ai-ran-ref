@@ -364,7 +364,7 @@ function Orders() {
 function SubmitOrder() {
   const [scope, setScope] = useState("");
   const [steps, setSteps] = useState(JSON.stringify([STEP_TEMPLATES.POLICY], null, 2));
-  const models = useSmo<Model[]>("/ai-ml-workflow/models");
+  const models = useSmo<Model[]>("/mlmr/models");
   const descriptors = useSmo<NfDescriptor[]>("/nfo/descriptors");
   const deployments = useSmo<NfDeployment[]>("/nfo/deployments");
   let parsed: unknown[] | null = null;

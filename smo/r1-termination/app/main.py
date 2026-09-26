@@ -43,7 +43,9 @@ ROUTES = {
     "/a1-related": os.environ.get("A1_RELATED_URL", "http://a1-related:8000"),  # reserved, inert until Near-RT RIC
     "/nfo": os.environ.get("NFO_URL", "http://nfo:8000"),
     "/focom": os.environ.get("FOCOM_URL", "http://focom:8000"),
-    "/ai-ml-workflow": os.environ.get("AI_ML_WORKFLOW_URL", "http://ai-ml-workflow:8000"),
+    "/aimgf": os.environ.get("AIMGF_URL", "http://aimgf:8000"),
+    "/mlmr": os.environ.get("MLMR_URL", "http://mlmr:8000"),
+    "/mllf": os.environ.get("MLLF_URL", "http://mllf:8000"),
     "/ran-analytics": os.environ.get("RAN_ANALYTICS_URL", "http://ran-analytics:8000"),
     "/intent-service": os.environ.get("INTENT_SERVICE_URL", "http://intent-service:8000"),
     "/so-smos": os.environ.get("SO_SMOS_URL", "http://so-smos:8000"),

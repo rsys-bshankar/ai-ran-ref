@@ -47,7 +47,7 @@ def test_route_table_covers_every_module():
     """
     expected_prefixes = {
         "/sme", "/dme", "/dme-push", "/dme-pull", "/onboarding", "/rapp-mgmt",
-        "/ran-nf-oam", "/a1-related", "/nfo", "/focom", "/ai-ml-workflow",
+        "/ran-nf-oam", "/a1-related", "/nfo", "/focom", "/aimgf", "/mlmr", "/mllf",
         "/ran-analytics", "/intent-service", "/so-smos", "/sa-smos",
     }
     assert set(ROUTES.keys()) == expected_prefixes

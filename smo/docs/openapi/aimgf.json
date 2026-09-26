@@ -29,61 +29,6 @@
         "title": "Body_subscribe_performance_monitoring_mlmf_subscriptions_post",
         "type": "object"
       },
-      "Body_upload_model_artifact_models__model_id__artifact_post": {
-        "properties": {
-          "file": {
-            "contentMediaType": "application/octet-stream",
-            "title": "File",
-            "type": "string"
-          }
-        },
-        "required": [
-          "file"
-        ],
-        "title": "Body_upload_model_artifact_models__model_id__artifact_post",
-        "type": "object"
-      },
-      "CreateCoordinationGroupRequest": {
-        "properties": {
-          "memberModelIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Membermodelids",
-            "type": "array"
-          },
-          "memberUseCases": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Memberusecases",
-            "type": "array"
-          },
-          "retrainPropagation": {
-            "default": "ANY_MEMBER_TRIGGERS",
-            "title": "Retrainpropagation",
-            "type": "string"
-          },
-          "sharedFeaturePipelineRef": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sharedfeaturepipelineref"
-          }
-        },
-        "required": [
-          "memberModelIds"
-        ],
-        "title": "CreateCoordinationGroupRequest",
-        "type": "object"
-      },
       "CreateFeatureGroupRequest": {
         "properties": {
           "bucket": {
@@ -186,99 +131,6 @@
           }
         },
         "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "RegisterModelRequest": {
-        "properties": {
-          "author": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Author"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "inputDataType": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inputdatatype"
-          },
-          "modelType": {
-            "title": "Modeltype",
-            "type": "string"
-          },
-          "outputDataType": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Outputdatatype"
-          },
-          "owner": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner"
-          },
-          "requiredResourceTypeId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Requiredresourcetypeid"
-          },
-          "targetEnvironments": {
-            "default": [],
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Targetenvironments",
-            "type": "array"
-          },
-          "version": {
-            "title": "Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "modelType",
-          "version"
-        ],
-        "title": "RegisterModelRequest",
         "type": "object"
       },
       "RequestTrainingRequest": {
@@ -396,142 +248,6 @@
         "title": "RequestTrainingRequest",
         "type": "object"
       },
-      "UpdateModelRequest": {
-        "properties": {
-          "author": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Author"
-          },
-          "clearedNodeGroups": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Clearednodegroups"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "inputDataType": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inputdatatype"
-          },
-          "integrityHash": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Integrityhash"
-          },
-          "modelType": {
-            "title": "Modeltype",
-            "type": "string"
-          },
-          "outputDataType": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Outputdatatype"
-          },
-          "owner": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner"
-          },
-          "requiredResourceTypeId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Requiredresourcetypeid"
-          },
-          "targetEnvironments": {
-            "anyOf": [
-              {
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Targetenvironments"
-          },
-          "trainingDataLineage": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Trainingdatalineage"
-          },
-          "version": {
-            "title": "Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "modelType",
-          "version"
-        ],
-        "title": "UpdateModelRequest",
-        "type": "object"
-      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -575,63 +291,11 @@
     }
   },
   "info": {
-    "title": "AI/ML Workflow SMOS",
+    "title": "AIMgF",
     "version": "0.1.0"
   },
   "openapi": "3.1.0",
   "paths": {
-    "/coordination-groups": {
-      "get": {
-        "description": "Read side of create_coordination_group \u2014 groups were write-only.",
-        "operationId": "list_coordination_groups_coordination_groups_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Coordination Groups"
-      },
-      "post": {
-        "description": "AI/ML Workflow LLD section 4.5's call flow, step 1: register the\ngroup as a sibling of individual model registrations.\n\nA coordination group of fewer than two members isn't a coordination\nof anything \u2014 the migration's own `member_model_ids` CHECK constraint\n(array_length >= 2) already enforces this at the DB layer, but with\nno pre-validation here it surfaced as an unhandled IntegrityError\n(bare 500) rather than a clean error, exactly the class of bug\nRequestTraining's own `exactly_one_target` pre-check (below) already\nguards against. Found running this route against real Postgres \u2014\nSQLite's schema (built from the ORM models, which never mirrored\nthis constraint) never enforces it, so no unit test had ever caught\nit either.",
-        "operationId": "create_coordination_group_coordination_groups_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateCoordinationGroupRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Coordination Group"
-      }
-    },
     "/feature-groups": {
       "get": {
         "operationId": "list_feature_groups_feature_groups_get",
@@ -648,7 +312,7 @@
         "summary": "List Feature Groups"
       },
       "post": {
-        "description": "OPEN_ITEMS.md section 5: no feature-group/feature-store concept\nexisted at all. Matches the reference's own\nCreateFeatureGroup (featuregroup_controller.py): name must be\n`\\w+` (word characters only) and 3-63 characters long \u2014 the same\nrule the reference applies to both TrainingJob and FeatureGroup\nnames \u2014 and a duplicate `featureGroupName` 409s, matching\n`DBException` (\"already exist\") there. `enableDme`'s real\nDME job creation (a raw PUT to\ndata-consumer/v1/info-jobs/{featureGroupName} on the feature\ngroup's own host:port, trainingmgr_operations.create_dme_filtered_data_job)\nis a deliberate elision \u2014 `enableDme` is stored and returned\nfaithfully, just not acted on, the same no-real-southbound-compute\npattern as elsewhere in this build.",
+        "description": "OPEN_ITEMS.md section 5: no feature-group/feature-store concept\nexisted at all. Matches the reference's own\nCreateFeatureGroup (featuregroup_controller.py): name must be\n`\\w+` (word characters only) and 3-63 characters long, and a\nduplicate `featureGroupName` 409s, matching `DBException`\n(\"already exist\") there. `enableDme`'s real DME job creation is a\ndeliberate elision \u2014 `enableDme` is stored and returned faithfully,\njust not acted on, the same no-real-southbound-compute pattern as\nelsewhere in this build.",
         "operationId": "create_feature_group_feature_groups_post",
         "requestBody": {
           "content": {
@@ -685,7 +349,7 @@
     },
     "/health": {
       "get": {
-        "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel,\nso every module answers one \u2014 previously only ran-nf-oam/a1-related\ndid (as their own DME producer-health callback URL).",
+        "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel.",
         "operationId": "health_check_health_get",
         "responses": {
           "200": {
@@ -702,7 +366,6 @@
     },
     "/inference-jobs": {
       "get": {
-        "description": "Same gap as list_training_jobs, for MLEF's InferenceJob.",
         "operationId": "list_inference_jobs_inference_jobs_get",
         "parameters": [
           {
@@ -849,7 +512,6 @@
     },
     "/mlmf/reports": {
       "get": {
-        "description": "Fleet-wide recent MLMF reports, newest first \u2014 the dashboard's\nview across every model, without first listing every subscription.",
         "operationId": "list_recent_performance_reports_mlmf_reports_get",
         "parameters": [
           {
@@ -898,7 +560,6 @@
     },
     "/mlmf/subscriptions": {
       "get": {
-        "description": "MLMF's subscriptions were write-only too (LLD section 2 only ever\nspecified Subscribe/Report).",
         "operationId": "list_performance_subscriptions_mlmf_subscriptions_get",
         "parameters": [
           {
@@ -1001,7 +662,6 @@
     },
     "/mlmf/subscriptions/{subscription_id}/reports": {
       "get": {
-        "description": "Read side of report_performance \u2014 newest first, so the GUI can\nchart a model's recent metrics against its guardKpiFloor.",
         "operationId": "list_performance_reports_mlmf_subscriptions__subscription_id__reports_get",
         "parameters": [
           {
@@ -1096,203 +756,6 @@
         "summary": "Report Performance"
       }
     },
-    "/models": {
-      "get": {
-        "operationId": "discover_models_models_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "model_type",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Model Type"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Discover Models"
-      },
-      "post": {
-        "description": "OPEN_ITEMS.md section 5: the reference's own RegisterModel\n(mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint\nviolation \u2014 this build accepted a duplicate (modelType, version)\nregistration silently, creating a second, indistinguishable row.\n\nAlso OPEN_ITEMS.md section 5: registration metadata was thin \u2014 no\nI/O data type schema, no author/owner, no TargetEnvironment\ndeclarations, all real fields on the reference's own\nModelRelatedInformation/ModelInformation/Metadata (modelInfo.go).\nRequired there; kept optional here, since this build's own\nRegisterModel was already permissive before this pass.",
-        "operationId": "register_model_models_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RegisterModelRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Register Model"
-      }
-    },
-    "/models/{model_id}": {
-      "delete": {
-        "description": "DeleteModel (mmes_apis.go) \u2014 the reference's own repo.Delete\nexplicitly cleans up its one dependent child table\n(TargetEnvironment) before deleting the parent row, in a\ntransaction, rather than relying on the DB to cascade it. This\nbuild's schema has five FKs to aiml_model (model_artifact,\ntraining_job, model_change_subscription, mlmf_subscription,\ninference_job), none of which had any cascade behavior at all \u2014\nthe exact same unchecked-FK shape already found and fixed for\nDME's deregister_producer (OPEN_ITEMS.md section 5): deleting a\nmodel with any dependent row would either orphan it (SQLite, no FK\nenforcement) or crash with an unhandled IntegrityError (real\nPostgres). Cleaned up explicitly here, same as there, with the\nDB-level ON DELETE CASCADE added alongside this as a defense-in-\ndepth backstop, not the only line of defense. Idempotent: deleting\nan unknown id is a silent no-op, matching this module's other\nDELETE routes (cancel_training).",
-        "operationId": "deregister_model_models__model_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "model_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Model Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Deregister Model"
-      },
-      "get": {
-        "description": "OPEN_ITEMS.md section 5: model CRUD was incomplete \u2014 only create\nand a type-filtered list existed, no GET-by-id at all.",
-        "operationId": "get_model_models__model_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "model_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Model Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Model"
-      },
-      "put": {
-        "description": "UpdateModel (mmes_apis.go) \u2014 404s on an unknown id, same as\nGetModelInfoById there. The reference also rejects a modelName/\nmodelVersion mismatch between the path's existing record and the\nbody with a 400 (\"model with id ... has different modelName and\nmodelVersion than provided\") rather than silently renaming it \u2014\n(model_type, version) is this build's own identity for the same\nreference ModelID composite key `register_model`'s uniqueness\nconstraint already treats as immutable identity, so this endpoint\nonly ever updates the metadata fields around it, never the identity\nitself. `state`/`trainingJobId`/`artifactLocation` stay out of this\nbody on purpose \u2014 those are owned by the dedicated advance/training/\nartifact-upload endpoints, not a generic PUT.",
-        "operationId": "update_model_models__model_id__put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "model_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Model Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateModelRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Model"
-      }
-    },
     "/models/{model_id}/advance": {
       "post": {
         "description": "Single endpoint driving TRAINING_COMPLETE -> VALIDATION_COMPLETE ->\nCERTIFY -> LOAD -> ACTIVATE -> RETRAIN -> DEPRECATE, each a real FSM\ntransition (statemachine.py). One endpoint rather than six nearly\nidentical ones, since the pattern is mechanically the same at every step.",
@@ -1341,159 +804,9 @@
         "summary": "Advance Model Lifecycle"
       }
     },
-    "/models/{model_id}/artifact": {
-      "post": {
-        "description": "UploadModel (aiml-fw-awmf-modelmgmtservice apis/mmes_apis.go) \u2014 the\nreference looks the model up first (404 if unregistered), validates a\n.zip suffix (415 otherwise), then stamps a fresh artifactVersion,\nseparate from modelVersion, auto-incremented per model. Real S3 storage\nis elided (see ModelArtifact's docstring); the bytes are stored for real\nhere instead of being discarded, so upload+download round-trip.",
-        "operationId": "upload_model_artifact_models__model_id__artifact_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "model_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Model Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_upload_model_artifact_models__model_id__artifact_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Upload Model Artifact"
-      }
-    },
-    "/models/{model_id}/artifact/{artifact_version}": {
-      "get": {
-        "description": "DownloadModel \u2014 same modelId+artifactVersion lookup as the reference's\nmodelName+modelVersion+artifactVersion modelKey.",
-        "operationId": "download_model_artifact_models__model_id__artifact__artifact_version__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "model_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Model Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "artifact_version",
-            "required": true,
-            "schema": {
-              "title": "Artifact Version",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Download Model Artifact"
-      }
-    },
-    "/models/{model_id}/deploy": {
-      "post": {
-        "description": "RequestModelDeployment \u2014 triggers MLLF. Requires CERTIFIED-or-later\nstate (the AIMgF gate, unchanged from v1.3) and now stamps\nclearedNodeGroups (LLD section 5, closing MultiNode Q2's targeting gap).",
-        "operationId": "request_model_deployment_models__model_id__deploy_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "model_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Model Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "items": {
-                  "type": "string"
-                },
-                "title": "Node Groups",
-                "type": "array"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Request Model Deployment"
-      }
-    },
     "/models/{model_id}/inference-jobs": {
       "post": {
-        "description": "RequestInference \u2014 new, MLEF-hosted (AI/ML Workflow LLD section 3).",
+        "description": "RequestInference \u2014 MLEF-hosted (AI/ML Workflow LLD section 3).",
         "operationId": "request_inference_models__model_id__inference_jobs_post",
         "parameters": [
           {
@@ -1548,7 +861,6 @@
     },
     "/training-jobs": {
       "get": {
-        "description": "List read for RequestTraining's jobs \u2014 previously only a\nper-id status read existed, so an operator could never see which\njobs were running without already holding every trainingJobId.",
         "operationId": "list_training_jobs_training_jobs_get",
         "parameters": [
           {
@@ -1608,7 +920,7 @@
         "summary": "List Training Jobs"
       },
       "post": {
-        "description": "RequestTraining \u2014 exactly one of modelId/modelCoordinationGroupId,\nenforced at the DB layer (exactly_one_target constraint) and checked\nhere for a clean error.\n\nmodelId-targeted requests also drive the model's own FSM:\nREGISTERED -> TRAINING (TRAIN, the very first cycle) or\nACTIVE -> TRAINING (RETRAIN, an ordinary retrain). This used to\nalways fire TRAIN regardless of the model's actual state, which\ncrashed with an unhandled IllegalTransition on every retrain attempt\n(TRAIN is only legal from REGISTERED). A model already TRAINING (an\nunresolved prior job) is treated as the operator's explicit decision\nto supersede it: the orphaned job is marked CANCELLED rather than\nleft silently RUNNING and unreachable, which is what the old\nunconditional `model.training_job_id = job.training_job_id`\nassignment did.",
+        "description": "RequestTraining \u2014 exactly one of modelId/modelCoordinationGroupId,\nenforced at the DB layer (exactly_one_target constraint) and checked\nhere for a clean error.\n\nmodelId-targeted requests also drive the model's own FSM:\nREGISTERED -> TRAINING (TRAIN, the very first cycle) or\nACTIVE -> TRAINING (RETRAIN, an ordinary retrain). A model already\nTRAINING (an unresolved prior job) is treated as the operator's\nexplicit decision to supersede it: the orphaned job is marked\nCANCELLED rather than left silently RUNNING and unreachable.",
         "operationId": "request_training_training_jobs_post",
         "requestBody": {
           "content": {

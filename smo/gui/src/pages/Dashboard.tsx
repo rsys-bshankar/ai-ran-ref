@@ -16,11 +16,11 @@ export function Dashboard() {
   const status = useQuery<ModulesStatus>({ queryKey: ["bff", "modules-status"], queryFn: () => api("/modules/status"), refetchInterval: POLL.status });
   const alarms = useSmo<Alarm[]>("/ran-nf-oam/alarms", undefined, { refetchInterval: POLL.alarms });
   const ocloudAlarms = useSmo<OCloudAlarm[]>("/focom/alarms", undefined, { refetchInterval: POLL.alarms });
-  const mlmf = useSmo<MlmfReport[]>("/ai-ml-workflow/mlmf/reports", { limit: 40 });
+  const mlmf = useSmo<MlmfReport[]>("/aimgf/mlmf/reports", { limit: 40 });
   const escalations = useSmo<RemedialAction[]>("/sa-smos/remedial-actions", { outcome: "ESCALATED" });
   const instances = useSmo<InstanceSummary[]>("/rapp-mgmt/instances");
   const packages = useSmo<Package[]>("/onboarding/packages");
-  const models = useSmo<Model[]>("/ai-ml-workflow/models");
+  const models = useSmo<Model[]>("/mlmr/models");
   const deployments = useSmo<NfDeployment[]>("/nfo/deployments");
   const endpoints = useSmo<O1Endpoint[]>("/ran-nf-oam/o1-adaptor-endpoints");
   const policies = useSmo<A1Policy[]>("/a1-related/policies");

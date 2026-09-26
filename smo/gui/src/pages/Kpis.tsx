@@ -221,7 +221,7 @@ function Assurance() {
 
 function RegisterMonitor() {
   const orders = useSmo<ServiceOrder[]>("/so-smos/orders");
-  const groups = useSmo<CoordinationGroup[]>("/ai-ml-workflow/coordination-groups");
+  const groups = useSmo<CoordinationGroup[]>("/mlmr/coordination-groups");
   const [target, setTarget] = useState("");
   const [thresholds, setThresholds] = useState('{"throughputMbps": 100}');
   const parsed = parseJsonObject(thresholds);

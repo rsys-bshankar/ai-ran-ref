@@ -50,7 +50,7 @@ def dispatch_infra(r1: R1Client, step: dict) -> dict:
 
 
 def dispatch_training(r1: R1Client, step: dict) -> dict:
-    resp = r1.post("/ai-ml-workflow/training-jobs", json={
+    resp = r1.post("/aimgf/training-jobs", json={
         "modelId": step.get("modelId"),
         "modelCoordinationGroupId": step.get("modelCoordinationGroupId"),
         "producerId": step.get("producerId", "so-smos"),

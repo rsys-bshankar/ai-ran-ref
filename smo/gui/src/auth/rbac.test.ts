@@ -12,16 +12,16 @@ describe("requiredRole against the BFF's table", () => {
   it.each<[string, string, Role]>([
     ["GET", "/rapp-mgmt/instances", "viewer"],
     ["GET", "/ran-nf-oam/alarms", "viewer"],
-    ["GET", "/ai-ml-workflow/models/abc/artifact/2", "viewer"],
+    ["GET", "/mlmr/models/abc/artifact/2", "viewer"],
     ["POST", "/onboarding/packages", "operator"],
-    ["POST", "/ai-ml-workflow/training-jobs", "operator"],
+    ["POST", "/aimgf/training-jobs", "operator"],
     ["PATCH", "/ran-nf-oam/alarms/a1/ack", "operator"],
     ["PATCH", "/ran-nf-oam/alarms/a1/clear", "operator"],
     ["POST", "/sa-smos/monitors/m1/evaluate", "operator"],
     ["POST", "/rapp-mgmt/instances/i1/terminate", "admin"],
     ["DELETE", "/onboarding/packages/p1", "admin"],
     ["DELETE", "/nfo/deployments/d1", "admin"],
-    ["GET", "/ai-ml-workflow/feature-groups", "operator"],
+    ["GET", "/aimgf/feature-groups", "operator"],
   ])("%s %s needs %s", (method, path, role) => {
     expect(requiredRole(RULES, method, path)).toBe(role);
   });
@@ -38,9 +38,9 @@ describe("requiredRole against the BFF's table", () => {
   });
 
   it("applies query matches: DEPRECATE is admin-only, other advances are operator", () => {
-    expect(requiredRole(RULES, "POST", "/ai-ml-workflow/models/m/advance", { event: "CERTIFY" })).toBe("operator");
-    expect(requiredRole(RULES, "POST", "/ai-ml-workflow/models/m/advance", { event: "DEPRECATE" })).toBe("admin");
-    expect(requiredRole(RULES, "POST", "/ai-ml-workflow/models/m/advance", { event: ["CERTIFY", "DEPRECATE"] })).toBe("admin");
+    expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: "CERTIFY" })).toBe("operator");
+    expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: "DEPRECATE" })).toBe("admin");
+    expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: ["CERTIFY", "DEPRECATE"] })).toBe("admin");
   });
 });
 
@@ -49,8 +49,8 @@ describe("can", () => {
     const terminate = ["POST", "/rapp-mgmt/instances/i/terminate"] as const;
     expect(can(RULES, "operator", ...terminate)).toBe(false);
     expect(can(RULES, "admin", ...terminate)).toBe(true);
-    expect(can(RULES, "viewer", "POST", "/ai-ml-workflow/training-jobs")).toBe(false);
-    expect(can(RULES, "operator", "POST", "/ai-ml-workflow/training-jobs")).toBe(true);
+    expect(can(RULES, "viewer", "POST", "/aimgf/training-jobs")).toBe(false);
+    expect(can(RULES, "operator", "POST", "/aimgf/training-jobs")).toBe(true);
     expect(can(RULES, "viewer", "GET", "/nfo/deployments")).toBe(true);
   });
 

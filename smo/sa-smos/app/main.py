@@ -85,7 +85,7 @@ def execute_remedial_action(monitor_id: uuid.UUID, action_type: str, requester_i
     r1 = R1Client()
 
     if monitor.target_coordination_group_id is not None:
-        resp = r1.post("/ai-ml-workflow/training-jobs", json={
+        resp = r1.post("/aimgf/training-jobs", json={
             "modelCoordinationGroupId": str(monitor.target_coordination_group_id), "producerId": "sa-smos",
         })
         outcome = "RESOLVED" if resp.status_code < 300 else "ESCALATED"

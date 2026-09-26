@@ -136,16 +136,16 @@ function Flow01() {
 // ---------------------------------------------------------------- 02 AI/ML
 
 function Flow02() {
-  const models = useSmo<Model[]>("/ai-ml-workflow/models");
+  const models = useSmo<Model[]>("/mlmr/models");
   const [modelId, setModel, model] = useSelection(models.data, (m) => m.modelId);
   const q = modelId ? { model_id: modelId } : undefined;
-  const jobs = useSmo<TrainingJob[]>(modelId ? "/ai-ml-workflow/training-jobs" : null, q);
-  const inference = useSmo<InferenceJob[]>(modelId ? "/ai-ml-workflow/inference-jobs" : null, q);
-  const subs = useSmo<MlmfSubscription[]>(modelId ? "/ai-ml-workflow/mlmf/subscriptions" : null, q);
+  const jobs = useSmo<TrainingJob[]>(modelId ? "/aimgf/training-jobs" : null, q);
+  const inference = useSmo<InferenceJob[]>(modelId ? "/aimgf/inference-jobs" : null, q);
+  const subs = useSmo<MlmfSubscription[]>(modelId ? "/aimgf/mlmf/subscriptions" : null, q);
   const reportLists = useQueries({
     queries: (subs.data ?? []).map((s) => ({
-      queryKey: ["smo", `/ai-ml-workflow/mlmf/subscriptions/${s.subscriptionId}/reports`, {}],
-      queryFn: () => smo<MlmfReport[]>(`/ai-ml-workflow/mlmf/subscriptions/${s.subscriptionId}/reports`),
+      queryKey: ["smo", `/aimgf/mlmf/subscriptions/${s.subscriptionId}/reports`, {}],
+      queryFn: () => smo<MlmfReport[]>(`/aimgf/mlmf/subscriptions/${s.subscriptionId}/reports`),
       refetchInterval: POLL.lists,
     })),
   });
@@ -154,8 +154,8 @@ function Flow02() {
   const running = (inference.data ?? []).find((j) => j.status === "RUNNING");
   const next = model ? modelActions(model.state) : [];
   const nextAction = next[0] && (next[0].kind === "train"
-    ? <ActionButton label={next[0].label} tone="primary" action={{ method: "POST", path: "/ai-ml-workflow/training-jobs", json: { modelId, producerId: "smo-gui" }, success: "Training job started" }} />
-    : <ActionButton label={next[0].label} tone="primary" action={{ method: "POST", path: `/ai-ml-workflow/models/${modelId}/advance`, query: { event: next[0].event }, success: `${next[0].event} done` }} />);
+    ? <ActionButton label={next[0].label} tone="primary" action={{ method: "POST", path: "/aimgf/training-jobs", json: { modelId, producerId: "smo-gui" }, success: "Training job started" }} />
+    : <ActionButton label={next[0].label} tone="primary" action={{ method: "POST", path: `/aimgf/models/${modelId}/advance`, query: { event: next[0].event }, success: `${next[0].event} done` }} />);
   return (
     <>
       <Pick label="Model" items={models.data} value={modelId} onChange={setModel} id={(m) => m.modelId}
@@ -166,8 +166,8 @@ function Flow02() {
         deploy: go("/aiml#models", "Choose node groups"),
         infer: running
           ? <ActionButton label="Mark inference completed" tone="primary" title="Simulates MLEF finishing the job (result delivered via DME)"
-              action={{ method: "POST", path: `/ai-ml-workflow/inference-jobs/${running.inferenceJobId}/resolve`, query: { succeeded: true }, success: "Inference COMPLETED" }} />
-          : model?.state === "ACTIVE" && <ActionButton label="Request inference" tone="primary" action={{ method: "POST", path: `/ai-ml-workflow/models/${modelId}/inference-jobs`, success: "Inference job RUNNING" }} />,
+              action={{ method: "POST", path: `/aimgf/inference-jobs/${running.inferenceJobId}/resolve`, query: { succeeded: true }, success: "Inference COMPLETED" }} />
+          : model?.state === "ACTIVE" && <ActionButton label="Request inference" tone="primary" action={{ method: "POST", path: `/aimgf/models/${modelId}/inference-jobs`, success: "Inference job RUNNING" }} />,
         monitor: go("/aiml#mlmf", "Subscribe"),
         report: go("/aiml#mlmf", "MLMF reports"),
       }} />
@@ -213,7 +213,7 @@ function Flow04() {
   const order = useSmo<ServiceOrder>(monitor?.targetOrderId ? `/so-smos/orders/${monitor.targetOrderId}` : null);
   const actions = useSmo<RemedialAction[]>(monitorId ? "/sa-smos/remedial-actions" : null, { monitor_id: monitorId });
   const analytics = useSmo<AnalyticsReport[]>("/ran-analytics/reports");
-  const mlmf = useSmo<MlmfReport[]>("/ai-ml-workflow/mlmf/reports", { limit: 50 });
+  const mlmf = useSmo<MlmfReport[]>("/aimgf/mlmf/reports", { limit: 50 });
   const steps = flow04(monitor, order.data, actions.data ?? [], analytics.data?.length ?? 0, mlmf.data?.length ?? 0);
   const base = `/sa-smos/monitors/${monitorId}`;
   return (

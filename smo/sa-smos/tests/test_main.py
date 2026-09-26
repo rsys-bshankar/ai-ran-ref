@@ -176,7 +176,7 @@ def test_group_scoped_monitor_dispatches_retrain_regardless_of_action_type(clien
     resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "CONFIG_CHANGE"})
     assert resp.status_code == 201
     assert resp.json()["outcome"] == "RESOLVED"
-    assert calls == [("/ai-ml-workflow/training-jobs", {"modelCoordinationGroupId": str(group_id), "producerId": "sa-smos"})]
+    assert calls == [("/aimgf/training-jobs", {"modelCoordinationGroupId": str(group_id), "producerId": "sa-smos"})]
 
 
 def test_group_scoped_monitor_escalates_when_ai_ml_workflow_rejects(client, monkeypatch):

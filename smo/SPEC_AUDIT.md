@@ -287,6 +287,16 @@ more closely for security/trust-model detail than that pass went)
 
 ## AI/ML Workflow vs. TS28105 AI/ML NRM
 
+*(This module was split into `aimgf/`, `mlmr/`, `mllf/` in Wave 1 of the
+AI Platform Service Decomposition — see
+`docs/architecture/SERVICE_OWNERSHIP_MATRIX.md` and
+`docs/ownership/{AIMGF,MLMR,MLLF}_OWNERSHIP.md`. This is the deliberate
+reversal of this section's own "confirmed flat-shape" finding below:
+the split moves toward TS28.105's real NRM service boundaries — AIMgF,
+MLMR, MLLF are its own real function names — though not yet its full
+containment-tree/DN-addressing/FL-RL shape, which remains future work.
+Findings below are otherwise unchanged and still accurate.)*
+
 Spec read: `TS28105_AiMlNrm.yaml` (`paths: {}`, data-model only, same
 shape as the O2IMS spec below). Previously listed as "not yet audited"
 — `specs/README.md`'s claim that no directly relevant O-RAN-SC AI/ML

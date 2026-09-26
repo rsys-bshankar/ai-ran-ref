@@ -1,5 +1,5 @@
 """Tests for AI/ML Workflow's lifecycles (AI/ML Workflow LLD sections 3-4).
-Run with: pytest smo/ai-ml-workflow/tests -q
+Run with: pytest smo/aimgf/tests -q
 """
 
 import pytest

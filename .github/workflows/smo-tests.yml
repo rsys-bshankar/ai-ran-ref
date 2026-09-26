@@ -33,7 +33,7 @@ jobs:
         working-directory: smo
         run: |
           set -e
-          for m in onboarding rapp-mgmt ran-nf-oam ai-ml-workflow so-smos \
+          for m in onboarding rapp-mgmt ran-nf-oam aimgf mlmr mllf so-smos \
                    a1-related sme dme r1-termination nfo focom ran-analytics \
                    intent-service sa-smos mock-near-rt-ric mock-o1-adaptor; do
             echo "::group::$m"

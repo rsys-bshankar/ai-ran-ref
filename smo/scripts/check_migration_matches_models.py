@@ -44,7 +44,7 @@ from smo_shared.db import Base  # noqa: E402
 # of migrations/001_init.sql, so they're deliberately excluded here.
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
-    "a1-related", "nfo", "focom", "ai-ml-workflow", "ran-analytics",
+    "a1-related", "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics",
     "intent-service", "so-smos", "sa-smos",
 ]
 

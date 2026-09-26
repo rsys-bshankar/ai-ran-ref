@@ -197,19 +197,19 @@ def test_viewer_can_read(app, smo):
 
 
 def test_viewer_is_blocked_on_post_and_nothing_reaches_r1(app, smo, db):
-    resp = login(app, "viewer").post("/api/smo/ai-ml-workflow/training-jobs", json={"modelId": "m", "producerId": "gui"})
+    resp = login(app, "viewer").post("/api/smo/aimgf/training-jobs", json={"modelId": "m", "producerId": "gui"})
     assert resp.status_code == 403
     assert resp.json()["detail"] == "requires role operator"
     assert smo.proxied == []
     [denied] = audit_rows(db, "DENIED")
-    assert (denied.username, denied.method, denied.path) == ("viewer", "POST", "/ai-ml-workflow/training-jobs")
+    assert (denied.username, denied.method, denied.path) == ("viewer", "POST", "/aimgf/training-jobs")
 
 
 def test_operator_can_train_and_ack(app, smo):
     client = login(app, "operator")
-    assert client.post("/api/smo/ai-ml-workflow/training-jobs", json={"modelId": "m", "producerId": "gui"}).status_code == 200
+    assert client.post("/api/smo/aimgf/training-jobs", json={"modelId": "m", "producerId": "gui"}).status_code == 200
     assert client.patch("/api/smo/ran-nf-oam/alarms/a-1/ack", params={"new_state": "ACKNOWLEDGED"}).status_code == 200
-    assert [r.url.path for r in smo.proxied] == ["/ai-ml-workflow/training-jobs", "/ran-nf-oam/alarms/a-1/ack"]
+    assert [r.url.path for r in smo.proxied] == ["/aimgf/training-jobs", "/ran-nf-oam/alarms/a-1/ack"]
     assert json.loads(smo.proxied[0].content) == {"modelId": "m", "producerId": "gui"}
 
 
@@ -230,10 +230,10 @@ def test_operator_cannot_terminate_but_admin_can(app, smo):
 
 def test_model_deprecation_is_admin_only_even_with_a_duplicated_param(app, smo):
     operator = login(app, "operator")
-    assert operator.post("/api/smo/ai-ml-workflow/models/m-1/advance?event=CERTIFY").status_code == 200
-    assert operator.post("/api/smo/ai-ml-workflow/models/m-1/advance?event=DEPRECATE").status_code == 403
-    assert operator.post("/api/smo/ai-ml-workflow/models/m-1/advance?event=CERTIFY&event=DEPRECATE").status_code == 403
-    assert login(app, "admin").post("/api/smo/ai-ml-workflow/models/m-1/advance?event=DEPRECATE").status_code == 200
+    assert operator.post("/api/smo/aimgf/models/m-1/advance?event=CERTIFY").status_code == 200
+    assert operator.post("/api/smo/aimgf/models/m-1/advance?event=DEPRECATE").status_code == 403
+    assert operator.post("/api/smo/aimgf/models/m-1/advance?event=CERTIFY&event=DEPRECATE").status_code == 403
+    assert login(app, "admin").post("/api/smo/aimgf/models/m-1/advance?event=DEPRECATE").status_code == 200
 
 
 def test_package_delete_is_admin_only(app):
@@ -346,10 +346,10 @@ def test_expired_smo_token_is_refreshed_once(app, smo):
 
 
 def test_mutations_are_audited_with_status(app, db):
-    login(app, "operator").post("/api/smo/ai-ml-workflow/training-jobs", json={"modelId": "m", "producerId": "gui"})
+    login(app, "operator").post("/api/smo/aimgf/training-jobs", json={"modelId": "m", "producerId": "gui"})
     [row] = audit_rows(db, "PROXY")
     assert (row.username, row.role, row.method, row.path, row.status_code) == \
-        ("operator", "operator", "POST", "/ai-ml-workflow/training-jobs", 200)
+        ("operator", "operator", "POST", "/aimgf/training-jobs", 200)
 
 
 def test_reads_are_not_audited(app, db):
@@ -379,7 +379,7 @@ def test_modules_status_probes_every_module_via_r1(app, smo):
     smo.down_modules.add("nfo")
     body = login(app, "viewer").get("/api/modules/status").json()
     by_module = {m["module"]: m for m in body["modules"]}
-    assert list(by_module) == STATUS_MODULES and len(STATUS_MODULES) == 14
+    assert list(by_module) == STATUS_MODULES and len(STATUS_MODULES) == 16
     assert by_module["nfo"]["healthy"] is False and by_module["nfo"]["error"] == "unreachable"
     assert all(m["healthy"] for name, m in by_module.items() if name != "nfo")
     assert all(isinstance(m["latencyMs"], float) for m in body["modules"])

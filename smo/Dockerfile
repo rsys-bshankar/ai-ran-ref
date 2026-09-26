@@ -1,4 +1,4 @@
-# One Dockerfile for all fourteen services — they share one stack
+# One Dockerfile for all sixteen services — they share one stack
 # (Python 3.11 + FastAPI + SQLAlchemy), so a per-service Dockerfile would
 # just be fourteen near-identical copies. MODULE picks which service's
 # app/ directory gets copied in and run.
