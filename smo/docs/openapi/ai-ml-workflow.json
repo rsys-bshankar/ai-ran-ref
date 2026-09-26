@@ -597,7 +597,7 @@
         "summary": "List Coordination Groups"
       },
       "post": {
-        "description": "AI/ML Workflow LLD section 4.5's call flow, step 1: register the\ngroup as a sibling of individual model registrations.",
+        "description": "AI/ML Workflow LLD section 4.5's call flow, step 1: register the\ngroup as a sibling of individual model registrations.\n\nA coordination group of fewer than two members isn't a coordination\nof anything \u2014 the migration's own `member_model_ids` CHECK constraint\n(array_length >= 2) already enforces this at the DB layer, but with\nno pre-validation here it surfaced as an unhandled IntegrityError\n(bare 500) rather than a clean error, exactly the class of bug\nRequestTraining's own `exactly_one_target` pre-check (below) already\nguards against. Found running this route against real Postgres \u2014\nSQLite's schema (built from the ORM models, which never mirrored\nthis constraint) never enforces it, so no unit test had ever caught\nit either.",
         "operationId": "create_coordination_group_coordination_groups_post",
         "requestBody": {
           "content": {

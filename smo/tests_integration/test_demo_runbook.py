@@ -653,7 +653,49 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert invalid_group.status_code == 400
     assert invalid_group.json()["detail"]["title"] == "FEATURE_GROUP_NAME_INVALID"
 
-    # step 20: retire — the real package priming lifecycle (COMMISSIONED-
+    # step 20: SA SMOS coordination-group remedial action — a
+    # coordination-group-scoped AssuranceMonitor always dispatches a real
+    # group retrain via AI/ML Workflow's RequestTraining, regardless of
+    # actionType (already real and unit-tested, but never demonstrated —
+    # step 15's own monitor was targetOrderId-scoped throughout).
+    group_model_ids = []
+    for i in range(2):
+        group_model = mesh["ai-ml-workflow"].post("/models", json={
+            "modelType": f"demo-coordination-group-model-{i}", "version": "1.0.0",
+            "author": "hello-world-rapp", "owner": "hello-world-rapp",
+        })
+        assert group_model.status_code == 201
+        group_model_ids.append(group_model.json()["modelId"])
+
+    # A single-member group 422s with COORDINATION_GROUP_TOO_SMALL — the
+    # migration's own member_model_ids CHECK constraint (array_length >= 2)
+    # enforces this at the DB layer, but with no pre-validation this used to
+    # surface as an unhandled IntegrityError (bare 500) instead; SQLite's
+    # test schema (built from the ORM models, which never mirrored the
+    # constraint) never caught it, only a real-Postgres run did.
+    too_small = mesh["ai-ml-workflow"].post("/coordination-groups", json={"memberModelIds": [group_model_ids[0]]})
+    assert too_small.status_code == 422
+    assert too_small.json()["detail"]["title"] == "COORDINATION_GROUP_TOO_SMALL"
+
+    coordination_group = mesh["ai-ml-workflow"].post("/coordination-groups", json={"memberModelIds": group_model_ids})
+    assert coordination_group.status_code == 201
+    group_id = coordination_group.json()["groupId"]
+
+    group_monitor = mesh["sa-smos"].post("/monitors", params={"target_coordination_group_id": group_id}, json={})
+    assert group_monitor.status_code == 201
+    group_monitor_id = group_monitor.json()["monitorId"]
+
+    group_remedial = mesh["sa-smos"].post(f"/monitors/{group_monitor_id}/remedial-actions", params={"action_type": "SCALE"})
+    assert group_remedial.status_code == 201
+    assert group_remedial.json()["outcome"] == "RESOLVED"
+
+    running_jobs = mesh["ai-ml-workflow"].get("/training-jobs", params={"status": "RUNNING"})
+    assert running_jobs.status_code == 200
+    matching_jobs = [j for j in running_jobs.json() if j["modelCoordinationGroupId"] == group_id]
+    assert len(matching_jobs) == 1
+    assert matching_jobs[0]["producerId"] == "sa-smos"
+
+    # step 21: retire — the real package priming lifecycle (COMMISSIONED-
     # equivalent AVAILABLE -> PRIMING -> PRIMED), a genuine deprime
     # refusal while the sample rApp's own instance is still deployed
     # (the reference's own deprimeRapp guard, a real query against
