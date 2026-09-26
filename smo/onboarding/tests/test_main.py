@@ -419,3 +419,22 @@ def test_package_row_is_committed_before_nfo_create_descriptor_is_called(tmp_pat
         app.dependency_overrides.clear()
     assert seen_by_nfo == [True]
     assert state == "AVAILABLE"
+
+
+def test_list_usage_registrations_shows_what_blocks_delete(client, db_session_factory):
+    """GUI pass 2: the cascade-delete guard's usage registrations (call flow 06)."""
+    package_id = uuid.uuid4()
+    with db_session_factory() as session:
+        session.add(ApplicationPackage(package_id=package_id, application_type="rApp", name="p", version="1",
+                                        state="AVAILABLE", manifest_ref="m"))
+        session.add(Artifact(package_id=package_id, path="Files/Helm/app.tgz", access_url="http://x/app.tgz"))
+        session.commit()
+    reg = client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "instance-1"}).json()
+
+    [usage] = client.get(f"/packages/{package_id}/usage").json()
+    assert (usage["registrationId"], usage["consumerId"], usage["active"]) == (reg["registrationId"], "instance-1", True)
+    client.post(f"/packages/{package_id}/usage/{reg['registrationId']}/stop")
+    [usage] = client.get(f"/packages/{package_id}/usage").json()
+    assert usage["active"] is False and usage["stoppedAt"]
+
+    assert [a["path"] for a in client.get(f"/packages/{package_id}/artifacts").json()] == ["Files/Helm/app.tgz"]

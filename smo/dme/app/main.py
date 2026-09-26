@@ -492,3 +492,26 @@ def _producer_is_healthy(callback_url: str) -> bool:
         return resp.status_code < 300
     except httpx.HTTPError:
         return False
+
+
+# ---------------------------------------------------------------- list reads (GUI pass 2)
+# Data jobs and offers were only readable by id, so nobody could see which
+# consumers were pulling which types, or what producers had offered
+# (call flow 05).
+
+@app.get("/data-jobs")
+def list_data_jobs(dme_type_id: uuid.UUID | None = None, consumer_id: str | None = None, db: Session = Depends(get_session)):
+    stmt = select(DataJob)
+    if dme_type_id:
+        stmt = stmt.where(DataJob.dme_type_id == dme_type_id)
+    if consumer_id:
+        stmt = stmt.where(DataJob.consumer_id == consumer_id)
+    return [_job_view(j) for j in db.scalars(stmt).all()]
+
+
+@app.get("/offers")
+def list_data_offers(dme_type_id: uuid.UUID | None = None, db: Session = Depends(get_session)):
+    stmt = select(DataOffer)
+    if dme_type_id:
+        stmt = stmt.where(DataOffer.dme_type_id == dme_type_id)
+    return [_offer_view(o) for o in db.scalars(stmt).all()]

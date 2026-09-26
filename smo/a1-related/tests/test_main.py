@@ -607,3 +607,31 @@ def test_service_with_supervision_disabled_never_goes_stale(client, db_session_f
 
     resp = client.get("/services", params={"service_id": "rapp-1"})
     assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------- list reads (GUI pass 2)
+
+def test_list_policy_status_subscriptions_is_not_captured_by_the_policy_id_route(client):
+    """GET /policies/subscriptions must reach its own route, not
+    /policies/{policy_id} (which would 422 on a non-UUID)."""
+    created = client.post("/policies/subscriptions", json={"notificationDestination": "http://consumer/cb",
+                                                           "subscriptionScope": "ALL"}).json()
+    resp = client.get("/policies/subscriptions")
+    assert resp.status_code == 200
+    assert [(s["subscriptionId"], s["notificationDestination"]) for s in resp.json()] == [(created["subscriptionId"], "http://consumer/cb")]
+
+
+def test_list_ei_types_returns_registrations_with_their_dme_type(client, monkeypatch):
+    from smo_shared import r1_client as r1_client_module
+
+    class FakeResponse:
+        status_code = 201
+        def json(self):
+            return {"registrationId": "11111111-1111-1111-1111-111111111111"}
+
+    monkeypatch.setattr(r1_client_module.R1Client, "post", lambda self, path, json=None, **kw: FakeResponse())
+    assert client.get("/ei-types").json() == []
+    client.post("/ei-types/register", params={"ei_type_id": "ei-1", "registered_by": "rapp-1",
+                                              "dme_namespace": "RAN", "dme_name": "CoverageIssue", "dme_version": "1.0.0"})
+    assert client.get("/ei-types").json() == [{"eiTypeId": "ei-1", "registeredBy": "rapp-1",
+                                               "eiSourceDmeTypeId": "11111111-1111-1111-1111-111111111111"}]

@@ -401,3 +401,11 @@ def _deployment_manager_view(d: DeploymentManager) -> dict:
     return {"deploymentManagerId": d.deployment_manager_id, "name": d.name, "description": d.description,
             "oCloudId": d.o_cloud_id, "serviceUri": d.service_uri,
             "supportedLocations": d.supported_locations, "capabilities": d.capabilities, "capacity": d.capacity}
+
+
+@app.get("/inventory/subscriptions")
+def list_inventory_subscriptions(db: Session = Depends(get_session)):
+    """(GUI pass 2) Inventory-change subscriptions were write-only."""
+    return [{"subscriptionId": str(s.subscription_id), "callback": s.callback,
+             "consumerSubscriptionId": s.consumer_subscription_id, "resourceTypeId": s.resource_type_id}
+            for s in db.scalars(select(InventorySubscription)).all()]

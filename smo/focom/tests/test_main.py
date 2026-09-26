@@ -575,3 +575,10 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}
+
+
+def test_list_inventory_subscriptions(client):
+    """GUI pass 2: inventory subscriptions were write-only."""
+    sub = client.post("/inventory/subscriptions", json={"callback": "http://consumer/cb", "consumerSubscriptionId": "c-1"}).json()
+    listed = client.get("/inventory/subscriptions").json()
+    assert [(s["subscriptionId"], s["consumerSubscriptionId"]) for s in listed] == [(sub["subscriptionId"], "c-1")]

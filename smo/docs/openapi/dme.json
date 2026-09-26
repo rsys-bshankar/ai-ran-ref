@@ -232,6 +232,65 @@
   "openapi": "3.1.0",
   "paths": {
     "/data-jobs": {
+      "get": {
+        "operationId": "list_data_jobs_data_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dme_type_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dme Type Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "consumer_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Consumer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Data Jobs"
+      },
       "post": {
         "operationId": "create_data_job_data_jobs_post",
         "requestBody": {
@@ -485,6 +544,49 @@
       }
     },
     "/offers": {
+      "get": {
+        "operationId": "list_data_offers_offers_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dme_type_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dme Type Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Data Offers"
+      },
       "post": {
         "operationId": "create_data_offer_offers_post",
         "requestBody": {

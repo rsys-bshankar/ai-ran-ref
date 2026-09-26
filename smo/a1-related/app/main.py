@@ -120,6 +120,18 @@ def query_policies(policy_type_id: str | None = None, near_rt_ric_id: str | None
     return [_policy_view(r) for r in rows]
 
 
+@app.get("/policies/subscriptions")
+def list_policy_status_subscriptions(db: Session = Depends(get_session)):
+    """(GUI pass 2) Policy-status subscriptions were write-only. Declared before
+    /policies/{policy_id}: routes match in declaration order, so the UUID
+    route would otherwise capture "subscriptions" and fail validation.
+    """
+    return [{"subscriptionId": str(s.subscription_id), "notificationDestination": s.notification_destination,
+             "subscriptionScope": s.subscription_scope, "policyIdList": s.policy_id_list,
+             "policyTypeIdList": s.policy_type_id_list, "nearRtRicIdList": s.near_rt_ric_id_list}
+            for s in db.scalars(select(PolicyStatusSubscription)).all()]
+
+
 @app.get("/policies/{policy_id}")
 def query_policy(policy_id: uuid.UUID, db: Session = Depends(get_session)):
     p = db.get(A1Policy, policy_id)
@@ -399,3 +411,12 @@ def stop_dme_job(data_job_id: str):
 def _policy_view(p: A1Policy) -> dict:
     return {"policyId": str(p.policy_id), "policyTypeId": p.policy_type_id, "nearRtRicId": p.near_rt_ric_id,
             "policyObject": p.policy_object, "enforcementStatus": p.enforcement_status}
+
+
+@app.get("/ei-types")
+def list_ei_types(db: Session = Depends(get_session)):
+    """(GUI pass 2) Registered EI types and the DME type each one wraps (call flow
+    05). register_ei_type had no read side at all.
+    """
+    return [{"eiTypeId": t.ei_type_id, "registeredBy": t.registered_by, "eiSourceDmeTypeId": str(t.ei_source_dme_type_id)}
+            for t in db.scalars(select(A1EIType)).all()]

@@ -413,6 +413,41 @@
   "openapi": "3.1.0",
   "paths": {
     "/capif-events/v1/{subscriber_id}/subscriptions": {
+      "get": {
+        "operationId": "list_event_subscriptions_capif_events_v1__subscriber_id__subscriptions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscriber_id",
+            "required": true,
+            "schema": {
+              "title": "Subscriber Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Event Subscriptions"
+      },
       "post": {
         "description": "OPEN_ITEMS.md section 5: event subscription filtering was type-only\n\u2014 the reference's own CAPIFEventFilter also filters by apiId/\napiInvokerId/aefId (eventservice.go's getMatchingSubs). Of those,\nonly apiId is meaningfully implementable here: apiInvokerId filters\nagainst an event's own ApiInvokerIds, which only API_INVOKER_ONBOARDED\nevents carry \u2014 a real CAPIF Invoker-onboarding subsystem this build\ndoesn't have (see this module's own structurally-out-of-scope note);\nour SERVICE_API_* notifications have no invoker id in their payload\nto filter on. aefId likewise needs aefProfiles, which ServiceProfile\ndoesn't model (the separate \"flattened ServiceProfile\" gap). apiId\nmaps directly onto this build's own service_id, so that one's real.",
         "operationId": "subscribe_events_capif_events_v1__subscriber_id__subscriptions_post",
@@ -520,6 +555,20 @@
       }
     },
     "/invoker-registrations": {
+      "get": {
+        "operationId": "list_invokers_invoker_registrations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Invokers"
+      },
       "post": {
         "description": "OPEN_ITEMS.md section 2: API Invoker onboarding\n(`invokermanagement.go`'s `InvokerManager`) \u2014 the real registry the\nSecurity/token API's own `IsInvokerRegistered`/`VerifyInvokerSecret`\ngate needs, entirely absent before this pass.\n\nSPEC_AUDIT.md SME item 1: the real CAPIF onboarding flow is\npublic-key-based \u2014 the client supplies `apiInvokerPublicKey`; the\nserver *generates* both `apiInvokerId` and `onboardingSecret` and\nreturns them (`apiInvokerId` \"shall not be present\" in the real\nclient request at all). Previously both were taken as\nclient-supplied input \u2014 a self-asserted identity and a\nclient-chosen secret \u2014 flipped to match the real trust direction.\nEvery call always mints a new invoker now (no more\nupdate-in-place on a re-registration of the same id, since there's\nno client-supplied id to match an existing row against \u2014 the same\nreal behavior the reference's own onboarding endpoint has: it\nalways creates, never updates, an onboarded invoker).",
         "operationId": "register_invoker_invoker_registrations_post",
@@ -631,6 +680,20 @@
       }
     },
     "/provider-registrations": {
+      "get": {
+        "operationId": "list_providers_provider_registrations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Providers"
+      },
       "post": {
         "description": "OPEN_ITEMS.md section 5: Provider (APF) enrolment\n(`PostRegistrations`, `providermanagement.go`) \u2014 the real registry\n`register_service`'s own `apf_id` check needs, entirely absent\nbefore this pass. Idempotent update-in-place on a re-registration of\nthe same `apfId`, the same shape `register_service`'s own\nsame-producer re-registration already uses \u2014 the reference's real\ndomain/function-id collision detection doesn't apply here, since\nthis build has no separate provider-domain concept to collide on.",
         "operationId": "register_provider_provider_registrations_post",
@@ -958,6 +1021,22 @@
           }
         },
         "summary": "Discover Services"
+      }
+    },
+    "/trusted-invokers": {
+      "get": {
+        "operationId": "list_trusted_invokers_trusted_invokers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Trusted Invokers"
       }
     },
     "/trusted-invokers/{api_invoker_id}": {

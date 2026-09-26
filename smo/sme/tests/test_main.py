@@ -811,3 +811,35 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}
+
+
+# ---------------------------------------------------------------- registry reads (GUI pass 2)
+
+def test_list_providers_counts_their_published_services(client):
+    client.post("/provider-registrations", json={"apfId": "rapp-1", "providerDomainInfo": "demo"})
+    client.post("/published-apis/v1/rapp-1/service-apis", json=register_body())
+    by_apf = {p["apfId"]: p for p in client.get("/provider-registrations").json()}
+    assert by_apf["rapp-1"] == {"apfId": "rapp-1", "providerDomainInfo": "demo", "serviceCount": 1}
+    assert by_apf["rapp-2"]["serviceCount"] == 0   # KNOWN_TEST_PUBLISHERS, pre-registered by the fixture
+
+
+def test_list_invokers_never_exposes_the_secret(client):
+    inv = _register_invoker(client, public_key="pk-9")
+    _register_trusted_invoker(client, inv["apiInvokerId"])
+    listed = client.get("/invoker-registrations").json()
+    assert listed == [{"apiInvokerId": inv["apiInvokerId"], "apiInvokerPublicKey": "pk-9", "trusted": True}]
+    assert inv["onboardingSecret"] not in str(listed)
+
+
+def test_list_trusted_invokers(client):
+    inv = _register_invoker(client)
+    _register_trusted_invoker(client, inv["apiInvokerId"])
+    assert [t["apiInvokerId"] for t in client.get("/trusted-invokers").json()] == [inv["apiInvokerId"]]
+
+
+def test_list_event_subscriptions_per_subscriber(client):
+    client.post("/capif-events/v1/rapp-1/subscriptions", json={"subscriberId": "rapp-1", "eventTypes": ["SERVICE_API_AVAILABLE"],
+                                                               "callbackUri": "http://rapp-1/cb"})
+    listed = client.get("/capif-events/v1/rapp-1/subscriptions").json()
+    assert [(s["subscriberId"], s["eventTypes"]) for s in listed] == [("rapp-1", ["SERVICE_API_AVAILABLE"])]
+    assert client.get("/capif-events/v1/rapp-2/subscriptions").json() == []

@@ -572,3 +572,34 @@ def _service_view(r: ServiceProfile) -> dict:
         "apiSuppFeats": r.api_supp_feats,
         "shareableInfo": r.shareable_info,
     }
+
+
+# ---------------------------------------------------------------- registry reads (GUI pass 2)
+# The provider, invoker, trusted-invoker and event-subscription registries were
+# write-only (or read one known id at a time). No secret ever leaves here:
+# invokers expose their id and public key, never the onboarding-secret hash.
+
+@app.get("/provider-registrations")
+def list_providers(db: Session = Depends(get_session)):
+    return [{"apfId": p.apf_id, "providerDomainInfo": p.provider_domain_info,
+             "serviceCount": len(db.scalars(select(ServiceProfile).where(ServiceProfile.producer_id == p.apf_id)).all())}
+            for p in db.scalars(select(ProviderRegistration)).all()]
+
+
+@app.get("/invoker-registrations")
+def list_invokers(db: Session = Depends(get_session)):
+    return [{"apiInvokerId": i.api_invoker_id, "apiInvokerPublicKey": i.public_key,
+             "trusted": db.get(TrustedInvoker, i.api_invoker_id) is not None}
+            for i in db.scalars(select(InvokerRegistration)).all()]
+
+
+@app.get("/trusted-invokers")
+def list_trusted_invokers(db: Session = Depends(get_session)):
+    return [_trusted_invoker_view(ti) for ti in db.scalars(select(TrustedInvoker)).all()]
+
+
+@app.get("/capif-events/v1/{subscriber_id}/subscriptions")
+def list_event_subscriptions(subscriber_id: str, db: Session = Depends(get_session)):
+    return [{"subscriptionId": str(s.subscription_id), "subscriberId": s.subscriber_id, "eventTypes": s.event_types,
+             "callbackUri": s.callback_uri, "apiIds": s.api_ids}
+            for s in db.scalars(select(ServiceEventSubscription).where(ServiceEventSubscription.subscriber_id == subscriber_id)).all()]

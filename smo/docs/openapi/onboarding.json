@@ -214,6 +214,45 @@
         "summary": "Delete Package"
       }
     },
+    "/packages/{package_id}/artifacts": {
+      "get": {
+        "description": "(GUI pass 2) The artifacts registered during validation (Onboarding LLD section 1).",
+        "operationId": "list_package_artifacts_packages__package_id__artifacts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "package_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Package Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Package Artifacts"
+      }
+    },
     "/packages/{package_id}/cancel-delete": {
       "post": {
         "operationId": "cancel_delete_packages__package_id__cancel_delete_post",
@@ -404,6 +443,45 @@
           }
         },
         "summary": "Prime Package"
+      }
+    },
+    "/packages/{package_id}/usage": {
+      "get": {
+        "description": "(GUI pass 2) Usage registrations behind the cascade-delete guard (call flow 06):\nany row still missing stoppedAt blocks deprime and delete, so the operator\ncan now see why a delete was refused.",
+        "operationId": "list_package_usage_packages__package_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "package_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Package Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Package Usage"
       }
     },
     "/packages/{package_id}/usage/start": {
