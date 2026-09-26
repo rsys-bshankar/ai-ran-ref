@@ -151,6 +151,7 @@ function Flow02() {
   });
   const reports = reportLists.flatMap((r) => r.data ?? []);
   const steps = flow02(model, jobs.data ?? [], inference.data ?? [], subs.data ?? [], reports);
+  const running = (inference.data ?? []).find((j) => j.status === "RUNNING");
   const next = model ? modelActions(model.state) : [];
   const nextAction = next[0] && (next[0].kind === "train"
     ? <ActionButton label={next[0].label} tone="primary" action={{ method: "POST", path: "/ai-ml-workflow/training-jobs", json: { modelId, producerId: "smo-gui" }, success: "Training job started" }} />
@@ -163,7 +164,10 @@ function Flow02() {
         register: go("/aiml#models", "Register a model"),
         train: nextAction, tested: nextAction, emulated: nextAction, certified: nextAction, loaded: nextAction, active: nextAction,
         deploy: go("/aiml#models", "Choose node groups"),
-        infer: model?.state === "ACTIVE" && <ActionButton label="Request inference" tone="primary" action={{ method: "POST", path: `/ai-ml-workflow/models/${modelId}/inference-jobs`, success: "Inference job RUNNING" }} />,
+        infer: running
+          ? <ActionButton label="Mark inference completed" tone="primary" title="Simulates MLEF finishing the job (result delivered via DME)"
+              action={{ method: "POST", path: `/ai-ml-workflow/inference-jobs/${running.inferenceJobId}/resolve`, query: { succeeded: true }, success: "Inference COMPLETED" }} />
+          : model?.state === "ACTIVE" && <ActionButton label="Request inference" tone="primary" action={{ method: "POST", path: `/ai-ml-workflow/models/${modelId}/inference-jobs`, success: "Inference job RUNNING" }} />,
         monitor: go("/aiml#mlmf", "Subscribe"),
         report: go("/aiml#mlmf", "MLMF reports"),
       }} />

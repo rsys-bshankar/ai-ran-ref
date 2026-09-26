@@ -61,7 +61,7 @@ def test_onboard_success_creates_nf_deployment_descriptor_via_nfo(client, monkey
     package, instead of leaving rApp Management to pass packageId where
     NFO expects a genuine descriptor.
     """
-    monkeypatch.setattr("app.main._validate_package", lambda location: ("Definitions/main.yaml", [], "deadbeef"))
+    monkeypatch.setattr("app.main._validate_package", lambda location: ("Definitions/main.yaml", [], "deadbeef", {}))
     descriptor_id = uuid.uuid4()
     monkeypatch.setattr(
         "app.main.R1Client.post",
@@ -81,7 +81,7 @@ def test_onboard_routes_to_failed_when_nfo_descriptor_creation_fails(client, mon
     a malformed zip or an unreachable location — NFO being unavailable at
     onboarding time is a real, expected failure mode, not a crash.
     """
-    monkeypatch.setattr("app.main._validate_package", lambda location: ("Definitions/main.yaml", [], "deadbeef"))
+    monkeypatch.setattr("app.main._validate_package", lambda location: ("Definitions/main.yaml", [], "deadbeef", {}))
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(503, {}))
 
     resp = client.post("/packages", json={"location": "http://example/pkg.csar"})
@@ -112,7 +112,7 @@ def test_onboard_routes_to_failed_on_a_real_malformed_zip(client, monkeypatch):
     assert status.json()["state"] == "FAILED"
 
 
-def _real_package_bytes(include_acm_composition=True) -> bytes:
+def _real_package_bytes(include_acm_composition=True, definitions="tosca_definitions_version: tosca_simple_yaml_1_3\n") -> bytes:
     """A minimal but genuinely well-formed CSAR — TOSCA-Metadata/TOSCA.meta
     pointing at a real Definitions/ entry, optionally with the reference's
     required composition file alongside it, at its real path
@@ -125,7 +125,7 @@ def _real_package_bytes(include_acm_composition=True) -> bytes:
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("TOSCA-Metadata/TOSCA.meta", "Entry-Definitions: Definitions/main.yaml\n")
-        z.writestr("Definitions/main.yaml", "tosca_definitions_version: tosca_simple_yaml_1_3\n")
+        z.writestr("Definitions/main.yaml", definitions)
         if include_acm_composition:
             z.writestr("Files/Acm/definition/compositions.json", "{}")
     return buf.getvalue()
@@ -182,6 +182,35 @@ def test_onboard_succeeds_with_a_real_well_formed_package(client, monkeypatch):
     assert status.json()["state"] == "AVAILABLE"
 
 
+def test_onboard_resolves_name_version_vendor_from_the_asd(client, monkeypatch):
+    """A validated package takes its identity from the ASD's own
+    application_name / application_version / provider properties instead
+    of keeping the `unresolved-until-validated 0.0.0` placeholder.
+    """
+    asd = (
+        "tosca_definitions_version: tosca_simple_yaml_1_3\n"
+        "topology_template:\n  node_templates:\n    applicationServiceDescriptor:\n      properties:\n"
+        '        provider: "ai-ran-ref"\n        application_name: hello-world-rapp\n        application_version: "1.1"  # bumped\n'
+    )
+    _mock_fetch(monkeypatch, _real_package_bytes(definitions=asd))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+
+    package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+
+    pkg = next(p for p in client.get("/packages").json() if p["packageId"] == package_id)
+    assert (pkg["state"], pkg["name"], pkg["version"], pkg["vendor"]) == ("AVAILABLE", "hello-world-rapp", "1.1", "ai-ran-ref")
+
+
+def test_onboard_keeps_placeholder_identity_when_the_asd_has_none(client, monkeypatch):
+    _mock_fetch(monkeypatch, _real_package_bytes())
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+
+    package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+
+    pkg = next(p for p in client.get("/packages").json() if p["packageId"] == package_id)
+    assert (pkg["state"], pkg["name"], pkg["version"], pkg["vendor"]) == ("AVAILABLE", "unresolved-until-validated", "0.0.0", None)
+
+
 def test_onboard_routes_to_failed_for_a_byte_identical_duplicate_package(client, monkeypatch):
     """OPEN_ITEMS.md section 5: the reference's own AsdDescriptorValidator
     rejects re-onboarding a package whose ASD descriptor already exists;
@@ -219,7 +248,7 @@ def _make_available_package(client, monkeypatch, integrity_hash="deadbeef") -> s
     # duplicate-package detection) — a caller onboarding more than one
     # package in the same test must vary it, or the second one routes to
     # FAILED as a genuine duplicate.
-    monkeypatch.setattr("app.main._validate_package", lambda location: ("Definitions/main.yaml", [], integrity_hash))
+    monkeypatch.setattr("app.main._validate_package", lambda location: ("Definitions/main.yaml", [], integrity_hash, {}))
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
     return client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
 

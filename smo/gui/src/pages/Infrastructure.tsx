@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
 import type {
-  ConfigJob, ConfigJobSummary, DeploymentManager, InventorySubscription, LcmOperation, NfDeployment, NfDescriptor, NfResource, O1Endpoint, OCloudResource, ResourcePool,
+  ConfigJob, ConfigJobSummary, DeploymentManager, InventorySubscription, LcmOperation, Model, NfDeployment, NfDescriptor, NfResource, O1Endpoint, OCloudResource, ResourcePool,
   ResourceType, ServiceOrder, SwmJob, Topology,
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -364,15 +364,34 @@ function Orders() {
 function SubmitOrder() {
   const [scope, setScope] = useState("");
   const [steps, setSteps] = useState(JSON.stringify([STEP_TEMPLATES.POLICY], null, 2));
+  const models = useSmo<Model[]>("/ai-ml-workflow/models");
+  const descriptors = useSmo<NfDescriptor[]>("/nfo/descriptors");
+  const deployments = useSmo<NfDeployment[]>("/nfo/deployments");
   let parsed: unknown[] | null = null;
   try { const v = JSON.parse(steps); parsed = Array.isArray(v) ? v : null; } catch { parsed = null; }
-  const add = (k: string) => setSteps(JSON.stringify([...(parsed ?? []), STEP_TEMPLATES[k]], null, 2));
+  // TRAINING/DEPLOY need real ids: prefill the newest model, and the newest
+  // descriptor NFO will still accept (one deployment per descriptor, ever;
+  // deployment names are unique too), instead of placeholders the operator
+  // has to go and look up.
+  const fill = (k: string) => {
+    const t = { ...STEP_TEMPLATES[k] };
+    const model = models.data?.at(-1);
+    const used = new Set((deployments.data ?? []).map((d) => d.nfDeploymentDescriptorId));
+    const descriptor = descriptors.data?.filter((d) => !used.has(d.nfDeploymentDescriptorId)).at(-1);
+    if (k === "TRAINING" && model) t.modelId = model.modelId;
+    if (k === "DEPLOY") {
+      if (descriptor) t.nfDeploymentDescriptorId = descriptor.nfDeploymentDescriptorId;
+      t.name = `so-deploy-${Date.now().toString(36)}`;
+    }
+    return t;
+  };
+  const add = (k: string) => setSteps(JSON.stringify([...(parsed ?? []), fill(k)], null, 2));
   return (
     <Card title="Submit service order">
       <div className="row gap wrap"><span className="muted small">Add step:</span>{Object.keys(STEP_TEMPLATES).map((k) => <button key={k} className="btn small" onClick={() => add(k)}>{k}</button>)}</div>
       <div className="form">
         <Field label="Scope"><input value={scope} onChange={(e) => setScope(e.target.value)} placeholder="cell-cluster-7 rollout" /></Field>
-        <Field label="Steps (JSON array)" hint={parsed ? undefined : <span className="text-bad">must be a JSON array</span>}><textarea rows={8} value={steps} onChange={(e) => setSteps(e.target.value)} spellCheck={false} /></Field>
+        <Field label="Steps (JSON array)" hint={parsed ? "TRAINING / DEPLOY steps are prefilled with the newest model and a not-yet-deployed NF descriptor" : <span className="text-bad">must be a JSON array</span>}><textarea rows={8} value={steps} onChange={(e) => setSteps(e.target.value)} spellCheck={false} /></Field>
       </div>
       <ActionButton label="Submit order" tone="primary" disabled={!parsed || !scope} action={{ method: "POST", path: "/so-smos/orders", json: { scope, steps: parsed ?? [] }, success: "Order executed" }} />
     </Card>

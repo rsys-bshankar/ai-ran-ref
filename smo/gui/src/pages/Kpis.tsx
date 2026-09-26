@@ -206,6 +206,10 @@ function Assurance() {
         <DataTable rows={actions.data ? [...actions.data].reverse() : undefined} rowKey={(a) => a.actionId} empty="No remedial actions." columns={[
           { header: "Action", render: (a) => <Id value={a.actionId} /> },
           { header: "Monitor", render: (a) => <Id value={a.monitorId} /> },
+          { header: "Scope", render: (a) => {
+            const m = monitors.data?.find((x) => x.monitorId === a.monitorId);
+            return m?.targetCoordinationGroupId ? "model group (retrain)" : m?.targetOrderId ? "service order" : "—";
+          } },
           { header: "Type", render: (a) => a.actionType },
           { header: "Auto-executed", render: (a) => (a.autoExecuted ? "yes" : "no") },
           { header: "Outcome", render: (a) => <StateBadge state={a.outcome} /> },
@@ -266,7 +270,7 @@ function MonitorPanel({ monitor, onClose }: { monitor: Monitor; onClose: () => v
         <div>
           <h3>Remedial action</h3>
           {monitor.targetCoordinationGroupId && <p className="muted small">Group-scoped: any action type dispatches a group retrain via AI/ML Workflow.</p>}
-          <Field label="Action type" hint={actionType === "ROLLBACK" ? "Not supported: rApp Management keeps no prior-version history (SA SMOS returns ROLLBACK_HISTORY_UNAVAILABLE)." : actionType === "SCALE" ? "Always escalates in Phase 1 (NFO scale is a stub)." : undefined}>
+          <Field label="Action type" hint={monitor.targetCoordinationGroupId ? undefined : actionType === "ROLLBACK" ? "Not supported: rApp Management keeps no prior-version history (SA SMOS returns ROLLBACK_HISTORY_UNAVAILABLE)." : actionType === "SCALE" ? "Always escalates in Phase 1 (NFO scale is a stub)." : undefined}>
             <select value={actionType} onChange={(e) => setActionType(e.target.value)}>{["CONFIG_CHANGE", "SCALE", "RECONNECT", "ROLLBACK"].map((t) => <option key={t}>{t}</option>)}</select>
           </Field>
           <ActionButton label="Execute" tone="primary" action={{ method: "POST", path: `${base}/remedial-actions`, query: { action_type: actionType }, success: `${actionType} dispatched` }} />

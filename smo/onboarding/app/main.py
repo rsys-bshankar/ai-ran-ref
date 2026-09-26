@@ -98,7 +98,7 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
     db.commit()
 
     try:
-        entry_definitions, artifacts, integrity_hash = _validate_package(body.location)
+        entry_definitions, artifacts, integrity_hash, identity = _validate_package(body.location)
         # AsdDescriptorValidator's own duplicate-descriptor-id detection,
         # adapted to this build's own package identity (a content hash,
         # since real ASD descriptor data doesn't exist here) — a
@@ -111,6 +111,9 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
             raise PackageValidationFailed(f"package with integrity hash {integrity_hash} already onboarded as {existing.package_id}")
         pkg.tosca_entry_definitions = entry_definitions
         pkg.integrity_hash = integrity_hash
+        pkg.name = identity.get("name", pkg.name)
+        pkg.version = identity.get("version", pkg.version)
+        pkg.vendor = identity.get("vendor", pkg.vendor)
         pkg.signature_verified = True
         for path, access_url in artifacts:
             db.add(Artifact(package_id=pkg.package_id, path=path, access_url=access_url))
@@ -142,7 +145,28 @@ def _create_nf_deployment_descriptor(pkg: ApplicationPackage, entry_definitions:
     return uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
 
 
-def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str]:
+_ASD_IDENTITY_FIELDS = {"application_name": "name", "application_version": "version", "provider": "vendor"}
+
+
+def _asd_identity(definitions: str) -> dict[str, str]:
+    """The ASD's own applicationServiceDescriptor identity properties
+    (application_name / application_version / provider), read from the
+    entry definitions so a validated package stops showing as
+    `unresolved-until-validated 0.0.0`. A line scan rather than a YAML
+    parse: these are flat scalar properties, and this module carries no
+    YAML dependency. Missing fields are simply absent from the result.
+    """
+    found: dict[str, str] = {}
+    for line in definitions.splitlines():
+        key, sep, value = line.strip().partition(":")
+        if sep and key in _ASD_IDENTITY_FIELDS and _ASD_IDENTITY_FIELDS[key] not in found:
+            value = value.split(" #", 1)[0].strip().strip("\"'")
+            if value:
+                found[_ASD_IDENTITY_FIELDS[key]] = value
+    return found
+
+
+def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, dict[str, str]]:
     """Open TOSCA-Metadata/Definitions/Artifacts, per Onboarding LLD section 1.
 
     OPEN_ITEMS.md section 5: two more checks from the reference's own
@@ -171,11 +195,11 @@ def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str]:
         meta = z.read("TOSCA-Metadata/TOSCA.meta").decode()
         entry_line = next(l for l in meta.splitlines() if l.startswith("Entry-Definitions:"))
         entry_definitions = entry_line.split(":", 1)[1].strip()
-        z.getinfo(entry_definitions)  # raises KeyError if missing/malformed
+        identity = _asd_identity(z.read(entry_definitions).decode(errors="replace"))  # raises KeyError if missing/malformed
         z.getinfo("Files/Acm/definition/compositions.json")  # required per the reference's FileExistenceValidator
         artifacts = [(n, f"{location}#{n}") for n in z.namelist() if n.startswith("Artifacts/") and not n.endswith("/")]
     integrity_hash = hashlib.sha256(data).hexdigest()
-    return entry_definitions, artifacts, integrity_hash
+    return entry_definitions, artifacts, integrity_hash, identity
 
 
 @app.get("/packages/{package_id}/onboarding-status")
