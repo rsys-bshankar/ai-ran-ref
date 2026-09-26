@@ -87,6 +87,10 @@ RULES: list[Rule] = [
     _rule("POST", "/onboarding/packages", O),
     _rule("POST", "/onboarding/packages/{id}/(prime|deprime|deprecate|cancel-delete)", O),
     _rule("DELETE", "/onboarding/packages/{id}", A),
+    # usage registrations are what an rApp instance itself files (call flow 06):
+    # simulating one, to exercise the cascade-delete guard, is admin-only
+    _rule("POST", "/onboarding/packages/{id}/usage/start", A),
+    _rule("POST", "/onboarding/packages/{id}/usage/{id}/stop", A),
 
     # --- rApp Management
     _rule("POST", "/rapp-mgmt/instances", O),
@@ -117,11 +121,45 @@ RULES: list[Rule] = [
     _rule("POST", "/ran-nf-oam/alarms/ingest", A),                   # test-data injection
     _rule("POST", "/ran-nf-oam/(config-jobs|pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)", O),
     _rule("POST", "/ran-nf-oam/software-management-jobs/{id}/advance", O),
+    _rule("POST", "/ran-nf-oam/o1-adaptor-endpoints/{id}/heartbeat", A),   # what the ME's adaptor sends: simulation
 
     # --- A1 Related
     _rule("POST", "/a1-related/policies", O),
     _rule("PUT", "/a1-related/policies/{id}", O),
     _rule("DELETE", "/a1-related/policies/{id}", A),
+    _rule("POST", "/a1-related/policies/subscriptions", O),
+    _rule("DELETE", "/a1-related/policies/subscriptions/{id}", O),
+    _rule("POST", "/a1-related/ei-types/register", A),               # producer side of call flow 05
+    _rule("DELETE", "/a1-related/ei-types/{id}", A),
+    _rule("PUT", "/a1-related/services", A),                         # A1-P service registry
+    _rule("PUT", "/a1-related/services/{id}/keepalive", A),
+    _rule("DELETE", "/a1-related/services/{id}", A),
+
+    # --- DME (call flow 05): consumers are operator-level, producers admin
+    _rule("POST", "/dme/data-jobs", O),
+    _rule("PUT", "/dme/data-jobs/{id}", O),
+    _rule("DELETE", "/dme/data-jobs/{id}", O),                       # terminate a consumer job
+    _rule("POST", "/dme/type-subscriptions", O),
+    _rule("DELETE", "/dme/type-subscriptions/{id}", O),
+    _rule("POST", "/dme/production-capabilities", A),
+    _rule("DELETE", "/dme/production-capabilities", A),
+    _rule("POST", "/dme/offers", A),
+    _rule("POST", "/dme/offers/{id}/notify", A),
+    _rule("DELETE", "/dme/offers/{id}", A),
+
+    # --- SME: registry administration is admin; event subscriptions operator.
+    # Invoker onboarding returns a one-time secret, so it's admin-only and
+    # audited; token issuance and introspection stay unexposed.
+    _rule("POST", "/sme/provider-registrations", A),
+    _rule("DELETE", "/sme/provider-registrations/{id}", A),
+    _rule("POST", "/sme/published-apis/v1/{id}/service-apis", A),
+    _rule("DELETE", "/sme/published-apis/v1/{id}/service-apis/{id}", A),
+    _rule("POST", "/sme/invoker-registrations", A),
+    _rule("PUT", "/sme/trusted-invokers/{id}", A),
+    _rule("POST", "/sme/trusted-invokers/{id}/(update|delete)", A),
+    _rule("DELETE", "/sme/trusted-invokers/{id}", A),
+    _rule("POST", "/sme/capif-events/v1/{id}/subscriptions", O),
+    _rule("DELETE", "/sme/capif-events/v1/{id}/subscriptions/{id}", O),
 
     # --- NFO
     _rule("POST", "/nfo/deployments/{id}/(heal|scale)", O),
@@ -131,15 +169,25 @@ RULES: list[Rule] = [
     _rule("POST", "/focom/resources/provision", A),
     _rule("DELETE", "/focom/resources/{id}", A),
     _rule("POST", "/focom/alarms/ingest", A),                        # test-data injection
+    _rule("POST", "/focom/inventory/subscriptions", O),
+    _rule("DELETE", "/focom/inventory/subscriptions/{id}", O),
 
     # --- Policy Mgmt
     _rule("POST", "/policy-mgmt/intents", O, json_overrides=lambda u: {"rmioId": GUI_RMIO_ID}),
     _rule("PATCH", "/policy-mgmt/intents/{id}/admin-state", O, json_overrides=lambda u: {"requesterId": GUI_RMIO_ID}),
     _rule("DELETE", "/policy-mgmt/intents/{id}", A),
+    # RMIH registration is framework-internal only (D-SEC-POLICY-1: SO/SA SMOS
+    # identities) and fulfilment reports come from an RMIH, so both are admin
+    # acting on the framework's behalf (call flow 09)
+    _rule("POST", "/policy-mgmt/intent-handling-functions", A),
+    _rule("DELETE", "/policy-mgmt/intent-handling-functions/{id}", A),
+    _rule("POST", "/policy-mgmt/intent-reports", A),
 
     # --- RAN Analytics
     _rule("POST", "/ran-analytics/subscriptions", O),
     _rule("DELETE", "/ran-analytics/subscriptions/{id}", O),
+    _rule("POST", "/ran-analytics/producers", A),                    # producer side of call flow 08
+    _rule("POST", "/ran-analytics/reports", A),
 
     # --- SO / SA SMOS
     _rule("POST", "/so-smos/orders", O),
