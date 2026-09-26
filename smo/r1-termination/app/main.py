@@ -47,6 +47,7 @@ ROUTES = {
     "/mlmr": os.environ.get("MLMR_URL", "http://mlmr:8000"),
     "/mllf": os.environ.get("MLLF_URL", "http://mllf:8000"),
     "/ran-analytics": os.environ.get("RAN_ANALYTICS_URL", "http://ran-analytics:8000"),
+    "/mdaf": os.environ.get("MDAF_URL", "http://mdaf:8000"),
     "/intent-service": os.environ.get("INTENT_SERVICE_URL", "http://intent-service:8000"),
     "/so-smos": os.environ.get("SO_SMOS_URL", "http://so-smos:8000"),
     "/sa-smos": os.environ.get("SA_SMOS_URL", "http://sa-smos:8000"),

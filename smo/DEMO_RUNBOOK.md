@@ -956,16 +956,18 @@ print(r.status_code)
 "
 ```
 
-## 14. RAN Analytics (optional) — register a producer, subscribe, publish a real report
+## 14. RAN Analytics + MDAF (optional) — register a producer, subscribe, publish a real report
 
 Independent of the sample rApp instance above — the last of the four
 modules never touched by any demo phase before this pass. Real
 producer registration (which itself does the same real two-step CAPIF
 dance as step 4: SME provider enrolment then service publish), a real
 subscription, and a real report-publish that genuinely notifies its
-subscriber.
+subscriber. Wave 1 of the AI Platform Service Decomposition split
+report publishing/subscriptions into their own **MDAF** service —
+`ran-analytics` keeps producer registration only.
 
-Register an analytics producer:
+Register an analytics producer (RAN Analytics):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -991,12 +993,12 @@ print(r.status_code, r.json())
 "
 ```
 
-Subscribe, with a real notification destination:
+Subscribe, with a real notification destination (MDAF):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://ran-analytics:8000/subscriptions', params={
+r = httpx.post('http://mdaf:8000/subscriptions', params={
     'analytics_type': 'coverage-issue-analysis', 'requested_by': 'sa-smos',
     'notification_destination': 'http://demo-consumer:9000/analytics-reports',
 })
@@ -1004,12 +1006,12 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the `subscriptionId`, then publish a report:
+Note the `subscriptionId`, then publish a report (MDAF):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://ran-analytics:8000/reports', params={'analytics_type': 'coverage-issue-analysis'},
+r = httpx.post('http://mdaf:8000/reports', params={'analytics_type': 'coverage-issue-analysis'},
                 json={'output': {'issue': 'demo-cell-1 coverage hole detected'}, 'input_sources': []})
 print(r.status_code, r.json())
 "
@@ -1019,7 +1021,7 @@ print(r.status_code, r.json())
 `http://demo-consumer:9000/analytics-reports` — no real listener
 exists at that address in this compose stack (same honesty pattern as
 FOCOM's/Intent Service's/A1 Related's placeholder callbacks above), so
-watch `ran-analytics`'s own logs for the delivery attempt;
+watch `mdaf`'s own logs for the delivery attempt;
 `tests_integration/test_demo_runbook.py` proves the real dispatch
 fires with the correct `reportId`/`output` payload, by intercepting
 the exact `httpx.post` call `_notify_report_subscribers` makes.
@@ -1028,7 +1030,7 @@ Confirm the report is queryable:
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.get('http://ran-analytics:8000/reports', params={'analytics_type': 'coverage-issue-analysis'})
+r = httpx.get('http://mdaf:8000/reports', params={'analytics_type': 'coverage-issue-analysis'})
 print(r.status_code, r.json())
 "
 ```
@@ -1038,7 +1040,7 @@ Unsubscribe:
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.delete('http://ran-analytics:8000/subscriptions/<subscriptionId>')
+r = httpx.delete('http://mdaf:8000/subscriptions/<subscriptionId>')
 print(r.status_code)
 "
 ```

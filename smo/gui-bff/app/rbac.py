@@ -35,7 +35,7 @@ RANK = {Role.VIEWER: 0, Role.OPERATOR: 1, Role.ADMIN: 2}
 # minus DME's push/pull aliases, which are rApp data-plane paths).
 MODULES = [
     "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "a1-related", "nfo", "focom",
-    "aimgf", "mlmr", "mllf", "ran-analytics", "intent-service", "so-smos", "sa-smos",
+    "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf", "intent-service", "so-smos", "sa-smos",
 ]
 
 # The RMIO identity every GUI-created intent carries. Intent Service only lets
@@ -197,11 +197,12 @@ RULES: list[Rule] = [
     _rule("DELETE", "/intent-service/intent-handling-functions/{id}", A),
     _rule("POST", "/intent-service/intent-reports", A),
 
-    # --- RAN Analytics
-    _rule("POST", "/ran-analytics/subscriptions", O),
-    _rule("DELETE", "/ran-analytics/subscriptions/{id}", O),
+    # --- RAN Analytics / MDAF (Wave 1 split: reports/subscriptions moved
+    # to mdaf/, producer registration stays in ran-analytics/)
+    _rule("POST", "/mdaf/subscriptions", O),
+    _rule("DELETE", "/mdaf/subscriptions/{id}", O),
     _rule("POST", "/ran-analytics/producers", A),                    # producer side of call flow 08
-    _rule("POST", "/ran-analytics/reports", A),
+    _rule("POST", "/mdaf/reports", A),
 
     # --- SO / SA SMOS
     _rule("POST", "/so-smos/orders", O),

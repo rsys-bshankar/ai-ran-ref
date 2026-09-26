@@ -245,15 +245,16 @@ Per-module unit test counts:
 
 | Module | Tests |
 |---|---|
+| ran-analytics | 9 |
 | mllf | 4 |
 | mock-o1-adaptor | 6 |
 | intent-service | 10 |
 | sa-smos | 12 |
 | so-smos | 13 |
 | r1-termination | 15 |
+| mdaf | 15 |
 | mock-near-rt-ric | 16 |
 | rapp-mgmt | 19 |
-| ran-analytics | 22 |
 | nfo | 23 |
 | mlmr | 25 |
 | onboarding | 30 |
@@ -267,7 +268,9 @@ Per-module unit test counts:
 `ai-ml-workflow`'s 49 tests were split across `mlmr`/`aimgf` (plus 4 new
 ones for `mllf`, whose one existing route — `request_model_deployment`
 — had never had dedicated unit coverage before Wave 1's split) in the
-AI Platform Service Decomposition's Wave 1.
+AI Platform Service Decomposition's Wave 1. `ran-analytics`'s 22 tests
+were split across `ran-analytics`/`mdaf` the same wave (plus 1 new
+health-check test for `mdaf`, now its own service).
 
 Plus 14 cross-service integration tests in `tests_integration/`.
 `mock-near-rt-ric`/`r1-termination`/`intent-service` (formerly `policy-mgmt`) (10 tests each) are

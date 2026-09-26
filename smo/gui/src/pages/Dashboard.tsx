@@ -25,7 +25,7 @@ export function Dashboard() {
   const endpoints = useSmo<O1Endpoint[]>("/ran-nf-oam/o1-adaptor-endpoints");
   const policies = useSmo<A1Policy[]>("/a1-related/policies");
   const intents = useSmo<Intent[]>("/intent-service/intents");
-  const analytics = useSmo<AnalyticsReport[]>("/ran-analytics/reports");
+  const analytics = useSmo<AnalyticsReport[]>("/mdaf/reports");
 
   const open = (alarms.data ?? []).filter((a) => a.severity !== "cleared");
   const sev = countBySeverity(open);

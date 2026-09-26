@@ -22,7 +22,7 @@ from loader import load_app_module  # noqa: E402
 
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
-    "a1-related", "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics",
+    "a1-related", "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
     "intent-service", "so-smos", "sa-smos", "mock-near-rt-ric", "mock-o1-adaptor",
 ]
 
