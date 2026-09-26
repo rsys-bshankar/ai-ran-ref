@@ -82,6 +82,7 @@ function PackageDrawer({ pkg, onClose }: { pkg: Package; onClose: () => void }) 
         ["TOSCA entry definitions", pkg.toscaEntryDefinitions], ["Signature", pkg.signatureVerified ? "verified (dev cert)" : "unverified"],
         ["NF deployment descriptor", pkg.nfDeploymentDescriptorId && <code>{pkg.nfDeploymentDescriptorId}</code>],
         ["Instances", String((instances.data ?? []).filter((i) => i.packageId === pkg.packageId).length)],
+        ["AI capabilities", pkg.aiCapabilities ? <code className="small">{JSON.stringify(pkg.aiCapabilities)}</code> : <span className="muted">none declared</span>],
       ]} />
       <h3>Artifacts</h3>
       <DataTable rows={artifacts.data} error={artifacts.error} rowKey={(a) => a.artifactId} empty="No artifacts registered." columns={[
