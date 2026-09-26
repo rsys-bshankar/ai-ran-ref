@@ -1,18 +1,20 @@
 """MLLF (ML Loading Function) — TS 28.105 AI/ML NRM realization.
 
-Wave 1 of the AI Platform Service Decomposition: split out of the former
-flat `ai-ml-workflow/` module (see docs/architecture/AI_PLATFORM_BASELINE.md
+Wave 1 of the AI Platform Service Decomposition split this module out of
+the former flat `ai-ml-workflow/` (see docs/architecture/AI_PLATFORM_BASELINE.md
 and docs/ownership/MLLF_OWNERSHIP.md). MLLF is deployment truth — it
 answers "is this model loaded and active anywhere," distinct from AIMgF's
 lifecycle-state question and MLMR's repository question.
 
-Deliberately thin this wave: `ai-ml-workflow` never had a dedicated
+Deliberately thin still: `ai-ml-workflow` never had a dedicated
 load/unload/activate/deactivate surface of its own beyond
 `request_model_deployment` (see MLLF_OWNERSHIP.md's own migration-source
-note) — that one route moves here unchanged. Building the fuller
-load/unload/activate/deactivate surface the ownership doc describes is
-new business logic, out of scope for Wave 1's structural split; it's
-left for a later wave.
+note) — that one route moves here unchanged since Wave 1. Wave 2 only
+repoints its gate/write-back at AIMgF's own `model_lifecycle` row instead
+of MLMR's (Wave 1's `PATCH /mlmr/models/{id}/lifecycle` is gone —
+lifecycle/node-group state was never MLMR's to carry). Building the
+fuller load/unload/activate/deactivate surface the ownership doc
+describes is still new business logic, left for a later wave.
 """
 
 import uuid
@@ -23,7 +25,7 @@ from smo_shared.r1_client import R1Client
 
 app = FastAPI(title="MLLF")
 
-_mlmr = R1Client()
+_aimgf = R1Client()
 
 
 @app.get("/health")
@@ -36,17 +38,17 @@ def health_check():
 
 @app.post("/models/{model_id}/deploy")
 def request_model_deployment(model_id: uuid.UUID, node_groups: list[str]):
-    """RequestModelDeployment. Requires CERTIFIED-or-later state (the
-    AIMgF gate, unchanged from v1.3, now read cross-service from MLMR)
-    and stamps clearedNodeGroups (LLD section 5, MultiNode Q2's
-    targeting gap) back onto MLMR's own row — see
-    `PATCH /models/{id}/lifecycle` in mlmr/app/main.py.
+    """RequestModelDeployment. Requires CERTIFIED-or-PROMOTED
+    ModelLifecycleState (the AIMgF gate, unchanged from v1.3, now read
+    cross-service from AIMgF's own `model_lifecycle` row) and stamps
+    clearedNodeGroups (LLD section 5, MultiNode Q2's targeting gap) back
+    onto that same row — see `PATCH /aimgf/models/{id}/runtime/node-groups`.
     """
-    resp = _mlmr.get(f"/mlmr/models/{model_id}")
+    resp = _aimgf.get(f"/aimgf/models/{model_id}/lifecycle")
     if resp.status_code == 404:
         raise HTTPException(status_code=404, detail="no such model")
-    model = resp.json()
-    if model["state"] not in ("CERTIFIED", "LOADED", "ACTIVE"):
+    lifecycle = resp.json()
+    if lifecycle["modelLifecycleState"] not in ("CERTIFIED", "PROMOTED"):
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED)
-    updated = _mlmr.patch(f"/mlmr/models/{model_id}/lifecycle", json={"clearedNodeGroups": node_groups}).json()
+    updated = _aimgf.patch(f"/aimgf/models/{model_id}/runtime/node-groups", json={"clearedNodeGroups": node_groups}).json()
     return {"modelId": str(model_id), "clearedNodeGroups": updated["clearedNodeGroups"]}

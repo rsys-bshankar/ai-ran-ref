@@ -1,5 +1,7 @@
-"""Tests for AI/ML Workflow's lifecycles (AI/ML Workflow LLD sections 3-4).
-Run with: pytest smo/aimgf/tests -q
+"""Tests for AIMgF's own two real state machines (Wave 2, AI Platform
+Service Decomposition) — ModelLifecycle (14 states, a model's own
+identity/certification path) and RuntimeLifecycle (8 states, its serving
+existence, jointly owned with NFO). Run with: pytest smo/aimgf/tests -q
 """
 
 import pytest
@@ -7,51 +9,138 @@ import pytest
 from smo_shared.statemachine import IllegalTransition
 
 from app.statemachine import (
-    AIML_MODEL_FSM,
+    GOVERNANCE_EVENTS,
     INFERENCE_JOB_FSM,
+    MODEL_LIFECYCLE_FSM,
+    RUNTIME_LIFECYCLE_FSM,
     InferenceEvent,
     InferenceState,
-    ModelEvent,
-    ModelState,
+    ModelLifecycleEvent,
+    ModelLifecycleState,
+    RuntimeLifecycleEvent,
+    RuntimeLifecycleState,
     should_trigger_group_retrain,
 )
 
 
-# ---------------------------------------------------------------- AIMLModel
+# ---------------------------------------------------------------- ModelLifecycle
 
 def test_full_certification_pipeline():
-    s = ModelState.REGISTERED
+    s = ModelLifecycleState.REGISTERED
     for event, expected in [
-        (ModelEvent.TRAIN, ModelState.TRAINING),
-        (ModelEvent.TRAINING_COMPLETE, ModelState.TESTED),
-        (ModelEvent.VALIDATION_COMPLETE, ModelState.EMULATED),
-        (ModelEvent.CERTIFY, ModelState.CERTIFIED),
-        (ModelEvent.LOAD, ModelState.LOADED),
-        (ModelEvent.ACTIVATE, ModelState.ACTIVE),
+        (ModelLifecycleEvent.CREATE_TRAINING, ModelLifecycleState.TRAINING),
+        (ModelLifecycleEvent.TRAINING_COMPLETE, ModelLifecycleState.TRAINED),
+        (ModelLifecycleEvent.CREATE_VALIDATION, ModelLifecycleState.VALIDATING),
+        (ModelLifecycleEvent.VALIDATION_COMPLETE, ModelLifecycleState.VALIDATED),
+        (ModelLifecycleEvent.CREATE_EMULATION, ModelLifecycleState.EMULATING),
+        (ModelLifecycleEvent.EMULATION_COMPLETE, ModelLifecycleState.EMULATED),
+        (ModelLifecycleEvent.SUBMIT_FOR_APPROVAL, ModelLifecycleState.PENDING_APPROVAL),
+        (ModelLifecycleEvent.APPROVE, ModelLifecycleState.APPROVED),
+        (ModelLifecycleEvent.CERTIFY, ModelLifecycleState.CERTIFIED),
+        (ModelLifecycleEvent.PROMOTE, ModelLifecycleState.PROMOTED),
     ]:
-        s = AIML_MODEL_FSM.fire(s, event)
+        s = MODEL_LIFECYCLE_FSM.fire(s, event)
         assert s == expected
 
 
 def test_no_shortcut_from_registered_to_certified():
-    """No lightweight update path — confirmed, unchanged project design
-    principle. Skipping TESTED/EMULATED must fail.
+    """No lightweight update path — existing project design principle,
+    carried over unchanged from Wave 1. Skipping any intermediate phase
+    must fail.
     """
     with pytest.raises(IllegalTransition):
-        AIML_MODEL_FSM.fire(ModelState.REGISTERED, ModelEvent.CERTIFY)
-
-
-def test_retraining_re_enters_at_training_not_registered():
-    s = AIML_MODEL_FSM.fire(ModelState.ACTIVE, ModelEvent.RETRAIN)
-    assert s == ModelState.TRAINING
-    # and the full pipeline is required again — no fast path back to ACTIVE
+        MODEL_LIFECYCLE_FSM.fire(ModelLifecycleState.REGISTERED, ModelLifecycleEvent.CERTIFY)
     with pytest.raises(IllegalTransition):
-        AIML_MODEL_FSM.fire(s, ModelEvent.ACTIVATE)
+        MODEL_LIFECYCLE_FSM.fire(ModelLifecycleState.TRAINED, ModelLifecycleEvent.SUBMIT_FOR_APPROVAL)
 
 
-def test_deprecate_from_active():
-    s = AIML_MODEL_FSM.fire(ModelState.ACTIVE, ModelEvent.DEPRECATE)
-    assert s == ModelState.DEPRECATED
+def test_retraining_a_promoted_model_re_enters_at_training_not_registered():
+    s = MODEL_LIFECYCLE_FSM.fire(ModelLifecycleState.PROMOTED, ModelLifecycleEvent.CREATE_TRAINING)
+    assert s == ModelLifecycleState.TRAINING
+    with pytest.raises(IllegalTransition):
+        MODEL_LIFECYCLE_FSM.fire(s, ModelLifecycleEvent.SUBMIT_FOR_APPROVAL)
+
+
+def test_rollback_demotes_a_promoted_model_to_certified_not_further():
+    s = MODEL_LIFECYCLE_FSM.fire(ModelLifecycleState.PROMOTED, ModelLifecycleEvent.ROLLBACK)
+    assert s == ModelLifecycleState.CERTIFIED
+    with pytest.raises(IllegalTransition):
+        MODEL_LIFECYCLE_FSM.fire(s, ModelLifecycleEvent.ROLLBACK)
+
+
+def test_reject_during_approval_routes_to_failed_not_a_dead_end():
+    s = MODEL_LIFECYCLE_FSM.fire(ModelLifecycleState.PENDING_APPROVAL, ModelLifecycleEvent.REJECT)
+    assert s == ModelLifecycleState.FAILED
+    # a failure can be retried from the top of the pipeline
+    assert MODEL_LIFECYCLE_FSM.fire(s, ModelLifecycleEvent.CREATE_TRAINING) == ModelLifecycleState.TRAINING
+
+
+def test_deprecate_from_certified_or_promoted():
+    assert MODEL_LIFECYCLE_FSM.fire(ModelLifecycleState.CERTIFIED, ModelLifecycleEvent.DEPRECATE) == ModelLifecycleState.DEPRECATED
+    assert MODEL_LIFECYCLE_FSM.fire(ModelLifecycleState.PROMOTED, ModelLifecycleEvent.DEPRECATE) == ModelLifecycleState.DEPRECATED
+
+
+def test_retire_from_deprecated_or_failed():
+    assert MODEL_LIFECYCLE_FSM.fire(ModelLifecycleState.DEPRECATED, ModelLifecycleEvent.RETIRE) == ModelLifecycleState.RETIRED
+    assert MODEL_LIFECYCLE_FSM.fire(ModelLifecycleState.FAILED, ModelLifecycleEvent.RETIRE) == ModelLifecycleState.RETIRED
+
+
+def test_retired_is_terminal():
+    with pytest.raises(IllegalTransition):
+        MODEL_LIFECYCLE_FSM.fire(ModelLifecycleState.RETIRED, ModelLifecycleEvent.CREATE_TRAINING)
+
+
+def test_governance_events_are_exactly_the_documented_four_decisions_plus_their_framing():
+    """AIMGF_OWNERSHIP.md's own Governance list: Approval, Certification,
+    Promotion, Rollback — plus the submit/reject pair framing approval,
+    so the CertificationRecord audit trail covers the whole governance
+    conversation main.py writes it for.
+    """
+    assert GOVERNANCE_EVENTS == {
+        ModelLifecycleEvent.SUBMIT_FOR_APPROVAL, ModelLifecycleEvent.APPROVE, ModelLifecycleEvent.REJECT,
+        ModelLifecycleEvent.CERTIFY, ModelLifecycleEvent.PROMOTE, ModelLifecycleEvent.ROLLBACK,
+    }
+
+
+def test_model_lifecycle_state_has_exactly_fourteen_states():
+    assert len(list(ModelLifecycleState)) == 14
+
+
+# ---------------------------------------------------------------- RuntimeLifecycle
+
+def test_runtime_lifecycle_state_has_exactly_eight_states():
+    assert len(list(RuntimeLifecycleState)) == 8
+
+
+def test_full_deploy_activate_scale_terminate_pipeline():
+    s = RuntimeLifecycleState.NOT_DEPLOYED
+    for event, expected in [
+        (RuntimeLifecycleEvent.REQUEST_DEPLOYMENT, RuntimeLifecycleState.DEPLOYMENT_REQUESTED),
+        (RuntimeLifecycleEvent.DEPLOYMENT_COMPLETE, RuntimeLifecycleState.DEPLOYED),
+        (RuntimeLifecycleEvent.ACTIVATE, RuntimeLifecycleState.ACTIVATING),
+        (RuntimeLifecycleEvent.ACTIVATION_COMPLETE, RuntimeLifecycleState.ACTIVE),
+        (RuntimeLifecycleEvent.REQUEST_SCALE, RuntimeLifecycleState.SCALING),
+        (RuntimeLifecycleEvent.SCALE_COMPLETE, RuntimeLifecycleState.ACTIVE),
+        (RuntimeLifecycleEvent.REQUEST_TERMINATION, RuntimeLifecycleState.TERMINATING),
+        (RuntimeLifecycleEvent.TERMINATION_COMPLETE, RuntimeLifecycleState.TERMINATED),
+    ]:
+        s = RUNTIME_LIFECYCLE_FSM.fire(s, event)
+        assert s == expected
+
+
+def test_termination_is_legal_from_every_pre_active_deployed_state():
+    for state in (RuntimeLifecycleState.DEPLOYMENT_REQUESTED, RuntimeLifecycleState.DEPLOYED, RuntimeLifecycleState.ACTIVE):
+        assert RUNTIME_LIFECYCLE_FSM.fire(state, RuntimeLifecycleEvent.REQUEST_TERMINATION) == RuntimeLifecycleState.TERMINATING
+
+
+def test_terminated_is_terminal():
+    with pytest.raises(IllegalTransition):
+        RUNTIME_LIFECYCLE_FSM.fire(RuntimeLifecycleState.TERMINATED, RuntimeLifecycleEvent.REQUEST_DEPLOYMENT)
+
+
+def test_cannot_scale_before_active():
+    with pytest.raises(IllegalTransition):
+        RUNTIME_LIFECYCLE_FSM.fire(RuntimeLifecycleState.DEPLOYED, RuntimeLifecycleEvent.REQUEST_SCALE)
 
 
 # ---------------------------------------------------------------- InferenceJob

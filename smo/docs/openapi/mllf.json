@@ -81,7 +81,7 @@
     },
     "/models/{model_id}/deploy": {
       "post": {
-        "description": "RequestModelDeployment. Requires CERTIFIED-or-later state (the\nAIMgF gate, unchanged from v1.3, now read cross-service from MLMR)\nand stamps clearedNodeGroups (LLD section 5, MultiNode Q2's\ntargeting gap) back onto MLMR's own row \u2014 see\n`PATCH /models/{id}/lifecycle` in mlmr/app/main.py.",
+        "description": "RequestModelDeployment. Requires CERTIFIED-or-PROMOTED\nModelLifecycleState (the AIMgF gate, unchanged from v1.3, now read\ncross-service from AIMgF's own `model_lifecycle` row) and stamps\nclearedNodeGroups (LLD section 5, MultiNode Q2's targeting gap) back\nonto that same row \u2014 see `PATCH /aimgf/models/{id}/runtime/node-groups`.",
         "operationId": "request_model_deployment_models__model_id__deploy_post",
         "parameters": [
           {

@@ -7,6 +7,100 @@ from sqlalchemy.orm import Mapped, mapped_column
 from smo_shared.db import Base
 
 
+class ModelLifecycle(Base):
+    """Wave 2's own lifecycle-state truth (docs/ownership/AIMGF_OWNERSHIP.md,
+    docs/architecture/SERVICE_OWNERSHIP_MATRIX.md: "Lifecycle state: AIMgF
+    ✅, MLMR ❌"). Replaces Wave 1's `PATCH /mlmr/models/{id}/lifecycle`
+    (which left state/trainingJobId/clearedNodeGroups on MLMR's own row as
+    a structural shortcut) — AIMgF now owns this row outright, one per
+    model, created alongside every model's first TrainingJob.
+
+    `nf_deployment_descriptor_id`/`nf_deployment_id` are AIMgF's own
+    handles onto NFO's runtime — bare UUIDs, not ORM ForeignKeys: NFO
+    runs in its own process, where this module's metadata never has
+    `nf_deployment_descriptor`/`nf_deployment` declared (NoReferencedTableError
+    on flush otherwise), the same cross-module-reference shape already used
+    throughout this build (e.g. onboarding's own `nf_deployment_descriptor_id`).
+    Referential integrity is enforced at the DB level instead
+    (migrations/001_init.sql's own FK on the descriptor column).
+    """
+    __tablename__ = "model_lifecycle"
+
+    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)  # -> aiml_model (MLMR)
+    model_lifecycle_state: Mapped[str] = mapped_column(String, nullable=False, default="REGISTERED")
+    runtime_lifecycle_state: Mapped[str] = mapped_column(String, nullable=False, default="NOT_DEPLOYED")
+    training_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    cleared_node_groups: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
+    nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> nf_deployment_descriptor (NFO)
+    nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> nf_deployment (NFO)
+
+
+class ValidationJob(Base):
+    """New this wave — AIMgF's own "Create Validation" request/tracking
+    aggregate (docs/ownership/AIMGF_OWNERSHIP.md's "Owns" list), split out
+    from being folded silently into TrainingJob's own TRAINING_COMPLETE ->
+    TESTED transition in Wave 1's flat FSM.
+    """
+    __tablename__ = "validation_job"
+
+    validation_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    training_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("training_job.training_job_id"))
+    producer_id: Mapped[str] = mapped_column(String, nullable=False)
+    validation_criteria: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
+    metrics: Mapped[dict | None] = mapped_column(JSON)
+
+
+class EmulationJob(Base):
+    """New this wave — AIMgF's own "Create Emulation" request/tracking
+    aggregate, split out from Wave 1's flat VALIDATION_COMPLETE -> EMULATED
+    transition the same way ValidationJob is.
+    """
+    __tablename__ = "emulation_job"
+
+    emulation_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    producer_id: Mapped[str] = mapped_column(String, nullable=False)
+    emulation_criteria: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
+    metrics: Mapped[dict | None] = mapped_column(JSON)
+
+
+class CertificationRecord(Base):
+    """New this wave — a real, queryable record for every governance
+    decision (AIMGF_OWNERSHIP.md's Governance list: Approval,
+    Certification, Promotion, Rollback — plus the submit/reject pair
+    framing approval), written by `advance_model_lifecycle` whenever the
+    fired event is one of `statemachine.GOVERNANCE_EVENTS`.
+    """
+    __tablename__ = "certification_record"
+
+    certification_record_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    decision: Mapped[str] = mapped_column(String, nullable=False)
+    decided_by: Mapped[str] = mapped_column(String, nullable=False)
+    rationale: Mapped[str | None] = mapped_column(String)
+    decided_at: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))
+
+
+class LifecycleTransition(Base):
+    """New this wave — an audit trail of every ModelLifecycle/
+    RuntimeLifecycle FSM transition, so "how did this model get here" is
+    a real query rather than something only reconstructable from
+    TrainingJob/ValidationJob/EmulationJob/CertificationRecord timestamps.
+    """
+    __tablename__ = "lifecycle_transition"
+
+    lifecycle_transition_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    fsm: Mapped[str] = mapped_column(String, nullable=False)  # "MODEL" or "RUNTIME"
+    from_state: Mapped[str] = mapped_column(String, nullable=False)
+    to_state: Mapped[str] = mapped_column(String, nullable=False)
+    event: Mapped[str] = mapped_column(String, nullable=False)
+    occurred_at: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))
+
+
 class TrainingJob(Base):
     """model_id/model_coordination_group_id are bare UUIDs, not
     ForeignKeys, since Wave 1's split moved MLModel/MLModelCoordinationGroup

@@ -111,7 +111,75 @@
   },
   {
     "method": "POST",
+    "pattern": "^/aimgf/models/[^/]+/advance$",
+    "role": "admin",
+    "queryMatch": {
+      "event": "RETIRE"
+    }
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/models/[^/]+/advance$",
+    "role": "admin",
+    "queryMatch": {
+      "event": "SUBMIT_FOR_APPROVAL"
+    }
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/models/[^/]+/advance$",
+    "role": "admin",
+    "queryMatch": {
+      "event": "APPROVE"
+    }
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/models/[^/]+/advance$",
+    "role": "admin",
+    "queryMatch": {
+      "event": "REJECT"
+    }
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/models/[^/]+/advance$",
+    "role": "admin",
+    "queryMatch": {
+      "event": "CERTIFY"
+    }
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/models/[^/]+/advance$",
+    "role": "admin",
+    "queryMatch": {
+      "event": "PROMOTE"
+    }
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/models/[^/]+/advance$",
+    "role": "admin",
+    "queryMatch": {
+      "event": "ROLLBACK"
+    }
+  },
+  {
+    "method": "POST",
     "pattern": "^/aimgf/models/[^/]+/(advance|inference-jobs)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/models/[^/]+/runtime/terminate$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/models/[^/]+/runtime/(deploy|activate|scale)$",
     "role": "operator",
     "queryMatch": {}
   },
@@ -142,6 +210,30 @@
   {
     "method": "POST",
     "pattern": "^/aimgf/training-jobs/[^/]+/model-metrics$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/validation-jobs$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/validation-jobs/[^/]+/complete$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/emulation-jobs$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/emulation-jobs/[^/]+/complete$",
     "role": "operator",
     "queryMatch": {}
   },

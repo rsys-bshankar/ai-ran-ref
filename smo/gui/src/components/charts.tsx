@@ -48,7 +48,8 @@ export function FsmStepper({ state }: { state: string }) {
       {pipelineSteps(state).map((s) => (
         <li key={s.state} className={`step ${s.status}`}><span className="step-dot" />{s.state}</li>
       ))}
-      {state === "DEPRECATED" && <li className="step current deprecated"><span className="step-dot" />DEPRECATED</li>}
+      {(state === "DEPRECATED" || state === "RETIRED" || state === "FAILED") &&
+        <li className="step current deprecated"><span className="step-dot" />{state}</li>}
     </ol>
   );
 }

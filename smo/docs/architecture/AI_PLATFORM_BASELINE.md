@@ -190,8 +190,10 @@ Frozen wave order — do not reorder without updating this document first:
   six namespaces it consumes or provides — additive only, a package
   without either file (every one built before this extension) onboards
   unchanged.
-- **Wave 2**: AIMgF's own two state machines (Model Lifecycle, Runtime
-  Lifecycle) and domain model, deepened past Wave 1's structural split.
+- **Wave 2** (done): AIMgF's own two real state machines (`ModelLifecycleState`,
+  14 states; `RuntimeLifecycleState`, 8 states, jointly owned with NFO)
+  and its full eight-aggregate domain model, deepened past Wave 1's
+  structural split — see `docs/ownership/AIMGF_OWNERSHIP.md`.
 - **Wave 3**: R1 contracts (DME → MDAF → MLMR → AIMgF → MLLF → Intent
   Service, in that order), OpenAPI skeletons, sequence diagrams, and
   cross-cutting OpenAPI standardization (OAuth2/JWT, Correlation-ID,

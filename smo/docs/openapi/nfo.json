@@ -8,9 +8,16 @@
             "type": "string"
           },
           "packageId": {
-            "format": "uuid",
-            "title": "Packageid",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packageid"
           },
           "requiredResourceTypeId": {
             "anyOf": [
@@ -31,7 +38,6 @@
           }
         },
         "required": [
-          "packageId",
           "name"
         ],
         "title": "CreateDescriptorRequest",
@@ -438,7 +444,7 @@
     },
     "/descriptors": {
       "get": {
-        "description": "(GUI pass 2) NFDeploymentDescriptors created by Onboarding's validation pipeline.",
+        "description": "(GUI pass 2) NFDeploymentDescriptors created by Onboarding's validation\npipeline, or by AIMgF's own Runtime Lifecycle for a model runtime\n(packageId is None for those \u2014 see CreateDescriptorRequest's own docstring).",
         "operationId": "list_descriptors_descriptors_get",
         "parameters": [
           {
@@ -482,7 +488,7 @@
         "summary": "List Descriptors"
       },
       "post": {
-        "description": "CreateDescriptor \u2014 NFO+FOCOM LLD section 2: an NFDeploymentDescriptor\nderived from an onboarded package's TOSCA Definitions/, called from\nOnboarding's OnboardPackage flow once validation succeeds, closing the\ngap where nfDeploymentDescriptorId previously referenced nothing\nconcrete.",
+        "description": "CreateDescriptor \u2014 NFO+FOCOM LLD section 2: an NFDeploymentDescriptor\nderived from an onboarded package's TOSCA Definitions/, called from\nOnboarding's OnboardPackage flow once validation succeeds, closing the\ngap where nfDeploymentDescriptorId previously referenced nothing\nconcrete. `packageId` is optional since Wave 2 (AI Platform Service\nDecomposition, docs/ownership/AIMGF_OWNERSHIP.md): AIMgF's own Runtime\nLifecycle now also creates a descriptor per model runtime, and a\nmodel runtime has no onboarded ApplicationPackage behind it \u2014 every\npackage-derived descriptor (Onboarding's own flow, unchanged) still\nalways sets it.",
         "operationId": "create_descriptor_descriptors_post",
         "requestBody": {
           "content": {

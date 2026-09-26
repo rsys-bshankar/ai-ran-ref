@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { api, smo } from "../api/client";
 import { POLL, useSmo } from "../api/hooks";
 import type {
-  A1Policy, Alarm, AnalyticsReport, InstanceSummary, Intent, MlmfReport, Model, ModulesStatus, NfDeployment,
+  A1Policy, Alarm, AnalyticsReport, InstanceSummary, Intent, MlmfReport, Model, ModelLifecycle, ModulesStatus, NfDeployment,
   O1Endpoint, OCloudAlarm, Package, PerfReport, RemedialAction,
 } from "../api/types";
 import { CountBar, Sparkline } from "../components/charts";
@@ -21,6 +21,7 @@ export function Dashboard() {
   const instances = useSmo<InstanceSummary[]>("/rapp-mgmt/instances");
   const packages = useSmo<Package[]>("/onboarding/packages");
   const models = useSmo<Model[]>("/mlmr/models");
+  const modelLifecycles = useSmo<ModelLifecycle[]>("/aimgf/model-lifecycles");
   const deployments = useSmo<NfDeployment[]>("/nfo/deployments");
   const endpoints = useSmo<O1Endpoint[]>("/ran-nf-oam/o1-adaptor-endpoints");
   const policies = useSmo<A1Policy[]>("/a1-related/policies");
@@ -91,7 +92,7 @@ export function Dashboard() {
         <div className="grid cols-4 tight">
           <Summary label="rApp packages" to="/rapps#packages" counts={byState(packages.data)} />
           <Summary label="rApp instances" to="/rapps#instances" counts={byState(instances.data)} />
-          <Summary label="AI/ML models" to="/aiml#models" counts={byState(models.data)} />
+          <Summary label="AI/ML models" to="/aiml#models" counts={byKey(models.data, (m) => modelLifecycles.data?.find((l) => l.modelId === m.modelId)?.modelLifecycleState ?? "REGISTERED")} />
           <Summary label="NF deployments (NFO)" to="/infrastructure#nfo" counts={byState(deployments.data)} />
           <Summary label="O1 adaptor endpoints" to="/infrastructure#o1" counts={byKey(endpoints.data, (e) => e.healthStatus)} />
           <Summary label="A1 policies" to="/policy#a1" counts={byKey(policies.data, (p) => p.enforcementStatus)} />

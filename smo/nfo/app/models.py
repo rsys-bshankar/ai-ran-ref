@@ -14,7 +14,10 @@ class NFDeploymentDescriptor(Base):
     # declared as an ORM ForeignKey — this module runs in its own process, where
     # the other module's table isn't in the metadata and an ORM FK can't resolve
     # (NoReferencedTableError on flush). tests_integration/test_module_isolation.py.
-    package_id: Mapped[uuid.UUID] = mapped_column(Uuid)  # -> application_package (Onboarding)
+    # Nullable since Wave 2 (AI Platform Service Decomposition): a model
+    # runtime's own descriptor (AIMgF's Runtime Lifecycle) has no
+    # onboarded ApplicationPackage behind it, unlike an rApp's.
+    package_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> application_package (Onboarding)
     name: Mapped[str] = mapped_column(String, nullable=False)
     required_resource_type_id: Mapped[str | None] = mapped_column(String)
     workload_template: Mapped[dict] = mapped_column(JSON, nullable=False)

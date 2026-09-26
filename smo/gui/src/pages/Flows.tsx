@@ -6,8 +6,8 @@ import { smo } from "../api/client";
 import { POLL, useSmo } from "../api/hooks";
 import type {
   AnalyticsProducer, AnalyticsReport, AnalyticsSubscription, ConfigJob, ConfigJobSummary, DataJob, DataOffer, DmeType, EiType,
-  FaultReport, InferenceJob, Instance, InstanceSummary, Intent, IntentReport, MlmfReport, MlmfSubscription, Model, Monitor,
-  NfDeployment, O1Endpoint, Package, PackageUsage, PerfReport, RemedialAction, Rmih, ServiceOrder, SmeService, TrainingJob,
+  FaultReport, InferenceJob, Instance, InstanceSummary, Intent, IntentReport, MlmfReport, MlmfSubscription, Model, ModelLifecycle,
+  Monitor, NfDeployment, O1Endpoint, Package, PackageUsage, PerfReport, RemedialAction, Rmih, ServiceOrder, SmeService, TrainingJob,
 } from "../api/types";
 import { ActionButton, Card, Id, PageHeader, StateBadge, useHashTab } from "../components/ui";
 import {
@@ -138,6 +138,7 @@ function Flow01() {
 function Flow02() {
   const models = useSmo<Model[]>("/mlmr/models");
   const [modelId, setModel, model] = useSelection(models.data, (m) => m.modelId);
+  const lifecycle = useSmo<ModelLifecycle>(modelId ? `/aimgf/models/${modelId}/lifecycle` : null);
   const q = modelId ? { model_id: modelId } : undefined;
   const jobs = useSmo<TrainingJob[]>(modelId ? "/aimgf/training-jobs" : null, q);
   const inference = useSmo<InferenceJob[]>(modelId ? "/aimgf/inference-jobs" : null, q);
@@ -150,16 +151,21 @@ function Flow02() {
     })),
   });
   const reports = reportLists.flatMap((r) => r.data ?? []);
-  const steps = flow02(model, jobs.data ?? [], inference.data ?? [], subs.data ?? [], reports);
+  const steps = flow02(model, lifecycle.data, jobs.data ?? [], inference.data ?? [], subs.data ?? [], reports);
   const running = (inference.data ?? []).find((j) => j.status === "RUNNING");
-  const next = model ? modelActions(model.state) : [];
-  const nextAction = next[0] && (next[0].kind === "train"
-    ? <ActionButton label={next[0].label} tone="primary" action={{ method: "POST", path: "/aimgf/training-jobs", json: { modelId, producerId: "smo-gui" }, success: "Training job started" }} />
-    : <ActionButton label={next[0].label} tone="primary" action={{ method: "POST", path: `/aimgf/models/${modelId}/advance`, query: { event: next[0].event }, success: `${next[0].event} done` }} />);
+  const next = lifecycle.data ? modelActions(lifecycle.data.modelLifecycleState) : [];
+  const first = next[0];
+  const nextAction = first && (first.kind === "train"
+    ? <ActionButton label={first.label} tone="primary" action={{ method: "POST", path: "/aimgf/training-jobs", json: { modelId, producerId: "smo-gui" }, success: "Training job started" }} />
+    : first.kind === "validate"
+    ? <ActionButton label={first.label} tone="primary" action={{ method: "POST", path: "/aimgf/validation-jobs", json: { modelId, producerId: "smo-gui" }, success: "Validation job started" }} />
+    : first.kind === "emulate"
+    ? <ActionButton label={first.label} tone="primary" action={{ method: "POST", path: "/aimgf/emulation-jobs", json: { modelId, producerId: "smo-gui" }, success: "Emulation job started" }} />
+    : <ActionButton label={first.label} tone="primary" action={{ method: "POST", path: `/aimgf/models/${modelId}/advance`, query: first.governance ? { event: first.event, decided_by: "smo-gui" } : { event: first.event }, success: `${first.event} done` }} />);
   return (
     <>
       <Pick label="Model" items={models.data} value={modelId} onChange={setModel} id={(m) => m.modelId}
-        render={(m) => `${m.modelType} v${m.version} (${m.state})`} empty={<>No models registered. {go("/aiml#models", "Register one")}</>} />
+        render={(m) => `${m.modelType} v${m.version}`} empty={<>No models registered. {go("/aiml#models", "Register one")}</>} />
       <Timeline steps={steps} actions={{
         register: go("/aiml#models", "Register a model"),
         train: nextAction, tested: nextAction, emulated: nextAction, certified: nextAction, loaded: nextAction, active: nextAction,
@@ -167,7 +173,7 @@ function Flow02() {
         infer: running
           ? <ActionButton label="Mark inference completed" tone="primary" title="Simulates MLEF finishing the job (result delivered via DME)"
               action={{ method: "POST", path: `/aimgf/inference-jobs/${running.inferenceJobId}/resolve`, query: { succeeded: true }, success: "Inference COMPLETED" }} />
-          : model?.state === "ACTIVE" && <ActionButton label="Request inference" tone="primary" action={{ method: "POST", path: `/aimgf/models/${modelId}/inference-jobs`, success: "Inference job RUNNING" }} />,
+          : lifecycle.data?.runtimeLifecycleState === "ACTIVE" && <ActionButton label="Request inference" tone="primary" action={{ method: "POST", path: `/aimgf/models/${modelId}/inference-jobs`, success: "Inference job RUNNING" }} />,
         monitor: go("/aiml#mlmf", "Subscribe"),
         report: go("/aiml#mlmf", "MLMF reports"),
       }} />

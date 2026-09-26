@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ConfigJob, Instance, Model, NfDeployment, O1Endpoint, Package, ServiceOrder } from "../api/types";
+import type { ConfigJob, Instance, Model, ModelLifecycle, NfDeployment, O1Endpoint, Package, ServiceOrder } from "../api/types";
 import { FLOWS, flow01, flow02, flow03, flow05, flow06, flow07, flow09, flow10, progress, settle, type FlowStep } from "./flows";
 
 const statuses = (steps: FlowStep[]) => steps.map((s) => s.status);
@@ -10,9 +10,13 @@ const pkg = (state: string, extra: Partial<Package> = {}): Package => ({
   signatureVerified: true, nfDeploymentDescriptorId: state === "AVAILABLE" ? "d1" : null, aiCapabilities: null, ...extra,
 });
 const instance = (state: string): Instance => ({ instanceId: "i1", packageId: "p1", state, workloadRef: "nf1", configuration: {}, pendingUpgradeInstanceId: null });
-const model = (state: string, nodeGroups: string[] = []): Model => ({
-  modelId: "m1", modelType: "ts", version: "1", state, clearedNodeGroups: nodeGroups, artifactLocation: null, description: null,
+const model = (): Model => ({
+  modelId: "m1", modelType: "ts", version: "1", artifactLocation: null, description: null,
   author: null, owner: null, inputDataType: null, outputDataType: null, targetEnvironments: [],
+});
+const lifecycle = (modelLifecycleState: string, runtimeLifecycleState = "NOT_DEPLOYED", nodeGroups: string[] = []): ModelLifecycle => ({
+  modelId: "m1", modelLifecycleState, runtimeLifecycleState, trainingJobId: null,
+  clearedNodeGroups: nodeGroups, nfDeploymentDescriptorId: null, nfDeploymentId: null,
 });
 
 describe("the ten documented flows", () => {
@@ -49,14 +53,15 @@ describe("flow 01 — rApp onboarding → running", () => {
 
 describe("flow 02 — AI/ML model", () => {
   it("follows the model FSM", () => {
-    const at = (state: string, groups: string[] = []) => statuses(flow02(model(state, groups), [], [], [], []));
+    const at = (state: string, runtimeState = "NOT_DEPLOYED", groups: string[] = []) =>
+      statuses(flow02(model(), lifecycle(state, runtimeState, groups), [], [], [], []));
     expect(at("REGISTERED").slice(0, 3)).toEqual(["done", "current", "todo"]);
     expect(at("CERTIFIED").slice(0, 6)).toEqual(["done", "done", "done", "done", "done", "current"]);
-    expect(at("ACTIVE", ["edge-a"]).slice(0, 9)).toEqual(["done", "done", "done", "done", "done", "done", "done", "done", "current"]);
+    expect(at("PROMOTED", "ACTIVE", ["edge-a"]).slice(0, 9)).toEqual(["done", "done", "done", "done", "done", "done", "done", "done", "current"]);
   });
 
   it("flags a floor breach as a warning, not a failure", () => {
-    const steps = flow02(model("ACTIVE", ["g"]), [], [{ inferenceJobId: "j", modelId: "m1", status: "COMPLETED", notificationDestination: null }],
+    const steps = flow02(model(), lifecycle("PROMOTED", "ACTIVE", ["g"]), [], [{ inferenceJobId: "j", modelId: "m1", status: "COMPLETED", notificationDestination: null }],
       [{ subscriptionId: "s", modelId: "m1", metricTypes: ["acc"], dmeTypeId: "t", guardKpiFloor: { acc: 0.9 } }],
       [{ reportId: "r", subscriptionId: "s", metrics: { acc: 0.5 }, breachedFloor: true, reportedAt: "2026-01-01T00:00:00Z" }]);
     expect(steps.at(-1)?.status).toBe("warn");

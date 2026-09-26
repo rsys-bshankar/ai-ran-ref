@@ -26,8 +26,9 @@ question) and MLMR's "does this model exist" (a repository question).
 MLLF has **no lifecycle logic** — same discipline as MLMR. It executes
 a load/activate/deactivate operation when asked and records the result;
 it does not decide whether a model is *allowed* to load (AIMgF's own
-`LOAD_READY` gate, per Wave 2's state machine, is what grants that
-permission before MLLF is ever called).
+`ModelLifecycleState` gate — `CERTIFIED` or `PROMOTED`, read from its
+own `model_lifecycle` row since Wave 2 — is what grants that permission
+before MLLF is ever called).
 
 ## Migration source (Wave 1)
 

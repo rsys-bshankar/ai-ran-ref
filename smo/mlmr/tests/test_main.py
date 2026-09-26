@@ -42,10 +42,10 @@ def client(db_session_factory):
     app.dependency_overrides.clear()
 
 
-def _make_model(db_session_factory, state, model_type="t") -> uuid.UUID:
+def _make_model(db_session_factory, model_type="t") -> uuid.UUID:
     model_id = uuid.uuid4()
     with db_session_factory() as session:
-        session.add(MLModel(model_id=model_id, registration_id=str(uuid.uuid4()), model_type=model_type, version="1.0", state=state))
+        session.add(MLModel(model_id=model_id, registration_id=str(uuid.uuid4()), model_type=model_type, version="1.0"))
         session.commit()
     return model_id
 
@@ -62,7 +62,6 @@ def test_get_model_by_id_returns_its_fields(client):
     assert body["modelId"] == created["modelId"]
     assert body["modelType"] == "coverage-predictor"
     assert body["version"] == "1.0"
-    assert body["state"] == "REGISTERED"
 
 
 def test_register_model_stores_and_exposes_registration_metadata(client):
@@ -214,18 +213,23 @@ def test_download_unknown_artifact_version_is_404(client):
 def test_update_model_changes_metadata_fields(client):
     """OPEN_ITEMS.md section 5: model CRUD was incomplete — create, list,
     and (as of the previous pass) get-by-id existed, but no update at all.
+    requiredResourceTypeId/trainingDataLineage/integrityHash are write-only
+    from `_model_view`'s own perspective (pre-existing, unrelated to Wave
+    2's clearedNodeGroups removal) — this only asserts the write itself
+    succeeds, via description/author, which the view does expose.
     """
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0", "requiredResourceTypeId": "gpu-a"}).json()["modelId"]
 
     resp = client.put(f"/models/{model_id}", json={
         "modelType": "coverage-predictor", "version": "1.0", "requiredResourceTypeId": "gpu-b",
-        "trainingDataLineage": {"source": "dme-type-1"}, "integrityHash": "sha256:abc", "clearedNodeGroups": ["ng1"],
+        "trainingDataLineage": {"source": "dme-type-1"}, "integrityHash": "sha256:abc",
+        "description": "updated via metadata test",
     })
     assert resp.status_code == 200
-    assert resp.json()["clearedNodeGroups"] == ["ng1"]
+    assert resp.json()["description"] == "updated via metadata test"
 
     view = client.get(f"/models/{model_id}").json()
-    assert view["clearedNodeGroups"] == ["ng1"]
+    assert view["description"] == "updated via metadata test"
 
 
 def test_update_model_rejects_changing_its_identity(client):
@@ -284,34 +288,9 @@ def test_delete_model_cascades_its_own_artifacts(client):
     assert client.get(f"/models/{model_id}/artifact/1").status_code == 404
 
 
-def test_update_model_lifecycle_writes_state_training_job_id_and_cleared_node_groups(client):
-    """The new cross-service surface Wave 1's split needed: AIMgF/MLLF's
-    own write-back path for the fields they decide, which only MLMR can
-    persist to its own row.
-    """
-    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
-    job_id = str(uuid.uuid4())
-
-    resp = client.patch(f"/models/{model_id}/lifecycle", json={"state": "TRAINING", "trainingJobId": job_id})
-    assert resp.status_code == 200
-    assert resp.json()["state"] == "TRAINING"
-    assert resp.json()["trainingJobId"] == job_id
-
-    resp = client.patch(f"/models/{model_id}/lifecycle", json={"clearedNodeGroups": ["ng1", "ng2"]})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["clearedNodeGroups"] == ["ng1", "ng2"]
-    assert body["state"] == "TRAINING"  # untouched by a PATCH that doesn't mention it
-
-
-def test_update_model_lifecycle_for_unknown_model_is_404(client):
-    resp = client.patch(f"/models/{uuid.uuid4()}/lifecycle", json={"state": "TRAINING"})
-    assert resp.status_code == 404
-
-
 def test_list_coordination_groups_returns_members(client, db_session_factory):
-    model_id_1 = _make_model(db_session_factory, "ACTIVE", model_type="t1")
-    model_id_2 = _make_model(db_session_factory, "ACTIVE", model_type="t2")
+    model_id_1 = _make_model(db_session_factory, model_type="t1")
+    model_id_2 = _make_model(db_session_factory, model_type="t2")
     group_id = client.post("/coordination-groups", json={"memberModelIds": [str(model_id_1), str(model_id_2)]}).json()["groupId"]
 
     groups = client.get("/coordination-groups").json()
@@ -325,7 +304,7 @@ def test_create_coordination_group_rejects_fewer_than_two_members(client, db_ses
     real-Postgres run ever caught the unhandled IntegrityError this used
     to raise. Pre-validated here now instead.
     """
-    model_id = _make_model(db_session_factory, "ACTIVE")
+    model_id = _make_model(db_session_factory)
     resp = client.post("/coordination-groups", json={"memberModelIds": [str(model_id)]})
     assert resp.status_code == 422
     assert resp.json()["detail"]["title"] == "COORDINATION_GROUP_TOO_SMALL"

@@ -47,7 +47,7 @@ class InstantiateRequest(BaseModel):
 
 
 class CreateDescriptorRequest(BaseModel):
-    packageId: uuid.UUID
+    packageId: uuid.UUID | None = None
     name: str
     workloadTemplate: dict = {}
     requiredResourceTypeId: str | None = None
@@ -59,7 +59,12 @@ def create_descriptor(body: CreateDescriptorRequest, db: Session = Depends(get_s
     derived from an onboarded package's TOSCA Definitions/, called from
     Onboarding's OnboardPackage flow once validation succeeds, closing the
     gap where nfDeploymentDescriptorId previously referenced nothing
-    concrete.
+    concrete. `packageId` is optional since Wave 2 (AI Platform Service
+    Decomposition, docs/ownership/AIMGF_OWNERSHIP.md): AIMgF's own Runtime
+    Lifecycle now also creates a descriptor per model runtime, and a
+    model runtime has no onboarded ApplicationPackage behind it — every
+    package-derived descriptor (Onboarding's own flow, unchanged) still
+    always sets it.
     """
     descriptor = NFDeploymentDescriptor(
         package_id=body.packageId, name=body.name,
@@ -151,11 +156,18 @@ def terminate(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
     db.query(NFOCloudResource).filter_by(nf_deployment_id=nf_deployment_id).delete()
     # LCMOperation.nf_deployment_id has a real FK, same as NFOCloudResource
     # above — deleting the deployment without clearing its own operation
-    # history (including the TERMINATE row just added, still uncommitted)
-    # violates it. Never caught before: SQLite's test harness doesn't
-    # enforce FKs by default, so this only surfaced against a real
-    # Postgres instance, on a deployment with any prior LCMOperation row
+    # history (including the TERMINATE row just added above) violates it.
+    # A real, separate bug from the one this comment used to describe:
+    # `Query.delete()` issues its DELETE immediately against the database,
+    # and this session is `autoflush=False` (smo_shared/db.py), so it
+    # never sees that pending, unflushed TERMINATE row — only a `flush()`
+    # first makes it visible to the very next statement. Caught running
+    # a genuine deploy -> terminate sequence (Wave 2's own RuntimeLifecycle
+    # verification) against real Postgres — SQLite's test harness doesn't
+    # enforce FK constraints by default, so no unit test had ever caught
+    # this either, on any deployment with any LCMOperation row at all
     # (every deployment always has at least one, from Instantiate).
+    db.flush()
     db.query(LCMOperation).filter_by(nf_deployment_id=nf_deployment_id).delete()
     db.delete(d)
     db.commit()
@@ -247,11 +259,15 @@ def list_deployments(state: str | None = None, db: Session = Depends(get_session
 
 @app.get("/descriptors")
 def list_descriptors(package_id: uuid.UUID | None = None, db: Session = Depends(get_session)):
-    """(GUI pass 2) NFDeploymentDescriptors created by Onboarding's validation pipeline."""
+    """(GUI pass 2) NFDeploymentDescriptors created by Onboarding's validation
+    pipeline, or by AIMgF's own Runtime Lifecycle for a model runtime
+    (packageId is None for those — see CreateDescriptorRequest's own docstring).
+    """
     stmt = select(NFDeploymentDescriptor)
     if package_id:
         stmt = stmt.where(NFDeploymentDescriptor.package_id == package_id)
-    return [{"nfDeploymentDescriptorId": str(d.nf_deployment_descriptor_id), "packageId": str(d.package_id), "name": d.name,
+    return [{"nfDeploymentDescriptorId": str(d.nf_deployment_descriptor_id),
+             "packageId": str(d.package_id) if d.package_id else None, "name": d.name,
              "requiredResourceTypeId": d.required_resource_type_id, "workloadTemplate": d.workload_template}
             for d in db.scalars(stmt).all()]
 

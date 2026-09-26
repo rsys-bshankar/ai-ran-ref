@@ -25,13 +25,13 @@ class MLModel(Base):
     public contract, so keeping it avoids an unnecessary migration.
 
     This row is MLMR's repository truth — identity, metadata, versioning,
-    artifact location. `state`/`training_job_id`/`cleared_node_groups` stay
-    on this same row for Wave 1 (a structural split, not yet the full
-    aggregate redesign Wave 2 does): AIMgF and MLLF read/write them via
-    `PATCH /models/{id}/lifecycle` (see main.py) rather than owning a
-    separate copy, exactly as every other cross-module reference in this
-    build goes through the owning service's own routes rather than a
-    direct cross-module ORM import (e.g. NFO calling FOCOM's `/inventory`).
+    artifact location. Wave 1 left `state`/`training_job_id`/
+    `cleared_node_groups` on this same row as a structural shortcut
+    (AIMgF/MLLF read/wrote them via `PATCH /models/{id}/lifecycle`); Wave 2
+    moves all three to AIMgF's own `model_lifecycle` table — MLMR is model
+    truth, not lifecycle truth (docs/architecture/SERVICE_OWNERSHIP_MATRIX.md:
+    "Lifecycle state: AIMgF ✅, MLMR ❌") — so this row no longer carries
+    them at all.
 
     OPEN_ITEMS.md section 5: no uniqueness/conflict check on
     (model_type, version) existed — duplicate registrations silently
@@ -49,8 +49,6 @@ class MLModel(Base):
     registration_id: Mapped[str] = mapped_column(String, nullable=False)
     model_type: Mapped[str] = mapped_column(String, nullable=False)
     version: Mapped[str] = mapped_column(String, nullable=False)
-    state: Mapped[str] = mapped_column(String, nullable=False, default="REGISTERED")
-    training_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     training_data_lineage: Mapped[dict | None] = mapped_column(JSON)
     integrity_hash: Mapped[str | None] = mapped_column(String)
     artifact_location: Mapped[str | None] = mapped_column(String)
@@ -69,7 +67,6 @@ class MLModel(Base):
     input_data_type: Mapped[str | None] = mapped_column(String)
     output_data_type: Mapped[str | None] = mapped_column(String)
     target_environments: Mapped[list[dict] | None] = mapped_column(JSON)
-    cleared_node_groups: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))  # MultiNode Q2 gap closure, LLD section 5
 
 
 class ModelArtifact(Base):
