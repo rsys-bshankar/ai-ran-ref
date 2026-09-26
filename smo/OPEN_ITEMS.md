@@ -2551,6 +2551,22 @@ own §1/§2 items stand as-is.
   code, schema, or OpenAPI-spec change — a live subscribe/register/
   update/confirm/unsubscribe round trip against a real local Postgres 16
   instance found no issue.
+- **Demo depth: A1 Related's service supervision sweep.** Sixth and
+  final item off the "more demo depth" list below — the whole list is
+  now closed. The reference's own Service Registry and Supervision
+  contract was real and unit-tested since an earlier §5 pass, but step
+  11's own service used `keepAliveIntervalSeconds: 0` (supervision
+  disabled) throughout, so the real lazy-sweep-on-read
+  auto-deregistration path had never fired in this runbook. New section:
+  register a new supervised service with a real, short
+  `keepAliveIntervalSeconds` → create a policy under it → let the
+  interval elapse without a keepalive call (a real `sleep`, no scheduler
+  exists anywhere in this build) → `GET /services` genuinely deregisters
+  it (`404`) and tears down its policy alongside it.
+  `tests_integration/test_demo_runbook.py` gained a matching step. No
+  code, schema, or OpenAPI-spec change — a live register/create/sleep/
+  sweep/confirm round trip against a real local Postgres 16 instance
+  found no issue.
 
 ## Suggested next pass (priority order)
 
@@ -2565,14 +2581,22 @@ own §1/§2 items stand as-is.
    - ~~`sme`'s per-`apiId` event-subscription filtering~~ — closed, this
      pass (see the "Demo depth: SME's event-subscription `apiId`
      filtering" entry above).
-   - `a1-related`'s service supervision sweep with a real, non-zero
-     `keepAliveIntervalSeconds` (§5-closed) — step 11 only ever
-     demoed `keepAliveIntervalSeconds: 0` (supervision disabled); the
-     real lazy-sweep-on-read auto-deregistration path has never fired
-     in the demo.
+   - ~~`a1-related`'s service supervision sweep with a real, non-zero
+     keepAliveIntervalSeconds~~ — closed, this pass (see the "Demo
+     depth: A1 Related's service supervision sweep" entry above). This
+     was the last item on this list — see item 2's own note below.
    - ~~`sa-smos`'s `MLModelCoordinationGroup`-scoped remedial action~~ —
      closed, this pass (see the "Demo depth: SA SMOS's coordination-
      group remedial action" entry above).
+
+   **This list is now fully closed.** Every real, already-implemented,
+   previously-undemonstrated piece of functionality identified when this
+   list was drawn up (PRs #88-through-the-A1-Related-supervision-sweep
+   entry above) has a demo section and a matching
+   `tests_integration/test_demo_runbook.py` step now. Finding more items
+   for this list needs either new real functionality landing, or a fresh
+   read of every module's own routes against its own demo coverage —
+   don't assume there's an obvious next one without doing that.
 3. The three remaining §1 design-level decisions — `WEIGHTED_TRIGGERS`,
    the alarm-storm correlation algorithm, and A1-ML operations — are not
    stakeholder-answerable the way the rest of that section was: the

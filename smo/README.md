@@ -1030,6 +1030,30 @@ change this time — a live subscribe/register/update/confirm/unsubscribe
 round trip against a real local Postgres 16 instance found no issue,
 same as the AI/ML Workflow feature-groups pass.
 
+**Demo depth: A1 Related's service supervision sweep.** The last item on
+the "more demo depth" list this pass. The reference's own Service
+Registry and Supervision contract ("When a service fails to invoke
+keepalive within the configured time... automatically deregistered and
+its policies will be deleted") had been real and unit-tested since an
+earlier §5 pass, but step 11's own `putService` call used
+`keepAliveIntervalSeconds: 0` (supervision disabled) throughout, so the
+real lazy-sweep-on-read auto-deregistration path had never fired in this
+runbook. New section: register a new supervised service with a real,
+short `keepAliveIntervalSeconds` → create a policy under it → let the
+interval elapse without a keepalive call (a real `sleep`, since no
+scheduler exists anywhere in this build — the sweep happens lazily, on
+the next `GET /services` read, not on a timer) → the service is
+genuinely deregistered (`404`, not just reported stale), and its policy
+is torn down alongside it, the same cascade an explicit retract already
+demonstrated in step 11. `tests_integration/test_demo_runbook.py` gained
+a matching step. No code, schema, or OpenAPI-spec change — a live
+register/create/sleep/sweep/confirm round trip against a real local
+Postgres 16 instance found no issue.
+
+This closes out every item on the "more demo depth" list from this
+whole pass (PRs #88-through-this one) — see OPEN_ITEMS.md's own
+"Suggested next pass" section for where this leaves the backlog.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style

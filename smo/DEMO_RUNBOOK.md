@@ -1553,7 +1553,71 @@ print(r.status_code)
 "
 ```
 
-## 22. Retire it — package priming lifecycle, Terminate, then Delete
+## 22. A1 Related's service supervision sweep (optional) — a real, non-zero `keepAliveIntervalSeconds`
+
+Independent of the sample rApp instance above — step 11's own
+`putService` call used `keepAliveIntervalSeconds: 0` (supervision
+disabled) throughout, so the reference's own supervision contract
+("When a service fails to invoke keepalive within the configured time,
+the service is considered unavailable... automatically deregistered and
+its policies will be deleted") has been real and unit-tested since an
+earlier §5 pass, but has never actually fired in this runbook. No
+scheduler exists anywhere in this build — the sweep happens lazily, on
+the next `GET /services` read (`_sweep_stale_service`), not on a timer.
+
+Register a new supervised service with a real, short interval, and
+create a policy under it:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.put('http://a1-related:8000/services', json={'serviceId': 'demo-supervised-rapp', 'keepAliveIntervalSeconds': 2})
+print(r.status_code, r.json())
+r = httpx.post('http://a1-related:8000/policies', json={
+    'policyTypeId': 'ORAN_QoSandTSP_6.0.1',
+    'policyObject': {'scope': {'cellId': 'demo-cell-2'}, 'qosObjectives': {'gfbr': 50}},
+    'nearRtRicId': 'mock-near-rt-ric-001', 'creatorId': 'demo-supervised-rapp',
+})
+print(r.status_code, r.json())
+"
+```
+
+Now let the 2-second interval elapse **without** calling
+`PUT /services/demo-supervised-rapp/keepalive` — a real service that
+stopped heartbeating:
+
+```bash
+sleep 3
+```
+
+`GET /services` is the read path that actually enforces supervision — a
+stale match is swept on its way out, not just reported as stale:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://a1-related:8000/services', params={'service_id': 'demo-supervised-rapp'})
+print(r.status_code, r.json() if r.status_code == 200 else None)
+"
+```
+
+`404` — genuinely deregistered, not just still-listed-as-stale. Confirm
+its policy was torn down the same way an explicit retract does it (a
+real southbound `a1t.delete_policy` call per policy, not just a local
+row delete):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://a1-related:8000/policies', params={'creator_id': 'demo-supervised-rapp'})
+print(r.status_code, r.json())
+"
+```
+
+`[]` — the policy created above is gone, swept alongside its own
+service, exactly as `keepAliveIntervalSeconds`'s own contract promises.
+
+## 23. Retire it — package priming lifecycle, Terminate, then Delete
 
 **Prime the package** — the reference's real
 `COMMISSIONED -> PRIMING -> PRIMED` lifecycle (our `AVAILABLE` plays
