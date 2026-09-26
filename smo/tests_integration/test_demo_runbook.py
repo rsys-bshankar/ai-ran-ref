@@ -455,7 +455,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
             raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
         return real_post_4(location, json=json, timeout=timeout, **kwargs)
 
-    monkeypatch.setattr(loaded_apps["ran-analytics"].httpx, "post", fake_post_4)
+    monkeypatch.setattr(loaded_apps["mdaf"].httpx, "post", fake_post_4)
 
     producer = mesh["ran-analytics"].post("/producers",
         params={"producer_id": "hello-world-rapp", "analytics_type": "coverage-issue-analysis"},
@@ -465,14 +465,14 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     producers = mesh["ran-analytics"].get("/producers", params={"analytics_type": "coverage-issue-analysis"})
     assert any(p["producerId"] == "hello-world-rapp" for p in producers.json())
 
-    subscription = mesh["ran-analytics"].post("/subscriptions", params={
+    subscription = mesh["mdaf"].post("/subscriptions", params={
         "analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos",
         "notification_destination": "http://demo-consumer:9000/analytics-reports",
     })
     assert subscription.status_code == 201
     subscription_id = subscription.json()["subscriptionId"]
 
-    report = mesh["ran-analytics"].post("/reports", params={"analytics_type": "coverage-issue-analysis"},
+    report = mesh["mdaf"].post("/reports", params={"analytics_type": "coverage-issue-analysis"},
         json={"output": {"issue": "demo-cell-1 coverage hole detected"}, "input_sources": []})
     assert report.status_code == 201
     report_id = report.json()["reportId"]
@@ -481,10 +481,10 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert analytics_notifications[0]["reportId"] == report_id
     assert analytics_notifications[0]["output"] == {"issue": "demo-cell-1 coverage hole detected"}
 
-    reports = mesh["ran-analytics"].get("/reports", params={"analytics_type": "coverage-issue-analysis"})
+    reports = mesh["mdaf"].get("/reports", params={"analytics_type": "coverage-issue-analysis"})
     assert any(r["reportId"] == report_id for r in reports.json())
 
-    unsubscribed = mesh["ran-analytics"].delete(f"/subscriptions/{subscription_id}")
+    unsubscribed = mesh["mdaf"].delete(f"/subscriptions/{subscription_id}")
     assert unsubscribed.status_code == 204
 
     # step 15: SA SMOS — a real assurance monitor, a genuine RECONNECT

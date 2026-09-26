@@ -379,7 +379,7 @@ def test_modules_status_probes_every_module_via_r1(app, smo):
     smo.down_modules.add("nfo")
     body = login(app, "viewer").get("/api/modules/status").json()
     by_module = {m["module"]: m for m in body["modules"]}
-    assert list(by_module) == STATUS_MODULES and len(STATUS_MODULES) == 16
+    assert list(by_module) == STATUS_MODULES and len(STATUS_MODULES) == 17
     assert by_module["nfo"]["healthy"] is False and by_module["nfo"]["error"] == "unreachable"
     assert all(m["healthy"] for name, m in by_module.items() if name != "nfo")
     assert all(isinstance(m["latencyMs"], float) for m in body["modules"])

@@ -36,6 +36,7 @@ services:
       MLMR_URL: http://mlmr:8000
       MLLF_URL: http://mllf:8000
       RAN_ANALYTICS_URL: http://ran-analytics:8000
+      MDAF_URL: http://mdaf:8000
       INTENT_SERVICE_URL: http://intent-service:8000
       SO_SMOS_URL: http://so-smos:8000
       SA_SMOS_URL: http://sa-smos:8000
@@ -133,6 +134,11 @@ services:
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
+
+  mdaf:
+    build: { context: ., args: { MODULE: mdaf } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment: *db_env
 
   intent-service:
     build: { context: ., args: { MODULE: intent-service } }

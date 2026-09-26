@@ -381,6 +381,17 @@ FOCOM's O2IMS mismatch below, not a bug.
 
 ## RAN Analytics vs. TS28104 MDA NRM
 
+*(Report publishing and subscriptions were split into their own `mdaf/`
+service in Wave 1 of the AI Platform Service Decomposition — see
+`docs/architecture/AI_PLATFORM_BASELINE.md` and
+`docs/ownership/MDAF_OWNERSHIP.md`. This is the deliberate reversal of
+this section's own "confirmed flat-shape" finding below: `MDAF` is now
+its own real function name, matching TS28.104's own `MDAFunction`,
+though not yet its full request-response/DN-addressed/containment-tree
+shape, which remains future work. `ran-analytics/` keeps producer
+registration and becomes an MDAF consumer. Findings below are otherwise
+unchanged and still accurate.)*
+
 Spec read: `TS28104_MdaNrm.yaml` + `TS28104_MdaReport.yaml` (`paths: {}`,
 data-model only). Same stale-catalog correction as AI/ML Workflow above
 — both files were already present under `5G_APIs/`.

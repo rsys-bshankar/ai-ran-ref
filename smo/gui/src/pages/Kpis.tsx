@@ -96,9 +96,9 @@ function PmSubscriptions() {
 
 function Analytics() {
   const [type, setType] = useState("");
-  const reports = useSmo<AnalyticsReport[]>("/ran-analytics/reports", { analytics_type: type });
+  const reports = useSmo<AnalyticsReport[]>("/mdaf/reports", { analytics_type: type });
   const producers = useSmo<AnalyticsProducer[]>("/ran-analytics/producers");
-  const subs = useSmo<AnalyticsSubscription[]>("/ran-analytics/subscriptions");
+  const subs = useSmo<AnalyticsSubscription[]>("/mdaf/subscriptions");
   const [newType, setNewType] = useState("");
   const [shown, setShown] = useState<AnalyticsReport | null>(null);
   const types = [...new Set((producers.data ?? []).map((p) => p.analyticsType))];
@@ -119,16 +119,16 @@ function Analytics() {
           ]} />
         </Card>
         <Card title="Subscriptions">
-          <Can method="POST" path="/ran-analytics/subscriptions">
+          <Can method="POST" path="/mdaf/subscriptions">
             <div className="form inline">
               <Field label="Analytics type"><input list="an-types" value={newType} onChange={(e) => setNewType(e.target.value)} /><datalist id="an-types">{types.map((t) => <option key={t} value={t} />)}</datalist></Field>
-              <ActionButton label="Subscribe" disabled={!newType} action={{ method: "POST", path: "/ran-analytics/subscriptions", query: { analytics_type: newType, requested_by: "smo-gui" }, success: "Subscribed (poll-based)" }} />
+              <ActionButton label="Subscribe" disabled={!newType} action={{ method: "POST", path: "/mdaf/subscriptions", query: { analytics_type: newType, requested_by: "smo-gui" }, success: "Subscribed (poll-based)" }} />
             </div>
           </Can>
           <DataTable rows={subs.data} rowKey={(s) => s.subscriptionId} empty="No subscriptions." columns={[
             { header: "Type", render: (s) => s.analyticsType }, { header: "Requested by", render: (s) => s.requestedBy },
             { header: "Delivery", render: (s) => s.notificationDestination ?? <span className="muted">poll</span> },
-            { header: "", className: "actions", render: (s) => <ActionButton label="Unsubscribe" action={{ method: "DELETE", path: `/ran-analytics/subscriptions/${s.subscriptionId}`, success: "Unsubscribed" }} /> },
+            { header: "", className: "actions", render: (s) => <ActionButton label="Unsubscribe" action={{ method: "DELETE", path: `/mdaf/subscriptions/${s.subscriptionId}`, success: "Unsubscribed" }} /> },
           ]} />
         </Card>
       </div>
@@ -174,7 +174,7 @@ function AnalyticsProducerTools({ types }: { types: string[] }) {
             <Field label="Output (JSON)" hint={parsed.ok ? undefined : <span className="text-bad">{parsed.error}</span>}><textarea rows={3} value={output} onChange={(e) => setOutput(e.target.value)} spellCheck={false} /></Field>
           </div>
           <ActionButton label="Publish report" tone="primary" disabled={!reportType || !parsed.ok} action={{
-            method: "POST", path: "/ran-analytics/reports", query: { analytics_type: reportType },
+            method: "POST", path: "/mdaf/reports", query: { analytics_type: reportType },
             json: { output: parsed.ok ? parsed.value : {}, input_sources: inputs }, success: "Report published",
           }} />
         </div>

@@ -18,7 +18,7 @@ R1_PREFIX_TO_SERVICE = {
     "/sme": "sme", "/dme": "dme", "/dme-push": "dme", "/dme-pull": "dme",
     "/onboarding": "onboarding", "/rapp-mgmt": "rapp-mgmt", "/ran-nf-oam": "ran-nf-oam",
     "/a1-related": "a1-related", "/nfo": "nfo", "/focom": "focom",
-    "/aimgf": "aimgf", "/mlmr": "mlmr", "/mllf": "mllf", "/ran-analytics": "ran-analytics",
+    "/aimgf": "aimgf", "/mlmr": "mlmr", "/mllf": "mllf", "/ran-analytics": "ran-analytics", "/mdaf": "mdaf",
     "/intent-service": "intent-service", "/so-smos": "so-smos", "/sa-smos": "sa-smos",
 }
 

@@ -212,7 +212,7 @@ function Flow04() {
   const [monitorId, setMonitor, monitor] = useSelection(monitors.data, (m) => m.monitorId);
   const order = useSmo<ServiceOrder>(monitor?.targetOrderId ? `/so-smos/orders/${monitor.targetOrderId}` : null);
   const actions = useSmo<RemedialAction[]>(monitorId ? "/sa-smos/remedial-actions" : null, { monitor_id: monitorId });
-  const analytics = useSmo<AnalyticsReport[]>("/ran-analytics/reports");
+  const analytics = useSmo<AnalyticsReport[]>("/mdaf/reports");
   const mlmf = useSmo<MlmfReport[]>("/aimgf/mlmf/reports", { limit: 50 });
   const steps = flow04(monitor, order.data, actions.data ?? [], analytics.data?.length ?? 0, mlmf.data?.length ?? 0);
   const base = `/sa-smos/monitors/${monitorId}`;
@@ -329,8 +329,8 @@ function Flow07() {
 
 function Flow08() {
   const producers = useSmo<AnalyticsProducer[]>("/ran-analytics/producers");
-  const subs = useSmo<AnalyticsSubscription[]>("/ran-analytics/subscriptions");
-  const reports = useSmo<AnalyticsReport[]>("/ran-analytics/reports");
+  const subs = useSmo<AnalyticsSubscription[]>("/mdaf/subscriptions");
+  const reports = useSmo<AnalyticsReport[]>("/mdaf/reports");
   const types = [...new Set([...(producers.data ?? []), ...(subs.data ?? []), ...(reports.data ?? [])].map((x) => x.analyticsType))].map((t) => ({ t }));
   const [type, setType] = useSelection(types, (x) => x.t);
   const producerIds = [...new Set((producers.data ?? []).filter((p) => p.analyticsType === type).map((p) => p.producerId))];
@@ -349,7 +349,7 @@ function Flow08() {
       <Timeline steps={steps} actions={{
         producer: go("/kpis#analytics", "Register a producer"),
         sme: go("/data#sme", "SME registry"),
-        subscribe: <ActionButton label="Subscribe (poll)" action={{ method: "POST", path: "/ran-analytics/subscriptions", query: { analytics_type: type, requested_by: "smo-gui" }, success: "Subscribed" }} />,
+        subscribe: <ActionButton label="Subscribe (poll)" action={{ method: "POST", path: "/mdaf/subscriptions", query: { analytics_type: type, requested_by: "smo-gui" }, success: "Subscribed" }} />,
         publish: go("/kpis#analytics", "Publish a report"),
       }} />
     </>

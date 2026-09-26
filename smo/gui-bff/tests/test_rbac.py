@@ -64,7 +64,7 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/intent-service/intent-handling-functions", "admin"),
     ("POST", "/intent-service/intent-reports", "admin"),
     ("POST", "/ran-analytics/producers", "admin"),
-    ("POST", "/ran-analytics/reports", "admin"),
+    ("POST", "/mdaf/reports", "admin"),
     ("POST", "/focom/inventory/subscriptions", "operator"),
     ("POST", "/dme/production-capabilities", "admin"),
 ])

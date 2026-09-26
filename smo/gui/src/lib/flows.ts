@@ -37,11 +37,11 @@ export const FLOWS: FlowDef[] = [
   { id: "01", number: "01", title: "rApp onboarding → running instance", doc: "01-rapp-onboarding-to-deployment.md", subject: "package", modules: ["onboarding", "rapp-mgmt", "nfo", "focom", "sme", "dme"] },
   { id: "02", number: "02", title: "AI/ML model: register → train → certify → deploy → infer → monitor", doc: "02-aiml-model-train-to-inference.md", subject: "model", modules: ["mlmr", "aimgf", "mllf", "dme"] },
   { id: "03", number: "03", title: "Configuration write, schema-checked, fleet-aware", doc: "03-config-write-with-schema-check.md", subject: "config job", modules: ["ran-nf-oam"] },
-  { id: "04", number: "04", title: "Closed-loop assurance: monitor → decide → remediate → escalate", doc: "04-closed-loop-assurance.md", subject: "assurance monitor", modules: ["so-smos", "sa-smos", "ran-analytics", "ran-nf-oam", "nfo"] },
+  { id: "04", number: "04", title: "Closed-loop assurance: monitor → decide → remediate → escalate", doc: "04-closed-loop-assurance.md", subject: "assurance monitor", modules: ["so-smos", "sa-smos", "mdaf", "ran-nf-oam", "nfo"] },
   { id: "05", number: "05", title: "A1 EI registration → data consumption", doc: "05-a1-ei-registration-to-consumption.md", subject: "EI type", modules: ["a1-related", "dme"] },
   { id: "06", number: "06", title: "Package failure, deprecation and the cascade-delete guard", doc: "06-onboarding-failure-deprecation-deletion.md", subject: "package", modules: ["onboarding", "rapp-mgmt"] },
   { id: "07", number: "07", title: "rApp fault and performance reporting", doc: "07-rapp-fault-and-performance-reporting.md", subject: "rApp instance", modules: ["rapp-mgmt"] },
-  { id: "08", number: "08", title: "RAN Analytics: producer → report → subscriber query", doc: "08-ran-analytics-data-production.md", subject: "analytics type", modules: ["ran-analytics", "sme"] },
+  { id: "08", number: "08", title: "RAN Analytics: producer → report → subscriber query", doc: "08-ran-analytics-data-production.md", subject: "analytics type", modules: ["ran-analytics", "mdaf", "sme"] },
   { id: "09", number: "09", title: "Intent registration → fulfilment reporting → admin state", doc: "09-intent-service-intent-flow.md", subject: "intent", modules: ["intent-service"] },
   { id: "10", number: "10", title: "SO SMOS multi-step order: INFRA → TRAINING → DEPLOY", doc: "10-so-smos-multi-step-infra-training-deploy.md", subject: "service order", modules: ["so-smos", "focom", "aimgf", "nfo"] },
 ];
