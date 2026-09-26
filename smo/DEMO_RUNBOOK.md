@@ -1203,7 +1203,183 @@ print(r.status_code, r.json())
 "
 ```
 
-## 17. Retire it — package priming lifecycle, Terminate, then Delete
+## 17. DME type subscriptions (optional) — notify a consumer when a type is registered or removed
+
+Independent of the sample rApp instance above — DME's own real
+type-subscription mechanism (ICS's own `/info-type-subscription`,
+`InfoTypeSubscriptions`/`ConsumerCallbacks`), closed in an earlier
+pass but never demonstrated: a consumer notified whenever *any*
+`DmeType` is registered or removed, unfiltered (matching the
+reference's own lack of per-type scoping).
+
+Subscribe first, with a real notification destination:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://dme:8000/type-subscriptions', json={
+    'notificationDestination': 'http://demo-consumer:9000/dme-type-events', 'owner': 'hello-world-rapp',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `subscriptionId`. Register a new DME type — `register_dme_type`
+fires a real `REGISTERED` notification to every subscriber
+(`_notify_type_subscribers`):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://dme:8000/production-capabilities', json={
+    'namespace': 'demo', 'name': 'dme-type-sub-demo', 'version': '1.0',
+    'typeName': 'dme-type-sub-demo-v1', 'producerId': 'hello-world-rapp',
+    'dataProductionSchema': {'type': 'object', 'properties': {'reading': {'type': 'number'}}},
+    'producerHealthCallbackUrl': 'http://hello-world-rapp:8080/health',
+    'jobCallbackUrl': 'http://hello-world-rapp:8080/dme-jobs',
+})
+print(r.status_code, r.json())
+"
+```
+
+No real listener exists at `http://demo-consumer:9000/dme-type-events`
+in this compose stack (same honesty pattern as every other placeholder
+callback in this runbook), so watch `dme`'s own logs for the attempted
+delivery — a real POST with `{infoTypeId, jobDataSchema, status:
+"REGISTERED"}`. `tests_integration/test_demo_runbook.py` proves the
+real dispatch fires with the correct payload by intercepting the exact
+`httpx.post` call.
+
+Deregister the producer — `deregister_producer` fires a matching
+`DEREGISTERED` notification for the same type the same way:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://dme:8000/production-capabilities', params={'producer_id': 'hello-world-rapp'})
+print(r.status_code)
+"
+```
+
+Note this also deregisters `hello-world-rapp`'s own `hello-world-metrics`
+type from step 4, alongside the new demo one — `deregister_producer`
+tears down every `DmeType` a `producer_id` owns, matching ICS's own
+scope. Unsubscribe:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://dme:8000/type-subscriptions/<subscriptionId>')
+print(r.status_code)
+"
+```
+
+## 18. FOCOM topology export (optional) — TEIV entities and relationships from real inventory rows
+
+Independent of the sample rApp instance above — closed in an earlier
+§5 pass (the Blueprint names "FOCOM's placement as a TEIV data source"
+as a confirmed integration point) but never demonstrated. A real
+kubeconfig-driven `focom-to-teiv-adapter` pushing CloudEvents over
+Kafka is structurally out of scope for this docker-run Phase 1 (no
+message broker anywhere in this build); `GET /topology` is the honest
+pull-based substitute — the same real `ResourceType`/`ResourcePool`/
+`DeploymentManager`/`Resource` rows every other FOCOM drill-down route
+already reads, exported in the reference's own wire shape
+(`o-ran-smo-teiv-cloud:<EntityType>` keys, `{id, attributes}` for
+entities, `{id, aSide, bSide, sourceIds}` for relationships).
+
+By this point in the runbook, FOCOM already has real inventory beyond
+the seeded Phase 1 topology — step 15's `gpu-l40` `Resource` from SO
+SMOS's own `INFRA` step (never deprovisioned there):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://focom:8000/topology')
+print(r.status_code, r.json())
+"
+```
+
+`entities` includes a real `ResourceType` for both `generic` (Phase 1's
+own seeded type) and `gpu-l40` (auto-registered the moment step 15
+provisioned against it — `provision_resource`'s own real behavior, not
+this endpoint's), a `ResourcePool`, a `DeploymentManager`, and at least
+one real `Resource`. `relationships` are built only from this schema's
+real foreign keys — `RESOURCE_IS_OF_TYPE_RESOURCETYPE` and
+`RESOURCE_CONTAINED_IN_RESOURCEPOOL` for every `Resource` row, plus a
+`RESOURCE_CHILD_OF_RESOURCE` entry for any with a real `parentId` (none
+in this Phase 1 topology, so that key is genuinely absent rather than
+an empty placeholder) — never invented ones.
+
+## 19. AI/ML Workflow feature groups (optional) — register, list, a real duplicate-name rejection
+
+Independent of the sample rApp instance above — a whole entity added
+in an earlier §5 pass (the reference's own `CreateFeatureGroup`,
+`featuregroup_controller.py`) but never touched by any demo phase.
+Real Cassandra-backed feature-store queries and `enableDme`'s real DME
+job creation are deliberate elisions (the same no-real-southbound-
+compute pattern as the rest of this module) — this exercises the real
+part: registration, listing, and the reference's own name-validation
+and duplicate-name rejection.
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/feature-groups', json={
+    'featureGroupName': 'demo_coverage_features', 'featureList': 'rsrp,rsrq,sinr',
+    'datalakeSource': 'INFLUX', 'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket',
+    'token': 'demo-token', 'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `featureGroupId`. Confirm it's a real, queryable registration:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.get('http://ai-ml-workflow:8000/feature-groups')
+print(r.status_code, r.json())
+"
+```
+
+**A real duplicate-name rejection** — register the exact same
+`featureGroupName` again; the reference's own `DBException` ("already
+exist") fires for real, via a genuine `UniqueConstraint`, not a
+scripted check:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/feature-groups', json={
+    'featureGroupName': 'demo_coverage_features', 'featureList': 'rsrp,rsrq,sinr',
+    'datalakeSource': 'INFLUX', 'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket',
+    'token': 'demo-token', 'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
+})
+print(r.status_code, r.json())
+"
+```
+
+`409`, `detail.title` = `FEATURE_GROUP_ALREADY_REGISTERED`. Also a real
+rejection for an invalid name (the reference's own `\w+`, 3-63
+character rule, shared with `TrainingJob` names):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://ai-ml-workflow:8000/feature-groups', json={
+    'featureGroupName': 'no spaces allowed', 'featureList': 'rsrp', 'datalakeSource': 'INFLUX',
+    'host': 'influx.demo', 'port': '8086', 'bucket': 'demo-bucket', 'token': 'demo-token',
+    'dbOrg': 'demo-org', 'measurement': 'coverage_metrics',
+})
+print(r.status_code, r.json())
+"
+```
+
+`400`, `detail.title` = `FEATURE_GROUP_NAME_INVALID`.
+
+## 20. Retire it — package priming lifecycle, Terminate, then Delete
 
 **Prime the package** — the reference's real
 `COMMISSIONED -> PRIMING -> PRIMED` lifecycle (our `AVAILABLE` plays

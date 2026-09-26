@@ -2466,6 +2466,53 @@ own §1/§2 items stand as-is.
   local Postgres 16 pass (59 tables, 0 mismatches), live-schema-match
   check green, all 16 modules' unit test suites green (unchanged, 480
   total — no model/schema touched), all 16 integration tests green.
+- **Demo depth: DME's type-subscription mechanism.** First item off the
+  "more demo depth" list below. New section: subscribe with a real
+  `notificationDestination` → register a new `DmeType`, firing a real
+  `REGISTERED` notification (`_notify_type_subscribers`) → deregister
+  the producer, tearing down both this new type and step 4's own
+  `hello-world-metrics`, firing a matching `DEREGISTERED` notification
+  for each → unsubscribe. `tests_integration/test_demo_runbook.py`
+  gained a matching step, proving the real dispatch fires with the
+  correct payload by intercepting the exact `httpx.post` call. No code,
+  schema, or OpenAPI-spec change — confirmed via a full local Postgres
+  16 pass (59 tables, 0 mismatches) and the live-schema-match check,
+  both green. Landed alongside an unrelated, much larger parallel PR
+  (#87, the SMO Operator GUI + BFF, `gui/`/`gui-bff/`) that merged
+  first — re-ran the full suite after rebasing onto it to confirm no
+  interaction; none found, both PRs touch disjoint code.
+- **Demo depth: FOCOM's TEIV topology export.** Second item off the
+  "more demo depth" list below. New section: `GET /topology`, exported
+  against real inventory already non-trivial by this point in the
+  runbook (SO SMOS's own earlier `INFRA` step auto-registered a real
+  `gpu-l40` `ResourceType` and provisioned a `Resource`, never
+  deprovisioned). `tests_integration/test_demo_runbook.py` gained a
+  matching step. Grounding this against real Postgres caught a real,
+  previously-invisible bug: `provision_resource`'s own auto-
+  registration of an unrecognized `resourceTypeId` added the new
+  `ResourceType` and the dependent `Resource` row in the same flush
+  with no explicit flush between them — a genuine `ForeignKeyViolation`
+  under real Postgres on every genuinely new resource type, never
+  caught by SQLite's own non-FK-enforcing harness, and never previously
+  exercised against real Postgres at all (no existing test — unit or
+  integration — had ever provisioned a resource type this build didn't
+  already know about, against a real database). Fixed with an explicit
+  `db.flush()` between the two inserts, matching NFO's own
+  `Instantiate`. Verified: full local Postgres 16 pass (59 tables, 0
+  mismatches, plus a live provision+topology-export round trip),
+  live-schema-match check green, all unit/integration test suites
+  green.
+- **Demo depth: AI/ML Workflow's feature groups.** Third item off the
+  "more demo depth" list below. New section: register a feature group
+  with real InfluxDB-shaped connection details → confirm it's listed →
+  a real duplicate-name rejection (`FEATURE_GROUP_ALREADY_REGISTERED`,
+  a genuine `UniqueConstraint`) → a real invalid-name rejection
+  (`FEATURE_GROUP_NAME_INVALID`, the reference's own `\w+`, 3-63
+  character rule). `tests_integration/test_demo_runbook.py` gained a
+  matching step. No code, schema, or OpenAPI-spec change this time —
+  a live register/list/duplicate/invalid round trip against a real
+  local Postgres 16 instance found no issue, unlike the previous two
+  demo-depth passes.
 
 ## Suggested next pass (priority order)
 
@@ -2477,11 +2524,6 @@ own §1/§2 items stand as-is.
 2. **More demo depth is the best-scoped remaining backlog.** Real,
    already-implemented functionality with zero demo visibility, ranked
    by how self-contained each one is to add:
-   - `dme`'s type-subscription mechanism (`POST`/`GET`/
-     `DELETE /type-subscriptions`, §5-closed) — a consumer subscribing
-     to a `DmeType`'s registration/removal, never exercised.
-   - `nfo`+`focom`'s TEIV topology export (`GET /topology`, §5-closed)
-     — never called anywhere in the runbook.
    - `sme`'s per-`apiId` event-subscription filtering (`SubscribeEvents`
      `apiIds`, §5-closed) — only the type-only filtering path has ever
      been demoed.
@@ -2490,9 +2532,6 @@ own §1/§2 items stand as-is.
      demoed `keepAliveIntervalSeconds: 0` (supervision disabled); the
      real lazy-sweep-on-read auto-deregistration path has never fired
      in the demo.
-   - `ai-ml-workflow`'s `FeatureGroup` CRUD (`POST`/`GET
-     /feature-groups`, §5-closed) — a whole entity added, never
-     touched by any demo phase.
    - `sa-smos`'s `MLModelCoordinationGroup`-scoped remedial action (a
      group-scoped `AssuranceMonitor` always dispatching a group
      retrain via AI/ML Workflow, regardless of `actionType` —

@@ -561,7 +561,99 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert cancelled_steps[1]["status"] == "FAILED"
     assert cancelled_steps[2]["status"] == "CANCELLED"
 
-    # step 17: retire — the real package priming lifecycle (COMMISSIONED-
+    # step 17: DME type subscriptions — a real consumer notified when any
+    # DmeType is registered or removed, closed in an earlier §5 pass but
+    # never demonstrated. Intercepted the same way as FOCOM's/Policy
+    # Mgmt's/A1 Related's/RAN Analytics' own notification steps above.
+    dme_type_notifications = []
+    real_post_dme = httpx.post
+
+    def fake_post_dme(location, json=None, timeout=None, **kwargs):
+        if location == "http://demo-consumer:9000/dme-type-events":
+            dme_type_notifications.append(json)
+            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
+        return real_post_dme(location, json=json, timeout=timeout, **kwargs)
+
+    monkeypatch.setattr(loaded_apps["dme"].httpx, "post", fake_post_dme)
+
+    dme_sub = mesh["dme"].post("/type-subscriptions", json={
+        "notificationDestination": "http://demo-consumer:9000/dme-type-events", "owner": "hello-world-rapp",
+    })
+    assert dme_sub.status_code == 201
+    dme_subscription_id = dme_sub.json()["subscriptionId"]
+
+    new_type = mesh["dme"].post("/production-capabilities", json={
+        "namespace": "demo", "name": "dme-type-sub-demo", "version": "1.0",
+        "typeName": "dme-type-sub-demo-v1", "producerId": "hello-world-rapp",
+        "dataProductionSchema": {"type": "object", "properties": {"reading": {"type": "number"}}},
+        "producerHealthCallbackUrl": "http://hello-world-rapp:8080/health",
+        "jobCallbackUrl": "http://hello-world-rapp:8080/dme-jobs",
+    })
+    assert new_type.status_code == 201
+    new_type_id = new_type.json()["registrationId"]
+    assert len(dme_type_notifications) == 1
+    assert dme_type_notifications[0]["infoTypeId"] == new_type_id
+    assert dme_type_notifications[0]["status"] == "REGISTERED"
+
+    deregistered = mesh["dme"].delete("/production-capabilities", params={"producer_id": "hello-world-rapp"})
+    assert deregistered.status_code == 204
+    # tears down both hello-world-rapp's DmeTypes: step 4's hello-world-metrics
+    # and the new demo one above, each firing its own DEREGISTERED notification.
+    assert len(dme_type_notifications) == 3
+    assert {n["status"] for n in dme_type_notifications[1:]} == {"DEREGISTERED"}
+
+    dme_unsub = mesh["dme"].delete(f"/type-subscriptions/{dme_subscription_id}")
+    assert dme_unsub.status_code == 204
+
+    # step 18: FOCOM topology export — the real ResourceType/ResourcePool/
+    # DeploymentManager/Resource rows (including the gpu-l40 ResourceType
+    # auto-registered by SO SMOS's own INFRA step above, and its
+    # never-deprovisioned Resource) exported in the reference's own
+    # TEIV wire shape, closed in an earlier §5 pass but never demonstrated.
+    topology = mesh["focom"].get("/topology")
+    assert topology.status_code == 200
+    topology_json = topology.json()
+    entity_keys = {key for entity in topology_json["entities"] for key in entity}
+    assert entity_keys == {
+        "o-ran-smo-teiv-cloud:ResourceType", "o-ran-smo-teiv-cloud:ResourcePool",
+        "o-ran-smo-teiv-cloud:DeploymentManager", "o-ran-smo-teiv-cloud:Resource",
+    }
+    resource_type_ids = {
+        rt["id"] for entity in topology_json["entities"] if "o-ran-smo-teiv-cloud:ResourceType" in entity
+        for rt in entity["o-ran-smo-teiv-cloud:ResourceType"]
+    }
+    assert any(rt_id.endswith(":gpu-l40") for rt_id in resource_type_ids)
+    relationship_keys = {key for rel in topology_json["relationships"] for key in rel}
+    assert "o-ran-smo-teiv-cloud:RESOURCE_IS_OF_TYPE_RESOURCETYPE" in relationship_keys
+    assert "o-ran-smo-teiv-cloud:RESOURCE_CONTAINED_IN_RESOURCEPOOL" in relationship_keys
+
+    # step 19: AI/ML Workflow feature groups — a whole entity added in an
+    # earlier §5 pass but never touched by any demo phase. Real
+    # registration + listing, then the reference's own real duplicate-name
+    # rejection (a genuine UniqueConstraint) and invalid-name rejection
+    # (the reference's own \w+, 3-63 character rule).
+    feature_group_body = {
+        "featureGroupName": "demo_coverage_features", "featureList": "rsrp,rsrq,sinr",
+        "datalakeSource": "INFLUX", "host": "influx.demo", "port": "8086", "bucket": "demo-bucket",
+        "token": "demo-token", "dbOrg": "demo-org", "measurement": "coverage_metrics",
+    }
+    created_group = mesh["ai-ml-workflow"].post("/feature-groups", json=feature_group_body)
+    assert created_group.status_code == 201
+    feature_group_id = created_group.json()["featureGroupId"]
+
+    listed_groups = mesh["ai-ml-workflow"].get("/feature-groups")
+    assert listed_groups.status_code == 200
+    assert any(g["featureGroupId"] == feature_group_id for g in listed_groups.json()["featureGroups"])
+
+    duplicate_group = mesh["ai-ml-workflow"].post("/feature-groups", json=feature_group_body)
+    assert duplicate_group.status_code == 409
+    assert duplicate_group.json()["detail"]["title"] == "FEATURE_GROUP_ALREADY_REGISTERED"
+
+    invalid_group = mesh["ai-ml-workflow"].post("/feature-groups", json={**feature_group_body, "featureGroupName": "no spaces allowed"})
+    assert invalid_group.status_code == 400
+    assert invalid_group.json()["detail"]["title"] == "FEATURE_GROUP_NAME_INVALID"
+
+    # step 20: retire — the real package priming lifecycle (COMMISSIONED-
     # equivalent AVAILABLE -> PRIMING -> PRIMED), a genuine deprime
     # refusal while the sample rApp's own instance is still deployed
     # (the reference's own deprimeRapp guard, a real query against
