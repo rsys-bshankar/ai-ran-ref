@@ -605,7 +605,29 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     dme_unsub = mesh["dme"].delete(f"/type-subscriptions/{dme_subscription_id}")
     assert dme_unsub.status_code == 204
 
-    # step 18: retire — the real package priming lifecycle (COMMISSIONED-
+    # step 18: FOCOM topology export — the real ResourceType/ResourcePool/
+    # DeploymentManager/Resource rows (including the gpu-l40 ResourceType
+    # auto-registered by SO SMOS's own INFRA step above, and its
+    # never-deprovisioned Resource) exported in the reference's own
+    # TEIV wire shape, closed in an earlier §5 pass but never demonstrated.
+    topology = mesh["focom"].get("/topology")
+    assert topology.status_code == 200
+    topology_json = topology.json()
+    entity_keys = {key for entity in topology_json["entities"] for key in entity}
+    assert entity_keys == {
+        "o-ran-smo-teiv-cloud:ResourceType", "o-ran-smo-teiv-cloud:ResourcePool",
+        "o-ran-smo-teiv-cloud:DeploymentManager", "o-ran-smo-teiv-cloud:Resource",
+    }
+    resource_type_ids = {
+        rt["id"] for entity in topology_json["entities"] if "o-ran-smo-teiv-cloud:ResourceType" in entity
+        for rt in entity["o-ran-smo-teiv-cloud:ResourceType"]
+    }
+    assert any(rt_id.endswith(":gpu-l40") for rt_id in resource_type_ids)
+    relationship_keys = {key for rel in topology_json["relationships"] for key in rel}
+    assert "o-ran-smo-teiv-cloud:RESOURCE_IS_OF_TYPE_RESOURCETYPE" in relationship_keys
+    assert "o-ran-smo-teiv-cloud:RESOURCE_CONTAINED_IN_RESOURCEPOOL" in relationship_keys
+
+    # step 19: retire — the real package priming lifecycle (COMMISSIONED-
     # equivalent AVAILABLE -> PRIMING -> PRIMED), a genuine deprime
     # refusal while the sample rApp's own instance is still deployed
     # (the reference's own deprimeRapp guard, a real query against

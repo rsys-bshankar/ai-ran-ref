@@ -950,6 +950,27 @@ notification demo in this runbook). No code, schema, or OpenAPI-spec
 change — confirmed via a full local Postgres 16 pass (59 tables, 0
 mismatches) and the live-schema-match check, both green.
 
+**Demo depth: FOCOM's TEIV topology export.** Continuing the same
+"more demo depth" thread. `GET /topology` (closed in an earlier §5
+pass — the Blueprint names "FOCOM's placement as a TEIV data source"
+as a confirmed integration point) had never been called anywhere in
+the runbook. New section: export FOCOM's real `ResourceType`/
+`ResourcePool`/`DeploymentManager`/`Resource` rows in the reference's
+own wire shape — genuinely non-trivial by this point, since SO SMOS's
+own `INFRA` step earlier in the runbook already auto-registered a real
+`gpu-l40` `ResourceType` and provisioned a `Resource` against it, never
+deprovisioned. `tests_integration/test_demo_runbook.py` gained a
+matching step. No schema or OpenAPI-spec change, but grounding this
+against real Postgres caught a real, previously-invisible bug (see
+"Real bugs" below): `provision_resource`'s own auto-registration of an
+unrecognized `resourceTypeId` added the new `ResourceType` and the new
+`Resource` row in the same flush, with no explicit intermediate flush
+between them — a real `ForeignKeyViolation` under Postgres, every time
+a genuinely new resource type is provisioned, never caught by SQLite's
+own non-FK-enforcing test harness. Fixed with an explicit `db.flush()`
+between the two, matching the pattern NFO's own `Instantiate` already
+uses for its own dependent inserts.
+
 ### SQLite portability notes (`shared/smo_shared/testing.py`)
 
 Every model uses genuinely Postgres-shaped types (`ARRAY`, `JSONB`-style
@@ -1145,6 +1166,21 @@ Writing the tests, not just the code, is what surfaced these:
   prime/deprime/terminate sequence already passes against a real local
   Postgres instance). Fixed with `expire_on_commit=False` on
   `tests_integration/conftest.py`'s `TestSession`.
+- **FOCOM's `provision_resource` could hit a real `ForeignKeyViolation`
+  on every genuinely new `resourceTypeId`** — its own auto-registration
+  of an unrecognized type (`db.add(ResourceType(...))`) and the new
+  `Resource` row referencing it were both added to the same flush with
+  no explicit flush between them; SQLAlchemy's insert ordering across
+  the two didn't reliably insert the parent row first, so the
+  dependent `Resource` insert could reference a `resource_type_id` that
+  didn't exist yet in the same transaction. A minimal, reproducible
+  case against a real local Postgres 16 instance, unrelated to any
+  nested-session harness quirk — SQLite's own test harness never
+  enforces FKs, so nothing had ever caught it, and no test before this
+  pass had provisioned a genuinely new `resourceTypeId` against real
+  Postgres at all. Found grounding the new FOCOM topology export demo
+  below. Fixed with an explicit `db.flush()` between the two inserts,
+  matching the pattern NFO's own `Instantiate` already uses.
 
 ## What's deliberately incomplete
 

@@ -329,6 +329,16 @@ def provision_resource(spec: dict, db: Session = Depends(get_session)):
     resource_type_id = spec.get("resourceTypeId") or PHASE1_RESOURCE_TYPE_ID
     if db.get(ResourceType, resource_type_id) is None:
         db.add(ResourceType(resource_type_id=resource_type_id, name=resource_type_id))
+        # A real bug against real Postgres, never caught by SQLite: flushing
+        # this new ResourceType row together with the new Resource row below
+        # in one commit — instead of flushing it first — hits a genuine
+        # ForeignKeyViolation on resource.resource_type_id. Confirmed with a
+        # minimal repro against a real local Postgres 16 instance; an
+        # explicit flush here (matching the pattern NFO's own Instantiate
+        # already uses between its own dependent inserts) makes the new
+        # ResourceType row visible before the Resource row that references
+        # it is ever inserted.
+        db.flush()
     # SPEC_AUDIT.md item 7: globalAssetId/tags/groups — real
     # ORAN.O2ims.Inventory.yaml Resource fields, previously not even
     # readable from this already-untyped spec dict, let alone persisted.
