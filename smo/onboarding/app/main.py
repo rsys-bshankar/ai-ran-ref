@@ -11,6 +11,7 @@ import zipfile
 from io import BytesIO
 
 import httpx
+import yaml
 
 class DescriptorCreationFailed(Exception):
     """NFO's CreateDescriptor call (NFO+FOCOM LLD section 2) didn't return
@@ -36,8 +37,11 @@ class PackageValidationFailed(Exception):
 # at all (caught while integration-testing: an unreachable location
 # previously crashed OnboardPackage with an unhandled 500 instead of
 # routing to FAILED, which is itself a real, expected outcome here), and
-# now DescriptorCreationFailed/PackageValidationFailed alongside it.
-ONBOARD_VALIDATION_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, httpx.HTTPError, DescriptorCreationFailed, PackageValidationFailed)
+# now DescriptorCreationFailed/PackageValidationFailed alongside it, and
+# yaml.YAMLError for the Wave 1 manifest.yaml/capabilities.yaml
+# extension — a malformed one is a validation failure like any other
+# malformed package file, not an unhandled 500.
+ONBOARD_VALIDATION_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, httpx.HTTPError, DescriptorCreationFailed, PackageValidationFailed, yaml.YAMLError)
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -114,6 +118,7 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
         pkg.name = identity.get("name", pkg.name)
         pkg.version = identity.get("version", pkg.version)
         pkg.vendor = identity.get("vendor", pkg.vendor)
+        pkg.ai_capabilities = identity.get("ai_capabilities")
         pkg.signature_verified = True
         for path, access_url in artifacts:
             db.add(Artifact(package_id=pkg.package_id, path=path, access_url=access_url))
@@ -166,7 +171,43 @@ def _asd_identity(definitions: str) -> dict[str, str]:
     return found
 
 
-def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, dict[str, str]]:
+def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
+    """Wave 1's rApp packaging extension (docs/architecture/
+    AI_PLATFORM_BASELINE.md): an optional AI Platform capability
+    declaration, read from two new CSAR-root files alongside the existing
+    TOSCA-Metadata/Definitions/Artifacts layout —
+
+    - `manifest.yaml`: `rappManifest.manifestVersion` /
+      `rappManifest.aiRuntimeSdkVersion` (the sdk/ contract version this
+      rApp was built against).
+    - `capabilities.yaml`: `capabilities.consumes` / `capabilities.provides`,
+      each a list of `{namespace, description}` naming which of sdk/'s six
+      client namespaces (data/analytics/models/lifecycle/intent/platform)
+      this rApp uses.
+
+    Both are optional and additive: a package built before this extension,
+    or one that simply has neither file (every package this build produced
+    before this pass), still onboards exactly as before — this returns
+    None and `ApplicationPackage.ai_capabilities` stays NULL. Unlike
+    `_asd_identity`'s flat scalar line-scan, these files carry real nested
+    structure, so this one genuinely needs a YAML parse.
+    """
+    result: dict = {}
+    names = z.namelist()
+    if "manifest.yaml" in names:
+        manifest = yaml.safe_load(z.read("manifest.yaml")) or {}
+        rapp_manifest = manifest.get("rappManifest") or {}
+        result["manifestVersion"] = rapp_manifest.get("manifestVersion")
+        result["aiRuntimeSdkVersion"] = rapp_manifest.get("aiRuntimeSdkVersion")
+    if "capabilities.yaml" in names:
+        parsed = yaml.safe_load(z.read("capabilities.yaml")) or {}
+        caps = parsed.get("capabilities") or {}
+        result["consumes"] = caps.get("consumes") or []
+        result["provides"] = caps.get("provides") or []
+    return result or None
+
+
+def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, dict]:
     """Open TOSCA-Metadata/Definitions/Artifacts, per Onboarding LLD section 1.
 
     OPEN_ITEMS.md section 5: two more checks from the reference's own
@@ -198,6 +239,9 @@ def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, d
         identity = _asd_identity(z.read(entry_definitions).decode(errors="replace"))  # raises KeyError if missing/malformed
         z.getinfo("Files/Acm/definition/compositions.json")  # required per the reference's FileExistenceValidator
         artifacts = [(n, f"{location}#{n}") for n in z.namelist() if n.startswith("Artifacts/") and not n.endswith("/")]
+        ai_capabilities = _parse_ai_capabilities(z)
+        if ai_capabilities is not None:
+            identity["ai_capabilities"] = ai_capabilities
     integrity_hash = hashlib.sha256(data).hexdigest()
     return entry_definitions, artifacts, integrity_hash, identity
 
@@ -316,6 +360,7 @@ def _package_view(pkg: ApplicationPackage) -> dict:
         "toscaEntryDefinitions": pkg.tosca_entry_definitions,
         "signatureVerified": pkg.signature_verified,
         "nfDeploymentDescriptorId": str(pkg.nf_deployment_descriptor_id) if pkg.nf_deployment_descriptor_id else None,
+        "aiCapabilities": pkg.ai_capabilities,
     }
 
 

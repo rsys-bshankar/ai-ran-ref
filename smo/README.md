@@ -119,18 +119,23 @@ work: it already had no policy/rule/constraint code to leave behind,
 contrary to the review's own assumption — and `ran-analytics/` has
 gained a sibling **MDAF** service (`mdaf/`, TS 28.104-shaped analytics
 reporting), keeping only its own use-case-specific producer role and
-becoming an MDAF consumer. Still to come: a new **AI Runtime SDK**
-(`sdk/`) so rApps stop calling module REST endpoints directly. This is a
-genuine, deliberate reversal of the Phase-1 scope choice `SPEC_AUDIT.md`
-documented for AI/ML Workflow and RAN Analytics, not a bug fix. Full
-architecture in `docs/architecture/AI_PLATFORM_BASELINE.md` and
+becoming an MDAF consumer. A new **AI Runtime SDK** (`sdk/`) now wraps
+`R1Client` with one thin client namespace per platform service (`data`/
+`analytics`/`models`/`lifecycle`/`intent`/`platform`), and rApp packaging
+gained two new optional CSAR-root files, `manifest.yaml`/
+`capabilities.yaml`, so a package can declare which of those namespaces
+it consumes or provides — additive only, a package without either file
+still onboards unchanged. This is a genuine, deliberate reversal of the
+Phase-1 scope choice `SPEC_AUDIT.md` documented for AI/ML Workflow and
+RAN Analytics, not a bug fix. Full architecture in
+`docs/architecture/AI_PLATFORM_BASELINE.md` and
 `docs/architecture/SERVICE_OWNERSHIP_MATRIX.md`; per-service detail in
 `docs/ownership/`. Sequenced in four waves — **Wave 0** (architecture
-freeze, done), **Wave 1** (service decomposition, in progress — the
-`ai-ml-workflow`/`policy-mgmt`/`ran-analytics` splits done, `sdk/` and the
-rApp manifest extension remaining), Wave 2 (AIMgF's own state machines
-and domain model), Wave 3 (R1 contracts and OpenAPI standardization) —
-each a separate, reviewable step; do not reorder them.
+freeze, done), **Wave 1** (service decomposition, done — the
+`ai-ml-workflow`/`policy-mgmt`/`ran-analytics` splits, `sdk/`, and the
+rApp manifest extension), Wave 2 (AIMgF's own state machines and domain
+model), Wave 3 (R1 contracts and OpenAPI standardization) — each a
+separate, reviewable step; do not reorder them.
 
 ## Stack
 

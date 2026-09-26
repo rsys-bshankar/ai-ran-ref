@@ -163,7 +163,8 @@ CREATE TABLE application_package (
   manifest_ref                       TEXT NOT NULL,
   tosca_entry_definitions              TEXT,     -- NEW section 1: TOSCA-Metadata/Definitions/Artifacts
   signature_verified                     BOOLEAN NOT NULL DEFAULT false,
-  integrity_hash                           TEXT
+  integrity_hash                           TEXT,
+  ai_capabilities                            JSONB     -- Wave 1: optional manifest.yaml/capabilities.yaml declaration
 );
 
 CREATE TABLE artifact (

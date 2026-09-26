@@ -2,7 +2,7 @@ import uuid
 
 import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Uuid
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -24,6 +24,13 @@ class ApplicationPackage(Base):
     tosca_entry_definitions: Mapped[str | None] = mapped_column(String)
     signature_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     integrity_hash: Mapped[str | None] = mapped_column(String)
+    # Wave 1 rApp packaging extension: the optional AI Platform capability
+    # declaration read from the CSAR's root-level manifest.yaml/
+    # capabilities.yaml (docs/architecture/AI_PLATFORM_BASELINE.md) — which
+    # of sdk/'s six namespaces (data/analytics/models/lifecycle/intent/
+    # platform) this rApp consumes or provides. None for any package built
+    # before this extension, or one that simply omits both files.
+    ai_capabilities: Mapped[dict | None] = mapped_column(JSON)
     # NFO+FOCOM LLD section 2: populated by NFO's CreateDescriptor once
     # OnboardPackage's own validation succeeds — the actual fix for the
     # gap where rApp Management used to pass packageId where NFO expected
