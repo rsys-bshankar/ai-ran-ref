@@ -757,7 +757,35 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert mesh["sme"].delete(f"/capif-events/v1/consumer-unscoped/subscriptions/{unscoped_sub_id}").status_code == 204
     assert mesh["sme"].delete(f"/capif-events/v1/consumer-scoped/subscriptions/{scoped_sub_id}").status_code == 204
 
-    # step 22: retire — the real package priming lifecycle (COMMISSIONED-
+    # step 22: A1 Related's service supervision sweep — a real, non-zero
+    # keepAliveIntervalSeconds, real and unit-tested since an earlier §5
+    # pass but never fired in this runbook (step 11's own service used
+    # keepAliveIntervalSeconds: 0, supervision disabled, throughout). No
+    # scheduler exists anywhere in this build — the sweep happens lazily,
+    # on the next GET /services read, not on a timer, so this uses a real
+    # short interval and a real sleep, exactly as the runbook's own live
+    # demo does.
+    import time
+
+    supervised_service = mesh["a1-related"].put("/services", json={"serviceId": "demo-supervised-rapp", "keepAliveIntervalSeconds": 2})
+    assert supervised_service.status_code == 200
+    supervised_policy = mesh["a1-related"].post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1",
+        "policyObject": {"scope": {"cellId": "demo-cell-2"}, "qosObjectives": {"gfbr": 50}},
+        "nearRtRicId": "mock-near-rt-ric-001", "creatorId": "demo-supervised-rapp",
+    })
+    assert supervised_policy.status_code == 201
+
+    time.sleep(3)  # let the 2-second interval elapse without a keepalive call
+
+    swept = mesh["a1-related"].get("/services", params={"service_id": "demo-supervised-rapp"})
+    assert swept.status_code == 404  # genuinely deregistered, not just reported stale
+
+    swept_policies = mesh["a1-related"].get("/policies", params={"creator_id": "demo-supervised-rapp"})
+    assert swept_policies.status_code == 200
+    assert swept_policies.json() == []  # torn down alongside its own service
+
+    # step 23: retire — the real package priming lifecycle (COMMISSIONED-
     # equivalent AVAILABLE -> PRIMING -> PRIMED), a genuine deprime
     # refusal while the sample rApp's own instance is still deployed
     # (the reference's own deprimeRapp guard, a real query against
