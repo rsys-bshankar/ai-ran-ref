@@ -18,7 +18,7 @@ apart rather than merged into one score:
 | Audit | Ground truth | Status |
 |---|---|---|
 | `OPEN_ITEMS.md` section 5 | 18 cloned O-RAN-SC repos (ADOPT/REFERENCE source code) | **Fully closed** |
-| `SPEC_AUDIT.md` | Formal 3GPP/O-RAN specs in `../specs/` | **Closed for the 4 modules with a matching spec file** |
+| `SPEC_AUDIT.md` | Formal 3GPP/O-RAN specs in `../specs/` | **Closed for the 6 modules with a matching spec file** |
 | `OPEN_ITEMS.md` sections 1-4 | This build's own LLDs and internal completeness | **Closed except 3 stakeholder-blocked design decisions** |
 
 **O-RAN-SC source-code audit (section 5) — done.** Every module with an
@@ -32,37 +32,44 @@ time), so there is nothing upstream to audit completeness against for
 those four.
 
 **Formal-spec audit (`SPEC_AUDIT.md`) — done where a spec exists, but
-coverage is partial.** Only four modules had a directly relevant formal
-spec file already cataloged in `../specs/`: **RAN NF OAM** (TS28319/
-28111/28532/28550 + the O1NRM YANGs), **FOCOM** (the real O2IMS
+coverage is partial.** Six modules had a directly relevant formal spec
+file already sitting in `../specs/`: **RAN NF OAM** (TS28319/28111/
+28532/28550 + the O1NRM YANGs), **FOCOM** (the real O2IMS
 `o-cloud-im/` information model), **Policy Mgmt** (TS28312 IntentNrm),
-and **SME** (the real CAPIF core source, read closely for security/
-trust-model detail beyond section 5's own pass). For all four, every
-small and moderate closeable finding is closed (missing enum/column
-fields, field-name mismatches, FOCOM's `/inventory` reshape toward
-`OCloud`, Policy Mgmt's matching-field rename to
+**SME** (the real CAPIF core source, read closely for security/
+trust-model detail beyond section 5's own pass), and **AI/ML
+Workflow**/**RAN Analytics** (TS28105 AI/ML NRM and TS28104 MDA NRM —
+this file previously said no relevant spec existed for these two; that
+was stale, the files were already present, just never cataloged). For
+all six, every small and moderate closeable finding is closed (missing
+enum/column fields, field-name mismatches, FOCOM's `/inventory` reshape
+toward `OCloud`, Policy Mgmt's matching-field rename to
 `supportedExpectationObjectType`, SME's invoker-onboarding trust-model
-flip, SME's real Trusted Invokers registry), and every large/structural
-finding (MSAC RBAC, DN/typed O1 addressing, file/streaming transport,
-FOCOM's Provisioning/Artifacts/Cluster/Infrastructure categories) was
-confirmed as a **deliberate Phase-1 scope cut**, not a bug — see "What's
-deliberately incomplete" below. One open item is architectural, not
-code: Policy Mgmt's Intent-to-RMIH matching is producer-side push, but
-TS28312's own NRM containment model implies the spec's real answer is
-consumer-side LDN selection — a genuine design question for whoever owns
-that module's requirements, moot for `DEMO_RUNBOOK.md` (neither route is
-ever called there).
+flip, SME's real Trusted Invokers registry, AI/ML Workflow's
+`mLTrainingType`), and every large/structural finding (MSAC RBAC,
+DN/typed O1 addressing, file/streaming transport, FOCOM's
+Provisioning/Artifacts/Cluster/Infrastructure categories, and — new
+this pass — AI/ML Workflow's/RAN Analytics's whole TS28105/TS28104 NRM
+containment trees and FL/RL modeling) was confirmed as a **deliberate
+Phase-1 scope cut**, not a bug — both modules target the O-RAN-SC
+`aiml-fw`/`aiml-fw-apm` reference architecture instead, already
+confirmed in section 5. See "What's deliberately incomplete" below.
+Two open items are architectural, not code: Policy Mgmt's
+Intent-to-RMIH matching (producer-side push vs. the spec's implied
+consumer-side LDN selection), and — new this pass — RAN Analytics's
+`analytics_type` enum constraint and missing threshold-based
+conditional reporting, both real but moderate/breaking, left for a
+deliberate follow-up rather than guessed at.
 
 Not yet audited against a formal spec at all, because no relevant spec
 file exists in `../specs/` yet: **DME** (ICS's own spec set isn't
 there), **A1 Related** (3GPP/O-RAN A1 specs aren't there — section 5's
-source-code audit remains the only ground truth), **Onboarding/rApp
-Mgmt** (TOSCA/rApp packaging specs aren't there), and **AI/ML
-Workflow**/**RAN Analytics** (no directly relevant O-RAN AI/ML formal
-spec exists). Also cataloged in `../specs/` but never compared against:
-the O-RAN WG4/WG5 O-RU/O-CU/O-DU management-plane YANGs — likely out of
-scope given this build's single-node topology, but genuinely
-unconfirmed, not assumed.
+source-code audit remains the only ground truth), and
+**Onboarding/rApp Mgmt** (TOSCA/rApp packaging specs aren't there).
+Also cataloged in `../specs/` but never compared against: the O-RAN
+WG4/WG5 O-RU/O-CU/O-DU management-plane YANGs — likely out of scope
+given this build's single-node topology, but genuinely unconfirmed,
+not assumed.
 
 **Internal completeness (`OPEN_ITEMS.md` sections 1-4) — closed except 3
 items blocked on data, not effort.** Section 2's repo/lifecycle gaps and
@@ -88,14 +95,16 @@ genuine production bugs got caught that no unit test had ever touched
 "Suggested next pass" section confirms this list is now exhausted.
 
 **Bottom line — what's actually remaining:** extending the formal-spec
-audit to the five unaudited modules and the WG4/WG5 YANGs (real,
-unstarted work); Policy Mgmt's Intent-to-RMIH architecture question
-(needs a stakeholder decision); and the three section 1 design
+audit to the three still-unaudited modules (DME, A1 Related,
+Onboarding/rApp Mgmt — no spec file exists yet for any of them) and the
+WG4/WG5 YANGs (real, unstarted work); a scoped follow-up pass on RAN
+Analytics's own moderate/breaking findings (the `analytics_type` enum
+constraint, threshold-based conditional reporting) and AI/ML Workflow's
+(`requestStatus` vocabulary, cancel/suspend-flag support); Policy
+Mgmt's and RAN Analytics's own architecture questions (need a
+stakeholder decision, not code); and the three section 1 design
 decisions (blocked on real data/algorithm/scope input). Everything else
-large/structural is a **confirmed** Phase-1 scope cut, not a gap. Unlike
-the backlog that produced the last dozen PRs, none of these three are
-independently pickable without something from whoever owns the relevant
-module's requirements.
+large/structural is a **confirmed** Phase-1 scope cut, not a gap.
 
 ## Stack
 
@@ -1400,22 +1409,35 @@ yet attempted for lack of a spec file:**
   section 5 remains the only ground truth for this module.
 - **Onboarding/rApp Mgmt** — TOSCA/rApp packaging specs aren't in
   `../specs/`.
-- **AI/ML Workflow, RAN Analytics** — no directly relevant O-RAN AI/ML
-  formal spec exists in `../specs/`.
 - **O-RAN WG4/WG5 O-RU/O-CU/O-DU management-plane YANGs** — present in
   `../specs/` but never compared against. Likely out of scope given this
   build's single-node topology, but genuinely unconfirmed.
 
-**One open architectural question, not a code gap:** Policy Mgmt's
-Intent-to-RMIH matching is producer-side push (`create_intent`'s own
-`_matching_rmihs`); TS28312 IntentNrm's NRM containment model
-(`IntentHandlingFunction-Single` *contains* `Intent`) implies the spec's
-real answer is consumer-side LDN selection instead — an MnS consumer
-picks and addresses an already-chosen RMIH when creating an Intent. A
-real, architecturally different, spec-grounded alternative worth a
-design note before treating the current mechanism as final. Moot for
-`DEMO_RUNBOOK.md` — neither `CreateIntent` nor
-`RegisterIntentHandlingFunction` is ever called there.
+**Two open architectural questions, not code gaps:**
+
+- Policy Mgmt's Intent-to-RMIH matching is producer-side push
+  (`create_intent`'s own `_matching_rmihs`); TS28312 IntentNrm's NRM
+  containment model (`IntentHandlingFunction-Single` *contains*
+  `Intent`) implies the spec's real answer is consumer-side LDN
+  selection instead — an MnS consumer picks and addresses an
+  already-chosen RMIH when creating an Intent. A real, architecturally
+  different, spec-grounded alternative worth a design note before
+  treating the current mechanism as final. Moot for `DEMO_RUNBOOK.md`
+  — neither `CreateIntent` nor `RegisterIntentHandlingFunction` is ever
+  called there.
+- RAN Analytics implements TS28104 MDA's own `MDAType` domain (coverage/
+  mobility/energy-saving analytics) via `aiml-fw-apm`'s proactive
+  producer-push shape rather than TS28104's consumer-request
+  (`MDARequest`/`MDAReport`) NRM model — the same confirmed,
+  deliberate architecture choice as AI/ML Workflow's below. Two smaller,
+  real deltas within that choice are moderate/breaking, not closed:
+  `analytics_type` is a free string where the spec defines a real,
+  closed 24-value enum (constraining it would reject whatever strings
+  any existing caller already uses, not yet audited), and there's no
+  `ThresholdInfo`-based conditional reporting at all (every report
+  always fires) — AI/ML Workflow's own `MLMFSubscription.guard_kpi_floor`
+  is a directly analogous mechanism already in this codebase this
+  module could crib from. See `SPEC_AUDIT.md` for the full findings.
 
 **Confirmed, deliberate Phase-1 scope cuts — not gaps, not pickable as
 scoped PRs:**
@@ -1449,6 +1471,18 @@ scoped PRs:**
   consistent with FOCOM's own documented single-degenerate-cluster
   Phase-1 scope; no real hardware telemetry source exists in this build
   to feed a deeper model honestly.
+- **AI/ML Workflow's and RAN Analytics's whole TS28105/TS28104 NRM
+  containment trees, plus AI/ML Workflow's FL/RL modeling** — both
+  modules target the O-RAN-SC `aiml-fw`/`aiml-fw-apm` reference
+  architecture instead (a flat REST job-manager / producer-push shape,
+  already confirmed via `OPEN_ITEMS.md` section 5), not 3GPP's own
+  containment-tree NRM with typed DN addressing, distinct
+  Request/Process/Report resources per function, and real
+  `FLRequirement`/`RLRequirement` federated/reinforcement-learning
+  fields. A confirmed, deliberate architecture choice, the same
+  category as FOCOM's O2IMS mismatch above — neither module's own
+  runbook demo touches any of this real NRM surface, since neither
+  ever claimed to implement it.
 - **`ROLLBACK`** (`sa-smos/app/main.py`) — raises a clear, specific error
   (`ROLLBACK_HISTORY_UNAVAILABLE`) rather than picking one of several
   plausible meanings: rApp Management's own upgrade machinery deletes the

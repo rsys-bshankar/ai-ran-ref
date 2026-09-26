@@ -8,14 +8,19 @@ build from — 3GPP OpenAPI YAML and O-RAN's real O2IMS information model,
 both now living in `specs/` (see `specs/README.md` for the full catalog
 and why each file is relevant to which module).
 
-Four modules were audited so far — the ones with the clearest, most
-directly relevant spec files already identified in `specs/README.md`.
-Not yet audited against a formal spec: DME (ICS's own spec set isn't in
-`specs/`), A1 Related (3GPP/O-RAN A1 specs aren't in `specs/` either —
-the sim-a1-interface/a1pms source-code audit in `OPEN_ITEMS.md` section 5
-remains the only ground truth there), Onboarding/rApp Mgmt (TOSCA/rApp
-packaging specs aren't in `specs/`), AI/ML Workflow and RAN Analytics (no
-directly relevant O-RAN-SC AI/ML formal spec exists in `specs/` either).
+Six modules have been audited so far: the four with the clearest, most
+directly relevant spec files already identified in `specs/README.md`
+(RAN NF OAM, FOCOM, Policy Mgmt, SME), plus AI/ML Workflow and RAN
+Analytics — `specs/README.md`'s own earlier claim that no directly
+relevant O-RAN-SC AI/ML formal spec exists in `specs/` was stale:
+`TS28105_AiMlNrm.yaml` (AI/ML NRM) and `TS28104_MdaNrm.yaml`/
+`TS28104_MdaReport.yaml` (MDA NRM) were already present under
+`5G_APIs/`, just never cataloged there. Not yet audited against a
+formal spec, because no relevant spec file exists in `specs/` at all:
+DME (ICS's own spec set isn't there), A1 Related (3GPP/O-RAN A1 specs
+aren't there either — the `sim-a1-interface`/`a1pms` source-code audit
+in `OPEN_ITEMS.md` section 5 remains the only ground truth there), and
+Onboarding/rApp Mgmt (TOSCA/rApp packaging specs aren't there).
 
 Every finding below was produced by reading the actual spec file(s) and
 the actual implementation file(s) side by side — none are guessed or
@@ -275,6 +280,138 @@ more closely for security/trust-model detail than that pass went)
    consistent with the "ADOPT repos stay pattern references only"
    philosophy already established elsewhere.
 
+## AI/ML Workflow vs. TS28105 AI/ML NRM
+
+Spec read: `TS28105_AiMlNrm.yaml` (`paths: {}`, data-model only, same
+shape as the O2IMS spec below). Previously listed as "not yet audited"
+— `specs/README.md`'s claim that no directly relevant O-RAN-SC AI/ML
+formal spec exists in `specs/` was stale; this file was already present
+under `5G_APIs/`, just never cataloged there.
+
+**Framing**: TS28.105 models AI/ML management as a full NRM containment
+tree — `MLTrainingFunction`/`MLTestingFunction`/`MLModelRepository`/
+`MLUpdateFunction`/`AIMLInferenceFunction`/
+`AIMLInferenceEmulationFunction`, each containing typed
+Request/Process/Report child IOCs addressed by DN, with real FL/RL
+semantics (`FLRequirement`/`RLRequirement`/`FLParticipationInfo`/
+`SupportedLearningTechnology`) and a `ThresholdMonitor`-integrated
+`AIMLManagementPolicy`. This build instead targets the O-RAN-SC
+nonrtric `aiml-fw`/`trainingmgr` reference architecture — already
+confirmed and audited in `OPEN_ITEMS.md` section 5 — a flatter REST
+job-manager shape (`AIMLModel` + `TrainingJob` + `InferenceJob`, no
+Request/Process/Report triplet, no DN addressing, no FL/RL modeling). A
+confirmed, deliberate architecture choice, the same category as
+FOCOM's O2IMS mismatch below, not a bug.
+
+1. **Whole NRM containment tree absent** — large/structural, confirmed
+   deliberate. No `MLTestingFunction`/`MLTestingRequest`/
+   `MLTestingReport`, no `MLUpdateFunction`/`MLUpdateRequest`/
+   `MLUpdateProcess`/`MLUpdateReport`, no `MLModelLoadingRequest`/
+   `MLModelLoadingProcess`/`MLModelLoadingPolicy`, no distinct
+   `AIMLInferenceReport` resource (`InferenceJob` is a much simpler
+   analog with no `potentialImpactInfo`/`managedActivationScope`), no
+   DN/typed addressing anywhere. This build targets `aiml-fw`'s own
+   reference shape instead.
+2. **No FL/RL modeling at all** — large/structural, confirmed
+   deliberate. `FLRequirement`/`FLParticipationInfo`/`RLRequirement`/
+   `SupportedLearningTechnology`/`ClusteringCriteria` have zero
+   equivalent — consistent with no distributed-training-orchestration
+   subsystem existing anywhere else in this build either.
+3. **`MLModelCoordinationGroup.memberMLModelRefList` requires
+   `minItems: 2`** — not a gap, a confirmation. This is the exact same
+   constraint this build's own migration independently enforces
+   (`array_length(member_model_ids, 1) >= 2`), closed with a
+   `COORDINATION_GROUP_TOO_SMALL` pre-validation in the same pass that
+   demoed SA SMOS's coordination-group remedial action. Retroactively
+   confirms that fix was spec-grounded, not just an internal
+   DB-constraint choice invented from nothing.
+4. ~~**`mLTrainingType` computed internally but never stored or
+   exposed**~~ — **closed.** The spec's real, closed 4-value enum
+   (`INITIAL_TRAINING`/`PRE_SPECIALISED_TRAINING`/`RE_TRAINING`/
+   `FINE_TUNING`) on both `MLModel` and `MLTrainingRequest`.
+   `request_training` already computed this exact
+   INITIAL_TRAINING-vs-RE_TRAINING distinction internally (as a
+   `ModelEvent.TRAIN`/`RETRAIN` FSM choice) but never stored or
+   returned it. Closed with a new `ml_training_type` column, computed
+   in both `request_training` and `_trigger_group_retrain` (always
+   `RE_TRAINING` there — `RETRAIN` is the only legal transition it ever
+   fires), returned from both `POST /training-jobs`'s status read and
+   `GET /training-jobs/{id}/status`. `PRE_SPECIALISED_TRAINING`/
+   `FINE_TUNING` have no equivalent concept in this build, so only two
+   of the spec's four values are ever produced — an honest partial
+   mapping, not a fabricated one. Verified against a real local
+   Postgres 16 instance (the new `CHECK` constraint accepts all four
+   spec values, live-exercised for both produced ones) and the full
+   unit/integration suites.
+5. **`requestStatus`'s real 6-value enum
+   (NOT_STARTED/IN_PROGRESS/SUSPENDED/FINISHED/CANCELLED/CANCELLING) vs.
+   this build's own `TrainingJob.status`
+   (PENDING/RUNNING/COMPLETED/FAILED/CANCELLED)** — moderate/breaking,
+   not closed. A vocabulary mismatch only, not a functional gap (same
+   shape as RAN NF OAM's `scope`/`ScopeType` naming collision below),
+   but renaming an established, widely-depended-on field's values would
+   be a real breaking change across every existing caller — left for a
+   deliberate follow-up pass, not a quick fix.
+6. **No `cancelRequest`/`suspendRequest` in-place flag mechanism** —
+   moderate, not closed. This build's own `cancel_training` is a hard
+   `DELETE`, and there's no suspend concept at all. A real, closeable
+   feature gap, but reshaping the training-job lifecycle's own
+   established contract is a bigger change than this pass's usual
+   scoped fixes.
+7. **`AIMLManagementPolicy`/`ThresholdMonitorNrm` integration confirmed
+   NOT a gap** — this build's own `MLMFSubscription.guard_kpi_floor` is
+   a real, working, functionally equivalent threshold mechanism
+   already, just under this build's own `aiml-fw`-derived name/shape
+   rather than TS28.105's `ThresholdMonitor`.
+
+## RAN Analytics vs. TS28104 MDA NRM
+
+Spec read: `TS28104_MdaNrm.yaml` + `TS28104_MdaReport.yaml` (`paths: {}`,
+data-model only). Same stale-catalog correction as AI/ML Workflow above
+— both files were already present under `5G_APIs/`.
+
+**Framing**: TS28.104 models MDA (Management Data Analytics) as a
+request-response NRM: a consumer creates an `MDARequest`
+(`requestedMDAOutputs`, `analyticsScope`, threshold-based conditional
+reporting via `ThresholdInfo`), and an `MDAFunction` generates
+`MDAReport`s in response, addressed by DN inside a
+`SubNetwork`/`ManagedElement` containment tree. This build instead
+implements the O-RAN-SC nonrtric `aiml-fw-apm` reference's actual shape
+— already audited in `OPEN_ITEMS.md` section 5 — proactive
+producer-push, not consumer-request: a producer registers itself plus
+its `analytics_type`, publishes reports on its own initiative, and a
+separate subscriber list receives them. A confirmed, deliberate
+architecture choice, not a bug.
+
+1. **Whole `MDARequest`-driven request-response model absent, replaced
+   by proactive producer-push** — large/structural, confirmed
+   deliberate. Matches `aiml-fw-apm`'s own reference shape, not
+   TS28.104's NRM.
+2. **`analytics_type` is a free string; the spec defines a real, closed
+   24-value `MDAType` enum** (`COVERAGE_ANALYTICS_COVERAGE_PROBLEM_
+   ANALYSIS`, `MOBILITY_MANAGEMENT_ANALYTICS_MOBILITY_PERFORMANCE_
+   ANALYSIS`, etc.) — moderate/breaking, not closed. Constraining it
+   would reject whatever `analytics_type` strings any existing caller
+   (demo, tests, other modules) already uses — not yet audited for real
+   usage before attempting this, so left open rather than guessed at.
+3. **No `ThresholdInfo`-based conditional reporting** (`UP`/`DOWN`/
+   `UP_AND_DOWN` + hysteresis) — moderate, real feature gap, not closed.
+   Every report always fires regardless of value; this build's own
+   `MLMFSubscription.guard_kpi_floor` (AI/ML Workflow, above) is a
+   directly analogous mechanism already implemented elsewhere in this
+   same codebase this module could crib from. Real and scoped, just not
+   done this pass.
+4. **`scope` is an opaque JSON blob, not the spec's real structured
+   `AnalyticsScopeType`** (a `managedEntitiesScope` DN list or
+   `areaScope`) — small/cosmetic, consistent with this build's already-
+   declared no-real-DN-addressing elision (RAN NF OAM's flat-string
+   addressing, above).
+5. **`reportingMethod`'s FILE/STREAMING options confirmed NOT a gap** —
+   consistent with the already-declared file/streaming transport
+   elision (RAN NF OAM's `FileDataReportingMnS`/`StreamingDataMnS`
+   finding, above); this build's `notification_destination` is honestly
+   NOTIFICATION-only.
+
 ## What's genuinely closeable now (small, scoped, non-breaking)
 
 In priority order — these don't touch any established wire contract a
@@ -313,8 +450,22 @@ same-shape PR like this session's others:
    `callback` (or explicitly document the deviation) and add
    `consumerSubscriptionId` passthrough.~~ — **closed**
    (`OPEN_ITEMS.md`'s pass-history log). This was the last item on
-   this list — every small/scoped, non-breaking spec gap identified in
-   this pass is now closed.
+   this list from the first four modules audited — every small/scoped,
+   non-breaking spec gap identified in that pass was closed.
+9. ~~AI/ML Workflow: add `mLTrainingType` (INITIAL_TRAINING/
+   PRE_SPECIALISED_TRAINING/RE_TRAINING/FINE_TUNING) to `TrainingJob`,
+   computed from `request_training`'s own already-existing
+   TRAIN-vs-RETRAIN FSM-event choice.~~ — **closed**
+   (`OPEN_ITEMS.md`'s pass-history log). This was the one small,
+   non-breaking, additive item found auditing AI/ML Workflow and RAN
+   Analytics — everything else found there is either large/structural
+   (a confirmed architecture choice: this build targets `aiml-fw`/
+   `aiml-fw-apm`'s own O-RAN-SC reference shape, not TS28.105/TS28.104's
+   3GPP NRM containment-tree model) or moderate/breaking (RAN
+   Analytics's `analytics_type` enum constraint, its missing
+   threshold-based conditional reporting, and AI/ML Workflow's
+   `requestStatus` vocabulary and cancel/suspend-flag gaps) — see those
+   two modules' own sections above.
 
 Moderate/breaking-shape items (worth a deliberate follow-up pass, not
 a quick fix, since each changes a request/response contract a real
@@ -431,3 +582,15 @@ per the spec's NRM containment model, rather than this build's
 producer-side push) is moot for this specific demo — `CreateIntent`/
 `RegisterIntentHandlingFunction` are never called in the runbook
 either. Relevant to the platform roadmap, not to this walkthrough.
+
+7. **AI/ML Workflow's and RAN Analytics's own large/structural items
+   (whole TS28.105/TS28.104 NRM containment trees, FL/RL modeling,
+   MDARequest-driven request-response reporting).** Out of scope for
+   the same reason as everywhere else on this list — `DEMO_RUNBOOK.md`
+   exercises AI/ML Workflow's own `aiml-fw`-shaped routes (register,
+   train, upload/download an artifact, advance the lifecycle, feature
+   groups, a coordination-group remedial action) and RAN Analytics's
+   own `aiml-fw-apm`-shaped routes (register a producer, subscribe,
+   publish a report) — none of which touch TS28.105/TS28.104's real NRM
+   surface at all, since this build never claimed to implement that
+   surface in the first place. No reconsideration needed.

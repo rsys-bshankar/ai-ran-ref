@@ -561,6 +561,8 @@ CREATE TABLE training_job (
   consumer_rapp_id                                      TEXT, -- NEW section 5
   producer_rapp_id                                         TEXT, -- NEW section 5
   model_metrics                                               JSONB, -- NEW section 5: writeback target, POST .../model-metrics
+  ml_training_type                                               TEXT CHECK (ml_training_type IN
+    ('INITIAL_TRAINING','PRE_SPECIALISED_TRAINING','RE_TRAINING','FINE_TUNING')), -- NEW SPEC_AUDIT.md: TS28.105's own real enum
   CONSTRAINT exactly_one_target CHECK (
     (model_id IS NOT NULL AND model_coordination_group_id IS NULL)
     OR (model_id IS NULL AND model_coordination_group_id IS NOT NULL)
