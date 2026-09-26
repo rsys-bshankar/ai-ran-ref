@@ -627,7 +627,33 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert "o-ran-smo-teiv-cloud:RESOURCE_IS_OF_TYPE_RESOURCETYPE" in relationship_keys
     assert "o-ran-smo-teiv-cloud:RESOURCE_CONTAINED_IN_RESOURCEPOOL" in relationship_keys
 
-    # step 19: retire — the real package priming lifecycle (COMMISSIONED-
+    # step 19: AI/ML Workflow feature groups — a whole entity added in an
+    # earlier §5 pass but never touched by any demo phase. Real
+    # registration + listing, then the reference's own real duplicate-name
+    # rejection (a genuine UniqueConstraint) and invalid-name rejection
+    # (the reference's own \w+, 3-63 character rule).
+    feature_group_body = {
+        "featureGroupName": "demo_coverage_features", "featureList": "rsrp,rsrq,sinr",
+        "datalakeSource": "INFLUX", "host": "influx.demo", "port": "8086", "bucket": "demo-bucket",
+        "token": "demo-token", "dbOrg": "demo-org", "measurement": "coverage_metrics",
+    }
+    created_group = mesh["ai-ml-workflow"].post("/feature-groups", json=feature_group_body)
+    assert created_group.status_code == 201
+    feature_group_id = created_group.json()["featureGroupId"]
+
+    listed_groups = mesh["ai-ml-workflow"].get("/feature-groups")
+    assert listed_groups.status_code == 200
+    assert any(g["featureGroupId"] == feature_group_id for g in listed_groups.json()["featureGroups"])
+
+    duplicate_group = mesh["ai-ml-workflow"].post("/feature-groups", json=feature_group_body)
+    assert duplicate_group.status_code == 409
+    assert duplicate_group.json()["detail"]["title"] == "FEATURE_GROUP_ALREADY_REGISTERED"
+
+    invalid_group = mesh["ai-ml-workflow"].post("/feature-groups", json={**feature_group_body, "featureGroupName": "no spaces allowed"})
+    assert invalid_group.status_code == 400
+    assert invalid_group.json()["detail"]["title"] == "FEATURE_GROUP_NAME_INVALID"
+
+    # step 20: retire — the real package priming lifecycle (COMMISSIONED-
     # equivalent AVAILABLE -> PRIMING -> PRIMED), a genuine deprime
     # refusal while the sample rApp's own instance is still deployed
     # (the reference's own deprimeRapp guard, a real query against
