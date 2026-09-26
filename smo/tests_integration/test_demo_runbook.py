@@ -561,7 +561,51 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert cancelled_steps[1]["status"] == "FAILED"
     assert cancelled_steps[2]["status"] == "CANCELLED"
 
-    # step 17: retire — the real package priming lifecycle (COMMISSIONED-
+    # step 17: DME type subscriptions — a real consumer notified when any
+    # DmeType is registered or removed, closed in an earlier §5 pass but
+    # never demonstrated. Intercepted the same way as FOCOM's/Policy
+    # Mgmt's/A1 Related's/RAN Analytics' own notification steps above.
+    dme_type_notifications = []
+    real_post_dme = httpx.post
+
+    def fake_post_dme(location, json=None, timeout=None, **kwargs):
+        if location == "http://demo-consumer:9000/dme-type-events":
+            dme_type_notifications.append(json)
+            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
+        return real_post_dme(location, json=json, timeout=timeout, **kwargs)
+
+    monkeypatch.setattr(loaded_apps["dme"].httpx, "post", fake_post_dme)
+
+    dme_sub = mesh["dme"].post("/type-subscriptions", json={
+        "notificationDestination": "http://demo-consumer:9000/dme-type-events", "owner": "hello-world-rapp",
+    })
+    assert dme_sub.status_code == 201
+    dme_subscription_id = dme_sub.json()["subscriptionId"]
+
+    new_type = mesh["dme"].post("/production-capabilities", json={
+        "namespace": "demo", "name": "dme-type-sub-demo", "version": "1.0",
+        "typeName": "dme-type-sub-demo-v1", "producerId": "hello-world-rapp",
+        "dataProductionSchema": {"type": "object", "properties": {"reading": {"type": "number"}}},
+        "producerHealthCallbackUrl": "http://hello-world-rapp:8080/health",
+        "jobCallbackUrl": "http://hello-world-rapp:8080/dme-jobs",
+    })
+    assert new_type.status_code == 201
+    new_type_id = new_type.json()["registrationId"]
+    assert len(dme_type_notifications) == 1
+    assert dme_type_notifications[0]["infoTypeId"] == new_type_id
+    assert dme_type_notifications[0]["status"] == "REGISTERED"
+
+    deregistered = mesh["dme"].delete("/production-capabilities", params={"producer_id": "hello-world-rapp"})
+    assert deregistered.status_code == 204
+    # tears down both hello-world-rapp's DmeTypes: step 4's hello-world-metrics
+    # and the new demo one above, each firing its own DEREGISTERED notification.
+    assert len(dme_type_notifications) == 3
+    assert {n["status"] for n in dme_type_notifications[1:]} == {"DEREGISTERED"}
+
+    dme_unsub = mesh["dme"].delete(f"/type-subscriptions/{dme_subscription_id}")
+    assert dme_unsub.status_code == 204
+
+    # step 18: retire — the real package priming lifecycle (COMMISSIONED-
     # equivalent AVAILABLE -> PRIMING -> PRIMED), a genuine deprime
     # refusal while the sample rApp's own instance is still deployed
     # (the reference's own deprimeRapp guard, a real query against

@@ -2466,6 +2466,21 @@ own §1/§2 items stand as-is.
   local Postgres 16 pass (59 tables, 0 mismatches), live-schema-match
   check green, all 16 modules' unit test suites green (unchanged, 480
   total — no model/schema touched), all 16 integration tests green.
+- **Demo depth: DME's type-subscription mechanism.** First item off the
+  "more demo depth" list below. New section: subscribe with a real
+  `notificationDestination` → register a new `DmeType`, firing a real
+  `REGISTERED` notification (`_notify_type_subscribers`) → deregister
+  the producer, tearing down both this new type and step 4's own
+  `hello-world-metrics`, firing a matching `DEREGISTERED` notification
+  for each → unsubscribe. `tests_integration/test_demo_runbook.py`
+  gained a matching step, proving the real dispatch fires with the
+  correct payload by intercepting the exact `httpx.post` call. No code,
+  schema, or OpenAPI-spec change — confirmed via a full local Postgres
+  16 pass (59 tables, 0 mismatches) and the live-schema-match check,
+  both green. Landed alongside an unrelated, much larger parallel PR
+  (#87, the SMO Operator GUI + BFF, `gui/`/`gui-bff/`) that merged
+  first — re-ran the full suite after rebasing onto it to confirm no
+  interaction; none found, both PRs touch disjoint code.
 
 ## Suggested next pass (priority order)
 
@@ -2477,9 +2492,6 @@ own §1/§2 items stand as-is.
 2. **More demo depth is the best-scoped remaining backlog.** Real,
    already-implemented functionality with zero demo visibility, ranked
    by how self-contained each one is to add:
-   - `dme`'s type-subscription mechanism (`POST`/`GET`/
-     `DELETE /type-subscriptions`, §5-closed) — a consumer subscribing
-     to a `DmeType`'s registration/removal, never exercised.
    - `nfo`+`focom`'s TEIV topology export (`GET /topology`, §5-closed)
      — never called anywhere in the runbook.
    - `sme`'s per-`apiId` event-subscription filtering (`SubscribeEvents`

@@ -1203,7 +1203,78 @@ print(r.status_code, r.json())
 "
 ```
 
-## 17. Retire it — package priming lifecycle, Terminate, then Delete
+## 17. DME type subscriptions (optional) — notify a consumer when a type is registered or removed
+
+Independent of the sample rApp instance above — DME's own real
+type-subscription mechanism (ICS's own `/info-type-subscription`,
+`InfoTypeSubscriptions`/`ConsumerCallbacks`), closed in an earlier
+pass but never demonstrated: a consumer notified whenever *any*
+`DmeType` is registered or removed, unfiltered (matching the
+reference's own lack of per-type scoping).
+
+Subscribe first, with a real notification destination:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://dme:8000/type-subscriptions', json={
+    'notificationDestination': 'http://demo-consumer:9000/dme-type-events', 'owner': 'hello-world-rapp',
+})
+print(r.status_code, r.json())
+"
+```
+
+Note the `subscriptionId`. Register a new DME type — `register_dme_type`
+fires a real `REGISTERED` notification to every subscriber
+(`_notify_type_subscribers`):
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://dme:8000/production-capabilities', json={
+    'namespace': 'demo', 'name': 'dme-type-sub-demo', 'version': '1.0',
+    'typeName': 'dme-type-sub-demo-v1', 'producerId': 'hello-world-rapp',
+    'dataProductionSchema': {'type': 'object', 'properties': {'reading': {'type': 'number'}}},
+    'producerHealthCallbackUrl': 'http://hello-world-rapp:8080/health',
+    'jobCallbackUrl': 'http://hello-world-rapp:8080/dme-jobs',
+})
+print(r.status_code, r.json())
+"
+```
+
+No real listener exists at `http://demo-consumer:9000/dme-type-events`
+in this compose stack (same honesty pattern as every other placeholder
+callback in this runbook), so watch `dme`'s own logs for the attempted
+delivery — a real POST with `{infoTypeId, jobDataSchema, status:
+"REGISTERED"}`. `tests_integration/test_demo_runbook.py` proves the
+real dispatch fires with the correct payload by intercepting the exact
+`httpx.post` call.
+
+Deregister the producer — `deregister_producer` fires a matching
+`DEREGISTERED` notification for the same type the same way:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://dme:8000/production-capabilities', params={'producer_id': 'hello-world-rapp'})
+print(r.status_code)
+"
+```
+
+Note this also deregisters `hello-world-rapp`'s own `hello-world-metrics`
+type from step 4, alongside the new demo one — `deregister_producer`
+tears down every `DmeType` a `producer_id` owns, matching ICS's own
+scope. Unsubscribe:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://dme:8000/type-subscriptions/<subscriptionId>')
+print(r.status_code)
+"
+```
+
+## 18. Retire it — package priming lifecycle, Terminate, then Delete
 
 **Prime the package** — the reference's real
 `COMMISSIONED -> PRIMING -> PRIMED` lifecycle (our `AVAILABLE` plays
