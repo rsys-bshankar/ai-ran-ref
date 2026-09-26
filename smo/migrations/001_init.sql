@@ -649,7 +649,7 @@ CREATE TABLE mda_subscription (
 );
 
 -- ============================================================
--- Governance & Assurance: Policy Management & Info  (Policy Mgmt LLD sections 1-4)
+-- Governance & Assurance: Intent Service (formerly Policy Management & Info; Policy Mgmt LLD sections 1-4)
 -- ============================================================
 
 CREATE TABLE intent (

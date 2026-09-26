@@ -244,7 +244,7 @@ Per-module unit test counts:
 | Module | Tests |
 |---|---|
 | mock-o1-adaptor | 6 |
-| policy-mgmt | 10 |
+| intent-service | 10 |
 | sa-smos | 12 |
 | so-smos | 13 |
 | r1-termination | 15 |
@@ -261,12 +261,12 @@ Per-module unit test counts:
 | dme | 55 |
 
 Plus 14 cross-service integration tests in `tests_integration/`.
-`mock-near-rt-ric`/`r1-termination`/`policy-mgmt` (10 tests each) are
+`mock-near-rt-ric`/`r1-termination`/`intent-service` (formerly `policy-mgmt`) (10 tests each) are
 now the shallowest-covered tier — `nfo` moved out of it in a later pass
 (gained real deployment-state-machine coverage). `rapp-mgmt` and
 `dme` moved out of the shallow tier in an earlier pass (both gained
 route-level tests); a later pass added route-level coverage for the five
-§1 items closed below — `ai-ml-workflow` (+4), `policy-mgmt` (+3),
+§1 items closed below — `ai-ml-workflow` (+4), `policy-mgmt` (now `intent-service`) (+3),
 `sa-smos` (net +2, replacing one parametrized "ambiguous" test with four
 RECONNECT/ROLLBACK-specific ones), and `ran-nf-oam` (+10: its first
 route-level tests at all, plus unit tests for the new NETCONF client).
@@ -2604,7 +2604,7 @@ own §1/§2 items stand as-is.
    correlation algorithm) that would otherwise be fabricated, and the
    third only needs revisiting if A1-ML's out-of-scope decision itself
    changes. Not blocked on a call, blocked on data or a scope change.
-4. `mock-near-rt-ric`/`r1-termination`/`policy-mgmt` (10 tests each) are
+4. `mock-near-rt-ric`/`r1-termination`/`intent-service` (formerly `policy-mgmt`) (10 tests each) are
    the shallowest test-covered modules; an earlier survey of the
    remaining shallow tier found only 1-2 minor edge-case gaps each —
    already close to thoroughly covered. Diminishing returns as a

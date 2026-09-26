@@ -175,6 +175,11 @@ comparisons below are necessarily schema-level only.
 
 ## Policy Mgmt vs. TS28312 IntentNrm
 
+*(This module was renamed `intent-service/` in Wave 1 of the AI Platform
+Service Decomposition — see `docs/ownership/INTENT_SERVICE_OWNERSHIP.md`.
+Findings below are unchanged and still accurate; only the directory and
+service name changed, not the code.)*
+
 **Important framing correction the audit itself surfaced**: the "needs
 a design decision" language for Intent-to-RMIH matching quoted from
 `OPEN_ITEMS.md` section 1 is *stale* — a later pass (documented in the
@@ -524,8 +529,11 @@ own steps actually call — not a general risk assessment. The runbook
 exercises Onboarding → rApp Mgmt → NFO → FOCOM (`GET /inventory`,
 read-only) → SME (provider/invoker registration, OAuth2 token, publish
 service API) → DME (optional producer registration) → rApp Mgmt
-(performance report, terminate, delete). RAN NF OAM and Policy Mgmt
-are never called anywhere in the runbook.
+(performance report, terminate, delete). RAN NF OAM and Intent Service
+(then named Policy Mgmt) were never called anywhere in the runbook when
+this triage was written; Intent Service since gained its own *optional*
+demo section (§10, "Demo Phase D") — see the correction in the
+paragraph right after this numbered list. RAN NF OAM remains uncalled.
 
 1. **RAN NF OAM: MSAC RBAC placeholder.** Out of scope. The gated
    route (`WriteConfigurationChanges` / `POST /config-jobs`) never
@@ -576,12 +584,20 @@ are never called anywhere in the runbook.
    exists and has its own `DEMO_RUNBOOK.md` section.
 
 Not on the large/structural list, but adjacent and worth naming for
-the same reason: Policy Mgmt's own architecture question (§ above —
-whether Intent-to-RMIH matching should be consumer-side LDN selection
-per the spec's NRM containment model, rather than this build's
-producer-side push) is moot for this specific demo — `CreateIntent`/
-`RegisterIntentHandlingFunction` are never called in the runbook
-either. Relevant to the platform roadmap, not to this walkthrough.
+the same reason: Intent Service's own architecture question (§ above,
+under its former name Policy Mgmt — whether Intent-to-RMIH matching
+should be consumer-side LDN selection per the spec's NRM containment
+model, rather than this build's producer-side push). **Correction**:
+this was originally assessed as moot for the demo because `CreateIntent`/
+`RegisterIntentHandlingFunction` were never called in the runbook — that
+was true when this line was written, but a later pass (Demo Phase D,
+`OPEN_ITEMS.md`'s pass-history log) added exactly that walkthrough to
+`DEMO_RUNBOOK.md` §10. This question is therefore demo-relevant after
+all, the same category as the SME Trusted Invokers item above: worth a
+one-line disclosure in the live walkthrough rather than a silent
+assumption, and squarely on the table for Intent Service's own Wave 3
+contract design (see `docs/ownership/INTENT_SERVICE_OWNERSHIP.md`) to
+resolve properly rather than carry forward again.
 
 7. **AI/ML Workflow's and RAN Analytics's own large/structural items
    (whole TS28.105/TS28.104 NRM containment trees, FL/RL modeling,

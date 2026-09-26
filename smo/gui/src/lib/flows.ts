@@ -42,7 +42,7 @@ export const FLOWS: FlowDef[] = [
   { id: "06", number: "06", title: "Package failure, deprecation and the cascade-delete guard", doc: "06-onboarding-failure-deprecation-deletion.md", subject: "package", modules: ["onboarding", "rapp-mgmt"] },
   { id: "07", number: "07", title: "rApp fault and performance reporting", doc: "07-rapp-fault-and-performance-reporting.md", subject: "rApp instance", modules: ["rapp-mgmt"] },
   { id: "08", number: "08", title: "RAN Analytics: producer → report → subscriber query", doc: "08-ran-analytics-data-production.md", subject: "analytics type", modules: ["ran-analytics", "sme"] },
-  { id: "09", number: "09", title: "Intent registration → fulfilment reporting → admin state", doc: "09-policy-mgmt-intent-flow.md", subject: "intent", modules: ["policy-mgmt"] },
+  { id: "09", number: "09", title: "Intent registration → fulfilment reporting → admin state", doc: "09-intent-service-intent-flow.md", subject: "intent", modules: ["intent-service"] },
   { id: "10", number: "10", title: "SO SMOS multi-step order: INFRA → TRAINING → DEPLOY", doc: "10-so-smos-multi-step-infra-training-deploy.md", subject: "service order", modules: ["so-smos", "focom", "ai-ml-workflow", "nfo"] },
 ];
 
@@ -245,13 +245,13 @@ export function flow08(type: string, producers: AnalyticsProducer[], subs: Analy
 
 export function flow09(handlers: Rmih[], intent: Intent | undefined, reports: IntentReport[]): FlowStep[] {
   return settle([
-    step("rmih", "RegisterIntentHandlingFunction (framework-internal only)", "SO/SA SMOS → Policy Mgmt", handlers.length > 0,
+    step("rmih", "RegisterIntentHandlingFunction (framework-internal only)", "SO/SA SMOS → Intent Service", handlers.length > 0,
       handlers.length ? handlers.map((h) => h.rmihId).join(", ") : undefined),
-    step("create", "CreateIntent(expectations, priority)", "RMIO → Policy Mgmt", !!intent, intent ? `priority ${intent.intentPriority}, RMIO ${intent.rmioId}` : undefined),
-    step("dispatch", "Matching RMIHs notified (expectationObject.objectType)", "Policy Mgmt → RMIH", !!intent && handlers.length > 0 ? true : intent ? "warn" : false,
+    step("create", "CreateIntent(expectations, priority)", "RMIO → Intent Service", !!intent, intent ? `priority ${intent.intentPriority}, RMIO ${intent.rmioId}` : undefined),
+    step("dispatch", "Matching RMIHs notified (expectationObject.objectType)", "Intent Service → RMIH", !!intent && handlers.length > 0 ? true : intent ? "warn" : false,
       intent && !handlers.length ? "no handler registered to receive it" : undefined),
-    step("report", "PublishIntentReport(fulfilment, conflicts)", "RMIH → Policy Mgmt", reports.length > 0, reports.length ? `${reports.length} report(s)` : undefined),
-    step("admin", "UpdateIntentAdminState (RMIO only)", "RMIO → Policy Mgmt", intent?.intentAdminState === "DEACTIVATED", intent ? `state ${intent.intentAdminState}` : undefined),
+    step("report", "PublishIntentReport(fulfilment, conflicts)", "RMIH → Intent Service", reports.length > 0, reports.length ? `${reports.length} report(s)` : undefined),
+    step("admin", "UpdateIntentAdminState (RMIO only)", "RMIO → Intent Service", intent?.intentAdminState === "DEACTIVATED", intent ? `state ${intent.intentAdminState}` : undefined),
   ]);
 }
 

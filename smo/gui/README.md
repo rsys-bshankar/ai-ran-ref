@@ -89,7 +89,7 @@ The BFF also pins identity-bearing parameters rather than trusting the
 browser: `ack_user_id` / `clear_user_id` are the GUI user; SA SMOS's
 `requester_is_admin` follows the GUI role; a CM write's `requestedBy` is the
 GUI user and its MSAC tier (which `entire-RAN` scope requires) is granted to
-admins only; Policy Mgmt intents carry RMIO `smo-gui` (so the GUI can change
+admins only; Intent Service intents carry RMIO `smo-gui` (so the GUI can change
 the admin state of exactly the intents it created).
 
 ## Security
@@ -118,12 +118,12 @@ the admin state of exactly the intents it created).
 | Page | Module paths (all via `/api/smo/…` → R1) |
 |---|---|
 | **Lifecycle flows** | All ten `docs/call-flows` journeys, each a live step timeline for a chosen package / model / config job / monitor / EI type / instance / analytics type / intent / order, with the next action on the current step (`lib/flows.ts` holds the step logic). Reads everything the flows touch, including `/onboarding/packages/{id}/usage`, `/dme/offers`, `/dme/data-jobs`, `/a1-related/ei-types`, `/sme/published-apis/v1/{apf}/service-apis` |
-| **Dashboard** | BFF `GET /api/modules/status` (every `/<module>/health`, in parallel) · `/ran-nf-oam/alarms` · `/focom/alarms` · `/ai-ml-workflow/mlmf/reports` · `/rapp-mgmt/instances/{id}/performance` · `/sa-smos/remedial-actions?outcome=ESCALATED` · fleet counts from onboarding, rapp-mgmt, ai-ml-workflow, nfo, ran-nf-oam, a1-related, policy-mgmt, ran-analytics lists |
+| **Dashboard** | BFF `GET /api/modules/status` (every `/<module>/health`, in parallel) · `/ran-nf-oam/alarms` · `/focom/alarms` · `/ai-ml-workflow/mlmf/reports` · `/rapp-mgmt/instances/{id}/performance` · `/sa-smos/remedial-actions?outcome=ESCALATED` · fleet counts from onboarding, rapp-mgmt, ai-ml-workflow, nfo, ran-nf-oam, a1-related, intent-service, ran-analytics lists |
 | **rApps** (call-flow 01) | `/onboarding/packages` (+ `prime`, `deprime`, `deprecate`, `cancel-delete`, `DELETE`, `artifacts`, `usage` + `start`/`stop`) · `/rapp-mgmt/instances` (+ `GET {id}`, `config`, `bootstrap-complete`, `upgrade`, `upgrade/resolve`, `recover`, `terminate`, `DELETE`, `performance`, `faults`) |
 | **AI/ML** (call-flow 02) | `/ai-ml-workflow/models` (+ `{id}` `PUT`/`DELETE`, `advance?event=`, `artifact`, `artifact/{v}`, `deploy`, `inference-jobs`) · `/training-jobs` (+ `model-metrics`) · `/inference-jobs` (+ `resolve`) · `/coordination-groups` · `/mlmf/subscriptions` (+ `reports`) · `/feature-groups` · `/dme/dme-types` |
 | **Alarms** | `/ran-nf-oam/alarms` (filters `managed_element_ref`, `severity`; `PATCH …/ack`, `…/clear`; admin `alarms/ingest`) · `/focom/alarms` |
 | **KPIs & Assurance** | `/rapp-mgmt/instances/{id}/performance` · `/ran-nf-oam/pm-subscriptions` · MLMF as above · `/ran-analytics/reports`, `producers`, `subscriptions` (and, as admin, registering producers and publishing reports) · `/sa-smos/monitors` (+ `evaluate`, `remedial-actions`, `escalate`), `/sa-smos/remedial-actions` · `/focom/performance` |
-| **Policy & Intents** | `/a1-related/policy-types`, `/a1-related/policies` (+ `{id}`, `{id}/status`), `/a1-related/policies/subscriptions`, `/a1-related/services` (+ `keepalive`) · `/policy-mgmt/intents` (+ `admin-state`), `/intent-reports`, `/intent-handling-functions` |
+| **Policy & Intents** | `/a1-related/policy-types`, `/a1-related/policies` (+ `{id}`, `{id}/status`), `/a1-related/policies/subscriptions`, `/a1-related/services` (+ `keepalive`) · `/intent-service/intents` (+ `admin-state`), `/intent-reports`, `/intent-handling-functions` |
 | **Infrastructure** | `/nfo/deployments` (+ `heal`, `scale`, `resources`, `operations`, `DELETE`), `/nfo/descriptors` · `/focom/resource-pools` (+ `resources`), `resource-types`, `deployment-managers`, `topology`, `resources/provision`, `inventory/subscriptions` · `/ran-nf-oam/o1-adaptor-endpoints` (+ `discover`, `heartbeat`), `config-jobs` (several MEs per job), `software-management-jobs` (+ `advance`) · `/so-smos/orders` (+ `cancel`) |
 | **Data & Exposure** (call flows 01, 05, 08) | `/dme/dme-types`, `production-capabilities`, `data-jobs`, `offers` (+ `notify`), `type-subscriptions` · `/a1-related/ei-types` (+ `register`) · `/sme/provider-registrations`, `published-apis/v1/{apf}/service-apis`, `invoker-registrations`, `trusted-invokers`, `service-apis/v1/allServiceAPIs`, `capif-events/v1/{subscriber}/subscriptions` |
 | **Admin** | BFF `/api/admin/users`, `/api/admin/audit` |

@@ -24,7 +24,7 @@ export function Dashboard() {
   const deployments = useSmo<NfDeployment[]>("/nfo/deployments");
   const endpoints = useSmo<O1Endpoint[]>("/ran-nf-oam/o1-adaptor-endpoints");
   const policies = useSmo<A1Policy[]>("/a1-related/policies");
-  const intents = useSmo<Intent[]>("/policy-mgmt/intents");
+  const intents = useSmo<Intent[]>("/intent-service/intents");
   const analytics = useSmo<AnalyticsReport[]>("/ran-analytics/reports");
 
   const open = (alarms.data ?? []).filter((a) => a.severity !== "cleared");
