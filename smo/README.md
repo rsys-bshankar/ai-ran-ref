@@ -18,7 +18,7 @@ apart rather than merged into one score:
 | Audit | Ground truth | Status |
 |---|---|---|
 | `OPEN_ITEMS.md` section 5 | 18 cloned O-RAN-SC repos (ADOPT/REFERENCE source code) | **Fully closed** |
-| `SPEC_AUDIT.md` | Formal 3GPP/O-RAN specs in `../specs/` | **Closed for the 6 modules with a matching spec file** |
+| `SPEC_AUDIT.md` | Formal 3GPP/O-RAN specs in `../specs/`, plus source-derived ground truth where no formal spec document exists | **Closed for 8 of 9 in-scope modules** (6 against a formal spec document, plus DME against ICS's own OpenAPI and Onboarding/rApp Mgmt against the real reference's sample CSAR; A1 Related still has no spec file to audit against) |
 | `OPEN_ITEMS.md` sections 1-4 | This build's own LLDs and internal completeness | **Closed except 3 stakeholder-blocked design decisions** |
 
 **O-RAN-SC source-code audit (section 5) — done.** Every module with an
@@ -54,13 +54,21 @@ containment trees and FL/RL modeling) was confirmed as a **deliberate
 Phase-1 scope cut**, not a bug — both modules target the O-RAN-SC
 `aiml-fw`/`aiml-fw-apm` reference architecture instead, already
 confirmed in section 5. See "What's deliberately incomplete" below.
-Two open items are architectural, not code: Policy Mgmt's (now Intent
-Service's — see "Phase 2" below) Intent-to-RMIH matching (producer-side
-push vs. the spec's implied consumer-side LDN selection), and — new
-this pass — RAN Analytics's
-`analytics_type` enum constraint and missing threshold-based
-conditional reporting, both real but moderate/breaking, left for a
-deliberate follow-up rather than guessed at.
+Two items flagged here as open architectural questions when this audit
+was written are now closed, both during Wave 3 (see "Phase 2" below):
+Policy Mgmt's (now Intent Service's) Intent-to-RMIH matching was
+redesigned to the spec's own implied consumer-side selection — a
+caller now addresses one already-registered `IntentHandlingFunction`
+directly, matched against its declared capabilities rather than
+matched producer-side; and RAN Analytics's (now MDAF's) missing
+threshold-based conditional reporting was built — real edge-triggered
+`UP`/`DOWN`/`UP_AND_DOWN` crossing detection with genuine hysteresis
+state. RAN Analytics's `analytics_type` enum constraint remains open —
+real but moderate/breaking (every real caller's actual value is
+informal shorthand, not one of the spec's closed 24 wire values;
+constraining to it now would mean renaming every caller for
+conformance alone, not fixing a bug), left for a deliberate follow-up
+rather than guessed at.
 
 Not yet audited against a formal spec at all, because no relevant spec
 file exists in `../specs/` yet: **A1 Related** (3GPP/O-RAN A1 specs
@@ -94,10 +102,13 @@ directly). Real ASD identity fields (`descriptor_id`/
 captured and surfaced (GUI included) instead of relying only on a
 content hash; the CSAR validity requirement to bundle an ONAP ACM
 composition file is dropped, since this build has no ONAP dependency at
-all. One real finding audited and left open: the CSAR's own
-`Files/Sme/providers/`+`Files/Sme/serviceapis/` declarations aren't
-auto-registered with SME at onboarding time — see `SPEC_AUDIT.md`'s new
-Onboarding/rApp Mgmt section.
+all. The one real finding this audit left open — the CSAR's own
+`Files/Sme/providers/`+`Files/Sme/serviceapis/` declarations weren't
+auto-registered with SME — is now closed too: `bootstrap-complete`
+actually registers them under the instance's own identity, currently in
+review as [PR #117](https://github.com/rsys-bshankar/ai-ran-ref/pull/117);
+see `SPEC_AUDIT.md`'s Onboarding/rApp Mgmt section for the closure
+writeup.
 
 **Internal completeness (`OPEN_ITEMS.md` sections 1-4) — closed except 3
 items blocked on data, not effort.** Section 2's repo/lifecycle gaps and
@@ -127,13 +138,17 @@ audit to the one still-unaudited module (A1 Related — no spec file
 exists yet) and the WG4/WG5 YANGs (real, unstarted work); DME's own
 Producer/Type conflation finding (`SPEC_AUDIT.md`'s new DME vs. ICS
 section — a real, moderate-to-large breaking schema change, audited
-and left open, not attempted without being asked); a scoped follow-up
-pass on RAN
-Analytics's own moderate/breaking findings (the `analytics_type` enum
-constraint, threshold-based conditional reporting) and AI/ML Workflow's
-(`requestStatus` vocabulary, cancel/suspend-flag support); Policy
-Mgmt's and RAN Analytics's own architecture questions (need a
-stakeholder decision, not code); and the three section 1 design
+and left open, not attempted without being asked); RAN Analytics's own
+`analytics_type` enum constraint (real but moderate/breaking, every
+real caller's value is informal shorthand, not a spec wire value) and
+AIMgF's own `requestStatus` vocabulary mismatch (adopting `SUSPENDED`
+during Wave 2 didn't rename the rest of the vocabulary, a real
+breaking change deferred deliberately) — both audited, named, and left
+for a deliberate follow-up rather than guessed at; AIMgF's own
+`MLMFSubscription` gap (no callback field, no unsubscribe route —
+audited during Wave 3's Subscriptions slice, building either would be
+new functionality, not a field-name unification, so out of that
+slice's own scope); and the three section 1 design
 decisions (blocked on real data/algorithm/scope input). Everything else
 large/structural is a **confirmed** Phase-1 scope cut, not a gap.
 
@@ -170,7 +185,10 @@ in `docs/ownership/`. Sequenced in four waves — **Wave 0** (architecture
 freeze, done), **Wave 1** (service decomposition, done — the
 `ai-ml-workflow`/`policy-mgmt`/`ran-analytics` splits, `sdk/`, and the
 rApp manifest extension), **Wave 2** (AIMgF's own state machines and
-domain model, done), Wave 3 (R1 contracts and OpenAPI standardization) — each a
+domain model, done), **Wave 3** (R1 contracts and OpenAPI standardization,
+done — all six R1-contract slices and all six cross-cutting standardization
+items, the last of them Correlation-ID propagation, currently in review as
+[PR #118](https://github.com/rsys-bshankar/ai-ran-ref/pull/118)) — each a
 separate, reviewable step; do not reorder them.
 
 ## Stack
