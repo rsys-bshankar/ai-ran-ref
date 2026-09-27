@@ -196,7 +196,8 @@ CREATE TABLE application_package (
   descriptor_id                                TEXT,     -- real ASD schema field, grounded against nonrtric-plt-rappmanager's own sample CSARs
   descriptor_invariant_id                      TEXT,
   descriptor_version                           TEXT,
-  schema_version                               TEXT
+  schema_version                               TEXT,
+  sme_declarations                             JSONB     -- real CSAR-bundled Files/Sme/providers+serviceapis, registered per-instance at bootstrap-complete
 );
 
 CREATE TABLE artifact (
@@ -239,7 +240,8 @@ CREATE TABLE rapp_instance (
   -- SQLite's unit tests build their schema from the ORM models
   -- directly, never from this file, so the gap went uncaught.
   pending_upgrade_instance_id             UUID REFERENCES rapp_instance(instance_id),
-  package_usage_registration_id             UUID REFERENCES package_usage_registration(id)
+  package_usage_registration_id             UUID REFERENCES package_usage_registration(id),
+  sme_service_ids                              JSONB      -- SME serviceId(s) this instance registered at bootstrap-complete; deregistered on TERMINATE/CRASH
 );
 
 CREATE TABLE rapp_fault_report (

@@ -113,7 +113,7 @@ def test_onboard_routes_to_failed_on_a_real_malformed_zip(client, monkeypatch):
 
 
 def _real_package_bytes(include_acm_composition=True, definitions="tosca_definitions_version: tosca_simple_yaml_1_3\n",
-                         manifest_yaml=None, capabilities_yaml=None) -> bytes:
+                         manifest_yaml=None, capabilities_yaml=None, sme_provider_json=None, sme_service_api_json=None) -> bytes:
     """A minimal but genuinely well-formed CSAR — TOSCA-Metadata/TOSCA.meta
     pointing at a real Definitions/ entry, optionally with the reference's
     required composition file alongside it, at its real path
@@ -138,6 +138,10 @@ def _real_package_bytes(include_acm_composition=True, definitions="tosca_definit
             z.writestr("manifest.yaml", manifest_yaml)
         if capabilities_yaml is not None:
             z.writestr("capabilities.yaml", capabilities_yaml)
+        if sme_provider_json is not None:
+            z.writestr("Files/Sme/providers/provider-function-1.json", sme_provider_json)
+        if sme_service_api_json is not None:
+            z.writestr("Files/Sme/serviceapis/api-set-1.json", sme_service_api_json)
     return buf.getvalue()
 
 
@@ -325,6 +329,57 @@ def test_onboard_routes_to_failed_on_malformed_capabilities_yaml(client, monkeyp
     malformed-zip and missing-composition-file cases above.
     """
     _mock_fetch(monkeypatch, _real_package_bytes(capabilities_yaml="capabilities: [unterminated"))
+
+    resp = client.post("/packages", json={"location": "http://example/pkg.csar"})
+    package_id = resp.json()["packageId"]
+
+    status = client.get(f"/packages/{package_id}/onboarding-status")
+    assert status.json()["state"] == "FAILED"
+
+
+def test_onboard_leaves_sme_declarations_null_when_neither_directory_is_present(client, monkeypatch):
+    """Every package this build produced before this pass (and any package
+    that simply doesn't bundle Files/Sme/) onboards exactly as before —
+    smeDeclarations stays null, not an empty dict or a validation failure.
+    """
+    _mock_fetch(monkeypatch, _real_package_bytes())
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+
+    package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+
+    pkg = next(p for p in client.get("/packages").json()["items"] if p["packageId"] == package_id)
+    assert pkg["state"] == "AVAILABLE"
+    assert pkg["smeDeclarations"] is None
+
+
+def test_onboard_parses_sme_provider_and_service_api_declarations_when_present(client, monkeypatch):
+    """Real O-RAN SC rApp Manager CSAR layout (nonrtric-plt-rappmanager's
+    own sample-rapp-generator packages): Files/Sme/providers/*.json + Files/
+    Sme/serviceapis/*.json, read raw and stored for rapp-mgmt's own
+    bootstrap-complete to register per-instance (SPEC_AUDIT.md's
+    Onboarding/rApp Mgmt finding 3).
+    """
+    provider_json = '{"apiProvDomInfo": "Provider domain", "apiProvFuncs": [{"apiProvFuncRole": "APF"}]}'
+    service_api_json = '{"apiName": "Hello World API Set 1", "aefProfiles": [{"aefId": "aef-1"}]}'
+    _mock_fetch(monkeypatch, _real_package_bytes(sme_provider_json=provider_json, sme_service_api_json=service_api_json))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+
+    package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+
+    pkg = next(p for p in client.get("/packages").json()["items"] if p["packageId"] == package_id)
+    assert pkg["state"] == "AVAILABLE"
+    assert pkg["smeDeclarations"] == {
+        "providers": [{"apiProvDomInfo": "Provider domain", "apiProvFuncs": [{"apiProvFuncRole": "APF"}]}],
+        "serviceApis": [{"apiName": "Hello World API Set 1", "aefProfiles": [{"aefId": "aef-1"}]}],
+    }
+
+
+def test_onboard_routes_to_failed_on_malformed_sme_provider_json(client, monkeypatch):
+    """A malformed Files/Sme/providers/*.json is a package validation
+    failure like any other malformed package file, not an unhandled 500 —
+    the same discipline as malformed manifest.yaml/capabilities.yaml.
+    """
+    _mock_fetch(monkeypatch, _real_package_bytes(sme_provider_json="{not valid json"))
 
     resp = client.post("/packages", json={"location": "http://example/pkg.csar"})
     package_id = resp.json()["packageId"]

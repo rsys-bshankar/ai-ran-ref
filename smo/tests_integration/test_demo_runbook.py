@@ -99,7 +99,11 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     })
     assert dme_prod.status_code == 201
 
-    # step 5: bootstrap-complete — DEPLOYING -> RUNNING
+    # step 5: bootstrap-complete — DEPLOYING -> RUNNING. SPEC_AUDIT.md's
+    # Onboarding/rApp Mgmt finding 3: this also registers the package's
+    # own CSAR-bundled Files/Sme/ declarations with SME automatically,
+    # under this instance's own real oauthClientId — a real, separate
+    # registration from the manual "hello-world-rapp" one above.
     bc = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/bootstrap-complete")
     assert bc.status_code == 200
     assert bc.json()["state"] == "RUNNING"
@@ -107,6 +111,8 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     get_inst = mesh["rapp-mgmt"].get(f"/instances/{instance_id}")
     assert get_inst.status_code == 200
     assert get_inst.json()["state"] == "RUNNING"
+    assert len(get_inst.json()["smeServiceIds"]) == 1
+    assert get_inst.json()["smeServiceIds"][0] != helloworld_service_id
 
     # step 6: operate
     perf = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/performance", json={"greeting": "hello world", "requestsServed": 1})
