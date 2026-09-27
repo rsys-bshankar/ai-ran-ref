@@ -6,6 +6,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
 
+# Wave 3 (AI Platform Service Decomposition) — TS29482_MLR_MLModelManagement.yaml's
+# MLModelDomain enum, SPEC_AUDIT.md's MLMR section.
+MODEL_DOMAINS = {"SPEECH_RECOGNITION", "IMAGE_RECOGNITION", "IMAGE_PROCESSING", "LOCATION_PREDICTION", "CUSTOM"}
+
 
 class MLModelCoordinationGroup(Base):
     __tablename__ = "ml_model_coordination_group"
@@ -67,6 +71,15 @@ class MLModel(Base):
     input_data_type: Mapped[str | None] = mapped_column(String)
     output_data_type: Mapped[str | None] = mapped_column(String)
     target_environments: Mapped[list[dict] | None] = mapped_column(JSON)
+    # Wave 3: TS29482_MLR_MLModelManagement.yaml's MLModel schema
+    # (SPEC_AUDIT.md's MLMR section) — domain/customDomain mirror the
+    # spec's own domain+CUSTOM-string pairing; vendors ties into DME's
+    # own Wave 3 multi-vendor provenance principle
+    # (docs/ownership/DME_OWNERSHIP.md), same theme applied to model
+    # identity rather than data-source identity.
+    domain: Mapped[str | None] = mapped_column(String)
+    custom_domain: Mapped[str | None] = mapped_column(String)
+    vendors: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
 
 
 class ModelArtifact(Base):
@@ -90,6 +103,10 @@ class ModelArtifact(Base):
     filename: Mapped[str] = mapped_column(String, nullable=False)
     content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     uploaded_at: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))
+    # Wave 3: TS29482_MLR_MLModelManagement.yaml's MLModel.mlModelSize
+    # (SPEC_AUDIT.md's MLMR section) — computed from the real uploaded
+    # bytes, not a separately-declared value that could drift from them.
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class ModelChangeSubscription(Base):

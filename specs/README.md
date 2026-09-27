@@ -32,8 +32,13 @@ different and complementary ground truth).
   build's `aiml-fw`-shaped implementation), `TS28104_MdaNrm.yaml`/
   `TS28104_MdaReport.yaml` (RAN Analytics's own Management Data
   Analytics NRM, same audited-and-confirmed-different relationship to
-  `aiml-fw-apm`'s shape), and `TS28541_NrNrm.yaml`/`5GcNrm.yaml`
-  (network resource modeling generally).
+  `aiml-fw-apm`'s shape), `TS29482_MLR_MLModelManagement.yaml`/
+  `TS29482_MLR_ModelInformationDiscovery.yaml` (3GPP TS 29.482 AIMLE —
+  a genuine Stage-3 ML-repository/model-discovery API, Release 19/20,
+  much more directly applicable to MLMR's actual concept than
+  TS28.105's abstract NRM containment tree; audited in
+  `smo/SPEC_AUDIT.md`'s own MLMR section), and `TS28541_NrNrm.yaml`/
+  `5GcNrm.yaml` (network resource modeling generally).
 - **`O-RAN-WG10-O1NRM-YANGs/`**, **`O-RAN-WG10-IMDM-YANGs/`** — O-RAN's
   own O1 Network Resource Model and Information/Data Model YANG modules.
   Relevant to RAN NF OAM's `ManagedEntity`/CM write shape and

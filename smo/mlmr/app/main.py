@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 
-from .models import MLModel, MLModelCoordinationGroup, ModelArtifact
+from .models import MODEL_DOMAINS, MLModel, MLModelCoordinationGroup, ModelArtifact
 
 app = FastAPI(title="MLMR")
 
@@ -45,6 +45,9 @@ class RegisterModelRequest(BaseModel):
     inputDataType: str | None = None
     outputDataType: str | None = None
     targetEnvironments: list[dict] = []
+    domain: str | None = None  # SPEECH_RECOGNITION | IMAGE_RECOGNITION | IMAGE_PROCESSING | LOCATION_PREDICTION | CUSTOM
+    customDomain: str | None = None
+    vendors: list[str] | None = None
 
 
 class CreateCoordinationGroupRequest(BaseModel):
@@ -66,6 +69,14 @@ class UpdateModelRequest(BaseModel):
     inputDataType: str | None = None
     outputDataType: str | None = None
     targetEnvironments: list[dict] | None = None
+    domain: str | None = None
+    customDomain: str | None = None
+    vendors: list[str] | None = None
+
+
+def _validate_domain(domain: str | None) -> None:
+    if domain is not None and domain not in MODEL_DOMAINS:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"unknown domain {domain!r}")
 
 
 @app.post("/models", status_code=201)
@@ -81,12 +92,17 @@ def register_model(body: RegisterModelRequest, db: Session = Depends(get_session
     ModelRelatedInformation/ModelInformation/Metadata (modelInfo.go).
     Required there; kept optional here, since this build's own
     RegisterModel was already permissive before this pass.
+
+    domain/customDomain/vendors (Wave 3, SPEC_AUDIT.md's MLMR section):
+    TS29482_MLR_MLModelManagement.yaml's own MLModel schema.
     """
+    _validate_domain(body.domain)
     model = MLModel(registration_id=str(uuid.uuid4()), model_type=body.modelType, version=body.version,
                      required_resource_type_id=body.requiredResourceTypeId,
                      description=body.description, author=body.author, owner=body.owner,
                      input_data_type=body.inputDataType, output_data_type=body.outputDataType,
-                     target_environments=body.targetEnvironments)
+                     target_environments=body.targetEnvironments,
+                     domain=body.domain, custom_domain=body.customDomain, vendors=body.vendors)
     db.add(model)
     try:
         db.commit()
@@ -141,12 +157,14 @@ def update_model(model_id: uuid.UUID, body: UpdateModelRequest, db: Session = De
             FrameworkError.MODEL_IDENTITY_IMMUTABLE,
             detail=f"model {model_id} has modelType={model.model_type!r} version={model.version!r}, not the provided modelType/version",
         )
+    _validate_domain(body.domain)
     model.required_resource_type_id = body.requiredResourceTypeId
     model.training_data_lineage = body.trainingDataLineage
     model.integrity_hash = body.integrityHash
     model.description, model.author, model.owner = body.description, body.author, body.owner
     model.input_data_type, model.output_data_type = body.inputDataType, body.outputDataType
     model.target_environments = body.targetEnvironments
+    model.domain, model.custom_domain, model.vendors = body.domain, body.customDomain, body.vendors
     db.commit()
     return _model_view(model)
 
@@ -201,11 +219,13 @@ def upload_model_artifact(model_id: uuid.UUID, file: UploadFile = File(...), db:
     next_version = (db.scalar(
         select(func.max(ModelArtifact.artifact_version)).where(ModelArtifact.model_id == model_id)
     ) or 0) + 1
-    artifact = ModelArtifact(model_id=model_id, artifact_version=next_version, filename=file.filename, content=content)
+    artifact = ModelArtifact(model_id=model_id, artifact_version=next_version, filename=file.filename, content=content,
+                              size_bytes=len(content))
     db.add(artifact)
     model.artifact_location = f"model-artifact:{model_id}:{next_version}"
     db.commit()
-    return {"modelId": str(model_id), "artifactId": str(artifact.artifact_id), "artifactVersion": next_version}
+    return {"modelId": str(model_id), "artifactId": str(artifact.artifact_id), "artifactVersion": next_version,
+            "sizeBytes": artifact.size_bytes}
 
 
 @app.get("/models/{model_id}/artifact/{artifact_version}")
@@ -267,4 +287,5 @@ def _model_view(m: MLModel) -> dict:
             "artifactLocation": m.artifact_location,
             "description": m.description, "author": m.author, "owner": m.owner,
             "inputDataType": m.input_data_type, "outputDataType": m.output_data_type,
-            "targetEnvironments": m.target_environments or []}
+            "targetEnvironments": m.target_environments or [],
+            "domain": m.domain, "customDomain": m.custom_domain, "vendors": m.vendors or []}

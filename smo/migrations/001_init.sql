@@ -568,6 +568,9 @@ CREATE TABLE aiml_model (
   input_data_type                                       TEXT, -- NEW section 5: ModelInformation.inputDataType
   output_data_type                                         TEXT, -- NEW section 5: ModelInformation.outputDataType
   target_environments                                          JSONB, -- NEW section 5: ModelInformation.targetEnvironment[]
+  domain                                                          TEXT CHECK (domain IN ('SPEECH_RECOGNITION','IMAGE_RECOGNITION','IMAGE_PROCESSING','LOCATION_PREDICTION','CUSTOM')),  -- Wave 3: TS29482_MLR_MLModelManagement.yaml
+  custom_domain                                                     TEXT,
+  vendors                                                             TEXT[],
   UNIQUE (model_type, version)                           -- NEW section 5: the reference's own (modelName, modelVersion) uniqueness
 );
 
@@ -577,7 +580,8 @@ CREATE TABLE model_artifact (
   artifact_version  INTEGER NOT NULL CHECK (artifact_version >= 1),
   filename          TEXT NOT NULL,
   content           BYTEA NOT NULL,
-  uploaded_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+  uploaded_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  size_bytes        INTEGER NOT NULL  -- Wave 3: TS29482_MLR_MLModelManagement.yaml's MLModel.mlModelSize
 );
 
 CREATE TABLE training_job (

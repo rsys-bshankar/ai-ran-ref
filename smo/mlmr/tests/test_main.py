@@ -146,6 +146,58 @@ def test_get_unknown_model_is_404(client):
     assert resp.status_code == 404
 
 
+# ---------------------------------------------------------------- Wave 3: TS29482_MLR_MLModelManagement.yaml
+
+def test_register_model_rejects_unknown_domain(client):
+    resp = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0", "domain": "TELEPATHY"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
+
+
+def test_register_model_stores_and_exposes_domain_and_vendors(client):
+    model_id = client.post("/models", json={
+        "modelType": "coverage-predictor", "version": "1.0", "domain": "CUSTOM",
+        "customDomain": "coverage-optimization", "vendors": ["acme", "globex"],
+    }).json()["modelId"]
+
+    view = client.get(f"/models/{model_id}").json()
+    assert view["domain"] == "CUSTOM"
+    assert view["customDomain"] == "coverage-optimization"
+    assert view["vendors"] == ["acme", "globex"]
+
+
+def test_register_model_without_domain_defaults_to_empty(client):
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+    view = client.get(f"/models/{model_id}").json()
+    assert view["domain"] is None
+    assert view["customDomain"] is None
+    assert view["vendors"] == []
+
+
+def test_update_model_rejects_unknown_domain(client):
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+    resp = client.put(f"/models/{model_id}", json={"modelType": "coverage-predictor", "version": "1.0", "domain": "TELEPATHY"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
+
+
+def test_update_model_changes_domain_and_vendors(client):
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+    resp = client.put(f"/models/{model_id}", json={
+        "modelType": "coverage-predictor", "version": "1.0", "domain": "IMAGE_RECOGNITION", "vendors": ["acme"],
+    })
+    assert resp.status_code == 200
+    assert resp.json()["domain"] == "IMAGE_RECOGNITION"
+    assert resp.json()["vendors"] == ["acme"]
+
+
+def test_upload_model_artifact_records_size_bytes(client):
+    model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
+    resp = client.post(f"/models/{model_id}/artifact", files={"file": ("model.zip", b"twelve-bytes", "application/zip")})
+    assert resp.status_code == 201
+    assert resp.json()["sizeBytes"] == len(b"twelve-bytes")
+
+
 def test_upload_model_artifact_stamps_version_one_and_records_location(client):
     """OPEN_ITEMS.md section 5: the reference's real UploadModel — ours had
     an artifact_location field nothing in main.py ever read or wrote.

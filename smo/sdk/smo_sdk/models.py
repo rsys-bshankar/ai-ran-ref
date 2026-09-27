@@ -13,11 +13,18 @@ class ModelsClient(BaseClient):
     def register_model(self, model_type: str, version: str, required_resource_type_id: str | None = None,
                         description: str | None = None, author: str | None = None, owner: str | None = None,
                         input_data_type: str | None = None, output_data_type: str | None = None,
-                        target_environments: list[dict] | None = None) -> dict:
+                        target_environments: list[dict] | None = None, domain: str | None = None,
+                        custom_domain: str | None = None, vendors: list[str] | None = None) -> dict:
+        """`domain`/`custom_domain`/`vendors` (Wave 3, TS29482_MLR_MLModelManagement.yaml's
+        MLModel schema): domain is SPEECH_RECOGNITION|IMAGE_RECOGNITION|
+        IMAGE_PROCESSING|LOCATION_PREDICTION|CUSTOM — MLMR 422s on any
+        other value.
+        """
         return ensure_ok(self._r1.post("/mlmr/models", json={
             "modelType": model_type, "version": version, "requiredResourceTypeId": required_resource_type_id,
             "description": description, "author": author, "owner": owner, "inputDataType": input_data_type,
             "outputDataType": output_data_type, "targetEnvironments": target_environments or [],
+            "domain": domain, "customDomain": custom_domain, "vendors": vendors,
         }))
 
     def discover_models(self, model_type: str | None = None) -> list[dict]:
@@ -32,7 +39,9 @@ class ModelsClient(BaseClient):
         mlmr/app/main.py's own docstring). `fields` may include any of
         requiredResourceTypeId/trainingDataLineage/integrityHash/
         description/author/owner/inputDataType/outputDataType/
-        targetEnvironments. `clearedNodeGroups` moved to AIMgF's own
+        targetEnvironments/domain/customDomain/vendors (the last three
+        added Wave 3, TS29482_MLR_MLModelManagement.yaml).
+        `clearedNodeGroups` moved to AIMgF's own
         `model_lifecycle` row in Wave 2 — see `LifecycleClient` instead.
         """
         return ensure_ok(self._r1.put(f"/mlmr/models/{model_id}", json={

@@ -131,7 +131,7 @@ decision, not a per-PR judgment call.
 | DME | O-RAN (ICS-derived data plane) + O1 Adaptor MnS mapping (control/actuation mediation, Wave 3 — `docs/ownership/DME_OWNERSHIP.md`) |
 | MDAF | TS 28.104 (MDA) |
 | AIMgF | TS 28.105 (AI/ML NRM) realization |
-| MLMR | TS 28.105 (AI/ML NRM) realization |
+| MLMR | TS 28.105 (AI/ML NRM) + TS 29.482 AIMLE MLR (model repository/discovery, Wave 3 — `docs/ownership/MLMR_OWNERSHIP.md`) |
 | MLLF | TS 28.105 (AI/ML NRM) realization |
 | Intent Service | TS 28.312 (Intent NRM) |
 | NFO | O-Cloud / O2 |
@@ -208,6 +208,25 @@ Frozen wave order — do not reorder without updating this document first:
     it, it does not duplicate it. MDAF's report inputs are now validated
     against real DME artifacts, closing the "MDAF sources from DME only"
     rule with enforced code rather than a documented convention.
+  - **MDAF slice** (done): closes `SPEC_AUDIT.md`'s TS28.104
+    `ThresholdInfo` finding — a subscription with declared thresholds is
+    now notified only on a real `UP`/`DOWN`/`UP_AND_DOWN` crossing with
+    genuine hysteresis state, not on every report. `analytics_type`'s
+    free-string-vs-`MDAType`-enum finding was audited (every real value
+    this build uses is informal shorthand, no clean mapping) and left
+    open by that explicit finding, not closed.
+  - **MLMR slice** (done): grounds MLMR against a second, more directly
+    applicable spec — 3GPP TS 29.482 AIMLE's `MLR_MLModelManagement`/
+    `MLR_ModelInformationDiscovery` (a real model-repository/discovery
+    Stage-3 API, newly cataloged in `specs/README.md`) — alongside the
+    original TS28.105 NRM audit. Adds real `domain`/`customDomain`/
+    `vendors` (the last echoing DME's own multi-vendor provenance
+    principle, applied to model identity) and `ModelArtifact.size_bytes`
+    computed from the actual uploaded bytes. `MLModelPhase` confirmed
+    NOT a gap to close on MLMR — that's exactly the lifecycle concept
+    Wave 2 moved to AIMgF; re-adding it to MLMR would regress that
+    decision. See `SPEC_AUDIT.md`'s own MLMR section for the full
+    closed/deferred breakdown.
 
 Reordering Wave 3 ahead of Wave 1/2, or starting new R1 contract design
 before the ownership split is merged, is exactly the redesign-it-twice
