@@ -151,8 +151,8 @@
             ],
             "title": "Intenthandlingscope"
           },
-          "notificationCallbackUri": {
-            "title": "Notificationcallbackuri",
+          "notificationDestination": {
+            "title": "Notificationdestination",
             "type": "string"
           },
           "rmihId": {
@@ -168,7 +168,7 @@
           "rmihId",
           "smeServiceId",
           "capabilities",
-          "notificationCallbackUri"
+          "notificationDestination"
         ],
         "title": "RegisterRmihRequest",
         "type": "object"

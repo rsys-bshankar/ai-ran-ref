@@ -46,18 +46,23 @@ def test_query_reports(client, r1):
 
 
 def test_subscribe_sends_scope_and_threshold_info_body(client, r1):
-    """Wave 3: the body is now {"scope": ..., "thresholdInfo": ...} —
-    `scope` stopped being the bare unwrapped body once `thresholdInfo`
-    (TS28.104 ThresholdInfo) needed a body field alongside it. The other
-    three args are plain strings, so they still go in query params.
+    """Wave 3: the body is now {"notificationDestination": ..., "scope": ...,
+    "thresholdInfo": ...} — `scope` stopped being the bare unwrapped body
+    once `thresholdInfo` (TS28.104 ThresholdInfo) needed a body field
+    alongside it, and `notification_destination` moved from a query param
+    into this same body (cross-cutting standardization, Subscriptions) —
+    unified with every other subscription-shaped resource's own
+    notificationDestination body field. `analytics_type`/`requested_by`
+    are plain strings and still go in query params.
     Confirmed against MDAF's own live OpenAPI schema before writing this."""
     client.subscribe("RAN.Coverage", "rapp-1", notification_destination="http://x/notify", scope={"cell": "a"},
                       threshold_info=[{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP", "thresholdValue": 0.8}])
     assert r1.calls[0] == {
         "verb": "post", "path": "/mdaf/subscriptions",
-        "params": {"analytics_type": "RAN.Coverage", "requested_by": "rapp-1", "notification_destination": "http://x/notify"},
+        "params": {"analytics_type": "RAN.Coverage", "requested_by": "rapp-1"},
         "files": None,
-        "json": {"scope": {"cell": "a"}, "thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP", "thresholdValue": 0.8}]},
+        "json": {"notificationDestination": "http://x/notify", "scope": {"cell": "a"},
+                  "thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP", "thresholdValue": 0.8}]},
     }
 
 

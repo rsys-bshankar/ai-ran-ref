@@ -69,7 +69,7 @@ def test_register_intent_handling_function(client, r1):
     assert call["path"] == "/intent-service/intent-handling-functions"
     assert call["json"] == {
         "rmihId": "rmih-1", "smeServiceId": "sme-svc-1", "capabilities": [{"cap": "x"}],
-        "notificationCallbackUri": "http://x/notify", "intentHandlingScope": None,
+        "notificationDestination": "http://x/notify", "intentHandlingScope": None,
     }
 
 

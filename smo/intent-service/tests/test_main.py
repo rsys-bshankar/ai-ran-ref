@@ -42,7 +42,7 @@ def _register_rmih(client, rmih_id="so-smos", capabilities=None, scope=None, cal
     body = {
         "rmihId": rmih_id, "smeServiceId": f"svc-{rmih_id}",
         "capabilities": capabilities if capabilities is not None else [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
-        "notificationCallbackUri": callback or f"http://{rmih_id}:8000/intents/notify",
+        "notificationDestination": callback or f"http://{rmih_id}:8000/intents/notify",
     }
     if scope is not None:
         body["intentHandlingScope"] = scope
@@ -108,7 +108,7 @@ def test_register_intent_handling_function_rejects_external_rapp_caller(client):
     """
     resp = client.post("/intent-handling-functions", json={
         "rmihId": "550e8400-e29b-41d4-a716-446655440000", "smeServiceId": "svc-1", "capabilities": [{"scope": "config"}],
-        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
+        "notificationDestination": "http://so-smos:8000/intents/notify",
     })
     assert resp.status_code == 409
     assert resp.json()["detail"]["title"] == "SERVICE_NAME_CONFLICT"
@@ -117,7 +117,7 @@ def test_register_intent_handling_function_rejects_external_rapp_caller(client):
 def test_register_intent_handling_function_accepts_framework_internal_caller(client):
     resp = client.post("/intent-handling-functions", json={
         "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"scope": "config"}],
-        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
+        "notificationDestination": "http://so-smos:8000/intents/notify",
     })
     assert resp.status_code == 201
 
@@ -155,14 +155,14 @@ def test_register_intent_handling_function_persists_and_rejects_invalid_scope(cl
     """
     resp = client.post("/intent-handling-functions", json={
         "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{}],
-        "notificationCallbackUri": "http://so-smos:8000/intents/notify", "intentHandlingScope": ["RAN"],
+        "notificationDestination": "http://so-smos:8000/intents/notify", "intentHandlingScope": ["RAN"],
     })
     assert resp.status_code == 201
     assert resp.json()["intentHandlingScope"] == ["RAN"]
 
     invalid = client.post("/intent-handling-functions", json={
         "rmihId": "sa-smos", "smeServiceId": "svc-2", "capabilities": [{}],
-        "notificationCallbackUri": "http://sa-smos:8000/intents/notify", "intentHandlingScope": ["NOT_A_REAL_SCOPE"],
+        "notificationDestination": "http://sa-smos:8000/intents/notify", "intentHandlingScope": ["NOT_A_REAL_SCOPE"],
     })
     assert invalid.status_code == 422
 
@@ -358,7 +358,7 @@ def test_list_intent_handling_functions(client):
     """GUI pass: registered RMIHs were invisible."""
     client.post("/intent-handling-functions", json={
         "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
-        "notificationCallbackUri": "http://so-smos:8000/intents", "intentHandlingScope": ["RAN"],
+        "notificationDestination": "http://so-smos:8000/intents", "intentHandlingScope": ["RAN"],
     })
     listed = client.get("/intent-handling-functions").json()["items"]
     assert [(f["rmihId"], f["intentHandlingScope"]) for f in listed] == [("so-smos", ["RAN"])]

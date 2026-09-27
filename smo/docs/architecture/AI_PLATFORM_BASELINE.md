@@ -353,11 +353,49 @@ Frozen wave order — do not reorder without updating this document first:
     `limit`/`offset` query parameters), `scripts/
     check_migration_matches_models.py`, `docker compose config`, and
     the GUI's typecheck + vitest (49/49).
-  - **Cross-cutting standardization, slice 3b — Subscriptions**
-    (planned next): subscription callback field names are unified only
-    where no real external spec already fixes the name (DME/MDAF/Intent
-    Service/A1-Related/AIMgF); FOCOM's `callback` (real O2ims) and SME's
-    `callbackUri` (real CAPIF) stay as they are.
+  - **Cross-cutting standardization, slice 3b — Subscriptions** (done):
+    subscription callback field names unified to `notificationDestination`
+    only on genuine Subscription-shaped resources, and only where no real
+    external spec already fixes a different name — never as a blanket
+    rename. DME's `TypeSubscription` and A1-Related's
+    `PolicyStatusSubscription`/`ServiceRegistration` were already at the
+    target convention (no change needed). FOCOM's `callback` (real O2ims)
+    and SME's `callbackUri` (real CAPIF) are deliberately left as they are
+    — already grounded in the Pagination slice's own spec-fidelity work,
+    and real spec-fixed names always win over uniformity. Two real changes:
+    Intent Service's `IntentHandlingFunction.notificationCallbackUri` is
+    renamed to `notificationDestination` (grepped: the real
+    `TS28312_IntentNrm.yaml` never names this field at all, so this is this
+    build's own invention, free to unify — includes a real migration
+    column rename). MDAF's `subscribe_analytics` moves
+    `notification_destination` from a query param into
+    `SubscribeAnalyticsRequest`'s body as `notificationDestination` — the
+    one subscription-shaped resource in this build that had taken its
+    callback outside the body. AIMgF's `MLMFSubscription` — audited and
+    deliberately left open, not built: it declares no callback field at
+    all and has no unsubscribe route, but adding either would be building
+    new functionality, not unifying an existing field name, and so falls
+    outside this slice's scope (same precedent as the MDAF slice's own
+    `analytics_type` enum finding: audited, named, left open).
+    `AIMgF/InferenceJob.notificationDestination` and
+    `TrainingJob.notificationUri` are deliberately untouched — one-off
+    job-completion callbacks, not subscription resources, and outside the
+    audited Subscriptions scope.
+
+    GUI, SDK (`sdk/smo_sdk/intent.py`'s
+    `register_intent_handling_function`, `sdk/smo_sdk/analytics.py`'s
+    `subscribe`), and `tests_integration/test_demo_runbook.py`/
+    `DEMO_RUNBOOK.md`'s own runnable snippets all updated to match.
+    Verified: intent-service, mdaf, and sdk unit suites; the full
+    `tests_integration/` suite against real Postgres 16;
+    `scripts/check_migration_matches_models.py` (Intent Service's renamed
+    migration column); `docker compose config`; the GUI's typecheck +
+    vitest.
+
+This closes Wave 3 in its entirety — all six R1-contract service slices
+(DME, MDAF, MLMR, AIMgF, MLLF, Intent Service) and all three cross-cutting
+standardization slices (OAuth2/JWT + Versioning, Error Schema, Pagination +
+Subscriptions) described at the top of this section are now done.
 
 Reordering Wave 3 ahead of Wave 1/2, or starting new R1 contract design
 before the ownership split is merged, is exactly the redesign-it-twice

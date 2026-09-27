@@ -255,7 +255,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     rmih = mesh["intent-service"].post("/intent-handling-functions", json={
         "rmihId": "so-smos", "smeServiceId": "so-smos-svc",
         "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
-        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
+        "notificationDestination": "http://so-smos:8000/intents/notify",
         "intentHandlingScope": ["RAN"],
     })
     assert rmih.status_code == 201
@@ -284,7 +284,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     rmih2 = mesh["intent-service"].post("/intent-handling-functions", json={
         "rmihId": "sa-smos", "smeServiceId": "sa-smos-svc",
         "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
-        "notificationCallbackUri": "http://sa-smos:8000/intents/notify",
+        "notificationDestination": "http://sa-smos:8000/intents/notify",
         "intentHandlingScope": ["CN"],
     })
     assert rmih2.status_code == 201
@@ -506,8 +506,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
 
     subscription = mesh["mdaf"].post("/subscriptions", params={
         "analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos",
-        "notification_destination": "http://demo-consumer:9000/analytics-reports",
-    })
+    }, json={"notificationDestination": "http://demo-consumer:9000/analytics-reports"})
     assert subscription.status_code == 201
     subscription_id = subscription.json()["subscriptionId"]
 

@@ -761,7 +761,7 @@ CREATE TABLE intent_handling_function (
   sme_service_id                  TEXT NOT NULL,
   intent_handling_scope             JSONB,
   intent_handling_capability_list     JSONB NOT NULL,
-  notification_callback_uri            TEXT NOT NULL  -- NEW: closes the Intent-to-RMIH dispatch gap
+  notification_destination            TEXT NOT NULL  -- Wave 3: renamed from notification_callback_uri, unified with every other subscription-shaped resource's own callback field
 );
 
 CREATE TABLE intent (

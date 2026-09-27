@@ -47,10 +47,13 @@ class AnalyticsClient(BaseClient):
         # body. Confirmed against the route's own live OpenAPI schema
         # before writing this, not assumed. Each threshold_info dict:
         # {monitoredMDAOutputIE, thresholdDirection, thresholdValue, hysteresis?}.
+        # notification_destination moved from a query param into this
+        # same body (cross-cutting standardization, Subscriptions) —
+        # unified with every other subscription-shaped resource's own
+        # notificationDestination body field.
         return ensure_ok(self._r1.post("/mdaf/subscriptions", params={
             "analytics_type": analytics_type, "requested_by": requested_by,
-            "notification_destination": notification_destination,
-        }, json={"scope": scope, "thresholdInfo": threshold_info}))
+        }, json={"notificationDestination": notification_destination, "scope": scope, "thresholdInfo": threshold_info}))
 
     def unsubscribe(self, subscription_id: uuid.UUID | str) -> None:
         ensure_ok(self._r1.delete(f"/mdaf/subscriptions/{subscription_id}"))

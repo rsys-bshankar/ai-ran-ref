@@ -166,7 +166,7 @@ def test_publish_report_notifies_subscriber_with_a_notification_destination(clie
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
-    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos", "notification_destination": "http://sa-smos:8000/analytics-reports"})
+    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"}, json={"notificationDestination": "http://sa-smos:8000/analytics-reports"})
     resp = client.post("/reports", params={"analytics_type": "coverage-issue-analysis"}, json={"output": {"issue": "cellA"}, "input_sources": []})
     report_id = resp.json()["reportId"]
 
@@ -195,7 +195,7 @@ def test_publish_report_does_not_notify_subscriber_of_a_different_analytics_type
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
-    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo", "notification_destination": "http://nfo:8000/analytics-reports"})
+    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"}, json={"notificationDestination": "http://nfo:8000/analytics-reports"})
     client.post("/reports", params={"analytics_type": "coverage-issue-analysis"}, json={"output": {}, "input_sources": []})
 
     assert calls == []
@@ -209,14 +209,14 @@ def test_publish_report_notification_delivery_survives_unreachable_subscriber(cl
 
     monkeypatch.setattr("app.main.httpx.post", raise_error)
 
-    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos", "notification_destination": "http://sa-smos:8000/analytics-reports"})
+    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"}, json={"notificationDestination": "http://sa-smos:8000/analytics-reports"})
     resp = client.post("/reports", params={"analytics_type": "coverage-issue-analysis"}, json={"output": {}, "input_sources": []})
 
     assert resp.status_code == 201  # must not raise despite the unreachable subscriber
 
 
 def test_list_subscriptions_exposes_notification_destination(client):
-    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos", "notification_destination": "http://sa-smos:8000/analytics-reports"})
+    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"}, json={"notificationDestination": "http://sa-smos:8000/analytics-reports"})
 
     resp = client.get("/subscriptions")
     assert resp.json()["items"][0]["notificationDestination"] == "http://sa-smos:8000/analytics-reports"
@@ -258,9 +258,8 @@ def test_subscribe_persists_threshold_info(client):
 def test_threshold_subscription_fires_on_first_report_already_crossed(client, monkeypatch):
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
-    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo",
-                                           "notification_destination": "http://nfo:8000/analytics-reports"},
-                json={"thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP", "thresholdValue": 0.8}]})
+    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
+                json={"notificationDestination": "http://nfo:8000/analytics-reports", "thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP", "thresholdValue": 0.8}]})
     client.post("/reports", params={"analytics_type": "resource-utilization"},
                 json={"output": {"utilization": 0.9}, "input_sources": []})
     assert len(calls) == 1
@@ -269,9 +268,8 @@ def test_threshold_subscription_fires_on_first_report_already_crossed(client, mo
 def test_threshold_subscription_does_not_notify_below_threshold(client, monkeypatch):
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
-    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo",
-                                           "notification_destination": "http://nfo:8000/analytics-reports"},
-                json={"thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP", "thresholdValue": 0.8}]})
+    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
+                json={"notificationDestination": "http://nfo:8000/analytics-reports", "thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP", "thresholdValue": 0.8}]})
     client.post("/reports", params={"analytics_type": "resource-utilization"},
                 json={"output": {"utilization": 0.5}, "input_sources": []})
     assert calls == []
@@ -280,9 +278,8 @@ def test_threshold_subscription_does_not_notify_below_threshold(client, monkeypa
 def test_threshold_subscription_does_not_refire_while_staying_above(client, monkeypatch):
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
-    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo",
-                                           "notification_destination": "http://nfo:8000/analytics-reports"},
-                json={"thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP",
+    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
+                json={"notificationDestination": "http://nfo:8000/analytics-reports", "thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP",
                                           "thresholdValue": 0.8, "hysteresis": 0.05}]})
     for value in (0.9, 0.85, 0.92):
         client.post("/reports", params={"analytics_type": "resource-utilization"},
@@ -293,9 +290,8 @@ def test_threshold_subscription_does_not_refire_while_staying_above(client, monk
 def test_threshold_subscription_refires_after_reset_and_recross(client, monkeypatch):
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
-    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo",
-                                           "notification_destination": "http://nfo:8000/analytics-reports"},
-                json={"thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP",
+    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
+                json={"notificationDestination": "http://nfo:8000/analytics-reports", "thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP",
                                           "thresholdValue": 0.8, "hysteresis": 0.05}]})
     for value in (0.9, 0.72, 0.95):  # cross up, drop below the reset line (0.8-0.05), cross up again
         client.post("/reports", params={"analytics_type": "resource-utilization"},
@@ -306,9 +302,8 @@ def test_threshold_subscription_refires_after_reset_and_recross(client, monkeypa
 def test_threshold_subscription_ignores_reports_missing_the_monitored_field(client, monkeypatch):
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
-    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo",
-                                           "notification_destination": "http://nfo:8000/analytics-reports"},
-                json={"thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP", "thresholdValue": 0.8}]})
+    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
+                json={"notificationDestination": "http://nfo:8000/analytics-reports", "thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP", "thresholdValue": 0.8}]})
     client.post("/reports", params={"analytics_type": "resource-utilization"},
                 json={"output": {"somethingElse": 1}, "input_sources": []})
     assert calls == []
@@ -317,9 +312,8 @@ def test_threshold_subscription_ignores_reports_missing_the_monitored_field(clie
 def test_threshold_subscription_down_direction_fires_on_drop(client, monkeypatch):
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
-    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo",
-                                           "notification_destination": "http://nfo:8000/analytics-reports"},
-                json={"thresholdInfo": [{"monitoredMDAOutputIE": "freeCapacity", "thresholdDirection": "DOWN", "thresholdValue": 0.1}]})
+    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
+                json={"notificationDestination": "http://nfo:8000/analytics-reports", "thresholdInfo": [{"monitoredMDAOutputIE": "freeCapacity", "thresholdDirection": "DOWN", "thresholdValue": 0.1}]})
     client.post("/reports", params={"analytics_type": "resource-utilization"},
                 json={"output": {"freeCapacity": 0.05}, "input_sources": []})
     assert len(calls) == 1
@@ -331,8 +325,8 @@ def test_subscription_without_threshold_info_is_still_notified_every_report(clie
     """
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
-    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo",
-                                           "notification_destination": "http://nfo:8000/analytics-reports"})
+    client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
+                json={"notificationDestination": "http://nfo:8000/analytics-reports"})
     for value in (0.1, 0.9, 0.1):
         client.post("/reports", params={"analytics_type": "resource-utilization"},
                     json={"output": {"utilization": value}, "input_sources": []})

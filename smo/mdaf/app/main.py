@@ -164,16 +164,22 @@ class SubscribeAnalyticsRequest(BaseModel):
 
     scope: dict | None = None
     thresholdInfo: list[ThresholdInfo] | None = None
+    # Wave 3 (cross-cutting standardization, Subscriptions): was a query
+    # param — the one subscription-shaped resource in this build taking
+    # its callback outside the body, unlike DME/A1-Related/Intent
+    # Service's own notificationDestination body field it's now unified
+    # with.
+    notificationDestination: str | None = None
 
 
 @app.post("/subscriptions", status_code=201)
-def subscribe_analytics(analytics_type: str, requested_by: str, notification_destination: str | None = None,
+def subscribe_analytics(analytics_type: str, requested_by: str,
                          body: SubscribeAnalyticsRequest = SubscribeAnalyticsRequest(), db: Session = Depends(get_session)):
     if body.thresholdInfo is not None:
         bad = [t.thresholdDirection for t in body.thresholdInfo if t.thresholdDirection not in THRESHOLD_DIRECTIONS]
         if bad:
             raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"unknown thresholdDirection {bad[0]!r}")
-    sub = MDASubscription(analytics_type=analytics_type, requested_by=requested_by, notification_destination=notification_destination,
+    sub = MDASubscription(analytics_type=analytics_type, requested_by=requested_by, notification_destination=body.notificationDestination,
                           scope=body.scope, threshold_info=[t.model_dump() for t in body.thresholdInfo] if body.thresholdInfo else None)
     db.add(sub)
     db.commit()
