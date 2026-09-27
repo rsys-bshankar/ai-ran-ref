@@ -194,13 +194,12 @@ Frozen wave order — do not reorder without updating this document first:
   14 states; `RuntimeLifecycleState`, 8 states, jointly owned with NFO)
   and its full eight-aggregate domain model, deepened past Wave 1's
   structural split — see `docs/ownership/AIMGF_OWNERSHIP.md`.
-- **Wave 3** (R1-contract slices done; cross-cutting standardization
-  done except Correlation-ID — see below): R1 contracts (DME → MDAF →
-  MLMR → AIMgF → MLLF → Intent Service, in that order), OpenAPI
-  skeletons, sequence diagrams, and cross-cutting OpenAPI
-  standardization (OAuth2/JWT, Correlation-ID, Error Schema,
-  Versioning, Pagination, Subscriptions) — last, once every contract's
-  shape is already stable.
+- **Wave 3** (done, all six R1-contract slices and all six cross-cutting
+  standardization items): R1 contracts (DME → MDAF → MLMR → AIMgF →
+  MLLF → Intent Service, in that order), OpenAPI skeletons, sequence
+  diagrams, and cross-cutting OpenAPI standardization (OAuth2/JWT,
+  Correlation-ID, Error Schema, Versioning, Pagination, Subscriptions)
+  — last, once every contract's shape is already stable.
   - **DME slice** (done): revises DME from a pure data-job/offer broker
     into a dual data-plane + O1-actuation-mediation service, with real
     source/vendor provenance and a Digital-Twin-excluded-from-inference
@@ -394,17 +393,54 @@ Frozen wave order — do not reorder without updating this document first:
     migration column); `docker compose config`; the GUI's typecheck +
     vitest.
 
+  - **Cross-cutting standardization, slice 4 of 4 — Correlation-ID**
+    (done): the one item audited as "totally absent" at the start of
+    this standardization pass and never picked up by any of the first
+    four shipped slices. No formal 3GPP/O-RAN spec defines a header for
+    this exact purpose — `specs/5G_APIs/TS29500_CustomHeaders.abnf`'s
+    own real `3gpp-Sbi-Correlation-Info` header is a different concept
+    entirely (subscriber-identity correlation — imsi/msisdn/impu/etc —
+    not request tracing), confirmed by reading its own ABNF grammar
+    directly, not assumed from the name alone. The real O-RAN SC
+    `smo-teiv` component (already this build's own ground truth for
+    FOCOM's TEIV export) does track a genuine per-event `correlationid`
+    (its own CloudEvent extension attribute) — same concept, a
+    different transport (CloudEvents, not this build's own plain-REST
+    R1 mesh); `shared/smo_shared/correlation.py`'s `X-Correlation-ID` is
+    this module's own HTTP-native name for the same idea, matching the
+    near-universal industry convention. New middleware
+    (`apply_correlation_id`, applied to all 17 R1-facing services plus
+    r1-termination itself, the same footprint as the OAuth2/JWT slice)
+    assigns a real ID to every request that arrives without one, and
+    `R1Client` (every module's own cross-service caller) propagates the
+    current request's ID to every downstream call it makes — so one
+    inbound request's whole cross-service fan-out shares one ID, not
+    just one hop. r1-termination's own generic proxy explicitly
+    overrides the forwarded header with the real, current ID (its own
+    middleware's generated-or-forwarded value), since the gateway is
+    the true origin point for any external caller that sent none.
+    Deliberately not declared in any service's OpenAPI schema, unlike
+    `openapi_security.py`'s own security scheme: a middleware-injected
+    header isn't a per-operation contract element, and declaring it as
+    a formal parameter on every one of ~200 operations across 18
+    services would be a much larger, largely cosmetic diff for no real
+    behavior gain — confirmed via the OpenAPI-drift integration test,
+    which stays green with zero spec regeneration needed.
+
+    Verified: all 18 backend modules' unit suites, `shared/tests/`'s own
+    new correlation-ID coverage (`test_correlation.py`,
+    `test_r1_client.py`'s propagation tests), r1-termination's own new
+    proxy tests, the SDK's own suite, the full `tests_integration/`
+    suite against real Postgres 16 (confirming the OpenAPI schemas
+    stayed byte-identical, as designed), `scripts/
+    check_migration_matches_models.py`, `docker compose config`, and
+    the GUI's typecheck + vitest.
+
 This closes every R1-contract service slice (DME, MDAF, MLMR, AIMgF,
-MLLF, Intent Service) and four of the six items this section's own
-opening line named for cross-cutting standardization (OAuth2/JWT,
-Versioning, Error Schema, Pagination, Subscriptions). **Correlation-ID
-is not done** — audited (found totally absent) at the start of this
-standardization pass, never picked up by any of the four shipped
-slices, and not folded into this one either since it is a genuinely
-separate mechanism (a propagated request-scoped header, not a field
-name or a response shape) rather than a natural fit for any of the
-slices actually shipped. Left open as a real, scoped, not-yet-started
-piece of Wave 3, not assumed done.
+MLLF, Intent Service) and all six items this section's own opening line
+named for cross-cutting standardization (OAuth2/JWT, Versioning, Error
+Schema, Pagination, Subscriptions, Correlation-ID) — Wave 3 is now done
+in its entirety.
 
 Reordering Wave 3 ahead of Wave 1/2, or starting new R1 contract design
 before the ownership split is merged, is exactly the redesign-it-twice

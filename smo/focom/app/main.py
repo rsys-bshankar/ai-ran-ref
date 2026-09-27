@@ -17,12 +17,14 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import DeploymentManager, InventorySubscription, OCloudAlarm, OCloudPerformanceMetric, Resource, ResourcePool, ResourceType
 
 app = FastAPI(title="FOCOM SMOS (O2ims)")
 apply_r1_gateway_security(app)
+apply_correlation_id(app)
 
 
 @app.get("/health")

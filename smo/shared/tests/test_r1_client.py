@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from smo_shared import r1_client
+from smo_shared.correlation import _current_correlation_id
 from smo_shared.r1_client import R1Client, _ModuleIdentity
 
 R1 = "http://r1-termination:8000"
@@ -94,3 +95,29 @@ def test_an_explicit_bearer_token_is_used_as_is(net):
 def test_sme_down_sends_the_call_unauthenticated_rather_than_raising(net):
     net.sme_up = False
     assert R1Client(R1).get("/focom/inventory").status_code == 401
+
+
+def test_no_correlation_id_header_outside_any_request_context(net):
+    """Wave 3 cross-cutting standardization's Correlation-ID slice
+    (smo_shared/correlation.py): a call made outside any request handled
+    by apply_correlation_id's own middleware (e.g. a standalone script)
+    has no correlation ID to propagate — no header added, not a
+    fabricated one.
+    """
+    R1Client(R1).get("/focom/inventory")
+    assert "X-Correlation-ID" not in net.calls[-1][2]
+
+
+def test_propagates_the_current_requests_correlation_id(net):
+    """The one real behavior this slice adds: whatever correlation ID is
+    current (set by apply_correlation_id's middleware for the inbound
+    request this handler is servicing) rides along on every downstream
+    call this handler makes through R1Client — the whole point of
+    calling it "propagation," not just per-hop generation.
+    """
+    token = _current_correlation_id.set("corr-abc-123")
+    try:
+        R1Client(R1).get("/focom/inventory")
+    finally:
+        _current_correlation_id.reset(token)
+    assert net.calls[-1][2]["X-Correlation-ID"] == "corr-abc-123"

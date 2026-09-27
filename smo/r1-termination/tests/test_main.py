@@ -204,6 +204,28 @@ def test_proxy_strips_host_header_but_forwards_others(monkeypatch):
     assert "host" not in {k.lower() for k in call["headers"]}
 
 
+def test_proxy_generates_a_correlation_id_when_the_caller_sends_none(monkeypatch):
+    """Wave 3 cross-cutting standardization's Correlation-ID slice: this
+    gateway is the true origin point for external traffic — a caller
+    that never sent one still gets a real, consistent id forwarded
+    downstream and echoed back on the response.
+    """
+    recorder = _install_recording_client(monkeypatch)
+    resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
+    call = recorder.calls[-1]  # the actual forward, not _authorized's own introspection round trip
+    generated = call["headers"]["X-Correlation-ID"]
+    assert generated
+    assert resp.headers["X-Correlation-ID"] == generated
+
+
+def test_proxy_forwards_the_callers_own_correlation_id_unchanged(monkeypatch):
+    recorder = _install_recording_client(monkeypatch)
+    resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers={**AUTH_HEADERS, "X-Correlation-ID": "caller-supplied-id"})
+    call = recorder.calls[-1]
+    assert call["headers"]["X-Correlation-ID"] == "caller-supplied-id"
+    assert resp.headers["X-Correlation-ID"] == "caller-supplied-id"
+
+
 def test_proxy_passes_through_upstream_error_status_unchanged(monkeypatch):
     """A real backend failure (e.g. 503) must reach the rApp unchanged,
     not be swallowed or remapped by the gateway.

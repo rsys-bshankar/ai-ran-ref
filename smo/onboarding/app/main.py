@@ -53,6 +53,7 @@ from smo_shared.errors import framework_error, FrameworkError
 from smo_shared.r1_client import R1Client
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import ApplicationPackage, Artifact, PackageUsageRegistration
@@ -60,6 +61,7 @@ from .statemachine import ONBOARDING_FSM, PackageEvent, PackageState
 
 app = FastAPI(title="Software Package Onboarding SMOS")
 apply_r1_gateway_security(app)
+apply_correlation_id(app)
 
 
 @app.get("/health")
