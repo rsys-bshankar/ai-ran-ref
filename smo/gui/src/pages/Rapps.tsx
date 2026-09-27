@@ -84,6 +84,13 @@ function PackageDrawer({ pkg, onClose }: { pkg: Package; onClose: () => void }) 
         ["Instances", String((instances.data ?? []).filter((i) => i.packageId === pkg.packageId).length)],
         ["AI capabilities", pkg.aiCapabilities ? <code className="small">{JSON.stringify(pkg.aiCapabilities)}</code> : <span className="muted">none declared</span>],
       ]} />
+      <h3>ASD descriptor</h3>
+      <KeyValue items={[
+        ["Descriptor ID", pkg.descriptorId ? <code className="small">{pkg.descriptorId}</code> : <span className="muted">not declared</span>],
+        ["Invariant ID", pkg.descriptorInvariantId ? <code className="small">{pkg.descriptorInvariantId}</code> : <span className="muted">not declared</span>],
+        ["Descriptor version", pkg.descriptorVersion ?? <span className="muted">not declared</span>],
+        ["ASD schema version", pkg.schemaVersion ?? <span className="muted">not declared</span>],
+      ]} />
       <h3>Artifacts</h3>
       <DataTable rows={artifacts.data} error={artifacts.error} rowKey={(a) => a.artifactId} empty="No artifacts registered." columns={[
         { header: "Path", render: (a) => <code className="small">{a.path}</code> }, { header: "Access URL", render: (a) => <code className="small clip">{a.accessUrl}</code> },

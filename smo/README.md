@@ -64,13 +64,25 @@ deliberate follow-up rather than guessed at.
 
 Not yet audited against a formal spec at all, because no relevant spec
 file exists in `../specs/` yet: **DME** (ICS's own spec set isn't
-there), **A1 Related** (3GPP/O-RAN A1 specs aren't there — section 5's
-source-code audit remains the only ground truth), and
-**Onboarding/rApp Mgmt** (TOSCA/rApp packaging specs aren't there).
-Also cataloged in `../specs/` but never compared against: the O-RAN
-WG4/WG5 O-RU/O-CU/O-DU management-plane YANGs — likely out of scope
-given this build's single-node topology, but genuinely unconfirmed,
-not assumed.
+there) and **A1 Related** (3GPP/O-RAN A1 specs aren't there — section
+5's source-code audit remains the only ground truth). Also cataloged in
+`../specs/` but never compared against: the O-RAN WG4/WG5 O-RU/O-CU/
+O-DU management-plane YANGs — likely out of scope given this build's
+single-node topology, but genuinely unconfirmed, not assumed.
+
+**Onboarding/rApp Mgmt is now audited too**, the same source-derived way
+SME's own security-model pass was (no standalone ASD/TOSCA spec document
+exists in `../specs/`; this uses the real reference's own sample CSAR
+packages, `nonrtric-plt-rappmanager/sample-rapp-generator/`, read
+directly). Real ASD identity fields (`descriptor_id`/
+`descriptor_invariant_id`/`descriptor_version`/`schema_version`) are now
+captured and surfaced (GUI included) instead of relying only on a
+content hash; the CSAR validity requirement to bundle an ONAP ACM
+composition file is dropped, since this build has no ONAP dependency at
+all. One real finding audited and left open: the CSAR's own
+`Files/Sme/providers/`+`Files/Sme/serviceapis/` declarations aren't
+auto-registered with SME at onboarding time — see `SPEC_AUDIT.md`'s new
+Onboarding/rApp Mgmt section.
 
 **Internal completeness (`OPEN_ITEMS.md` sections 1-4) — closed except 3
 items blocked on data, not effort.** Section 2's repo/lifecycle gaps and
@@ -96,9 +108,9 @@ genuine production bugs got caught that no unit test had ever touched
 "Suggested next pass" section confirms this list is now exhausted.
 
 **Bottom line — what's actually remaining:** extending the formal-spec
-audit to the three still-unaudited modules (DME, A1 Related,
-Onboarding/rApp Mgmt — no spec file exists yet for any of them) and the
-WG4/WG5 YANGs (real, unstarted work); a scoped follow-up pass on RAN
+audit to the two still-unaudited modules (DME, A1 Related — no spec
+file exists yet for either) and the WG4/WG5 YANGs (real, unstarted
+work); a scoped follow-up pass on RAN
 Analytics's own moderate/breaking findings (the `analytics_type` enum
 constraint, threshold-based conditional reporting) and AI/ML Workflow's
 (`requestStatus` vocabulary, cancel/suspend-flag support); Policy
@@ -1447,8 +1459,6 @@ yet attempted for lack of a spec file:**
 - **A1 Related** — the 3GPP/O-RAN A1 specs aren't in `../specs/` either;
   the `sim-a1-interface`/`a1pms` source-code audit in `OPEN_ITEMS.md`
   section 5 remains the only ground truth for this module.
-- **Onboarding/rApp Mgmt** — TOSCA/rApp packaging specs aren't in
-  `../specs/`.
 - **O-RAN WG4/WG5 O-RU/O-CU/O-DU management-plane YANGs** — present in
   `../specs/` but never compared against. Likely out of scope given this
   build's single-node topology, but genuinely unconfirmed.

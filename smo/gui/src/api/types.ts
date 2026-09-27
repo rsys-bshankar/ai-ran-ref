@@ -11,6 +11,12 @@ export interface Package {
   packageId: string; name: string; version: string; vendor: string | null; applicationType: string;
   state: string; toscaEntryDefinitions: string | null; signatureVerified: boolean; nfDeploymentDescriptorId: string | null;
   aiCapabilities: Record<string, unknown> | null;
+  // Real ASD schema fields (asd_types.yaml's tosca.nodes.asd node type,
+  // grounded against nonrtric-plt-rappmanager's own sample CSARs) — null
+  // for a package whose ASD doesn't declare them (e.g. built before this
+  // pass, or a synthetic test fixture).
+  descriptorId: string | null; descriptorInvariantId: string | null;
+  descriptorVersion: string | null; schemaVersion: string | null;
 }
 export interface InstanceSummary { instanceId: string; packageId: string; state: string }
 export interface Instance extends InstanceSummary {
