@@ -119,7 +119,7 @@ def test_list_producers_returns_registered_producer(client):
 
     resp = client.get("/producers")
     assert resp.status_code == 200
-    producers = resp.json()
+    producers = resp.json()["items"]
     assert len(producers) == 1
     assert producers[0]["producerId"] == "rapp-mdaf-1"
     assert producers[0]["analyticsType"] == "coverage-issue-analysis"
@@ -133,7 +133,7 @@ def test_list_producers_filters_by_analytics_type(client):
                 json={"dme_input_types": [], "output_schema": {}})
 
     resp = client.get("/producers", params={"analytics_type": "resource-utilization"})
-    ids = [p["producerId"] for p in resp.json()]
+    ids = [p["producerId"] for p in resp.json()["items"]]
     assert ids == ["rapp-mdaf-2"]
 
 
@@ -146,13 +146,13 @@ def test_list_producers_filters_by_producer_id(client):
                 json={"dme_input_types": [], "output_schema": {}})
 
     resp = client.get("/producers", params={"producer_id": "rapp-mdaf-1"})
-    assert len(resp.json()) == 2
-    assert {p["producerId"] for p in resp.json()} == {"rapp-mdaf-1"}
+    assert len(resp.json()["items"]) == 2
+    assert {p["producerId"] for p in resp.json()["items"]} == {"rapp-mdaf-1"}
 
 
 def test_list_producers_returns_empty_list_when_none_registered(client):
     resp = client.get("/producers")
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 def test_health_check_answers_the_gui_bff_liveness_probe(client):

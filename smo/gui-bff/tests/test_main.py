@@ -452,9 +452,9 @@ def test_change_own_password_keeps_the_current_session(app):
 def test_audit_endpoint_lists_newest_first_and_filters(app):
     admin = login(app, "admin")
     admin.post("/api/admin/users", json={"username": "noc1", "password": "long-enough", "role": "viewer"})
-    entries = admin.get("/api/admin/audit").json()
+    entries = admin.get("/api/admin/audit").json()["items"]
     assert [e["action"] for e in entries][:2] == ["USER_CREATED", "LOGIN"]
-    assert {e["action"] for e in admin.get("/api/admin/audit", params={"action": "LOGIN"}).json()} == {"LOGIN"}
+    assert {e["action"] for e in admin.get("/api/admin/audit", params={"action": "LOGIN"}).json()["items"]} == {"LOGIN"}
 
 
 def test_permissions_endpoint_exposes_the_rbac_table(app):

@@ -17,6 +17,7 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
 from .statemachine import RAPP_INSTANCE_FSM, InstanceEvent, InstanceState
@@ -222,11 +223,13 @@ def report_fault(instance_id: uuid.UUID, severity: str, description: str = "", d
 
 
 @app.get("/instances")
-def list_instances(state: str | None = None, db: Session = Depends(get_session)):
+def list_instances(state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                    db: Session = Depends(get_session)):
     stmt = select(RAppInstance)
     if state:
         stmt = stmt.where(RAppInstance.state == state)
-    return [{"instanceId": str(i.instance_id), "packageId": str(i.package_id), "state": i.state} for i in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"instanceId": str(i.instance_id), "packageId": str(i.package_id), "state": i.state} for i in page["items"]]}
 
 
 @app.get("/instances/{instance_id}")
@@ -257,25 +260,26 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 @app.get("/instances/{instance_id}/performance")
-def list_performance_reports(instance_id: uuid.UUID, limit: int = 100, db: Session = Depends(get_session)):
+def list_performance_reports(instance_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
+                              db: Session = Depends(get_session)):
     """Read side of report_performance above — previously write-only, so
     an operator had no way to see what an rApp had reported at all.
-    Newest first, capped by `limit` (the GUI's KPI sparkline only ever
-    wants the recent tail).
+    Newest first (the GUI's KPI sparkline only ever wants the recent tail).
     """
     if db.get(RAppInstance, instance_id) is None:
         raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
-    rows = db.scalars(select(RAppPerformanceReport).where(RAppPerformanceReport.instance_id == instance_id)
-                      .order_by(RAppPerformanceReport.reported_at.desc()).limit(limit)).all()
-    return [{"reportId": str(r.id), "metrics": r.metrics, "reportedAt": r.reported_at.isoformat()} for r in rows]
+    stmt = select(RAppPerformanceReport).where(RAppPerformanceReport.instance_id == instance_id).order_by(RAppPerformanceReport.reported_at.desc())
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"reportId": str(r.id), "metrics": r.metrics, "reportedAt": r.reported_at.isoformat()} for r in page["items"]]}
 
 
 @app.get("/instances/{instance_id}/faults")
-def list_fault_reports(instance_id: uuid.UUID, limit: int = 100, db: Session = Depends(get_session)):
+def list_fault_reports(instance_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
+                        db: Session = Depends(get_session)):
     """Read side of report_fault above, same shape as list_performance_reports."""
     if db.get(RAppInstance, instance_id) is None:
         raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
-    rows = db.scalars(select(RAppFaultReport).where(RAppFaultReport.instance_id == instance_id)
-                      .order_by(RAppFaultReport.reported_at.desc()).limit(limit)).all()
-    return [{"faultId": str(r.id), "severity": r.severity, "description": r.description,
-             "reportedAt": r.reported_at.isoformat()} for r in rows]
+    stmt = select(RAppFaultReport).where(RAppFaultReport.instance_id == instance_id).order_by(RAppFaultReport.reported_at.desc())
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"faultId": str(r.id), "severity": r.severity, "description": r.description,
+             "reportedAt": r.reported_at.isoformat()} for r in page["items"]]}

@@ -421,7 +421,7 @@ def test_query_policies_returns_every_policy_unfiltered(client):
 
     resp = client.get("/policies")
     assert resp.status_code == 200
-    assert len(resp.json()) == 2
+    assert len(resp.json()["items"]) == 2
 
 
 def test_query_policies_filters_by_policy_type_id(client):
@@ -429,7 +429,7 @@ def test_query_policies_filters_by_policy_type_id(client):
     client.post("/policies", json={"policyTypeId": "ORAN_TrafficSteeringPreference_6.0.1", "policyObject": {"scope": "cell2"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
 
     resp = client.get("/policies", params={"policy_type_id": "ORAN_TrafficSteeringPreference_6.0.1"})
-    types = [p["policyTypeId"] for p in resp.json()]
+    types = [p["policyTypeId"] for p in resp.json()["items"]]
     assert types == ["ORAN_TrafficSteeringPreference_6.0.1"]
 
 
@@ -438,7 +438,7 @@ def test_query_policies_filters_by_near_rt_ric_id(client):
     client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell2"}, "nearRtRicId": "ric2", "creatorId": "rapp-1"})
 
     resp = client.get("/policies", params={"near_rt_ric_id": "ric2"})
-    rics = [p["nearRtRicId"] for p in resp.json()]
+    rics = [p["nearRtRicId"] for p in resp.json()["items"]]
     assert rics == ["ric2"]
 
 
@@ -447,15 +447,15 @@ def test_query_policies_filters_by_creator_id(client):
     client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell2"}, "nearRtRicId": "ric1", "creatorId": "rapp-2"})
 
     resp = client.get("/policies", params={"creator_id": "rapp-2"})
-    assert len(resp.json()) == 1
-    assert resp.json()[0]["policyObject"] == {"scope": "cell2"}
+    assert len(resp.json()["items"]) == 1
+    assert resp.json()["items"][0]["policyObject"] == {"scope": "cell2"}
 
 
 def test_query_policies_with_no_matching_filter_returns_empty_list(client):
     client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
 
     resp = client.get("/policies", params={"near_rt_ric_id": "ric-does-not-exist"})
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 def test_register_service_creates_it(client):
@@ -556,9 +556,9 @@ def test_unregister_service_deletes_its_policies_via_southbound_call(client):
     assert resp.status_code == 204
     assert calls == ["mock-nrt-policy-1"]  # only rapp-1's own policy, not rapp-other's
 
-    remaining = client.get("/policies", params={"creator_id": "rapp-1"}).json()
+    remaining = client.get("/policies", params={"creator_id": "rapp-1"}).json()["items"]
     assert remaining == []
-    still_there = client.get("/policies", params={"creator_id": "rapp-other"}).json()
+    still_there = client.get("/policies", params={"creator_id": "rapp-other"}).json()["items"]
     assert len(still_there) == 1
 
 
@@ -592,7 +592,7 @@ def test_stale_service_is_auto_deregistered_and_its_policies_deleted(client, db_
     assert resp.status_code == 404  # swept, not just stale-but-still-listed
 
     assert calls == ["mock-nrt-policy-1"]
-    assert client.get("/policies", params={"creator_id": "rapp-1"}).json() == []
+    assert client.get("/policies", params={"creator_id": "rapp-1"}).json()["items"] == []
 
 
 def test_service_with_supervision_disabled_never_goes_stale(client, db_session_factory):
@@ -618,7 +618,7 @@ def test_list_policy_status_subscriptions_is_not_captured_by_the_policy_id_route
                                                            "subscriptionScope": "ALL"}).json()
     resp = client.get("/policies/subscriptions")
     assert resp.status_code == 200
-    assert [(s["subscriptionId"], s["notificationDestination"]) for s in resp.json()] == [(created["subscriptionId"], "http://consumer/cb")]
+    assert [(s["subscriptionId"], s["notificationDestination"]) for s in resp.json()["items"]] == [(created["subscriptionId"], "http://consumer/cb")]
 
 
 def test_list_ei_types_returns_registrations_with_their_dme_type(client, monkeypatch):
@@ -630,8 +630,8 @@ def test_list_ei_types_returns_registrations_with_their_dme_type(client, monkeyp
             return {"registrationId": "11111111-1111-1111-1111-111111111111"}
 
     monkeypatch.setattr(r1_client_module.R1Client, "post", lambda self, path, json=None, **kw: FakeResponse())
-    assert client.get("/ei-types").json() == []
+    assert client.get("/ei-types").json()["items"] == []
     client.post("/ei-types/register", params={"ei_type_id": "ei-1", "registered_by": "rapp-1",
                                               "dme_namespace": "RAN", "dme_name": "CoverageIssue", "dme_version": "1.0.0"})
-    assert client.get("/ei-types").json() == [{"eiTypeId": "ei-1", "registeredBy": "rapp-1",
+    assert client.get("/ei-types").json()["items"] == [{"eiTypeId": "ei-1", "registeredBy": "rapp-1",
                                                "eiSourceDmeTypeId": "11111111-1111-1111-1111-111111111111"}]

@@ -108,7 +108,7 @@ def test_create_descriptor_without_a_package_id_for_a_model_runtime(client, db_s
         descriptor = session.get(NFDeploymentDescriptor, descriptor_id)
         assert descriptor.package_id is None
 
-    listed = client.get("/descriptors").json()
+    listed = client.get("/descriptors").json()["items"]
     assert next(d for d in listed if d["nfDeploymentDescriptorId"] == str(descriptor_id))["packageId"] is None
 
 
@@ -432,19 +432,19 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
 
 def test_list_deployments_filters_by_state(client, monkeypatch):
     """GUI pass: every deployment route was keyed by an id the caller already held."""
-    assert client.get("/deployments").json() == []
+    assert client.get("/deployments").json()["items"] == []
     created = _instantiate(client, monkeypatch, name="d1").json()
 
-    listed = client.get("/deployments").json()
+    listed = client.get("/deployments").json()["items"]
     assert [(d["nfDeploymentId"], d["name"], d["state"]) for d in listed] == [(created["nfDeploymentId"], "d1", created["state"])]
-    assert client.get("/deployments", params={"state": created["state"]}).json() == listed
-    assert client.get("/deployments", params={"state": "ABNORMAL"}).json() == []
+    assert client.get("/deployments", params={"state": created["state"]}).json()["items"] == listed
+    assert client.get("/deployments", params={"state": "ABNORMAL"}).json()["items"] == []
 
 
 def test_list_descriptors_and_deployment_operations(client, monkeypatch):
     """GUI pass 2: descriptors and a deployment's LCM operation history."""
     created = _instantiate(client, monkeypatch, name="d1").json()
-    assert len(client.get("/descriptors").json()) == 1
+    assert len(client.get("/descriptors").json()["items"]) == 1
     client.post(f"/deployments/{created['nfDeploymentId']}/heal")
-    ops = client.get(f"/deployments/{created['nfDeploymentId']}/operations").json()
+    ops = client.get(f"/deployments/{created['nfDeploymentId']}/operations").json()["items"]
     assert [o["operationType"] for o in ops] == ["INSTANTIATE", "HEAL"]

@@ -21,6 +21,7 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import DELIVERY_METHODS, LIFECYCLE_STAGES, SOURCE_DOMAINS, DataJob, DataOffer, DataRecord, DmeActionRecord, DMEType, DMETypeSubscription
 
@@ -215,11 +216,13 @@ def subscribe_type_changes(body: TypeSubscriptionRequest, db: Session = Depends(
 
 
 @app.get("/type-subscriptions")
-def list_type_subscriptions(owner: str | None = None, db: Session = Depends(get_session)):
+def list_type_subscriptions(owner: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                             db: Session = Depends(get_session)):
     stmt = select(DMETypeSubscription)
     if owner:
         stmt = stmt.where(DMETypeSubscription.owner == owner)
-    return [_subscription_view(s) for s in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_subscription_view(s) for s in page["items"]]}
 
 
 @app.get("/type-subscriptions/{subscription_id}")
@@ -562,21 +565,25 @@ def _producer_is_healthy(callback_url: str) -> bool:
 # (call flow 05).
 
 @app.get("/data-jobs")
-def list_data_jobs(dme_type_id: uuid.UUID | None = None, consumer_id: str | None = None, db: Session = Depends(get_session)):
+def list_data_jobs(dme_type_id: uuid.UUID | None = None, consumer_id: str | None = None, limit: int = PageLimit,
+                    offset: int = PageOffset, db: Session = Depends(get_session)):
     stmt = select(DataJob)
     if dme_type_id:
         stmt = stmt.where(DataJob.dme_type_id == dme_type_id)
     if consumer_id:
         stmt = stmt.where(DataJob.consumer_id == consumer_id)
-    return [_job_view(j) for j in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_job_view(j) for j in page["items"]]}
 
 
 @app.get("/offers")
-def list_data_offers(dme_type_id: uuid.UUID | None = None, db: Session = Depends(get_session)):
+def list_data_offers(dme_type_id: uuid.UUID | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                      db: Session = Depends(get_session)):
     stmt = select(DataOffer)
     if dme_type_id:
         stmt = stmt.where(DataOffer.dme_type_id == dme_type_id)
-    return [_offer_view(o) for o in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_offer_view(o) for o in page["items"]]}
 
 
 # ---------------------------------------------------------------- Wave 3: real data-plane store
@@ -598,13 +605,14 @@ def ingest_data_record(data_job_id: uuid.UUID, body: DataRecordRequest, db: Sess
 
 
 @app.get("/data-jobs/{data_job_id}/records")
-def fetch_data_records(data_job_id: uuid.UUID, limit: int = 100, db: Session = Depends(get_session)):
+def fetch_data_records(data_job_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
+                        db: Session = Depends(get_session)):
     job = db.get(DataJob, data_job_id)
     if job is None:
         raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
-    stmt = select(DataRecord).where(DataRecord.data_job_id == data_job_id).order_by(DataRecord.produced_at.desc()).limit(limit)
-    records = db.scalars(stmt).all()
-    return [_record_view(r) for r in records]
+    stmt = select(DataRecord).where(DataRecord.data_job_id == data_job_id).order_by(DataRecord.produced_at.desc())
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_record_view(r) for r in page["items"]]}
 
 
 def _record_view(r: DataRecord) -> dict:
@@ -654,13 +662,15 @@ def get_action(action_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 @app.get("/actions")
-def list_actions(managed_element_ref: str | None = None, requested_by: str | None = None, db: Session = Depends(get_session)):
+def list_actions(managed_element_ref: str | None = None, requested_by: str | None = None, limit: int = PageLimit,
+                  offset: int = PageOffset, db: Session = Depends(get_session)):
     stmt = select(DmeActionRecord)
     if managed_element_ref:
         stmt = stmt.where(DmeActionRecord.managed_element_ref == managed_element_ref)
     if requested_by:
         stmt = stmt.where(DmeActionRecord.requested_by == requested_by)
-    return [_action_view(a) for a in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_action_view(a) for a in page["items"]]}
 
 
 def _action_view(a: DmeActionRecord) -> dict:

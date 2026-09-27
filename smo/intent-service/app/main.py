@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.identity import is_framework_internal_identity
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
 
 from .models import Intent, IntentHandlingFunction, IntentReport
@@ -214,11 +215,13 @@ def query_intent(intent_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 @app.get("/intents")
-def query_intents(admin_state: str | None = None, db: Session = Depends(get_session)):
+def query_intents(admin_state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                   db: Session = Depends(get_session)):
     stmt = select(Intent)
     if admin_state:
         stmt = stmt.where(Intent.intent_admin_state == admin_state)
-    return [_intent_view(i) for i in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_intent_view(i) for i in page["items"]]}
 
 
 @app.patch("/intents/{intent_id}/admin-state")
@@ -287,20 +290,23 @@ def _intent_view(i: Intent) -> dict:
 
 
 @app.get("/intent-handling-functions")
-def list_intent_handling_functions(db: Session = Depends(get_session)):
+def list_intent_handling_functions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """List read over registered RMIHs (GUI pass) — which handlers an
     Intent can actually be dispatched to was otherwise invisible."""
-    return [{"rmihId": fn.rmih_id, "smeServiceId": fn.sme_service_id, "capabilities": fn.intent_handling_capability_list,
+    page = paginate(db, select(IntentHandlingFunction), limit, offset)
+    return {**page, "items": [{"rmihId": fn.rmih_id, "smeServiceId": fn.sme_service_id, "capabilities": fn.intent_handling_capability_list,
              "notificationCallbackUri": fn.notification_callback_uri, "intentHandlingScope": fn.intent_handling_scope}
-            for fn in db.scalars(select(IntentHandlingFunction)).all()]
+            for fn in page["items"]]}
 
 
 @app.get("/intent-reports")
-def list_intent_reports(intent_id: uuid.UUID | None = None, db: Session = Depends(get_session)):
+def list_intent_reports(intent_id: uuid.UUID | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                         db: Session = Depends(get_session)):
     """Read side of publish_intent_report — fulfilment/conflict reports
     were write-only."""
     stmt = select(IntentReport)
     if intent_id:
         stmt = stmt.where(IntentReport.intent_id == intent_id)
-    return [{"reportId": str(r.id), "intentId": str(r.intent_id), "fulfilmentReport": r.intent_fulfilment_report,
-             "conflictReports": r.intent_conflict_reports, "lastUpdatedTime": r.last_updated_time.isoformat()} for r in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"reportId": str(r.id), "intentId": str(r.intent_id), "fulfilmentReport": r.intent_fulfilment_report,
+             "conflictReports": r.intent_conflict_reports, "lastUpdatedTime": r.last_updated_time.isoformat()} for r in page["items"]]}

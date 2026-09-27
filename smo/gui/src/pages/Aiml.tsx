@@ -463,7 +463,7 @@ function WriteMetrics({ job, onClose }: { job: TrainingJob; onClose: () => void 
 function FeatureGroups() {
   const { can } = useAuth();
   const allowed = can("GET", "/aimgf/feature-groups");
-  const groups = useSmo<{ featureGroups: FeatureGroup[] }>(allowed ? "/aimgf/feature-groups" : null);
+  const groups = useSmo<FeatureGroup[]>(allowed ? "/aimgf/feature-groups" : null);
   const [f, setF] = useState({ featureGroupName: "", featureList: "", datalakeSource: "InfluxSource", host: "", port: "8086", bucket: "", token: "", dbOrg: "", measurement: "", sourceName: "" });
   const [enableDme, setEnableDme] = useState(false);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
@@ -490,7 +490,7 @@ function FeatureGroups() {
       </Can>
       {!allowed && <Card title="Feature groups"><p className="muted">Feature groups carry datalake credentials, so they're visible to operators and admins only.</p></Card>}
       {allowed && <Card title="Feature groups" actions={<span className="muted small">Operator-only view: groups hold datalake credentials, which are never displayed here</span>}>
-        <DataTable rows={groups.data?.featureGroups} loading={groups.isLoading} error={groups.error} rowKey={(g) => g.featureGroupId} empty="No feature groups." columns={[
+        <DataTable rows={groups.data} loading={groups.isLoading} error={groups.error} rowKey={(g) => g.featureGroupId} empty="No feature groups." columns={[
           { header: "Name", render: (g) => <strong>{g.featureGroupName}</strong> }, { header: "Features", render: (g) => <code className="small">{g.featureList}</code> },
           { header: "Source", render: (g) => `${g.datalakeSource} ${g.host}:${g.port}` }, { header: "Bucket / measurement", render: (g) => `${g.bucket} / ${g.measurement}` },
           { header: "DME", render: (g) => (g.enableDme ? "yes" : "no") },

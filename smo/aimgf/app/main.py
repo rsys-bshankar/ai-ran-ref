@@ -45,6 +45,7 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import (
     CertificationRecord, EmulationJob, FeatureGroup, InferenceJob, LifecycleTransition, MLMFSubscription,
@@ -324,13 +325,15 @@ def get_training_job_model_metrics(training_job_id: uuid.UUID, db: Session = Dep
 
 
 @app.get("/training-jobs")
-def list_training_jobs(model_id: uuid.UUID | None = None, status: str | None = None, db: Session = Depends(get_session)):
+def list_training_jobs(model_id: uuid.UUID | None = None, status: str | None = None, limit: int = PageLimit,
+                        offset: int = PageOffset, db: Session = Depends(get_session)):
     stmt = select(TrainingJob)
     if model_id:
         stmt = stmt.where(TrainingJob.model_id == model_id)
     if status:
         stmt = stmt.where(TrainingJob.status == status)
-    return [_training_job_view(j) for j in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_training_job_view(j) for j in page["items"]]}
 
 
 # ---------------------------------------------------------------- Validation
@@ -378,13 +381,15 @@ def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, 
 
 
 @app.get("/validation-jobs")
-def list_validation_jobs(model_id: uuid.UUID | None = None, status: str | None = None, db: Session = Depends(get_session)):
+def list_validation_jobs(model_id: uuid.UUID | None = None, status: str | None = None, limit: int = PageLimit,
+                          offset: int = PageOffset, db: Session = Depends(get_session)):
     stmt = select(ValidationJob)
     if model_id:
         stmt = stmt.where(ValidationJob.model_id == model_id)
     if status:
         stmt = stmt.where(ValidationJob.status == status)
-    return [_validation_job_view(j) for j in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_validation_job_view(j) for j in page["items"]]}
 
 
 # ---------------------------------------------------------------- Emulation
@@ -430,13 +435,15 @@ def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db
 
 
 @app.get("/emulation-jobs")
-def list_emulation_jobs(model_id: uuid.UUID | None = None, status: str | None = None, db: Session = Depends(get_session)):
+def list_emulation_jobs(model_id: uuid.UUID | None = None, status: str | None = None, limit: int = PageLimit,
+                         offset: int = PageOffset, db: Session = Depends(get_session)):
     stmt = select(EmulationJob)
     if model_id:
         stmt = stmt.where(EmulationJob.model_id == model_id)
     if status:
         stmt = stmt.where(EmulationJob.status == status)
-    return [_emulation_job_view(j) for j in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_emulation_job_view(j) for j in page["items"]]}
 
 
 # ---------------------------------------------------------------- ModelLifecycle: generic advance + governance
@@ -468,33 +475,39 @@ def get_model_lifecycle(model_id: uuid.UUID, db: Session = Depends(get_session))
 
 
 @app.get("/model-lifecycles")
-def list_model_lifecycles(db: Session = Depends(get_session)):
-    """(GUI) Every model AIMgF has ever been asked to act on, in one call —
-    the Models table's own State/Node-groups columns would otherwise be
-    an N-model-lifecycle-fetches-per-page-load problem. A model MLMR
-    knows about that AIMgF has never touched yet simply has no row here
-    (still REGISTERED/NOT_DEPLOYED in truth, per `_get_or_create_lifecycle`'s
-    own lazy-initialization default) — the GUI falls back to that same
-    default for a model missing from this list.
+def list_model_lifecycles(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """(GUI) Every model AIMgF has ever been asked to act on — the Models
+    table's own State/Node-groups columns would otherwise be an
+    N-model-lifecycle-fetches-per-page-load problem. A model MLMR knows
+    about that AIMgF has never touched yet simply has no row here (still
+    REGISTERED/NOT_DEPLOYED in truth, per `_get_or_create_lifecycle`'s own
+    lazy-initialization default) — the GUI falls back to that same
+    default for a model missing from this list. Wave 3: paginated like
+    every other list route now, so the GUI's own "give me the whole
+    picture" use case fetches a large enough page rather than assuming
+    an unbounded response.
     """
-    return [_lifecycle_view(l) for l in db.scalars(select(ModelLifecycle)).all()]
+    page = paginate(db, select(ModelLifecycle), limit, offset)
+    return {**page, "items": [_lifecycle_view(l) for l in page["items"]]}
 
 
 @app.get("/models/{model_id}/governance-history")
-def list_governance_history(model_id: uuid.UUID, db: Session = Depends(get_session)):
-    rows = db.scalars(select(CertificationRecord).where(CertificationRecord.model_id == model_id)
-                       .order_by(CertificationRecord.decided_at)).all()
-    return [_certification_record_view(r) for r in rows]
+def list_governance_history(model_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
+                             db: Session = Depends(get_session)):
+    stmt = select(CertificationRecord).where(CertificationRecord.model_id == model_id).order_by(CertificationRecord.decided_at)
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_certification_record_view(r) for r in page["items"]]}
 
 
 @app.get("/models/{model_id}/lifecycle-history")
-def list_lifecycle_history(model_id: uuid.UUID, fsm: str | None = None, db: Session = Depends(get_session)):
+def list_lifecycle_history(model_id: uuid.UUID, fsm: str | None = None, limit: int = PageLimit,
+                            offset: int = PageOffset, db: Session = Depends(get_session)):
     stmt = select(LifecycleTransition).where(LifecycleTransition.model_id == model_id)
     if fsm:
         stmt = stmt.where(LifecycleTransition.fsm == fsm)
-    rows = db.scalars(stmt.order_by(LifecycleTransition.occurred_at)).all()
-    return [{"fsm": r.fsm, "fromState": r.from_state, "toState": r.to_state, "event": r.event, "occurredAt": r.occurred_at.isoformat()}
-            for r in rows]
+    page = paginate(db, stmt.order_by(LifecycleTransition.occurred_at), limit, offset)
+    return {**page, "items": [{"fsm": r.fsm, "fromState": r.from_state, "toState": r.to_state, "event": r.event,
+                                "occurredAt": r.occurred_at.isoformat()} for r in page["items"]]}
 
 
 # ---------------------------------------------------------------- RuntimeLifecycle (jointly with NFO)
@@ -630,14 +643,16 @@ def resolve_inference(inference_job_id: uuid.UUID, succeeded: bool, db: Session 
 
 
 @app.get("/inference-jobs")
-def list_inference_jobs(model_id: uuid.UUID | None = None, status: str | None = None, db: Session = Depends(get_session)):
+def list_inference_jobs(model_id: uuid.UUID | None = None, status: str | None = None, limit: int = PageLimit,
+                         offset: int = PageOffset, db: Session = Depends(get_session)):
     stmt = select(InferenceJob)
     if model_id:
         stmt = stmt.where(InferenceJob.model_id == model_id)
     if status:
         stmt = stmt.where(InferenceJob.status == status)
-    return [{"inferenceJobId": str(j.inference_job_id), "modelId": str(j.model_id), "status": j.status,
-             "notificationDestination": j.notification_destination} for j in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"inferenceJobId": str(j.inference_job_id), "modelId": str(j.model_id), "status": j.status,
+             "notificationDestination": j.notification_destination} for j in page["items"]]}
 
 
 # ---------------------------------------------------------------- MLMF performance monitoring
@@ -655,7 +670,7 @@ def subscribe_performance_monitoring(model_id: uuid.UUID, metric_types: list[str
 
 def _find_coordination_group_for_model(model_id: uuid.UUID) -> dict | None:
     resp = _r1.get("/mlmr/coordination-groups")
-    groups = resp.json() if resp.status_code == 200 else []
+    groups = resp.json()["items"] if resp.status_code == 200 else []
     return next((g for g in groups if str(model_id) in set(g["memberModelIds"])), None)
 
 
@@ -683,30 +698,34 @@ def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = 
 
 
 @app.get("/mlmf/subscriptions")
-def list_performance_subscriptions(model_id: uuid.UUID | None = None, db: Session = Depends(get_session)):
+def list_performance_subscriptions(model_id: uuid.UUID | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                                    db: Session = Depends(get_session)):
     stmt = select(MLMFSubscription)
     if model_id:
         stmt = stmt.where(MLMFSubscription.model_id == model_id)
-    return [{"subscriptionId": str(sub.subscription_id), "modelId": str(sub.model_id), "metricTypes": sub.metric_types,
-             "dmeTypeId": str(sub.dme_type_id), "guardKpiFloor": sub.guard_kpi_floor} for sub in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"subscriptionId": str(sub.subscription_id), "modelId": str(sub.model_id), "metricTypes": sub.metric_types,
+             "dmeTypeId": str(sub.dme_type_id), "guardKpiFloor": sub.guard_kpi_floor} for sub in page["items"]]}
 
 
 @app.get("/mlmf/subscriptions/{subscription_id}/reports")
-def list_performance_reports(subscription_id: uuid.UUID, limit: int = 100, db: Session = Depends(get_session)):
+def list_performance_reports(subscription_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
+                              db: Session = Depends(get_session)):
     if db.get(MLMFSubscription, subscription_id) is None:
         raise framework_error(FrameworkError.MLMF_SUBSCRIPTION_NOT_FOUND, detail="no such MLMF subscription")
-    rows = db.scalars(select(PerformanceReport).where(PerformanceReport.subscription_id == subscription_id)
-                      .order_by(PerformanceReport.reported_at.desc()).limit(limit)).all()
-    return [_performance_report_view(r) for r in rows]
+    stmt = select(PerformanceReport).where(PerformanceReport.subscription_id == subscription_id).order_by(PerformanceReport.reported_at.desc())
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_performance_report_view(r) for r in page["items"]]}
 
 
 @app.get("/mlmf/reports")
-def list_recent_performance_reports(breached_only: bool = False, limit: int = 50, db: Session = Depends(get_session)):
+def list_recent_performance_reports(breached_only: bool = False, limit: int = PageLimit, offset: int = PageOffset,
+                                     db: Session = Depends(get_session)):
     stmt = select(PerformanceReport)
     if breached_only:
         stmt = stmt.where(PerformanceReport.breached_floor.is_(True))
-    rows = db.scalars(stmt.order_by(PerformanceReport.reported_at.desc()).limit(limit)).all()
-    return [_performance_report_view(r) for r in rows]
+    page = paginate(db, stmt.order_by(PerformanceReport.reported_at.desc()), limit, offset)
+    return {**page, "items": [_performance_report_view(r) for r in page["items"]]}
 
 
 def _trigger_group_retrain(db: Session, group: dict) -> list[uuid.UUID]:
@@ -808,8 +827,9 @@ def create_feature_group(body: CreateFeatureGroupRequest, db: Session = Depends(
 
 
 @app.get("/feature-groups")
-def list_feature_groups(db: Session = Depends(get_session)):
-    return {"featureGroups": [_feature_group_view(g) for g in db.scalars(select(FeatureGroup)).all()]}
+def list_feature_groups(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    page = paginate(db, select(FeatureGroup), limit, offset)
+    return {**page, "items": [_feature_group_view(g) for g in page["items"]]}
 
 
 def _feature_group_view(g: FeatureGroup) -> dict:

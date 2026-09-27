@@ -61,11 +61,11 @@ def test_publish_and_query_report_by_analytics_type(client):
     assert resp.status_code == 201
 
     listing = client.get("/reports", params={"analytics_type": "resource-utilization"})
-    assert len(listing.json()) == 1
-    assert listing.json()[0]["output"]["utilization"] == 0.7
+    assert len(listing.json()["items"]) == 1
+    assert listing.json()["items"][0]["output"]["utilization"] == 0.7
 
     empty = client.get("/reports", params={"analytics_type": "failure-prediction"})
-    assert empty.json() == []
+    assert empty.json()["items"] == []
 
 
 def test_subscribe_and_unsubscribe_analytics(client):
@@ -93,7 +93,7 @@ def test_query_all_reports_without_filter_returns_everything(client):
     client.post("/reports", params={"analytics_type": "resource-utilization"}, json={"output": {"b": 2}, "input_sources": []})
 
     all_reports = client.get("/reports")
-    assert len(all_reports.json()) == 2
+    assert len(all_reports.json()["items"]) == 2
 
 
 def test_publish_report_persists_scope(client, db_session_factory):
@@ -123,7 +123,7 @@ def test_list_subscriptions_returns_active_subscription(client):
 
     resp = client.get("/subscriptions")
     assert resp.status_code == 200
-    subs = resp.json()
+    subs = resp.json()["items"]
     assert len(subs) == 1
     assert subs[0]["analyticsType"] == "coverage-issue-analysis"
     assert subs[0]["requestedBy"] == "sa-smos"
@@ -134,7 +134,7 @@ def test_list_subscriptions_filters_by_analytics_type(client):
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"})
 
     resp = client.get("/subscriptions", params={"analytics_type": "resource-utilization"})
-    requesters = [s["requestedBy"] for s in resp.json()]
+    requesters = [s["requestedBy"] for s in resp.json()["items"]]
     assert requesters == ["nfo"]
 
 
@@ -144,8 +144,8 @@ def test_list_subscriptions_filters_by_requested_by(client):
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"})
 
     resp = client.get("/subscriptions", params={"requested_by": "sa-smos"})
-    assert len(resp.json()) == 2
-    assert {s["requestedBy"] for s in resp.json()} == {"sa-smos"}
+    assert len(resp.json()["items"]) == 2
+    assert {s["requestedBy"] for s in resp.json()["items"]} == {"sa-smos"}
 
 
 def test_list_subscriptions_excludes_unsubscribed(client):
@@ -153,7 +153,7 @@ def test_list_subscriptions_excludes_unsubscribed(client):
     client.delete(f"/subscriptions/{sub['subscriptionId']}")
 
     resp = client.get("/subscriptions")
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 def test_publish_report_notifies_subscriber_with_a_notification_destination(client, monkeypatch):
@@ -219,7 +219,7 @@ def test_list_subscriptions_exposes_notification_destination(client):
     client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos", "notification_destination": "http://sa-smos:8000/analytics-reports"})
 
     resp = client.get("/subscriptions")
-    assert resp.json()[0]["notificationDestination"] == "http://sa-smos:8000/analytics-reports"
+    assert resp.json()["items"][0]["notificationDestination"] == "http://sa-smos:8000/analytics-reports"
 
 
 def test_publish_report_rejects_unknown_dme_input_source(client, monkeypatch):
@@ -249,7 +249,7 @@ def test_subscribe_persists_threshold_info(client):
     sub = client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
                        json={"thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP",
                                                  "thresholdValue": 0.8, "hysteresis": 0.05}]}).json()
-    listed = client.get("/subscriptions").json()
+    listed = client.get("/subscriptions").json()["items"]
     assert listed[0]["thresholdInfo"] == [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP",
                                             "thresholdValue": 0.8, "hysteresis": 0.05}]
     assert listed[0]["subscriptionId"] == sub["subscriptionId"]

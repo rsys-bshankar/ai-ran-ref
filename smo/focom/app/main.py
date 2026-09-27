@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import DeploymentManager, InventorySubscription, OCloudAlarm, OCloudPerformanceMetric, Resource, ResourcePool, ResourceType
 
@@ -116,7 +117,7 @@ def query_inventory(resource_type: str = "", db: Session = Depends(get_session))
 
 
 @app.get("/resource-types")
-def list_resource_types(db: Session = Depends(get_session)):
+def list_resource_types(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """OPEN_ITEMS.md section 5: no per-resource-type/pool/resource
     drill-down endpoints existed at all — the reference exposes
     /resourceTypes, /resourceTypes/{id}, /resourcePools/{id}/resources,
@@ -124,7 +125,8 @@ def list_resource_types(db: Session = Depends(get_session)):
     everything into one /inventory route with nothing behind it.
     """
     _ensure_phase1_topology(db)
-    return [_resource_type_view(t) for t in db.scalars(select(ResourceType)).all()]
+    page = paginate(db, select(ResourceType), limit, offset)
+    return {**page, "items": [_resource_type_view(t) for t in page["items"]]}
 
 
 @app.get("/resource-types/{resource_type_id}")
@@ -137,9 +139,10 @@ def get_resource_type(resource_type_id: str, db: Session = Depends(get_session))
 
 
 @app.get("/resource-pools")
-def list_resource_pools(db: Session = Depends(get_session)):
+def list_resource_pools(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     _ensure_phase1_topology(db)
-    return [_resource_pool_view(p) for p in db.scalars(select(ResourcePool)).all()]
+    page = paginate(db, select(ResourcePool), limit, offset)
+    return {**page, "items": [_resource_pool_view(p) for p in page["items"]]}
 
 
 @app.get("/resource-pools/{resource_pool_id}")
@@ -152,18 +155,21 @@ def get_resource_pool(resource_pool_id: str, db: Session = Depends(get_session))
 
 
 @app.get("/resource-pools/{resource_pool_id}/resources")
-def list_pool_resources(resource_pool_id: str, db: Session = Depends(get_session)):
+def list_pool_resources(resource_pool_id: str, limit: int = PageLimit, offset: int = PageOffset,
+                         db: Session = Depends(get_session)):
     _ensure_phase1_topology(db)
     if db.get(ResourcePool, resource_pool_id) is None:
         raise framework_error(FrameworkError.RESOURCE_POOL_NOT_FOUND, detail="no such resource pool")
-    rows = db.scalars(select(Resource).where(Resource.resource_pool_id == resource_pool_id)).all()
-    return [_resource_view(r) for r in rows]
+    stmt = select(Resource).where(Resource.resource_pool_id == resource_pool_id)
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_resource_view(r) for r in page["items"]]}
 
 
 @app.get("/deployment-managers")
-def list_deployment_managers(db: Session = Depends(get_session)):
+def list_deployment_managers(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     _ensure_phase1_topology(db)
-    return [_deployment_manager_view(d) for d in db.scalars(select(DeploymentManager)).all()]
+    page = paginate(db, select(DeploymentManager), limit, offset)
+    return {**page, "items": [_deployment_manager_view(d) for d in page["items"]]}
 
 
 @app.get("/deployment-managers/{deployment_manager_id}")
@@ -373,8 +379,9 @@ def monitor_resource(resource_id: str):
 
 
 @app.get("/alarms")
-def query_ocloud_alarms(db: Session = Depends(get_session)):
-    return [{"alarmId": str(a.alarm_id), "resourceRef": a.resource_ref, "severity": a.severity} for a in db.query(OCloudAlarm).all()]
+def query_ocloud_alarms(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    page = paginate(db, select(OCloudAlarm), limit, offset)
+    return {**page, "items": [{"alarmId": str(a.alarm_id), "resourceRef": a.resource_ref, "severity": a.severity} for a in page["items"]]}
 
 
 @app.post("/alarms/ingest")
@@ -386,11 +393,13 @@ def ingest_ocloud_alarm(resource_ref: str, severity: str, db: Session = Depends(
 
 
 @app.get("/performance")
-def query_ocloud_performance(resource_ref: str | None = None, db: Session = Depends(get_session)):
-    q = db.query(OCloudPerformanceMetric)
+def query_ocloud_performance(resource_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                              db: Session = Depends(get_session)):
+    stmt = select(OCloudPerformanceMetric)
     if resource_ref:
-        q = q.filter(OCloudPerformanceMetric.resource_ref == resource_ref)
-    return [{"resourceRef": m.resource_ref, "metricName": m.metric_name, "value": m.value} for m in q.all()]
+        stmt = stmt.where(OCloudPerformanceMetric.resource_ref == resource_ref)
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"resourceRef": m.resource_ref, "metricName": m.metric_name, "value": m.value} for m in page["items"]]}
 
 
 def _resource_type_view(t: ResourceType) -> dict:
@@ -417,8 +426,9 @@ def _deployment_manager_view(d: DeploymentManager) -> dict:
 
 
 @app.get("/inventory/subscriptions")
-def list_inventory_subscriptions(db: Session = Depends(get_session)):
+def list_inventory_subscriptions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """(GUI pass 2) Inventory-change subscriptions were write-only."""
-    return [{"subscriptionId": str(s.subscription_id), "callback": s.callback,
+    page = paginate(db, select(InventorySubscription), limit, offset)
+    return {**page, "items": [{"subscriptionId": str(s.subscription_id), "callback": s.callback,
              "consumerSubscriptionId": s.consumer_subscription_id, "resourceTypeId": s.resource_type_id}
-            for s in db.scalars(select(InventorySubscription)).all()]
+            for s in page["items"]]}

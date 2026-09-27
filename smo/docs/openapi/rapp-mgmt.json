@@ -139,6 +139,33 @@
               ],
               "title": "State"
             }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -468,12 +495,29 @@
             }
           },
           {
+            "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
               "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
               "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
               "type": "integer"
             }
           }
@@ -503,7 +547,7 @@
     },
     "/instances/{instance_id}/performance": {
       "get": {
-        "description": "Read side of report_performance above \u2014 previously write-only, so\nan operator had no way to see what an rApp had reported at all.\nNewest first, capped by `limit` (the GUI's KPI sparkline only ever\nwants the recent tail).",
+        "description": "Read side of report_performance above \u2014 previously write-only, so\nan operator had no way to see what an rApp had reported at all.\nNewest first (the GUI's KPI sparkline only ever wants the recent tail).",
         "operationId": "list_performance_reports_instances__instance_id__performance_get",
         "parameters": [
           {
@@ -517,12 +561,29 @@
             }
           },
           {
+            "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
               "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
               "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
               "type": "integer"
             }
           }

@@ -116,7 +116,7 @@ class LifecycleClient(BaseClient):
             "enableDme": enable_dme, "measuredObjClass": measured_obj_class, "dmePort": dme_port, "sourceName": source_name,
         }))
 
-    def list_feature_groups(self) -> dict:
+    def list_feature_groups(self) -> list[dict]:
         return ensure_ok(self._r1.get("/aimgf/feature-groups"))
 
     # ---------------------------------------------------------------- MLLF: deploy

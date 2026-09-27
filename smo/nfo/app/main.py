@@ -24,6 +24,7 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import LCMOperation, NFDeployment, NFDeploymentDescriptor, NFOCloudResource
 from .statemachine import DeploymentEvent, DeploymentState, NFO_FSM
@@ -246,7 +247,8 @@ def query_cluster_placement(nf_deployment_id: uuid.UUID, db: Session = Depends(g
 
 
 @app.get("/deployments")
-def list_deployments(state: str | None = None, db: Session = Depends(get_session)):
+def list_deployments(state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                      db: Session = Depends(get_session)):
     """List read over NFDeployment — every other deployment route is
     keyed by an id the caller already holds, so there was no way to see
     the workload fleet (or which deployments sit ABNORMAL) at all.
@@ -254,13 +256,15 @@ def list_deployments(state: str | None = None, db: Session = Depends(get_session
     stmt = select(NFDeployment)
     if state:
         stmt = stmt.where(NFDeployment.state == state)
-    return [{"nfDeploymentId": str(d.nf_deployment_id), "name": d.name, "state": d.state, "clusterId": d.cluster_id,
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"nfDeploymentId": str(d.nf_deployment_id), "name": d.name, "state": d.state, "clusterId": d.cluster_id,
              "nfDeploymentDescriptorId": str(d.nf_deployment_descriptor_id), "workloadRef": d.workload_ref,
-             "requiredResourceTypeId": d.required_resource_type_id} for d in db.scalars(stmt).all()]
+             "requiredResourceTypeId": d.required_resource_type_id} for d in page["items"]]}
 
 
 @app.get("/descriptors")
-def list_descriptors(package_id: uuid.UUID | None = None, db: Session = Depends(get_session)):
+def list_descriptors(package_id: uuid.UUID | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                      db: Session = Depends(get_session)):
     """(GUI pass 2) NFDeploymentDescriptors created by Onboarding's validation
     pipeline, or by AIMgF's own Runtime Lifecycle for a model runtime
     (packageId is None for those — see CreateDescriptorRequest's own docstring).
@@ -268,16 +272,20 @@ def list_descriptors(package_id: uuid.UUID | None = None, db: Session = Depends(
     stmt = select(NFDeploymentDescriptor)
     if package_id:
         stmt = stmt.where(NFDeploymentDescriptor.package_id == package_id)
-    return [{"nfDeploymentDescriptorId": str(d.nf_deployment_descriptor_id),
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"nfDeploymentDescriptorId": str(d.nf_deployment_descriptor_id),
              "packageId": str(d.package_id) if d.package_id else None, "name": d.name,
              "requiredResourceTypeId": d.required_resource_type_id, "workloadTemplate": d.workload_template}
-            for d in db.scalars(stmt).all()]
+            for d in page["items"]]}
 
 
 @app.get("/deployments/{nf_deployment_id}/operations")
-def list_deployment_operations(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
+def list_deployment_operations(nf_deployment_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
+                                db: Session = Depends(get_session)):
     """(GUI pass 2) A deployment's LCM operation history (Instantiate/Heal/Scale/
     Terminate); only a single operation id could be looked up before.
     """
-    return [{"operationId": str(o.operation_id), "operationType": o.operation_type, "status": o.status}
-            for o in db.scalars(select(LCMOperation).where(LCMOperation.nf_deployment_id == nf_deployment_id)).all()]
+    stmt = select(LCMOperation).where(LCMOperation.nf_deployment_id == nf_deployment_id)
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"operationId": str(o.operation_id), "operationType": o.operation_type, "status": o.status}
+            for o in page["items"]]}

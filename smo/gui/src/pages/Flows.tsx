@@ -3,7 +3,7 @@ import { useQueries } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { smo } from "../api/client";
-import { POLL, useSmo } from "../api/hooks";
+import { POLL, unwrapPage, useSmo } from "../api/hooks";
 import type {
   AnalyticsProducer, AnalyticsReport, AnalyticsSubscription, ConfigJob, ConfigJobSummary, DataJob, DataOffer, DmeType, EiType,
   FaultReport, InferenceJob, Instance, InstanceSummary, Intent, IntentReport, MlmfReport, MlmfSubscription, Model, ModelLifecycle,
@@ -146,7 +146,7 @@ function Flow02() {
   const reportLists = useQueries({
     queries: (subs.data ?? []).map((s) => ({
       queryKey: ["smo", `/aimgf/mlmf/subscriptions/${s.subscriptionId}/reports`, {}],
-      queryFn: () => smo<MlmfReport[]>(`/aimgf/mlmf/subscriptions/${s.subscriptionId}/reports`),
+      queryFn: async () => unwrapPage<MlmfReport[]>(await smo<unknown>(`/aimgf/mlmf/subscriptions/${s.subscriptionId}/reports`)),
       refetchInterval: POLL.lists,
     })),
   });

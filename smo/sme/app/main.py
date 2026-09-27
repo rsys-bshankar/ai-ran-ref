@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.timeutil import as_utc
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
 
 from .models import EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile, TrustedInvoker
@@ -586,26 +587,37 @@ def _service_view(r: ServiceProfile) -> dict:
 # invokers expose their id and public key, never the onboarding-secret hash.
 
 @app.get("/provider-registrations")
-def list_providers(db: Session = Depends(get_session)):
-    return [{"apfId": p.apf_id, "providerDomainInfo": p.provider_domain_info,
+def list_providers(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    page = paginate(db, select(ProviderRegistration), limit, offset)
+    return {**page, "items": [{"apfId": p.apf_id, "providerDomainInfo": p.provider_domain_info,
              "serviceCount": len(db.scalars(select(ServiceProfile).where(ServiceProfile.producer_id == p.apf_id)).all())}
-            for p in db.scalars(select(ProviderRegistration)).all()]
+            for p in page["items"]]}
 
 
 @app.get("/invoker-registrations")
-def list_invokers(db: Session = Depends(get_session)):
-    return [{"apiInvokerId": i.api_invoker_id, "apiInvokerPublicKey": i.public_key,
+def list_invokers(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    page = paginate(db, select(InvokerRegistration), limit, offset)
+    return {**page, "items": [{"apiInvokerId": i.api_invoker_id, "apiInvokerPublicKey": i.public_key,
              "trusted": db.get(TrustedInvoker, i.api_invoker_id) is not None}
-            for i in db.scalars(select(InvokerRegistration)).all()]
+            for i in page["items"]]}
 
 
 @app.get("/trusted-invokers")
-def list_trusted_invokers(db: Session = Depends(get_session)):
-    return [_trusted_invoker_view(ti) for ti in db.scalars(select(TrustedInvoker)).all()]
+def list_trusted_invokers(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    page = paginate(db, select(TrustedInvoker), limit, offset)
+    return {**page, "items": [_trusted_invoker_view(ti) for ti in page["items"]]}
 
 
 @app.get("/capif-events/v1/{subscriber_id}/subscriptions")
-def list_event_subscriptions(subscriber_id: str, db: Session = Depends(get_session)):
-    return [{"subscriptionId": str(s.subscription_id), "subscriberId": s.subscriber_id, "eventTypes": s.event_types,
+def list_event_subscriptions(subscriber_id: str, limit: int = PageLimit, offset: int = PageOffset,
+                              db: Session = Depends(get_session)):
+    """The real TS29222_CAPIF_Events_API.yaml only ever defines POST on
+    this path — no GET/list operation exists in the real spec at all, so
+    this is this build's own GUI-pass addition, not a spec-mandated
+    shape: free to follow this build's own pagination convention.
+    """
+    stmt = select(ServiceEventSubscription).where(ServiceEventSubscription.subscriber_id == subscriber_id)
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"subscriptionId": str(s.subscription_id), "subscriberId": s.subscriber_id, "eventTypes": s.event_types,
              "callbackUri": s.callback_uri, "apiIds": s.api_ids}
-            for s in db.scalars(select(ServiceEventSubscription).where(ServiceEventSubscription.subscriber_id == subscriber_id)).all()]
+            for s in page["items"]]}

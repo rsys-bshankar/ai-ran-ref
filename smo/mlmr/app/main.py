@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import MODEL_DOMAINS, MLModel, MLModelCoordinationGroup, ModelArtifact
 
@@ -115,11 +116,13 @@ def register_model(body: RegisterModelRequest, db: Session = Depends(get_session
 
 
 @app.get("/models")
-def discover_models(model_type: str | None = None, db: Session = Depends(get_session)):
+def discover_models(model_type: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                     db: Session = Depends(get_session)):
     stmt = select(MLModel)
     if model_type:
         stmt = stmt.where(MLModel.model_type == model_type)
-    return [_model_view(m) for m in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_model_view(m) for m in page["items"]]}
 
 
 @app.get("/models/{model_id}")
@@ -271,17 +274,18 @@ def create_coordination_group(body: CreateCoordinationGroupRequest, db: Session 
 
 
 @app.get("/coordination-groups")
-def list_coordination_groups(db: Session = Depends(get_session)):
+def list_coordination_groups(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """Read side of create_coordination_group. Also AIMgF's own read path
     for group-retrain propagation (report_performance) — it has no direct
     ORM access to MLModelCoordinationGroup anymore, so it lists groups
     through this route and filters in Python, exactly as it did in-process
     before the split.
     """
-    return [{"groupId": str(g.group_id), "groupType": g.group_type,
+    page = paginate(db, select(MLModelCoordinationGroup), limit, offset)
+    return {**page, "items": [{"groupId": str(g.group_id), "groupType": g.group_type,
              "memberModelIds": [str(m) for m in g.member_model_ids], "memberUseCases": g.member_use_cases or [],
              "sharedFeaturePipelineRef": g.shared_feature_pipeline_ref, "retrainPropagation": g.retrain_propagation}
-            for g in db.scalars(select(MLModelCoordinationGroup)).all()]
+            for g in page["items"]]}
 
 
 def _model_view(m: MLModel) -> dict:

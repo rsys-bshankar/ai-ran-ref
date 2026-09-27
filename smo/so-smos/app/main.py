@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .dispatch import execute_order
 from .models import ServiceOrder
@@ -75,8 +76,9 @@ def cancel_order(order_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 @app.get("/orders")
-def list_service_orders(db: Session = Depends(get_session)):
+def list_service_orders(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """List read over ServiceOrder — only GET-by-id existed. Each order's
     own steps come back whole, same as query_order_status."""
-    return [{"orderId": str(o.order_id), "scope": o.scope, "steps": o.steps, "homingDecision": o.homing_decision,
-             "rmihRegistration": o.rmih_registration} for o in db.scalars(select(ServiceOrder)).all()]
+    page = paginate(db, select(ServiceOrder), limit, offset)
+    return {**page, "items": [{"orderId": str(o.order_id), "scope": o.scope, "steps": o.steps, "homingDecision": o.homing_decision,
+             "rmihRegistration": o.rmih_registration} for o in page["items"]]}
