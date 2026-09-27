@@ -31,17 +31,16 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import httpx
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from .config import Settings, settings as default_settings
 from .db import AuditEntry, Database, GuiUser
 from .rbac import MODULES, RULES, Role, User, decide
 from .security import decode_jwt, hash_password, issue_jwt, verify_password
 from .smo_client import R1Gateway, SmoAuthError
-from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 log = logging.getLogger("smo-gui-bff")
 
@@ -76,6 +75,27 @@ SECURITY_HEADERS = {
 
 # Display order of the health grid: R1 first (every other probe goes through it).
 STATUS_MODULES = ["r1-termination", *MODULES]
+
+# Wave 3 (cross-cutting standardization) — Pagination. Every SMO backend
+# module shares shared/smo_shared/pagination.py's paginate() for this same
+# {items, total, limit, offset} shape; gui-bff can't import it — its own
+# CI job (.github/workflows/smo-tests.yml's "Operator GUI BFF tests")
+# deliberately never installs smo_shared, unlike every backend module's
+# job, so gui-bff keeps its own small local conventions instead (same
+# reason it already has its own _problem()/_problem_exception() rather
+# than smo_shared.errors). One route here needs it, so it's inlined
+# rather than requiring smo_shared just for this.
+PageLimit = Query(100, ge=1, le=500, description="Max rows to return (1-500).")
+PageOffset = Query(0, ge=0, description="Rows to skip before the first one returned.")
+
+
+def _paginate(db, stmt, limit: int, offset: int) -> dict:
+    # `db` is a real sqlalchemy.orm.Session (db.py's own Database.session()) —
+    # left untyped here since this module's own `Session` name (below) is a
+    # different, unrelated RBAC dataclass.
+    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
+    rows = db.scalars(stmt.limit(limit).offset(offset)).all()
+    return {"items": rows, "total": total, "limit": limit, "offset": offset}
 
 
 def _problem_body(status: int, title: str, detail: str | None = None) -> dict:
@@ -469,7 +489,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         if action:
             stmt = stmt.where(AuditEntry.action == action)
         with app.state.db.session() as s:
-            page = paginate(s, stmt, limit, offset)
+            page = _paginate(s, stmt, limit, offset)
             return {**page, "items": [{"id": e.id, "at": e.at.isoformat(), "username": e.username, "role": e.role, "action": e.action,
                      "method": e.method, "path": e.path, "statusCode": e.status_code, "detail": e.detail}
                     for e in page["items"]]}
