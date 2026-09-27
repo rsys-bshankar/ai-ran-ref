@@ -598,8 +598,8 @@ CREATE TABLE training_job (
   producer_id                      TEXT NOT NULL,
   required_data                       JSONB,
   validation_criteria                   JSONB,
-  status                                   TEXT NOT NULL DEFAULT 'PENDING'
-                                             CHECK (status IN ('PENDING','RUNNING','SUSPENDED','COMPLETED','FAILED','CANCELLED')),  -- Wave 3: SUSPENDED, SPEC_AUDIT.md's AI/ML Workflow section item 6
+  status                                   TEXT NOT NULL DEFAULT 'NOT_STARTED'
+                                             CHECK (status IN ('NOT_STARTED','IN_PROGRESS','SUSPENDED','FINISHED','FAILED','CANCELLED')),  -- SPEC_AUDIT.md's requestStatus vocabulary finding, closed (FAILED is this build's own honest addition beyond the real spec; CANCELLING is never produced)
   notification_uri                          TEXT,
   run_id                                       TEXT,  -- NEW section 5: trainingmgr's own TrainingJob.run_id
   training_dataset                                TEXT, -- NEW section 5

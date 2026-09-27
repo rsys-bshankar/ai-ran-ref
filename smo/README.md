@@ -138,13 +138,7 @@ audit to the one still-unaudited module (A1 Related — no spec file
 exists yet) and the WG4/WG5 YANGs (real, unstarted work); DME's own
 Producer/Type conflation finding (`SPEC_AUDIT.md`'s new DME vs. ICS
 section — a real, moderate-to-large breaking schema change, audited
-and left open, not attempted without being asked); RAN Analytics's own
-`analytics_type` enum constraint (real but moderate/breaking, every
-real caller's value is informal shorthand, not a spec wire value) and
-AIMgF's own `requestStatus` vocabulary mismatch (adopting `SUSPENDED`
-during Wave 2 didn't rename the rest of the vocabulary, a real
-breaking change deferred deliberately) — both audited, named, and left
-for a deliberate follow-up rather than guessed at; AIMgF's own
+and left open, not attempted without being asked); AIMgF's own
 `MLMFSubscription` gap (no callback field, no unsubscribe route —
 audited during Wave 3's Subscriptions slice, building either would be
 new functionality, not a field-name unification, so out of that

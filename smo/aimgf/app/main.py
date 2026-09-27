@@ -226,7 +226,7 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
     job = TrainingJob(model_id=body.modelId, model_coordination_group_id=body.modelCoordinationGroupId,
                        producer_id=body.producerId, required_data=body.requiredData,
                        validation_criteria=body.validationCriteria, notification_uri=body.notificationUri,
-                       status="RUNNING", run_id=body.runId, training_dataset=body.trainingDataset,
+                       status="IN_PROGRESS", run_id=body.runId, training_dataset=body.trainingDataset,
                        validation_dataset=body.validationDataset, consumer_rapp_id=body.consumerRappId,
                        producer_rapp_id=body.producerRappId, ml_training_type=ml_training_type)
     db.add(job)
@@ -237,7 +237,7 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
             existing_job_id = lifecycle.training_job_id
             if existing_job_id is not None:
                 orphaned = db.get(TrainingJob, existing_job_id)
-                if orphaned is not None and orphaned.status == "RUNNING":
+                if orphaned is not None and orphaned.status == "IN_PROGRESS":
                     orphaned.status = "CANCELLED"
         else:
             _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_TRAINING)
@@ -273,16 +273,16 @@ def suspend_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessi
     plain status flip, not a third state machine — the two real FSMs
     Wave 2 built (ModelLifecycleState/RuntimeLifecycleState) operate one
     level up and are untouched by a job-level suspend/resume, the same
-    way job.status's other transitions (RUNNING -> COMPLETED/FAILED/
+    way job.status's other transitions (IN_PROGRESS -> FINISHED/FAILED/
     CANCELLED) already don't reach into ModelLifecycleState either —
     only an explicit `POST /models/{id}/advance` call does that. Only
-    legal from RUNNING, matching the reference's own request-flag
+    legal from IN_PROGRESS, matching the reference's own request-flag
     semantics (a suspend request only makes sense against an in-flight job).
     """
     job = db.get(TrainingJob, training_job_id)
     if job is None:
         raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
-    if job.status != "RUNNING":
+    if job.status != "IN_PROGRESS":
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot suspend a training job in status {job.status}")
     job.status = "SUSPENDED"
@@ -298,7 +298,7 @@ def resume_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessio
     if job.status != "SUSPENDED":
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot resume a training job in status {job.status}")
-    job.status = "RUNNING"
+    job.status = "IN_PROGRESS"
     db.commit()
     return {"trainingJobId": str(job.training_job_id), "status": job.status}
 
@@ -746,7 +746,7 @@ def _trigger_group_retrain(db: Session, group: dict) -> list[uuid.UUID]:
         lifecycle = _get_or_create_lifecycle(db, member_id)
         if lifecycle.model_lifecycle_state != ModelLifecycleState.PROMOTED:
             continue
-        job = TrainingJob(model_id=member_id, producer_id="aimgf:group-retrain", status="RUNNING", ml_training_type="RE_TRAINING")
+        job = TrainingJob(model_id=member_id, producer_id="aimgf:group-retrain", status="IN_PROGRESS", ml_training_type="RE_TRAINING")
         db.add(job)
         db.flush()
         _fire_model_event(db, member_id, ModelLifecycleEvent.CREATE_TRAINING)
