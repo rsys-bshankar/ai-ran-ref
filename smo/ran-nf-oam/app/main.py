@@ -24,6 +24,7 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.timeutil import as_utc
+from smo_shared.openapi_security import apply_r1_gateway_security
 
 from .models import Alarm, CMSchemaCache, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from .netconf_client import send_edit_config
@@ -43,6 +44,7 @@ from .statemachine import (
 )
 
 app = FastAPI(title="RAN NF OAM SMOS")
+apply_r1_gateway_security(app)
 
 MISSED_HEARTBEAT_THRESHOLD = datetime.timedelta(seconds=90)
 

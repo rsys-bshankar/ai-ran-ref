@@ -31,10 +31,12 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
+from smo_shared.openapi_security import apply_r1_gateway_security
 
 from .models import AssuranceMonitor, RemedialAction
 
 app = FastAPI(title="SA SMOS")
+apply_r1_gateway_security(app)
 
 
 @app.get("/health")

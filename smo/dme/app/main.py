@@ -20,10 +20,12 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
+from smo_shared.openapi_security import apply_r1_gateway_security
 
 from .models import DELIVERY_METHODS, LIFECYCLE_STAGES, SOURCE_DOMAINS, DataJob, DataOffer, DataRecord, DmeActionRecord, DMEType, DMETypeSubscription
 
 app = FastAPI(title="DME — Data Management and Exposure")
+apply_r1_gateway_security(app)
 
 _r1 = R1Client()
 

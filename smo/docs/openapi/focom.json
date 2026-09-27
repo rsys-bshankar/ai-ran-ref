@@ -90,11 +90,18 @@
         "title": "ValidationError",
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "r1BearerAuth": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
     }
   },
   "info": {
     "title": "FOCOM SMOS (O2ims)",
-    "version": "0.1.0"
+    "version": "1.0.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -671,5 +678,10 @@
         "summary": "Export Topology"
       }
     }
-  }
+  },
+  "security": [
+    {
+      "r1BearerAuth": []
+    }
+  ]
 }

@@ -81,11 +81,18 @@
         "title": "ValidationError",
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "r1BearerAuth": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
     }
   },
   "info": {
     "title": "SO SMOS",
-    "version": "0.1.0"
+    "version": "1.0.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -234,5 +241,10 @@
         "summary": "Cancel Order"
       }
     }
-  }
+  },
+  "security": [
+    {
+      "r1BearerAuth": []
+    }
+  ]
 }

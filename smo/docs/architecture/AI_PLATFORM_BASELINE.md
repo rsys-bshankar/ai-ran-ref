@@ -258,6 +258,45 @@ Frozen wave order — do not reorder without updating this document first:
     deregistered RMIH now genuinely ends every Intent still addressed
     to it, matching real NRM containment literally. GUI, SDK, and the
     demo runbook's own step 10 all updated to match.
+  - **Cross-cutting standardization, slice 1 of 3 — OAuth2/JWT +
+    Versioning** (done): grounded against the real code first —
+    `r1-termination/app/main.py`'s own `_authorized()` already does real
+    RFC 7662 introspection against SME's token issuer on every proxied
+    request (OPEN_ITEMS.md section 2's "no real OAuth2/token
+    enforcement" was already closed), but not one of the 17 R1-facing
+    services' generated OpenAPI specs declared any security scheme, and
+    every one still carried FastAPI's untouched default
+    `info.version: "0.1.0"`. New `shared/smo_shared/openapi_security.py`
+    declares an `r1BearerAuth` HTTP-bearer scheme and a real
+    `info.version: "1.0.0"` on each of the 17 in-scope specs, purely at
+    the OpenAPI-schema level — no enforcing dependency added to any
+    individual service (they still all trust r1-termination's gateway,
+    exactly as before; this only makes that already-real interface
+    honest in its own contract). SME's own `/oauth2/token` and
+    `/oauth2/introspect`, and r1-termination's own `/health` and
+    `/bootstrap`, are the declared exemptions. `mock-near-rt-ric`/
+    `mock-o1-adaptor` are deliberately excluded — they simulate external
+    O1/A1 southbound endpoints with their own separate real auth model,
+    not R1-facing services. Zero runtime behavior change: every
+    service's full unit suite (574 tests across 18 modules) and the
+    full `tests_integration/` suite pass unchanged.
+  - **Cross-cutting standardization, slice 2 of 3 — Error Schema**
+    (planned next): 47 raw `HTTPException(status_code=..., detail="...")`
+    call sites across 12 files bypass the existing RFC 7807
+    `ProblemDetails`/`framework_error()` convention (`shared/smo_shared/
+    errors.py`) — FOCOM uses it not at all. Asked rather than guessed
+    given the real breaking-change cost (some existing callers read
+    `resp.json()["detail"]` as a bare string for these specific
+    endpoints): confirmed, fix all 47 now.
+  - **Cross-cutting standardization, slice 3 of 3 — Pagination +
+    Subscriptions** (planned after that): real limit/offset pagination
+    (`{items, total, limit, offset}`) on every list endpoint across
+    ~16 services — a real breaking change to GUI/SDK/tests_integration,
+    confirmed rather than left as a documented-only finding. Subscription
+    callback field names are unified only where no real external spec
+    already fixes the name (DME/MDAF/Intent Service/A1-Related/AIMgF);
+    FOCOM's `callback` (real O2ims) and SME's `callbackUri` (real CAPIF)
+    stay as they are.
 
 Reordering Wave 3 ahead of Wave 1/2, or starting new R1 contract design
 before the ownership split is merged, is exactly the redesign-it-twice
