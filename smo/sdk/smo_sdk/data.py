@@ -29,8 +29,27 @@ class DataClient(BaseClient):
     def discover_types(self, data_category: str | None = None) -> list[dict]:
         return ensure_ok(self._r1.get("/dme/dme-types", params={"data_category": data_category}))
 
+    def list_producers(self) -> list[dict]:
+        """The real ICS `GET /data-producer/v1/info-producers` — a
+        producer is now its own real entity, not implied by a DmeType row.
+        """
+        return ensure_ok(self._r1.get("/dme/production-capabilities"))
+
+    def get_producer(self, producer_id: str) -> dict:
+        return ensure_ok(self._r1.get(f"/dme/production-capabilities/{producer_id}"))
+
     def deregister_producer(self, producer_id: str) -> None:
+        """Removes only this producer and its type links — the types it
+        supported stay registered (see `delete_type`) if any other
+        producer still supports them, or simply go DISABLED if not.
+        """
         ensure_ok(self._r1.delete("/dme/production-capabilities", params={"producer_id": producer_id}))
+
+    def delete_type(self, dme_type_id: uuid.UUID | str) -> None:
+        """The real ICS `DELETE /data-producer/v1/info-types/{id}` —
+        409s if any producer still supports this type.
+        """
+        ensure_ok(self._r1.delete(f"/dme/dme-types/{dme_type_id}"))
 
     def query_producer_status(self, producer_id: str) -> dict:
         return ensure_ok(self._r1.get(f"/dme/production-capabilities/{producer_id}/status"))

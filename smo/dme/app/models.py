@@ -19,6 +19,23 @@ SOURCE_DOMAINS = {"LIVE_RAN", "DIGITAL_TWIN"}
 LIFECYCLE_STAGES = {"TRAINING", "TESTING", "EMULATION", "INFERENCE", "CLOSED_LOOP_FEEDBACK"}
 
 
+class DMEProducer(Base):
+    """SPEC_AUDIT.md — DME vs. the real ICS API: ICS's own real Information
+    Producer entity (`producer_registration_info` — `PUT
+    /data-producer/v1/info-producers/{infoProducerId}`), previously
+    conflated into `DMEType` itself. `producer_id` is the caller's own
+    chosen identity (matching ICS's own path-param convention, and this
+    build's existing "producer_id is the caller's own identity string"
+    pattern — e.g. RAppInstance.oauth_client_id).
+    """
+
+    __tablename__ = "dme_producer"
+
+    producer_id: Mapped[str] = mapped_column(String, primary_key=True)
+    producer_health_callback_url: Mapped[str] = mapped_column(String, nullable=False)
+    job_callback_url: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class DMEType(Base):
     __tablename__ = "dme_type"
     __table_args__ = (UniqueConstraint("namespace", "name", "version"),)
@@ -28,11 +45,8 @@ class DMEType(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     version: Mapped[str] = mapped_column(String, nullable=False)
     type_name: Mapped[str] = mapped_column(String, nullable=False)
-    producer_id: Mapped[str] = mapped_column(String, nullable=False)
     data_production_schema: Mapped[dict] = mapped_column(JSON, nullable=False)
     collection_spec: Mapped[dict | None] = mapped_column(JSON)
-    producer_health_callback_url: Mapped[str] = mapped_column(String, nullable=False)
-    job_callback_url: Mapped[str] = mapped_column(String, nullable=False)  # NEW section 5: ICS's own InfoProducer.jobCallbackUrl — distinct from the health-check URL
     # Wave 3: source provenance, docs/ownership/DME_OWNERSHIP.md's
     # multi-vendor/multi-Digital-Twin principle. source_context is a
     # flexible dict (vendor/product/release/instance/node/cell) rather
@@ -47,6 +61,22 @@ class DMEType(Base):
         derived from our internal UUID PK. Foundational Platform LLD section 3.1.
         """
         return {"namespace": self.namespace, "name": self.name, "version": self.version}
+
+
+class DMEProducerType(Base):
+    """The real many-to-many relationship ICS's own `producer_registration_info.
+    supported_info_types` models — a producer supports zero or more types,
+    and (`consumer_information_type.no_of_producers`) a type may be
+    supported by zero or more producers. SPEC_AUDIT.md's own closed
+    finding: this build's `DMEType` used to conflate identity with its
+    single registering producer, making a second producer for the same
+    type structurally impossible.
+    """
+
+    __tablename__ = "dme_producer_type"
+
+    producer_id: Mapped[str] = mapped_column(String, ForeignKey("dme_producer.producer_id", ondelete="CASCADE"), primary_key=True)
+    dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("dme_type.dme_type_id", ondelete="CASCADE"), primary_key=True)
 
 
 class DMETypeSubscription(Base):
