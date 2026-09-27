@@ -657,6 +657,42 @@ def test_terminate_data_job_succeeds_even_if_the_producer_stop_fails(client, mon
     assert resp.status_code == 204
 
 
+def test_terminate_data_jobs_for_consumer_deletes_every_matching_job(client, monkeypatch):
+    """SPEC_AUDIT.md's DME vs. real ICS finding: the real
+    DELETE /data-consumer/v1/info-jobs?owner=X (ics-api.yaml's own
+    deleteJobsForOwner) — every job one consumer owns torn down in one
+    call, including the same per-job producer-stop notification
+    terminate_data_job already fires, and leaving a different
+    consumer's own job alone.
+    """
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    job1 = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    }).json()
+    job2 = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    }).json()
+    other = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-2",
+    }).json()
+
+    calls = []
+    monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None: calls.append(url))
+
+    resp = client.delete("/data-jobs", params={"consumer_id": "rapp-1"})
+    assert resp.status_code == 204
+    assert sorted(calls) == sorted([
+        f"http://ran-nf-oam:8000/dme-jobs/{job1['dataJobId']}", f"http://ran-nf-oam:8000/dme-jobs/{job2['dataJobId']}",
+    ])
+
+    assert client.get(f"/data-jobs/{job1['dataJobId']}/status").status_code == 404
+    assert client.get(f"/data-jobs/{job2['dataJobId']}/status").status_code == 404
+    assert client.get(f"/data-jobs/{other['dataJobId']}/status").status_code == 200
+
+
 def test_register_dme_type_exposes_job_callback_url(client):
     client.post("/production-capabilities", json=register_type_body())
     resp = client.get("/dme-types")

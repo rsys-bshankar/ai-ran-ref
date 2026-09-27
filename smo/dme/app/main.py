@@ -408,6 +408,24 @@ def terminate_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session
         _stop_job_at_producer(dme_type, data_job_id)
 
 
+@app.delete("/data-jobs", status_code=204)
+def terminate_data_jobs_for_consumer(consumer_id: str, db: Session = Depends(get_session)):
+    """SPEC_AUDIT.md's DME vs. real ICS finding: the real
+    `DELETE /data-consumer/v1/info-jobs?owner=X` (ics-api.yaml's own
+    `deleteJobsForOwner`) — every job one consumer owns, torn down in
+    one call, not one `terminate_data_job` at a time. Same per-job
+    teardown as that route (producer notification included), just
+    fanned out across every matching job.
+    """
+    jobs = db.scalars(select(DataJob).where(DataJob.consumer_id == consumer_id)).all()
+    for job in jobs:
+        dme_type = db.get(DMEType, job.dme_type_id)
+        db.delete(job)
+        db.commit()
+        if dme_type is not None:
+            _stop_job_at_producer(dme_type, job.data_job_id)
+
+
 @app.post("/offers", status_code=201)
 def create_data_offer(body: DataOfferRequest, db: Session = Depends(get_session)):
     if not set(body.dataDeliveryMethods) <= DELIVERY_METHODS:
