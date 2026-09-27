@@ -26,7 +26,10 @@ it orchestrates all of those.
 
 **Does NOT own**
 - Model artifacts, versioning, coordination groups → **MLMR**
-- Model loading/activation/deployment tracking → **MLLF**
+- The deploy-request gate / node-group targeting → **MLLF** (AIMgF's
+  own `RuntimeLifecycleState`, jointly with NFO, is the load/unload/
+  activate/deactivate state machine itself — see the Wave 3 correction
+  in `docs/ownership/MLLF_OWNERSHIP.md`)
 - Data, datasets, feature sets → **DME**
 - Analytics reports, predictions, drift → **MDAF**
 - Business logic → **rApps**
@@ -43,17 +46,23 @@ it orchestrates all of those.
 
 **Does NOT own**
 - Lifecycle state, training/validation/emulation/inference requests → **AIMgF**
-- Loading, activation, deployment tracking → **MLLF**
+- The deploy-request gate / node-group targeting → **MLLF**; the actual
+  load/unload/activate/deactivate state machine → **AIMgF** (jointly
+  with NFO), see `docs/ownership/MLLF_OWNERSHIP.md`'s Wave 3 correction
 
-## MLLF (ML Loading Function)
+## MLLF (ML Loading Function) — scope corrected Wave 3, see `docs/ownership/MLLF_OWNERSHIP.md`
 
 **Owns**
-- Model loading / unloading
-- Model activation / deactivation
-- Deployment record and tracking
+- The deploy-request gate (requires AIMgF's `ModelLifecycleState`
+  CERTIFIED/PROMOTED) and `clearedNodeGroups` targeting
 
 **Does NOT own**
 - Training, validation, repository → **AIMgF** / **MLMR**
+- The load/unload/activate/deactivate state machine itself → **AIMgF**
+  (jointly with NFO) via `RuntimeLifecycleState` — Wave 1 described this
+  as a future MLLF-owned surface before Wave 2's `RuntimeLifecycleState`
+  existed to answer it; building a second one here would duplicate it,
+  not close a gap.
 
 ## MDAF (Management Data Analytics Function)
 
@@ -143,8 +152,8 @@ or model:
 | Validation request | ✅ | ❌ | ❌ |
 | Emulation request | ✅ | ❌ | ❌ |
 | Inference runtime request | ✅ | ❌ | ❌ |
-| Load model | ❌ | ❌ | ✅ |
-| Activate model | ❌ | ❌ | ✅ |
+| Load/activate model (RuntimeLifecycleState, jointly w/ NFO — Wave 2) | ✅ | ❌ | ❌ |
+| Deploy-request gate / node-group targeting | ❌ | ❌ | ✅ |
 | Version control | ❌ | ✅ | ❌ |
 | NFO invocation | ✅ | ❌ | ❌ |
 
@@ -154,7 +163,7 @@ One sentence each, to prevent almost every future ownership dispute:
 
 - **AIMgF** = state + decisions.
 - **MLMR** = model truth.
-- **MLLF** = deployment truth.
+- **MLLF** = the deploy-request gate + node-group targeting (not deployment/runtime truth — that's AIMgF+NFO's `RuntimeLifecycleState`).
 - **NFO** = runtime truth.
 - **MDAF** = analytics truth.
 - **DME** = data truth, plus O1 action-mediation (not O1 protocol dispatch — that's `ran-nf-oam`'s).
