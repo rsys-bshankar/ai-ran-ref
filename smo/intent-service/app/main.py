@@ -111,7 +111,12 @@ class RegisterRmihRequest(BaseModel):
     # typed sub-schema, matching this build's own pre-existing looseness
     # here; only the field `_matching_rmihs` actually reads was renamed.
     capabilities: list[dict]
-    notificationCallbackUri: str
+    # Wave 3 (cross-cutting standardization, Subscriptions): renamed from
+    # notificationCallbackUri — not a real TS28312_IntentNrm.yaml field
+    # name (grepped: the real spec never names this callback at all),
+    # unified with every other subscription-shaped resource's own
+    # callback field (DME/A1-Related's own notificationDestination).
+    notificationDestination: str
     # SPEC_AUDIT.md item 5: TS28312_IntentNrm.yaml's IntentHandlingScope is
     # a closed 2-value enum (RAN/CN) — was untyped JSON, never set by any
     # caller. None means "no declared scope restriction" (matches anything).
@@ -147,7 +152,7 @@ def create_intent(body: CreateIntentRequest, db: Session = Depends(get_session))
     db.commit()
 
     try:
-        httpx.post(fn.notification_callback_uri, json={
+        httpx.post(fn.notification_destination, json={
             "intentId": str(intent.intent_id), "expectationObjectTypes": sorted(expectation_object_types),
             "priority": intent.intent_priority, "rmioId": intent.rmio_id,
         }, timeout=5.0)
@@ -268,7 +273,7 @@ def register_intent_handling_function(body: RegisterRmihRequest, db: Session = D
     if not is_framework_internal_identity(body.rmihId):
         raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail="external callers may never hold an rmihId (D-SEC-POLICY-1)")
     fn = IntentHandlingFunction(rmih_id=body.rmihId, sme_service_id=body.smeServiceId, intent_handling_capability_list=body.capabilities,
-                                 notification_callback_uri=body.notificationCallbackUri, intent_handling_scope=body.intentHandlingScope)
+                                 notification_destination=body.notificationDestination, intent_handling_scope=body.intentHandlingScope)
     db.add(fn)
     db.commit()
     return {"rmihId": fn.rmih_id, "intentHandlingScope": fn.intent_handling_scope}
@@ -295,7 +300,7 @@ def list_intent_handling_functions(limit: int = PageLimit, offset: int = PageOff
     Intent can actually be dispatched to was otherwise invisible."""
     page = paginate(db, select(IntentHandlingFunction), limit, offset)
     return {**page, "items": [{"rmihId": fn.rmih_id, "smeServiceId": fn.sme_service_id, "capabilities": fn.intent_handling_capability_list,
-             "notificationCallbackUri": fn.notification_callback_uri, "intentHandlingScope": fn.intent_handling_scope}
+             "notificationDestination": fn.notification_destination, "intentHandlingScope": fn.intent_handling_scope}
             for fn in page["items"]]}
 
 

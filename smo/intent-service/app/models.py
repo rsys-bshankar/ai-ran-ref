@@ -45,4 +45,4 @@ class IntentHandlingFunction(Base):
     # Closes the Intent-to-RMIH matching/dispatch gap — CreateIntent POSTs
     # here on a capability match, same established pattern as DME's
     # producerHealthCallbackUrl.
-    notification_callback_uri: Mapped[str] = mapped_column(String, nullable=False)
+    notification_destination: Mapped[str] = mapped_column(String, nullable=False)

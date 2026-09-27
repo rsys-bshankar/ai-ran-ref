@@ -47,10 +47,10 @@ class IntentClient(BaseClient):
         return ensure_ok(self._r1.get("/intent-service/intent-reports", params={"intent_id": intent_id}))
 
     def register_intent_handling_function(self, rmih_id: str, sme_service_id: str, capabilities: list[dict],
-                                           notification_callback_uri: str, intent_handling_scope: list[str] | None = None) -> dict:
+                                           notification_destination: str, intent_handling_scope: list[str] | None = None) -> dict:
         return ensure_ok(self._r1.post("/intent-service/intent-handling-functions", json={
             "rmihId": rmih_id, "smeServiceId": sme_service_id, "capabilities": capabilities,
-            "notificationCallbackUri": notification_callback_uri, "intentHandlingScope": intent_handling_scope,
+            "notificationDestination": notification_destination, "intentHandlingScope": intent_handling_scope,
         }))
 
     def deregister_intent_handling_function(self, rmih_id: str) -> None:

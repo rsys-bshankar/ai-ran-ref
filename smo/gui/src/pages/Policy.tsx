@@ -203,7 +203,7 @@ function Handlers() {
         { header: "RMIH", render: (h) => <strong>{h.rmihId}</strong> },
         { header: "Supported object types", render: (h) => h.capabilities.map((c) => String(c.supportedExpectationObjectType ?? "?")).join(", ") },
         { header: "Scope", render: (h) => h.intentHandlingScope?.join(", ") ?? "any" },
-        { header: "Callback", render: (h) => <code className="small">{h.notificationCallbackUri}</code> },
+        { header: "Callback", render: (h) => <code className="small">{h.notificationDestination}</code> },
         { header: "", className: "actions", render: (h) => <ActionButton label="Deregister" tone="danger" confirm={`Deregister ${h.rmihId}?`}
           action={{ method: "DELETE", path: `/intent-service/intent-handling-functions/${h.rmihId}`, success: "Handler deregistered" }} /> },
       ]} />
@@ -220,7 +220,7 @@ function Handlers() {
           </div>
           <ActionButton label="Register handler" disabled={!f.rmihId || !f.types} action={{
             method: "POST", path: "/intent-service/intent-handling-functions", success: "Handler registered",
-            json: { rmihId: f.rmihId, smeServiceId: f.smeServiceId, notificationCallbackUri: f.callback,
+            json: { rmihId: f.rmihId, smeServiceId: f.smeServiceId, notificationDestination: f.callback,
               capabilities: splitList(f.types).map((t) => ({ supportedExpectationObjectType: t })), intentHandlingScope: f.scope ? [f.scope] : null },
           }} />
         </details>
