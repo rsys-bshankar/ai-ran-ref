@@ -142,6 +142,8 @@ function IntentActions({ intent }: { intent: Intent }) {
 }
 
 function CreateIntent() {
+  const handlers = useSmo<Rmih[]>("/intent-service/intent-handling-functions");
+  const [rmihId, setRmihId] = useState("");
   const [objectType, setObjectType] = useState("RAN_SUBNETWORK");
   const [targets, setTargets] = useState('[{"targetName": "DLThptPerUE", "targetCondition": "IS_GREATER_THAN", "targetValueRange": 50}]');
   const [priority, setPriority] = useState("1");
@@ -151,17 +153,19 @@ function CreateIntent() {
   try { const v = JSON.parse(targets); parsedTargets = Array.isArray(v) ? v : null; } catch { parsedTargets = null; }
   return (
     <Card title="Create intent">
-      <p className="muted small">Dispatched to every registered handler whose <code>supportedExpectationObjectType</code> matches the expectation's <code>expectationObject.objectType</code>.</p>
+      <p className="muted small">Addressed to one handler you choose below (consumer-side selection, TS 28.312's own NRM containment) — rejected at creation if that handler's declared <code>supportedExpectationObjectType</code>/scope doesn't cover this Intent.</p>
       <div className="form grid cols-3 tight">
+        <Field label="Handler (RMIH)"><select value={rmihId} onChange={(e) => setRmihId(e.target.value)}><option value="">select…</option>{(handlers.data ?? []).map((h) => <option key={h.rmihId} value={h.rmihId}>{h.rmihId}</option>)}</select></Field>
         <Field label="Expectation object type"><select value={objectType} onChange={(e) => setObjectType(e.target.value)}>{OBJECT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></Field>
         <Field label="Priority"><input type="number" min={1} value={priority} onChange={(e) => setPriority(e.target.value)} /></Field>
         <Field label="Handling scope"><select value={scope} onChange={(e) => setScope(e.target.value)}><option value="">any</option><option>RAN</option><option>CN</option></select></Field>
         <Field label="Purpose"><select value={purpose} onChange={(e) => setPurpose(e.target.value)}>{PURPOSES.map((p) => <option key={p}>{p}</option>)}</select></Field>
         <Field label="Expectation targets (JSON array)" hint={parsedTargets ? undefined : <span className="text-bad">must be a JSON array</span>}><textarea rows={2} value={targets} onChange={(e) => setTargets(e.target.value)} spellCheck={false} /></Field>
       </div>
-      <ActionButton label="Create intent" tone="primary" disabled={!parsedTargets} action={{
+      <ActionButton label="Create intent" tone="primary" disabled={!parsedTargets || !rmihId} action={{
         method: "POST", path: "/intent-service/intents", success: "Intent created",
         json: {
+          rmihId,
           expectations: [{ expectationVerb: "DELIVER", expectationObject: { objectType }, expectationTargets: parsedTargets ?? [] }],
           priority: Number(priority) || 1, intentMgmtPurpose: purpose, intentHandlingScope: scope || null,
         },

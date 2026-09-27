@@ -752,6 +752,18 @@ CREATE TABLE mda_subscription (
 -- Governance & Assurance: Intent Service (formerly Policy Management & Info; Policy Mgmt LLD sections 1-4)
 -- ============================================================
 
+-- Declared before `intent` (below) — Wave 3's consumer-side-selection
+-- redesign (SPEC_AUDIT.md / docs/ownership/INTENT_SERVICE_OWNERSHIP.md's
+-- own "Open item carried into Wave 3") gives `intent` a real FK onto
+-- this table, so it must exist first.
+CREATE TABLE intent_handling_function (
+  rmih_id                        TEXT PRIMARY KEY,
+  sme_service_id                  TEXT NOT NULL,
+  intent_handling_scope             JSONB,
+  intent_handling_capability_list     JSONB NOT NULL,
+  notification_callback_uri            TEXT NOT NULL  -- NEW: closes the Intent-to-RMIH dispatch gap
+);
+
 CREATE TABLE intent (
   intent_id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_label                   TEXT,
@@ -763,7 +775,14 @@ CREATE TABLE intent (
   intent_admin_state                  TEXT NOT NULL DEFAULT 'ACTIVATED' CHECK (intent_admin_state IN ('ACTIVATED','DEACTIVATED')),
   intent_priority                       INTEGER NOT NULL DEFAULT 1 CHECK (intent_priority BETWEEN 1 AND 100),
   intent_preemption_capability             BOOLEAN NOT NULL DEFAULT false,
-  rmio_id                                    TEXT NOT NULL
+  rmio_id                                    TEXT NOT NULL,
+  -- Wave 3: consumer-side RMIH selection — TS28.312's own NRM containment
+  -- (IntentHandlingFunction *contains* Intent) means an Intent's real
+  -- identity depends on the RMIH that owns it; ON DELETE CASCADE matches
+  -- that containment literally (deregistering an RMIH really does end
+  -- every Intent addressed to it, not just orphan a dangling reference),
+  -- same house pattern as intent_report's own cascade below.
+  rmih_id                                     TEXT NOT NULL REFERENCES intent_handling_function(rmih_id) ON DELETE CASCADE
 );
 
 CREATE TABLE intent_report (
@@ -776,14 +795,6 @@ CREATE TABLE intent_report (
   intent_fulfilment_report JSONB,
   intent_conflict_reports    JSONB,
   last_updated_time            TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE intent_handling_function (
-  rmih_id                        TEXT PRIMARY KEY,
-  sme_service_id                  TEXT NOT NULL,
-  intent_handling_scope             JSONB,
-  intent_handling_capability_list     JSONB NOT NULL,
-  notification_callback_uri            TEXT NOT NULL  -- NEW: closes the Intent-to-RMIH dispatch gap
 );
 
 -- ============================================================

@@ -12,12 +12,12 @@ def client(r1):
 
 
 def test_create_intent(client, r1):
-    client.create_intent([{"expectationType": "DELIVERY"}], priority=2, rmio_id="rmio-1")
+    client.create_intent([{"expectationType": "DELIVERY"}], "rmih-1", priority=2, rmio_id="rmio-1")
     call = r1.calls[0]
     assert call["verb"] == "post"
     assert call["path"] == "/intent-service/intents"
     assert call["json"] == {
-        "expectations": [{"expectationType": "DELIVERY"}], "priority": 2, "rmioId": "rmio-1",
+        "expectations": [{"expectationType": "DELIVERY"}], "priority": 2, "rmioId": "rmio-1", "rmihId": "rmih-1",
         "intentMgmtPurpose": "FULFILMENT_WITHOUT_NEGOTIATION", "intentHandlingScope": None,
     }
 

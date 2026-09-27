@@ -119,9 +119,9 @@ describe("flow 07 — fault reporting", () => {
 });
 
 describe("flow 09 — intents", () => {
-  it("warns when an intent has no handler to receive it", () => {
-    const intent = { intentId: "i", intentAdminState: "ACTIVATED", intentPriority: 1, rmioId: "smo-gui", intentMgmtPurpose: null };
-    expect(flow09([], intent, [])[2].status).toBe("warn");
+  it("marks the named-RMIH dispatch step done once an intent exists (consumer-side selection guarantees a valid target)", () => {
+    const intent = { intentId: "i", intentAdminState: "ACTIVATED", intentPriority: 1, rmioId: "smo-gui", intentMgmtPurpose: null, rmihId: "so-smos" };
+    expect(flow09([], intent, [])[2].status).toBe("done");
   });
 });
 

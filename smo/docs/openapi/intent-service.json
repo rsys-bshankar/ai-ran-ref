@@ -61,6 +61,10 @@
             "title": "Priority",
             "type": "integer"
           },
+          "rmihId": {
+            "title": "Rmihid",
+            "type": "string"
+          },
           "rmioId": {
             "default": "",
             "title": "Rmioid",
@@ -68,7 +72,8 @@
           }
         },
         "required": [
-          "expectations"
+          "expectations",
+          "rmihId"
         ],
         "title": "CreateIntentRequest",
         "type": "object"
@@ -442,7 +447,7 @@
         "summary": "Query Intents"
       },
       "post": {
-        "description": "CreateIntent \u2014 closes the matching/dispatch gap between this and\nRegisterIntentHandlingFunction: previously an RMIH was never notified\nof a new Intent it could fulfil at all.\n\nSPEC_AUDIT.md items 2-3: matching is now grounded in the real spec's\nown matching-relevant field \u2014 each expectation's\n`expectationObject.objectType` \u2014 read straight out of the\nalready-accepted, already-opaque `expectations` list (no deeper\nTS 28.312 expectation grammar needed for this one field), rather than\nan invented top-level `intentType` string with no shared vocabulary\nwith the spec, or `intentMgmtPurpose` (a different, workflow-procedure\nfield). Dispatch is best-effort: a callback failure never blocks\nCreateIntent itself succeeding.",
+        "description": "CreateIntent \u2014 Wave 3 (docs/ownership/INTENT_SERVICE_OWNERSHIP.md's\n\"Open item carried into Wave 3\"): the caller now addresses a specific,\nalready-registered RMIH by `rmihId` (consumer-side selection,\nTS28312_IntentNrm.yaml's own NRM containment \u2014 IntentHandlingFunction\n*contains* Intent), replacing the former producer-side push that\nmatched and notified every capability-matching RMIH after the fact.\n\n404 if `rmihId` names no registered function at all. If the Intent\ndeclares expectation object types and/or a handling scope, the named\nRMIH must actually cover them (`RMIH_CAPABILITY_MISMATCH`, 422) \u2014\naddressing an Intent to a handler that can't fulfil it is rejected at\ncreation, not silently accepted. Dispatch to that one RMIH is\nbest-effort: a callback failure never blocks CreateIntent succeeding.",
         "operationId": "create_intent_intents_post",
         "requestBody": {
           "content": {
@@ -511,7 +516,7 @@
         "summary": "Delete Intent"
       },
       "get": {
-        "description": "NEW \u2014 v1.3 had CreateIntent and subscribe/publish, but no read\noperation at all (Policy Mgmt LLD section 1).",
+        "description": "NEW \u2014 v1.3 had CreateIntent and subscribe/publish, but no read\noperation at all (Policy Mgmt LLD section 1).\n\nWave 3: a real 404 here (rather than crashing) matters more now that\n`Intent.rmih_id`'s ON DELETE CASCADE means an Intent can legitimately\nvanish out from under a caller mid-flight, when its addressed RMIH is\nderegistered.",
         "operationId": "query_intent_intents__intent_id__get",
         "parameters": [
           {

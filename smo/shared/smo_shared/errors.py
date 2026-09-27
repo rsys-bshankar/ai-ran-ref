@@ -52,6 +52,9 @@ class FrameworkError:
     # Wave 3 — AIMgF's TrainingJob suspend/resume, SPEC_AUDIT.md's
     # AI/ML Workflow section item 6
     TRAINING_JOB_ILLEGAL_TRANSITION = ("TRAINING_JOB_ILLEGAL_TRANSITION", 409)
+    # Wave 3 — Intent Service's consumer-side RMIH selection,
+    # docs/ownership/INTENT_SERVICE_OWNERSHIP.md's Wave 3 resolution
+    RMIH_CAPABILITY_MISMATCH = ("RMIH_CAPABILITY_MISMATCH", 422)
     # A1 Related LLD section 1.3
     POLICY_TYPE_NOT_SUPPORTED = ("POLICY_TYPE_NOT_SUPPORTED", 422)
     POLICY_OBJECT_SCHEMA_INVALID = ("POLICY_OBJECT_SCHEMA_INVALID", 422)

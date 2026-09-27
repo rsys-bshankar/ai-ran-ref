@@ -133,7 +133,7 @@ decision, not a per-PR judgment call.
 | AIMgF | TS 28.105 (AI/ML NRM) realization |
 | MLMR | TS 28.105 (AI/ML NRM) + TS 29.482 AIMLE MLR (model repository/discovery, Wave 3 — `docs/ownership/MLMR_OWNERSHIP.md`) |
 | MLLF | TS 28.105 (AI/ML NRM) realization — deploy-request gate + targeting only; the state machine itself is AIMgF+NFO's `RuntimeLifecycleState` (Wave 3 scope correction — `docs/ownership/MLLF_OWNERSHIP.md`) |
-| Intent Service | TS 28.312 (Intent NRM) |
+| Intent Service | TS 28.312 (Intent NRM) — consumer-side RMIH selection since Wave 3 (`docs/ownership/INTENT_SERVICE_OWNERSHIP.md`) |
 | NFO | O-Cloud / O2 |
 | FOCOM | O2IMS |
 | RAN NF OAM | O1 |
@@ -245,6 +245,19 @@ Frozen wave order — do not reorder without updating this document first:
     table/matrix are corrected to say so explicitly; MLLF's code is
     unchanged (it was already only ever the gate+targeting surface this
     correction describes).
+  - **Intent Service slice** (done): resolves the architecture question
+    this baseline itself flagged for Wave 3 — TS28.312's own NRM
+    containment (`IntentHandlingFunction` *contains* `Intent`) implies
+    consumer-side RMIH selection, not the former producer-side push
+    matching. Asked rather than guessed, given the real breaking-change
+    cost: redesigned `CreateIntent` to require a real, required
+    `rmihId` — the caller addresses one already-registered RMIH
+    directly, validated against its declared capabilities/scope
+    (`RMIH_CAPABILITY_MISMATCH`, 422) rather than silently filtered
+    around. `Intent.rmih_id` is a real `ON DELETE CASCADE` FK — a
+    deregistered RMIH now genuinely ends every Intent still addressed
+    to it, matching real NRM containment literally. GUI, SDK, and the
+    demo runbook's own step 10 all updated to match.
 
 Reordering Wave 3 ahead of Wave 1/2, or starting new R1 contract design
 before the ownership split is merged, is exactly the redesign-it-twice

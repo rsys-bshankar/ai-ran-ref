@@ -1,7 +1,8 @@
 # Intent Service Ownership
 
-Status: **frozen** — Wave 0. See `docs/architecture/SERVICE_OWNERSHIP_MATRIX.md`
-and `docs/architecture/AI_PLATFORM_BASELINE.md`.
+Status: **implemented, Wave 3 architecture resolved**. See
+`docs/architecture/SERVICE_OWNERSHIP_MATRIX.md` and
+`docs/architecture/AI_PLATFORM_BASELINE.md`.
 
 ## Mission
 
@@ -53,17 +54,38 @@ surviving `policy-mgmt/` module exists.
 |---|---|
 | A1 policy create/enforce/retract (a genuinely different "policy" concept) | `a1-related/`, unchanged |
 
-## Open item carried into Wave 3
+## Wave 3 resolution: consumer-side RMIH selection
 
-TS 28.312's own NRM containment model (`IntentHandlingFunction`
-*contains* `Intent`) implies the spec's real answer is consumer-side LDN
-selection — an MnS consumer picks and addresses an already-chosen RMIH
-when creating an `Intent` — rather than this build's current
-producer-side push matching (`create_intent`'s own `_matching_rmihs`).
-This was already flagged as an open architecture question in
-`SPEC_AUDIT.md` before this decomposition; Intent Service's Wave 3
-contract design is the point to resolve it explicitly, not carry the
-ambiguity forward under a new name.
+The open item this section used to carry is resolved. TS 28.312's own
+NRM containment model (`IntentHandlingFunction` *contains* `Intent`)
+implied the spec's real answer was consumer-side LDN selection — an
+MnS consumer picks and addresses an already-chosen RMIH when creating
+an `Intent` — rather than this build's former producer-side push
+matching (`create_intent`'s own `_matching_rmihs`, which scanned every
+registered RMIH's declared capabilities and notified every match).
+Asked rather than guessed, given the real breaking-change cost either
+way: confirmed the redesign.
+
+`CreateIntent` now requires a real, required `rmihId` field — the
+caller names the specific, already-registered `IntentHandlingFunction`
+this Intent is addressed to (discovered beforehand via
+`GET /intent-handling-functions`). Real consequences of adopting the
+containment model literally, not just cosmetically:
+
+- `Intent.rmih_id` is a real foreign key onto
+  `intent_handling_function.rmih_id`, `ON DELETE CASCADE` — a
+  deregistered RMIH really does end every Intent still addressed to
+  it, matching how a contained MOI cannot outlive its containing
+  parent in real NRM/DN semantics (same house cascade-delete pattern
+  used throughout this build elsewhere, e.g. `aiml_model` →
+  `model_artifact`).
+- `create_intent` still validates the named RMIH's declared
+  capabilities/scope actually cover the Intent's request
+  (`RMIH_CAPABILITY_MISMATCH`, 422) — addressing an Intent at a
+  handler that can't fulfil it is rejected at creation, not silently
+  un-notified the way the old multi-candidate filter left it.
+- Dispatch is now a single best-effort notification to the one named
+  RMIH, replacing the former broadcast-to-every-match loop.
 
 ## Migration source (Wave 1)
 
