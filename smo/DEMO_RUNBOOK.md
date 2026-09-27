@@ -1318,21 +1318,42 @@ delivery — a real POST with `{infoTypeId, jobDataSchema, status:
 real dispatch fires with the correct payload by intercepting the exact
 `httpx.post` call.
 
-Deregister the producer — `deregister_producer` fires a matching
-`DEREGISTERED` notification for the same type the same way:
+Deregister the producer. SPEC_AUDIT.md's own Producer/Type conflation
+finding, closed: Producer and Type are two real, separately-owned
+entities now (matching ICS's own model), so `deregister_producer` only
+removes `hello-world-rapp` itself — the type it registered stays
+registered, just DISABLED (no producer left to serve it), and fires
+*no* notification (ICS's own `deleteInfoProducer` never touches
+info-types at all):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.delete('http://dme:8000/production-capabilities', params={'producer_id': 'hello-world-rapp'})
 print(r.status_code)
+r = httpx.get('http://dme:8000/dme-types')
+print([(t['typeName'], t['producerIds'], t['typeStatus']) for t in r.json()])
 "
 ```
 
-Note this also deregisters `hello-world-rapp`'s own `hello-world-metrics`
-type from step 4, alongside the new demo one — `deregister_producer`
-tears down every `DmeType` a `producer_id` owns, matching ICS's own
-scope. Unsubscribe:
+The `dme-type-sub-demo` type is still there (`producerIds: []`,
+`typeStatus: DISABLED`) — `hello-world-metrics` from step 4 too. Only
+`delete_dme_type` (ICS's own `DELETE /info-types/{id}`) actually removes
+a type, and only once every producer has left it (409 otherwise) —
+this is what fires the real `DEREGISTERED` notification:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.delete('http://dme:8000/dme-types/<dmeTypeId>')  # the dme-type-sub-demo one, from its own registrationId above
+print(r.status_code)
+"
+```
+
+Watch `dme`'s own logs for the attempted delivery — a real POST with
+`{infoTypeId, jobDataSchema, status: "DEREGISTERED"}`.
+`tests_integration/test_demo_runbook.py` proves this real dispatch too.
+Unsubscribe:
 
 ```bash
 docker compose exec r1-termination python3 -c "

@@ -87,13 +87,14 @@ data-plane-side spec grounding, distinct from the O1-facing side
 already audited against the ProvMnS workbook). A real, closeable gap
 closed: the real `deleteJobsForOwner` (`DELETE
 /data-consumer/v1/info-jobs?owner=X`) had no equivalent — DME could
-only terminate one data job at a time. One real, large finding audited
-and left open, not attempted without being asked: ICS's own model
-treats Information Producer and Information Type as two separate,
-many-to-many entities; this build's own `DMEType` conflates them with
-a global uniqueness constraint that makes a second producer for the
-same type structurally impossible — see `SPEC_AUDIT.md`'s new DME vs.
-ICS section.
+only terminate one data job at a time. A real, large finding this audit
+left open is now closed too: ICS's own model treats Information
+Producer and Information Type as two separate, many-to-many entities;
+this build's own `DMEType` used to conflate them with a global
+uniqueness constraint that made a second producer for the same type
+structurally impossible — split into `DMEProducer`/`DMEType`/a real
+producer-type join table, per explicit direction; see `SPEC_AUDIT.md`'s
+DME vs. ICS section for the closure writeup.
 
 **Onboarding/rApp Mgmt is now audited too**, the same source-derived way
 SME's own security-model pass was (no standalone ASD/TOSCA spec document

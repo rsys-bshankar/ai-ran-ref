@@ -98,7 +98,8 @@ export interface RemedialAction { actionId: string; monitorId: string; actionTyp
 export interface AnalyticsReport { reportId: string; analyticsType: string; output: Record<string, unknown> }
 export interface AnalyticsProducer { producerId: string; analyticsType: string; mdaType: string | null; dmeInputTypes: string[]; outputSchema: Record<string, unknown> }
 export interface AnalyticsSubscription { subscriptionId: string; analyticsType: string; requestedBy: string; notificationDestination: string | null; scope: Record<string, unknown> | null }
-export interface DmeType { dmeTypeId: string; dmeTypeIdStruct: Record<string, string>; typeName: string; producerId: string; typeStatus: string }
+export interface DmeType { dmeTypeId: string; dmeTypeIdStruct: Record<string, string>; typeName: string; producerIds: string[]; typeStatus: string }
+export interface DmeProducer { producerId: string; producerHealthCallbackUrl: string; jobCallbackUrl: string; supportedTypeIds: string[] }
 
 // ---- BFF admin
 export interface GuiUser { username: string; role: "viewer" | "operator" | "admin"; active: boolean; createdAt: string }

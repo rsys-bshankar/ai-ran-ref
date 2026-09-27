@@ -960,6 +960,40 @@
         "summary": "Discover Dme Types"
       }
     },
+    "/dme-types/{dme_type_id}": {
+      "delete": {
+        "description": "ICS's own `DELETE /data-producer/v1/info-types/{infoTypeId}`\n(deleteInfoType) \u2014 409 (\"has one or several active producers\") if any\nproducer still supports it, otherwise deletes it and every dependent\nDataJob/DataOffer (the cleanup `deregister_producer` used to do\nunconditionally, now correctly gated on the type actually having zero\nproducers left, not merely on ONE producer having left).",
+        "operationId": "delete_dme_type_dme_types__dme_type_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dme_type_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dme Type Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Dme Type"
+      }
+    },
     "/health": {
       "get": {
         "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel,\nso every module answers one \u2014 previously only ran-nf-oam/a1-related\ndid (as their own DME producer-health callback URL).",
@@ -1201,7 +1235,7 @@
     },
     "/production-capabilities": {
       "delete": {
-        "description": "The DME half of rApp Management's producer-reconsideration trigger\n(OPEN_ITEMS.md section 1): when a RAppInstance crashes or terminates,\nits own DME registrations (keyed by producer_id == the rApp's\noauth_client_id) are no longer trustworthy and are torn down here,\nsame as terminate_data_job's shape. Idempotent \u2014 a producer_id with\nnothing registered is a no-op, not an error.\n\nOPEN_ITEMS.md section 5: this used to delete each DMEType row\nunconditionally, leaving any DataJob/DataOffer still referencing\nthat type either orphaned (no FK enforcement under SQLite) or\ncrashing with an unhandled IntegrityError (real Postgres \u2014 neither\nFK had an ON DELETE CASCADE, unlike dme_delivery_schema's own\nalready-cascading one). A job or offer for a type nobody produces\nanymore is meaningless once the producer is gone, so this cleans\nthem up explicitly \u2014 the DB-level ON DELETE CASCADE (added\nalongside this) is a defense-in-depth backstop, not the only line\nof defense.",
+        "description": "The DME half of rApp Management's producer-reconsideration trigger\n(OPEN_ITEMS.md section 1): when a RAppInstance crashes or terminates,\nits own DME registration is no longer trustworthy and is torn down\nhere. Idempotent \u2014 a producer_id with nothing registered is a no-op,\nnot an error.\n\nSPEC_AUDIT.md \u2014 DME vs. the real ICS API: this used to also delete\nevery DmeType (and dependent DataJob/DataOffer rows) this producer_id\nhappened to have registered, because the old schema conflated a type\nwith its one-and-only producer. Now that Producer and Type are two\nreal, separately-owned entities (ICS's own deleteInfoProducer never\ntouches info-types at all \u2014 those are only ever removed via their own\n`DELETE /info-types/{id}`, see `delete_dme_type` below), this only\nremoves the producer and its producer-type links; a type some other\nproducer still supports keeps serving, and a type this was the last\nproducer for simply goes DISABLED until deleted or re-registered \u2014\nthe real fix for the conflation, not a cosmetic rename.",
         "operationId": "deregister_producer_production_capabilities_delete",
         "parameters": [
           {
@@ -1231,7 +1265,23 @@
         },
         "summary": "Deregister Producer"
       },
+      "get": {
+        "description": "ICS's own `GET /data-producer/v1/info-producers` \u2014 previously no\nway at all to see a producer independent of the DmeType rows it\nhappened to conflate with.",
+        "operationId": "list_producers_production_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Producers"
+      },
       "post": {
+        "description": "SPEC_AUDIT.md \u2014 DME vs. the real ICS API, Producer/Type conflation\nfinding, closed: ICS's own `PUT .../info-producers/{id}` and\n`PUT .../info-types/{id}` are two separate, idempotent create-or-update\ncalls against two separate entities, many-to-many. This build keeps\none wire-compatible request body (no caller needs to change), but now\nupserts a real `DMEProducer` row, upserts a real `DMEType` row keyed\non (namespace, name, version) rather than erroring on an existing one,\nand links them \u2014 so a second producer registering an already-known\ntype identity, or the same producer re-registering after a restart,\nboth succeed instead of the old global `DME_TYPE_VERSION_CONFLICT`.",
         "operationId": "register_dme_type_production_capabilities_post",
         "requestBody": {
           "content": {
@@ -1266,9 +1316,46 @@
         "summary": "Register Dme Type"
       }
     },
+    "/production-capabilities/{producer_id}": {
+      "get": {
+        "operationId": "get_producer_production_capabilities__producer_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "producer_id",
+            "required": true,
+            "schema": {
+              "title": "Producer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Producer"
+      }
+    },
     "/production-capabilities/{producer_id}/status": {
       "get": {
-        "description": "OPEN_ITEMS.md section 5: no producer-status endpoint existed at\nall. ICS's own GET .../info-producers/{id}/status\n(ProducerController.getInfoProducerStatus) returns a single\nENABLED/DISABLED operational_state per producer, derived from the\nsame producer-availability signal typeStatus itself now uses\n(ProducerStatusInfo, producer.isAvailable()). Our schema has no\nseparate InfoProducer entity \u2014 a producer is however many DMEType\nrows share its producer_id \u2014 so this reuses the first one's\nproducer_health_callback_url, live, same as _computed_type_status.\n404 if the producer has nothing registered at all, matching ICS's\nown getProducer-not-found behavior.",
+        "description": "ICS's own GET .../info-producers/{id}/status\n(ProducerController.getInfoProducerStatus) returns a single\nENABLED/DISABLED operational_state per producer, derived from the\nsame producer-availability signal typeStatus itself now uses\n(ProducerStatusInfo, producer.isAvailable()). 404 if the producer has\nnothing registered at all, matching ICS's own getProducer-not-found\nbehavior.",
         "operationId": "query_producer_status_production_capabilities__producer_id__status_get",
         "parameters": [
           {
