@@ -12,6 +12,12 @@ production logic — `MDAFProducer` and its registration route stay in
 producer registering itself and a report being published are
 independent concerns here, exactly as they were before the split (the
 original code never validated a report's producer registration either).
+
+Wave 3 (docs/ownership/DME_OWNERSHIP.md): `publish_report` now does call
+out cross-service, to DME — every `input_sources` id must be a real DME
+`DataJob`, closing the "MDAF sources from DME only" rule with an
+enforced check rather than a documented convention. MDAF never reaches
+DME's O1 action-mediation path; this is the data path only.
 """
 
 import uuid
@@ -22,10 +28,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
+from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.r1_client import R1Client
 
 from .models import MDAFReport, MDASubscription
 
 app = FastAPI(title="MDAF")
+
+_r1 = R1Client()
 
 
 @app.get("/health")
@@ -36,8 +46,24 @@ def health_check():
     return {"status": "healthy"}
 
 
+def _validate_input_sources_are_real_dme_artifacts(input_sources: list[uuid.UUID]) -> None:
+    """Wave 3 (AI Platform Service Decomposition) —
+    docs/ownership/DME_OWNERSHIP.md's "two paths, not one": MDAF is a
+    consumer of DME's data plane like any rApp, never the O1 action
+    path, and a report can no longer cite data that never actually came
+    from DME. Same bare-UUID cross-service-reference convention used
+    for NFO/AIMgF elsewhere in this build — MDAF doesn't fetch the data
+    itself here, only proves the reference is real.
+    """
+    for source_id in input_sources:
+        resp = _r1.get(f"/dme/data-jobs/{source_id}")
+        if resp.status_code != 200:
+            raise framework_error(FrameworkError.DME_ARTIFACT_NOT_FOUND, detail=f"no such DME data job {source_id}")
+
+
 @app.post("/reports", status_code=201)
 def publish_report(analytics_type: str, output: dict, input_sources: list[uuid.UUID], scope: dict | None = None, db: Session = Depends(get_session)):
+    _validate_input_sources_are_real_dme_artifacts(input_sources)
     report = MDAFReport(analytics_type=analytics_type, output=output, input_sources=input_sources, scope=scope)
     db.add(report)
     db.commit()

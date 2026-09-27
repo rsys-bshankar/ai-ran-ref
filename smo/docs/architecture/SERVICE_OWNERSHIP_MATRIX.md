@@ -77,17 +77,21 @@ Maps to `specs/5G_APIs/TS28104_MdaNrm.yaml` /
   those use cases, so this split is a deliberate product-organization
   choice, not one directly forced by the spec.
 
-## DME (unchanged this wave — restated for completeness)
+## DME (revised Wave 3 — see `docs/ownership/DME_OWNERSHIP.md` for full detail)
 
 **Owns**
-- Datasets, feature sets
-- Data discovery
-- Data subscriptions
-- Data lineage
+- Datasets, feature sets, data discovery, data subscriptions, data lineage
+- Source/vendor/domain provenance (`source_domain`, `source_context`) and
+  the Digital-Twin-excluded-from-inference eligibility rule
+- Real data-record storage (producer ingest, consumer fetch) — serves
+  both rApps and MDAF, no distinction at this layer
+- O1 action-mediation (`/actions`) — thin, provenance-recording forward
+  to `ran-nf-oam`'s real NETCONF dispatch, not a duplicate of it
 
 **Does NOT own**
 - Analytics, predictions → **MDAF**
 - Models → **MLMR**
+- Real O1 protocol dispatch (NETCONF/RESTCONF), O1 endpoint registry → **ran-nf-oam**
 
 ## Intent Service
 
@@ -153,5 +157,5 @@ One sentence each, to prevent almost every future ownership dispute:
 - **MLLF** = deployment truth.
 - **NFO** = runtime truth.
 - **MDAF** = analytics truth.
-- **DME** = data truth.
+- **DME** = data truth, plus O1 action-mediation (not O1 protocol dispatch — that's `ran-nf-oam`'s).
 - **Intent Service** = intent truth.

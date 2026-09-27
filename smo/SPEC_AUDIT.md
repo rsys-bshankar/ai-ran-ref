@@ -8,19 +8,25 @@ build from — 3GPP OpenAPI YAML and O-RAN's real O2IMS information model,
 both now living in `specs/` (see `specs/README.md` for the full catalog
 and why each file is relevant to which module).
 
-Six modules have been audited so far: the four with the clearest, most
+Seven modules have been audited so far: the four with the clearest, most
 directly relevant spec files already identified in `specs/README.md`
 (RAN NF OAM, FOCOM, Policy Mgmt, SME), plus AI/ML Workflow and RAN
 Analytics — `specs/README.md`'s own earlier claim that no directly
 relevant O-RAN-SC AI/ML formal spec exists in `specs/` was stale:
 `TS28105_AiMlNrm.yaml` (AI/ML NRM) and `TS28104_MdaNrm.yaml`/
 `TS28104_MdaReport.yaml` (MDA NRM) were already present under
-`5G_APIs/`, just never cataloged there. Not yet audited against a
-formal spec, because no relevant spec file exists in `specs/` at all:
-DME (ICS's own spec set isn't there), A1 Related (3GPP/O-RAN A1 specs
-aren't there either — the `sim-a1-interface`/`a1pms` source-code audit
-in `OPEN_ITEMS.md` section 5 remains the only ground truth there), and
-Onboarding/rApp Mgmt (TOSCA/rApp packaging specs aren't there).
+`5G_APIs/`, just never cataloged there — and now DME/O1 Adaptor, via a
+user-supplied curated mapping workbook
+(`specs/O1_Adaptor/O1_Adaptor_MnS_Hierarchy_Mapping_v4.xlsx`) indexing
+ProvMnS's generic CRUD engine, its full 3GPP+O-RAN IOC tree, the 3
+dedicated 3GPP APIs, and O-RAN WG4 Software Management — ICS's own spec
+set (DME's original R1AP grounding) still isn't in `specs/`, but the O1
+Adaptor side of DME's revised, dual data+control-mediation role now is.
+Not yet audited against a formal spec, because no relevant spec file
+exists in `specs/` at all: A1 Related (3GPP/O-RAN A1 specs aren't there
+— the `sim-a1-interface`/`a1pms` source-code audit in `OPEN_ITEMS.md`
+section 5 remains the only ground truth there), and Onboarding/rApp
+Mgmt (TOSCA/rApp packaging specs aren't there).
 
 Every finding below was produced by reading the actual spec file(s) and
 the actual implementation file(s) side by side — none are guessed or
@@ -437,6 +443,81 @@ architecture choice, not a bug.
    elision (RAN NF OAM's `FileDataReportingMnS`/`StreamingDataMnS`
    finding, above); this build's `notification_destination` is honestly
    NOTIFICATION-only.
+
+## DME / O1 Adaptor vs. O1 Adaptor MnS Hierarchy Mapping (ProvMnS + O-RAN augments)
+
+*(Wave 3 of the AI Platform Service Decomposition revises DME's role:
+previously a pure R1AP/ICS-style data-job/offer broker with zero O1
+involvement, DME now also mediates O1 actuation — see
+`docs/ownership/DME_OWNERSHIP.md`. The real O1 protocol dispatch stays
+in `ran-nf-oam/` (`netconf_client.py`'s `edit-config` RPCs,
+`O1AdaptorEndpoint`/`ManagedEntity` registry) — DME's new `/actions`
+route is a thin mediation layer in front of it, not a duplicate. This
+section audits both against the mapping workbook, since the workbook's
+own subject is "O1 Adaptor" as an architectural role, which this build
+splits across the two services.)*
+
+Spec read: `specs/O1_Adaptor/O1_Adaptor_MnS_Hierarchy_Mapping_v4.xlsx`,
+a user-supplied, hand-curated index (not machine-generated) across
+`TS28532_ProvMnS.yaml`'s generic CRUD engine, ~100 3GPP NRM IOCs
+(`TS28623_GenericNrm`/`TS28541_NrNrm`/`SliceNrm`/`TS28111_FaultNrm`/
+etc.), ~17 O-RAN WG10-O1NRM/WG5-O-DU/WG5-O-CU IOCs and attribute
+extensions that augment the same 3GPP tree, the 3 genuinely dedicated
+3GPP APIs (PM Job Control/File Data Reporting/Streaming Data
+Reporting), and O-RAN WG4 Software Management's standalone RPC engine.
+186 items total across 7 sheets; see the workbook's own `Index` sheet
+for the full breakdown.
+
+1. **No generic `/{className}={id}` addressing anywhere in this build**
+   — large/structural, confirmed deliberate, same elision as RAN NF
+   OAM's already-flagged flat-string addressing (above): ProvMnS's
+   entire IOC tree is reached through one generic CRUD engine keyed by
+   class name + DN; `ManagedEntity.managed_element_ref`/
+   `managed_function_ref`/`entity_type` are opaque free strings, not
+   `className`-typed. Groundable at small scope for the *new* pieces
+   this wave adds (DME's `/actions` route and its `className`/instance
+   addressing) without taking on the full DN/containment-tree rework —
+   done this wave: the new route's request shape uses real IOC class
+   names from the workbook (`GNBDUFunction`, `NRCellDU`, `GNBCUCPFunction`,
+   etc.) as a documented convention rather than another opaque string,
+   though it still resolves through `ManagedEntity`'s existing flat
+   `managed_element_ref`, not a real DN.
+2. **PM Job Control (TS28550), File Data Reporting, Streaming Data
+   Reporting dedicated APIs** — already audited and confirmed
+   deliberate wrapper/elision scope cuts under RAN NF OAM above (items 7
+   and 8); this workbook's sheets 3-5 don't change that finding, just
+   name the exact payload types involved
+   (`measJobCreation-RequestType`, `FileDataType`, `streamInfo-Type`,
+   etc.) for whoever eventually grounds them.
+3. **Software Management: this build already covers the base RPCs'
+   documented gap** — not a gap, a confirmed strength. The workbook
+   flags `o-ran-software-management.yang`'s 3 RPCs
+   (`software-download`/`software-install`/`software-activate`) as
+   missing a `ru-instance-id` (or equivalent) input parameter, needed
+   "before reuse at an aggregated/RAN-node level." `ran-nf-oam`'s
+   `SoftwareManagementJob` already carries `ru_instance_id` as a
+   first-class field and `software_update`/`advance_software_job`
+   already implement a 3-phase DOWNLOAD/INSTALL/ACTIVATE FSM lining up
+   1:1 with the 3 RPCs and their 3 completion notifications
+   (`download-event`/`install-event`/`activation-event`). This build's
+   implementation is already ahead of what the base spec's own RPCs
+   support unaugmented.
+4. **O-RAN WG10-O1NRM's new IOCs (ORU, NearRTRICFunction, EP_D2C/D2U/E2,
+   D2Params, NESPolicy/NESPolicyRelation, RRMPolicyRBAlloc) and WG5-O-DU's
+   CTI\* family (CTIFunction/CTIClient/CTISessionGroup/CTISession/
+   CTIFlowsInUse/CTIConfig/CTIServer/CTIFlow/CTIConnProfile/CTIPattern)
+   — none modeled** — large/structural, confirmed deliberate. These are
+   exactly the kind of vendor/product-specific augmentations the revised
+   architecture's capability registry concept (`docs/ownership/
+   DME_OWNERSHIP.md`) is meant to eventually track per-vendor rather
+   than hard-code; not built this wave, since no second RAN vendor
+   exists in this build to make the registry's per-vendor branching
+   real rather than speculative.
+5. **Sheet 7's WG5 O-RU aggregation mount points confirmed genuinely
+   out of scope** — not a gap. The workbook's own notes mark these as
+   "NOT part of O1 Adaptor's northbound surface" (internal
+   O-RU-Controller↔O-RU boundary only), so their absence from
+   `ran-nf-oam`/DME isn't an elision to track at all.
 
 ## What's genuinely closeable now (small, scoped, non-breaking)
 

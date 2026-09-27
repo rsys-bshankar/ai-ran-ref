@@ -19,10 +19,13 @@ from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.r1_client import R1Client
 
-from .models import DELIVERY_METHODS, DataJob, DataOffer, DMEType, DMETypeSubscription
+from .models import DELIVERY_METHODS, LIFECYCLE_STAGES, SOURCE_DOMAINS, DataJob, DataOffer, DataRecord, DmeActionRecord, DMEType, DMETypeSubscription
 
 app = FastAPI(title="DME — Data Management and Exposure")
+
+_r1 = R1Client()
 
 
 @app.get("/health")
@@ -45,6 +48,12 @@ class DMETypeRegistration(BaseModel):
     collectionSpec: dict | None = None
     producerHealthCallbackUrl: str
     jobCallbackUrl: str
+    # Wave 3 (docs/ownership/DME_OWNERSHIP.md): source provenance. Both
+    # optional — a producer that doesn't declare its domain skips the
+    # Digital-Twin-inference eligibility check entirely (same permissive
+    # shape as _validate_delivery_method's own offer check).
+    sourceDomain: str | None = None  # LIVE_RAN | DIGITAL_TWIN
+    sourceContext: dict | None = None
 
 
 class DataJobRequest(BaseModel):
@@ -54,6 +63,29 @@ class DataJobRequest(BaseModel):
     dataDeliveryMethod: str  # PULL_HTTP | PUSH_HTTP | STREAMING_KAFKA
     deliveryDetails: dict = {}
     consumerId: str
+    lifecycleStage: str | None = None  # TRAINING | TESTING | EMULATION | INFERENCE | CLOSED_LOOP_FEEDBACK
+
+
+class DataRecordRequest(BaseModel):
+    payload: dict
+
+
+class ActionRequest(BaseModel):
+    """DME's O1 action-mediation request — mirrors ran-nf-oam's own
+    WriteConfigRequest.changes shape ({managedElementRef,
+    managedFunctionRef?, attributeChanges?, operation?}), plus an
+    optional real ProvMnS IOC class name per change (className, e.g.
+    'GNBDUFunction'/'NRCellDU' — specs/O1_Adaptor/
+    O1_Adaptor_MnS_Hierarchy_Mapping_v4.xlsx) for audit/documentation
+    purposes; ran-nf-oam itself still resolves purely on
+    managedElementRef, unchanged this wave.
+    """
+
+    requestedBy: str
+    changes: list[dict]
+    scope: str = "single-ME"
+    msacRole: str | None = None
+    sourceContext: dict | None = None
 
 
 class DataOfferRequest(BaseModel):
@@ -72,6 +104,8 @@ class TypeSubscriptionRequest(BaseModel):
 
 @app.post("/production-capabilities", status_code=201)
 def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_session)):
+    if body.sourceDomain is not None and body.sourceDomain not in SOURCE_DOMAINS:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"unknown sourceDomain {body.sourceDomain!r}")
     t = DMEType(
         namespace=body.namespace,
         name=body.name,
@@ -82,6 +116,8 @@ def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_sessi
         collection_spec=body.collectionSpec,
         producer_health_callback_url=body.producerHealthCallbackUrl,
         job_callback_url=body.jobCallbackUrl,
+        source_domain=body.sourceDomain,
+        source_context=body.sourceContext,
     )
     db.add(t)
     try:
@@ -258,10 +294,28 @@ def _validate_job_definition_schema(db: Session, dme_type_id: uuid.UUID, definit
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"registered dataProductionSchema is invalid: {e.message}")
 
 
+def _validate_lifecycle_eligibility(db: Session, dme_type_id: uuid.UUID, lifecycle_stage: str | None) -> None:
+    """Wave 3 (docs/ownership/DME_OWNERSHIP.md): the one data-source
+    eligibility rule Phase-1 actually needs — a Digital Twin may feed
+    Training/Emulation, never Inference. A dmeTypeId with no registered
+    DMEType, or a type/job that never declared sourceDomain/
+    lifecycleStage, skips this — same permissive shape as
+    _validate_job_definition_schema's own type-existence check.
+    """
+    if lifecycle_stage is not None and lifecycle_stage not in LIFECYCLE_STAGES:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"unknown lifecycleStage {lifecycle_stage!r}")
+    dme_type = db.get(DMEType, dme_type_id)
+    if dme_type is None or dme_type.source_domain != "DIGITAL_TWIN" or lifecycle_stage != "INFERENCE":
+        return
+    raise framework_error(FrameworkError.DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE,
+                           detail="a Digital Twin source may feed Training/Emulation, never Inference")
+
+
 @app.post("/data-jobs", status_code=202)
 def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
     _validate_delivery_method(db, body.dmeTypeId, body.dataDeliveryMethod)
     _validate_job_definition_schema(db, body.dmeTypeId, body.productionJobDefinition)
+    _validate_lifecycle_eligibility(db, body.dmeTypeId, body.lifecycleStage)
     job = DataJob(
         data_delivery_mode=body.dataDeliveryMode,
         dme_type_id=body.dmeTypeId,
@@ -270,6 +324,7 @@ def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
         delivery_details=body.deliveryDetails,
         consumer_id=body.consumerId,
         status="ACTIVE",
+        lifecycle_stage=body.lifecycleStage,
     )
     db.add(job)
     db.commit()
@@ -309,9 +364,11 @@ def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, db: Session = 
         raise framework_error(FrameworkError.DATA_JOB_TARGET_IMMUTABLE, detail="dmeTypeId/consumerId/dataDeliveryMode cannot change on update")
     _validate_delivery_method(db, body.dmeTypeId, body.dataDeliveryMethod)
     _validate_job_definition_schema(db, body.dmeTypeId, body.productionJobDefinition)
+    _validate_lifecycle_eligibility(db, body.dmeTypeId, body.lifecycleStage)
     job.production_job_definition = body.productionJobDefinition
     job.data_delivery_method = body.dataDeliveryMethod
     job.delivery_details = body.deliveryDetails
+    job.lifecycle_stage = body.lifecycleStage
     db.commit()
     dme_type = db.get(DMEType, job.dme_type_id)
     if dme_type is not None:
@@ -444,6 +501,7 @@ def _job_view(j: DataJob) -> dict:
         "deliveryDetails": j.delivery_details or {},
         "consumerId": j.consumer_id,
         "status": j.status,
+        "lifecycleStage": j.lifecycle_stage,
     }
 
 
@@ -467,6 +525,8 @@ def _type_view(t: DMEType) -> dict:
         "typeStatus": _computed_type_status(t),  # ADOPT from ICS, section 3.4
         "producerHealthCallbackUrl": t.producer_health_callback_url,
         "jobCallbackUrl": t.job_callback_url,
+        "sourceDomain": t.source_domain,
+        "sourceContext": t.source_context,
     }
 
 
@@ -515,3 +575,94 @@ def list_data_offers(dme_type_id: uuid.UUID | None = None, db: Session = Depends
     if dme_type_id:
         stmt = stmt.where(DataOffer.dme_type_id == dme_type_id)
     return [_offer_view(o) for o in db.scalars(stmt).all()]
+
+
+# ---------------------------------------------------------------- Wave 3: real data-plane store
+# docs/ownership/DME_OWNERSHIP.md — previously DME only ever brokered
+# job/offer metadata; a producer's actual payload never had anywhere to
+# land inside DME itself. Serves both rApp and MDAF consumers, no
+# distinction at this layer (docs/ownership/DME_OWNERSHIP.md's "two
+# paths, not one" — this is the data path, reachable by either).
+
+@app.post("/data-jobs/{data_job_id}/records", status_code=201)
+def ingest_data_record(data_job_id: uuid.UUID, body: DataRecordRequest, db: Session = Depends(get_session)):
+    job = db.get(DataJob, data_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such data job")
+    record = DataRecord(data_job_id=data_job_id, payload=body.payload)
+    db.add(record)
+    db.commit()
+    return {"recordId": str(record.record_id)}
+
+
+@app.get("/data-jobs/{data_job_id}/records")
+def fetch_data_records(data_job_id: uuid.UUID, limit: int = 100, db: Session = Depends(get_session)):
+    job = db.get(DataJob, data_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such data job")
+    stmt = select(DataRecord).where(DataRecord.data_job_id == data_job_id).order_by(DataRecord.produced_at.desc()).limit(limit)
+    records = db.scalars(stmt).all()
+    return [_record_view(r) for r in records]
+
+
+def _record_view(r: DataRecord) -> dict:
+    return {"recordId": str(r.record_id), "dataJobId": str(r.data_job_id), "payload": r.payload,
+            "producedAt": r.produced_at.isoformat()}
+
+
+# ---------------------------------------------------------------- Wave 3: O1 action mediation
+# docs/ownership/DME_OWNERSHIP.md — DME does not speak NETCONF/RESTCONF
+# itself; ran-nf-oam already does (netconf_client.py's edit-config RPCs
+# against its own real ManagedEntity/O1AdaptorEndpoint registry). This
+# route records an rApp's AI/ML decision with its source provenance,
+# then forwards to ran-nf-oam's existing POST /config-jobs — a thin
+# mediation layer, not a second implementation of O1 dispatch.
+
+@app.post("/actions", status_code=202)
+def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
+    if not body.changes:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="changes must not be empty")
+    first = body.changes[0]
+    record = DmeActionRecord(
+        requested_by=body.requestedBy,
+        managed_element_ref=first.get("managedElementRef", ""),
+        class_name=first.get("className"),
+        changes=body.changes,
+        source_context=body.sourceContext,
+    )
+    db.add(record)
+    db.commit()
+    resp = _r1.post("/ran-nf-oam/config-jobs", json={
+        "requestedBy": body.requestedBy, "scope": body.scope, "msacRole": body.msacRole,
+        "changes": [{k: v for k, v in change.items() if k != "className"} for change in body.changes],
+    })
+    forwarded = resp.json()
+    record.forwarded_job_id = uuid.UUID(forwarded["jobId"])
+    record.status = forwarded["status"]
+    db.commit()
+    return {"actionId": str(record.action_id), "forwardedJobId": forwarded["jobId"], "status": record.status}
+
+
+@app.get("/actions/{action_id}")
+def get_action(action_id: uuid.UUID, db: Session = Depends(get_session)):
+    record = db.get(DmeActionRecord, action_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="no such action")
+    return _action_view(record)
+
+
+@app.get("/actions")
+def list_actions(managed_element_ref: str | None = None, requested_by: str | None = None, db: Session = Depends(get_session)):
+    stmt = select(DmeActionRecord)
+    if managed_element_ref:
+        stmt = stmt.where(DmeActionRecord.managed_element_ref == managed_element_ref)
+    if requested_by:
+        stmt = stmt.where(DmeActionRecord.requested_by == requested_by)
+    return [_action_view(a) for a in db.scalars(stmt).all()]
+
+
+def _action_view(a: DmeActionRecord) -> dict:
+    return {"actionId": str(a.action_id), "requestedBy": a.requested_by, "managedElementRef": a.managed_element_ref,
+            "className": a.class_name, "changes": a.changes, "sourceContext": a.source_context,
+            "forwardedJobId": str(a.forwarded_job_id) if a.forwarded_job_id else None, "status": a.status,
+            "createdAt": a.created_at.isoformat()}

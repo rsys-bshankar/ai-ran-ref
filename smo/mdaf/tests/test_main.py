@@ -36,6 +36,24 @@ def client(db_session_factory):
     app.dependency_overrides.clear()
 
 
+class FakeDmeResponse:
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+
+@pytest.fixture(autouse=True)
+def _dme_data_jobs_are_known_by_default(monkeypatch):
+    """Wave 3: publish_report's cross-service check
+    (docs/ownership/DME_OWNERSHIP.md's "MDAF sources from DME only" rule)
+    calls out to DME for every input_sources id. Every existing test uses
+    either an empty list or an arbitrary placeholder UUID never meant to
+    be a real negative-case test — defaulting the lookup to "found" keeps
+    those tests focused on what they actually test.
+    `test_publish_report_rejects_unknown_dme_input_source` overrides this.
+    """
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeDmeResponse(200))
+
+
 def test_publish_and_query_report_by_analytics_type(client):
     dme_type = str(uuid.uuid4())
     resp = client.post("/reports", params={"analytics_type": "resource-utilization"},
@@ -202,6 +220,20 @@ def test_list_subscriptions_exposes_notification_destination(client):
 
     resp = client.get("/subscriptions")
     assert resp.json()[0]["notificationDestination"] == "http://sa-smos:8000/analytics-reports"
+
+
+def test_publish_report_rejects_unknown_dme_input_source(client, monkeypatch):
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeDmeResponse(404))
+    resp = client.post("/reports", params={"analytics_type": "resource-utilization"},
+                        json={"output": {"utilization": 0.7}, "input_sources": [str(uuid.uuid4())]})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "DME_ARTIFACT_NOT_FOUND"
+
+
+def test_publish_report_accepts_multiple_known_dme_input_sources(client):
+    resp = client.post("/reports", params={"analytics_type": "resource-utilization"},
+                        json={"output": {"utilization": 0.7}, "input_sources": [str(uuid.uuid4()), str(uuid.uuid4())]})
+    assert resp.status_code == 201
 
 
 def test_health_check_answers_the_gui_bff_liveness_probe(client):

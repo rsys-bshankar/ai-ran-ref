@@ -19,7 +19,16 @@ def test_register_type(client, r1):
         "namespace": "RAN", "name": "CoverageIssue", "version": "1.0", "typeName": "RAN.CoverageIssue",
         "producerId": "rapp-1", "dataProductionSchema": {"type": "object"}, "collectionSpec": {"a": 1},
         "producerHealthCallbackUrl": "http://x/health", "jobCallbackUrl": "http://x/jobs",
+        "sourceDomain": None, "sourceContext": None,
     }}
+
+
+def test_register_type_with_source_provenance(client, r1):
+    client.register_type("RAN", "CoverageIssue", "1.0", "RAN.CoverageIssue", "rapp-1", {"type": "object"},
+                          "http://x/health", "http://x/jobs", source_domain="DIGITAL_TWIN", source_context={"vendor": "acme"})
+    call = r1.calls[0]
+    assert call["json"]["sourceDomain"] == "DIGITAL_TWIN"
+    assert call["json"]["sourceContext"] == {"vendor": "acme"}
 
 
 def test_discover_types(client, r1):
@@ -41,12 +50,14 @@ def test_query_producer_status(client, r1):
 
 def test_create_data_job(client, r1):
     dme_type_id = uuid.uuid4()
-    client.create_data_job(dme_type_id, "ONE_TIME", "PULL_HTTP", "consumer-1", production_job_definition={"a": 1})
+    client.create_data_job(dme_type_id, "ONE_TIME", "PULL_HTTP", "consumer-1", production_job_definition={"a": 1},
+                            lifecycle_stage="TRAINING")
     call = r1.calls[0]
     assert call["path"] == "/dme/data-jobs"
     assert call["json"] == {
         "dataDeliveryMode": "ONE_TIME", "dmeTypeId": str(dme_type_id), "productionJobDefinition": {"a": 1},
         "dataDeliveryMethod": "PULL_HTTP", "deliveryDetails": {}, "consumerId": "consumer-1",
+        "lifecycleStage": "TRAINING",
     }
 
 
@@ -132,3 +143,32 @@ def test_raises_sdk_error_on_a_4xx_response(client, r1):
         client.get_data_job(uuid.uuid4())
     assert exc_info.value.status_code == 404
     assert exc_info.value.body == {"detail": "no such data job"}
+
+
+def test_ingest_and_fetch_data_records(client, r1):
+    job_id = uuid.uuid4()
+    client.ingest_data_record(job_id, {"kpi": 1.0})
+    r1.script(200, [{"recordId": "x", "dataJobId": str(job_id), "payload": {"kpi": 1.0}, "producedAt": "2026-01-01T00:00:00+00:00"}])
+    result = client.fetch_data_records(job_id, limit=10)
+    assert r1.calls[0] == {"verb": "post", "path": f"/dme/data-jobs/{job_id}/records", "params": None, "files": None, "json": {"payload": {"kpi": 1.0}}}
+    assert r1.calls[1] == {"verb": "get", "path": f"/dme/data-jobs/{job_id}/records", "params": {"limit": 10}}
+    assert result[0]["payload"] == {"kpi": 1.0}
+
+
+def test_mediate_action(client, r1):
+    client.mediate_action("energy-optimizer", [{"managedElementRef": "me-1", "attributeChanges": {"x": 1}}],
+                           source_context={"vendor": "acme"})
+    call = r1.calls[0]
+    assert call["path"] == "/dme/actions"
+    assert call["json"] == {
+        "requestedBy": "energy-optimizer", "changes": [{"managedElementRef": "me-1", "attributeChanges": {"x": 1}}],
+        "scope": "single-ME", "msacRole": None, "sourceContext": {"vendor": "acme"},
+    }
+
+
+def test_get_and_list_actions(client, r1):
+    action_id = uuid.uuid4()
+    client.get_action(action_id)
+    client.list_actions(requested_by="energy-optimizer")
+    assert r1.calls[0] == {"verb": "get", "path": f"/dme/actions/{action_id}", "params": None}
+    assert r1.calls[1] == {"verb": "get", "path": "/dme/actions", "params": {"managed_element_ref": None, "requested_by": "energy-optimizer"}}

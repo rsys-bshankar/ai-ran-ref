@@ -1,6 +1,57 @@
 {
   "components": {
     "schemas": {
+      "ActionRequest": {
+        "description": "DME's O1 action-mediation request \u2014 mirrors ran-nf-oam's own\nWriteConfigRequest.changes shape ({managedElementRef,\nmanagedFunctionRef?, attributeChanges?, operation?}), plus an\noptional real ProvMnS IOC class name per change (className, e.g.\n'GNBDUFunction'/'NRCellDU' \u2014 specs/O1_Adaptor/\nO1_Adaptor_MnS_Hierarchy_Mapping_v4.xlsx) for audit/documentation\npurposes; ran-nf-oam itself still resolves purely on\nmanagedElementRef, unchanged this wave.",
+        "properties": {
+          "changes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "msacRole": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Msacrole"
+          },
+          "requestedBy": {
+            "title": "Requestedby",
+            "type": "string"
+          },
+          "scope": {
+            "default": "single-ME",
+            "title": "Scope",
+            "type": "string"
+          },
+          "sourceContext": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcecontext"
+          }
+        },
+        "required": [
+          "requestedBy",
+          "changes"
+        ],
+        "title": "ActionRequest",
+        "type": "object"
+      },
       "DMETypeRegistration": {
         "properties": {
           "collectionSpec": {
@@ -39,6 +90,29 @@
           "producerId": {
             "title": "Producerid",
             "type": "string"
+          },
+          "sourceContext": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcecontext"
+          },
+          "sourceDomain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcedomain"
           },
           "typeName": {
             "title": "Typename",
@@ -86,6 +160,17 @@
             "format": "uuid",
             "title": "Dmetypeid",
             "type": "string"
+          },
+          "lifecycleStage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lifecyclestage"
           },
           "productionJobDefinition": {
             "additionalProperties": true,
@@ -150,6 +235,20 @@
           "dataOfferTerminationNotificationUri"
         ],
         "title": "DataOfferRequest",
+        "type": "object"
+      },
+      "DataRecordRequest": {
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "payload"
+        ],
+        "title": "DataRecordRequest",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -231,6 +330,138 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/actions": {
+      "get": {
+        "operationId": "list_actions_actions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requested_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Requested By"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Actions"
+      },
+      "post": {
+        "operationId": "mediate_action_actions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mediate Action"
+      }
+    },
+    "/actions/{action_id}": {
+      "get": {
+        "operationId": "get_action_actions__action_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Action"
+      }
+    },
     "/data-jobs": {
       "get": {
         "operationId": "list_data_jobs_data_jobs_get",
@@ -441,6 +672,100 @@
           }
         },
         "summary": "Update Data Job"
+      }
+    },
+    "/data-jobs/{data_job_id}/records": {
+      "get": {
+        "operationId": "fetch_data_records_data_jobs__data_job_id__records_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fetch Data Records"
+      },
+      "post": {
+        "operationId": "ingest_data_record_data_jobs__data_job_id__records_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "data_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Data Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataRecordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest Data Record"
       }
     },
     "/data-jobs/{data_job_id}/status": {

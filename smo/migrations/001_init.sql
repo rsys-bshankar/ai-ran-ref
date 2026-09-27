@@ -110,6 +110,8 @@ CREATE TABLE dme_type (
   collection_spec                        JSONB,               -- above-spec addition, kept deliberately (section 3.4)
   producer_health_callback_url             TEXT NOT NULL,     -- ADOPT from ICS (repo inventory)
   job_callback_url                            TEXT NOT NULL,  -- NEW section 5: ICS's own InfoProducer.jobCallbackUrl
+  source_domain                                 TEXT CHECK (source_domain IN ('LIVE_RAN','DIGITAL_TWIN')),  -- Wave 3: docs/ownership/DME_OWNERSHIP.md
+  source_context                                  JSONB,
   UNIQUE (namespace, name, version)
 );
 
@@ -134,7 +136,8 @@ CREATE TABLE data_job (
   data_delivery_method  TEXT NOT NULL CHECK (data_delivery_method IN ('PULL_HTTP','PUSH_HTTP','STREAMING_KAFKA')),
   delivery_details       JSONB,
   consumer_id             TEXT NOT NULL,   -- rAppId, or 'DME_FRAMEWORK' (section 3.7)
-  status                    TEXT NOT NULL DEFAULT 'PENDING'
+  status                    TEXT NOT NULL DEFAULT 'PENDING',
+  lifecycle_stage             TEXT CHECK (lifecycle_stage IN ('TRAINING','TESTING','EMULATION','INFERENCE','CLOSED_LOOP_FEEDBACK'))  -- Wave 3: docs/ownership/DME_OWNERSHIP.md
 );
 
 CREATE TABLE data_offer (
@@ -144,6 +147,31 @@ CREATE TABLE data_offer (
   data_delivery_method_committed      TEXT,
   data_availability_notification_uri  TEXT,   -- REVERSED direction — section 3.5
   data_offer_termination_notification_uri TEXT NOT NULL
+);
+
+-- Wave 3 (AI Platform Service Decomposition) — docs/ownership/DME_OWNERSHIP.md.
+-- DME's real data-plane store: a producer's actual payload, ingested
+-- against its own DataJob and fetched back by either an rApp or MDAF.
+CREATE TABLE data_record (
+  record_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  data_job_id    UUID NOT NULL REFERENCES data_job(data_job_id) ON DELETE CASCADE,
+  payload           JSONB NOT NULL,
+  produced_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- DME's O1 action-mediation audit trail: what an rApp's AI/ML decision
+-- asked for. ran-nf-oam's own write_config_job/write_config_sub_change
+-- (forwarded_job_id below) remain the record of what NETCONF actually did.
+CREATE TABLE dme_action_record (
+  action_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  requested_by         TEXT NOT NULL,
+  managed_element_ref     TEXT NOT NULL,
+  class_name                 TEXT,    -- real ProvMnS IOC name where known, e.g. GNBDUFunction/NRCellDU
+  changes                       JSONB NOT NULL,
+  source_context                   JSONB,
+  forwarded_job_id                    UUID,
+  status                                 TEXT NOT NULL DEFAULT 'FORWARDED',
+  created_at                                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ============================================================

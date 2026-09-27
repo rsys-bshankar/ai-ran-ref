@@ -128,7 +128,7 @@ decision, not a per-PR judgment call.
 | Service | Spec/standard it realizes |
 |---|---|
 | SME | O-RAN (CAPIF-derived) |
-| DME | O-RAN (ICS-derived) |
+| DME | O-RAN (ICS-derived data plane) + O1 Adaptor MnS mapping (control/actuation mediation, Wave 3 — `docs/ownership/DME_OWNERSHIP.md`) |
 | MDAF | TS 28.104 (MDA) |
 | AIMgF | TS 28.105 (AI/ML NRM) realization |
 | MLMR | TS 28.105 (AI/ML NRM) realization |
@@ -194,11 +194,20 @@ Frozen wave order — do not reorder without updating this document first:
   14 states; `RuntimeLifecycleState`, 8 states, jointly owned with NFO)
   and its full eight-aggregate domain model, deepened past Wave 1's
   structural split — see `docs/ownership/AIMGF_OWNERSHIP.md`.
-- **Wave 3**: R1 contracts (DME → MDAF → MLMR → AIMgF → MLLF → Intent
-  Service, in that order), OpenAPI skeletons, sequence diagrams, and
-  cross-cutting OpenAPI standardization (OAuth2/JWT, Correlation-ID,
-  Error Schema, Versioning, Pagination, Subscriptions) — last, once
-  every contract's shape is already stable.
+- **Wave 3** (in progress): R1 contracts (DME → MDAF → MLMR → AIMgF →
+  MLLF → Intent Service, in that order), OpenAPI skeletons, sequence
+  diagrams, and cross-cutting OpenAPI standardization (OAuth2/JWT,
+  Correlation-ID, Error Schema, Versioning, Pagination, Subscriptions) —
+  last, once every contract's shape is already stable.
+  - **DME slice** (done): revises DME from a pure data-job/offer broker
+    into a dual data-plane + O1-actuation-mediation service, with real
+    source/vendor provenance and a Digital-Twin-excluded-from-inference
+    eligibility rule enforced at the DB layer — see
+    `docs/ownership/DME_OWNERSHIP.md`. Real O1 protocol dispatch stays
+    in `ran-nf-oam/`; DME's `/actions` route mediates and forwards to
+    it, it does not duplicate it. MDAF's report inputs are now validated
+    against real DME artifacts, closing the "MDAF sources from DME only"
+    rule with enforced code rather than a documented convention.
 
 Reordering Wave 3 ahead of Wave 1/2, or starting new R1 contract design
 before the ownership split is merged, is exactly the redesign-it-twice
