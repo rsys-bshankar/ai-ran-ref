@@ -20,7 +20,16 @@ def test_register_model(client, r1):
         "modelType": "QoE-predictor", "version": "1.0", "requiredResourceTypeId": None,
         "description": "d", "author": "a", "owner": "o", "inputDataType": None,
         "outputDataType": None, "targetEnvironments": [],
+        "domain": None, "customDomain": None, "vendors": None,
     }
+
+
+def test_register_model_with_domain_and_vendors(client, r1):
+    client.register_model("QoE-predictor", "1.0", domain="CUSTOM", custom_domain="qoe", vendors=["acme"])
+    call = r1.calls[0]
+    assert call["json"]["domain"] == "CUSTOM"
+    assert call["json"]["customDomain"] == "qoe"
+    assert call["json"]["vendors"] == ["acme"]
 
 
 def test_discover_models(client, r1):

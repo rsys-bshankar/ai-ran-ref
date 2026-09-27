@@ -385,6 +385,89 @@ FOCOM's O2IMS mismatch below, not a bug.
    already, just under this build's own `aiml-fw`-derived name/shape
    rather than TS28.105's `ThresholdMonitor`.
 
+## MLMR vs. TS29482 MLR (AIMLE) — Wave 3
+
+*(Wave 3's MLMR slice, after DME and MDAF — see
+`docs/architecture/AI_PLATFORM_BASELINE.md`'s R1-contract ordering.
+TS28.105's NRM containment tree, audited above, is AI/ML management's
+*configuration* view; TS 29.482 AIMLE is a genuinely different, much
+newer (Release 19/20) Stage-3 *service* API purpose-built for exactly
+what MLMR already is — a model repository/discovery service — so this
+is read as a second, complementary ground truth for MLMR specifically,
+not a replacement for the AI/ML Workflow section above.)*
+
+Spec read: `TS29482_MLR_MLModelManagement.yaml` (`/storages` resource
+CRUD + `MLModel`/`MLModelProfile`/`MLModelsStorage` schemas) and
+`TS29482_MLR_ModelInformationDiscovery.yaml` (`GET /models` with a
+whole-`MLModel`-object filter criteria). Newly cataloged in
+`specs/README.md` this pass — previously unread.
+
+1. **Whole `MLModelsStorage`/`MLModelProfile` resource layer absent** —
+   large/structural, confirmed deliberate, same category as AI/ML
+   Workflow's own already-accepted flatter-shape choice above. The
+   spec wraps every model in a Storage+Profile indirection
+   (`aimleServId`/`aimleRepId`/`mlModelUri` as a separate endpoint
+   reference); this build's `MLModel` rows are directly first-class,
+   no wrapping resource.
+2. **`domain`/`customDomain` (closed 5-value `MLModelDomain` enum +
+   CUSTOM escape hatch) absent** — **closed this wave.** `MLModel.model_type`
+   is a free-form use-case name (`coverage-predictor`), a different
+   concept from the spec's own domain taxonomy; added as new, separate
+   `domain`/`custom_domain` columns rather than overloading
+   `model_type`, with real validation (`SCHEMA_VALIDATION_FAILED` on
+   an unknown value) in both `register_model` and `update_model`.
+3. **`vendors` absent** — **closed this wave.** A real, small addition
+   (`list[str]`, same ARRAY-with-SQLite-JSON-fallback pattern this
+   codebase already uses for `MLModelCoordinationGroup.member_use_cases`),
+   deliberately echoing DME's own Wave 3 multi-vendor provenance
+   principle (`docs/ownership/DME_OWNERSHIP.md`) applied to model
+   identity instead of data-source identity.
+4. **`mlModelSize` absent** — **closed this wave.** `ModelArtifact`
+   gains `size_bytes`, computed from the real uploaded bytes
+   (`len(content)`) at `upload_model_artifact` time — not a
+   separately-declared value that could drift from the actual
+   artifact, and returned from the upload response.
+5. **`MLModelPhase` (`NOT_TRAINED`/`IN_TRAINING`/`TRAINED`/
+   `IN_RETRAINING`/`DEPLOYED`) confirmed NOT a gap for MLMR to close** —
+   this is exactly the lifecycle concept Wave 2 deliberately moved off
+   MLMR entirely (`docs/ownership/AIMGF_OWNERSHIP.md`: "MLMR is model
+   truth, not lifecycle truth"). AIMgF's own `ModelLifecycleState` is
+   the real analog; adding a second, competing phase field to MLMR's
+   own row would be a direct regression of that Wave 2 decision, not a
+   spec-conformance improvement.
+6. **`storeDiscReqs` (retention `duration` + `accessReqs`:
+   `PUBLICLY_AVAILABLE`/`RESTRICTED`/`PRIVATE_USE_ONLY`) absent** —
+   moderate, real feature gap, not closed. Storing the declared
+   requirement is small; actually *enforcing* access restriction on
+   `download_model_artifact` is a real authorization feature this
+   build has no equivalent of anywhere yet (RBAC lives entirely in
+   `gui-bff/`, never inside a backend module itself) — a bigger change
+   than this pass's scoped fixes, and enforcement-less storage of an
+   access-control field would be actively misleading.
+7. **`trainingInfo` (`dataSources`/`dataVolume`/`freshness`/
+   `baseModelId`) mostly absent** — moderate, partially pre-existing.
+   `dataSources` is arguably already covered by this build's own
+   `training_data_lineage` (a deliberately write-only field per an
+   earlier pass's own finding, above the fold in `mlmr/app/main.py`'s
+   `_model_view`); `baseModelId` (continual-training lineage) is a
+   real, genuinely new, useful gap, but tying it correctly to AIMgF's
+   own retrain/coordination-group machinery needs more design than a
+   single-field addition — left open rather than added as a dead
+   column.
+8. **`MLModelUsage` (`TRAINING`/`INFERENCE`) absent** — small,
+   groundable if it matters, not closed this pass. Distinct from
+   `usageReqs`'s own `AccessReqs` concept (item 6) — this one is
+   simply which lifecycle stages a model is declared valid for at all,
+   closer to a static capability flag than a runtime access rule. Not
+   picked up this wave to keep the slice scoped to the four items
+   above.
+9. **`ModelInformationDiscovery`'s whole-`MLModel`-object `filt-criteria`
+   query parameter** — large/structural, confirmed deliberate.
+   `discover_models`'s own `model_type`-only filter is this build's
+   already-established, much narrower discovery shape; matching the
+   spec's arbitrary-field filtering would be a genuine query-engine
+   feature, not a scoped fix.
+
 ## RAN Analytics vs. TS28104 MDA NRM
 
 *(Report publishing and subscriptions were split into their own `mdaf/`

@@ -82,6 +82,17 @@
             ],
             "title": "Author"
           },
+          "customDomain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customdomain"
+          },
           "description": {
             "anyOf": [
               {
@@ -92,6 +103,17 @@
               }
             ],
             "title": "Description"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
           },
           "inputDataType": {
             "anyOf": [
@@ -150,6 +172,20 @@
             "title": "Targetenvironments",
             "type": "array"
           },
+          "vendors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendors"
+          },
           "version": {
             "title": "Version",
             "type": "string"
@@ -175,6 +211,17 @@
             ],
             "title": "Author"
           },
+          "customDomain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customdomain"
+          },
           "description": {
             "anyOf": [
               {
@@ -185,6 +232,17 @@
               }
             ],
             "title": "Description"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
           },
           "inputDataType": {
             "anyOf": [
@@ -271,6 +329,20 @@
               }
             ],
             "title": "Trainingdatalineage"
+          },
+          "vendors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendors"
           },
           "version": {
             "title": "Version",
@@ -445,7 +517,7 @@
         "summary": "Discover Models"
       },
       "post": {
-        "description": "OPEN_ITEMS.md section 5: the reference's own RegisterModel\n(mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint\nviolation \u2014 this build accepted a duplicate (modelType, version)\nregistration silently, creating a second, indistinguishable row.\n\nAlso OPEN_ITEMS.md section 5: registration metadata was thin \u2014 no\nI/O data type schema, no author/owner, no TargetEnvironment\ndeclarations, all real fields on the reference's own\nModelRelatedInformation/ModelInformation/Metadata (modelInfo.go).\nRequired there; kept optional here, since this build's own\nRegisterModel was already permissive before this pass.",
+        "description": "OPEN_ITEMS.md section 5: the reference's own RegisterModel\n(mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint\nviolation \u2014 this build accepted a duplicate (modelType, version)\nregistration silently, creating a second, indistinguishable row.\n\nAlso OPEN_ITEMS.md section 5: registration metadata was thin \u2014 no\nI/O data type schema, no author/owner, no TargetEnvironment\ndeclarations, all real fields on the reference's own\nModelRelatedInformation/ModelInformation/Metadata (modelInfo.go).\nRequired there; kept optional here, since this build's own\nRegisterModel was already permissive before this pass.\n\ndomain/customDomain/vendors (Wave 3, SPEC_AUDIT.md's MLMR section):\nTS29482_MLR_MLModelManagement.yaml's own MLModel schema.",
         "operationId": "register_model_models_post",
         "requestBody": {
           "content": {

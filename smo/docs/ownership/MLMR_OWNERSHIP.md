@@ -1,7 +1,14 @@
 # MLMR Ownership
 
-Status: **frozen** — Wave 0. See `docs/architecture/SERVICE_OWNERSHIP_MATRIX.md`
-and `docs/architecture/AI_PLATFORM_BASELINE.md`.
+Status: **implemented, extended Wave 3**. See
+`docs/architecture/SERVICE_OWNERSHIP_MATRIX.md` and
+`docs/architecture/AI_PLATFORM_BASELINE.md`. Wave 3 grounds MLMR against
+a second, more directly-applicable formal spec —
+`specs/5G_APIs/TS29482_MLR_MLModelManagement.yaml`/
+`TS29482_MLR_ModelInformationDiscovery.yaml` (3GPP TS 29.482 AIMLE), a
+genuine model-repository/discovery Stage-3 API — audited in
+`SPEC_AUDIT.md`'s own MLMR section alongside the original TS28.105 NRM
+audit above it.
 
 ## Mission
 
@@ -13,7 +20,10 @@ anywhere.
 ## Owns
 
 - `MLModel` — the AI asset itself (identity, type, version, description,
-  author/owner, artifact location, target environments)
+  author/owner, artifact location, target environments, and — Wave 3,
+  TS29482_MLR_MLModelManagement.yaml — `domain`/`customDomain`/`vendors`)
+- `ModelArtifact.size_bytes` (Wave 3) — computed from the real uploaded
+  bytes, not a separately-declared value
 - `MLModelVersion`
 - `MLModelRepository` (the containing concept, per TS 28.105)
 - `MLModelCoordinationGroup` (member models, retrain propagation —
