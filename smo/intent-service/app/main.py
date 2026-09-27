@@ -34,11 +34,13 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.identity import is_framework_internal_identity
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.correlation import apply_correlation_id
 
 from .models import Intent, IntentHandlingFunction, IntentReport
 
 app = FastAPI(title="Intent Service")
 apply_r1_gateway_security(app)
+apply_correlation_id(app)
 
 
 @app.get("/health")

@@ -26,6 +26,7 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.timeutil import as_utc
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.correlation import apply_correlation_id
 
 from .models import EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile, TrustedInvoker
 
@@ -38,6 +39,7 @@ app = FastAPI(title="SME — Service Management and Exposure")
 # these two routes are the one exemption, the same way a token endpoint is
 # never itself gated behind the token it hands out.
 apply_r1_gateway_security(app, public_paths=frozenset({"/oauth2/token", "/oauth2/introspect"}))
+apply_correlation_id(app)
 
 
 @app.get("/health")

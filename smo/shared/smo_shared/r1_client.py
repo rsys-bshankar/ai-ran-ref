@@ -34,6 +34,9 @@ import time
 
 import httpx
 
+from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
+from .correlation import get_correlation_id
+
 R1_GATEWAY_URL = os.environ.get("R1_GATEWAY_URL", "http://r1-termination:8000")
 
 log = logging.getLogger(__name__)
@@ -119,7 +122,17 @@ class R1Client:
 
     def _headers(self, refresh: bool = False) -> dict:
         token = self._bearer_token or _module_token(self.base_url, refresh)
-        return {"Authorization": f"Bearer {token}"} if token else {}
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        # Wave 3 cross-cutting standardization's Correlation-ID slice
+        # (smo_shared/correlation.py): propagates the calling handler's
+        # own correlation ID to this downstream call, so one inbound
+        # request's whole cross-service fan-out shares one ID. None
+        # outside any request context (e.g. a standalone script) — no
+        # header added rather than fabricating one.
+        correlation_id = get_correlation_id()
+        if correlation_id:
+            headers[CORRELATION_ID_HEADER] = correlation_id
+        return headers
 
     def _send(self, send, path: str, **kwargs) -> httpx.Response:
         resp = send(self._url(path), headers=self._headers(), **kwargs)

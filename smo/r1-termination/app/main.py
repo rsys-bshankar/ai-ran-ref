@@ -17,6 +17,8 @@ import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
+from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.openapi_security import apply_r1_gateway_security
 
 app = FastAPI(title="R1 Termination")
@@ -26,6 +28,11 @@ app = FastAPI(title="R1 Termination")
 # path here is the catch-all proxy route, which really does call
 # _authorized() on every request.
 apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/bootstrap"}))
+# This gateway is the true origin point for external traffic: a caller
+# that never sent its own X-Correlation-ID gets one assigned here, which
+# then propagates through the whole downstream fan-out (see the proxy
+# route below, and smo_shared/r1_client.py for the intra-mesh half).
+apply_correlation_id(app)
 
 
 @app.get("/health")
@@ -122,11 +129,20 @@ async def proxy(full_path: str, request: Request):
     # docker-compose network boundary) — everything past _authorized above
     # is just forwarding the already-authenticated request.
     body = await request.body()
+    # Every other header forwards verbatim; X-Correlation-ID is
+    # explicitly overridden with this request's own real one (the
+    # caller's, or one apply_correlation_id's middleware just generated
+    # if it sent none) rather than whatever raw casing/value it arrived
+    # with, so a caller that omitted the header still gets a consistent
+    # ID threaded through its own request's whole downstream fan-out.
+    forwarded_headers = {k: v for k, v in request.headers.items()
+                          if k.lower() not in ("host", CORRELATION_ID_HEADER.lower())}
+    forwarded_headers[CORRELATION_ID_HEADER] = get_correlation_id()
     async with httpx.AsyncClient() as client:
         upstream = await client.request(
             request.method,
             f"{backend}/{rest_of_path}",
-            headers={k: v for k, v in request.headers.items() if k.lower() != "host"},
+            headers=forwarded_headers,
             params=request.query_params,
             content=body,
         )
