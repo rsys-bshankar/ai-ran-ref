@@ -24,6 +24,7 @@ import uuid
 
 import httpx
 from fastapi import Depends, FastAPI
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -32,6 +33,15 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 
 from .models import MDAFReport, MDASubscription
+
+THRESHOLD_DIRECTIONS = {"UP", "DOWN", "UP_AND_DOWN"}  # TS28.104 ThresholdInfo.thresholdDirection's exact wire values
+
+
+class ThresholdInfo(BaseModel):
+    monitoredMDAOutputIE: str
+    thresholdDirection: str
+    thresholdValue: float
+    hysteresis: float = 0
 
 app = FastAPI(title="MDAF")
 
@@ -71,6 +81,41 @@ def publish_report(analytics_type: str, output: dict, input_sources: list[uuid.U
     return {"reportId": str(report.report_id)}
 
 
+def _threshold_crossed(sub: MDASubscription, output: dict) -> bool:
+    """TS28.104 ThresholdInfo — edge-triggered crossing with a real
+    hysteresis band, not a level check re-fired on every report (that
+    would make `hysteresis` a declared-but-unused field, the exact
+    anti-pattern this build's own audits keep catching elsewhere).
+    Mutates `sub.threshold_state` in place (caller commits); returns
+    True the moment ANY of this subscription's thresholds crosses.
+    `threshold_state` maps monitoredMDAOutputIE -> "ABOVE"/"BELOW", the
+    side last observed — None (never yet observed, or the metric hasn't
+    appeared in a report yet) fires nothing on its own, it only seeds
+    the state so the *next* report can detect a real transition.
+    """
+    if not sub.threshold_info:
+        return False
+    state = dict(sub.threshold_state or {})
+    crossed = False
+    for entry in sub.threshold_info:
+        ie, direction = entry["monitoredMDAOutputIE"], entry["thresholdDirection"]
+        if ie not in output:
+            continue
+        value, threshold, hysteresis = output[ie], entry["thresholdValue"], entry["hysteresis"]
+        previous = state.get(ie)
+        if direction in ("UP", "UP_AND_DOWN") and value >= threshold and previous != "ABOVE":
+            crossed, state[ie] = True, "ABOVE"
+        elif direction in ("DOWN", "UP_AND_DOWN") and value <= threshold and previous != "BELOW":
+            crossed, state[ie] = True, "BELOW"
+        elif value < threshold - hysteresis:
+            state[ie] = "BELOW"
+        elif value > threshold + hysteresis:
+            state[ie] = "ABOVE"
+        # inside the hysteresis band and no new crossing: leave state as-is
+    sub.threshold_state = state
+    return crossed
+
+
 def _notify_report_subscribers(db: Session, report: MDAFReport) -> None:
     """OPEN_ITEMS.md section 5: PublishAnalyticsReport's subscriber loop
     was a deliberate no-op (`for sub in subs: pass`) — a matching
@@ -82,9 +127,17 @@ def _notify_report_subscribers(db: Session, report: MDAFReport) -> None:
     registered a real `notificationDestination` are ever POSTed to — one
     that didn't (e.g. a purely poll-based consumer) is left alone rather
     than guessing a delivery target from `requestedBy`.
+
+    Wave 3: a subscription with `threshold_info` set is now conditional —
+    notified only on a real threshold crossing (see `_threshold_crossed`),
+    not on every report. A subscription with no threshold_info keeps the
+    original always-notify behavior, unchanged.
     """
     subs = db.scalars(select(MDASubscription).where(MDASubscription.analytics_type == report.analytics_type)).all()
     for sub in subs:
+        crossed = _threshold_crossed(sub, report.output)
+        if sub.threshold_info and not crossed:
+            continue
         if not sub.notification_destination:
             continue
         try:
@@ -94,11 +147,31 @@ def _notify_report_subscribers(db: Session, report: MDAFReport) -> None:
             }, timeout=2.0)
         except httpx.HTTPError:
             pass
+    db.commit()  # persists threshold_state even for subscriptions that didn't cross (or have no destination)
+
+
+class SubscribeAnalyticsRequest(BaseModel):
+    """`scope`'s wire shape changes here from a bare JSON body to this
+    named model — FastAPI can't leave `scope` as the implicit unwrapped
+    body once a second body-eligible field (`thresholdInfo`) exists
+    alongside it. No real caller sets `scope` on a subscription today
+    (grepped: ran-analytics never does, and no test did either before
+    this pass), so this is a real but zero-blast-radius wire change.
+    """
+
+    scope: dict | None = None
+    thresholdInfo: list[ThresholdInfo] | None = None
 
 
 @app.post("/subscriptions", status_code=201)
-def subscribe_analytics(analytics_type: str, requested_by: str, notification_destination: str | None = None, scope: dict | None = None, db: Session = Depends(get_session)):
-    sub = MDASubscription(analytics_type=analytics_type, requested_by=requested_by, notification_destination=notification_destination, scope=scope)
+def subscribe_analytics(analytics_type: str, requested_by: str, notification_destination: str | None = None,
+                         body: SubscribeAnalyticsRequest = SubscribeAnalyticsRequest(), db: Session = Depends(get_session)):
+    if body.thresholdInfo is not None:
+        bad = [t.thresholdDirection for t in body.thresholdInfo if t.thresholdDirection not in THRESHOLD_DIRECTIONS]
+        if bad:
+            raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"unknown thresholdDirection {bad[0]!r}")
+    sub = MDASubscription(analytics_type=analytics_type, requested_by=requested_by, notification_destination=notification_destination,
+                          scope=body.scope, threshold_info=[t.model_dump() for t in body.thresholdInfo] if body.thresholdInfo else None)
     db.add(sub)
     db.commit()
     return {"subscriptionId": str(sub.subscription_id)}
@@ -137,4 +210,5 @@ def query_analytics_report(analytics_type: str | None = None, db: Session = Depe
 
 def _subscription_view(s: MDASubscription) -> dict:
     return {"subscriptionId": str(s.subscription_id), "analyticsType": s.analytics_type,
-            "requestedBy": s.requested_by, "notificationDestination": s.notification_destination, "scope": s.scope}
+            "requestedBy": s.requested_by, "notificationDestination": s.notification_destination, "scope": s.scope,
+            "thresholdInfo": s.threshold_info}
