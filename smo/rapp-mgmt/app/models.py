@@ -24,6 +24,13 @@ class RAppInstance(Base):
     upgrade_timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=300)  # confirmed default, LLD section 6 (OPEN_ITEMS.md section 1)
     pending_upgrade_instance_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # links old row to its in-flight replacement
     package_usage_registration_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> package_usage_registration (Onboarding), cross-module like package_id
+    # SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3 (SME auto-registration):
+    # SME serviceId(s) this instance registered at bootstrap-complete from
+    # the package's own CSAR-bundled Files/Sme/serviceapis/ declarations —
+    # None if the package declared none, or before bootstrap-complete ran.
+    # Deregistered (best-effort) on TERMINATE/CRASH, same as oauth_client_id
+    # is used as this instance's own SME apfId throughout.
+    sme_service_ids: Mapped[list[str] | None] = mapped_column(JSON)
 
 
 class RAppFaultReport(Base):

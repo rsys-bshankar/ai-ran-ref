@@ -91,6 +91,12 @@ function PackageDrawer({ pkg, onClose }: { pkg: Package; onClose: () => void }) 
         ["Descriptor version", pkg.descriptorVersion ?? <span className="muted">not declared</span>],
         ["ASD schema version", pkg.schemaVersion ?? <span className="muted">not declared</span>],
       ]} />
+      <h3>SME registration</h3>
+      <p className="muted small">
+        {pkg.smeDeclarations
+          ? `This package's CSAR declares ${pkg.smeDeclarations.providers.length} provider(s) and ${pkg.smeDeclarations.serviceApis.length} service API(s) — each deployed instance registers them with SME at bootstrap.`
+          : "This package's CSAR declares no Files/Sme/ providers or service APIs — nothing is auto-registered with SME."}
+      </p>
       <h3>Artifacts</h3>
       <DataTable rows={artifacts.data} error={artifacts.error} rowKey={(a) => a.artifactId} empty="No artifacts registered." columns={[
         { header: "Path", render: (a) => <code className="small">{a.path}</code> }, { header: "Access URL", render: (a) => <code className="small clip">{a.accessUrl}</code> },
@@ -238,6 +244,9 @@ function InstanceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
           ["Instance ID", <code>{inst.data.instanceId}</code>], ["Package", <code>{inst.data.packageId}</code>],
           ["NFO deployment (workloadRef)", inst.data.workloadRef && <code>{inst.data.workloadRef}</code>],
           ["Pending upgrade to", inst.data.pendingUpgradeInstanceId && <code>{inst.data.pendingUpgradeInstanceId}</code>],
+          ["SME service API(s)", inst.data.smeServiceIds?.length
+            ? <code className="small">{inst.data.smeServiceIds.join(", ")}</code>
+            : <span className="muted">none registered</span>],
         ]} />
         <ConfigEditor id={id} config={inst.data.configuration ?? {}} />
       </>}

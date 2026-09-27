@@ -65,11 +65,38 @@ def _reconsider_dme_registration(instance: RAppInstance, **_) -> None:
         pass
 
 
-def _terminate_side_effects(instance: RAppInstance, **_) -> None:
-    # DME reconsideration must run BEFORE credential revocation — it reads
-    # instance.oauth_client_id as the DME producer_id, which
-    # _revoke_credential clears to None.
+def _reconsider_sme_registration(instance: RAppInstance, **_) -> None:
+    """SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3 (SME auto-
+    registration): the mirror image of _reconsider_dme_registration
+    above, for the SME provider/service-API registrations bootstrap-
+    complete made using this same oauth_client_id as its SME apfId. Real
+    O-RAN SC rApp Manager behavior (SmeDeployer.undeployRappInstance) —
+    deregister each published service API first, then the provider
+    domain itself. Best-effort, same reasoning as the DME case: an
+    unreachable SME must never block CRASH/TERMINATE.
+    """
+    if instance.oauth_client_id is None:
+        return
+    apf_id = instance.oauth_client_id
+    r1 = R1Client()
+    try:
+        for service_id in (instance.sme_service_ids or []):
+            r1.delete(f"/sme/published-apis/v1/{apf_id}/service-apis/{service_id}")
+        r1.delete(f"/sme/provider-registrations/{apf_id}")
+    except httpx.HTTPError:
+        pass
+
+
+def _reconsider_registrations(instance: RAppInstance, **_) -> None:
     _reconsider_dme_registration(instance)
+    _reconsider_sme_registration(instance)
+
+
+def _terminate_side_effects(instance: RAppInstance, **_) -> None:
+    # Reconsideration must run BEFORE credential revocation — it reads
+    # instance.oauth_client_id as the DME producer_id/SME apfId, which
+    # _revoke_credential clears to None.
+    _reconsider_registrations(instance)
     _revoke_credential(instance)
 
 
@@ -81,7 +108,7 @@ def build_rapp_instance_fsm() -> StateMachine[InstanceState, InstanceEvent]:
     fsm.add(InstanceState.UPGRADING, InstanceEvent.UPGRADE_COMMIT, InstanceState.UNDEPLOYED, action=_revoke_credential)
     fsm.add(InstanceState.UPGRADING, InstanceEvent.UPGRADE_ROLLBACK, InstanceState.RUNNING)
     fsm.add(InstanceState.RUNNING, InstanceEvent.TERMINATE, InstanceState.UNDEPLOYED, action=_terminate_side_effects)
-    fsm.add(InstanceState.RUNNING, InstanceEvent.CRASH, InstanceState.FAULTED, action=_reconsider_dme_registration)
+    fsm.add(InstanceState.RUNNING, InstanceEvent.CRASH, InstanceState.FAULTED, action=_reconsider_registrations)
     fsm.add(InstanceState.FAULTED, InstanceEvent.RECOVER, InstanceState.DEPLOYING)
     return fsm
 

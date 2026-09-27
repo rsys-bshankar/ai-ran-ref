@@ -6,6 +6,7 @@ FAILED terminal state, and the cascade-delete guard (statemachine.py).
 """
 
 import hashlib
+import json
 import uuid
 import zipfile
 from io import BytesIO
@@ -41,7 +42,7 @@ class PackageValidationFailed(Exception):
 # yaml.YAMLError for the Wave 1 manifest.yaml/capabilities.yaml
 # extension — a malformed one is a validation failure like any other
 # malformed package file, not an unhandled 500.
-ONBOARD_VALIDATION_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, httpx.HTTPError, DescriptorCreationFailed, PackageValidationFailed, yaml.YAMLError)
+ONBOARD_VALIDATION_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, httpx.HTTPError, DescriptorCreationFailed, PackageValidationFailed, yaml.YAMLError, json.JSONDecodeError)
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -126,6 +127,7 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
         pkg.descriptor_version = identity.get("descriptor_version")
         pkg.schema_version = identity.get("schema_version")
         pkg.ai_capabilities = identity.get("ai_capabilities")
+        pkg.sme_declarations = identity.get("sme_declarations")
         pkg.signature_verified = True
         for path, access_url in artifacts:
             db.add(Artifact(package_id=pkg.package_id, path=path, access_url=access_url))
@@ -223,6 +225,34 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
     return result or None
 
 
+def _parse_sme_declarations(z: zipfile.ZipFile) -> dict | None:
+    """The real O-RAN SC rApp Manager's own CSAR layout
+    (`nonrtric-plt-rappmanager/sample-rapp-generator/`'s real sample
+    packages): `Files/Sme/providers/*.json` (real CAPIF
+    `APIProviderEnrolmentDetails`) and `Files/Sme/serviceapis/*.json`
+    (real CAPIF `ServiceAPIDescription`) declare which SME provider/API
+    this package registers as, once deployed. Read here at onboarding
+    time and stored raw; registered per-instance by rapp-mgmt's
+    bootstrap-complete (`SmeDeployer.deployRappInstance`'s own real
+    per-*instance*, not per-package, timing — the reference's own
+    `primeRapp` is a documented no-op for SME).
+
+    Optional and additive, like `manifest.yaml`/`capabilities.yaml`: a
+    package whose CSAR declares neither directory (every package before
+    this pass, and the ONAP-Files/Acm-only samples) onboards exactly as
+    before — this returns None, `ApplicationPackage.sme_declarations`
+    stays NULL, and bootstrap-complete simply has nothing to register.
+    Sorted names for deterministic ordering across multiple provider/
+    service-API files.
+    """
+    names = z.namelist()
+    providers = [json.loads(z.read(n)) for n in sorted(names) if n.startswith("Files/Sme/providers/") and n.endswith(".json")]
+    service_apis = [json.loads(z.read(n)) for n in sorted(names) if n.startswith("Files/Sme/serviceapis/") and n.endswith(".json")]
+    if not providers and not service_apis:
+        return None
+    return {"providers": providers, "serviceApis": service_apis}
+
+
 def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, dict]:
     """Open TOSCA-Metadata/Definitions/Artifacts, per Onboarding LLD section 1.
 
@@ -254,6 +284,9 @@ def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, d
         ai_capabilities = _parse_ai_capabilities(z)
         if ai_capabilities is not None:
             identity["ai_capabilities"] = ai_capabilities
+        sme_declarations = _parse_sme_declarations(z)
+        if sme_declarations is not None:
+            identity["sme_declarations"] = sme_declarations
     integrity_hash = hashlib.sha256(data).hexdigest()
     return entry_definitions, artifacts, integrity_hash, identity
 
@@ -266,6 +299,12 @@ def query_onboarding_status(package_id: uuid.UUID, db: Session = Depends(get_ses
     return {
         "packageId": str(pkg.package_id), "state": pkg.state,
         "nfDeploymentDescriptorId": str(pkg.nf_deployment_descriptor_id) if pkg.nf_deployment_descriptor_id else None,
+        # rapp-mgmt's CreateInstance already calls this exact route to read
+        # state/nfDeploymentDescriptorId — smeDeclarations rides along here
+        # rather than a new dedicated route, for bootstrap-complete's own
+        # per-instance SME registration (SPEC_AUDIT.md's Onboarding/rApp
+        # Mgmt finding 3).
+        "smeDeclarations": pkg.sme_declarations,
     }
 
 
@@ -379,6 +418,7 @@ def _package_view(pkg: ApplicationPackage) -> dict:
         "signatureVerified": pkg.signature_verified,
         "nfDeploymentDescriptorId": str(pkg.nf_deployment_descriptor_id) if pkg.nf_deployment_descriptor_id else None,
         "aiCapabilities": pkg.ai_capabilities,
+        "smeDeclarations": pkg.sme_declarations,
     }
 
 

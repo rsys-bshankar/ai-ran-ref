@@ -181,6 +181,20 @@ container doesn't have one yet).
 From here on, continue with `docker compose exec r1-termination` again
 — those URIs are container-internal hostnames.
 
+Since this pass (SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3),
+step 5's `bootstrap-complete` below also does its own real SME
+registration automatically, straight from the package's own CSAR-bundled
+`Files/Sme/providers/`+`Files/Sme/serviceapis/` declarations — using
+this deployed instance's own real, random `oauthClientId` as its apfId,
+not the human-readable `hello-world-rapp` string this walkthrough uses
+below. The manual steps below are still worth running by hand: every
+later section of this runbook (RAN NF OAM, FOCOM, Intent Service, etc.)
+references `hello-world-rapp` as a human-readable producer/requester
+identity throughout, and that identity only exists once these manual
+calls register it — the automatic one at bootstrap-complete is a real,
+separate registration under a different, instance-scoped identity, not
+a substitute for it.
+
 **Register as a provider (APF)** — `Files/Sme/providers/provider.json`'s body:
 
 ```bash
@@ -269,7 +283,10 @@ print(r.status_code, r.json())
 "
 ```
 
-`state` should now be `RUNNING`. Confirm:
+`state` should now be `RUNNING`. Confirm — `smeServiceIds` shows the
+real serviceId(s) bootstrap-complete's own automatic SME registration
+(above) just received back, under this instance's own `oauthClientId`,
+separate from the manual `hello-world-rapp` registration:
 
 ```bash
 docker compose exec r1-termination python3 -c "

@@ -60,7 +60,7 @@ def client(db_session_factory):
     app.dependency_overrides.clear()
 
 
-def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None):
+def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None, sme_declarations=None, sme_service_id=None):
     """Builds a fake R1Client.get/post pair that answers each of
     CreateInstance's three downstream calls (onboarding-status, NFO
     deploy, usage/start) based on the path, since they all go through
@@ -68,13 +68,20 @@ def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None):
     nfDeploymentDescriptorId — CreateInstance now requires it (the
     NFDeploymentDescriptor fix), so a fake response without it would
     incorrectly 409 before ever reaching the usage-registration wiring
-    this suite actually tests.
+    this suite actually tests. `sme_declarations` (SPEC_AUDIT.md's
+    Onboarding/rApp Mgmt finding 3) is None by default — bootstrap-
+    complete's own SME auto-registration then finds nothing to do,
+    covering every existing call site of this helper unchanged.
     """
     reg_id = registration_id or uuid.uuid4()
+    service_id = sme_service_id or uuid.uuid4()
 
     def fake_get(self, path, **kw):
         assert "/onboarding-status" in path
-        return FakeR1Response(200, {"state": onboarding_status, "nfDeploymentDescriptorId": str(uuid.uuid4())})
+        return FakeR1Response(200, {
+            "state": onboarding_status, "nfDeploymentDescriptorId": str(uuid.uuid4()),
+            "smeDeclarations": sme_declarations,
+        })
 
     def fake_post(self, path, json=None, **kw):
         if "/nfo/deployments" in path:
@@ -83,6 +90,10 @@ def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None):
             return FakeR1Response(200, {"registrationId": str(reg_id)})
         if "/usage/" in path and path.endswith("/stop"):
             return FakeR1Response(200, {"status": "stopped"})
+        if "/sme/provider-registrations" in path:
+            return FakeR1Response(201, {"apfId": json["apfId"]})
+        if "/sme/published-apis/" in path and "/service-apis" in path:
+            return FakeR1Response(201, {"serviceId": str(service_id)})
         raise AssertionError(f"unexpected R1 POST to {path}")
 
     return fake_get, fake_post
@@ -161,7 +172,13 @@ def test_terminate_instance_deregisters_dme_producer(client, monkeypatch):
     """rApp-as-producer reconsideration trigger (OPEN_ITEMS.md section 1):
     TERMINATE must reach DME too, deregistering every DMEType this
     instance's own oauth_client_id (== its DME producerId) registered —
-    not just revoke the local credential.
+    not just revoke the local credential. Also reaches SME (SPEC_AUDIT.md's
+    Onboarding/rApp Mgmt finding 3): an unconditional, idempotent
+    provider-registrations delete attempt using the same identity as its
+    SME apfId — the package here declared no real SME data (fake_get's
+    onboarding-status has no smeDeclarations), so no service-api deletes
+    happen, only the always-attempted provider deregistration, mirroring
+    the DME call's own unconditional-attempt shape.
     """
     fake_get, fake_post = _route_r1_get_post()
     calls = []
@@ -179,18 +196,22 @@ def test_terminate_instance_deregisters_dme_producer(client, monkeypatch):
 
     resp = client.post(f"/instances/{created['instanceId']}/terminate")
     assert resp.status_code == 200
-    assert len(calls) == 1
-    path, params = calls[0]
-    assert path == "/dme/production-capabilities"
-    assert params == {"producer_id": created["oauthClientId"]}
+    assert len(calls) == 2
+    assert calls[0] == ("/dme/production-capabilities", {"producer_id": created["oauthClientId"]})
+    assert calls[1] == (f"/sme/provider-registrations/{created['oauthClientId']}", None)
 
 
 def test_crash_via_critical_fault_deregisters_dme_producer(client, monkeypatch):
+    """Also reaches SME (SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3) —
+    see test_terminate_instance_deregisters_dme_producer's own docstring
+    for why the second call is an unconditional provider-registrations
+    delete with no matching service-api deletes.
+    """
     fake_get, fake_post = _route_r1_get_post()
     calls = []
     monkeypatch.setattr("app.main.R1Client.get", fake_get)
     monkeypatch.setattr("app.main.R1Client.post", fake_post)
-    monkeypatch.setattr("app.statemachine.R1Client.delete", lambda self, path, params=None, **kw: calls.append(params))
+    monkeypatch.setattr("app.statemachine.R1Client.delete", lambda self, path, params=None, **kw: calls.append((path, params)))
 
     created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
     client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
@@ -198,7 +219,10 @@ def test_crash_via_critical_fault_deregisters_dme_producer(client, monkeypatch):
     resp = client.post(f"/instances/{created['instanceId']}/fault", params={"severity": "critical"})
     assert resp.status_code == 200
     assert resp.json()["instanceState"] == "FAULTED"
-    assert calls == [{"producer_id": created["oauthClientId"]}]
+    assert calls == [
+        ("/dme/production-capabilities", {"producer_id": created["oauthClientId"]}),
+        (f"/sme/provider-registrations/{created['oauthClientId']}", None),
+    ]
 
 
 def test_terminate_instance_survives_unreachable_dme(client, monkeypatch):
@@ -222,6 +246,137 @@ def test_terminate_instance_survives_unreachable_dme(client, monkeypatch):
 
     resp = client.post(f"/instances/{created['instanceId']}/terminate")
     assert resp.status_code == 200
+
+
+def test_bootstrap_complete_registers_package_sme_declarations(client, db_session_factory, monkeypatch):
+    """SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3, closed: a package
+    whose CSAR declared real Files/Sme/providers + Files/Sme/serviceapis
+    content gets that content registered with SME at bootstrap-complete,
+    using this instance's own oauth_client_id as its apfId — the real
+    O-RAN SC rApp Manager's own per-instance SME deploy timing
+    (SmeDeployer.deployRappInstance), not at onboarding or CreateInstance.
+
+    Uses the real external CAPIF shape (apiProvDomInfo/apiName+aefProfiles,
+    grounded against nonrtric-plt-rappmanager's own real sample packages)
+    — see the sibling test below for this build's own direct-shape CSARs
+    (samples/hello-world-rapp/'s own established convention).
+    """
+    sme_declarations = {
+        "providers": [{"apiProvDomInfo": "Provider domain"}],
+        "serviceApis": [{"apiName": "Hello World API Set 1", "aefProfiles": [{"aefId": "aef-1"}]}],
+    }
+    service_id = uuid.uuid4()
+    calls = []
+
+    fake_get, real_fake_post = _route_r1_get_post(sme_declarations=sme_declarations, sme_service_id=service_id)
+
+    def fake_post(self, path, json=None, **kw):
+        calls.append((path, json))
+        return real_fake_post(self, path, json=json, **kw)
+
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+    calls.clear()  # only care about bootstrap-complete's own SME calls, not CreateInstance's NFO/usage ones
+
+    resp = client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    assert resp.status_code == 200
+
+    apf_id = created["oauthClientId"]
+    assert calls == [
+        ("/sme/provider-registrations", {"apfId": apf_id, "providerDomainInfo": "Provider domain"}),
+        (f"/sme/published-apis/v1/{apf_id}/service-apis", {
+            # Suffixed with apf_id — SME's own serviceName is globally
+            # unique across producers, so a CSAR's fixed name would
+            # otherwise collide across separate instances/registrations.
+            "serviceName": f"Hello World API Set 1-{apf_id}", "producerId": apf_id,
+            "endpoint": "http://unknown", "version": "1.0", "moduleScope": "rapp",
+            "aefProfiles": [{"aefId": "aef-1"}],
+        }),
+    ]
+
+    with db_session_factory() as session:
+        inst = session.get(RAppInstance, uuid.UUID(created["instanceId"]))
+        assert inst.sme_service_ids == [str(service_id)]
+
+    detail = client.get(f"/instances/{created['instanceId']}").json()
+    assert detail["smeServiceIds"] == [str(service_id)]
+
+
+def test_bootstrap_complete_passes_through_this_builds_own_sme_declaration_shape(client, monkeypatch):
+    """samples/hello-world-rapp/'s own real, already-shipped CSAR bundles
+    Files/Sme/ content in this build's own request-body shape directly
+    (apfId/providerDomainInfo; serviceName/endpoint/version/moduleScope/
+    aefProfiles/...) rather than the real external CAPIF shape — caught
+    by reading that real sample file, not assumed. Both fields must pass
+    through mostly as-is (serviceName's presence is the shape signal),
+    with only apfId/producerId overridden to this instance's own real
+    identity, never the CSAR's own hardcoded apfId (so two instances of
+    the same package never collide on one shared apfId).
+    """
+    sme_declarations = {
+        "providers": [{"apfId": "hello-world-rapp", "providerDomainInfo": "Hello World rApp — demo provider domain"}],
+        "serviceApis": [{
+            "serviceName": "helloworld-api", "producerId": "hello-world-rapp",
+            "endpoint": "http://hello-world-rapp:8080/helloworld/v1", "version": "v1",
+            "fullApiVersions": ["v1"], "serviceCapabilities": {"resource": "helloworld", "operations": ["GET"]},
+            "selectionCriteria": {}, "moduleScope": "hello-world-rapp", "allowedConsumers": ["hello-world-rapp"],
+            "aefProfiles": [{"aefId": "hello-world-rapp-aef", "interfaceDescription": {"ipv4Addr": "hello-world-rapp", "port": 8080}}],
+        }],
+    }
+    service_id = uuid.uuid4()
+    calls = []
+    fake_get, real_fake_post = _route_r1_get_post(sme_declarations=sme_declarations, sme_service_id=service_id)
+
+    def fake_post(self, path, json=None, **kw):
+        calls.append((path, json))
+        return real_fake_post(self, path, json=json, **kw)
+
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+    calls.clear()
+
+    resp = client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    assert resp.status_code == 200
+
+    apf_id = created["oauthClientId"]
+    assert calls[0] == ("/sme/provider-registrations", {"apfId": apf_id, "providerDomainInfo": "Hello World rApp — demo provider domain"})
+    service_call_path, service_call_body = calls[1]
+    assert service_call_path == f"/sme/published-apis/v1/{apf_id}/service-apis"
+    assert service_call_body["producerId"] == apf_id  # overridden — never the CSAR's own hardcoded "hello-world-rapp"
+    assert service_call_body["serviceName"] == f"helloworld-api-{apf_id}"  # suffixed — see this build's own global serviceName-uniqueness rule
+    assert service_call_body["endpoint"] == "http://hello-world-rapp:8080/helloworld/v1"
+    assert service_call_body["aefProfiles"] == sme_declarations["serviceApis"][0]["aefProfiles"]
+
+
+def test_terminate_instance_deregisters_sme_service_apis_too(client, monkeypatch):
+    """The registered-service-ids half of finding 3: TERMINATE deregisters
+    each real serviceId bootstrap-complete received back, not just the
+    provider domain.
+    """
+    sme_declarations = {"providers": [{"apiProvDomInfo": "Provider domain"}], "serviceApis": [{"apiName": "Hello World"}]}
+    service_id = uuid.uuid4()
+    fake_get, fake_post = _route_r1_get_post(sme_declarations=sme_declarations, sme_service_id=service_id)
+    calls = []
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    monkeypatch.setattr("app.statemachine.R1Client.delete", lambda self, path, params=None, **kw: (calls.append(path), FakeR1Response(204, {}))[1])
+
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+
+    resp = client.post(f"/instances/{created['instanceId']}/terminate")
+    assert resp.status_code == 200
+    # DME reconsideration runs first (statemachine.py's _reconsider_registrations
+    # ordering), then the SME service-api delete(s), then the provider delete.
+    assert calls == [
+        "/dme/production-capabilities",
+        f"/sme/published-apis/v1/{created['oauthClientId']}/service-apis/{service_id}",
+        f"/sme/provider-registrations/{created['oauthClientId']}",
+    ]
 
 
 def test_recover_route_fires_recover_transition(client, db_session_factory):

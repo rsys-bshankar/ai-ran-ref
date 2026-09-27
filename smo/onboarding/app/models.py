@@ -36,6 +36,13 @@ class ApplicationPackage(Base):
     descriptor_invariant_id: Mapped[str | None] = mapped_column(String)
     descriptor_version: Mapped[str | None] = mapped_column(String)
     schema_version: Mapped[str | None] = mapped_column(String)
+    # SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3 (SME auto-registration):
+    # the CSAR's own Files/Sme/providers/*.json + Files/Sme/serviceapis/*.json
+    # (real CAPIF APIProviderEnrolmentDetails/ServiceAPIDescription content),
+    # read once at onboarding time and registered per-instance at
+    # rapp-mgmt's bootstrap-complete (see rapp-mgmt/app/main.py). None for a
+    # package whose CSAR declares neither directory.
+    sme_declarations: Mapped[dict | None] = mapped_column(JSON)
     # Wave 1 rApp packaging extension: the optional AI Platform capability
     # declaration read from the CSAR's root-level manifest.yaml/
     # capabilities.yaml (docs/architecture/AI_PLATFORM_BASELINE.md) — which

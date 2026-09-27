@@ -673,19 +673,42 @@ summary — same precedent as SME's own CAPIF-source-based pass above)
    real spec fidelity, just an inherited requirement from the
    reference's own `FileExistenceValidator`. A CSAR with or without
    that file now onboards identically.
-3. **`Files/Sme/providers/*.json` + `Files/Sme/serviceapis/*.json` —
+3. ~~**`Files/Sme/providers/*.json` + `Files/Sme/serviceapis/*.json` —
    real CAPIF-shaped provider-function/service-API declarations bundled
-   in the CSAR — are never read during onboarding at all** — audited
-   this pass, **not closed, left open by this explicit finding**. The
-   real reference's rApp Manager uses these to auto-register the
-   package's own APIs with SME at onboarding/priming time; this build's
-   `_validate_package` never opens `Files/Sme/` and SME registration
-   stays a manual, separate operator/SDK step (`sdk/smo_sdk/platform.py`
-   or the SME GUI page) for every package regardless of what its CSAR
-   declares. A real, moderate-sized piece of automation, not attempted
-   this pass — narrower in scope than "capture real descriptor
-   identity fields" and "drop the ONAP file requirement," the two
-   things actually asked for.
+   in the CSAR — are never read during onboarding at all**~~ — **closed**.
+   Grounded against the real reference source itself
+   (`SmeDeployer.deployRappInstance`/`undeployRappInstance`,
+   `rapp-manager-sme/`), not guessed: SME registration is real, per-
+   *instance* behavior at deploy/undeploy time — the reference's own
+   `primeRapp` is a documented no-op for SME — not a per-package,
+   onboarding-time action. `_parse_sme_declarations` (onboarding) reads
+   both directories raw at onboarding time; `rapp-mgmt`'s own
+   `bootstrap-complete` — already this build's established stand-in for
+   "the rApp container has bootstrapped ... and registered with
+   SME/DME," previously just a docstring claim — now actually does so,
+   registering each declared provider/service API with SME using this
+   instance's own `oauth_client_id` as its apfId (the same "one
+   instance, one identity" convention already used for its DME
+   producer_id). `TERMINATE`/`CRASH` deregister the same way, mirroring
+   `_reconsider_dme_registration`'s existing best-effort pattern
+   exactly. A package that declares neither directory (every package
+   before this pass) behaves exactly as before — bootstrap-complete
+   simply has nothing to register.
+
+   A real shape mismatch caught while wiring this against this repo's
+   own already-shipped demo CSAR (`samples/hello-world-rapp/`), not
+   assumed: that sample's own `Files/Sme/` content is already this
+   build's own real `ProviderRegistrationRequest`/`ServiceRegistration`
+   body shape directly (`providerDomainInfo`/`serviceName`/`endpoint`/
+   ...), not the real external CAPIF `APIProviderEnrolmentDetails`/
+   `ServiceAPIDescription` shape (`apiProvDomInfo`/`apiName`+
+   `aefProfiles` with nested `versions`/`interfaceDescriptions`) this
+   finding's own audit was grounded against. `rapp-mgmt`'s mapping
+   functions detect and support both (`serviceName`'s presence is the
+   shape signal) — a real external CSAR gets mapped field-by-field, this
+   build's own demo CSAR passes through almost as-is — with `apfId`/
+   `producerId` always overridden to the instance's own real identity
+   either way, never a CSAR's own hardcoded value.
 4. **The real ASD artifact's Helm-chart-specific properties
    (`tosca.artifacts.asd.deploymentItem`'s `artifact_type`/
    `target_server`/`target_server_uri`) have no equivalent — this

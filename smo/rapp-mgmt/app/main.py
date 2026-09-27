@@ -84,12 +84,112 @@ def create_instance(body: CreateInstanceRequest, db: Session = Depends(get_sessi
     return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id}
 
 
+def _sme_provider_registration_body(provider: dict, apf_id: str) -> dict:
+    """A CSAR's own `Files/Sme/providers/*.json` may already be this
+    build's own real `ProviderRegistrationRequest` body
+    (`samples/hello-world-rapp/`'s own established convention —
+    `apfId`/`providerDomainInfo`) or the real external CAPIF
+    `APIProviderEnrolmentDetails` shape (`apiProvDomInfo`/`apiProvFuncs`,
+    grounded against `nonrtric-plt-rappmanager`'s own real sample
+    packages) — `providerDomainInfo` reads whichever key is actually
+    present. `apfId` is always this instance's own `oauth_client_id`
+    (the "one instance, one identity" convention already used for its
+    DME producer_id), never whatever a CSAR's own JSON declares — two
+    instances of the same package must never collide on one shared,
+    hardcoded apfId.
+    """
+    return {"apfId": apf_id, "providerDomainInfo": provider.get("providerDomainInfo") or provider.get("apiProvDomInfo")}
+
+
+def _sme_service_registration_body(service_api: dict, apf_id: str) -> dict:
+    """A CSAR's own `Files/Sme/serviceapis/*.json` may already be this
+    build's own real `ServiceRegistration` body
+    (`samples/hello-world-rapp/`'s own established convention —
+    `serviceName`/`endpoint`/`version`/`moduleScope`/... directly) or
+    the real external CAPIF `ServiceAPIDescription` shape
+    (`apiName`/`aefProfiles` with nested `versions`/
+    `interfaceDescriptions`, grounded against
+    `nonrtric-plt-rappmanager`'s own real sample packages) needing a
+    real field-by-field mapping — `serviceName`'s presence distinguishes
+    the two. `producerId` is always this instance's own `oauth_client_id`
+    either way, never whatever the CSAR's own JSON declares, same
+    reasoning as `_sme_provider_registration_body` above. For the real
+    CAPIF shape, serviceName/endpoint/version/moduleScope are this
+    build's own required fields with no CAPIF equivalent, so a fixed,
+    documented default fills each one where the real sample has nothing
+    to say (its own `apiVersion` is even an empty string).
+    `aefProfiles` passes through byte-for-byte in both cases: this
+    build's own field is an untyped `list[dict]`, so neither shape needs
+    lossy reshaping there.
+
+    `serviceName` is always suffixed with this instance's own apfId —
+    caught by running this against this repo's own real, already-shipped
+    demo CSAR (`samples/hello-world-rapp/`), not assumed: SME's own
+    `register_service` treats `serviceName` as globally unique across
+    every producer (`sme/app/main.py`'s own documented Section 2.3
+    rule), so a CSAR's fixed, package-level `serviceName` would
+    otherwise collide the moment a second instance of the same package
+    tries to register the identical name under its own, different
+    apfId — a real `SERVICE_NAME_CONFLICT`, not a hypothetical one.
+    """
+    if "serviceName" in service_api:
+        return {**service_api, "producerId": apf_id, "serviceName": f"{service_api['serviceName']}-{apf_id}"}
+    first_profile = (service_api.get("aefProfiles") or [{}])[0]
+    first_version = (first_profile.get("versions") or [{}])[0]
+    first_iface = (first_profile.get("interfaceDescriptions") or [{}])[0]
+    endpoint = f"http://{first_iface['ipv4Addr']}:{first_iface['port']}" if first_iface.get("ipv4Addr") else "http://unknown"
+    return {
+        "serviceName": f"{service_api.get('apiName', 'unnamed-service')}-{apf_id}", "producerId": apf_id,
+        "endpoint": endpoint, "version": first_version.get("apiVersion") or "1.0",
+        "moduleScope": "rapp", "aefProfiles": service_api.get("aefProfiles", []),
+    }
+
+
+def _register_sme_declarations(inst: RAppInstance) -> None:
+    """SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3 (SME auto-
+    registration): real O-RAN SC rApp Manager behavior
+    (SmeDeployer.deployRappInstance) registers a package's CSAR-bundled
+    Files/Sme/providers/ + Files/Sme/serviceapis/ declarations with SME
+    per *instance*, at deploy time — not at onboarding or priming (the
+    reference's own primeRapp is a documented no-op for SME). This
+    build's own bootstrap-complete is already the established stand-in
+    for "the rApp container has bootstrapped ... and registered with
+    SME/DME" (this route's own docstring predates this actually doing
+    so) — the natural, already-grounded hook, not a new subsystem.
+
+    Uses this instance's own oauth_client_id as its SME apfId, the same
+    "one instance, one identity" convention already used for its DME
+    producer_id (statemachine.py's _reconsider_dme_registration).
+    Best-effort: an unreachable SME must never block bootstrap from
+    completing, the same "unreachable callback never fails the primary
+    operation" precedent used throughout this build.
+    """
+    r1 = R1Client()
+    pkg_resp = r1.get(f"/onboarding/packages/{inst.package_id}/onboarding-status")
+    declarations = pkg_resp.json().get("smeDeclarations") if pkg_resp.status_code == 200 else None
+    if not declarations:
+        return
+    apf_id = inst.oauth_client_id
+    try:
+        for provider in declarations.get("providers", []):
+            r1.post("/sme/provider-registrations", json=_sme_provider_registration_body(provider, apf_id))
+        service_ids = []
+        for service_api in declarations.get("serviceApis", []):
+            resp = r1.post(f"/sme/published-apis/v1/{apf_id}/service-apis", json=_sme_service_registration_body(service_api, apf_id))
+            if resp.status_code == 201:
+                service_ids.append(resp.json()["serviceId"])
+        inst.sme_service_ids = service_ids or None
+    except httpx.HTTPError:
+        pass
+
+
 @app.post("/instances/{instance_id}/bootstrap-complete")
 def bootstrap_complete(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """Called once the rApp container has bootstrapped via R1 Termination
     and registered with SME/DME — closes DEPLOYING -> RUNNING.
     """
     inst = db.get(RAppInstance, instance_id)
+    _register_sme_declarations(inst)
     inst.state = RAPP_INSTANCE_FSM.fire(InstanceState(inst.state), InstanceEvent.BOOTSTRAP_OK, instance=inst)
     db.commit()
     return {"instanceId": str(inst.instance_id), "state": inst.state}
@@ -239,15 +339,17 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     (config via get_config/set_config). The reference's own
     GET .../instance/{id} returns nested ACM/SME/DME resource records
     (composition IDs, provider-function IDs, producer/consumer type
-    lists) — that part stays out of scope, unchanged: CreateInstance
+    lists) — the ACM part stays out of scope, unchanged: CreateInstance
     never accepts that caller-supplied deploy descriptor in the first
     place (real ACM/Helm/K8s deployment is the declared elision), so
     echoing it back would mean inventing descriptor data, not exposing
     something this build already computes. What this genuinely does
     expose: workloadRef (the real NFO nfDeploymentId CreateInstance
-    received back — the one real resource reference this build tracks)
-    and the caller-supplied configuration, alongside the identity/state
-    fields list_instances already returns.
+    received back), smeServiceIds (the real SME serviceId(s)
+    bootstrap-complete's own SME auto-registration received back —
+    SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3, closed), and the
+    caller-supplied configuration, alongside the identity/state fields
+    list_instances already returns.
     """
     inst = db.get(RAppInstance, instance_id)
     if inst is None:
@@ -256,6 +358,7 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
         "instanceId": str(inst.instance_id), "packageId": str(inst.package_id), "state": inst.state,
         "workloadRef": inst.workload_ref, "configuration": inst.configuration,
         "pendingUpgradeInstanceId": str(inst.pending_upgrade_instance_id) if inst.pending_upgrade_instance_id else None,
+        "smeServiceIds": inst.sme_service_ids,
     }
 
 

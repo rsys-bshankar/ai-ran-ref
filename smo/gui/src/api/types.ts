@@ -17,10 +17,19 @@ export interface Package {
   // pass, or a synthetic test fixture).
   descriptorId: string | null; descriptorInvariantId: string | null;
   descriptorVersion: string | null; schemaVersion: string | null;
+  // Real CSAR-bundled Files/Sme/providers + Files/Sme/serviceapis
+  // declarations (SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3) — null
+  // for a package whose CSAR declares neither directory. Registered per
+  // instance at bootstrap-complete, not here at onboarding time.
+  smeDeclarations: { providers: Record<string, unknown>[]; serviceApis: Record<string, unknown>[] } | null;
 }
 export interface InstanceSummary { instanceId: string; packageId: string; state: string }
 export interface Instance extends InstanceSummary {
   workloadRef: string | null; configuration: Record<string, unknown> | null; pendingUpgradeInstanceId: string | null;
+  // The real SME serviceId(s) this instance registered at bootstrap-complete
+  // from its package's own smeDeclarations — null if the package declared
+  // none, or before bootstrap-complete has run.
+  smeServiceIds: string[] | null;
 }
 export interface PerfReport { reportId: string; metrics: Record<string, unknown>; reportedAt: string }
 export interface FaultReport { faultId: string; severity: string; description: string | null; reportedAt: string }
