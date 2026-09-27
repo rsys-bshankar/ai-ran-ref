@@ -1736,6 +1736,44 @@
         "summary": "Update Training Job Model Metrics"
       }
     },
+    "/training-jobs/{training_job_id}/resume": {
+      "post": {
+        "operationId": "resume_training_training_jobs__training_job_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "training_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Training Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Training"
+      }
+    },
     "/training-jobs/{training_job_id}/status": {
       "get": {
         "operationId": "query_training_job_status_training_jobs__training_job_id__status_get",
@@ -1772,6 +1810,45 @@
           }
         },
         "summary": "Query Training Job Status"
+      }
+    },
+    "/training-jobs/{training_job_id}/suspend": {
+      "post": {
+        "description": "SPEC_AUDIT.md's AI/ML Workflow section item 6: TrainingJob had no\nsuspend concept at all, only a hard cancel. This is deliberately a\nplain status flip, not a third state machine \u2014 the two real FSMs\nWave 2 built (ModelLifecycleState/RuntimeLifecycleState) operate one\nlevel up and are untouched by a job-level suspend/resume, the same\nway job.status's other transitions (RUNNING -> COMPLETED/FAILED/\nCANCELLED) already don't reach into ModelLifecycleState either \u2014\nonly an explicit `POST /models/{id}/advance` call does that. Only\nlegal from RUNNING, matching the reference's own request-flag\nsemantics (a suspend request only makes sense against an in-flight job).",
+        "operationId": "suspend_training_training_jobs__training_job_id__suspend_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "training_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Training Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suspend Training"
       }
     },
     "/validation-jobs": {

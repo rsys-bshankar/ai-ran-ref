@@ -367,18 +367,25 @@ FOCOM's O2IMS mismatch below, not a bug.
 5. **`requestStatus`'s real 6-value enum
    (NOT_STARTED/IN_PROGRESS/SUSPENDED/FINISHED/CANCELLED/CANCELLING) vs.
    this build's own `TrainingJob.status`
-   (PENDING/RUNNING/COMPLETED/FAILED/CANCELLED)** — moderate/breaking,
-   not closed. A vocabulary mismatch only, not a functional gap (same
-   shape as RAN NF OAM's `scope`/`ScopeType` naming collision below),
-   but renaming an established, widely-depended-on field's values would
-   be a real breaking change across every existing caller — left for a
-   deliberate follow-up pass, not a quick fix.
+   (PENDING/RUNNING/SUSPENDED/COMPLETED/FAILED/CANCELLED)** —
+   moderate/breaking, reconfirmed still open in Wave 3 (only
+   `SUSPENDED` was adopted, as item 6's own real value, not a full
+   vocabulary rename). A vocabulary mismatch only, not a functional gap
+   (same shape as RAN NF OAM's `scope`/`ScopeType` naming collision
+   below), but renaming an established, widely-depended-on field's
+   remaining values would be a real breaking change across every
+   existing caller — left for a deliberate follow-up pass, not a quick
+   fix.
 6. **No `cancelRequest`/`suspendRequest` in-place flag mechanism** —
-   moderate, not closed. This build's own `cancel_training` is a hard
-   `DELETE`, and there's no suspend concept at all. A real, closeable
-   feature gap, but reshaping the training-job lifecycle's own
-   established contract is a bigger change than this pass's usual
-   scoped fixes.
+   **closed this wave (Wave 3).** `TrainingJob.status` gains
+   `SUSPENDED`; new `POST /training-jobs/{id}/suspend`/`.../resume`
+   routes flip it, legal only from `RUNNING`/`SUSPENDED` respectively
+   (`TRAINING_JOB_ILLEGAL_TRANSITION` otherwise). Deliberately a plain
+   status flip, not a third state machine: Wave 2's two real FSMs
+   (`ModelLifecycleState`/`RuntimeLifecycleState`) operate one level up
+   and are untouched by this, the same way `COMPLETED`/`FAILED`/
+   `CANCELLED` transitions on `job.status` already don't reach into
+   `ModelLifecycleState` either.
 7. **`AIMLManagementPolicy`/`ThresholdMonitorNrm` integration confirmed
    NOT a gap** — this build's own `MLMFSubscription.guard_kpi_floor` is
    a real, working, functionally equivalent threshold mechanism

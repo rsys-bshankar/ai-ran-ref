@@ -227,6 +227,14 @@ Frozen wave order — do not reorder without updating this document first:
     Wave 2 moved to AIMgF; re-adding it to MLMR would regress that
     decision. See `SPEC_AUDIT.md`'s own MLMR section for the full
     closed/deferred breakdown.
+  - **AIMgF slice** (done): closes the AI/ML Workflow audit's
+    `cancelRequest`/`suspendRequest` finding — `TrainingJob` gains a
+    `SUSPENDED` status plus `POST .../suspend`/`.../resume` routes, a
+    plain status flip that deliberately does not become a third state
+    machine (Wave 2's two real FSMs are untouched by it). The
+    `requestStatus` vocabulary-mismatch finding is reconfirmed still
+    open — only `SUSPENDED` itself was adopted, not a full rename of
+    the remaining values, which would be a real breaking change.
 
 Reordering Wave 3 ahead of Wave 1/2, or starting new R1 contract design
 before the ownership split is merged, is exactly the redesign-it-twice

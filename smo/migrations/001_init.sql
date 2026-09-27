@@ -593,7 +593,7 @@ CREATE TABLE training_job (
   required_data                       JSONB,
   validation_criteria                   JSONB,
   status                                   TEXT NOT NULL DEFAULT 'PENDING'
-                                             CHECK (status IN ('PENDING','RUNNING','COMPLETED','FAILED','CANCELLED')),
+                                             CHECK (status IN ('PENDING','RUNNING','SUSPENDED','COMPLETED','FAILED','CANCELLED')),  -- Wave 3: SUSPENDED, SPEC_AUDIT.md's AI/ML Workflow section item 6
   notification_uri                          TEXT,
   run_id                                       TEXT,  -- NEW section 5: trainingmgr's own TrainingJob.run_id
   training_dataset                                TEXT, -- NEW section 5

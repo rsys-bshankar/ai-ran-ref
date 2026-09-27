@@ -133,6 +133,7 @@ RULES: list[Rule] = [
     _rule("POST", "/aimgf/training-jobs", O),
     _rule("DELETE", "/aimgf/training-jobs/{id}", O),        # cancel, not a hard delete
     _rule("POST", "/aimgf/training-jobs/{id}/model-metrics", O),
+    _rule("POST", "/aimgf/training-jobs/{id}/(suspend|resume)", O),  # Wave 3: same tier as cancel
     _rule("POST", "/aimgf/validation-jobs", O),
     _rule("POST", "/aimgf/validation-jobs/{id}/complete", O),
     _rule("POST", "/aimgf/emulation-jobs", O),
