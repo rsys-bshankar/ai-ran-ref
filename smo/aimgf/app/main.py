@@ -77,7 +77,7 @@ def _get_model_or_none(model_id: uuid.UUID) -> dict | None:
 def _get_model(model_id: uuid.UUID) -> dict:
     model = _get_model_or_none(model_id)
     if model is None:
-        raise HTTPException(status_code=404, detail="no such model")
+        raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
     return model
 
 
@@ -278,7 +278,7 @@ def suspend_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessi
     """
     job = db.get(TrainingJob, training_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such training job")
+        raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
     if job.status != "RUNNING":
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot suspend a training job in status {job.status}")
@@ -291,7 +291,7 @@ def suspend_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessi
 def resume_training(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(TrainingJob, training_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such training job")
+        raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
     if job.status != "SUSPENDED":
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot resume a training job in status {job.status}")
@@ -309,7 +309,7 @@ def update_training_job_model_metrics(training_job_id: uuid.UUID, model_metrics:
     """
     job = db.get(TrainingJob, training_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such training job")
+        raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
     job.model_metrics = model_metrics
     db.commit()
     return {"trainingJobId": str(job.training_job_id), "modelMetrics": job.model_metrics}
@@ -319,7 +319,7 @@ def update_training_job_model_metrics(training_job_id: uuid.UUID, model_metrics:
 def get_training_job_model_metrics(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(TrainingJob, training_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such training job")
+        raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
     return job.model_metrics or {}
 
 
@@ -360,7 +360,7 @@ def request_validation(body: RequestValidationRequest, db: Session = Depends(get
 def query_validation_job_status(validation_job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(ValidationJob, validation_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such validation job")
+        raise framework_error(FrameworkError.VALIDATION_JOB_NOT_FOUND, detail="no such validation job")
     return _validation_job_view(job)
 
 
@@ -368,7 +368,7 @@ def query_validation_job_status(validation_job_id: uuid.UUID, db: Session = Depe
 def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, db: Session = Depends(get_session)):
     job = db.get(ValidationJob, validation_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such validation job")
+        raise framework_error(FrameworkError.VALIDATION_JOB_NOT_FOUND, detail="no such validation job")
     job.status = "COMPLETED" if body.succeeded else "FAILED"
     job.metrics = body.metrics
     event = ModelLifecycleEvent.VALIDATION_COMPLETE if body.succeeded else ModelLifecycleEvent.VALIDATION_FAILED
@@ -412,7 +412,7 @@ def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_s
 def query_emulation_job_status(emulation_job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(EmulationJob, emulation_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such emulation job")
+        raise framework_error(FrameworkError.EMULATION_JOB_NOT_FOUND, detail="no such emulation job")
     return _emulation_job_view(job)
 
 
@@ -420,7 +420,7 @@ def query_emulation_job_status(emulation_job_id: uuid.UUID, db: Session = Depend
 def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db: Session = Depends(get_session)):
     job = db.get(EmulationJob, emulation_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such emulation job")
+        raise framework_error(FrameworkError.EMULATION_JOB_NOT_FOUND, detail="no such emulation job")
     job.status = "COMPLETED" if body.succeeded else "FAILED"
     job.metrics = body.metrics
     event = ModelLifecycleEvent.EMULATION_COMPLETE if body.succeeded else ModelLifecycleEvent.EMULATION_FAILED
@@ -694,7 +694,7 @@ def list_performance_subscriptions(model_id: uuid.UUID | None = None, db: Sessio
 @app.get("/mlmf/subscriptions/{subscription_id}/reports")
 def list_performance_reports(subscription_id: uuid.UUID, limit: int = 100, db: Session = Depends(get_session)):
     if db.get(MLMFSubscription, subscription_id) is None:
-        raise HTTPException(status_code=404, detail="no such MLMF subscription")
+        raise framework_error(FrameworkError.MLMF_SUBSCRIPTION_NOT_FOUND, detail="no such MLMF subscription")
     rows = db.scalars(select(PerformanceReport).where(PerformanceReport.subscription_id == subscription_id)
                       .order_by(PerformanceReport.reported_at.desc()).limit(limit)).all()
     return [_performance_report_view(r) for r in rows]

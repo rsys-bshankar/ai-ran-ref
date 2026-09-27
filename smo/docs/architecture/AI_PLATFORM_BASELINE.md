@@ -281,13 +281,30 @@ Frozen wave order — do not reorder without updating this document first:
     service's full unit suite (574 tests across 18 modules) and the
     full `tests_integration/` suite pass unchanged.
   - **Cross-cutting standardization, slice 2 of 3 — Error Schema**
-    (planned next): 47 raw `HTTPException(status_code=..., detail="...")`
-    call sites across 12 files bypass the existing RFC 7807
-    `ProblemDetails`/`framework_error()` convention (`shared/smo_shared/
-    errors.py`) — FOCOM uses it not at all. Asked rather than guessed
-    given the real breaking-change cost (some existing callers read
-    `resp.json()["detail"]` as a bare string for these specific
-    endpoints): confirmed, fix all 47 now.
+    (done): all 47 raw `HTTPException(status_code=..., detail="...")`
+    call sites across 12 files (a1-related, aimgf, dme, focom,
+    intent-service, mllf, mlmr, nfo, rapp-mgmt, sa-smos, sme, gui-bff —
+    FOCOM used none of the shared convention at all) now go through
+    `framework_error()`/`FrameworkError` (23 new, specifically-named
+    `*_NOT_FOUND`/`ARTIFACT_FORMAT_INVALID` codes added to
+    `shared/smo_shared/errors.py`) or, for gui-bff's own separate local
+    convention (four `Depends()`-raised auth checks that must `raise`,
+    not `return` — `current_session`/`require_admin`), a new
+    `_problem_exception()` sharing `_problem()`'s own body shape. Checked
+    for real breaking-change impact before shipping, not assumed: the
+    GUI's `describeError` already handled both the old bare-string shape
+    and the new `{title, status, detail}` shape gracefully (verified by
+    reading `gui/src/api/client.ts` directly) — strictly better
+    rendering, no regression. Two genuinely stale mocks/fakes were found
+    and fixed in the same PR: `aimgf/tests/test_main.py`'s `FakeMlmr`
+    double now returns MLMR's real new 404 shape (nothing in aimgf's own
+    code reads the body, only the status code, so this was cosmetic);
+    the SDK's own `test_raises_sdk_error_on_a_4xx_response` tests were
+    confirmed to test generic SDK error-passthrough mechanics with an
+    arbitrary scripted body, not any specific real endpoint's shape, so
+    left alone deliberately. Zero real behavior regression: every
+    service's full unit suite (574 tests), the full `tests_integration/`
+    suite, and the GUI's typecheck + vitest all pass.
   - **Cross-cutting standardization, slice 3 of 3 — Pagination +
     Subscriptions** (planned after that): real limit/offset pagination
     (`{items, total, limit, offset}`) on every list endpoint across

@@ -75,7 +75,7 @@ def get_policy_type(policy_type_id: str):
     DME type registrations (`dataProductionSchema: {}`).
     """
     if policy_type_id not in KNOWN_POLICY_TYPES:
-        raise HTTPException(status_code=404, detail=f"unknown policyTypeId {policy_type_id}")
+        raise framework_error(FrameworkError.POLICY_TYPE_NOT_FOUND, detail=f"unknown policyTypeId {policy_type_id}")
     return {"policySchema": {"type": "object"}, "statusSchema": None}
 
 
@@ -312,7 +312,7 @@ def query_services(service_id: str | None = None, db: Session = Depends(get_sess
     live = [s for s in db.scalars(stmt).all() if not _sweep_stale_service(db, s, a1t)]
     if service_id is not None:
         if not live:
-            raise HTTPException(status_code=404, detail=f"unknown serviceId {service_id}")
+            raise framework_error(FrameworkError.A1_SERVICE_REGISTRATION_NOT_FOUND, detail=f"unknown serviceId {service_id}")
         return _service_status_view(live[0])
     return {"serviceList": [_service_status_view(s) for s in live]}
 
@@ -329,7 +329,7 @@ def unregister_service(service_id: str, db: Session = Depends(get_session), a1t:
     """
     svc = db.get(A1ServiceRegistration, service_id)
     if svc is None:
-        raise HTTPException(status_code=404, detail=f"unknown serviceId {service_id}")
+        raise framework_error(FrameworkError.A1_SERVICE_REGISTRATION_NOT_FOUND, detail=f"unknown serviceId {service_id}")
     for p in db.scalars(select(A1Policy).where(A1Policy.creator_id == service_id)).all():
         a1t.delete_policy(p.near_rt_ric_policy_id)
         db.delete(p)
@@ -347,7 +347,7 @@ def keepalive_service(service_id: str, db: Session = Depends(get_session)):
     """
     svc = db.get(A1ServiceRegistration, service_id)
     if svc is None:
-        raise HTTPException(status_code=404, detail=f"unknown serviceId {service_id}")
+        raise framework_error(FrameworkError.A1_SERVICE_REGISTRATION_NOT_FOUND, detail=f"unknown serviceId {service_id}")
     svc.last_activity_at = datetime.datetime.now(datetime.UTC)
     db.commit()
     return {}

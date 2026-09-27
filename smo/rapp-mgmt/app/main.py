@@ -180,7 +180,7 @@ def delete_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """
     inst = db.get(RAppInstance, instance_id)
     if inst is None:
-        raise HTTPException(status_code=404, detail="no such RAppInstance")
+        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
     if inst.state != InstanceState.UNDEPLOYED:
         raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_UNDEPLOYED,
                                detail=f"instance {instance_id} is not UNDEPLOYED (state={inst.state})")
@@ -248,7 +248,7 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """
     inst = db.get(RAppInstance, instance_id)
     if inst is None:
-        raise HTTPException(status_code=404, detail="no such RAppInstance")
+        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
     return {
         "instanceId": str(inst.instance_id), "packageId": str(inst.package_id), "state": inst.state,
         "workloadRef": inst.workload_ref, "configuration": inst.configuration,
@@ -264,7 +264,7 @@ def list_performance_reports(instance_id: uuid.UUID, limit: int = 100, db: Sessi
     wants the recent tail).
     """
     if db.get(RAppInstance, instance_id) is None:
-        raise HTTPException(status_code=404, detail="no such RAppInstance")
+        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
     rows = db.scalars(select(RAppPerformanceReport).where(RAppPerformanceReport.instance_id == instance_id)
                       .order_by(RAppPerformanceReport.reported_at.desc()).limit(limit)).all()
     return [{"reportId": str(r.id), "metrics": r.metrics, "reportedAt": r.reported_at.isoformat()} for r in rows]
@@ -274,7 +274,7 @@ def list_performance_reports(instance_id: uuid.UUID, limit: int = 100, db: Sessi
 def list_fault_reports(instance_id: uuid.UUID, limit: int = 100, db: Session = Depends(get_session)):
     """Read side of report_fault above, same shape as list_performance_reports."""
     if db.get(RAppInstance, instance_id) is None:
-        raise HTTPException(status_code=404, detail="no such RAppInstance")
+        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
     rows = db.scalars(select(RAppFaultReport).where(RAppFaultReport.instance_id == instance_id)
                       .order_by(RAppFaultReport.reported_at.desc()).limit(limit)).all()
     return [{"faultId": str(r.id), "severity": r.severity, "description": r.description,

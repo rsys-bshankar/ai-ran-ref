@@ -135,7 +135,7 @@ def create_intent(body: CreateIntentRequest, db: Session = Depends(get_session))
     """
     fn = db.get(IntentHandlingFunction, body.rmihId)
     if fn is None:
-        raise HTTPException(status_code=404, detail="no such intent handling function")
+        raise framework_error(FrameworkError.INTENT_HANDLING_FUNCTION_NOT_FOUND, detail="no such intent handling function")
 
     expectation_object_types = _requested_expectation_object_types(body.expectations)
     _validate_rmih_can_handle(fn, expectation_object_types, body.intentHandlingScope)
@@ -209,7 +209,7 @@ def query_intent(intent_id: uuid.UUID, db: Session = Depends(get_session)):
     """
     intent = db.get(Intent, intent_id)
     if intent is None:
-        raise HTTPException(status_code=404, detail="no such intent")
+        raise framework_error(FrameworkError.INTENT_NOT_FOUND, detail="no such intent")
     return _intent_view(intent)
 
 

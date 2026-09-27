@@ -131,7 +131,7 @@ def get_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
     """
     model = db.get(MLModel, model_id)
     if model is None:
-        raise HTTPException(status_code=404, detail="no such model")
+        raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
     return _model_view(model)
 
 
@@ -153,7 +153,7 @@ def update_model(model_id: uuid.UUID, body: UpdateModelRequest, db: Session = De
     """
     model = db.get(MLModel, model_id)
     if model is None:
-        raise HTTPException(status_code=404, detail="no such model")
+        raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
     if model.model_type != body.modelType or model.version != body.version:
         raise framework_error(
             FrameworkError.MODEL_IDENTITY_IMMUTABLE,
@@ -213,9 +213,9 @@ def upload_model_artifact(model_id: uuid.UUID, file: UploadFile = File(...), db:
     """
     model = db.get(MLModel, model_id)
     if model is None:
-        raise HTTPException(status_code=404, detail="no such model")
+        raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
     if not file.filename or not file.filename.endswith(".zip"):
-        raise HTTPException(status_code=415, detail="artifact must be a .zip file")
+        raise framework_error(FrameworkError.ARTIFACT_FORMAT_INVALID, detail="artifact must be a .zip file")
 
     content = file.file.read()
     next_version = (db.scalar(
@@ -239,7 +239,7 @@ def download_model_artifact(model_id: uuid.UUID, artifact_version: int, db: Sess
         select(ModelArtifact).where(ModelArtifact.model_id == model_id, ModelArtifact.artifact_version == artifact_version)
     )
     if artifact is None:
-        raise HTTPException(status_code=404, detail="no such artifact version")
+        raise framework_error(FrameworkError.ARTIFACT_VERSION_NOT_FOUND, detail="no such artifact version")
     return Response(
         content=artifact.content, media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"'},
