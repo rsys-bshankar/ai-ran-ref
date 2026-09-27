@@ -21,11 +21,13 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.timeutil import as_utc
+from smo_shared.openapi_security import apply_r1_gateway_security
 
 from .a1_termination_client import A1TerminationClient
 from .models import A1EIType, A1Policy, A1ServiceRegistration, PolicyStatusSubscription
 
 app = FastAPI(title="A1 Related SMOS")
+apply_r1_gateway_security(app)
 
 KNOWN_POLICY_TYPES = {"ORAN_QoSandTSP_6.0.1", "ORAN_TrafficSteeringPreference_6.0.1"}  # A1TD clause 7.2 catalog sample
 

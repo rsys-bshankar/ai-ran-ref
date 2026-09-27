@@ -27,8 +27,10 @@ import uuid
 from fastapi import FastAPI, HTTPException
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
+from smo_shared.openapi_security import apply_r1_gateway_security
 
 app = FastAPI(title="MLLF")
+apply_r1_gateway_security(app)
 
 _aimgf = R1Client()
 

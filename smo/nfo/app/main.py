@@ -23,11 +23,13 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.statemachine import IllegalTransition
+from smo_shared.openapi_security import apply_r1_gateway_security
 
 from .models import LCMOperation, NFDeployment, NFDeploymentDescriptor, NFOCloudResource
 from .statemachine import DeploymentEvent, DeploymentState, NFO_FSM
 
 app = FastAPI(title="NFO SMOS (O2dms)")
+apply_r1_gateway_security(app)
 
 
 @app.get("/health")

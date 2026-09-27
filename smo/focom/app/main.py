@@ -15,10 +15,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
+from smo_shared.openapi_security import apply_r1_gateway_security
 
 from .models import DeploymentManager, InventorySubscription, OCloudAlarm, OCloudPerformanceMetric, Resource, ResourcePool, ResourceType
 
 app = FastAPI(title="FOCOM SMOS (O2ims)")
+apply_r1_gateway_security(app)
 
 
 @app.get("/health")

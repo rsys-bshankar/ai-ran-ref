@@ -21,10 +21,12 @@ from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.openapi_security import apply_r1_gateway_security
 
 from .models import MODEL_DOMAINS, MLModel, MLModelCoordinationGroup, ModelArtifact
 
 app = FastAPI(title="MLMR")
+apply_r1_gateway_security(app)
 
 
 @app.get("/health")

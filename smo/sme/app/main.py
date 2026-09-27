@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.timeutil import as_utc
+from smo_shared.openapi_security import apply_r1_gateway_security
 
 from .models import EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile, TrustedInvoker
 
@@ -31,6 +32,11 @@ ACCESS_TOKEN_TTL_SECONDS = 3600
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P, _SCRYPT_DKLEN = 2**14, 8, 1, 32
 
 app = FastAPI(title="SME — Service Management and Exposure")
+# SME issues and introspects the R1 bearer token itself (r1-termination's
+# own _authorized() calls /oauth2/introspect on every proxied request) —
+# these two routes are the one exemption, the same way a token endpoint is
+# never itself gated behind the token it hands out.
+apply_r1_gateway_security(app, public_paths=frozenset({"/oauth2/token", "/oauth2/introspect"}))
 
 
 @app.get("/health")

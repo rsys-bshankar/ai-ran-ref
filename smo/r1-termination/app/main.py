@@ -17,7 +17,15 @@ import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from smo_shared.openapi_security import apply_r1_gateway_security
+
 app = FastAPI(title="R1 Termination")
+# /health and /bootstrap are this gateway's own two exemptions (see their
+# own docstrings above/below: /health is answered ahead of _authorized
+# entirely, /bootstrap is "No auth (network-isolated)") — every other
+# path here is the catch-all proxy route, which really does call
+# _authorized() on every request.
+apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/bootstrap"}))
 
 
 @app.get("/health")
