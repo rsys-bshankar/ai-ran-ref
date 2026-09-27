@@ -25,8 +25,15 @@ Adaptor side of DME's revised, dual data+control-mediation role now is.
 Not yet audited against a formal spec, because no relevant spec file
 exists in `specs/` at all: A1 Related (3GPP/O-RAN A1 specs aren't there
 — the `sim-a1-interface`/`a1pms` source-code audit in `OPEN_ITEMS.md`
-section 5 remains the only ground truth there), and Onboarding/rApp
-Mgmt (TOSCA/rApp packaging specs aren't there).
+section 5 remains the only ground truth there).
+
+Onboarding/rApp Mgmt is now audited too, the same way SME's own
+security-model pass was: no standalone ASD/TOSCA formal spec document
+sits in `specs/`, so this uses the real reference's own sample CSAR
+packages (`nonrtric-plt-rappmanager/sample-rapp-generator/`, already
+cloned for section 5's audit) — genuine `TOSCA-Metadata/TOSCA.meta`,
+`Definitions/asd.yaml`+`asd_types.yaml`, and `Files/Sme/`+`Files/Acm/`
+content read directly, not a summary.
 
 Every finding below was produced by reading the actual spec file(s) and
 the actual implementation file(s) side by side — none are guessed or
@@ -635,6 +642,59 @@ for the full breakdown.
    "NOT part of O1 Adaptor's northbound surface" (internal
    O-RU-Controller↔O-RU boundary only), so their absence from
    `ran-nf-oam`/DME isn't an elision to track at all.
+
+## Onboarding / rApp Mgmt vs. the real ASD/TOSCA CSAR format
+(`nonrtric-plt-rappmanager/sample-rapp-generator/`) — manual review, not
+formal-spec-file-based (no standalone ASD/TOSCA spec document lives in
+`specs/`; this uses the real reference's own sample CSAR packages,
+already cloned for section 5's audit, read directly rather than a
+summary — same precedent as SME's own CAPIF-source-based pass above)
+
+1. ~~**The real ASD schema's own required identity properties
+   (`descriptor_id`/`descriptor_invariant_id`/`descriptor_version`/
+   `schema_version`) were never captured**~~ — **closed this pass**.
+   `asd_types.yaml`'s `tosca.nodes.asd` node type requires all four
+   alongside `application_name`/`application_version`/`provider` (the
+   three this build already read); a content SHA-256 hash stood in for
+   package identity/uniqueness instead, since real ASD descriptor data
+   didn't exist here. All four are now parsed from the entry
+   definitions the same way the existing three already were, and
+   surfaced on `ApplicationPackage`/the GUI's package drawer.
+   Uniqueness detection deliberately stays on the content hash — lower
+   risk than switching to `descriptor_id`, per explicit direction, not
+   an oversight.
+2. ~~**Every CSAR was required to bundle
+   `Files/Acm/definition/compositions.json`, an ONAP ACM composition
+   file, just to pass validation**~~ — **closed this pass, by removal,
+   per explicit direction to have no ONAP dependency.** This build's
+   `rapp-mgmt/` already never calls real ONAP ACM at all (deployment
+   orchestration is a declared elision, unchanged) — requiring every
+   package to bundle an ONAP-specific file it will never read wasn't
+   real spec fidelity, just an inherited requirement from the
+   reference's own `FileExistenceValidator`. A CSAR with or without
+   that file now onboards identically.
+3. **`Files/Sme/providers/*.json` + `Files/Sme/serviceapis/*.json` —
+   real CAPIF-shaped provider-function/service-API declarations bundled
+   in the CSAR — are never read during onboarding at all** — audited
+   this pass, **not closed, left open by this explicit finding**. The
+   real reference's rApp Manager uses these to auto-register the
+   package's own APIs with SME at onboarding/priming time; this build's
+   `_validate_package` never opens `Files/Sme/` and SME registration
+   stays a manual, separate operator/SDK step (`sdk/smo_sdk/platform.py`
+   or the SME GUI page) for every package regardless of what its CSAR
+   declares. A real, moderate-sized piece of automation, not attempted
+   this pass — narrower in scope than "capture real descriptor
+   identity fields" and "drop the ONAP file requirement," the two
+   things actually asked for.
+4. **The real ASD artifact's Helm-chart-specific properties
+   (`tosca.artifacts.asd.deploymentItem`'s `artifact_type`/
+   `target_server`/`target_server_uri`) have no equivalent — this
+   build's own `Artifact` model stores only a path and an access URL —
+   confirmed NOT a gap.** Consistent with the already-declared
+   real-Helm/K8s-deployment elision (`rapp-mgmt/app/main.py`'s own
+   `CreateInstance` docstring): modeling a chart-museum target server
+   only matters once something in this build actually deploys the
+   chart there, which nothing does.
 
 ## What's genuinely closeable now (small, scoped, non-breaking)
 

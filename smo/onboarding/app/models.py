@@ -24,6 +24,18 @@ class ApplicationPackage(Base):
     tosca_entry_definitions: Mapped[str | None] = mapped_column(String)
     signature_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     integrity_hash: Mapped[str | None] = mapped_column(String)
+    # Real O-RAN SC rApp Manager ASD schema (`asd_types.yaml`'s
+    # `tosca.nodes.asd` node type, grounded against the real
+    # `nonrtric-plt-rappmanager` sample CSARs, not a summary) — all four
+    # required alongside application_name/application_version/provider,
+    # never captured before this pass. Package identity/uniqueness stays
+    # on integrity_hash (unchanged, lower-risk than switching to
+    # descriptor_id) — these are surfaced for real spec fidelity, not
+    # used as a key.
+    descriptor_id: Mapped[str | None] = mapped_column(String)
+    descriptor_invariant_id: Mapped[str | None] = mapped_column(String)
+    descriptor_version: Mapped[str | None] = mapped_column(String)
+    schema_version: Mapped[str | None] = mapped_column(String)
     # Wave 1 rApp packaging extension: the optional AI Platform capability
     # declaration read from the CSAR's root-level manifest.yaml/
     # capabilities.yaml (docs/architecture/AI_PLATFORM_BASELINE.md) — which

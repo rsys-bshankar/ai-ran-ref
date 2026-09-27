@@ -121,6 +121,10 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
         pkg.name = identity.get("name", pkg.name)
         pkg.version = identity.get("version", pkg.version)
         pkg.vendor = identity.get("vendor", pkg.vendor)
+        pkg.descriptor_id = identity.get("descriptor_id")
+        pkg.descriptor_invariant_id = identity.get("descriptor_invariant_id")
+        pkg.descriptor_version = identity.get("descriptor_version")
+        pkg.schema_version = identity.get("schema_version")
         pkg.ai_capabilities = identity.get("ai_capabilities")
         pkg.signature_verified = True
         for path, access_url in artifacts:
@@ -153,7 +157,16 @@ def _create_nf_deployment_descriptor(pkg: ApplicationPackage, entry_definitions:
     return uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
 
 
-_ASD_IDENTITY_FIELDS = {"application_name": "name", "application_version": "version", "provider": "vendor"}
+_ASD_IDENTITY_FIELDS = {
+    "application_name": "name", "application_version": "version", "provider": "vendor",
+    # Real ASD schema fields (asd_types.yaml's tosca.nodes.asd node type,
+    # grounded against nonrtric-plt-rappmanager's own real sample CSARs,
+    # not a summary) — required alongside the three above, never
+    # captured before this pass. Surfaced for real spec fidelity;
+    # package identity/uniqueness stays on integrity_hash, unchanged.
+    "descriptor_id": "descriptor_id", "descriptor_invariant_id": "descriptor_invariant_id",
+    "descriptor_version": "descriptor_version", "schema_version": "schema_version",
+}
 
 
 def _asd_identity(definitions: str) -> dict[str, str]:
@@ -213,22 +226,19 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
 def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, dict]:
     """Open TOSCA-Metadata/Definitions/Artifacts, per Onboarding LLD section 1.
 
-    OPEN_ITEMS.md section 5: two more checks from the reference's own
-    validator chain, previously entirely absent — NamingValidator's
-    filename convention (a package location not ending in `.csar` is
-    rejected up front, before ever fetching it) and
-    FileExistenceValidator's required composition file (checked alongside
-    the existing `TOSCA-Metadata/TOSCA.meta` requirement, not replacing
-    it — the reference requires both). The exact path was wrong before —
-    `Definitions/acm_composition.json` — a guess that didn't match the
-    reference; the real one is `RappCsarPathProvider.
-    ACM_COMPOSITION_JSON_LOCATION` (`FileExistenceValidator.java`):
-    `Files/Acm/definition/compositions.json`. Caught while adapting the
-    reference's own real sample package (`sample-rapp-generator/rapp-all`,
-    which puts its composition file at exactly this path) for a demo —
-    the old path would have rejected every real CSAR the reference itself
-    produces, even though this build's own synthetic test fixture
-    (constructed to match the same wrong assumption) never caught it.
+    OPEN_ITEMS.md section 5: NamingValidator's filename convention (a
+    package location not ending in `.csar` is rejected up front, before
+    ever fetching it), adopted from the reference's own validator chain.
+
+    The reference's own FileExistenceValidator additionally requires
+    `Files/Acm/definition/compositions.json` (an ONAP ACM composition
+    file) alongside `TOSCA-Metadata/TOSCA.meta` — deliberately NOT
+    adopted here. This build never calls ONAP ACM at all (real
+    deployment orchestration is a declared elision — see
+    rapp-mgmt/app/main.py's own CreateInstance), so requiring every CSAR
+    to bundle an ONAP-specific file just to pass validation would be
+    requiring a dependency this build doesn't have, not real spec
+    fidelity. A package with or without that file onboards the same way.
     """
     if not location.endswith(".csar"):
         raise PackageValidationFailed(f"package location {location!r} does not end with .csar")
@@ -240,7 +250,6 @@ def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, d
         entry_line = next(l for l in meta.splitlines() if l.startswith("Entry-Definitions:"))
         entry_definitions = entry_line.split(":", 1)[1].strip()
         identity = _asd_identity(z.read(entry_definitions).decode(errors="replace"))  # raises KeyError if missing/malformed
-        z.getinfo("Files/Acm/definition/compositions.json")  # required per the reference's FileExistenceValidator
         artifacts = [(n, f"{location}#{n}") for n in z.namelist() if n.startswith("Artifacts/") and not n.endswith("/")]
         ai_capabilities = _parse_ai_capabilities(z)
         if ai_capabilities is not None:
@@ -363,6 +372,10 @@ def _package_view(pkg: ApplicationPackage) -> dict:
         "applicationType": pkg.application_type,
         "state": pkg.state,
         "toscaEntryDefinitions": pkg.tosca_entry_definitions,
+        "descriptorId": pkg.descriptor_id,
+        "descriptorInvariantId": pkg.descriptor_invariant_id,
+        "descriptorVersion": pkg.descriptor_version,
+        "schemaVersion": pkg.schema_version,
         "signatureVerified": pkg.signature_verified,
         "nfDeploymentDescriptorId": str(pkg.nf_deployment_descriptor_id) if pkg.nf_deployment_descriptor_id else None,
         "aiCapabilities": pkg.ai_capabilities,

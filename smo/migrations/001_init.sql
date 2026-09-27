@@ -192,7 +192,11 @@ CREATE TABLE application_package (
   tosca_entry_definitions              TEXT,     -- NEW section 1: TOSCA-Metadata/Definitions/Artifacts
   signature_verified                     BOOLEAN NOT NULL DEFAULT false,
   integrity_hash                           TEXT,
-  ai_capabilities                            JSONB     -- Wave 1: optional manifest.yaml/capabilities.yaml declaration
+  ai_capabilities                            JSONB,     -- Wave 1: optional manifest.yaml/capabilities.yaml declaration
+  descriptor_id                                TEXT,     -- real ASD schema field, grounded against nonrtric-plt-rappmanager's own sample CSARs
+  descriptor_invariant_id                      TEXT,
+  descriptor_version                           TEXT,
+  schema_version                               TEXT
 );
 
 CREATE TABLE artifact (

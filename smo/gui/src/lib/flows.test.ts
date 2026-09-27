@@ -7,7 +7,8 @@ const statuses = (steps: FlowStep[]) => steps.map((s) => s.status);
 
 const pkg = (state: string, extra: Partial<Package> = {}): Package => ({
   packageId: "p1", name: "hello", version: "1.0", vendor: null, applicationType: "rApp", state, toscaEntryDefinitions: null,
-  signatureVerified: true, nfDeploymentDescriptorId: state === "AVAILABLE" ? "d1" : null, aiCapabilities: null, ...extra,
+  signatureVerified: true, nfDeploymentDescriptorId: state === "AVAILABLE" ? "d1" : null, aiCapabilities: null,
+  descriptorId: null, descriptorInvariantId: null, descriptorVersion: null, schemaVersion: null, ...extra,
 });
 const instance = (state: string): Instance => ({ instanceId: "i1", packageId: "p1", state, workloadRef: "nf1", configuration: {}, pendingUpgradeInstanceId: null });
 const model = (): Model => ({

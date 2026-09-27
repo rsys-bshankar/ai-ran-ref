@@ -162,19 +162,25 @@ def test_onboard_routes_to_failed_when_location_does_not_end_with_csar(client, m
     assert status.json()["state"] == "FAILED"
 
 
-def test_onboard_routes_to_failed_when_acm_composition_json_is_missing(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: the reference's own FileExistenceValidator
-    requires Files/Acm/definition/compositions.json alongside
-    TOSCA-Metadata/TOSCA.meta — previously never checked, a package
-    missing it onboarded successfully anyway.
+def test_onboard_succeeds_without_the_onap_acm_composition_file(client, monkeypatch):
+    """The reference's own FileExistenceValidator requires
+    Files/Acm/definition/compositions.json (an ONAP ACM composition
+    file) alongside TOSCA-Metadata/TOSCA.meta. Deliberately NOT adopted
+    here (formal-spec audit, Onboarding/rApp Mgmt vs. the real ASD/TOSCA
+    CSAR format — see SPEC_AUDIT.md): this build never calls ONAP ACM at
+    all, so requiring every CSAR to bundle an ONAP-specific file just to
+    pass validation isn't real spec fidelity, it's an unwanted
+    dependency. A package that omits the file onboards the same as one
+    that includes it.
     """
     _mock_fetch(monkeypatch, _real_package_bytes(include_acm_composition=False))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
 
     resp = client.post("/packages", json={"location": "http://example/pkg.csar"})
     package_id = resp.json()["packageId"]
 
     status = client.get(f"/packages/{package_id}/onboarding-status")
-    assert status.json()["state"] == "FAILED"
+    assert status.json()["state"] == "AVAILABLE"
 
 
 def test_onboard_succeeds_with_a_real_well_formed_package(client, monkeypatch):
@@ -209,6 +215,35 @@ def test_onboard_resolves_name_version_vendor_from_the_asd(client, monkeypatch):
 
     pkg = next(p for p in client.get("/packages").json()["items"] if p["packageId"] == package_id)
     assert (pkg["state"], pkg["name"], pkg["version"], pkg["vendor"]) == ("AVAILABLE", "hello-world-rapp", "1.1", "ai-ran-ref")
+
+
+def test_onboard_captures_the_real_asd_descriptor_identity_fields(client, monkeypatch):
+    """The real ASD schema (asd_types.yaml's tosca.nodes.asd node type,
+    grounded against nonrtric-plt-rappmanager's own sample CSARs) also
+    requires descriptor_id/descriptor_invariant_id/descriptor_version/
+    schema_version alongside application_name/application_version/
+    provider — none captured before this pass. Package identity/
+    uniqueness stays on integrity_hash (unchanged); these are surfaced
+    for real spec fidelity only.
+    """
+    asd = (
+        "tosca_definitions_version: tosca_simple_yaml_1_2\n"
+        "topology_template:\n  node_templates:\n    applicationServiceDescriptor:\n      properties:\n"
+        "        descriptor_id: 2cd6a567-2e33-4960-8ef7-1cc519c998c4\n"
+        "        descriptor_invariant_id: 3f8a5e1b-68f1-42e5-89d0-47090dd0ef5a\n"
+        '        descriptor_version: "1.0"\n        schema_version: "2.0"\n'
+        '        provider: "ai-ran-ref"\n        application_name: hello-world-rapp\n        application_version: "1.0"\n'
+    )
+    _mock_fetch(monkeypatch, _real_package_bytes(definitions=asd))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+
+    package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+
+    pkg = next(p for p in client.get("/packages").json()["items"] if p["packageId"] == package_id)
+    assert pkg["descriptorId"] == "2cd6a567-2e33-4960-8ef7-1cc519c998c4"
+    assert pkg["descriptorInvariantId"] == "3f8a5e1b-68f1-42e5-89d0-47090dd0ef5a"
+    assert pkg["descriptorVersion"] == "1.0"
+    assert pkg["schemaVersion"] == "2.0"
 
 
 def test_onboard_keeps_placeholder_identity_when_the_asd_has_none(client, monkeypatch):
