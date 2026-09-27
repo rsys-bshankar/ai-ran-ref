@@ -215,6 +215,12 @@
   },
   {
     "method": "POST",
+    "pattern": "^/aimgf/training-jobs/[^/]+/(suspend|resume)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/aimgf/validation-jobs$",
     "role": "operator",
     "queryMatch": {}

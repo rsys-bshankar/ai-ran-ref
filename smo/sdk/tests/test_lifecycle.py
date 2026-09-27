@@ -35,6 +35,14 @@ def test_cancel_training(client, r1):
     assert r1.calls[0] == {"verb": "delete", "path": f"/aimgf/training-jobs/{job_id}", "params": None}
 
 
+def test_suspend_and_resume_training(client, r1):
+    job_id = uuid.uuid4()
+    client.suspend_training(job_id)
+    client.resume_training(job_id)
+    assert r1.calls[0] == {"verb": "post", "path": f"/aimgf/training-jobs/{job_id}/suspend", "params": None, "files": None, "json": None}
+    assert r1.calls[1] == {"verb": "post", "path": f"/aimgf/training-jobs/{job_id}/resume", "params": None, "files": None, "json": None}
+
+
 def test_update_training_job_model_metrics_sends_raw_unwrapped_body(client, r1):
     """model_metrics is the route's only body-eligible parameter — the
     wire body is that dict directly, not {"model_metrics": ...}.

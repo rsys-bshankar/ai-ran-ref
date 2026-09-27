@@ -229,6 +229,64 @@ def test_update_model_metrics_for_unknown_training_job_is_404(client):
     assert resp.status_code == 404
 
 
+# ---------------------------------------------------------------- Wave 3: suspend/resume
+
+def test_suspend_and_resume_a_running_training_job(client, mlmr):
+    model_id = mlmr.add_model()
+    job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+
+    suspend = client.post(f"/training-jobs/{job_id}/suspend")
+    assert suspend.status_code == 200
+    assert suspend.json()["status"] == "SUSPENDED"
+    assert client.get(f"/training-jobs/{job_id}/status").json()["status"] == "SUSPENDED"
+
+    resume = client.post(f"/training-jobs/{job_id}/resume")
+    assert resume.status_code == 200
+    assert resume.json()["status"] == "RUNNING"
+    assert client.get(f"/training-jobs/{job_id}/status").json()["status"] == "RUNNING"
+
+
+def test_suspend_does_not_touch_model_lifecycle_state(client, mlmr):
+    """Wave 2's two real FSMs operate one level up — a job-level suspend
+    is deliberately not a third state machine and must not reach into
+    ModelLifecycleState, the same way COMPLETED/FAILED/CANCELLED
+    transitions on job.status already don't either.
+    """
+    model_id = mlmr.add_model()
+    job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    client.post(f"/training-jobs/{job_id}/suspend")
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.TRAINING
+
+
+def test_suspend_rejects_a_non_running_job(client, mlmr):
+    model_id = mlmr.add_model()
+    job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    client.delete(f"/training-jobs/{job_id}")  # cancel it first
+
+    resp = client.post(f"/training-jobs/{job_id}/suspend")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "TRAINING_JOB_ILLEGAL_TRANSITION"
+
+
+def test_resume_rejects_a_non_suspended_job(client, mlmr):
+    model_id = mlmr.add_model()
+    job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+
+    resp = client.post(f"/training-jobs/{job_id}/resume")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "TRAINING_JOB_ILLEGAL_TRANSITION"
+
+
+def test_suspend_unknown_training_job_is_404(client):
+    resp = client.post(f"/training-jobs/{uuid.uuid4()}/suspend")
+    assert resp.status_code == 404
+
+
+def test_resume_unknown_training_job_is_404(client):
+    resp = client.post(f"/training-jobs/{uuid.uuid4()}/resume")
+    assert resp.status_code == 404
+
+
 def test_request_training_on_promoted_model_fires_create_training_not_a_shortcut(client, mlmr, db_session_factory):
     """The actual Wave 1 fix, carried over: RequestTraining must not
     always fire the same transition regardless of the model's state —

@@ -261,6 +261,43 @@ def cancel_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessio
         db.commit()
 
 
+@app.post("/training-jobs/{training_job_id}/suspend")
+def suspend_training(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    """SPEC_AUDIT.md's AI/ML Workflow section item 6: TrainingJob had no
+    suspend concept at all, only a hard cancel. This is deliberately a
+    plain status flip, not a third state machine — the two real FSMs
+    Wave 2 built (ModelLifecycleState/RuntimeLifecycleState) operate one
+    level up and are untouched by a job-level suspend/resume, the same
+    way job.status's other transitions (RUNNING -> COMPLETED/FAILED/
+    CANCELLED) already don't reach into ModelLifecycleState either —
+    only an explicit `POST /models/{id}/advance` call does that. Only
+    legal from RUNNING, matching the reference's own request-flag
+    semantics (a suspend request only makes sense against an in-flight job).
+    """
+    job = db.get(TrainingJob, training_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such training job")
+    if job.status != "RUNNING":
+        raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
+                               detail=f"cannot suspend a training job in status {job.status}")
+    job.status = "SUSPENDED"
+    db.commit()
+    return {"trainingJobId": str(job.training_job_id), "status": job.status}
+
+
+@app.post("/training-jobs/{training_job_id}/resume")
+def resume_training(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    job = db.get(TrainingJob, training_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such training job")
+    if job.status != "SUSPENDED":
+        raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
+                               detail=f"cannot resume a training job in status {job.status}")
+    job.status = "RUNNING"
+    db.commit()
+    return {"trainingJobId": str(job.training_job_id), "status": job.status}
+
+
 @app.post("/training-jobs/{training_job_id}/model-metrics")
 def update_training_job_model_metrics(training_job_id: uuid.UUID, model_metrics: dict, db: Session = Depends(get_session)):
     """OPEN_ITEMS.md section 5: TrainingJob had no metrics-writeback

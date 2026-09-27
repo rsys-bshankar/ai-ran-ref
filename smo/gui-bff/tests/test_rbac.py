@@ -70,6 +70,8 @@ def test_every_module_is_readable_by_a_viewer(module):
     # Wave 3 (docs/ownership/DME_OWNERSHIP.md)
     ("POST", "/dme/data-jobs/j/records", "admin"),
     ("POST", "/dme/actions", "operator"),
+    ("POST", "/aimgf/training-jobs/j/suspend", "operator"),
+    ("POST", "/aimgf/training-jobs/j/resume", "operator"),
 ])
 def test_minimum_role_per_route(method, path, minimum):
     order = ["viewer", "operator", "admin"]
