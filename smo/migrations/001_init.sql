@@ -99,20 +99,36 @@ CREATE TABLE trusted_invoker (
 -- Foundational Platform: DME  (Foundational Platform LLD section 3.8)
 -- ============================================================
 
+-- SPEC_AUDIT.md — DME vs. the real ICS API, Producer/Type conflation
+-- finding, closed: ICS's own real Information Producer
+-- (producer_registration_info) is a separate first-class entity from
+-- Information Type, in a genuine many-to-many relationship
+-- (consumer_information_type.no_of_producers) — dme_type used to
+-- conflate the two, making a second producer for the same type
+-- structurally impossible.
+CREATE TABLE dme_producer (
+  producer_id                  TEXT PRIMARY KEY,
+  producer_health_callback_url  TEXT NOT NULL,     -- ADOPT from ICS (repo inventory)
+  job_callback_url                 TEXT NOT NULL   -- NEW section 5: ICS's own InfoProducer.jobCallbackUrl
+);
+
 CREATE TABLE dme_type (
   dme_type_id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   namespace                     TEXT NOT NULL,
   name                           TEXT NOT NULL CHECK (name NOT LIKE '%:%'),
   version                         TEXT NOT NULL,
   type_name                        TEXT NOT NULL,
-  producer_id                        TEXT NOT NULL,
   data_production_schema               JSONB NOT NULL,
   collection_spec                        JSONB,               -- above-spec addition, kept deliberately (section 3.4)
-  producer_health_callback_url             TEXT NOT NULL,     -- ADOPT from ICS (repo inventory)
-  job_callback_url                            TEXT NOT NULL,  -- NEW section 5: ICS's own InfoProducer.jobCallbackUrl
   source_domain                                 TEXT CHECK (source_domain IN ('LIVE_RAN','DIGITAL_TWIN')),  -- Wave 3: docs/ownership/DME_OWNERSHIP.md
   source_context                                  JSONB,
   UNIQUE (namespace, name, version)
+);
+
+CREATE TABLE dme_producer_type (  -- the real many-to-many join, see dme_producer's own comment above
+  producer_id  TEXT NOT NULL REFERENCES dme_producer(producer_id) ON DELETE CASCADE,
+  dme_type_id   UUID NOT NULL REFERENCES dme_type(dme_type_id) ON DELETE CASCADE,
+  PRIMARY KEY (producer_id, dme_type_id)
 );
 
 CREATE TABLE dme_type_subscription (  -- NEW section 5: ICS's own /info-type-subscription

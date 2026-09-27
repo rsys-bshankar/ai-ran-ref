@@ -729,13 +729,13 @@ spec file directly, not a summary — `data-producer/v1`, `data-consumer/v1`,
 and the `producer_registration_info`/`consumer_information_type`/
 `consumer_job`/`producer_status` schemas.)*
 
-1. **The real ICS model treats Information Producer and Information
+1. ~~**The real ICS model treats Information Producer and Information
    Type as two separate first-class entities in a genuine many-to-many
    relationship — this build's own `DMEType` conflates them into one
    row, with a uniqueness constraint that makes a second producer for
-   the same type structurally impossible** — large/structural, real,
-   audited this pass, **not closed, left open by this explicit
-   finding**. ICS's own `producer_registration_info` (`PUT
+   the same type structurally impossible**~~ — **closed**, per explicit
+   direction to build the moderate/breaking schema change this finding
+   named. ICS's own `producer_registration_info` (`PUT
    /data-producer/v1/info-producers/{id}`) is a producer's own
    registration — callback URLs plus a `supported_info_types` array —
    entirely separate from `PUT /data-producer/v1/info-types/{id}`
@@ -743,21 +743,37 @@ and the `producer_registration_info`/`consumer_information_type`/
    own `no_of_producers` field and its `ENABLED`/`DISABLED` status
    ("one or several producers ... are available") exist specifically
    because the real spec expects *multiple* producers to register the
-   same type. `dme/app/models.py`'s own `DMEType.__table_args__`
-   (`UniqueConstraint("namespace", "name", "version")`) makes this
-   global across every producer — confirmed by reading
-   `register_dme_type`'s own `IntegrityError` handler directly: a
-   second producer registering an already-registered type identity
-   gets the same `DME_TYPE_VERSION_CONFLICT` a same-producer
-   re-registration attempt would (the check has no producer-scoping at
-   all). Splitting Producer and Type into two real entities would be a
-   genuine, moderate-to-large breaking schema change (every existing
-   `DMEType` row conflates identity that would need to split across two
-   tables, and every caller of `register_dme_type`/`register_service`-
-   equivalent flows would need updating) — audited and named, not
-   attempted without being asked, the same discipline as SME's own
-   CAPIF trust-direction finding and Intent Service's consumer-side
-   RMIH question before it.
+   same type. Closed by splitting `DMEType` into two real entities —
+   `DMEProducer` (`producer_id`, both callback URLs) and a real
+   `DMEProducerType` many-to-many join table — verified against
+   `InfoProducers.getProducersSupportingType`/`ProducerCallbacks`'s own
+   Java source, not assumed:
+   - `register_dme_type` (`POST /production-capabilities`) keeps its
+     existing wire-compatible request body (no caller needs to change)
+     but now upserts producer/type/link independently — a second
+     producer registering an already-known type, or a producer
+     re-registering after a restart, both succeed where they used to
+     409 with `DME_TYPE_VERSION_CONFLICT`.
+   - `typeStatus` is now ENABLED if *any* linked producer is healthy
+     (`ConsumerController.typeStatus`'s own real logic), and job
+     start/stop (`create_data_job`/`terminate_data_job`) fan out to
+     *every* producer supporting the type
+     (`ProducerCallbacks.startInfoSubscriptionJob`/`stopInfoJob`'s own
+     real fan-out), not just one.
+   - `deregister_producer` (the DME half of rApp Management's
+     producer-reconsideration trigger) now only removes the producer and
+     its links, matching ICS's own `deleteInfoProducer` — it no longer
+     cascades to the type or its DataJobs/DataOffers, since those are
+     ICS's real `deleteInfoType`'s job, not a producer's. New
+     `DELETE /dme-types/{id}` (ICS's own `deleteInfoType`) does that:
+     409s ("has one or several active producers") if any producer still
+     supports the type, otherwise deletes it and its dependent jobs/
+     offers and fires the real `DEREGISTERED` notification.
+   - New `GET /production-capabilities` / `GET
+     /production-capabilities/{id}` (ICS's own producer-list/get) expose
+     the producer as its own real, independently addressable resource —
+     the GUI's Data page gained its own Producers table alongside the
+     existing Types table.
 2. ~~**No bulk "delete every job I own" route — the real
    `DELETE /data-consumer/v1/info-jobs?owner=X`
    (`deleteJobsForOwner`)**~~ — **closed this pass**. Confirmed missing

@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
 import type {
-  CapifEventSubscription, DataJob, DataOffer, DmeType, DmeTypeSubscription, EiType, SmeInvoker, SmeProvider, SmeService,
+  CapifEventSubscription, DataJob, DataOffer, DmeProducer, DmeType, DmeTypeSubscription, EiType, SmeInvoker, SmeProvider, SmeService,
   TrustedInvoker,
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -32,15 +32,25 @@ export function Data() {
 
 function Dme() {
   const types = useSmo<DmeType[]>("/dme/dme-types");
+  const producers = useSmo<DmeProducer[]>("/dme/production-capabilities");
   const typeName = (id: string) => types.data?.find((t) => t.dmeTypeId === id)?.typeName ?? id.slice(0, 8);
   return (
     <>
-      <Card title="Data types (production capabilities)" actions={<span className="muted small">Type status is a live call to each producer's health callback</span>}>
+      <Card title="Producers" actions={<span className="muted small">A producer is its own entity now (SPEC_AUDIT.md) — several may support the same type</span>}>
+        <DataTable rows={producers.data} loading={producers.isLoading} error={producers.error} rowKey={(p) => p.producerId} empty="No producers registered." columns={[
+          { header: "Producer", render: (p) => <code>{p.producerId}</code> }, { header: "Health callback", render: (p) => p.producerHealthCallbackUrl },
+          { header: "Job callback", render: (p) => p.jobCallbackUrl }, { header: "Supported types", render: (p) => p.supportedTypeIds.map(typeName).join(", ") || "—" },
+          { header: "", className: "actions", render: (p) => <ActionButton label="Deregister" tone="danger"
+            confirm={`Deregister producer ${p.producerId}? Its types stay registered (served by any other producer, or DISABLED if none).`}
+            action={{ method: "DELETE", path: "/dme/production-capabilities", query: { producer_id: p.producerId }, success: "Producer deregistered" }} /> },
+        ]} />
+      </Card>
+      <Card title="Data types (production capabilities)" actions={<span className="muted small">Type status is ENABLED if any of its producers answers its health callback</span>}>
         <DataTable rows={types.data} loading={types.isLoading} error={types.error} rowKey={(t) => t.dmeTypeId} empty="No DME types registered." columns={[
           { header: "Type", render: (t) => <code>{t.typeName}</code> }, { header: "ID", render: (t) => <Id value={t.dmeTypeId} /> },
-          { header: "Producer", render: (t) => t.producerId }, { header: "Status", render: (t) => <StateBadge state={t.typeStatus} /> },
-          { header: "", className: "actions", render: (t) => <ActionButton label="Deregister producer" tone="danger" confirm={`Deregister producer ${t.producerId} and all its types, jobs and offers?`}
-            action={{ method: "DELETE", path: "/dme/production-capabilities", query: { producer_id: t.producerId }, success: "Producer deregistered" }} /> },
+          { header: "Producers", render: (t) => t.producerIds.join(", ") || "—" }, { header: "Status", render: (t) => <StateBadge state={t.typeStatus} /> },
+          { header: "", className: "actions", render: (t) => <ActionButton label="Delete type" tone="danger" confirm={`Delete type ${t.typeName}? Fails if any producer still supports it.`}
+            action={{ method: "DELETE", path: `/dme/dme-types/${t.dmeTypeId}`, success: "Type deleted" }} /> },
         ]} />
         <Can method="POST" path="/dme/production-capabilities"><RegisterDmeType /></Can>
       </Card>
