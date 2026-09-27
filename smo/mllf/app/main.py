@@ -53,7 +53,7 @@ def request_model_deployment(model_id: uuid.UUID, node_groups: list[str]):
     """
     resp = _aimgf.get(f"/aimgf/models/{model_id}/lifecycle")
     if resp.status_code == 404:
-        raise HTTPException(status_code=404, detail="no such model")
+        raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
     lifecycle = resp.json()
     if lifecycle["modelLifecycleState"] not in ("CERTIFIED", "PROMOTED"):
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED)

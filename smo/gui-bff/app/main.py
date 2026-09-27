@@ -77,11 +77,25 @@ SECURITY_HEADERS = {
 STATUS_MODULES = ["r1-termination", *MODULES]
 
 
-def _problem(status: int, title: str, detail: str | None = None) -> JSONResponse:
+def _problem_body(status: int, title: str, detail: str | None = None) -> dict:
     body = {"title": title, "status": status}
     if detail:
         body["detail"] = detail
-    return JSONResponse(status_code=status, content=body)
+    return body
+
+
+def _problem(status: int, title: str, detail: str | None = None) -> JSONResponse:
+    return JSONResponse(status_code=status, content=_problem_body(status, title, detail))
+
+
+def _problem_exception(status: int, title: str, detail: str | None = None) -> HTTPException:
+    """Wave 3 (cross-cutting standardization) — Error Schema: the same
+    {title, status, detail} shape as _problem() above, for the four spots
+    that must `raise` rather than `return` (FastAPI dependencies, which
+    resolve to their return value rather than short-circuiting the
+    response) — current_session/require_admin below.
+    """
+    return HTTPException(status_code=status, detail=_problem_body(status, title, detail))
 
 
 def seed_users(db: Database, cfg: Settings) -> None:
@@ -196,22 +210,22 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         token = request.cookies.get(SESSION_COOKIE) if via_cookie else auth[7:].strip()
         claims = decode_jwt(token or "", cfg.jwt_secret)
         if claims is None:
-            raise HTTPException(status_code=401, detail="not authenticated")
+            raise _problem_exception(401, "UNAUTHENTICATED", "not authenticated")
         with app.state.db.session() as s:
             user = s.get(GuiUser, claims.get("sub"))
         if user is None or not user.active or user.token_version != claims.get("ver"):
-            raise HTTPException(status_code=401, detail="session revoked")
+            raise _problem_exception(401, "SESSION_REVOKED", "session revoked")
         if via_cookie and request.method in UNSAFE_METHODS:
             sent = request.headers.get(CSRF_HEADER, "")
             if not sent or not hmac.compare_digest(sent, str(claims.get("csrf", ""))):
-                raise HTTPException(status_code=403, detail="missing or invalid CSRF token")
+                raise _problem_exception(403, "CSRF_TOKEN_INVALID", "missing or invalid CSRF token")
         # Role always read from the user table, never from the token: a role
         # change or demotion applies on the very next request.
         return Session(user=User(user.username, Role(user.role)), csrf=claims.get("csrf"), via_cookie=via_cookie)
 
     def require_admin(session: Session = Depends(current_session)) -> Session:
         if session.user.role != Role.ADMIN:
-            raise HTTPException(status_code=403, detail="requires role admin")
+            raise _problem_exception(403, "FORBIDDEN", "requires role admin")
         return session
 
     # ------------------------------------------------------------ auth

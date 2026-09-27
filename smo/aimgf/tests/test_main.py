@@ -61,7 +61,9 @@ class FakeMlmr:
             return FakeResponse(200, self.groups)
         model_id = path.rsplit("/", 1)[-1]
         model = self.models.get(model_id)
-        return FakeResponse(200, model) if model is not None else FakeResponse(404, {"detail": "no such model"})
+        return FakeResponse(200, model) if model is not None else FakeResponse(
+            404, {"detail": {"type": "about:blank", "title": "MODEL_NOT_FOUND", "status": 404, "detail": "no such model"}}
+        )
 
 
 class FakeNfo:

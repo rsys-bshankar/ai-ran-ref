@@ -159,7 +159,7 @@ def list_assurance_monitors(db: Session = Depends(get_session)):
 def get_assurance_monitor(monitor_id: uuid.UUID, db: Session = Depends(get_session)):
     monitor = db.get(AssuranceMonitor, monitor_id)
     if monitor is None:
-        raise HTTPException(status_code=404, detail="no such AssuranceMonitor")
+        raise framework_error(FrameworkError.ASSURANCE_MONITOR_NOT_FOUND, detail="no such AssuranceMonitor")
     return _monitor_view(monitor)
 
 

@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
+from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.openapi_security import apply_r1_gateway_security
 
 from .models import DeploymentManager, InventorySubscription, OCloudAlarm, OCloudPerformanceMetric, Resource, ResourcePool, ResourceType
@@ -131,7 +132,7 @@ def get_resource_type(resource_type_id: str, db: Session = Depends(get_session))
     _ensure_phase1_topology(db)
     t = db.get(ResourceType, resource_type_id)
     if t is None:
-        raise HTTPException(status_code=404, detail="no such resource type")
+        raise framework_error(FrameworkError.RESOURCE_TYPE_NOT_FOUND, detail="no such resource type")
     return _resource_type_view(t)
 
 
@@ -146,7 +147,7 @@ def get_resource_pool(resource_pool_id: str, db: Session = Depends(get_session))
     _ensure_phase1_topology(db)
     p = db.get(ResourcePool, resource_pool_id)
     if p is None:
-        raise HTTPException(status_code=404, detail="no such resource pool")
+        raise framework_error(FrameworkError.RESOURCE_POOL_NOT_FOUND, detail="no such resource pool")
     return _resource_pool_view(p)
 
 
@@ -154,7 +155,7 @@ def get_resource_pool(resource_pool_id: str, db: Session = Depends(get_session))
 def list_pool_resources(resource_pool_id: str, db: Session = Depends(get_session)):
     _ensure_phase1_topology(db)
     if db.get(ResourcePool, resource_pool_id) is None:
-        raise HTTPException(status_code=404, detail="no such resource pool")
+        raise framework_error(FrameworkError.RESOURCE_POOL_NOT_FOUND, detail="no such resource pool")
     rows = db.scalars(select(Resource).where(Resource.resource_pool_id == resource_pool_id)).all()
     return [_resource_view(r) for r in rows]
 
@@ -170,7 +171,7 @@ def get_deployment_manager(deployment_manager_id: str, db: Session = Depends(get
     _ensure_phase1_topology(db)
     d = db.get(DeploymentManager, deployment_manager_id)
     if d is None:
-        raise HTTPException(status_code=404, detail="no such deployment manager")
+        raise framework_error(FrameworkError.DEPLOYMENT_MANAGER_NOT_FOUND, detail="no such deployment manager")
     return _deployment_manager_view(d)
 
 

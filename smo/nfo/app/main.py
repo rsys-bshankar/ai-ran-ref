@@ -187,7 +187,7 @@ def heal(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
     """
     d = db.get(NFDeployment, nf_deployment_id)
     if d is None:
-        raise HTTPException(status_code=404, detail="no such NfDeployment")
+        raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")
     try:
         d.state = NFO_FSM.fire(DeploymentState(d.state), DeploymentEvent.HEAL)
     except IllegalTransition:
@@ -207,7 +207,7 @@ def scale(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
     """
     d = db.get(NFDeployment, nf_deployment_id)
     if d is None:
-        raise HTTPException(status_code=404, detail="no such NfDeployment")
+        raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")
     try:
         d.state = NFO_FSM.fire(DeploymentState(d.state), DeploymentEvent.UPDATE)
     except IllegalTransition:

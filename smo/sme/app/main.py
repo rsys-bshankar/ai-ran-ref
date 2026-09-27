@@ -449,7 +449,7 @@ def query_own_services(apf_id: str, db: Session = Depends(get_session)):
     """
     rows = db.scalars(select(ServiceProfile).where(ServiceProfile.producer_id == apf_id)).all()
     if not rows and db.get(ProviderRegistration, apf_id) is None:
-        raise HTTPException(status_code=404, detail=f"{apf_id} is not a registered publishing function")
+        raise framework_error(FrameworkError.PUBLISHING_FUNCTION_NOT_FOUND, detail=f"{apf_id} is not a registered publishing function")
     return [_service_view(r) for r in rows]
 
 

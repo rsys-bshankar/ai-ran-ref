@@ -193,7 +193,7 @@ def query_producer_status(producer_id: str, db: Session = Depends(get_session)):
     """
     t = db.scalar(select(DMEType).where(DMEType.producer_id == producer_id).limit(1))
     if t is None:
-        raise HTTPException(status_code=404, detail="no such producer")
+        raise framework_error(FrameworkError.PRODUCER_NOT_FOUND, detail="no such producer")
     operational_state = "ENABLED" if _producer_is_healthy(t.producer_health_callback_url) else "DISABLED"
     return {"producerId": producer_id, "operationalState": operational_state}
 
@@ -226,7 +226,7 @@ def list_type_subscriptions(owner: str | None = None, db: Session = Depends(get_
 def get_type_subscription(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
     sub = db.get(DMETypeSubscription, subscription_id)
     if sub is None:
-        raise HTTPException(status_code=404, detail="no such subscription")
+        raise framework_error(FrameworkError.TYPE_SUBSCRIPTION_NOT_FOUND, detail="no such subscription")
     return _subscription_view(sub)
 
 
@@ -340,7 +340,7 @@ def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
 def get_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(DataJob, data_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such data job")
+        raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
     return _job_view(job)
 
 
@@ -361,7 +361,7 @@ def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, db: Session = 
     """
     job = db.get(DataJob, data_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such data job")
+        raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
     if job.dme_type_id != body.dmeTypeId or job.consumer_id != body.consumerId or job.data_delivery_mode != body.dataDeliveryMode:
         raise framework_error(FrameworkError.DATA_JOB_TARGET_IMMUTABLE, detail="dmeTypeId/consumerId/dataDeliveryMode cannot change on update")
     _validate_delivery_method(db, body.dmeTypeId, body.dataDeliveryMethod)
@@ -385,7 +385,7 @@ def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, db: Session = 
 def query_data_job_status(data_job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(DataJob, data_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such data job")
+        raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
     return {"dataJobId": str(job.data_job_id), "status": job.status}
 
 
@@ -425,7 +425,7 @@ def create_data_offer(body: DataOfferRequest, db: Session = Depends(get_session)
 def get_data_offer(offer_id: uuid.UUID, db: Session = Depends(get_session)):
     offer = db.get(DataOffer, offer_id)
     if offer is None:
-        raise HTTPException(status_code=404, detail="no such data offer")
+        raise framework_error(FrameworkError.DATA_OFFER_NOT_FOUND, detail="no such data offer")
     return _offer_view(offer)
 
 
@@ -590,7 +590,7 @@ def list_data_offers(dme_type_id: uuid.UUID | None = None, db: Session = Depends
 def ingest_data_record(data_job_id: uuid.UUID, body: DataRecordRequest, db: Session = Depends(get_session)):
     job = db.get(DataJob, data_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such data job")
+        raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
     record = DataRecord(data_job_id=data_job_id, payload=body.payload)
     db.add(record)
     db.commit()
@@ -601,7 +601,7 @@ def ingest_data_record(data_job_id: uuid.UUID, body: DataRecordRequest, db: Sess
 def fetch_data_records(data_job_id: uuid.UUID, limit: int = 100, db: Session = Depends(get_session)):
     job = db.get(DataJob, data_job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="no such data job")
+        raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
     stmt = select(DataRecord).where(DataRecord.data_job_id == data_job_id).order_by(DataRecord.produced_at.desc()).limit(limit)
     records = db.scalars(stmt).all()
     return [_record_view(r) for r in records]
@@ -649,7 +649,7 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
 def get_action(action_id: uuid.UUID, db: Session = Depends(get_session)):
     record = db.get(DmeActionRecord, action_id)
     if record is None:
-        raise HTTPException(status_code=404, detail="no such action")
+        raise framework_error(FrameworkError.DME_ACTION_NOT_FOUND, detail="no such action")
     return _action_view(record)
 
 
