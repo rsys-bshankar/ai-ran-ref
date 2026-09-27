@@ -132,7 +132,7 @@ decision, not a per-PR judgment call.
 | MDAF | TS 28.104 (MDA) |
 | AIMgF | TS 28.105 (AI/ML NRM) realization |
 | MLMR | TS 28.105 (AI/ML NRM) + TS 29.482 AIMLE MLR (model repository/discovery, Wave 3 — `docs/ownership/MLMR_OWNERSHIP.md`) |
-| MLLF | TS 28.105 (AI/ML NRM) realization |
+| MLLF | TS 28.105 (AI/ML NRM) realization — deploy-request gate + targeting only; the state machine itself is AIMgF+NFO's `RuntimeLifecycleState` (Wave 3 scope correction — `docs/ownership/MLLF_OWNERSHIP.md`) |
 | Intent Service | TS 28.312 (Intent NRM) |
 | NFO | O-Cloud / O2 |
 | FOCOM | O2IMS |
@@ -235,6 +235,16 @@ Frozen wave order — do not reorder without updating this document first:
     `requestStatus` vocabulary-mismatch finding is reconfirmed still
     open — only `SUSPENDED` itself was adopted, not a full rename of
     the remaining values, which would be a real breaking change.
+  - **MLLF slice** (done, doc-only): MLLF was still a Wave-1 stub (one
+    gate route, no models of its own) whose ownership doc described a
+    "load/unload/activate/deactivate + deployment record" surface as
+    deferred future work. That work turned out to already be done —
+    Wave 2's `RuntimeLifecycleState` (AIMgF+NFO) answers exactly that
+    question. Rather than build a second, competing state machine,
+    `docs/ownership/MLLF_OWNERSHIP.md` and this baseline's own service
+    table/matrix are corrected to say so explicitly; MLLF's code is
+    unchanged (it was already only ever the gate+targeting surface this
+    correction describes).
 
 Reordering Wave 3 ahead of Wave 1/2, or starting new R1 contract design
 before the ownership split is merged, is exactly the redesign-it-twice
