@@ -9,10 +9,10 @@
 
 import type {
   AnalyticsProducer, AnalyticsReport, AnalyticsSubscription, ConfigJob, DataJob, DataOffer, DmeType, EiType, FaultReport,
-  InferenceJob, Instance, Intent, IntentReport, MlmfReport, MlmfSubscription, Model, Monitor, NfDeployment, O1Endpoint,
-  Package, PackageUsage, PerfReport, RemedialAction, Rmih, ServiceOrder, TrainingJob,
+  InferenceJob, Instance, Intent, IntentReport, MlmfReport, MlmfSubscription, Model, ModelLifecycle, Monitor, NfDeployment,
+  O1Endpoint, Package, PackageUsage, PerfReport, RemedialAction, Rmih, ServiceOrder, TrainingJob,
 } from "../api/types";
-import { MODEL_PIPELINE } from "./domain";
+import { MODEL_PIPELINE, RUNTIME_PIPELINE } from "./domain";
 
 export type StepStatus = "done" | "current" | "todo" | "failed" | "blocked" | "warn";
 
@@ -91,26 +91,34 @@ export function flow01(pkg: Package | undefined, instance: Instance | undefined,
 
 // ---------------------------------------------------------------- 02
 
-const reached = (state: string, target: string) => {
-  if (state === "DEPRECATED") return true;
+const reached = (state: string | undefined, target: string) => {
+  if (!state) return false;
+  if (state === "DEPRECATED" || state === "RETIRED" || state === "FAILED") return true;
   return MODEL_PIPELINE.indexOf(state as (typeof MODEL_PIPELINE)[number]) >= MODEL_PIPELINE.indexOf(target as (typeof MODEL_PIPELINE)[number]);
 };
 
-export function flow02(model: Model | undefined, jobs: TrainingJob[], inference: InferenceJob[], subs: MlmfSubscription[], reports: MlmfReport[]): FlowStep[] {
+const runtimeReached = (state: string | undefined, target: string) => {
+  if (!state) return false;
+  return RUNTIME_PIPELINE.indexOf(state as (typeof RUNTIME_PIPELINE)[number]) >= RUNTIME_PIPELINE.indexOf(target as (typeof RUNTIME_PIPELINE)[number]);
+};
+
+export function flow02(model: Model | undefined, lifecycle: ModelLifecycle | undefined, jobs: TrainingJob[], inference: InferenceJob[], subs: MlmfSubscription[], reports: MlmfReport[]): FlowStep[] {
   if (!model) return settle([step("register", "RegisterModel(modelType, version)", "Producer → AI/ML", false)]);
-  const s = model.state;
+  const s = lifecycle?.modelLifecycleState;
+  const rs = lifecycle?.runtimeLifecycleState;
+  const nodeGroups = lifecycle?.clearedNodeGroups ?? [];
   const inferenceDone = inference.find((j) => j.status === "COMPLETED");
   const inferenceFailed = inference.length > 0 && inference.every((j) => j.status === "FAILED");
   const breached = reports.filter((r) => r.breachedFloor).length;
   return settle([
     step("register", "RegisterModel(modelType, version)", "Producer → AI/ML", true, `${model.modelType} v${model.version}`),
     step("train", "RequestTraining → TRAINING", "Producer → AI/ML (MLTF)", jobs.length > 0 || reached(s, "TRAINING"), jobs.length ? `${jobs.length} training job(s)` : undefined),
-    step("tested", "advance(TRAINING_COMPLETE) → TESTED", "MLVF", reached(s, "TESTED")),
-    step("emulated", "advance(VALIDATION_COMPLETE) → EMULATED", "MLEF", reached(s, "EMULATED")),
-    step("certified", "advance(CERTIFY) → CERTIFIED (AIMgF gate)", "AIMgF", reached(s, "CERTIFIED")),
-    step("deploy", "RequestModelDeployment(nodeGroups)", "Producer → MLLF", model.clearedNodeGroups.length > 0, model.clearedNodeGroups.join(", ") || undefined),
-    step("loaded", "advance(LOAD) → LOADED", "MLLF", reached(s, "LOADED")),
-    step("active", "advance(ACTIVATE) → ACTIVE", "MLLF", reached(s, "ACTIVE")),
+    step("tested", "advance(TRAINING_COMPLETE) → TRAINED → RequestValidation → VALIDATED", "MLVF", reached(s, "VALIDATED")),
+    step("emulated", "RequestEmulation → EMULATING → EMULATED", "MLEF", reached(s, "EMULATED")),
+    step("certified", "governance: submit → approve → certify → CERTIFIED", "AIMgF", reached(s, "CERTIFIED")),
+    step("deploy", "RequestModelDeployment(nodeGroups)", "Producer → MLLF", nodeGroups.length > 0, nodeGroups.join(", ") || undefined),
+    step("loaded", "runtime/deploy → DEPLOYED (AIMgF + NFO)", "AIMgF", runtimeReached(rs, "DEPLOYED")),
+    step("active", "runtime/activate → ACTIVE", "AIMgF", runtimeReached(rs, "ACTIVE")),
     step("infer", "RequestInference → COMPLETED (result via DME)", "Consumer → MLEF",
       inferenceDone ? true : inferenceFailed ? "warn" : false, inference.length ? `${inference.length} job(s): ${inference.map((j) => j.status).join(", ")}` : undefined),
     step("monitor", "SubscribePerformanceMonitoring(guardKpiFloor)", "Producer → MLMF", subs.length > 0, subs.length ? `${subs.length} subscription(s)` : undefined),

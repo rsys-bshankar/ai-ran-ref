@@ -60,10 +60,19 @@ def test_list_training_jobs(client, r1):
 
 def test_advance_model_lifecycle(client, r1):
     model_id = uuid.uuid4()
-    client.advance_model_lifecycle(model_id, "CERTIFY")
+    client.advance_model_lifecycle(model_id, "TRAINING_COMPLETE")
     assert r1.calls[0] == {
         "verb": "post", "path": f"/aimgf/models/{model_id}/advance",
-        "params": {"event": "CERTIFY"}, "files": None, "json": None,
+        "params": {"event": "TRAINING_COMPLETE", "decided_by": None, "rationale": None}, "files": None, "json": None,
+    }
+
+
+def test_advance_model_lifecycle_governance_decision_passes_decided_by_and_rationale(client, r1):
+    model_id = uuid.uuid4()
+    client.advance_model_lifecycle(model_id, "CERTIFY", decided_by="operator-1", rationale="looks good")
+    assert r1.calls[0] == {
+        "verb": "post", "path": f"/aimgf/models/{model_id}/advance",
+        "params": {"event": "CERTIFY", "decided_by": "operator-1", "rationale": "looks good"}, "files": None, "json": None,
     }
 
 

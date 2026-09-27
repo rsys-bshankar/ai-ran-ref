@@ -1,10 +1,25 @@
-"""Two lifecycles plus one policy function, per AI/ML Workflow LLD:
-  - AIMLModel     (SMO Design v1.3 section 3.8's state diagram, unchanged
-                    shape — retraining re-enters at TRAINING, not REGISTERED,
-                    since the model identity/registration itself doesn't change)
-  - InferenceJob  (LLD section 3 — new, v1.3 never modeled serving at all)
-  - retrain propagation (LLD section 4.3-4.4 — the ANY_MEMBER_TRIGGERS
-    decision, made computable rather than just described)
+"""Wave 2 (AI Platform Service Decomposition): AIMgF's own two real state
+machines, per docs/ownership/AIMGF_OWNERSHIP.md — replacing Wave 1's single
+flat `ModelState`/`ModelEvent` (which conflated a model's own identity/
+certification progress with its runtime/serving existence, and lived partly
+on MLMR's row via `PATCH /models/{id}/lifecycle`).
+
+  - ModelLifecycle  (14 states) — a model's own identity/certification
+                      path: training -> validation -> emulation ->
+                      governance (approval/certification/promotion) ->
+                      deprecation/retirement. AIMgF's own truth end to end
+                      (docs/architecture/SERVICE_OWNERSHIP_MATRIX.md:
+                      "Lifecycle state: AIMgF ✅, MLMR ❌").
+  - RuntimeLifecycle (8 states) — a model's serving existence once
+                      PROMOTED, jointly owned with NFO (NFO invocation:
+                      request runtime creation/termination/scaling).
+                      Decoupled from ModelLifecycle so retraining a
+                      PROMOTED model doesn't force its runtime down, and a
+                      runtime can be scaled/terminated without touching
+                      the model's own certification state.
+
+Also carries `should_trigger_group_retrain`, unchanged from Wave 1 (AI/ML
+Workflow LLD section 4.3-4.4's retrain-propagation decision).
 """
 
 from __future__ import annotations
@@ -13,46 +28,130 @@ from enum import StrEnum
 
 from smo_shared.statemachine import StateMachine
 
-# ---------------------------------------------------------------- AIMLModel
+# ---------------------------------------------------------------- ModelLifecycle
 
-class ModelState(StrEnum):
+class ModelLifecycleState(StrEnum):
     REGISTERED = "REGISTERED"
     TRAINING = "TRAINING"
-    TESTED = "TESTED"
+    TRAINED = "TRAINED"
+    VALIDATING = "VALIDATING"
+    VALIDATED = "VALIDATED"
+    EMULATING = "EMULATING"
     EMULATED = "EMULATED"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    APPROVED = "APPROVED"
     CERTIFIED = "CERTIFIED"
-    LOADED = "LOADED"
-    ACTIVE = "ACTIVE"
+    PROMOTED = "PROMOTED"
     DEPRECATED = "DEPRECATED"
+    RETIRED = "RETIRED"
+    FAILED = "FAILED"
 
 
-class ModelEvent(StrEnum):
-    TRAIN = "TRAIN"
-    TRAINING_COMPLETE = "TRAINING_COMPLETE"    # -> TESTED (MLVF)
-    VALIDATION_COMPLETE = "VALIDATION_COMPLETE"  # -> EMULATED (MLEF)
-    CERTIFY = "CERTIFY"                          # AIMgF governance decision -> CERTIFIED
-    LOAD = "LOAD"                                # MLLF deploys -> LOADED
-    ACTIVATE = "ACTIVATE"                        # -> ACTIVE
-    RETRAIN = "RETRAIN"                          # ACTIVE -> TRAINING, full pipeline re-entry
-    DEPRECATE = "DEPRECATE"
+class ModelLifecycleEvent(StrEnum):
+    CREATE_TRAINING = "CREATE_TRAINING"            # REGISTERED/PROMOTED/FAILED -> TRAINING (first cycle or retrain)
+    TRAINING_COMPLETE = "TRAINING_COMPLETE"          # -> TRAINED
+    TRAINING_FAILED = "TRAINING_FAILED"                # -> FAILED
+    CREATE_VALIDATION = "CREATE_VALIDATION"              # TRAINED -> VALIDATING (MLVF)
+    VALIDATION_COMPLETE = "VALIDATION_COMPLETE"            # -> VALIDATED
+    VALIDATION_FAILED = "VALIDATION_FAILED"                  # -> FAILED
+    CREATE_EMULATION = "CREATE_EMULATION"                      # VALIDATED -> EMULATING (MLEF)
+    EMULATION_COMPLETE = "EMULATION_COMPLETE"                    # -> EMULATED
+    EMULATION_FAILED = "EMULATION_FAILED"                          # -> FAILED
+    SUBMIT_FOR_APPROVAL = "SUBMIT_FOR_APPROVAL"                      # EMULATED -> PENDING_APPROVAL (governance)
+    APPROVE = "APPROVE"                                                # -> APPROVED
+    REJECT = "REJECT"                                                    # PENDING_APPROVAL -> FAILED
+    CERTIFY = "CERTIFY"                                                    # APPROVED -> CERTIFIED
+    PROMOTE = "PROMOTE"                                                      # CERTIFIED -> PROMOTED
+    ROLLBACK = "ROLLBACK"                                                      # PROMOTED -> CERTIFIED (governance)
+    DEPRECATE = "DEPRECATE"                                                      # CERTIFIED/PROMOTED -> DEPRECATED
+    RETIRE = "RETIRE"                                                              # DEPRECATED/FAILED -> RETIRED
 
 
-def build_aiml_model_fsm() -> StateMachine[ModelState, ModelEvent]:
-    fsm: StateMachine[ModelState, ModelEvent] = StateMachine()
-    fsm.add(ModelState.REGISTERED, ModelEvent.TRAIN, ModelState.TRAINING)
-    fsm.add(ModelState.TRAINING, ModelEvent.TRAINING_COMPLETE, ModelState.TESTED)
-    fsm.add(ModelState.TESTED, ModelEvent.VALIDATION_COMPLETE, ModelState.EMULATED)
-    fsm.add(ModelState.EMULATED, ModelEvent.CERTIFY, ModelState.CERTIFIED)
-    fsm.add(ModelState.CERTIFIED, ModelEvent.LOAD, ModelState.LOADED)
-    fsm.add(ModelState.LOADED, ModelEvent.ACTIVATE, ModelState.ACTIVE)
-    # No lightweight update path — existing project design principle,
-    # confirmed unchanged by every LLD pass touching this module.
-    fsm.add(ModelState.ACTIVE, ModelEvent.RETRAIN, ModelState.TRAINING)
-    fsm.add(ModelState.ACTIVE, ModelEvent.DEPRECATE, ModelState.DEPRECATED)
+# Governance events a CertificationRecord is written for (main.py's
+# advance_model_lifecycle) — Approval/Certification/Promotion/Rollback
+# per AIMGF_OWNERSHIP.md's own Governance list, plus the two decisions
+# framing approval (submit/reject) so the audit trail covers the whole
+# governance conversation, not just its middle.
+GOVERNANCE_EVENTS = frozenset({
+    ModelLifecycleEvent.SUBMIT_FOR_APPROVAL, ModelLifecycleEvent.APPROVE, ModelLifecycleEvent.REJECT,
+    ModelLifecycleEvent.CERTIFY, ModelLifecycleEvent.PROMOTE, ModelLifecycleEvent.ROLLBACK,
+})
+
+
+def build_model_lifecycle_fsm() -> StateMachine[ModelLifecycleState, ModelLifecycleEvent]:
+    fsm: StateMachine[ModelLifecycleState, ModelLifecycleEvent] = StateMachine()
+    S, E = ModelLifecycleState, ModelLifecycleEvent
+    fsm.add(S.REGISTERED, E.CREATE_TRAINING, S.TRAINING)
+    fsm.add(S.TRAINING, E.TRAINING_COMPLETE, S.TRAINED)
+    fsm.add(S.TRAINING, E.TRAINING_FAILED, S.FAILED)
+    fsm.add(S.TRAINED, E.CREATE_VALIDATION, S.VALIDATING)
+    fsm.add(S.VALIDATING, E.VALIDATION_COMPLETE, S.VALIDATED)
+    fsm.add(S.VALIDATING, E.VALIDATION_FAILED, S.FAILED)
+    fsm.add(S.VALIDATED, E.CREATE_EMULATION, S.EMULATING)
+    fsm.add(S.EMULATING, E.EMULATION_COMPLETE, S.EMULATED)
+    fsm.add(S.EMULATING, E.EMULATION_FAILED, S.FAILED)
+    fsm.add(S.EMULATED, E.SUBMIT_FOR_APPROVAL, S.PENDING_APPROVAL)
+    fsm.add(S.PENDING_APPROVAL, E.APPROVE, S.APPROVED)
+    fsm.add(S.PENDING_APPROVAL, E.REJECT, S.FAILED)
+    fsm.add(S.APPROVED, E.CERTIFY, S.CERTIFIED)
+    fsm.add(S.CERTIFIED, E.PROMOTE, S.PROMOTED)
+    fsm.add(S.CERTIFIED, E.DEPRECATE, S.DEPRECATED)
+    fsm.add(S.PROMOTED, E.ROLLBACK, S.CERTIFIED)
+    fsm.add(S.PROMOTED, E.DEPRECATE, S.DEPRECATED)
+    # No lightweight update path — existing project design principle
+    # carried over from Wave 1's own ACTIVE -> RETRAIN -> TRAINING edge:
+    # retraining a PROMOTED model re-enters the full pipeline at TRAINING,
+    # not at REGISTERED (identity/registration itself doesn't change).
+    fsm.add(S.PROMOTED, E.CREATE_TRAINING, S.TRAINING)
+    fsm.add(S.DEPRECATED, E.RETIRE, S.RETIRED)
+    fsm.add(S.FAILED, E.RETIRE, S.RETIRED)
+    fsm.add(S.FAILED, E.CREATE_TRAINING, S.TRAINING)  # retry after a failure, same re-entry point
     return fsm
 
 
-AIML_MODEL_FSM = build_aiml_model_fsm()
+MODEL_LIFECYCLE_FSM = build_model_lifecycle_fsm()
+
+# ---------------------------------------------------------------- RuntimeLifecycle
+
+class RuntimeLifecycleState(StrEnum):
+    NOT_DEPLOYED = "NOT_DEPLOYED"
+    DEPLOYMENT_REQUESTED = "DEPLOYMENT_REQUESTED"
+    DEPLOYED = "DEPLOYED"
+    ACTIVATING = "ACTIVATING"
+    ACTIVE = "ACTIVE"
+    SCALING = "SCALING"
+    TERMINATING = "TERMINATING"
+    TERMINATED = "TERMINATED"
+
+
+class RuntimeLifecycleEvent(StrEnum):
+    REQUEST_DEPLOYMENT = "REQUEST_DEPLOYMENT"          # NFO: request runtime creation
+    DEPLOYMENT_COMPLETE = "DEPLOYMENT_COMPLETE"
+    ACTIVATE = "ACTIVATE"
+    ACTIVATION_COMPLETE = "ACTIVATION_COMPLETE"
+    REQUEST_SCALE = "REQUEST_SCALE"                      # NFO: request runtime scaling
+    SCALE_COMPLETE = "SCALE_COMPLETE"
+    REQUEST_TERMINATION = "REQUEST_TERMINATION"            # NFO: request runtime termination
+    TERMINATION_COMPLETE = "TERMINATION_COMPLETE"
+
+
+def build_runtime_lifecycle_fsm() -> StateMachine[RuntimeLifecycleState, RuntimeLifecycleEvent]:
+    fsm: StateMachine[RuntimeLifecycleState, RuntimeLifecycleEvent] = StateMachine()
+    S, E = RuntimeLifecycleState, RuntimeLifecycleEvent
+    fsm.add(S.NOT_DEPLOYED, E.REQUEST_DEPLOYMENT, S.DEPLOYMENT_REQUESTED)
+    fsm.add(S.DEPLOYMENT_REQUESTED, E.DEPLOYMENT_COMPLETE, S.DEPLOYED)
+    fsm.add(S.DEPLOYED, E.ACTIVATE, S.ACTIVATING)
+    fsm.add(S.ACTIVATING, E.ACTIVATION_COMPLETE, S.ACTIVE)
+    fsm.add(S.ACTIVE, E.REQUEST_SCALE, S.SCALING)
+    fsm.add(S.SCALING, E.SCALE_COMPLETE, S.ACTIVE)
+    fsm.add(S.DEPLOYMENT_REQUESTED, E.REQUEST_TERMINATION, S.TERMINATING)
+    fsm.add(S.DEPLOYED, E.REQUEST_TERMINATION, S.TERMINATING)
+    fsm.add(S.ACTIVE, E.REQUEST_TERMINATION, S.TERMINATING)
+    fsm.add(S.TERMINATING, E.TERMINATION_COMPLETE, S.TERMINATED)
+    return fsm
+
+
+RUNTIME_LIFECYCLE_FSM = build_runtime_lifecycle_fsm()
 
 # ---------------------------------------------------------------- InferenceJob
 
@@ -63,7 +162,7 @@ class InferenceState(StrEnum):
 
 
 class InferenceEvent(StrEnum):
-    COMPLETE = "COMPLETE"   # signals result is now pullable via DME (section 3)
+    COMPLETE = "COMPLETE"   # signals result is now pullable via DME
     FAIL = "FAIL"
 
 

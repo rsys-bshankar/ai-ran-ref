@@ -3,26 +3,53 @@
 
 import type { Alarm } from "../api/types";
 
-// ---------------------------------------------------------------- AI/ML model FSM
-// aimgf/app/statemachine.py
+// ---------------------------------------------------------------- AI/ML model FSMs
+// aimgf/app/statemachine.py — Wave 2 split ModelLifecycle (a model's own
+// identity/certification path) from RuntimeLifecycle (its serving
+// existence), replacing the flat single pipeline this GUI drew before.
 
-export const MODEL_PIPELINE = ["REGISTERED", "TRAINING", "TESTED", "EMULATED", "CERTIFIED", "LOADED", "ACTIVE"] as const;
+export const MODEL_PIPELINE = [
+  "REGISTERED", "TRAINING", "TRAINED", "VALIDATING", "VALIDATED", "EMULATING", "EMULATED",
+  "PENDING_APPROVAL", "APPROVED", "CERTIFIED", "PROMOTED",
+] as const;
 
 export type ModelAction =
-  | { kind: "train"; label: string }           // POST /training-jobs (fires TRAIN or RETRAIN itself)
-  | { kind: "advance"; event: string; label: string };
+  | { kind: "train"; label: string }           // POST /training-jobs (fires CREATE_TRAINING itself)
+  | { kind: "validate"; label: string }        // POST /validation-jobs (fires CREATE_VALIDATION itself)
+  | { kind: "emulate"; label: string }         // POST /emulation-jobs (fires CREATE_EMULATION itself)
+  | { kind: "advance"; event: string; label: string; governance?: boolean };  // governance: decidedBy required
 
-/** The operator actions legal from a model state. TRAIN/RETRAIN go through
- * RequestTraining, not a bare advance, so a TrainingJob row exists for them. */
+/** The operator actions legal from a ModelLifecycleState. TRAIN/VALIDATE/
+ * EMULATE go through their own request routes, not a bare advance, so a
+ * TrainingJob/ValidationJob/EmulationJob row exists for each. `governance`
+ * actions are the six decisions AIMgF requires a decidedBy for
+ * (SUBMIT_FOR_APPROVAL/APPROVE/REJECT/CERTIFY/PROMOTE/ROLLBACK) —
+ * DEPRECATE/RETIRE aren't governance in AIMGF_OWNERSHIP.md's own sense. */
 export function modelActions(state: string): ModelAction[] {
   switch (state) {
     case "REGISTERED": return [{ kind: "train", label: "Request training" }];
     case "TRAINING": return [{ kind: "advance", event: "TRAINING_COMPLETE", label: "Training complete" }];
-    case "TESTED": return [{ kind: "advance", event: "VALIDATION_COMPLETE", label: "Validation complete" }];
-    case "EMULATED": return [{ kind: "advance", event: "CERTIFY", label: "Certify" }];
-    case "CERTIFIED": return [{ kind: "advance", event: "LOAD", label: "Load" }];
-    case "LOADED": return [{ kind: "advance", event: "ACTIVATE", label: "Activate" }];
-    case "ACTIVE": return [{ kind: "train", label: "Retrain" }, { kind: "advance", event: "DEPRECATE", label: "Deprecate" }];
+    case "TRAINED": return [{ kind: "validate", label: "Request validation" }];
+    case "VALIDATING": return [{ kind: "advance", event: "VALIDATION_COMPLETE", label: "Validation complete" }];
+    case "VALIDATED": return [{ kind: "emulate", label: "Request emulation" }];
+    case "EMULATING": return [{ kind: "advance", event: "EMULATION_COMPLETE", label: "Emulation complete" }];
+    case "EMULATED": return [{ kind: "advance", event: "SUBMIT_FOR_APPROVAL", label: "Submit for approval", governance: true }];
+    case "PENDING_APPROVAL": return [
+      { kind: "advance", event: "APPROVE", label: "Approve", governance: true },
+      { kind: "advance", event: "REJECT", label: "Reject", governance: true },
+    ];
+    case "APPROVED": return [{ kind: "advance", event: "CERTIFY", label: "Certify", governance: true }];
+    case "CERTIFIED": return [
+      { kind: "advance", event: "PROMOTE", label: "Promote", governance: true },
+      { kind: "advance", event: "DEPRECATE", label: "Deprecate" },
+    ];
+    case "PROMOTED": return [
+      { kind: "train", label: "Retrain" },
+      { kind: "advance", event: "ROLLBACK", label: "Rollback", governance: true },
+      { kind: "advance", event: "DEPRECATE", label: "Deprecate" },
+    ];
+    case "DEPRECATED": return [{ kind: "advance", event: "RETIRE", label: "Retire" }];
+    case "FAILED": return [{ kind: "train", label: "Retry training" }, { kind: "advance", event: "RETIRE", label: "Retire" }];
     default: return [];
   }
 }
@@ -31,11 +58,32 @@ export type StepStatus = "done" | "current" | "todo";
 
 export function pipelineSteps(state: string): { state: string; status: StepStatus }[] {
   const idx = MODEL_PIPELINE.indexOf(state as (typeof MODEL_PIPELINE)[number]);
-  if (state === "DEPRECATED") return MODEL_PIPELINE.map((s) => ({ state: s, status: "done" as StepStatus }));
+  if (state === "DEPRECATED" || state === "RETIRED" || state === "FAILED") {
+    return MODEL_PIPELINE.map((s) => ({ state: s, status: "done" as StepStatus }));
+  }
   return MODEL_PIPELINE.map((s, i) => ({ state: s, status: i < idx ? "done" : i === idx ? "current" : "todo" }));
 }
 
-export const DEPLOYABLE_MODEL_STATES = ["CERTIFIED", "LOADED", "ACTIVE"];
+// A model can only be deployed (a RuntimeLifecycle can only be requested)
+// once its own ModelLifecycle has cleared governance.
+export const DEPLOYABLE_MODEL_STATES = ["CERTIFIED", "PROMOTED"];
+
+// The "progress" ordering for a runtime — SCALING/TERMINATING/TERMINATED
+// are transient/terminal, excluded the same way DEPRECATED/RETIRED/FAILED
+// are from MODEL_PIPELINE above.
+export const RUNTIME_PIPELINE = ["NOT_DEPLOYED", "DEPLOYMENT_REQUESTED", "DEPLOYED", "ACTIVATING", "ACTIVE"] as const;
+
+/** The operator actions legal from a RuntimeLifecycleState — jointly owned
+ * with NFO (AIMGF_OWNERSHIP.md's own "NFO invocation" list). */
+export function runtimeActions(state: string): { action: "deploy" | "activate" | "scale" | "terminate"; label: string }[] {
+  switch (state) {
+    case "NOT_DEPLOYED": return [{ action: "deploy", label: "Deploy runtime" }];
+    case "DEPLOYMENT_REQUESTED": return [{ action: "terminate", label: "Terminate" }];
+    case "DEPLOYED": return [{ action: "activate", label: "Activate" }, { action: "terminate", label: "Terminate" }];
+    case "ACTIVE": return [{ action: "scale", label: "Scale" }, { action: "terminate", label: "Terminate" }];
+    default: return [];
+  }
+}
 
 // ---------------------------------------------------------------- packages / instances
 

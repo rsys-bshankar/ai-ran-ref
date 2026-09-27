@@ -37,10 +37,11 @@ describe("requiredRole against the BFF's table", () => {
     expect(requiredRole(RULES, "POST", "/rapp-mgmt/instances/a/b/terminate")).toBeNull();
   });
 
-  it("applies query matches: DEPRECATE is admin-only, other advances are operator", () => {
-    expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: "CERTIFY" })).toBe("operator");
+  it("applies query matches: DEPRECATE and governance decisions are admin-only, other advances are operator", () => {
+    expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: "TRAINING_COMPLETE" })).toBe("operator");
     expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: "DEPRECATE" })).toBe("admin");
-    expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: ["CERTIFY", "DEPRECATE"] })).toBe("admin");
+    expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: "CERTIFY" })).toBe("admin");
+    expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: ["TRAINING_COMPLETE", "DEPRECATE"] })).toBe("admin");
   });
 });
 

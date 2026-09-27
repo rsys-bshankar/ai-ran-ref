@@ -162,50 +162,6 @@
         "title": "RegisterModelRequest",
         "type": "object"
       },
-      "UpdateLifecycleRequest": {
-        "description": "Internal, cross-service-only surface \u2014 called by AIMgF after it\nfires a lifecycle transition and by MLLF after a deploy request, never\nby a GUI or rApp directly (not listed in gui-bff/app/rbac.py's own\nmodule rules for exactly that reason). Every field is optional: each\ncaller only ever supplies the field(s) it owns the decision for.",
-        "properties": {
-          "clearedNodeGroups": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Clearednodegroups"
-          },
-          "state": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "State"
-          },
-          "trainingJobId": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Trainingjobid"
-          }
-        },
-        "title": "UpdateLifecycleRequest",
-        "type": "object"
-      },
       "UpdateModelRequest": {
         "properties": {
           "author": {
@@ -218,20 +174,6 @@
               }
             ],
             "title": "Author"
-          },
-          "clearedNodeGroups": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Clearednodegroups"
           },
           "description": {
             "anyOf": [
@@ -609,7 +551,7 @@
         "summary": "Get Model"
       },
       "put": {
-        "description": "UpdateModel (mmes_apis.go) \u2014 404s on an unknown id, same as\nGetModelInfoById there. The reference also rejects a modelName/\nmodelVersion mismatch between the path's existing record and the\nbody with a 400 (\"model with id ... has different modelName and\nmodelVersion than provided\") rather than silently renaming it \u2014\n(model_type, version) is this build's own identity for the same\nreference ModelID composite key `register_model`'s uniqueness\nconstraint already treats as immutable identity, so this endpoint\nonly ever updates the metadata fields around it, never the identity\nitself. `state`/`trainingJobId`/`artifactLocation` stay out of this\nbody on purpose \u2014 those are owned by AIMgF/MLLF's own\n`PATCH .../lifecycle` and this module's own artifact-upload route,\nnot a generic PUT.",
+        "description": "UpdateModel (mmes_apis.go) \u2014 404s on an unknown id, same as\nGetModelInfoById there. The reference also rejects a modelName/\nmodelVersion mismatch between the path's existing record and the\nbody with a 400 (\"model with id ... has different modelName and\nmodelVersion than provided\") rather than silently renaming it \u2014\n(model_type, version) is this build's own identity for the same\nreference ModelID composite key `register_model`'s uniqueness\nconstraint already treats as immutable identity, so this endpoint\nonly ever updates the metadata fields around it, never the identity\nitself. `artifactLocation` stays out of this body on purpose \u2014 that's\nthis module's own artifact-upload route's job. Lifecycle/runtime\nstate and node-group targeting are AIMgF's own `model_lifecycle` row\nentirely (Wave 2) \u2014 not this module's concern at all any more.",
         "operationId": "update_model_models__model_id__put",
         "parameters": [
           {
@@ -751,55 +693,6 @@
           }
         },
         "summary": "Download Model Artifact"
-      }
-    },
-    "/models/{model_id}/lifecycle": {
-      "patch": {
-        "description": "Wave 1's minimal necessary cross-service plumbing: AIMgF owns the\ndecision of what `state`/`trainingJobId` a model moves to (its own\nFSM, per docs/ownership/AIMGF_OWNERSHIP.md) and MLLF owns\n`clearedNodeGroups` (docs/ownership/MLLF_OWNERSHIP.md) \u2014 but only MLMR\ncan write its own row. Not a generic PATCH: only these three fields,\nmatching exactly what used to be direct ORM writes from the same\nprocess before this split, no new business logic.",
-        "operationId": "update_model_lifecycle_models__model_id__lifecycle_patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "model_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Model Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateLifecycleRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Model Lifecycle"
       }
     }
   }

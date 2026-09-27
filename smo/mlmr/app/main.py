@@ -1,14 +1,14 @@
 """MLMR (ML Model Repository) — TS 28.105 AI/ML NRM realization.
 
-Wave 1 of the AI Platform Service Decomposition: split out of the former
-flat `ai-ml-workflow/` module (see docs/architecture/AI_PLATFORM_BASELINE.md
-and docs/ownership/MLMR_OWNERSHIP.md). MLMR is model truth — identity,
-versions, artifacts, coordination groups — and has no lifecycle logic of
-its own: it never fires a state transition. `state`/`training_job_id`/
-`cleared_node_groups` still live on its own `MLModel` row this wave (the
-full aggregate split is Wave 2's job), but only AIMgF and MLLF ever write
-them, through `PATCH /models/{id}/lifecycle` below — MLMR itself only
-ever writes them via that one endpoint, never by deciding a transition.
+Wave 1 of the AI Platform Service Decomposition split this module out of
+the former flat `ai-ml-workflow/` (see docs/architecture/AI_PLATFORM_BASELINE.md
+and docs/ownership/MLMR_OWNERSHIP.md); Wave 2 finished the job — MLMR is
+model truth (identity, versions, artifacts, coordination groups) and has
+no lifecycle logic of its own, and as of this wave no longer stores any
+either: `state`/`training_job_id`/`cleared_node_groups` moved to AIMgF's
+own `model_lifecycle` table, and `PATCH /models/{id}/lifecycle` below is
+gone along with them. AIMgF's `GET/PATCH /aimgf/models/{id}/lifecycle`
+is the real thing now.
 """
 
 import uuid
@@ -60,25 +60,12 @@ class UpdateModelRequest(BaseModel):
     requiredResourceTypeId: str | None = None
     trainingDataLineage: dict | None = None
     integrityHash: str | None = None
-    clearedNodeGroups: list[str] | None = None
     description: str | None = None
     author: str | None = None
     owner: str | None = None
     inputDataType: str | None = None
     outputDataType: str | None = None
     targetEnvironments: list[dict] | None = None
-
-
-class UpdateLifecycleRequest(BaseModel):
-    """Internal, cross-service-only surface — called by AIMgF after it
-    fires a lifecycle transition and by MLLF after a deploy request, never
-    by a GUI or rApp directly (not listed in gui-bff/app/rbac.py's own
-    module rules for exactly that reason). Every field is optional: each
-    caller only ever supplies the field(s) it owns the decision for.
-    """
-    state: str | None = None
-    trainingJobId: uuid.UUID | None = None
-    clearedNodeGroups: list[str] | None = None
 
 
 @app.post("/models", status_code=201)
@@ -96,7 +83,7 @@ def register_model(body: RegisterModelRequest, db: Session = Depends(get_session
     RegisterModel was already permissive before this pass.
     """
     model = MLModel(registration_id=str(uuid.uuid4()), model_type=body.modelType, version=body.version,
-                     required_resource_type_id=body.requiredResourceTypeId, state="REGISTERED",
+                     required_resource_type_id=body.requiredResourceTypeId,
                      description=body.description, author=body.author, owner=body.owner,
                      input_data_type=body.inputDataType, output_data_type=body.outputDataType,
                      target_environments=body.targetEnvironments)
@@ -106,7 +93,7 @@ def register_model(body: RegisterModelRequest, db: Session = Depends(get_session
     except IntegrityError:
         db.rollback()
         raise framework_error(FrameworkError.MODEL_ALREADY_REGISTERED, detail=f"model type {body.modelType} version {body.version} already registered")
-    return {"modelId": str(model.model_id), "state": model.state}
+    return {"modelId": str(model.model_id)}
 
 
 @app.get("/models")
@@ -141,10 +128,10 @@ def update_model(model_id: uuid.UUID, body: UpdateModelRequest, db: Session = De
     reference ModelID composite key `register_model`'s uniqueness
     constraint already treats as immutable identity, so this endpoint
     only ever updates the metadata fields around it, never the identity
-    itself. `state`/`trainingJobId`/`artifactLocation` stay out of this
-    body on purpose — those are owned by AIMgF/MLLF's own
-    `PATCH .../lifecycle` and this module's own artifact-upload route,
-    not a generic PUT.
+    itself. `artifactLocation` stays out of this body on purpose — that's
+    this module's own artifact-upload route's job. Lifecycle/runtime
+    state and node-group targeting are AIMgF's own `model_lifecycle` row
+    entirely (Wave 2) — not this module's concern at all any more.
     """
     model = db.get(MLModel, model_id)
     if model is None:
@@ -157,33 +144,9 @@ def update_model(model_id: uuid.UUID, body: UpdateModelRequest, db: Session = De
     model.required_resource_type_id = body.requiredResourceTypeId
     model.training_data_lineage = body.trainingDataLineage
     model.integrity_hash = body.integrityHash
-    model.cleared_node_groups = body.clearedNodeGroups
     model.description, model.author, model.owner = body.description, body.author, body.owner
     model.input_data_type, model.output_data_type = body.inputDataType, body.outputDataType
     model.target_environments = body.targetEnvironments
-    db.commit()
-    return _model_view(model)
-
-
-@app.patch("/models/{model_id}/lifecycle")
-def update_model_lifecycle(model_id: uuid.UUID, body: UpdateLifecycleRequest, db: Session = Depends(get_session)):
-    """Wave 1's minimal necessary cross-service plumbing: AIMgF owns the
-    decision of what `state`/`trainingJobId` a model moves to (its own
-    FSM, per docs/ownership/AIMGF_OWNERSHIP.md) and MLLF owns
-    `clearedNodeGroups` (docs/ownership/MLLF_OWNERSHIP.md) — but only MLMR
-    can write its own row. Not a generic PATCH: only these three fields,
-    matching exactly what used to be direct ORM writes from the same
-    process before this split, no new business logic.
-    """
-    model = db.get(MLModel, model_id)
-    if model is None:
-        raise HTTPException(status_code=404, detail="no such model")
-    if body.state is not None:
-        model.state = body.state
-    if body.trainingJobId is not None:
-        model.training_job_id = body.trainingJobId
-    if body.clearedNodeGroups is not None:
-        model.cleared_node_groups = body.clearedNodeGroups
     db.commit()
     return _model_view(model)
 
@@ -300,9 +263,8 @@ def list_coordination_groups(db: Session = Depends(get_session)):
 
 
 def _model_view(m: MLModel) -> dict:
-    return {"modelId": str(m.model_id), "modelType": m.model_type, "version": m.version, "state": m.state,
-            "trainingJobId": str(m.training_job_id) if m.training_job_id else None,
-            "clearedNodeGroups": m.cleared_node_groups or [], "artifactLocation": m.artifact_location,
+    return {"modelId": str(m.model_id), "modelType": m.model_type, "version": m.version,
+            "artifactLocation": m.artifact_location,
             "description": m.description, "author": m.author, "owner": m.owner,
             "inputDataType": m.input_data_type, "outputDataType": m.output_data_type,
             "targetEnvironments": m.target_environments or []}

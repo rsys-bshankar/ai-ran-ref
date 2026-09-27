@@ -92,6 +92,26 @@ def test_create_descriptor_persists_a_real_row(client, db_session_factory):
         assert descriptor.workload_template == {"toscaEntryDefinitions": "Definitions/main.yaml"}
 
 
+def test_create_descriptor_without_a_package_id_for_a_model_runtime(client, db_session_factory):
+    """Wave 2 (AI Platform Service Decomposition): AIMgF's own Runtime
+    Lifecycle creates a descriptor per model runtime, with no onboarded
+    ApplicationPackage behind it — packageId is optional since this wave
+    for exactly that caller (docs/ownership/AIMGF_OWNERSHIP.md).
+    """
+    resp = client.post("/descriptors", json={
+        "name": "aimgf-model-<id>-runtime", "workloadTemplate": {"modelId": "some-model-id"},
+    })
+    assert resp.status_code == 201
+    descriptor_id = uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
+
+    with db_session_factory() as session:
+        descriptor = session.get(NFDeploymentDescriptor, descriptor_id)
+        assert descriptor.package_id is None
+
+    listed = client.get("/descriptors").json()
+    assert next(d for d in listed if d["nfDeploymentDescriptorId"] == str(descriptor_id))["packageId"] is None
+
+
 def test_instantiate_resolves_cluster_via_focom(client, monkeypatch):
     """NFO+FOCOM LLD section 4: Instantiate queries FOCOM's inventory
     before placing a workload, rather than assuming the degenerate
@@ -198,6 +218,30 @@ def test_terminate_removes_its_lcm_operation_history(client, monkeypatch, db_ses
     with db_session_factory() as session:
         remaining = session.query(LCMOperation).filter_by(nf_deployment_id=nf_deployment_id).all()
         assert remaining == []
+
+
+def test_terminate_after_a_scale_still_removes_its_lcm_operation_history(client, monkeypatch, db_session_factory):
+    """A real bug this exact sequence found running against real Postgres
+    (Wave 2's own RuntimeLifecycle verification, aimgf's deploy/scale/
+    terminate calling this same NFO route in order): `Query.delete()`
+    issues its DELETE immediately, and this session is `autoflush=False`
+    (smo_shared/db.py) — the filter-delete above never saw the TERMINATE
+    row `db.add()`-ed earlier in this same call, only catching whatever
+    was already committed to the database (here: the INSTANTIATE and
+    SCALE rows). SQLite's own test harness doesn't enforce the FK, so
+    this couldn't be asserted here before `terminate`'s own `db.flush()`
+    fix — this now just re-runs the same real sequence and trusts the
+    live-Postgres verification for the FK itself.
+    """
+    created = _instantiate(client, monkeypatch).json()
+    nf_deployment_id = uuid.UUID(created["nfDeploymentId"])
+    assert client.post(f"/deployments/{nf_deployment_id}/scale").status_code == 200
+
+    del_resp = client.delete(f"/deployments/{nf_deployment_id}")
+    assert del_resp.status_code == 204
+
+    with db_session_factory() as session:
+        assert session.query(LCMOperation).filter_by(nf_deployment_id=nf_deployment_id).all() == []
 
 
 def test_terminate_again_on_already_terminating_deployment_is_a_noop(client, monkeypatch, db_session_factory):

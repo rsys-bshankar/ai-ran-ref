@@ -21,9 +21,18 @@ export interface FaultReport { faultId: string; severity: string; description: s
 
 // ---- AI/ML Workflow
 export interface Model {
-  modelId: string; modelType: string; version: string; state: string; clearedNodeGroups: string[];
+  modelId: string; modelType: string; version: string;
   artifactLocation: string | null; description: string | null; author: string | null; owner: string | null;
   inputDataType: string | null; outputDataType: string | null; targetEnvironments: Record<string, unknown>[];
+}
+// aimgf's own model_lifecycle row (Wave 2) — MLMR's Model no longer
+// carries state/clearedNodeGroups at all, see MLMR_OWNERSHIP.md.
+export interface ModelLifecycle {
+  modelId: string; modelLifecycleState: string; runtimeLifecycleState: string; trainingJobId: string | null;
+  clearedNodeGroups: string[]; nfDeploymentDescriptorId: string | null; nfDeploymentId: string | null;
+}
+export interface CertificationRecord {
+  certificationRecordId: string; modelId: string; decision: string; decidedBy: string; rationale: string | null; decidedAt: string;
 }
 export interface TrainingJob {
   trainingJobId: string; modelId: string | null; modelCoordinationGroupId: string | null; producerId: string;

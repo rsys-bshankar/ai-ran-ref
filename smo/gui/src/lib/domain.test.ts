@@ -6,16 +6,20 @@ describe("model lifecycle", () => {
   it("maps each state to the FSM's next legal action", () => {
     expect(modelActions("REGISTERED")).toEqual([{ kind: "train", label: "Request training" }]);
     expect(modelActions("TRAINING").map((a) => a.kind === "advance" && a.event)).toEqual(["TRAINING_COMPLETE"]);
-    expect(modelActions("EMULATED").map((a) => a.kind === "advance" && a.event)).toEqual(["CERTIFY"]);
-    expect(modelActions("ACTIVE").map((a) => (a.kind === "advance" ? a.event : a.kind))).toEqual(["train", "DEPRECATE"]);
-    expect(modelActions("DEPRECATED")).toEqual([]);
+    expect(modelActions("EMULATED").map((a) => a.kind === "advance" && a.event)).toEqual(["SUBMIT_FOR_APPROVAL"]);
+    expect(modelActions("PROMOTED").map((a) => (a.kind === "advance" ? a.event : a.kind))).toEqual(["train", "ROLLBACK", "DEPRECATE"]);
+    expect(modelActions("DEPRECATED").map((a) => (a.kind === "advance" ? a.event : a.kind))).toEqual(["RETIRE"]);
   });
 
   it("marks stepper progress", () => {
     const steps = pipelineSteps("CERTIFIED");
-    expect(steps.filter((s) => s.status === "done").map((s) => s.state)).toEqual(["REGISTERED", "TRAINING", "TESTED", "EMULATED"]);
+    expect(steps.filter((s) => s.status === "done").map((s) => s.state)).toEqual([
+      "REGISTERED", "TRAINING", "TRAINED", "VALIDATING", "VALIDATED", "EMULATING", "EMULATED", "PENDING_APPROVAL", "APPROVED",
+    ]);
     expect(steps.find((s) => s.status === "current")?.state).toBe("CERTIFIED");
     expect(pipelineSteps("DEPRECATED").every((s) => s.status === "done")).toBe(true);
+    expect(pipelineSteps("RETIRED").every((s) => s.status === "done")).toBe(true);
+    expect(pipelineSteps("FAILED").every((s) => s.status === "done")).toBe(true);
   });
 });
 

@@ -31,8 +31,9 @@ class ModelsClient(BaseClient):
         UpdateModel 400s if they don't match the existing record (see
         mlmr/app/main.py's own docstring). `fields` may include any of
         requiredResourceTypeId/trainingDataLineage/integrityHash/
-        clearedNodeGroups/description/author/owner/inputDataType/
-        outputDataType/targetEnvironments.
+        description/author/owner/inputDataType/outputDataType/
+        targetEnvironments. `clearedNodeGroups` moved to AIMgF's own
+        `model_lifecycle` row in Wave 2 — see `LifecycleClient` instead.
         """
         return ensure_ok(self._r1.put(f"/mlmr/models/{model_id}", json={
             "modelType": model_type, "version": version, **fields,

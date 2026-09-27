@@ -376,7 +376,13 @@ CREATE TABLE a1_service_registration (
 
 CREATE TABLE nf_deployment_descriptor (
   nf_deployment_descriptor_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  package_id                    UUID NOT NULL REFERENCES application_package(package_id),
+  -- Wave 2 (AI Platform Service Decomposition): nullable since this pass —
+  -- AIMgF's own Runtime Lifecycle now creates a descriptor per model
+  -- runtime directly (docs/ownership/AIMGF_OWNERSHIP.md), and a model
+  -- runtime has no onboarded ApplicationPackage behind it. Every
+  -- package-derived descriptor (Onboarding's own flow, unchanged) still
+  -- always sets it.
+  package_id                    UUID REFERENCES application_package(package_id),
   name                            TEXT NOT NULL,
   required_resource_type_id        TEXT,
   workload_template                 JSONB NOT NULL
@@ -519,14 +525,15 @@ CREATE TABLE aiml_model (
   registration_id       TEXT NOT NULL,
   model_type              TEXT NOT NULL,
   version                   TEXT NOT NULL,
-  state                       TEXT NOT NULL DEFAULT 'REGISTERED'
-                                 CHECK (state IN ('REGISTERED','TRAINING','TESTED','EMULATED','CERTIFIED','LOADED','ACTIVE','DEPRECATED')),
-  training_job_id                UUID,
+  -- Wave 2 (AI Platform Service Decomposition): state/training_job_id/
+  -- cleared_node_groups moved to AIMgF's own model_lifecycle table below
+  -- (docs/ownership/AIMGF_OWNERSHIP.md) — MLMR is model truth, not
+  -- lifecycle truth, and Wave 1 only left them here as a structural
+  -- shortcut pending this exact move.
   training_data_lineage             JSONB,
   integrity_hash                       TEXT,
   artifact_location                       TEXT,
   required_resource_type_id                 TEXT,
-  cleared_node_groups                          TEXT[],   -- NEW section 5: MultiNode Q2 gap closure
   description                                    TEXT,   -- NEW section 5: ModelRelatedInformation.description
   author                                            TEXT, -- NEW section 5: Metadata.author
   owner                                               TEXT, -- NEW section 5: Metadata.owner
@@ -598,6 +605,64 @@ CREATE TABLE inference_job (
   model_id         UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
   status           TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','COMPLETED','FAILED')),
   notification_destination TEXT
+);
+
+-- Wave 2 (AI Platform Service Decomposition): the full eight-aggregate
+-- domain model docs/ownership/AIMGF_OWNERSHIP.md's Wave 1 note promised —
+-- AIMgF's own lifecycle-state truth (model_lifecycle) plus the
+-- validation/emulation/governance/audit aggregates Wave 1 didn't need yet.
+
+CREATE TABLE model_lifecycle (
+  model_id                     UUID PRIMARY KEY REFERENCES aiml_model(model_id) ON DELETE CASCADE,
+  model_lifecycle_state         TEXT NOT NULL DEFAULT 'REGISTERED' CHECK (model_lifecycle_state IN (
+    'REGISTERED','TRAINING','TRAINED','VALIDATING','VALIDATED','EMULATING','EMULATED',
+    'PENDING_APPROVAL','APPROVED','CERTIFIED','PROMOTED','DEPRECATED','RETIRED','FAILED'
+  )),
+  runtime_lifecycle_state         TEXT NOT NULL DEFAULT 'NOT_DEPLOYED' CHECK (runtime_lifecycle_state IN (
+    'NOT_DEPLOYED','DEPLOYMENT_REQUESTED','DEPLOYED','ACTIVATING','ACTIVE','SCALING','TERMINATING','TERMINATED'
+  )),
+  training_job_id                   UUID,
+  cleared_node_groups                  TEXT[],
+  nf_deployment_descriptor_id             UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
+  nf_deployment_id                          UUID  -- -> nf_deployment (NFO) — bare UUID, cross-module reference
+);
+
+CREATE TABLE validation_job (
+  validation_job_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  model_id            UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
+  training_job_id       UUID REFERENCES training_job(training_job_id),
+  producer_id             TEXT NOT NULL,
+  validation_criteria       JSONB,
+  status                      TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','COMPLETED','FAILED','CANCELLED')),
+  metrics                       JSONB
+);
+
+CREATE TABLE emulation_job (
+  emulation_job_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  model_id           UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
+  producer_id          TEXT NOT NULL,
+  emulation_criteria     JSONB,
+  status                   TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','COMPLETED','FAILED','CANCELLED')),
+  metrics                    JSONB
+);
+
+CREATE TABLE certification_record (
+  certification_record_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  model_id                  UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
+  decision                    TEXT NOT NULL CHECK (decision IN ('SUBMIT_FOR_APPROVAL','APPROVE','REJECT','CERTIFY','PROMOTE','ROLLBACK')),
+  decided_by                     TEXT NOT NULL,
+  rationale                        TEXT,
+  decided_at                         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE lifecycle_transition (
+  lifecycle_transition_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  model_id                  UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
+  fsm                         TEXT NOT NULL CHECK (fsm IN ('MODEL','RUNTIME')),
+  from_state                    TEXT NOT NULL,
+  to_state                        TEXT NOT NULL,
+  event                             TEXT NOT NULL,
+  occurred_at                         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- NEW section 5: the reference's own FeatureGroup (aiml-fw-awmf-tm) — no

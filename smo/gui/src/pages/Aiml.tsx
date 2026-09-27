@@ -1,14 +1,19 @@
 import { useState, type FormEvent } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
-import type { CoordinationGroup, DmeType, FeatureGroup, InferenceJob, MlmfReport, MlmfSubscription, Model, TrainingJob } from "../api/types";
+import type { CoordinationGroup, DmeType, FeatureGroup, InferenceJob, MlmfReport, MlmfSubscription, Model, ModelLifecycle, TrainingJob } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { FsmStepper, Sparkline } from "../components/charts";
 import {
   ActionButton, Can, Card, DataTable, Drawer, ErrorBox, Field, Id, Json, KeyValue, Modal, PageHeader, StateBadge, Tabs,
   useHashTab,
 } from "../components/ui";
-import { DEPLOYABLE_MODEL_STATES, formatTime, metricSeries, modelActions, numericMetricKeys, parseJsonObject, splitList } from "../lib/domain";
+import { DEPLOYABLE_MODEL_STATES, formatTime, metricSeries, modelActions, numericMetricKeys, parseJsonObject, runtimeActions, splitList } from "../lib/domain";
+
+const REGISTERED_LIFECYCLE: ModelLifecycle = {
+  modelId: "", modelLifecycleState: "REGISTERED", runtimeLifecycleState: "NOT_DEPLOYED",
+  trainingJobId: null, clearedNodeGroups: [], nfDeploymentDescriptorId: null, nfDeploymentId: null,
+};
 
 const TABS = ["models", "training", "inference", "groups", "mlmf", "features"] as const;
 
@@ -42,9 +47,15 @@ export function useModelNames() {
 
 // ---------------------------------------------------------------- models
 
+function useLifecycles() {
+  const lifecycles = useSmo<ModelLifecycle[]>("/aimgf/model-lifecycles");
+  return (modelId: string): ModelLifecycle => lifecycles.data?.find((l) => l.modelId === modelId) ?? { ...REGISTERED_LIFECYCLE, modelId };
+}
+
 function Models() {
   const [modelType, setModelType] = useState("");
   const models = useSmo<Model[]>("/mlmr/models", { model_type: modelType });
+  const lifecycleFor = useLifecycles();
   const [selected, setSelected] = useState<string | null>(null);
   const [registering, setRegistering] = useState(false);
   return (
@@ -58,10 +69,10 @@ function Models() {
           columns={[
             { header: "Model", render: (m) => <><strong>{m.modelType}</strong> <span className="muted">v{m.version}</span><div className="muted small">{m.description ?? ""}</div></> },
             { header: "ID", render: (m) => <Id value={m.modelId} /> },
-            { header: "State", render: (m) => <StateBadge state={m.state} /> },
-            { header: "Node groups", render: (m) => m.clearedNodeGroups.join(", ") || <span className="muted">—</span> },
+            { header: "State", render: (m) => <StateBadge state={lifecycleFor(m.modelId).modelLifecycleState} /> },
+            { header: "Node groups", render: (m) => lifecycleFor(m.modelId).clearedNodeGroups.join(", ") || <span className="muted">—</span> },
             { header: "Owner", render: (m) => m.owner ?? <span className="muted">—</span> },
-            { header: "", className: "actions", render: (m) => <ModelActions model={m} /> },
+            { header: "", className: "actions", render: (m) => <ModelActions model={m} lifecycle={lifecycleFor(m.modelId)} /> },
           ]} />
       </Card>
       {registering && <RegisterModel onClose={() => setRegistering(false)} />}
@@ -70,14 +81,32 @@ function Models() {
   );
 }
 
-function ModelActions({ model }: { model: Model }) {
+function ModelActions({ model, lifecycle }: { model: Model; lifecycle: ModelLifecycle }) {
   const aimgfBase = `/aimgf/models/${model.modelId}`;
   return (
     <div className="row gap end">
-      {modelActions(model.state).map((a) => a.kind === "train"
-        ? <ActionButton key="train" label={a.label} tone="primary" action={{ method: "POST", path: "/aimgf/training-jobs", json: { modelId: model.modelId, producerId: "smo-gui" }, success: `${a.label}: training job started` }} />
-        : <ActionButton key={a.event} label={a.label} tone={a.event === "DEPRECATE" ? "danger" : "primary"} confirm={a.event === "DEPRECATE" ? "Deprecate this model? This is terminal." : undefined}
-            action={{ method: "POST", path: `${aimgfBase}/advance`, query: { event: a.event }, success: `${a.event} → done` }} />)}
+      {modelActions(lifecycle.modelLifecycleState).map((a) => {
+        if (a.kind === "train") return <ActionButton key="train" label={a.label} tone="primary" action={{ method: "POST", path: "/aimgf/training-jobs", json: { modelId: model.modelId, producerId: "smo-gui" }, success: `${a.label}: training job started` }} />;
+        if (a.kind === "validate") return <ActionButton key="validate" label={a.label} tone="primary" action={{ method: "POST", path: "/aimgf/validation-jobs", json: { modelId: model.modelId, producerId: "smo-gui" }, success: "Validation job started" }} />;
+        if (a.kind === "emulate") return <ActionButton key="emulate" label={a.label} tone="primary" action={{ method: "POST", path: "/aimgf/emulation-jobs", json: { modelId: model.modelId, producerId: "smo-gui" }, success: "Emulation job started" }} />;
+        const destructive = a.event === "DEPRECATE" || a.event === "RETIRE" || a.event === "REJECT";
+        return <ActionButton key={a.event} label={a.label} tone={destructive ? "danger" : "primary"}
+          confirm={a.event === "DEPRECATE" || a.event === "RETIRE" ? `${a.label} this model? This is terminal.` : undefined}
+          action={{ method: "POST", path: `${aimgfBase}/advance`, query: a.governance ? { event: a.event, decided_by: "smo-gui" } : { event: a.event }, success: `${a.event} → done` }} />;
+      })}
+    </div>
+  );
+}
+
+function RuntimeActions({ modelId, lifecycle }: { modelId: string; lifecycle: ModelLifecycle }) {
+  const aimgfBase = `/aimgf/models/${modelId}`;
+  return (
+    <div className="row gap end">
+      {runtimeActions(lifecycle.runtimeLifecycleState).map((a) => (
+        <ActionButton key={a.action} label={a.label} tone={a.action === "terminate" ? "danger" : "primary"}
+          confirm={a.action === "terminate" ? "Terminate this model's runtime?" : undefined}
+          action={{ method: "POST", path: `${aimgfBase}/runtime/${a.action}`, success: `Runtime ${a.action}: done` }} />
+      ))}
     </div>
   );
 }
@@ -113,17 +142,19 @@ function ModelDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const aimgfBase = `/aimgf/models/${id}`;
   const mllfBase = `/mllf/models/${id}`;
   const model = useSmo<Model>(mlmrBase);
+  const lifecycle = useSmo<ModelLifecycle>(`${aimgfBase}/lifecycle`);
   const jobs = useSmo<TrainingJob[]>("/aimgf/training-jobs", { model_id: id });
   const inference = useSmo<InferenceJob[]>("/aimgf/inference-jobs", { model_id: id });
   const m = model.data;
+  const l = lifecycle.data;
   const latestArtifact = m?.artifactLocation ? Number(m.artifactLocation.split(":").pop()) : 0;
   const [editing, setEditing] = useState(false);
   return (
     <Drawer title={m ? `${m.modelType} v${m.version}` : "Model"} onClose={onClose}>
-      <ErrorBox error={model.error} />
-      {m && <>
-        <FsmStepper state={m.state} />
-        <div className="row between"><StateBadge state={m.state} /><ModelActions model={m} /></div>
+      <ErrorBox error={model.error || lifecycle.error} />
+      {m && l && <>
+        <FsmStepper state={l.modelLifecycleState} />
+        <div className="row between"><StateBadge state={l.modelLifecycleState} /><ModelActions model={m} lifecycle={l} /></div>
         <div className="row gap">
           <Can method="PUT" path={mlmrBase}><button className="btn small" onClick={() => setEditing(true)}>Edit metadata</button></Can>
           <ActionButton label="Delete model" tone="danger" confirm={`Delete ${m.modelType} v${m.version} with its jobs, subscriptions and artifacts?`}
@@ -132,7 +163,7 @@ function ModelDrawer({ id, onClose }: { id: string; onClose: () => void }) {
         <KeyValue items={[
           ["Model ID", <code>{m.modelId}</code>], ["Description", m.description], ["Author / owner", [m.author, m.owner].filter(Boolean).join(" / ") || null],
           ["Input → output", m.inputDataType || m.outputDataType ? `${m.inputDataType ?? "?"} → ${m.outputDataType ?? "?"}` : null],
-          ["Cleared node groups", m.clearedNodeGroups.join(", ") || null], ["Artifact", m.artifactLocation],
+          ["Cleared node groups", l.clearedNodeGroups.join(", ") || null], ["Artifact", m.artifactLocation],
         ]} />
 
         <h3>Artifacts</h3>
@@ -145,8 +176,11 @@ function ModelDrawer({ id, onClose }: { id: string; onClose: () => void }) {
         ) : <p className="muted">No artifact uploaded.</p>}
         <Can method="POST" path={`${mlmrBase}/artifact`}><ArtifactUpload modelId={id} /></Can>
 
-        {DEPLOYABLE_MODEL_STATES.includes(m.state) && <Can method="POST" path={`${mllfBase}/deploy`}><DeployNodeGroups model={m} /></Can>}
-        {m.state === "ACTIVE" && <div className="row gap"><ActionButton label="Request inference job" tone="primary" action={{ method: "POST", path: `${aimgfBase}/inference-jobs`, success: "Inference job RUNNING" }} /></div>}
+        {DEPLOYABLE_MODEL_STATES.includes(l.modelLifecycleState) && <Can method="POST" path={`${mllfBase}/deploy`}><DeployNodeGroups modelId={id} clearedNodeGroups={l.clearedNodeGroups} /></Can>}
+
+        <h3>Runtime — <StateBadge state={l.runtimeLifecycleState} /></h3>
+        <RuntimeActions modelId={id} lifecycle={l} />
+        {l.runtimeLifecycleState === "ACTIVE" && <div className="row gap"><ActionButton label="Request inference job" tone="primary" action={{ method: "POST", path: `${aimgfBase}/inference-jobs`, success: "Inference job RUNNING" }} /></div>}
 
         <h3>Training jobs</h3>
         <TrainingTable rows={jobs.data} />
@@ -175,15 +209,15 @@ function ArtifactUpload({ modelId }: { modelId: string }) {
   );
 }
 
-function DeployNodeGroups({ model }: { model: Model }) {
-  const [groups, setGroups] = useState(model.clearedNodeGroups.join(", "));
+function DeployNodeGroups({ modelId, clearedNodeGroups }: { modelId: string; clearedNodeGroups: string[] }) {
+  const [groups, setGroups] = useState(clearedNodeGroups.join(", "));
   const action = useSmoAction();
   return (
     <form className="form inline" onSubmit={(e) => {
       e.preventDefault();
-      action.mutate({ method: "POST", path: `/mllf/models/${model.modelId}/deploy`, json: splitList(groups), success: "Deployment targets cleared (MLLF)" });
+      action.mutate({ method: "POST", path: `/mllf/models/${modelId}/deploy`, json: splitList(groups), success: "Deployment targets cleared (MLLF)" });
     }}>
-      <Field label="Deploy to node groups" hint="Comma-separated. Stamps clearedNodeGroups; requires CERTIFIED or later."><input value={groups} onChange={(e) => setGroups(e.target.value)} placeholder="edge-gpu-a, edge-gpu-b" /></Field>
+      <Field label="Deploy to node groups" hint="Comma-separated. Stamps clearedNodeGroups on AIMgF's own lifecycle row; requires CERTIFIED or PROMOTED."><input value={groups} onChange={(e) => setGroups(e.target.value)} placeholder="edge-gpu-a, edge-gpu-b" /></Field>
       <button className="btn" disabled={!splitList(groups).length || action.isPending}>Deploy</button>
     </form>
   );
@@ -262,6 +296,7 @@ function Groups() {
   const groups = useSmo<CoordinationGroup[]>("/mlmr/coordination-groups");
   const models = useSmo<Model[]>("/mlmr/models");
   const modelName = useModelNames();
+  const lifecycleFor = useLifecycles();
   const [members, setMembers] = useState<string[]>([]);
   const [useCases, setUseCases] = useState("");
   const [propagation, setPropagation] = useState("ANY_MEMBER_TRIGGERS");
@@ -277,7 +312,7 @@ function Groups() {
           }}>
             <Field label="Member models" hint={members.length === 1 ? <span className="text-bad">Pick at least 2 models</span> : "Ctrl/Cmd-click to pick 2 or more"}>
               <select multiple value={members} onChange={(e) => setMembers([...e.target.selectedOptions].map((o) => o.value))} size={Math.min(5, Math.max(2, models.data?.length ?? 2))}>
-                {models.data?.map((m) => <option key={m.modelId} value={m.modelId}>{m.modelType} {m.version} ({m.state})</option>)}
+                {models.data?.map((m) => <option key={m.modelId} value={m.modelId}>{m.modelType} {m.version} ({lifecycleFor(m.modelId).modelLifecycleState})</option>)}
               </select>
             </Field>
             <Field label="Use cases"><input value={useCases} onChange={(e) => setUseCases(e.target.value)} placeholder="energy-saving, mobility" /></Field>
@@ -286,7 +321,7 @@ function Groups() {
           </form>
         </Card>
       </Can>
-      <Card title="Coordination groups" actions={<span className="muted small">A guard-KPI breach on any ACTIVE member retrains every ACTIVE member</span>}>
+      <Card title="Coordination groups" actions={<span className="muted small">A guard-KPI breach on any PROMOTED member retrains every PROMOTED member</span>}>
         <DataTable rows={groups.data} loading={groups.isLoading} error={groups.error} rowKey={(g) => g.groupId} empty="No coordination groups." columns={[
           { header: "Group", render: (g) => <Id value={g.groupId} /> },
           { header: "Members", render: (g) => g.memberModelIds.map((id) => modelName(id) ?? id.slice(0, 8)).join(", ") },
@@ -341,7 +376,7 @@ function MlmfReports({ sub }: { sub?: MlmfSubscription }) {
       <Can method="POST" path={`/aimgf/mlmf/subscriptions/${sub.subscriptionId}/reports`}>
         <details className="admin-tools">
           <summary>Admin: inject a performance report</summary>
-          <p className="muted small">A report under a guard floor marks the model for retrain — and, for a coordination-group member, retrains every ACTIVE member.</p>
+          <p className="muted small">A report under a guard floor marks the model for retrain — and, for a coordination-group member, retrains every PROMOTED member.</p>
           <Field label="Metrics (JSON)"><textarea rows={2} value={metrics} onChange={(e) => setMetrics(e.target.value)} placeholder='{"accuracy": 0.82}' spellCheck={false} /></Field>
           <ActionButton label="Report" disabled={!parsed.ok} action={{ method: "POST", path: `/aimgf/mlmf/subscriptions/${sub.subscriptionId}/reports`, json: parsed.ok ? parsed.value : {}, success: "Report recorded" }} />
         </details>
@@ -394,7 +429,7 @@ function EditModel({ model, onClose }: { model: Model; onClose: () => void }) {
         e.preventDefault();
         // modelType/version are the model's identity: sent unchanged (UpdateModel rejects a change)
         action.mutate({ method: "PUT", path: `/mlmr/models/${model.modelId}`, success: "Model metadata updated",
-          json: { modelType: model.modelType, version: model.version, clearedNodeGroups: model.clearedNodeGroups, targetEnvironments: model.targetEnvironments,
+          json: { modelType: model.modelType, version: model.version, targetEnvironments: model.targetEnvironments,
             ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.trim() || null])) } }, { onSuccess: onClose });
       }}>
         <Field label="Description"><input value={f.description} onChange={set("description")} /></Field>

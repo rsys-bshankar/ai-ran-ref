@@ -51,8 +51,15 @@ class LifecycleClient(BaseClient):
 
     # ---------------------------------------------------------------- AIMgF: lifecycle FSM + inference
 
-    def advance_model_lifecycle(self, model_id: uuid.UUID | str, event: str) -> dict:
-        return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/advance", params={"event": event}))
+    def advance_model_lifecycle(self, model_id: uuid.UUID | str, event: str,
+                                 decided_by: str | None = None, rationale: str | None = None) -> dict:
+        """Fires any ModelLifecycle transition (Wave 2, `aimgf/app/statemachine.py`)
+        — `decided_by` is required by AIMgF itself for the six governance
+        decisions (SUBMIT_FOR_APPROVAL/APPROVE/REJECT/CERTIFY/PROMOTE/
+        ROLLBACK); omitted here it 422s the same way a direct call would.
+        """
+        return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/advance",
+                                        params={"event": event, "decided_by": decided_by, "rationale": rationale}))
 
     def request_inference(self, model_id: uuid.UUID | str, notification_destination: str | None = None) -> dict:
         return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/inference-jobs",

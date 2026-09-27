@@ -125,16 +125,22 @@ becoming an MDAF consumer. A new **AI Runtime SDK** (`sdk/`) now wraps
 gained two new optional CSAR-root files, `manifest.yaml`/
 `capabilities.yaml`, so a package can declare which of those namespaces
 it consumes or provides — additive only, a package without either file
-still onboards unchanged. This is a genuine, deliberate reversal of the
-Phase-1 scope choice `SPEC_AUDIT.md` documented for AI/ML Workflow and
-RAN Analytics, not a bug fix. Full architecture in
-`docs/architecture/AI_PLATFORM_BASELINE.md` and
-`docs/architecture/SERVICE_OWNERSHIP_MATRIX.md`; per-service detail in
-`docs/ownership/`. Sequenced in four waves — **Wave 0** (architecture
+still onboards unchanged. AIMgF now owns two real state machines of its
+own — `ModelLifecycleState` (14 states: identity/certification, ending
+in `PROMOTED`) and `RuntimeLifecycleState` (8 states: serving existence,
+jointly owned with NFO, which AIMgF now genuinely calls to create/scale/
+terminate a model's own runtime) — plus the full eight-aggregate domain
+model (`ValidationJob`/`EmulationJob`/`CertificationRecord`/
+`LifecycleTransition` are new; see `docs/ownership/AIMGF_OWNERSHIP.md`).
+This is a genuine, deliberate reversal of the Phase-1 scope choice
+`SPEC_AUDIT.md` documented for AI/ML Workflow and RAN Analytics, not a
+bug fix. Full architecture in `docs/architecture/AI_PLATFORM_BASELINE.md`
+and `docs/architecture/SERVICE_OWNERSHIP_MATRIX.md`; per-service detail
+in `docs/ownership/`. Sequenced in four waves — **Wave 0** (architecture
 freeze, done), **Wave 1** (service decomposition, done — the
 `ai-ml-workflow`/`policy-mgmt`/`ran-analytics` splits, `sdk/`, and the
-rApp manifest extension), Wave 2 (AIMgF's own state machines and domain
-model), Wave 3 (R1 contracts and OpenAPI standardization) — each a
+rApp manifest extension), **Wave 2** (AIMgF's own state machines and
+domain model, done), Wave 3 (R1 contracts and OpenAPI standardization) — each a
 separate, reviewable step; do not reorder them.
 
 ## Stack

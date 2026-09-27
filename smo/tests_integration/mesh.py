@@ -80,7 +80,9 @@ def install(monkeypatch, mesh: ServiceMesh) -> None:
     so one patch at the httpx module level intercepts everything, regardless
     of which module's code makes the call. `patch` added for Wave 1's
     MLMR `PATCH /models/{id}/lifecycle` cross-service write-back — the
-    first caller in this build that needed it.
+    first caller in this build that needed it; Wave 2 moved that same
+    write-back to AIMgF's own `PATCH /models/{id}/runtime/node-groups`
+    (MLLF's caller), still exercising this same verb.
     """
     import httpx
 

@@ -396,9 +396,11 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     gone = mesh["sme"].get(f"/trusted-invokers/{invoker['apiInvokerId']}")
     assert gone.status_code == 404
 
-    # step 13: AI/ML Workflow — register a model, request training, upload
-    # a real artifact, write metrics, advance the real lifecycle FSM to
-    # ACTIVE, download the artifact back, deregister.
+    # step 13: AI Platform (Wave 2) — register a model (MLMR), request
+    # training/validation/emulation and drive governance to PROMOTED
+    # (AIMgF's own ModelLifecycle), deploy+activate its runtime (AIMgF +
+    # NFO's own RuntimeLifecycle), upload/download a real artifact
+    # (MLMR), deregister.
     model = mesh["mlmr"].post("/models", json={
         "modelType": "hello-world-anomaly-detector", "version": "1.0.0",
         "description": "Demo anomaly-detection model for the hello-world rApp",
@@ -407,7 +409,6 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     })
     assert model.status_code == 201
     model_id = model.json()["modelId"]
-    assert model.json()["state"] == "REGISTERED"
 
     training = mesh["aimgf"].post("/training-jobs", json={
         "modelId": model_id, "producerId": "hello-world-rapp", "runId": "demo-run-1",
@@ -416,8 +417,8 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert training.status_code == 201
     training_job_id = training.json()["trainingJobId"]
 
-    training_state = mesh["mlmr"].get(f"/models/{model_id}")
-    assert training_state.json()["state"] == "TRAINING"
+    lifecycle = mesh["aimgf"].get(f"/models/{model_id}/lifecycle")
+    assert lifecycle.json()["modelLifecycleState"] == "TRAINING"
 
     artifact_bytes = b"demo-model-weights-bytes"
     artifact = mesh["mlmr"].post(f"/models/{model_id}/artifact",
@@ -429,14 +430,42 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert metrics.status_code == 200
     assert metrics.json()["modelMetrics"] == {"accuracy": 0.94, "f1Score": 0.91}
 
-    for event in ["TRAINING_COMPLETE", "VALIDATION_COMPLETE", "CERTIFY", "LOAD", "ACTIVATE"]:
-        advanced = mesh["aimgf"].post(f"/models/{model_id}/advance", params={"event": event})
-        assert advanced.status_code == 200
-    assert advanced.json()["state"] == "ACTIVE"
+    advanced = mesh["aimgf"].post(f"/models/{model_id}/advance", params={"event": "TRAINING_COMPLETE"})
+    assert advanced.status_code == 200
+    assert advanced.json()["modelLifecycleState"] == "TRAINED"
+
+    validation = mesh["aimgf"].post("/validation-jobs", json={"modelId": model_id, "trainingJobId": training_job_id, "producerId": "hello-world-rapp"})
+    assert validation.status_code == 201
+    validation_complete = mesh["aimgf"].post(f"/validation-jobs/{validation.json()['validationJobId']}/complete", json={"succeeded": True, "metrics": {"accuracy": 0.95}})
+    assert validation_complete.json()["status"] == "COMPLETED"
+
+    emulation = mesh["aimgf"].post("/emulation-jobs", json={"modelId": model_id, "producerId": "hello-world-rapp"})
+    assert emulation.status_code == 201
+    emulation_complete = mesh["aimgf"].post(f"/emulation-jobs/{emulation.json()['emulationJobId']}/complete", json={"succeeded": True, "metrics": {"latencyMs": 8}})
+    assert emulation_complete.json()["status"] == "COMPLETED"
+
+    for event in ["SUBMIT_FOR_APPROVAL", "APPROVE", "CERTIFY", "PROMOTE"]:
+        governed = mesh["aimgf"].post(f"/models/{model_id}/advance", params={"event": event, "decided_by": "demo-operator", "rationale": f"{event} for the demo"})
+        assert governed.status_code == 200
+    assert governed.json()["modelLifecycleState"] == "PROMOTED"
+
+    history = mesh["aimgf"].get(f"/models/{model_id}/governance-history")
+    assert [h["decision"] for h in history.json()] == ["SUBMIT_FOR_APPROVAL", "APPROVE", "CERTIFY", "PROMOTE"]
+
+    deployed = mesh["aimgf"].post(f"/models/{model_id}/runtime/deploy")
+    assert deployed.status_code == 201
+    assert deployed.json()["runtimeLifecycleState"] == "DEPLOYED"
+    assert deployed.json()["nfDeploymentId"] is not None
+
+    activated = mesh["aimgf"].post(f"/models/{model_id}/runtime/activate")
+    assert activated.json()["runtimeLifecycleState"] == "ACTIVE"
 
     downloaded = mesh["mlmr"].get(f"/models/{model_id}/artifact/1")
     assert downloaded.status_code == 200
     assert downloaded.content == artifact_bytes
+
+    terminated = mesh["aimgf"].post(f"/models/{model_id}/runtime/terminate")
+    assert terminated.json()["runtimeLifecycleState"] == "TERMINATED"
 
     deregistered = mesh["mlmr"].delete(f"/models/{model_id}")
     assert deregistered.status_code == 204

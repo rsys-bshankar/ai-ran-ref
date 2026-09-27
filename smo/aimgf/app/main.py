@@ -1,22 +1,34 @@
 """AIMgF (AI Management Function) — TS 28.105 AI/ML NRM realization.
 
-Wave 1 of the AI Platform Service Decomposition: split out of the former
-flat `ai-ml-workflow/` module (see docs/architecture/AI_PLATFORM_BASELINE.md
-and docs/ownership/AIMGF_OWNERSHIP.md). AIMgF is the AI lifecycle
-orchestrator — it decides *what state* a model or runtime is in and
-*whether* a transition is allowed; it does not store the model row itself
-(MLMR's own repository truth) or perform loading/activation (MLLF's).
+Wave 2 of the AI Platform Service Decomposition: the full eight-aggregate
+domain model and two real state machines (see docs/architecture/
+AI_PLATFORM_BASELINE.md and docs/ownership/AIMGF_OWNERSHIP.md), deepening
+Wave 1's structural split of the former flat `ai-ml-workflow/` module.
 
-Every place this module used to read/write `AIMLModel.state`/
-`training_job_id` directly via the ORM now calls MLMR through R1Client
-instead (`_get_model`/`_patch_model_lifecycle` below) — the same
-cross-module-call shape this build already uses everywhere else (e.g.
-NFO calling FOCOM's `/inventory`), not a distributed transaction: a
-`_patch_model_lifecycle` call that fails after `db.commit()` here leaves
-AIMgF's own TrainingJob/state decision recorded but MLMR's row stale,
-the same no-two-phase-commit honesty this build already carries for
-every other cross-module write (e.g. DME's "unreachable callback never
-fails the primary operation").
+  - ModelLifecycle  — a model's own identity/certification path
+                      (training -> validation -> emulation -> governance
+                      -> deprecation/retirement). AIMgF's own storage now
+                      (`.models.ModelLifecycle`), not MLMR's row: Wave 1's
+                      `PATCH /mlmr/models/{id}/lifecycle` is gone —
+                      `docs/architecture/SERVICE_OWNERSHIP_MATRIX.md`'s
+                      own "Lifecycle state: AIMgF ✅, MLMR ❌" is now
+                      actually true, not just documented.
+  - RuntimeLifecycle — a model's serving existence once PROMOTED, jointly
+                      owned with NFO: AIMgF now really calls NFO's
+                      descriptor/instantiate/scale/terminate routes
+                      (`_nfo_*` below) for "request runtime creation/
+                      termination/scaling" (AIMGF_OWNERSHIP.md's own list),
+                      not just tracking a state that never drove anything.
+                      A model runtime has no onboarded ApplicationPackage
+                      behind it, unlike an rApp's own NfDeploymentDescriptor
+                      — `packageId` is omitted on `_nfo_create_descriptor`
+                      (NFO's own column is nullable since this wave).
+
+MLLF's own `request_model_deployment` (node-group targeting) now reads/
+writes this module's `/models/{id}/lifecycle` and
+`/models/{id}/runtime/node-groups` instead of MLMR's row — MLMR is model
+truth, not lifecycle truth, and never was meant to carry either field
+past Wave 1's structural shortcut.
 """
 
 import re
@@ -31,13 +43,20 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
+from smo_shared.statemachine import IllegalTransition
 
-from .models import FeatureGroup, InferenceJob, MLMFSubscription, PerformanceReport, TrainingJob
-from .statemachine import AIML_MODEL_FSM, INFERENCE_JOB_FSM, InferenceEvent, InferenceState, ModelEvent, ModelState, should_trigger_group_retrain
+from .models import (
+    CertificationRecord, EmulationJob, FeatureGroup, InferenceJob, LifecycleTransition, MLMFSubscription,
+    ModelLifecycle, PerformanceReport, TrainingJob, ValidationJob,
+)
+from .statemachine import (
+    GOVERNANCE_EVENTS, INFERENCE_JOB_FSM, MODEL_LIFECYCLE_FSM, RUNTIME_LIFECYCLE_FSM, InferenceEvent, InferenceState,
+    ModelLifecycleEvent, ModelLifecycleState, RuntimeLifecycleEvent, RuntimeLifecycleState, should_trigger_group_retrain,
+)
 
 app = FastAPI(title="AIMgF")
 
-_mlmr = R1Client()
+_r1 = R1Client()
 
 
 @app.get("/health")
@@ -49,7 +68,7 @@ def health_check():
 
 
 def _get_model_or_none(model_id: uuid.UUID) -> dict | None:
-    resp = _mlmr.get(f"/mlmr/models/{model_id}")
+    resp = _r1.get(f"/mlmr/models/{model_id}")
     return resp.json() if resp.status_code == 200 else None
 
 
@@ -60,9 +79,57 @@ def _get_model(model_id: uuid.UUID) -> dict:
     return model
 
 
-def _patch_model_lifecycle(model_id: uuid.UUID, **fields) -> dict:
-    resp = _mlmr.patch(f"/mlmr/models/{model_id}/lifecycle", json=fields)
-    return resp.json()
+def _get_or_create_lifecycle(db: Session, model_id: uuid.UUID) -> ModelLifecycle:
+    """Every model has a ModelLifecycle row lazily: MLMR's own
+    `register_model` has no hook into AIMgF (a real cross-service call for
+    every registration would be more coupling than Wave 2 needs), so this
+    row is created here, the first time AIMgF is ever asked about the
+    model, at its REGISTERED/NOT_DEPLOYED defaults.
+    """
+    lifecycle = db.get(ModelLifecycle, model_id)
+    if lifecycle is None:
+        lifecycle = ModelLifecycle(model_id=model_id)
+        db.add(lifecycle)
+        db.flush()
+    return lifecycle
+
+
+def _fire_model_event(db: Session, model_id: uuid.UUID, event: ModelLifecycleEvent,
+                       decided_by: str | None = None, rationale: str | None = None) -> ModelLifecycle:
+    """Fires a ModelLifecycle transition, records it (LifecycleTransition),
+    and — for the four governance decisions plus their submit/reject
+    framing (`GOVERNANCE_EVENTS`) — writes a CertificationRecord too, per
+    AIMGF_OWNERSHIP.md's own Governance list.
+    """
+    if event in GOVERNANCE_EVENTS and decided_by is None:
+        raise framework_error(FrameworkError.GOVERNANCE_DECIDER_REQUIRED, detail=f"{event} requires decidedBy")
+    lifecycle = _get_or_create_lifecycle(db, model_id)
+    from_state = ModelLifecycleState(lifecycle.model_lifecycle_state)
+    try:
+        new_state = MODEL_LIFECYCLE_FSM.fire(from_state, event)
+    except IllegalTransition:
+        raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
+                               detail=f"cannot fire {event} from model lifecycle state {from_state}")
+    lifecycle.model_lifecycle_state = new_state
+    db.add(LifecycleTransition(model_id=model_id, fsm="MODEL", from_state=from_state, to_state=new_state, event=event))
+    if event in GOVERNANCE_EVENTS:
+        db.add(CertificationRecord(model_id=model_id, decision=event, decided_by=decided_by, rationale=rationale))
+    db.flush()
+    return lifecycle
+
+
+def _fire_runtime_event(db: Session, model_id: uuid.UUID, event: RuntimeLifecycleEvent) -> ModelLifecycle:
+    lifecycle = _get_or_create_lifecycle(db, model_id)
+    from_state = RuntimeLifecycleState(lifecycle.runtime_lifecycle_state)
+    try:
+        new_state = RUNTIME_LIFECYCLE_FSM.fire(from_state, event)
+    except IllegalTransition:
+        raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
+                               detail=f"cannot fire {event} from runtime lifecycle state {from_state}")
+    lifecycle.runtime_lifecycle_state = new_state
+    db.add(LifecycleTransition(model_id=model_id, fsm="RUNTIME", from_state=from_state, to_state=new_state, event=event))
+    db.flush()
+    return lifecycle
 
 
 class RequestTrainingRequest(BaseModel):
@@ -77,6 +144,28 @@ class RequestTrainingRequest(BaseModel):
     validationDataset: str | None = None
     consumerRappId: str | None = None
     producerRappId: str | None = None
+
+
+class RequestValidationRequest(BaseModel):
+    modelId: uuid.UUID
+    trainingJobId: uuid.UUID | None = None
+    producerId: str
+    validationCriteria: dict = {}
+
+
+class RequestEmulationRequest(BaseModel):
+    modelId: uuid.UUID
+    producerId: str
+    emulationCriteria: dict = {}
+
+
+class CompleteJobRequest(BaseModel):
+    succeeded: bool
+    metrics: dict = {}
+
+
+class UpdateNodeGroupsRequest(BaseModel):
+    clearedNodeGroups: list[str]
 
 
 class CreateFeatureGroupRequest(BaseModel):
@@ -95,30 +184,39 @@ class CreateFeatureGroupRequest(BaseModel):
     sourceName: str | None = None
 
 
+# ---------------------------------------------------------------- Training
+
 @app.post("/training-jobs", status_code=201)
 def request_training(body: RequestTrainingRequest, db: Session = Depends(get_session)):
     """RequestTraining — exactly one of modelId/modelCoordinationGroupId,
     enforced at the DB layer (exactly_one_target constraint) and checked
     here for a clean error.
 
-    modelId-targeted requests also drive the model's own FSM:
-    REGISTERED -> TRAINING (TRAIN, the very first cycle) or
-    ACTIVE -> TRAINING (RETRAIN, an ordinary retrain). A model already
-    TRAINING (an unresolved prior job) is treated as the operator's
-    explicit decision to supersede it: the orphaned job is marked
-    CANCELLED rather than left silently RUNNING and unreachable.
+    modelId-targeted requests also drive the model's own ModelLifecycle
+    FSM: REGISTERED -> TRAINING (the very first cycle) or
+    PROMOTED -> TRAINING (an ordinary retrain) or FAILED -> TRAINING (a
+    retry). A model already TRAINING (an unresolved prior job) is treated
+    as the operator's explicit decision to supersede it: the orphaned job
+    is marked CANCELLED rather than left silently RUNNING and unreachable.
     """
     if (body.modelId is None) == (body.modelCoordinationGroupId is None):
         raise framework_error(FrameworkError.COORDINATION_GROUP_MISMATCH)
 
-    model = _get_model(body.modelId) if body.modelId else None
-    if model is not None and model["state"] not in (ModelState.REGISTERED, ModelState.ACTIVE, ModelState.TRAINING):
-        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail=f"cannot (re)train a model in state {model['state']}")
+    lifecycle = None
+    if body.modelId is not None:
+        _get_model(body.modelId)
+        lifecycle = _get_or_create_lifecycle(db, body.modelId)
+        if lifecycle.model_lifecycle_state not in (
+            ModelLifecycleState.REGISTERED, ModelLifecycleState.PROMOTED,
+            ModelLifecycleState.FAILED, ModelLifecycleState.TRAINING,
+        ):
+            raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
+                                   detail=f"cannot (re)train a model in state {lifecycle.model_lifecycle_state}")
 
     # TS28.105 AI/ML NRM's own real mLTrainingType — INITIAL_TRAINING the
     # very first cycle (model still REGISTERED), RE_TRAINING every other
     # case.
-    ml_training_type = "INITIAL_TRAINING" if model is not None and model["state"] == ModelState.REGISTERED else "RE_TRAINING"
+    ml_training_type = "INITIAL_TRAINING" if lifecycle is not None and lifecycle.model_lifecycle_state == ModelLifecycleState.REGISTERED else "RE_TRAINING"
 
     job = TrainingJob(model_id=body.modelId, model_coordination_group_id=body.modelCoordinationGroupId,
                        producer_id=body.producerId, required_data=body.requiredData,
@@ -129,18 +227,16 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
     db.add(job)
     db.flush()
 
-    if model is not None:
-        new_state = None
-        if model["state"] == ModelState.TRAINING:
-            existing_job_id = model.get("trainingJobId")
+    if lifecycle is not None:
+        if lifecycle.model_lifecycle_state == ModelLifecycleState.TRAINING:
+            existing_job_id = lifecycle.training_job_id
             if existing_job_id is not None:
-                orphaned = db.get(TrainingJob, uuid.UUID(existing_job_id))
+                orphaned = db.get(TrainingJob, existing_job_id)
                 if orphaned is not None and orphaned.status == "RUNNING":
                     orphaned.status = "CANCELLED"
         else:
-            event = ModelEvent.RETRAIN if model["state"] == ModelState.ACTIVE else ModelEvent.TRAIN
-            new_state = AIML_MODEL_FSM.fire(ModelState(model["state"]), event)
-        _patch_model_lifecycle(body.modelId, state=new_state, trainingJobId=str(job.training_job_id))
+            _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_TRAINING)
+        lifecycle.training_job_id = job.training_job_id
 
     db.commit()
     return {"trainingJobId": str(job.training_job_id)}
@@ -188,23 +284,290 @@ def get_training_job_model_metrics(training_job_id: uuid.UUID, db: Session = Dep
     return job.model_metrics or {}
 
 
-@app.post("/models/{model_id}/advance")
-def advance_model_lifecycle(model_id: uuid.UUID, event: str, db: Session = Depends(get_session)):
-    """Single endpoint driving TRAINING_COMPLETE -> VALIDATION_COMPLETE ->
-    CERTIFY -> LOAD -> ACTIVATE -> RETRAIN -> DEPRECATE, each a real FSM
-    transition (statemachine.py). One endpoint rather than six nearly
-    identical ones, since the pattern is mechanically the same at every step.
-    """
-    model = _get_model(model_id)
-    new_state = AIML_MODEL_FSM.fire(ModelState(model["state"]), ModelEvent(event))
-    return _patch_model_lifecycle(model_id, state=new_state)
+@app.get("/training-jobs")
+def list_training_jobs(model_id: uuid.UUID | None = None, status: str | None = None, db: Session = Depends(get_session)):
+    stmt = select(TrainingJob)
+    if model_id:
+        stmt = stmt.where(TrainingJob.model_id == model_id)
+    if status:
+        stmt = stmt.where(TrainingJob.status == status)
+    return [_training_job_view(j) for j in db.scalars(stmt).all()]
 
+
+# ---------------------------------------------------------------- Validation
+
+@app.post("/validation-jobs", status_code=201)
+def request_validation(body: RequestValidationRequest, db: Session = Depends(get_session)):
+    """CreateValidation (AIMGF_OWNERSHIP.md's own request list) — new this
+    wave: Wave 1's flat FSM folded validation silently into
+    TRAINING_COMPLETE -> TESTED with no request/tracking of its own.
+    Requires the model to have finished training (TRAINED).
+    """
+    _get_model(body.modelId)
+    lifecycle = _get_or_create_lifecycle(db, body.modelId)
+    if lifecycle.model_lifecycle_state != ModelLifecycleState.TRAINED:
+        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
+                               detail=f"cannot request validation for a model in state {lifecycle.model_lifecycle_state}")
+    job = ValidationJob(model_id=body.modelId, training_job_id=body.trainingJobId, producer_id=body.producerId,
+                         validation_criteria=body.validationCriteria, status="RUNNING")
+    db.add(job)
+    db.flush()
+    _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_VALIDATION)
+    db.commit()
+    return {"validationJobId": str(job.validation_job_id)}
+
+
+@app.get("/validation-jobs/{validation_job_id}/status")
+def query_validation_job_status(validation_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    job = db.get(ValidationJob, validation_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such validation job")
+    return _validation_job_view(job)
+
+
+@app.post("/validation-jobs/{validation_job_id}/complete")
+def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, db: Session = Depends(get_session)):
+    job = db.get(ValidationJob, validation_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such validation job")
+    job.status = "COMPLETED" if body.succeeded else "FAILED"
+    job.metrics = body.metrics
+    event = ModelLifecycleEvent.VALIDATION_COMPLETE if body.succeeded else ModelLifecycleEvent.VALIDATION_FAILED
+    _fire_model_event(db, job.model_id, event)
+    db.commit()
+    return _validation_job_view(job)
+
+
+@app.get("/validation-jobs")
+def list_validation_jobs(model_id: uuid.UUID | None = None, status: str | None = None, db: Session = Depends(get_session)):
+    stmt = select(ValidationJob)
+    if model_id:
+        stmt = stmt.where(ValidationJob.model_id == model_id)
+    if status:
+        stmt = stmt.where(ValidationJob.status == status)
+    return [_validation_job_view(j) for j in db.scalars(stmt).all()]
+
+
+# ---------------------------------------------------------------- Emulation
+
+@app.post("/emulation-jobs", status_code=201)
+def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_session)):
+    """CreateEmulation — new this wave, split out from Wave 1's flat
+    VALIDATION_COMPLETE -> EMULATED transition the same way ValidationJob
+    is. Requires the model to have passed validation (VALIDATED).
+    """
+    _get_model(body.modelId)
+    lifecycle = _get_or_create_lifecycle(db, body.modelId)
+    if lifecycle.model_lifecycle_state != ModelLifecycleState.VALIDATED:
+        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
+                               detail=f"cannot request emulation for a model in state {lifecycle.model_lifecycle_state}")
+    job = EmulationJob(model_id=body.modelId, producer_id=body.producerId, emulation_criteria=body.emulationCriteria, status="RUNNING")
+    db.add(job)
+    db.flush()
+    _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_EMULATION)
+    db.commit()
+    return {"emulationJobId": str(job.emulation_job_id)}
+
+
+@app.get("/emulation-jobs/{emulation_job_id}/status")
+def query_emulation_job_status(emulation_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    job = db.get(EmulationJob, emulation_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such emulation job")
+    return _emulation_job_view(job)
+
+
+@app.post("/emulation-jobs/{emulation_job_id}/complete")
+def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db: Session = Depends(get_session)):
+    job = db.get(EmulationJob, emulation_job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such emulation job")
+    job.status = "COMPLETED" if body.succeeded else "FAILED"
+    job.metrics = body.metrics
+    event = ModelLifecycleEvent.EMULATION_COMPLETE if body.succeeded else ModelLifecycleEvent.EMULATION_FAILED
+    _fire_model_event(db, job.model_id, event)
+    db.commit()
+    return _emulation_job_view(job)
+
+
+@app.get("/emulation-jobs")
+def list_emulation_jobs(model_id: uuid.UUID | None = None, status: str | None = None, db: Session = Depends(get_session)):
+    stmt = select(EmulationJob)
+    if model_id:
+        stmt = stmt.where(EmulationJob.model_id == model_id)
+    if status:
+        stmt = stmt.where(EmulationJob.status == status)
+    return [_emulation_job_view(j) for j in db.scalars(stmt).all()]
+
+
+# ---------------------------------------------------------------- ModelLifecycle: generic advance + governance
+
+@app.post("/models/{model_id}/advance")
+def advance_model_lifecycle(model_id: uuid.UUID, event: str, decided_by: str | None = None, rationale: str | None = None,
+                             db: Session = Depends(get_session)):
+    """Single endpoint driving every ModelLifecycle transition that isn't
+    already its own request route above — SUBMIT_FOR_APPROVAL, APPROVE,
+    REJECT, CERTIFY, PROMOTE, ROLLBACK, DEPRECATE, RETIRE — each a real
+    FSM transition (statemachine.py). `decidedBy` is required for the six
+    governance decisions (`GOVERNANCE_EVENTS`) and written onto a real
+    CertificationRecord; omitted for DEPRECATE/RETIRE, which aren't
+    governance decisions in AIMGF_OWNERSHIP.md's own sense.
+    """
+    _get_model(model_id)
+    ev = ModelLifecycleEvent(event)
+    lifecycle = _fire_model_event(db, model_id, ev, decided_by=decided_by, rationale=rationale)
+    db.commit()
+    return _lifecycle_view(lifecycle)
+
+
+@app.get("/models/{model_id}/lifecycle")
+def get_model_lifecycle(model_id: uuid.UUID, db: Session = Depends(get_session)):
+    _get_model(model_id)
+    lifecycle = _get_or_create_lifecycle(db, model_id)
+    db.commit()
+    return _lifecycle_view(lifecycle)
+
+
+@app.get("/model-lifecycles")
+def list_model_lifecycles(db: Session = Depends(get_session)):
+    """(GUI) Every model AIMgF has ever been asked to act on, in one call —
+    the Models table's own State/Node-groups columns would otherwise be
+    an N-model-lifecycle-fetches-per-page-load problem. A model MLMR
+    knows about that AIMgF has never touched yet simply has no row here
+    (still REGISTERED/NOT_DEPLOYED in truth, per `_get_or_create_lifecycle`'s
+    own lazy-initialization default) — the GUI falls back to that same
+    default for a model missing from this list.
+    """
+    return [_lifecycle_view(l) for l in db.scalars(select(ModelLifecycle)).all()]
+
+
+@app.get("/models/{model_id}/governance-history")
+def list_governance_history(model_id: uuid.UUID, db: Session = Depends(get_session)):
+    rows = db.scalars(select(CertificationRecord).where(CertificationRecord.model_id == model_id)
+                       .order_by(CertificationRecord.decided_at)).all()
+    return [_certification_record_view(r) for r in rows]
+
+
+@app.get("/models/{model_id}/lifecycle-history")
+def list_lifecycle_history(model_id: uuid.UUID, fsm: str | None = None, db: Session = Depends(get_session)):
+    stmt = select(LifecycleTransition).where(LifecycleTransition.model_id == model_id)
+    if fsm:
+        stmt = stmt.where(LifecycleTransition.fsm == fsm)
+    rows = db.scalars(stmt.order_by(LifecycleTransition.occurred_at)).all()
+    return [{"fsm": r.fsm, "fromState": r.from_state, "toState": r.to_state, "event": r.event, "occurredAt": r.occurred_at.isoformat()}
+            for r in rows]
+
+
+# ---------------------------------------------------------------- RuntimeLifecycle (jointly with NFO)
+
+def _nfo_create_descriptor(model_id: uuid.UUID) -> uuid.UUID:
+    """A model runtime has no onboarded ApplicationPackage behind it —
+    unlike Onboarding's own CreateDescriptor call, packageId is omitted
+    (NFO's own `nf_deployment_descriptor.package_id` is nullable since
+    this wave, migrations/001_init.sql).
+    """
+    resp = _r1.post("/nfo/descriptors", json={
+        "packageId": None, "name": f"aimgf-model-{model_id}-runtime", "workloadTemplate": {"modelId": str(model_id)},
+    })
+    return uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
+
+
+def _nfo_instantiate(descriptor_id: uuid.UUID, model_id: uuid.UUID) -> uuid.UUID:
+    resp = _r1.post("/nfo/deployments", json={
+        "nfDeploymentDescriptorId": str(descriptor_id), "name": f"aimgf-model-{model_id}-runtime",
+    })
+    return uuid.UUID(resp.json()["nfDeploymentId"])
+
+
+@app.post("/models/{model_id}/runtime/deploy", status_code=201)
+def deploy_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)):
+    """RuntimeLifecycle's own DEPLOY — jointly owned with NFO
+    (AIMGF_OWNERSHIP.md's "NFO invocation: request runtime creation").
+    Requires the model to have cleared governance (CERTIFIED or
+    PROMOTED). The RuntimeLifecycle guard fires before any NFO call, so a
+    duplicate deploy attempt (already DEPLOYMENT_REQUESTED-or-later)
+    never touches NFO at all.
+    """
+    _get_model(model_id)
+    lifecycle = _get_or_create_lifecycle(db, model_id)
+    if lifecycle.model_lifecycle_state not in (ModelLifecycleState.CERTIFIED, ModelLifecycleState.PROMOTED):
+        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
+                               detail=f"cannot deploy a runtime for a model in state {lifecycle.model_lifecycle_state}")
+    _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.REQUEST_DEPLOYMENT)
+
+    descriptor_id = _nfo_create_descriptor(model_id)
+    deployment_id = _nfo_instantiate(descriptor_id, model_id)
+    lifecycle.nf_deployment_descriptor_id = descriptor_id
+    lifecycle.nf_deployment_id = deployment_id
+
+    _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.DEPLOYMENT_COMPLETE)
+    db.commit()
+    return _lifecycle_view(lifecycle)
+
+
+@app.post("/models/{model_id}/runtime/activate")
+def activate_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Marks the runtime as ready to accept inference (request_inference's
+    own gate). Local-only: NFO's own deployment is already RUNNING once
+    `deploy` returns (Phase 1: instantiate completes synchronously, same
+    elision as elsewhere in this build) — ACTIVATE is AIMgF's own
+    decision about whether traffic should be sent yet, not a further NFO
+    call.
+    """
+    _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.ACTIVATE)
+    lifecycle = _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.ACTIVATION_COMPLETE)
+    db.commit()
+    return _lifecycle_view(lifecycle)
+
+
+@app.post("/models/{model_id}/runtime/scale")
+def scale_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)):
+    lifecycle = _get_or_create_lifecycle(db, model_id)
+    _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.REQUEST_SCALE)
+    if lifecycle.nf_deployment_id is not None:
+        _r1.post(f"/nfo/deployments/{lifecycle.nf_deployment_id}/scale")
+    _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.SCALE_COMPLETE)
+    db.commit()
+    return _lifecycle_view(lifecycle)
+
+
+@app.post("/models/{model_id}/runtime/terminate")
+def terminate_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)):
+    lifecycle = _get_or_create_lifecycle(db, model_id)
+    _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.REQUEST_TERMINATION)
+    if lifecycle.nf_deployment_id is not None:
+        _r1.delete(f"/nfo/deployments/{lifecycle.nf_deployment_id}")
+    _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.TERMINATION_COMPLETE)
+    db.commit()
+    return _lifecycle_view(lifecycle)
+
+
+@app.patch("/models/{model_id}/runtime/node-groups")
+def update_node_groups(model_id: uuid.UUID, body: UpdateNodeGroupsRequest, db: Session = Depends(get_session)):
+    """Called by MLLF's own `request_model_deployment` (MultiNode Q2's
+    targeting gap, LLD section 5) — MLLF owns the *decision* of which
+    node groups a model is placed on, AIMgF owns the row it's written to
+    (the same shape as Wave 1's `PATCH /mlmr/models/{id}/lifecycle`, just
+    against AIMgF's own storage now instead of MLMR's).
+    """
+    lifecycle = _get_or_create_lifecycle(db, model_id)
+    lifecycle.cleared_node_groups = body.clearedNodeGroups
+    db.commit()
+    return _lifecycle_view(lifecycle)
+
+
+# ---------------------------------------------------------------- Inference
 
 @app.post("/models/{model_id}/inference-jobs", status_code=201)
 def request_inference(model_id: uuid.UUID, notification_destination: str | None = None, db: Session = Depends(get_session)):
-    """RequestInference — MLEF-hosted (AI/ML Workflow LLD section 3)."""
-    model = _get_model(model_id)
-    if model["state"] != ModelState.ACTIVE:
+    """RequestInference — MLEF-hosted (AI/ML Workflow LLD section 3).
+    Gated on RuntimeLifecycleState.ACTIVE (a serving question), not
+    ModelLifecycleState — a PROMOTED-but-not-yet-deployed model, or one
+    whose runtime is mid-SCALING, can't serve inference either way.
+    """
+    _get_model(model_id)
+    lifecycle = _get_or_create_lifecycle(db, model_id)
+    if lifecycle.runtime_lifecycle_state != RuntimeLifecycleState.ACTIVE:
         raise framework_error(FrameworkError.INFERENCE_MODEL_NOT_ACTIVE)
     job = InferenceJob(model_id=model_id, status=InferenceState.RUNNING, notification_destination=notification_destination)
     db.add(job)
@@ -227,6 +590,19 @@ def resolve_inference(inference_job_id: uuid.UUID, succeeded: bool, db: Session 
     return {"inferenceJobId": str(job.inference_job_id), "status": job.status}
 
 
+@app.get("/inference-jobs")
+def list_inference_jobs(model_id: uuid.UUID | None = None, status: str | None = None, db: Session = Depends(get_session)):
+    stmt = select(InferenceJob)
+    if model_id:
+        stmt = stmt.where(InferenceJob.model_id == model_id)
+    if status:
+        stmt = stmt.where(InferenceJob.status == status)
+    return [{"inferenceJobId": str(j.inference_job_id), "modelId": str(j.model_id), "status": j.status,
+             "notificationDestination": j.notification_destination} for j in db.scalars(stmt).all()]
+
+
+# ---------------------------------------------------------------- MLMF performance monitoring
+
 @app.post("/mlmf/subscriptions", status_code=201)
 def subscribe_performance_monitoring(model_id: uuid.UUID, metric_types: list[str], dme_type_id: uuid.UUID, guard_kpi_floor: dict | None = None, db: Session = Depends(get_session)):
     """MLMF — new sub-function, AI/ML Workflow LLD section 2. Distinct
@@ -239,7 +615,7 @@ def subscribe_performance_monitoring(model_id: uuid.UUID, metric_types: list[str
 
 
 def _find_coordination_group_for_model(model_id: uuid.UUID) -> dict | None:
-    resp = _mlmr.get("/mlmr/coordination-groups")
+    resp = _r1.get("/mlmr/coordination-groups")
     groups = resp.json() if resp.status_code == 200 else []
     return next((g for g in groups if str(model_id) in set(g["memberModelIds"])), None)
 
@@ -265,27 +641,6 @@ def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = 
             if triggered:
                 result["retrainedModelIds"] = [str(mid) for mid in _trigger_group_retrain(db, group)]
     return result
-
-
-@app.get("/training-jobs")
-def list_training_jobs(model_id: uuid.UUID | None = None, status: str | None = None, db: Session = Depends(get_session)):
-    stmt = select(TrainingJob)
-    if model_id:
-        stmt = stmt.where(TrainingJob.model_id == model_id)
-    if status:
-        stmt = stmt.where(TrainingJob.status == status)
-    return [_training_job_view(j) for j in db.scalars(stmt).all()]
-
-
-@app.get("/inference-jobs")
-def list_inference_jobs(model_id: uuid.UUID | None = None, status: str | None = None, db: Session = Depends(get_session)):
-    stmt = select(InferenceJob)
-    if model_id:
-        stmt = stmt.where(InferenceJob.model_id == model_id)
-    if status:
-        stmt = stmt.where(InferenceJob.status == status)
-    return [{"inferenceJobId": str(j.inference_job_id), "modelId": str(j.model_id), "status": j.status,
-             "notificationDestination": j.notification_destination} for j in db.scalars(stmt).all()]
 
 
 @app.get("/mlmf/subscriptions")
@@ -315,6 +670,32 @@ def list_recent_performance_reports(breached_only: bool = False, limit: int = 50
     return [_performance_report_view(r) for r in rows]
 
 
+def _trigger_group_retrain(db: Session, group: dict) -> list[uuid.UUID]:
+    """Fires CREATE_TRAINING (the same PROMOTED -> TRAINING transition
+    RequestTraining's own modelId-targeted path uses) and creates a
+    per-model TrainingJob for every currently PROMOTED member. A member
+    not PROMOTED (already TRAINING from an earlier trigger, or never
+    certified) is skipped rather than forced — CREATE_TRAINING is only a
+    legal transition from PROMOTED (or REGISTERED/FAILED).
+    """
+    retrained_model_ids: list[uuid.UUID] = []
+    for raw_member_id in group["memberModelIds"]:
+        member_id = uuid.UUID(raw_member_id)
+        if _get_model_or_none(member_id) is None:
+            continue
+        lifecycle = _get_or_create_lifecycle(db, member_id)
+        if lifecycle.model_lifecycle_state != ModelLifecycleState.PROMOTED:
+            continue
+        job = TrainingJob(model_id=member_id, producer_id="aimgf:group-retrain", status="RUNNING", ml_training_type="RE_TRAINING")
+        db.add(job)
+        db.flush()
+        _fire_model_event(db, member_id, ModelLifecycleEvent.CREATE_TRAINING)
+        lifecycle.training_job_id = job.training_job_id
+        retrained_model_ids.append(member_id)
+    db.commit()
+    return retrained_model_ids
+
+
 def _training_job_view(j: TrainingJob) -> dict:
     return {"trainingJobId": str(j.training_job_id), "modelId": str(j.model_id) if j.model_id else None,
             "modelCoordinationGroupId": str(j.model_coordination_group_id) if j.model_coordination_group_id else None,
@@ -323,33 +704,40 @@ def _training_job_view(j: TrainingJob) -> dict:
             "modelMetrics": j.model_metrics, "mlTrainingType": j.ml_training_type}
 
 
+def _validation_job_view(j: ValidationJob) -> dict:
+    return {"validationJobId": str(j.validation_job_id), "modelId": str(j.model_id),
+            "trainingJobId": str(j.training_job_id) if j.training_job_id else None,
+            "producerId": j.producer_id, "validationCriteria": j.validation_criteria or {},
+            "status": j.status, "metrics": j.metrics or {}}
+
+
+def _emulation_job_view(j: EmulationJob) -> dict:
+    return {"emulationJobId": str(j.emulation_job_id), "modelId": str(j.model_id), "producerId": j.producer_id,
+            "emulationCriteria": j.emulation_criteria or {}, "status": j.status, "metrics": j.metrics or {}}
+
+
+def _certification_record_view(r: CertificationRecord) -> dict:
+    return {"certificationRecordId": str(r.certification_record_id), "modelId": str(r.model_id), "decision": r.decision,
+            "decidedBy": r.decided_by, "rationale": r.rationale, "decidedAt": r.decided_at.isoformat()}
+
+
 def _performance_report_view(r: PerformanceReport) -> dict:
     return {"reportId": str(r.id), "subscriptionId": str(r.subscription_id), "metrics": r.metrics,
             "breachedFloor": r.breached_floor, "reportedAt": r.reported_at.isoformat()}
 
 
-def _trigger_group_retrain(db: Session, group: dict) -> list[uuid.UUID]:
-    """Fires RETRAIN (the same ACTIVE -> TRAINING transition RequestTraining's
-    own modelId-targeted path uses) and creates a per-model TrainingJob for
-    every currently ACTIVE member. A member not in ACTIVE (already TRAINING
-    from an earlier trigger, or never certified) is skipped rather than
-    forced — RETRAIN is only a legal transition from ACTIVE.
-    """
-    retrained_model_ids: list[uuid.UUID] = []
-    for raw_member_id in group["memberModelIds"]:
-        member_id = uuid.UUID(raw_member_id)
-        member = _get_model_or_none(member_id)
-        if member is None or member["state"] != ModelState.ACTIVE:
-            continue
-        job = TrainingJob(model_id=member_id, producer_id="aimgf:group-retrain", status="RUNNING", ml_training_type="RE_TRAINING")
-        db.add(job)
-        db.flush()
-        new_state = AIML_MODEL_FSM.fire(ModelState.ACTIVE, ModelEvent.RETRAIN)
-        _patch_model_lifecycle(member_id, state=new_state, trainingJobId=str(job.training_job_id))
-        retrained_model_ids.append(member_id)
-    db.commit()
-    return retrained_model_ids
+def _lifecycle_view(l: ModelLifecycle) -> dict:
+    return {
+        "modelId": str(l.model_id), "modelLifecycleState": l.model_lifecycle_state,
+        "runtimeLifecycleState": l.runtime_lifecycle_state,
+        "trainingJobId": str(l.training_job_id) if l.training_job_id else None,
+        "clearedNodeGroups": l.cleared_node_groups or [],
+        "nfDeploymentDescriptorId": str(l.nf_deployment_descriptor_id) if l.nf_deployment_descriptor_id else None,
+        "nfDeploymentId": str(l.nf_deployment_id) if l.nf_deployment_id else None,
+    }
 
+
+# ---------------------------------------------------------------- Feature groups
 
 @app.post("/feature-groups", status_code=201)
 def create_feature_group(body: CreateFeatureGroupRequest, db: Session = Depends(get_session)):

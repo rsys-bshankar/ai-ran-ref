@@ -101,23 +101,42 @@ RULES: list[Rule] = [
     _rule("POST", "/rapp-mgmt/instances/{id}/(performance|fault)", A),   # test-data injection
 
     # --- AI Platform (Wave 1 split of the former ai-ml-workflow: MLMR owns
-    # the model/artifact/coordination-group rows, AIMgF owns training/
-    # inference/MLMF/feature-groups, MLLF owns deploy). MLMR's own
-    # internal PATCH /models/{id}/lifecycle is deliberately absent — a
-    # machine-to-machine route only AIMgF/MLLF call, same as the SME/DME/
-    # NFO internal routes above.
+    # the model/artifact/coordination-group rows, AIMgF owns lifecycle
+    # state/training/validation/emulation/inference/MLMF/feature-groups,
+    # MLLF owns deploy). AIMgF's own internal
+    # PATCH /models/{id}/runtime/node-groups is deliberately absent — a
+    # machine-to-machine route only MLLF calls, same as the SME/DME/NFO
+    # internal routes above.
     _rule("POST", "/mlmr/models", O),
     _rule("PUT", "/mlmr/models/{id}", O),
     _rule("DELETE", "/mlmr/models/{id}", A),
     _rule("POST", "/mlmr/models/{id}/artifact", O),
     _rule("POST", "/mlmr/coordination-groups", O),
+    # Wave 2: the six governance decisions (Approval/Certification/
+    # Promotion/Rollback plus the submit/reject pair framing approval) are
+    # admin-only, the same elevated stakes DEPRECATE/RETIRE already get —
+    # everything else `advance` can fire (the automatic TRAINING_COMPLETE/
+    # VALIDATION_COMPLETE/EMULATION_COMPLETE-style transitions) is operator.
     _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "DEPRECATE"}),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "RETIRE"}),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "SUBMIT_FOR_APPROVAL"}),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "APPROVE"}),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "REJECT"}),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "CERTIFY"}),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "PROMOTE"}),
+    _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "ROLLBACK"}),
     _rule("POST", "/aimgf/models/{id}/(advance|inference-jobs)", O),
+    _rule("POST", "/aimgf/models/{id}/runtime/terminate", A),  # tearing down a runtime is destructive, like the DELETEs above
+    _rule("POST", "/aimgf/models/{id}/runtime/(deploy|activate|scale)", O),
     _rule("POST", "/mllf/models/{id}/deploy", O),
     _rule("POST", "/aimgf/inference-jobs/{id}/resolve", O),
     _rule("POST", "/aimgf/training-jobs", O),
     _rule("DELETE", "/aimgf/training-jobs/{id}", O),        # cancel, not a hard delete
     _rule("POST", "/aimgf/training-jobs/{id}/model-metrics", O),
+    _rule("POST", "/aimgf/validation-jobs", O),
+    _rule("POST", "/aimgf/validation-jobs/{id}/complete", O),
+    _rule("POST", "/aimgf/emulation-jobs", O),
+    _rule("POST", "/aimgf/emulation-jobs/{id}/complete", O),
     _rule("POST", "/aimgf/(feature-groups|mlmf/subscriptions)", O),
     _rule("POST", "/aimgf/mlmf/subscriptions/{id}/reports", A),  # test-data injection
 
