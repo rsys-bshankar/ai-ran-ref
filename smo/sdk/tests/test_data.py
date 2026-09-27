@@ -86,6 +86,11 @@ def test_terminate_data_job(client, r1):
     assert r1.calls[0] == {"verb": "delete", "path": f"/dme/data-jobs/{job_id}", "params": None}
 
 
+def test_terminate_data_jobs_for_consumer(client, r1):
+    client.terminate_data_jobs_for_consumer("rapp-1")
+    assert r1.calls[0] == {"verb": "delete", "path": "/dme/data-jobs", "params": {"consumer_id": "rapp-1"}}
+
+
 def test_list_data_jobs(client, r1):
     client.list_data_jobs(consumer_id="consumer-1")
     assert r1.calls[0] == {"verb": "get", "path": "/dme/data-jobs", "params": {"dme_type_id": None, "consumer_id": "consumer-1"}}

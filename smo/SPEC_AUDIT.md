@@ -696,6 +696,62 @@ summary — same precedent as SME's own CAPIF-source-based pass above)
    only matters once something in this build actually deploys the
    chart there, which nothing does.
 
+## DME vs. the real ICS API (`nonrtric-plt-informationcoordinatorservice/api/ics-api.yaml`)
+
+*(DME's *other* formal-spec grounding — the section above audits the
+O1-facing half against the ProvMnS workbook; this audits the
+data-plane half, DME's original R1AP-derived scope, against ICS's own
+real OpenAPI spec, previously not in `specs/` at all. Read the real
+spec file directly, not a summary — `data-producer/v1`, `data-consumer/v1`,
+and the `producer_registration_info`/`consumer_information_type`/
+`consumer_job`/`producer_status` schemas.)*
+
+1. **The real ICS model treats Information Producer and Information
+   Type as two separate first-class entities in a genuine many-to-many
+   relationship — this build's own `DMEType` conflates them into one
+   row, with a uniqueness constraint that makes a second producer for
+   the same type structurally impossible** — large/structural, real,
+   audited this pass, **not closed, left open by this explicit
+   finding**. ICS's own `producer_registration_info` (`PUT
+   /data-producer/v1/info-producers/{id}`) is a producer's own
+   registration — callback URLs plus a `supported_info_types` array —
+   entirely separate from `PUT /data-producer/v1/info-types/{id}`
+   (the type's own schema declaration); `consumer_information_type`'s
+   own `no_of_producers` field and its `ENABLED`/`DISABLED` status
+   ("one or several producers ... are available") exist specifically
+   because the real spec expects *multiple* producers to register the
+   same type. `dme/app/models.py`'s own `DMEType.__table_args__`
+   (`UniqueConstraint("namespace", "name", "version")`) makes this
+   global across every producer — confirmed by reading
+   `register_dme_type`'s own `IntegrityError` handler directly: a
+   second producer registering an already-registered type identity
+   gets the same `DME_TYPE_VERSION_CONFLICT` a same-producer
+   re-registration attempt would (the check has no producer-scoping at
+   all). Splitting Producer and Type into two real entities would be a
+   genuine, moderate-to-large breaking schema change (every existing
+   `DMEType` row conflates identity that would need to split across two
+   tables, and every caller of `register_dme_type`/`register_service`-
+   equivalent flows would need updating) — audited and named, not
+   attempted without being asked, the same discipline as SME's own
+   CAPIF trust-direction finding and Intent Service's consumer-side
+   RMIH question before it.
+2. ~~**No bulk "delete every job I own" route — the real
+   `DELETE /data-consumer/v1/info-jobs?owner=X`
+   (`deleteJobsForOwner`)**~~ — **closed this pass**. Confirmed missing
+   by reading `ics-api.yaml` directly (DME's own `GET /data-jobs`
+   already supports the same `owner`/`infoTypeId`-equivalent filters as
+   the real `getJobIds`, but `DELETE` only ever existed per-job). New
+   `DELETE /data-jobs?consumer_id=X` fans the real per-job teardown
+   (`_stop_job_at_producer`'s own producer notification included) out
+   across every job that consumer owns, rather than requiring N
+   separate calls. `sdk/smo_sdk/data.py`'s
+   `terminate_data_jobs_for_consumer` added to match.
+3. **`dataDeliveryMode`'s `ONE_TIME`/`CONTINUOUS` values have no
+   equivalent anywhere in the real ICS spec — confirmed NOT a gap, a
+   pre-existing SMO Design v1.3 convention, not an ICS field this build
+   ever claimed to source from ICS.** Grepped `ics-api.yaml` directly:
+   no `ONE_TIME`, `CONTINUOUS`, or `data_delivery_mode` anywhere in it.
+
 ## What's genuinely closeable now (small, scoped, non-breaking)
 
 In priority order — these don't touch any established wire contract a

@@ -63,12 +63,27 @@ conditional reporting, both real but moderate/breaking, left for a
 deliberate follow-up rather than guessed at.
 
 Not yet audited against a formal spec at all, because no relevant spec
-file exists in `../specs/` yet: **DME** (ICS's own spec set isn't
-there) and **A1 Related** (3GPP/O-RAN A1 specs aren't there — section
-5's source-code audit remains the only ground truth). Also cataloged in
-`../specs/` but never compared against: the O-RAN WG4/WG5 O-RU/O-CU/
-O-DU management-plane YANGs — likely out of scope given this build's
-single-node topology, but genuinely unconfirmed, not assumed.
+file exists in `../specs/` yet: **A1 Related** (3GPP/O-RAN A1 specs
+aren't there — section 5's source-code audit remains the only ground
+truth). Also cataloged in `../specs/` but never compared against: the
+O-RAN WG4/WG5 O-RU/O-CU/O-DU management-plane YANGs — likely out of
+scope given this build's single-node topology, but genuinely
+unconfirmed, not assumed.
+
+**DME is now audited too**, against ICS's own real OpenAPI spec
+(`nonrtric-plt-informationcoordinatorservice/api/ics-api.yaml`,
+previously not in `../specs/` at all — this is DME's original,
+data-plane-side spec grounding, distinct from the O1-facing side
+already audited against the ProvMnS workbook). A real, closeable gap
+closed: the real `deleteJobsForOwner` (`DELETE
+/data-consumer/v1/info-jobs?owner=X`) had no equivalent — DME could
+only terminate one data job at a time. One real, large finding audited
+and left open, not attempted without being asked: ICS's own model
+treats Information Producer and Information Type as two separate,
+many-to-many entities; this build's own `DMEType` conflates them with
+a global uniqueness constraint that makes a second producer for the
+same type structurally impossible — see `SPEC_AUDIT.md`'s new DME vs.
+ICS section.
 
 **Onboarding/rApp Mgmt is now audited too**, the same source-derived way
 SME's own security-model pass was (no standalone ASD/TOSCA spec document
@@ -108,9 +123,12 @@ genuine production bugs got caught that no unit test had ever touched
 "Suggested next pass" section confirms this list is now exhausted.
 
 **Bottom line — what's actually remaining:** extending the formal-spec
-audit to the two still-unaudited modules (DME, A1 Related — no spec
-file exists yet for either) and the WG4/WG5 YANGs (real, unstarted
-work); a scoped follow-up pass on RAN
+audit to the one still-unaudited module (A1 Related — no spec file
+exists yet) and the WG4/WG5 YANGs (real, unstarted work); DME's own
+Producer/Type conflation finding (`SPEC_AUDIT.md`'s new DME vs. ICS
+section — a real, moderate-to-large breaking schema change, audited
+and left open, not attempted without being asked); a scoped follow-up
+pass on RAN
 Analytics's own moderate/breaking findings (the `analytics_type` enum
 constraint, threshold-based conditional reporting) and AI/ML Workflow's
 (`requestStatus` vocabulary, cancel/suspend-flag support); Policy
@@ -1455,7 +1473,6 @@ scope call, not on engineering effort:**
 **Formal-spec audit gaps (`SPEC_AUDIT.md`) — real, unstarted work, not
 yet attempted for lack of a spec file:**
 
-- **DME** — ICS's own formal spec set isn't in `../specs/` yet.
 - **A1 Related** — the 3GPP/O-RAN A1 specs aren't in `../specs/` either;
   the `sim-a1-interface`/`a1pms` source-code audit in `OPEN_ITEMS.md`
   section 5 remains the only ground truth for this module.

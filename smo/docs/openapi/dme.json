@@ -497,6 +497,37 @@
       }
     },
     "/data-jobs": {
+      "delete": {
+        "description": "SPEC_AUDIT.md's DME vs. real ICS finding: the real\n`DELETE /data-consumer/v1/info-jobs?owner=X` (ics-api.yaml's own\n`deleteJobsForOwner`) \u2014 every job one consumer owns, torn down in\none call, not one `terminate_data_job` at a time. Same per-job\nteardown as that route (producer notification included), just\nfanned out across every matching job.",
+        "operationId": "terminate_data_jobs_for_consumer_data_jobs_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "consumer_id",
+            "required": true,
+            "schema": {
+              "title": "Consumer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Terminate Data Jobs For Consumer"
+      },
       "get": {
         "operationId": "list_data_jobs_data_jobs_get",
         "parameters": [

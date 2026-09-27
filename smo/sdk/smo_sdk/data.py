@@ -66,6 +66,13 @@ class DataClient(BaseClient):
     def terminate_data_job(self, data_job_id: uuid.UUID | str) -> None:
         ensure_ok(self._r1.delete(f"/dme/data-jobs/{data_job_id}"))
 
+    def terminate_data_jobs_for_consumer(self, consumer_id: str) -> None:
+        """The real ICS deleteJobsForOwner (ics-api.yaml) — every job this
+        consumer owns, torn down in one call rather than one terminate_data_job
+        per id.
+        """
+        ensure_ok(self._r1.delete("/dme/data-jobs", params={"consumer_id": consumer_id}))
+
     def list_data_jobs(self, dme_type_id: uuid.UUID | str | None = None, consumer_id: str | None = None) -> list[dict]:
         return ensure_ok(self._r1.get("/dme/data-jobs", params={"dme_type_id": dme_type_id, "consumer_id": consumer_id}))
 
