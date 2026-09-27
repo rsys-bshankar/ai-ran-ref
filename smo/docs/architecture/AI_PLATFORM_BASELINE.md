@@ -194,11 +194,13 @@ Frozen wave order — do not reorder without updating this document first:
   14 states; `RuntimeLifecycleState`, 8 states, jointly owned with NFO)
   and its full eight-aggregate domain model, deepened past Wave 1's
   structural split — see `docs/ownership/AIMGF_OWNERSHIP.md`.
-- **Wave 3** (in progress): R1 contracts (DME → MDAF → MLMR → AIMgF →
-  MLLF → Intent Service, in that order), OpenAPI skeletons, sequence
-  diagrams, and cross-cutting OpenAPI standardization (OAuth2/JWT,
-  Correlation-ID, Error Schema, Versioning, Pagination, Subscriptions) —
-  last, once every contract's shape is already stable.
+- **Wave 3** (R1-contract slices done; cross-cutting standardization
+  done except Correlation-ID — see below): R1 contracts (DME → MDAF →
+  MLMR → AIMgF → MLLF → Intent Service, in that order), OpenAPI
+  skeletons, sequence diagrams, and cross-cutting OpenAPI
+  standardization (OAuth2/JWT, Correlation-ID, Error Schema,
+  Versioning, Pagination, Subscriptions) — last, once every contract's
+  shape is already stable.
   - **DME slice** (done): revises DME from a pure data-job/offer broker
     into a dual data-plane + O1-actuation-mediation service, with real
     source/vendor provenance and a Digital-Twin-excluded-from-inference
@@ -392,10 +394,17 @@ Frozen wave order — do not reorder without updating this document first:
     migration column); `docker compose config`; the GUI's typecheck +
     vitest.
 
-This closes Wave 3 in its entirety — all six R1-contract service slices
-(DME, MDAF, MLMR, AIMgF, MLLF, Intent Service) and all three cross-cutting
-standardization slices (OAuth2/JWT + Versioning, Error Schema, Pagination +
-Subscriptions) described at the top of this section are now done.
+This closes every R1-contract service slice (DME, MDAF, MLMR, AIMgF,
+MLLF, Intent Service) and four of the six items this section's own
+opening line named for cross-cutting standardization (OAuth2/JWT,
+Versioning, Error Schema, Pagination, Subscriptions). **Correlation-ID
+is not done** — audited (found totally absent) at the start of this
+standardization pass, never picked up by any of the four shipped
+slices, and not folded into this one either since it is a genuinely
+separate mechanism (a propagated request-scoped header, not a field
+name or a response shape) rather than a natural fit for any of the
+slices actually shipped. Left open as a real, scoped, not-yet-started
+piece of Wave 3, not assumed done.
 
 Reordering Wave 3 ahead of Wave 1/2, or starting new R1 contract design
 before the ownership split is merged, is exactly the redesign-it-twice
