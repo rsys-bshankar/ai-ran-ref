@@ -731,6 +731,7 @@ CREATE TABLE mdaf_producer (
   analytics_type    TEXT NOT NULL,
   dme_input_types    UUID[] NOT NULL,
   output_schema       JSONB NOT NULL,
+  mda_type               TEXT,  -- SPEC_AUDIT.md: TS28104's own real, closed MDAType enum — optional, additive
   PRIMARY KEY (producer_id, analytics_type)
 );
 

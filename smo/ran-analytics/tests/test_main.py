@@ -155,6 +155,43 @@ def test_list_producers_returns_empty_list_when_none_registered(client):
     assert resp.json()["items"] == []
 
 
+def test_register_analytics_producer_infers_mda_type_for_a_known_shorthand(client):
+    """SPEC_AUDIT.md's `analytics_type` enum finding, closed: TS28104's
+    own real MDAType is derived automatically for the two shorthand
+    values this build honestly maps unambiguously.
+    """
+    client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
+                json={"dme_input_types": [], "output_schema": {}})
+    resp = client.get("/producers")
+    assert resp.json()["items"][0]["mdaType"] == "COVERAGE_ANALYTICS_COVERAGE_PROBLEM_ANALYSIS"
+
+
+def test_register_analytics_producer_leaves_mda_type_null_for_an_unmapped_shorthand(client):
+    """`resource-utilization` is genuinely ambiguous between several real
+    MDAType values (virtualized vs. physical NF resource analytics) — left
+    unmapped, not guessed."""
+    client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "resource-utilization"},
+                json={"dme_input_types": [], "output_schema": {}})
+    resp = client.get("/producers")
+    assert resp.json()["items"][0]["mdaType"] is None
+
+
+def test_register_analytics_producer_accepts_an_explicit_real_mda_type(client):
+    client.post("/producers", params={
+        "producer_id": "rapp-mdaf-1", "analytics_type": "some-custom-shorthand", "mda_type": "PREDICTIONS_PM_DATA",
+    }, json={"dme_input_types": [], "output_schema": {}})
+    resp = client.get("/producers")
+    assert resp.json()["items"][0]["mdaType"] == "PREDICTIONS_PM_DATA"
+
+
+def test_register_analytics_producer_rejects_an_unknown_mda_type(client):
+    resp = client.post("/producers", params={
+        "producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis", "mda_type": "NOT_A_REAL_MDA_TYPE",
+    }, json={"dme_input_types": [], "output_schema": {}})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
+
+
 def test_health_check_answers_the_gui_bff_liveness_probe(client):
     """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
     resp = client.get("/health")

@@ -115,6 +115,7 @@ function Analytics() {
         <Card title="Producers">
           <DataTable rows={producers.data} rowKey={(p) => `${p.producerId}/${p.analyticsType}`} empty="No producers registered." columns={[
             { header: "Producer", render: (p) => p.producerId }, { header: "Type", render: (p) => p.analyticsType },
+            { header: "MDAType (TS28104)", render: (p) => p.mdaType ?? <span className="muted">—</span> },
             { header: "DME inputs", render: (p) => p.dmeInputTypes.length },
           ]} />
         </Card>
