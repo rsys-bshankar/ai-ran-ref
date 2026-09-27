@@ -37,16 +37,20 @@ class AnalyticsClient(BaseClient):
         return ensure_ok(self._r1.get("/mdaf/reports", params={"analytics_type": analytics_type}))
 
     def subscribe(self, analytics_type: str, requested_by: str, notification_destination: str | None = None,
-                  scope: dict | None = None) -> dict:
-        # `scope` is the route's only body-eligible parameter (the other
-        # three are all plain strings, so FastAPI treats them as query
-        # params) — the JSON body is `scope` itself, unwrapped, not
-        # {"scope": scope}. Confirmed against the route's own OpenAPI
-        # schema before writing this, not assumed.
+                  scope: dict | None = None, threshold_info: list[dict] | None = None) -> dict:
+        # Wave 3: `scope` used to be the route's only body-eligible
+        # parameter (bare, unwrapped JSON body) until `thresholdInfo`
+        # (TS28.104 ThresholdInfo, SPEC_AUDIT.md's MDAF section) needed a
+        # body field alongside it — FastAPI can't leave a single field
+        # unwrapped once a second body-eligible field exists, so the
+        # route now takes an explicit {"scope": ..., "thresholdInfo": ...}
+        # body. Confirmed against the route's own live OpenAPI schema
+        # before writing this, not assumed. Each threshold_info dict:
+        # {monitoredMDAOutputIE, thresholdDirection, thresholdValue, hysteresis?}.
         return ensure_ok(self._r1.post("/mdaf/subscriptions", params={
             "analytics_type": analytics_type, "requested_by": requested_by,
             "notification_destination": notification_destination,
-        }, json=scope))
+        }, json={"scope": scope, "thresholdInfo": threshold_info}))
 
     def unsubscribe(self, subscription_id: uuid.UUID | str) -> None:
         ensure_ok(self._r1.delete(f"/mdaf/subscriptions/{subscription_id}"))

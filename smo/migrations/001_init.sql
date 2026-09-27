@@ -739,7 +739,9 @@ CREATE TABLE mda_subscription (
   analytics_type     TEXT NOT NULL,
   scope                JSONB,
   requested_by          TEXT NOT NULL,
-  notification_destination  TEXT  -- NEW section 5: publish_report's actual delivery target
+  notification_destination  TEXT,  -- NEW section 5: publish_report's actual delivery target
+  threshold_info               JSONB,  -- Wave 3: TS28.104 ThresholdInfo list, SPEC_AUDIT.md's MDAF section
+  threshold_state                 JSONB
 );
 
 -- ============================================================

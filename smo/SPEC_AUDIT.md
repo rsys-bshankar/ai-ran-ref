@@ -422,17 +422,26 @@ architecture choice, not a bug.
 2. **`analytics_type` is a free string; the spec defines a real, closed
    24-value `MDAType` enum** (`COVERAGE_ANALYTICS_COVERAGE_PROBLEM_
    ANALYSIS`, `MOBILITY_MANAGEMENT_ANALYTICS_MOBILITY_PERFORMANCE_
-   ANALYSIS`, etc.) — moderate/breaking, not closed. Constraining it
-   would reject whatever `analytics_type` strings any existing caller
-   (demo, tests, other modules) already uses — not yet audited for real
-   usage before attempting this, so left open rather than guessed at.
+   ANALYSIS`, etc.) — audited for real usage this wave (Wave 3), **not
+   closed, confirmed non-conformant rather than merely unaudited**.
+   Every real caller's actual value (`ran-analytics/app/main.py` never
+   hardcodes one; `coverage-issue-analysis`/`resource-utilization`/
+   `failure-prediction`/`RAN.Coverage` across tests/demo/samples are the
+   only real values this build has ever used) is informal shorthand,
+   not one of the spec's real wire values — none match even loosely.
+   Constraining to the closed enum now would mean renaming every real
+   caller for spec-conformance alone, not fixing a bug or closing a
+   silently-wrong behavior; left open by this explicit finding, not by
+   omission.
 3. **No `ThresholdInfo`-based conditional reporting** (`UP`/`DOWN`/
-   `UP_AND_DOWN` + hysteresis) — moderate, real feature gap, not closed.
-   Every report always fires regardless of value; this build's own
-   `MLMFSubscription.guard_kpi_floor` (AI/ML Workflow, above) is a
-   directly analogous mechanism already implemented elsewhere in this
-   same codebase this module could crib from. Real and scoped, just not
-   done this pass.
+   `UP_AND_DOWN` + hysteresis) — **closed this wave (Wave 3)**.
+   `MDASubscription.threshold_info`/`main.py`'s `_threshold_crossed`
+   implement real edge-triggered crossing detection with a genuine
+   hysteresis band (persisted per-subscription `threshold_state`, not a
+   level check re-fired on every report) — cribbed from AI/ML Workflow's
+   `MLMFSubscription.guard_kpi_floor` per this finding's own suggestion,
+   though the real spec semantics (crossing + hysteresis, not just a
+   floor) needed real state, not just a static comparison.
 4. **`scope` is an opaque JSON blob, not the spec's real structured
    `AnalyticsScopeType`** (a `managedEntitiesScope` DN list or
    `areaScope`) — small/cosmetic, consistent with this build's already-
