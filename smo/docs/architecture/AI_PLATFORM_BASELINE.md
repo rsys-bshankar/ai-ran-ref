@@ -305,15 +305,59 @@ Frozen wave order — do not reorder without updating this document first:
     left alone deliberately. Zero real behavior regression: every
     service's full unit suite (574 tests), the full `tests_integration/`
     suite, and the GUI's typecheck + vitest all pass.
-  - **Cross-cutting standardization, slice 3 of 3 — Pagination +
-    Subscriptions** (planned after that): real limit/offset pagination
-    (`{items, total, limit, offset}`) on every list endpoint across
-    ~16 services — a real breaking change to GUI/SDK/tests_integration,
-    confirmed rather than left as a documented-only finding. Subscription
-    callback field names are unified only where no real external spec
-    already fixes the name (DME/MDAF/Intent Service/A1-Related/AIMgF);
-    FOCOM's `callback` (real O2ims) and SME's `callbackUri` (real CAPIF)
-    stay as they are.
+  - **Cross-cutting standardization, slice 3a — Pagination** (done):
+    real limit/offset pagination (`{items, total, limit, offset}`,
+    `shared/smo_shared/pagination.py`'s `paginate()`) on every
+    DB-backed list endpoint across all 16 backend services — confirmed
+    as a real breaking change rather than left undone. A real SQL
+    `LIMIT`/`OFFSET` plus a real `COUNT(*)` for `total`, never a
+    Python-level slice of an already-fetched full result set. Two
+    classes of route deliberately excluded, grounded case by case
+    rather than converted uniformly: (1) routes backed by a fixed,
+    non-DB enum (A1-Related's `/policy-types`) — nothing to paginate;
+    (2) routes whose response shape is dictated by a real external spec
+    checked directly against its own YAML — A1-Related's `/services`
+    (`{"serviceList": [...]}`, real A1-PMS `pms-api-v3.json` shape) and
+    SME's `/published-apis/v1/{apf_id}/service-apis` +
+    `/service-apis/v1/allServiceAPIs` (real CAPIF `GetApfIdServiceApis`/
+    `DiscoverServices` operations). SME's own
+    `/capif-events/v1/{subscriber_id}/subscriptions` GET was checked
+    against the real `TS29222_CAPIF_Events_API.yaml` and confirmed to
+    not exist there at all (only `POST` does) — this build's own GUI-pass
+    addition, so paginated like everything else.
+
+    GUI: rather than touch ~90 call sites, `gui/src/api/hooks.ts`'s
+    `useSmo()` now auto-unwraps `{items: [...]}` at the one shared fetch
+    boundary every list-reading call already goes through, so every
+    existing `T[]`-typed call site keeps working unchanged; the two
+    direct `smo()` calls outside `useSmo` (`Dashboard.tsx`,
+    `Flows.tsx`) call the same exported `unwrapPage()` helper. One real
+    exception: `/aimgf/feature-groups`'s old custom
+    `{featureGroups: [...]}` wrapper is gone now that every list route
+    shares one convention — its one call site and the SDK's
+    `list_feature_groups()` return-type annotation both updated to
+    match. SDK: `sdk/smo_sdk/_common.py`'s
+    `ensure_ok()` (the one shared response helper every `sdk.*` method
+    already goes through) unwraps the same way, so every
+    `list_*`/`query_*`/`discover_*` method's own `-> list[dict]`
+    annotation stays correct without touching each method.
+
+    Verified: every service's full unit suite (594 tests across 18
+    modules, plus new/updated tests where a list route's shape changed
+    — a real SQLAlchemy `Session` doesn't enforce `LIMIT`/`OFFSET`
+    server-side any differently in SQLite vs Postgres, so this needed
+    no separate live-Postgres check the way some earlier slices did),
+    the SDK's own suite (83 tests), the full `tests_integration/` suite
+    against real Postgres 16 (31/31, including the OpenAPI-drift check
+    against the now-larger specs — every paginated route gained real
+    `limit`/`offset` query parameters), `scripts/
+    check_migration_matches_models.py`, `docker compose config`, and
+    the GUI's typecheck + vitest (49/49).
+  - **Cross-cutting standardization, slice 3b — Subscriptions**
+    (planned next): subscription callback field names are unified only
+    where no real external spec already fixes the name (DME/MDAF/Intent
+    Service/A1-Related/AIMgF); FOCOM's `callback` (real O2ims) and SME's
+    `callbackUri` (real CAPIF) stay as they are.
 
 Reordering Wave 3 ahead of Wave 1/2, or starting new R1 contract design
 before the ownership split is merged, is exactly the redesign-it-twice

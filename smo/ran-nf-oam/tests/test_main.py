@@ -348,7 +348,7 @@ def test_ingest_alarm_persists_standard_fault_fields(client, db_session_factory)
     assert resp.status_code == 200
     alarm_id = resp.json()["alarmId"]
 
-    listing = client.get("/alarms").json()
+    listing = client.get("/alarms").json()["items"]
     assert len(listing) == 1
     alarm = listing[0]
     assert alarm["alarmId"] == alarm_id
@@ -372,7 +372,7 @@ def test_ingest_alarm_defaults_fault_fields_when_not_provided(client, db_session
     })
     assert resp.status_code == 200
 
-    alarm = client.get("/alarms").json()[0]
+    alarm = client.get("/alarms").json()["items"][0]
     assert alarm["probableCause"] is None
     assert alarm["specificProblem"] is None
     assert alarm["rootCauseIndicator"] is False
@@ -397,7 +397,7 @@ def test_query_alarms_filters_by_managed_element_ref(client, db_session_factory)
     client.post("/alarms/ingest", params={"source_alarm_id": "src-2", "managed_element_ref": "ME-2", "severity": "minor"})
 
     resp = client.get("/alarms", params={"managed_element_ref": "ME-2"})
-    alarms = resp.json()
+    alarms = resp.json()["items"]
     assert len(alarms) == 1
     assert alarms[0]["managedElementRef"] == "ME-2"
 
@@ -422,7 +422,7 @@ def test_change_alarm_ack_state_records_ack_user_id_and_changed_at(client, db_se
     alarm_id = client.post("/alarms/ingest", params={
         "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "major",
     }).json()["alarmId"]
-    assert client.get("/alarms").json()[0]["changedAt"] is None
+    assert client.get("/alarms").json()["items"][0]["changedAt"] is None
 
     resp = client.patch(f"/alarms/{alarm_id}/ack", params={"new_state": "ACKNOWLEDGED", "ack_user_id": "operator-1"})
     assert resp.status_code == 200
@@ -461,7 +461,7 @@ def test_cleared_alarm_still_appears_in_query_alarms(client, db_session_factory)
     }).json()["alarmId"]
     client.patch(f"/alarms/{alarm_id}/clear")
 
-    alarms = client.get("/alarms").json()
+    alarms = client.get("/alarms").json()["items"]
     assert len(alarms) == 1
     assert alarms[0]["severity"] == "cleared"
 
@@ -485,12 +485,12 @@ def test_query_alarms_filters_by_severity_and_exposes_raised_at(client, db_sessi
     client.post("/alarms/ingest", params={"source_alarm_id": "a1", "managed_element_ref": "ME-1", "severity": "major"})
     minor = client.post("/alarms/ingest", params={"source_alarm_id": "a2", "managed_element_ref": "ME-1", "severity": "minor"}).json()
 
-    only_minor = client.get("/alarms", params={"severity": "minor"}).json()
+    only_minor = client.get("/alarms", params={"severity": "minor"}).json()["items"]
     assert [a["alarmId"] for a in only_minor] == [minor["alarmId"]]
     assert only_minor[0]["raisedAt"]
 
     client.patch(f"/alarms/{minor['alarmId']}/clear")
-    assert [a["alarmId"] for a in client.get("/alarms", params={"severity": "cleared"}).json()] == [minor["alarmId"]]
+    assert [a["alarmId"] for a in client.get("/alarms", params={"severity": "cleared"}).json()["items"]] == [minor["alarmId"]]
 
 
 def test_list_pm_subscriptions(client, db_session_factory, monkeypatch):
@@ -499,16 +499,16 @@ def test_list_pm_subscriptions(client, db_session_factory, monkeypatch):
     sub = client.post("/pm-subscriptions", params={"managed_element_ref": "ME-1", "counter_type": "DRB.UEThpDl",
                                                     "delivery_method": "push", "granularity_period": 900}).json()
 
-    listed = client.get("/pm-subscriptions").json()
+    listed = client.get("/pm-subscriptions").json()["items"]
     assert [(s["subscriptionId"], s["southboundEngine"], s["granularityPeriod"]) for s in listed] == [(sub["subscriptionId"], "PMJobControl", 900)]
-    assert client.get("/pm-subscriptions", params={"managed_element_ref": "ME-2"}).json() == []
+    assert client.get("/pm-subscriptions", params={"managed_element_ref": "ME-2"}).json()["items"] == []
 
 
 def test_list_o1_adaptor_endpoints_filters_by_health(client, db_session_factory):
     _make_me(db_session_factory, health="DEGRADED")
-    listed = client.get("/o1-adaptor-endpoints").json()
+    listed = client.get("/o1-adaptor-endpoints").json()["items"]
     assert [(e["managedElementRef"], e["healthStatus"]) for e in listed] == [("ME-1", "DEGRADED")]
-    assert client.get("/o1-adaptor-endpoints", params={"health_status": "ACTIVE"}).json() == []
+    assert client.get("/o1-adaptor-endpoints", params={"health_status": "ACTIVE"}).json()["items"] == []
 
 
 def test_list_config_and_software_jobs(client, db_session_factory, monkeypatch):
@@ -517,5 +517,5 @@ def test_list_config_and_software_jobs(client, db_session_factory, monkeypatch):
     job = client.post("/config-jobs", json={"requestedBy": "op", "scope": "cell", "changes": []}).json()
     swm = client.post("/software-management-jobs", params={"managed_element_ref": "ME-1"}).json()
 
-    assert [j["jobId"] for j in client.get("/config-jobs").json()] == [job["jobId"]]
-    assert [(j["jobId"], j["phase"]) for j in client.get("/software-management-jobs").json()] == [(swm["jobId"], swm["phase"])]
+    assert [j["jobId"] for j in client.get("/config-jobs").json()["items"]] == [job["jobId"]]
+    assert [(j["jobId"], j["phase"]) for j in client.get("/software-management-jobs").json()["items"]] == [(swm["jobId"], swm["phase"])]

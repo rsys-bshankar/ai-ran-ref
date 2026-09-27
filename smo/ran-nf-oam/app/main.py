@@ -25,6 +25,7 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.timeutil import as_utc
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import Alarm, CMSchemaCache, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from .netconf_client import send_edit_config
@@ -182,7 +183,8 @@ def query_write_config_job_status(job_id: uuid.UUID, db: Session = Depends(get_s
 
 
 @app.get("/alarms")
-def query_alarms(managed_element_ref: str | None = None, severity: str | None = None, db: Session = Depends(get_session)):
+def query_alarms(managed_element_ref: str | None = None, severity: str | None = None, limit: int = PageLimit,
+                  offset: int = PageOffset, db: Session = Depends(get_session)):
     """`severity` filter (GUI pass) — the alarm console filters by ME and
     by perceivedSeverity; `severity=cleared` isolates the cleared history.
     """
@@ -191,7 +193,8 @@ def query_alarms(managed_element_ref: str | None = None, severity: str | None = 
         stmt = stmt.where(Alarm.managed_element_ref == managed_element_ref)
     if severity:
         stmt = stmt.where(Alarm.severity == severity)
-    return [_alarm_view(a) for a in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_alarm_view(a) for a in page["items"]]}
 
 
 @app.post("/alarms/ingest")
@@ -398,40 +401,48 @@ def _alarm_view(a: Alarm) -> dict:
 # registered without already holding every id.
 
 @app.get("/pm-subscriptions")
-def list_pm_subscriptions(managed_element_ref: str | None = None, db: Session = Depends(get_session)):
+def list_pm_subscriptions(managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                           db: Session = Depends(get_session)):
     stmt = select(PMSubscription)
     if managed_element_ref:
         stmt = stmt.where(PMSubscription.managed_element_ref == managed_element_ref)
-    return [{"subscriptionId": str(s.subscription_id), "managedElementRef": s.managed_element_ref,
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"subscriptionId": str(s.subscription_id), "managedElementRef": s.managed_element_ref,
              "counterType": s.counter_type, "deliveryMethod": s.delivery_method,
              "southboundEngine": s.southbound_engine, "granularityPeriod": s.granularity_period}
-            for s in db.scalars(stmt).all()]
+            for s in page["items"]]}
 
 
 @app.get("/o1-adaptor-endpoints")
-def list_o1_adaptor_endpoints(health_status: str | None = None, db: Session = Depends(get_session)):
+def list_o1_adaptor_endpoints(health_status: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                               db: Session = Depends(get_session)):
     stmt = select(O1AdaptorEndpoint)
     if health_status:
         stmt = stmt.where(O1AdaptorEndpoint.health_status == health_status)
-    return [{"endpointId": str(ep.endpoint_id), "managedElementRef": ep.managed_element_ref, "adaptorUri": ep.adaptor_uri,
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"endpointId": str(ep.endpoint_id), "managedElementRef": ep.managed_element_ref, "adaptorUri": ep.adaptor_uri,
              "protocolSupport": ep.protocol_support, "registeredVia": ep.registered_via, "healthStatus": ep.health_status,
              "lastHeartbeatAt": ep.last_heartbeat_at.isoformat() if ep.last_heartbeat_at else None}
-            for ep in db.scalars(stmt).all()]
+            for ep in page["items"]]}
 
 
 @app.get("/config-jobs")
-def list_write_config_jobs(status: str | None = None, db: Session = Depends(get_session)):
+def list_write_config_jobs(status: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                            db: Session = Depends(get_session)):
     stmt = select(WriteConfigJob)
     if status:
         stmt = stmt.where(WriteConfigJob.status == status)
-    return [{"jobId": str(j.job_id), "requestedBy": j.requested_by, "scope": j.scope, "status": j.status,
-             "msacRole": j.msac_role} for j in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"jobId": str(j.job_id), "requestedBy": j.requested_by, "scope": j.scope, "status": j.status,
+             "msacRole": j.msac_role} for j in page["items"]]}
 
 
 @app.get("/software-management-jobs")
-def list_software_management_jobs(managed_element_ref: str | None = None, db: Session = Depends(get_session)):
+def list_software_management_jobs(managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                                   db: Session = Depends(get_session)):
     stmt = select(SoftwareManagementJob)
     if managed_element_ref:
         stmt = stmt.where(SoftwareManagementJob.managed_element_ref == managed_element_ref)
-    return [{"jobId": str(j.job_id), "managedElementRef": j.managed_element_ref, "ruInstanceId": j.ru_instance_id,
-             "phase": j.phase, "status": j.status} for j in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"jobId": str(j.job_id), "managedElementRef": j.managed_element_ref, "ruInstanceId": j.ru_instance_id,
+             "phase": j.phase, "status": j.status} for j in page["items"]]}

@@ -207,7 +207,7 @@ def test_onboard_resolves_name_version_vendor_from_the_asd(client, monkeypatch):
 
     package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
 
-    pkg = next(p for p in client.get("/packages").json() if p["packageId"] == package_id)
+    pkg = next(p for p in client.get("/packages").json()["items"] if p["packageId"] == package_id)
     assert (pkg["state"], pkg["name"], pkg["version"], pkg["vendor"]) == ("AVAILABLE", "hello-world-rapp", "1.1", "ai-ran-ref")
 
 
@@ -217,7 +217,7 @@ def test_onboard_keeps_placeholder_identity_when_the_asd_has_none(client, monkey
 
     package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
 
-    pkg = next(p for p in client.get("/packages").json() if p["packageId"] == package_id)
+    pkg = next(p for p in client.get("/packages").json()["items"] if p["packageId"] == package_id)
     assert (pkg["state"], pkg["name"], pkg["version"], pkg["vendor"]) == ("AVAILABLE", "unresolved-until-validated", "0.0.0", None)
 
 
@@ -232,7 +232,7 @@ def test_onboard_leaves_ai_capabilities_null_when_neither_file_is_present(client
 
     package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
 
-    pkg = next(p for p in client.get("/packages").json() if p["packageId"] == package_id)
+    pkg = next(p for p in client.get("/packages").json()["items"] if p["packageId"] == package_id)
     assert pkg["state"] == "AVAILABLE"
     assert pkg["aiCapabilities"] is None
 
@@ -257,7 +257,7 @@ def test_onboard_parses_manifest_and_capabilities_yaml_when_present(client, monk
 
     package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
 
-    pkg = next(p for p in client.get("/packages").json() if p["packageId"] == package_id)
+    pkg = next(p for p in client.get("/packages").json()["items"] if p["packageId"] == package_id)
     assert pkg["state"] == "AVAILABLE"
     assert pkg["aiCapabilities"] == {
         "manifestVersion": "1.0", "aiRuntimeSdkVersion": "1.0",
@@ -277,7 +277,7 @@ def test_onboard_parses_capabilities_yaml_alone_without_a_manifest(client, monke
 
     package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
 
-    pkg = next(p for p in client.get("/packages").json() if p["packageId"] == package_id)
+    pkg = next(p for p in client.get("/packages").json()["items"] if p["packageId"] == package_id)
     assert pkg["aiCapabilities"] == {
         "consumes": [], "provides": [{"namespace": "models", "description": "registers a model"}],
     }
@@ -345,10 +345,10 @@ def test_query_packages_lists_and_filters_by_state(client, monkeypatch):
     monkeypatch.setattr("app.main._validate_package", lambda location: (_ for _ in ()).throw(KeyError("Definitions/missing.yaml")))
     client.post("/packages", json={"location": "http://example/other.csar"})  # routes to FAILED
 
-    all_packages = client.get("/packages").json()
+    all_packages = client.get("/packages").json()["items"]
     assert len(all_packages) == 2
 
-    available_only = client.get("/packages", params={"state": "AVAILABLE"}).json()
+    available_only = client.get("/packages", params={"state": "AVAILABLE"}).json()["items"]
     assert [p["packageId"] for p in available_only] == [available_id]
 
 
@@ -463,7 +463,7 @@ def test_deprime_blocked_by_active_usage_registration(client, monkeypatch):
     assert resp.status_code == 409
     assert resp.json()["detail"]["title"] == "SERVICE_NAME_CONFLICT"
 
-    with_package = client.get("/packages", params={"state": "PRIMED"}).json()
+    with_package = client.get("/packages", params={"state": "PRIMED"}).json()["items"]
     assert [p["packageId"] for p in with_package] == [package_id]
 
 
@@ -492,7 +492,7 @@ def test_query_packages_exposes_identity_fields_for_the_gui(client, db_session_f
         session.add(ApplicationPackage(package_id=uuid.uuid4(), application_type="rApp", name="hello-world", version="1.0.0",
                                         vendor="acme", state="AVAILABLE", manifest_ref="m"))
         session.commit()
-    [pkg] = client.get("/packages").json()
+    [pkg] = client.get("/packages").json()["items"]
     assert (pkg["name"], pkg["version"], pkg["vendor"], pkg["applicationType"]) == ("hello-world", "1.0.0", "acme", "rApp")
     assert pkg["nfDeploymentDescriptorId"] is None
 
@@ -547,10 +547,10 @@ def test_list_usage_registrations_shows_what_blocks_delete(client, db_session_fa
         session.commit()
     reg = client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "instance-1"}).json()
 
-    [usage] = client.get(f"/packages/{package_id}/usage").json()
+    [usage] = client.get(f"/packages/{package_id}/usage").json()["items"]
     assert (usage["registrationId"], usage["consumerId"], usage["active"]) == (reg["registrationId"], "instance-1", True)
     client.post(f"/packages/{package_id}/usage/{reg['registrationId']}/stop")
-    [usage] = client.get(f"/packages/{package_id}/usage").json()
+    [usage] = client.get(f"/packages/{package_id}/usage").json()["items"]
     assert usage["active"] is False and usage["stoppedAt"]
 
-    assert [a["path"] for a in client.get(f"/packages/{package_id}/artifacts").json()] == ["Files/Helm/app.tgz"]
+    assert [a["path"] for a in client.get(f"/packages/{package_id}/artifacts").json()["items"]] == ["Files/Helm/app.tgz"]

@@ -377,11 +377,11 @@ def test_list_performance_reports_returns_newest_first(client, db_session_factor
 
     resp = client.get(f"/instances/{instance_id}/performance")
     assert resp.status_code == 200
-    reports = resp.json()
+    reports = resp.json()["items"]
     assert [r["metrics"]["throughputMbps"] for r in reports] == [20, 10]
     assert all(r["reportedAt"] for r in reports)
 
-    assert len(client.get(f"/instances/{instance_id}/performance", params={"limit": 1}).json()) == 1
+    assert len(client.get(f"/instances/{instance_id}/performance", params={"limit": 1}).json()["items"]) == 1
 
 
 def test_list_fault_reports_returns_recorded_faults(client, db_session_factory):
@@ -390,7 +390,7 @@ def test_list_fault_reports_returns_recorded_faults(client, db_session_factory):
 
     resp = client.get(f"/instances/{instance_id}/faults")
     assert resp.status_code == 200
-    assert [(f["severity"], f["description"]) for f in resp.json()] == [("minor", "slow")]
+    assert [(f["severity"], f["description"]) for f in resp.json()["items"]] == [("minor", "slow")]
 
 
 def test_list_reports_404_on_an_unknown_instance(client):

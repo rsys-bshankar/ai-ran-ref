@@ -3,7 +3,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { api, smo } from "../api/client";
-import { POLL, useSmo } from "../api/hooks";
+import { POLL, unwrapPage, useSmo } from "../api/hooks";
 import type {
   A1Policy, Alarm, AnalyticsReport, InstanceSummary, Intent, MlmfReport, Model, ModelLifecycle, ModulesStatus, NfDeployment,
   O1Endpoint, OCloudAlarm, Package, PerfReport, RemedialAction,
@@ -154,7 +154,7 @@ function RappSparklines({ instances }: { instances: InstanceSummary[] }) {
   const perf = useQueries({
     queries: instances.map((i) => ({
       queryKey: ["smo", `/rapp-mgmt/instances/${i.instanceId}/performance`, { limit: 30 }],
-      queryFn: () => smo<PerfReport[]>(`/rapp-mgmt/instances/${i.instanceId}/performance`, { query: { limit: 30 } }),
+      queryFn: async () => unwrapPage<PerfReport[]>(await smo<unknown>(`/rapp-mgmt/instances/${i.instanceId}/performance`, { query: { limit: 30 } })),
       refetchInterval: POLL.lists,
     })),
   });

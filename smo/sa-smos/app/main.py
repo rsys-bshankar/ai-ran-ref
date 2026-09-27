@@ -32,6 +32,7 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import AssuranceMonitor, RemedialAction
 
@@ -149,10 +150,11 @@ def _resolve_deployed_nf(r1: R1Client, target_order_id: uuid.UUID | None) -> str
 
 
 @app.get("/monitors")
-def list_assurance_monitors(db: Session = Depends(get_session)):
+def list_assurance_monitors(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """List read over AssuranceMonitor — previously write-only, so the
     thresholds being evaluated were invisible to an operator."""
-    return [_monitor_view(m) for m in db.scalars(select(AssuranceMonitor)).all()]
+    page = paginate(db, select(AssuranceMonitor), limit, offset)
+    return {**page, "items": [_monitor_view(m) for m in page["items"]]}
 
 
 @app.get("/monitors/{monitor_id}")
@@ -164,7 +166,8 @@ def get_assurance_monitor(monitor_id: uuid.UUID, db: Session = Depends(get_sessi
 
 
 @app.get("/remedial-actions")
-def list_remedial_actions(monitor_id: uuid.UUID | None = None, outcome: str | None = None, db: Session = Depends(get_session)):
+def list_remedial_actions(monitor_id: uuid.UUID | None = None, outcome: str | None = None, limit: int = PageLimit,
+                           offset: int = PageOffset, db: Session = Depends(get_session)):
     """Every RemedialAction row, optionally per-monitor or per-outcome —
     `outcome=ESCALATED` is the operator's escalation queue (the GUI
     dashboard's SA SMOS tile)."""
@@ -173,8 +176,9 @@ def list_remedial_actions(monitor_id: uuid.UUID | None = None, outcome: str | No
         stmt = stmt.where(RemedialAction.monitor_id == monitor_id)
     if outcome:
         stmt = stmt.where(RemedialAction.outcome == outcome)
-    return [{"actionId": str(a.action_id), "monitorId": str(a.monitor_id), "actionType": a.action_type,
-             "autoExecuted": a.auto_executed, "outcome": a.outcome} for a in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"actionId": str(a.action_id), "monitorId": str(a.monitor_id), "actionType": a.action_type,
+             "autoExecuted": a.auto_executed, "outcome": a.outcome} for a in page["items"]]}
 
 
 def _monitor_view(m: AssuranceMonitor) -> dict:

@@ -744,7 +744,7 @@ def test_list_type_subscriptions_filters_by_owner(client):
     client.post("/type-subscriptions", json={"notificationDestination": "http://nfo/type-changes", "owner": "nfo"})
 
     resp = client.get("/type-subscriptions", params={"owner": "nfo"})
-    assert [s["owner"] for s in resp.json()] == ["nfo"]
+    assert [s["owner"] for s in resp.json()["items"]] == ["nfo"]
 
 
 def test_register_dme_type_notifies_subscribers(client, monkeypatch):
@@ -821,10 +821,10 @@ def test_list_data_jobs_filters_by_type_and_consumer(client):
     client.post("/data-jobs", json={"dataDeliveryMode": "ONE_TIME", "dmeTypeId": other["registrationId"],
                                     "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-2"})
 
-    assert len(client.get("/data-jobs").json()) == 2
-    by_type = client.get("/data-jobs", params={"dme_type_id": reg["registrationId"]}).json()
+    assert client.get("/data-jobs").json()["total"] == 2
+    by_type = client.get("/data-jobs", params={"dme_type_id": reg["registrationId"]}).json()["items"]
     assert [j["dataJobId"] for j in by_type] == [job["dataJobId"]]
-    assert [j["consumerId"] for j in client.get("/data-jobs", params={"consumer_id": "rapp-2"}).json()] == ["rapp-2"]
+    assert [j["consumerId"] for j in client.get("/data-jobs", params={"consumer_id": "rapp-2"}).json()["items"]] == ["rapp-2"]
 
 
 def test_list_data_offers_filters_by_type(client):
@@ -832,9 +832,9 @@ def test_list_data_offers_filters_by_type(client):
     offer = client.post("/offers", json={"dmeTypeId": reg["registrationId"], "dataDeliveryMode": "CONTINUOUS",
                                           "dataDeliveryMethods": ["PUSH_HTTP"],
                                           "dataOfferTerminationNotificationUri": "http://producer/terminate"}).json()
-    listed = client.get("/offers").json()
+    listed = client.get("/offers").json()["items"]
     assert [o["offerId"] for o in listed] == [offer["offerId"]]
-    assert client.get("/offers", params={"dme_type_id": "00000000-0000-0000-0000-000000000000"}).json() == []
+    assert client.get("/offers", params={"dme_type_id": "00000000-0000-0000-0000-000000000000"}).json()["items"] == []
 
 
 # ---------------------------------------------------------------- Wave 3: source provenance + lifecycle eligibility
@@ -926,7 +926,7 @@ def test_ingest_and_fetch_data_records(client):
     assert ingest.status_code == 201
     assert "recordId" in ingest.json()
 
-    records = client.get(f"/data-jobs/{job['dataJobId']}/records").json()
+    records = client.get(f"/data-jobs/{job['dataJobId']}/records").json()["items"]
     assert len(records) == 1
     assert records[0]["payload"] == {"kpi": 12.5}
     assert records[0]["dataJobId"] == job["dataJobId"]
@@ -948,7 +948,7 @@ def test_fetch_data_records_respects_limit(client):
                                            "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1"}).json()
     for i in range(3):
         client.post(f"/data-jobs/{job['dataJobId']}/records", json={"payload": {"i": i}})
-    assert len(client.get(f"/data-jobs/{job['dataJobId']}/records", params={"limit": 2}).json()) == 2
+    assert len(client.get(f"/data-jobs/{job['dataJobId']}/records", params={"limit": 2}).json()["items"]) == 2
 
 
 # ---------------------------------------------------------------- Wave 3: O1 action mediation
@@ -1021,5 +1021,5 @@ def test_get_unknown_action_is_404(client):
 def test_list_actions_filters_by_managed_element_ref(client, ran_nf_oam):
     client.post("/actions", json={"requestedBy": "rapp-1", "changes": [{"managedElementRef": "me-1"}]})
     client.post("/actions", json={"requestedBy": "rapp-2", "changes": [{"managedElementRef": "me-2"}]})
-    listed = client.get("/actions", params={"managed_element_ref": "me-1"}).json()
+    listed = client.get("/actions", params={"managed_element_ref": "me-1"}).json()["items"]
     assert [a["requestedBy"] for a in listed] == ["rapp-1"]

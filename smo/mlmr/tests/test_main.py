@@ -125,7 +125,7 @@ def test_register_model_rejects_duplicate_type_and_version(client):
     assert resp.status_code == 409
     assert resp.json()["detail"]["title"] == "MODEL_ALREADY_REGISTERED"
 
-    all_models = client.get("/models").json()
+    all_models = client.get("/models").json()["items"]
     assert len(all_models) == 1
 
 
@@ -345,7 +345,7 @@ def test_list_coordination_groups_returns_members(client, db_session_factory):
     model_id_2 = _make_model(db_session_factory, model_type="t2")
     group_id = client.post("/coordination-groups", json={"memberModelIds": [str(model_id_1), str(model_id_2)]}).json()["groupId"]
 
-    groups = client.get("/coordination-groups").json()
+    groups = client.get("/coordination-groups").json()["items"]
     assert [(g["groupId"], g["memberModelIds"]) for g in groups] == [(group_id, [str(model_id_1), str(model_id_2)])]
 
 

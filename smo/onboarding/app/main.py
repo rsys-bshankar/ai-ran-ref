@@ -52,6 +52,7 @@ from smo_shared.errors import framework_error, FrameworkError
 from smo_shared.r1_client import R1Client
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import ApplicationPackage, Artifact, PackageUsageRegistration
 from .statemachine import ONBOARDING_FSM, PackageEvent, PackageState
@@ -260,11 +261,13 @@ def query_onboarding_status(package_id: uuid.UUID, db: Session = Depends(get_ses
 
 
 @app.get("/packages")
-def query_packages(state: str | None = None, db: Session = Depends(get_session)):
+def query_packages(state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                    db: Session = Depends(get_session)):
     stmt = select(ApplicationPackage)
     if state:
         stmt = stmt.where(ApplicationPackage.state == state)
-    return [_package_view(p) for p in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_package_view(p) for p in page["items"]]}
 
 
 @app.post("/packages/{package_id}/deprecate")
@@ -367,18 +370,24 @@ def _package_view(pkg: ApplicationPackage) -> dict:
 
 
 @app.get("/packages/{package_id}/artifacts")
-def list_package_artifacts(package_id: uuid.UUID, db: Session = Depends(get_session)):
+def list_package_artifacts(package_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
+                            db: Session = Depends(get_session)):
     """(GUI pass 2) The artifacts registered during validation (Onboarding LLD section 1)."""
-    return [{"artifactId": str(a.artifact_id), "path": a.path, "accessUrl": a.access_url}
-            for a in db.scalars(select(Artifact).where(Artifact.package_id == package_id)).all()]
+    stmt = select(Artifact).where(Artifact.package_id == package_id)
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"artifactId": str(a.artifact_id), "path": a.path, "accessUrl": a.access_url}
+            for a in page["items"]]}
 
 
 @app.get("/packages/{package_id}/usage")
-def list_package_usage(package_id: uuid.UUID, db: Session = Depends(get_session)):
+def list_package_usage(package_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
+                        db: Session = Depends(get_session)):
     """(GUI pass 2) Usage registrations behind the cascade-delete guard (call flow 06):
     any row still missing stoppedAt blocks deprime and delete, so the operator
     can now see why a delete was refused.
     """
-    return [{"registrationId": str(r.id), "consumerId": r.consumer_id,
+    stmt = select(PackageUsageRegistration).where(PackageUsageRegistration.package_id == package_id)
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"registrationId": str(r.id), "consumerId": r.consumer_id,
              "stoppedAt": r.stopped_at.isoformat() if r.stopped_at else None, "active": r.stopped_at is None}
-            for r in db.scalars(select(PackageUsageRegistration).where(PackageUsageRegistration.package_id == package_id)).all()]
+            for r in page["items"]]}

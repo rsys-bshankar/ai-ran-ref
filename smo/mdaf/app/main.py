@@ -32,6 +32,7 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import MDAFReport, MDASubscription
 
@@ -188,7 +189,8 @@ def unsubscribe_analytics(subscription_id: uuid.UUID, db: Session = Depends(get_
 
 
 @app.get("/subscriptions")
-def list_analytics_subscriptions(analytics_type: str | None = None, requested_by: str | None = None, db: Session = Depends(get_session)):
+def list_analytics_subscriptions(analytics_type: str | None = None, requested_by: str | None = None,
+                                  limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """OPEN_ITEMS.md section 5: no list/query endpoint for active
     subscriptions existed at all — the reference defines this route
     (even though its own implementation of it is a no-op stub; ours
@@ -199,15 +201,18 @@ def list_analytics_subscriptions(analytics_type: str | None = None, requested_by
         stmt = stmt.where(MDASubscription.analytics_type == analytics_type)
     if requested_by:
         stmt = stmt.where(MDASubscription.requested_by == requested_by)
-    return [_subscription_view(s) for s in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_subscription_view(s) for s in page["items"]]}
 
 
 @app.get("/reports")
-def query_analytics_report(analytics_type: str | None = None, db: Session = Depends(get_session)):
+def query_analytics_report(analytics_type: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                            db: Session = Depends(get_session)):
     stmt = select(MDAFReport)
     if analytics_type:
         stmt = stmt.where(MDAFReport.analytics_type == analytics_type)
-    return [{"reportId": str(r.report_id), "analyticsType": r.analytics_type, "output": r.output} for r in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"reportId": str(r.report_id), "analyticsType": r.analytics_type, "output": r.output} for r in page["items"]]}
 
 
 def _subscription_view(s: MDASubscription) -> dict:

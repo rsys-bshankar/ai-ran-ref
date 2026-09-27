@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import MDAFProducer
 
@@ -72,7 +73,8 @@ def register_analytics_producer(producer_id: str, analytics_type: str, dme_input
 
 
 @app.get("/producers")
-def list_analytics_producers(analytics_type: str | None = None, producer_id: str | None = None, db: Session = Depends(get_session)):
+def list_analytics_producers(analytics_type: str | None = None, producer_id: str | None = None, limit: int = PageLimit,
+                              offset: int = PageOffset, db: Session = Depends(get_session)):
     """OPEN_ITEMS.md section 5: no list/query endpoint for registered
     producers existed at all — same gap as MDAF's own subscriptions list.
     """
@@ -81,7 +83,8 @@ def list_analytics_producers(analytics_type: str | None = None, producer_id: str
         stmt = stmt.where(MDAFProducer.analytics_type == analytics_type)
     if producer_id:
         stmt = stmt.where(MDAFProducer.producer_id == producer_id)
-    return [_producer_view(p) for p in db.scalars(stmt).all()]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_producer_view(p) for p in page["items"]]}
 
 
 def _producer_view(p: MDAFProducer) -> dict:

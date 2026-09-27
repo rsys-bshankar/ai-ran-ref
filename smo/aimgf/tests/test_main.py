@@ -58,7 +58,7 @@ class FakeMlmr:
 
     def get(self, path, **kw):
         if path == "/mlmr/coordination-groups":
-            return FakeResponse(200, self.groups)
+            return FakeResponse(200, {"items": self.groups, "total": len(self.groups), "limit": 100, "offset": 0})
         model_id = path.rsplit("/", 1)[-1]
         model = self.models.get(model_id)
         return FakeResponse(200, model) if model is not None else FakeResponse(
@@ -447,7 +447,8 @@ def test_list_validation_jobs_filters_by_model(client, mlmr, db_session_factory)
     job_id = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["validationJobId"]
 
     listed = client.get("/validation-jobs", params={"model_id": str(model_id)}).json()
-    assert [j["validationJobId"] for j in listed] == [job_id]
+    assert [j["validationJobId"] for j in listed["items"]] == [job_id]
+    assert listed["total"] == 1
 
 
 def test_request_emulation_requires_validated_model_and_completes_to_emulated(client, mlmr, db_session_factory):
@@ -471,7 +472,8 @@ def test_list_emulation_jobs_filters_by_model(client, mlmr, db_session_factory):
     job_id = client.post("/emulation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["emulationJobId"]
 
     listed = client.get("/emulation-jobs", params={"model_id": str(model_id)}).json()
-    assert [j["emulationJobId"] for j in listed] == [job_id]
+    assert [j["emulationJobId"] for j in listed["items"]] == [job_id]
+    assert listed["total"] == 1
 
 
 # ---------------------------------------------------------------- ModelLifecycle: advance + governance
@@ -518,7 +520,7 @@ def test_full_governance_pipeline_writes_a_certification_record_per_decision(cli
         assert resp.status_code == 200
         assert resp.json()["modelLifecycleState"] == expected_state
 
-    history = client.get(f"/models/{model_id}/governance-history").json()
+    history = client.get(f"/models/{model_id}/governance-history").json()["items"]
     assert [h["decision"] for h in history] == ["SUBMIT_FOR_APPROVAL", "APPROVE", "CERTIFY", "PROMOTE"]
     assert all(h["decidedBy"] == "operator-1" for h in history)
 
@@ -531,7 +533,7 @@ def test_rollback_demotes_a_promoted_model_and_is_itself_recorded(client, mlmr, 
     assert resp.status_code == 200
     assert resp.json()["modelLifecycleState"] == ModelLifecycleState.CERTIFIED
 
-    history = client.get(f"/models/{model_id}/governance-history").json()
+    history = client.get(f"/models/{model_id}/governance-history").json()["items"]
     assert history[-1] == {
         "certificationRecordId": history[-1]["certificationRecordId"], "modelId": str(model_id),
         "decision": "ROLLBACK", "decidedBy": "operator-1", "rationale": "regression found",
@@ -552,7 +554,7 @@ def test_lifecycle_history_records_every_transition(client, mlmr, db_session_fac
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINING)
     client.post(f"/models/{model_id}/advance", params={"event": "TRAINING_COMPLETE"})
 
-    history = client.get(f"/models/{model_id}/lifecycle-history").json()
+    history = client.get(f"/models/{model_id}/lifecycle-history").json()["items"]
     assert history == [{"fsm": "MODEL", "fromState": "TRAINING", "toState": "TRAINED", "event": "TRAINING_COMPLETE", "occurredAt": history[0]["occurredAt"]}]
 
 
@@ -565,7 +567,7 @@ def test_list_model_lifecycles_returns_every_touched_model(client, mlmr, db_sess
     _set_lifecycle(db_session_factory, model_a, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
     # model_b never touched — absent from the list, same as before any AIMgF interaction
 
-    listed = client.get("/model-lifecycles").json()
+    listed = client.get("/model-lifecycles").json()["items"]
     assert [l["modelId"] for l in listed] == [str(model_a)]
     assert listed[0]["modelLifecycleState"] == ModelLifecycleState.CERTIFIED
 
@@ -679,13 +681,13 @@ def test_list_training_jobs_filters_by_model_and_status(client, mlmr):
     job_a = client.post("/training-jobs", json={"modelId": str(model_a), "producerId": "rapp-1"}).json()["trainingJobId"]
     client.post("/training-jobs", json={"modelId": str(model_b), "producerId": "rapp-1"})
 
-    assert len(client.get("/training-jobs").json()) == 2
-    only_a = client.get("/training-jobs", params={"model_id": str(model_a)}).json()
+    assert client.get("/training-jobs").json()["total"] == 2
+    only_a = client.get("/training-jobs", params={"model_id": str(model_a)}).json()["items"]
     assert [j["trainingJobId"] for j in only_a] == [job_a]
     assert only_a[0]["status"] == "RUNNING" and only_a[0]["modelId"] == str(model_a)
 
     client.delete(f"/training-jobs/{job_a}")
-    assert [j["trainingJobId"] for j in client.get("/training-jobs", params={"status": "CANCELLED"}).json()] == [job_a]
+    assert [j["trainingJobId"] for j in client.get("/training-jobs", params={"status": "CANCELLED"}).json()["items"]] == [job_a]
 
 
 def test_list_inference_jobs_filters_by_model(client, mlmr, db_session_factory):
@@ -693,9 +695,9 @@ def test_list_inference_jobs_filters_by_model(client, mlmr, db_session_factory):
     _set_lifecycle(db_session_factory, model_id, runtime_lifecycle_state=RuntimeLifecycleState.ACTIVE)
     job_id = client.post(f"/models/{model_id}/inference-jobs").json()["inferenceJobId"]
 
-    listed = client.get("/inference-jobs", params={"model_id": str(model_id)}).json()
+    listed = client.get("/inference-jobs", params={"model_id": str(model_id)}).json()["items"]
     assert listed == [{"inferenceJobId": job_id, "modelId": str(model_id), "status": "RUNNING", "notificationDestination": None}]
-    assert client.get("/inference-jobs", params={"status": "COMPLETED"}).json() == []
+    assert client.get("/inference-jobs", params={"status": "COMPLETED"}).json()["items"] == []
 
 
 def test_list_mlmf_subscriptions_and_their_reports_newest_first(client, mlmr):
@@ -706,15 +708,15 @@ def test_list_mlmf_subscriptions_and_their_reports_newest_first(client, mlmr):
     client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.95})
     client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5})
 
-    subs = client.get("/mlmf/subscriptions", params={"model_id": str(model_id)}).json()
+    subs = client.get("/mlmf/subscriptions", params={"model_id": str(model_id)}).json()["items"]
     assert [(s["subscriptionId"], s["guardKpiFloor"]) for s in subs] == [(sub_id, {"accuracy": 0.9})]
 
-    reports = client.get(f"/mlmf/subscriptions/{sub_id}/reports").json()
+    reports = client.get(f"/mlmf/subscriptions/{sub_id}/reports").json()["items"]
     assert [(r["metrics"]["accuracy"], r["breachedFloor"]) for r in reports] == [(0.5, True), (0.95, False)]
 
-    breached = client.get("/mlmf/reports", params={"breached_only": True}).json()
+    breached = client.get("/mlmf/reports", params={"breached_only": True}).json()["items"]
     assert [r["metrics"]["accuracy"] for r in breached] == [0.5]
-    assert len(client.get("/mlmf/reports").json()) == 2
+    assert client.get("/mlmf/reports").json()["total"] == 2
 
 
 def test_list_mlmf_reports_404_on_an_unknown_subscription(client):
@@ -773,13 +775,13 @@ def test_list_feature_groups_returns_registered_groups(client):
 
     resp = client.get("/feature-groups")
     assert resp.status_code == 200
-    names = {g["featureGroupName"] for g in resp.json()["featureGroups"]}
+    names = {g["featureGroupName"] for g in resp.json()["items"]}
     assert names == {"cellCounters", "handoverCounters"}
 
 
 def test_list_feature_groups_returns_empty_list_when_none_registered(client):
     resp = client.get("/feature-groups")
-    assert resp.json() == {"featureGroups": []}
+    assert resp.json() == {"items": [], "total": 0, "limit": 100, "offset": 0}
 
 
 def test_create_feature_group_stores_enable_dme_and_dme_fields(client):

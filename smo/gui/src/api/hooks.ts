@@ -6,12 +6,26 @@ import { ApiError, smo, type Query } from "./client";
 // Polling cadences (ms): fast-moving operational state vs slower inventory.
 export const POLL = { alarms: 5_000, status: 10_000, lists: 15_000 } as const;
 
+/** Wave 3: every list-returning GET across the SMO backend now answers
+ * {items, total, limit, offset} instead of a bare array (real limit/offset
+ * pagination, confirmed as a breaking change rather than left undone). No
+ * endpoint in this build otherwise shapes a response as {items: [...]}, so
+ * unwrapping it here — once, at the fetch boundary — keeps every existing
+ * call site's own T[] type and array usage (.map/.filter/.length) exactly
+ * as it was, instead of touching ~90 call sites across the GUI. */
+export function unwrapPage<T>(data: unknown): T {
+  if (data && typeof data === "object" && Array.isArray((data as { items?: unknown }).items)) {
+    return (data as { items: T }).items;
+  }
+  return data as T;
+}
+
 /** GET one SMO module path through the BFF. Keyed by path + query, so any
  * page reading the same resource shares one cache entry. */
 export function useSmo<T>(path: string | null, query?: Query, opts: Partial<UseQueryOptions<T, ApiError>> = {}) {
   return useQuery<T, ApiError>({
     queryKey: ["smo", path, query ?? {}],
-    queryFn: ({ signal }) => smo<T>(path!, { query, signal }),
+    queryFn: async ({ signal }) => unwrapPage<T>(await smo<unknown>(path!, { query, signal })),
     enabled: path !== null && (opts.enabled ?? true),
     refetchInterval: POLL.lists,
     ...opts,

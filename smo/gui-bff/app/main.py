@@ -41,6 +41,7 @@ from .db import AuditEntry, Database, GuiUser
 from .rbac import MODULES, RULES, Role, User, decide
 from .security import decode_jwt, hash_password, issue_jwt, verify_password
 from .smo_client import R1Gateway, SmoAuthError
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 log = logging.getLogger("smo-gui-bff")
 
@@ -460,17 +461,18 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         return Response(status_code=204)
 
     @app.get("/api/admin/audit")
-    def list_audit(limit: int = 200, username: str | None = None, action: str | None = None,
-                   session: Session = Depends(require_admin)):
-        stmt = select(AuditEntry).order_by(AuditEntry.id.desc()).limit(min(max(limit, 1), 1000))
+    def list_audit(limit: int = PageLimit, offset: int = PageOffset, username: str | None = None, action: str | None = None,
+                    session: Session = Depends(require_admin)):
+        stmt = select(AuditEntry).order_by(AuditEntry.id.desc())
         if username:
             stmt = stmt.where(AuditEntry.username == username)
         if action:
             stmt = stmt.where(AuditEntry.action == action)
         with app.state.db.session() as s:
-            return [{"id": e.id, "at": e.at.isoformat(), "username": e.username, "role": e.role, "action": e.action,
+            page = paginate(s, stmt, limit, offset)
+            return {**page, "items": [{"id": e.id, "at": e.at.isoformat(), "username": e.username, "role": e.role, "action": e.action,
                      "method": e.method, "path": e.path, "statusCode": e.status_code, "detail": e.detail}
-                    for e in s.scalars(stmt).all()]
+                    for e in page["items"]]}
 
     return app
 

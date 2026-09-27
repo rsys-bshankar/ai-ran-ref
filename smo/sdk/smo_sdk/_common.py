@@ -35,7 +35,17 @@ def ensure_ok(resp) -> dict | list | None:
         raise SdkError(resp.status_code, body)
     if resp.status_code == 204 or not resp.content:
         return None
-    return resp.json()
+    body = resp.json()
+    # Wave 3: every list-returning route now answers {items, total, limit,
+    # offset} (real limit/offset pagination) instead of a bare array. No
+    # route in this build otherwise shapes a response as {"items": [...]},
+    # so unwrapping it here — once, at this one shared response boundary
+    # every sdk.* method already goes through — keeps every existing
+    # list_*/query_*/discover_* method's own `-> list[dict]` return type
+    # exactly as it was.
+    if isinstance(body, dict) and isinstance(body.get("items"), list):
+        return body["items"]
+    return body
 
 
 class BaseClient:

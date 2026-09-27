@@ -84,8 +84,8 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
 def test_list_orders_returns_every_persisted_order(client, monkeypatch):
     """GUI pass: only GET /orders/{id} existed."""
     monkeypatch.setattr("app.main.execute_order", lambda r1, steps: [{**s, "status": "COMPLETED", "result": {}} for s in steps])
-    assert client.get("/orders").json() == []
+    assert client.get("/orders").json()["items"] == []
     created = client.post("/orders", json={"scope": "policy-rollout", "steps": [{"stepType": "POLICY", "targetModule": "A1_RELATED"}]}).json()
 
-    listed = client.get("/orders").json()
+    listed = client.get("/orders").json()["items"]
     assert [(o["orderId"], o["scope"], o["steps"]) for o in listed] == [(created["orderId"], "policy-rollout", created["steps"])]

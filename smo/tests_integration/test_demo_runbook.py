@@ -202,7 +202,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     resource_id = provisioned.json()["resourceId"]
 
     pool_resources = mesh["focom"].get("/resource-pools/pool-0/resources")
-    assert any(r["resourceId"] == resource_id for r in pool_resources.json())
+    assert any(r["resourceId"] == resource_id for r in pool_resources.json()["items"])
 
     assert len(notifications) == 1
     assert notifications[0]["notificationEventType"] == "CREATE"
@@ -225,11 +225,11 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     alarm = mesh["focom"].post("/alarms/ingest", params={"resource_ref": "phase1-degenerate-cluster", "severity": "critical"})
     assert alarm.status_code == 200
     alarms = mesh["focom"].get("/alarms")
-    assert any(a["resourceRef"] == "phase1-degenerate-cluster" and a["severity"] == "critical" for a in alarms.json())
+    assert any(a["resourceRef"] == "phase1-degenerate-cluster" and a["severity"] == "critical" for a in alarms.json()["items"])
 
     performance = mesh["focom"].get("/performance")
     assert performance.status_code == 200
-    assert performance.json() == []
+    assert performance.json()["items"] == []
 
     # step 10: Intent Service automation — register an RMIH, create an
     # Intent addressed to it (Wave 3's consumer-side selection —
@@ -460,7 +460,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert governed.json()["modelLifecycleState"] == "PROMOTED"
 
     history = mesh["aimgf"].get(f"/models/{model_id}/governance-history")
-    assert [h["decision"] for h in history.json()] == ["SUBMIT_FOR_APPROVAL", "APPROVE", "CERTIFY", "PROMOTE"]
+    assert [h["decision"] for h in history.json()["items"]] == ["SUBMIT_FOR_APPROVAL", "APPROVE", "CERTIFY", "PROMOTE"]
 
     deployed = mesh["aimgf"].post(f"/models/{model_id}/runtime/deploy")
     assert deployed.status_code == 201
@@ -502,7 +502,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert producer.status_code == 201
 
     producers = mesh["ran-analytics"].get("/producers", params={"analytics_type": "coverage-issue-analysis"})
-    assert any(p["producerId"] == "hello-world-rapp" for p in producers.json())
+    assert any(p["producerId"] == "hello-world-rapp" for p in producers.json()["items"])
 
     subscription = mesh["mdaf"].post("/subscriptions", params={
         "analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos",
@@ -521,7 +521,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert analytics_notifications[0]["output"] == {"issue": "demo-cell-1 coverage hole detected"}
 
     reports = mesh["mdaf"].get("/reports", params={"analytics_type": "coverage-issue-analysis"})
-    assert any(r["reportId"] == report_id for r in reports.json())
+    assert any(r["reportId"] == report_id for r in reports.json()["items"])
 
     unsubscribed = mesh["mdaf"].delete(f"/subscriptions/{subscription_id}")
     assert unsubscribed.status_code == 204
@@ -683,7 +683,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
 
     listed_groups = mesh["aimgf"].get("/feature-groups")
     assert listed_groups.status_code == 200
-    assert any(g["featureGroupId"] == feature_group_id for g in listed_groups.json()["featureGroups"])
+    assert any(g["featureGroupId"] == feature_group_id for g in listed_groups.json()["items"])
 
     duplicate_group = mesh["aimgf"].post("/feature-groups", json=feature_group_body)
     assert duplicate_group.status_code == 409
@@ -731,7 +731,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
 
     running_jobs = mesh["aimgf"].get("/training-jobs", params={"status": "RUNNING"})
     assert running_jobs.status_code == 200
-    matching_jobs = [j for j in running_jobs.json() if j["modelCoordinationGroupId"] == group_id]
+    matching_jobs = [j for j in running_jobs.json()["items"] if j["modelCoordinationGroupId"] == group_id]
     assert len(matching_jobs) == 1
     assert matching_jobs[0]["producerId"] == "sa-smos"
 
@@ -822,7 +822,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
 
     swept_policies = mesh["a1-related"].get("/policies", params={"creator_id": "demo-supervised-rapp"})
     assert swept_policies.status_code == 200
-    assert swept_policies.json() == []  # torn down alongside its own service
+    assert swept_policies.json()["items"] == []  # torn down alongside its own service
 
     # step 23: retire — the real package priming lifecycle (COMMISSIONED-
     # equivalent AVAILABLE -> PRIMING -> PRIMED), a genuine deprime

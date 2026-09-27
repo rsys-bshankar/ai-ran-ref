@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
+from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.timeutil import as_utc
 from smo_shared.openapi_security import apply_r1_gateway_security
 
@@ -103,7 +104,8 @@ def create_policy(body: CreatePolicyRequest, db: Session = Depends(get_session),
 
 
 @app.get("/policies")
-def query_policies(policy_type_id: str | None = None, near_rt_ric_id: str | None = None, creator_id: str | None = None, db: Session = Depends(get_session)):
+def query_policies(policy_type_id: str | None = None, near_rt_ric_id: str | None = None, creator_id: str | None = None,
+                    limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """OPEN_ITEMS.md section 5: no policy list/query-by-filter endpoint
     existed at all — only GET /policies/{id}, despite the mapping-store's
     whole job (section 1.1) being to track these mappings. Filterable by
@@ -118,20 +120,21 @@ def query_policies(policy_type_id: str | None = None, near_rt_ric_id: str | None
         stmt = stmt.where(A1Policy.near_rt_ric_id == near_rt_ric_id)
     if creator_id:
         stmt = stmt.where(A1Policy.creator_id == creator_id)
-    rows = db.scalars(stmt).all()
-    return [_policy_view(r) for r in rows]
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_policy_view(r) for r in page["items"]]}
 
 
 @app.get("/policies/subscriptions")
-def list_policy_status_subscriptions(db: Session = Depends(get_session)):
+def list_policy_status_subscriptions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """(GUI pass 2) Policy-status subscriptions were write-only. Declared before
     /policies/{policy_id}: routes match in declaration order, so the UUID
     route would otherwise capture "subscriptions" and fail validation.
     """
-    return [{"subscriptionId": str(s.subscription_id), "notificationDestination": s.notification_destination,
+    page = paginate(db, select(PolicyStatusSubscription), limit, offset)
+    return {**page, "items": [{"subscriptionId": str(s.subscription_id), "notificationDestination": s.notification_destination,
              "subscriptionScope": s.subscription_scope, "policyIdList": s.policy_id_list,
              "policyTypeIdList": s.policy_type_id_list, "nearRtRicIdList": s.near_rt_ric_id_list}
-            for s in db.scalars(select(PolicyStatusSubscription)).all()]
+            for s in page["items"]]}
 
 
 @app.get("/policies/{policy_id}")
@@ -416,9 +419,10 @@ def _policy_view(p: A1Policy) -> dict:
 
 
 @app.get("/ei-types")
-def list_ei_types(db: Session = Depends(get_session)):
+def list_ei_types(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """(GUI pass 2) Registered EI types and the DME type each one wraps (call flow
     05). register_ei_type had no read side at all.
     """
-    return [{"eiTypeId": t.ei_type_id, "registeredBy": t.registered_by, "eiSourceDmeTypeId": str(t.ei_source_dme_type_id)}
-            for t in db.scalars(select(A1EIType)).all()]
+    page = paginate(db, select(A1EIType), limit, offset)
+    return {**page, "items": [{"eiTypeId": t.ei_type_id, "registeredBy": t.registered_by, "eiSourceDmeTypeId": str(t.ei_source_dme_type_id)}
+            for t in page["items"]]}

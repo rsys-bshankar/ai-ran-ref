@@ -98,7 +98,7 @@ def test_query_intents_filters_by_admin_state(client):
     two = client.post("/intents", json={"expectations": [], "rmioId": "rapp-2", "rmihId": "so-smos"}).json()
     client.patch(f"/intents/{two['intentId']}/admin-state", json={"newState": "DEACTIVATED", "requesterId": "rapp-2"})
 
-    active = client.get("/intents", params={"admin_state": "ACTIVATED"}).json()
+    active = client.get("/intents", params={"admin_state": "ACTIVATED"}).json()["items"]
     assert len(active) == 1
 
 
@@ -220,7 +220,7 @@ def test_delete_intent_removes_it_and_its_reports(client):
 
     resp = client.delete(f"/intents/{intent['intentId']}")
     assert resp.status_code == 204
-    remaining = client.get("/intents").json()
+    remaining = client.get("/intents").json()["items"]
     assert intent["intentId"] not in [i["intentId"] for i in remaining]
 
 
@@ -360,7 +360,7 @@ def test_list_intent_handling_functions(client):
         "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
         "notificationCallbackUri": "http://so-smos:8000/intents", "intentHandlingScope": ["RAN"],
     })
-    listed = client.get("/intent-handling-functions").json()
+    listed = client.get("/intent-handling-functions").json()["items"]
     assert [(f["rmihId"], f["intentHandlingScope"]) for f in listed] == [("so-smos", ["RAN"])]
 
 
@@ -369,6 +369,6 @@ def test_list_intent_reports_filters_by_intent(client):
     intent_id = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "rmihId": "so-smos"}).json()["intentId"]
     client.post("/intent-reports", json={"intentId": intent_id, "fulfilmentReport": {"state": "FULFILLED"}})
 
-    reports = client.get("/intent-reports", params={"intent_id": intent_id}).json()
+    reports = client.get("/intent-reports", params={"intent_id": intent_id}).json()["items"]
     assert [r["fulfilmentReport"] for r in reports] == [{"state": "FULFILLED"}]
     assert reports[0]["lastUpdatedTime"]

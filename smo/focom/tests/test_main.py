@@ -239,8 +239,8 @@ def test_ingested_alarm_is_queryable(client):
     """
     client.post("/alarms/ingest", params={"resource_ref": "host-1", "severity": "critical"})
     resp = client.get("/alarms")
-    assert len(resp.json()) == 1
-    assert resp.json()[0]["resourceRef"] == "host-1"
+    assert len(resp.json()["items"]) == 1
+    assert resp.json()["items"][0]["resourceRef"] == "host-1"
 
 
 def test_performance_metrics_filterable_by_resource(client, db_session):
@@ -255,8 +255,8 @@ def test_performance_metrics_filterable_by_resource(client, db_session):
     session.close()
 
     resp = client.get("/performance", params={"resource_ref": "host-2"})
-    assert len(resp.json()) == 1
-    assert resp.json()[0]["value"] == 0.9
+    assert len(resp.json()["items"]) == 1
+    assert resp.json()["items"][0]["value"] == 0.9
 
 
 def test_performance_metrics_without_filter_returns_all(client, db_session):
@@ -270,12 +270,12 @@ def test_performance_metrics_without_filter_returns_all(client, db_session):
     session.close()
 
     resp = client.get("/performance")
-    assert len(resp.json()) == 2
+    assert len(resp.json()["items"]) == 2
 
 
 def test_query_performance_returns_empty_list_when_none_seeded(client):
     resp = client.get("/performance")
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 def test_query_inventory_defaults_to_every_registered_resource_type(client):
@@ -313,7 +313,7 @@ def test_query_inventory_reflects_the_real_seeded_deployment_manager_row(client,
 
 def test_query_alarms_returns_empty_list_when_none_ingested(client):
     resp = client.get("/alarms")
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 def test_multiple_alarms_are_all_returned(client):
@@ -324,8 +324,8 @@ def test_multiple_alarms_are_all_returned(client):
     client.post("/alarms/ingest", params={"resource_ref": "host-2", "severity": "minor"})
 
     resp = client.get("/alarms")
-    assert len(resp.json()) == 2
-    refs = {a["resourceRef"] for a in resp.json()}
+    assert len(resp.json()["items"]) == 2
+    refs = {a["resourceRef"] for a in resp.json()["items"]}
     assert refs == {"host-1", "host-2"}
 
 
@@ -347,7 +347,7 @@ def test_list_resource_types_returns_seeded_phase1_type(client):
     real, seeded rows, not a hardcoded literal.
     """
     resp = client.get("/resource-types")
-    ids = [t["resourceTypeId"] for t in resp.json()]
+    ids = [t["resourceTypeId"] for t in resp.json()["items"]]
     assert ids == [PHASE1_RESOURCE_TYPE_ID]
 
 
@@ -384,13 +384,13 @@ def test_provision_with_unrecognized_type_auto_registers_it(client):
     client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"})
 
     resp = client.get("/resource-types")
-    ids = {t["resourceTypeId"] for t in resp.json()}
+    ids = {t["resourceTypeId"] for t in resp.json()["items"]}
     assert ids == {PHASE1_RESOURCE_TYPE_ID, "gpu-l40"}
 
 
 def test_list_resource_pools_returns_seeded_phase1_pool(client):
     resp = client.get("/resource-pools")
-    ids = [p["resourcePoolId"] for p in resp.json()]
+    ids = [p["resourcePoolId"] for p in resp.json()["items"]]
     assert ids == [PHASE1_POOL_ID]
 
 
@@ -408,7 +408,7 @@ def test_get_unknown_resource_pool_is_404(client):
 def test_list_pool_resources_is_empty_before_any_provisioning(client):
     resp = client.get(f"/resource-pools/{PHASE1_POOL_ID}/resources")
     assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 def test_list_pool_resources_reflects_provisioned_resource(client):
@@ -419,7 +419,7 @@ def test_list_pool_resources_reflects_provisioned_resource(client):
     provisioned = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()
 
     resp = client.get(f"/resource-pools/{PHASE1_POOL_ID}/resources")
-    resources = resp.json()
+    resources = resp.json()["items"]
     assert len(resources) == 1
     assert resources[0]["resourceId"] == provisioned["resourceId"]
     assert resources[0]["resourceTypeId"] == "gpu-l40"
@@ -435,7 +435,7 @@ def test_provision_resource_persists_global_asset_id_tags_and_groups(client):
     }).json()
 
     resp = client.get(f"/resource-pools/{PHASE1_POOL_ID}/resources")
-    resource = resp.json()[0]
+    resource = resp.json()["items"][0]
     assert resource["resourceId"] == provisioned["resourceId"]
     assert resource["globalAssetId"] == "SN-12345"
     assert resource["tags"] == ["gpu", "edge"]
@@ -444,7 +444,7 @@ def test_provision_resource_persists_global_asset_id_tags_and_groups(client):
 
 def test_provision_resource_without_optional_spec_fields_leaves_them_null(client):
     client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"})
-    resource = client.get(f"/resource-pools/{PHASE1_POOL_ID}/resources").json()[0]
+    resource = client.get(f"/resource-pools/{PHASE1_POOL_ID}/resources").json()["items"][0]
     assert resource["globalAssetId"] is None
     assert resource["tags"] is None
     assert resource["groups"] is None
@@ -455,7 +455,7 @@ def test_deprovisioned_resource_no_longer_listed(client):
     client.delete(f"/resources/{provisioned['resourceId']}")
 
     resp = client.get(f"/resource-pools/{PHASE1_POOL_ID}/resources")
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 def test_list_resources_for_unknown_pool_is_404(client):
@@ -465,7 +465,7 @@ def test_list_resources_for_unknown_pool_is_404(client):
 
 def test_list_deployment_managers_returns_seeded_phase1_manager(client):
     resp = client.get("/deployment-managers")
-    ids = [d["deploymentManagerId"] for d in resp.json()]
+    ids = [d["deploymentManagerId"] for d in resp.json()["items"]]
     assert ids == [PHASE1_DEPLOYMENT_MANAGER_ID]
 
 
@@ -580,5 +580,5 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
 def test_list_inventory_subscriptions(client):
     """GUI pass 2: inventory subscriptions were write-only."""
     sub = client.post("/inventory/subscriptions", json={"callback": "http://consumer/cb", "consumerSubscriptionId": "c-1"}).json()
-    listed = client.get("/inventory/subscriptions").json()
+    listed = client.get("/inventory/subscriptions").json()["items"]
     assert [(s["subscriptionId"], s["consumerSubscriptionId"]) for s in listed] == [(sub["subscriptionId"], "c-1")]
