@@ -128,14 +128,15 @@ not extracting one service from a two-concern module — see
 Policy/Rule/Constraint engine, if ever wanted, is new work for a later
 wave.
 
-This split is the natural moment to also resolve the open architecture
+This split was the natural moment to also resolve the open architecture
 question `SPEC_AUDIT.md` already flagged for Policy Mgmt (as it was
 still named there): TS 28.312's own NRM containment model
 (`IntentHandlingFunction` *contains* `Intent`) implies consumer-side LDN
-selection rather than this build's current producer-side push matching.
-Intent Service's own design (Wave 3) should settle that question
-explicitly rather than carrying the ambiguity
-forward into a new service.
+selection rather than the producer-side push matching this build had.
+**Resolved in Wave 3** — see `docs/ownership/INTENT_SERVICE_OWNERSHIP.md`'s
+own "Wave 3 resolution" section: `CreateIntent` now requires the caller
+to name a specific, already-registered RMIH (`rmihId`), with
+`Intent.rmih_id` a real `ON DELETE CASCADE` foreign key onto it.
 
 ## Responsibility matrix (AIMgF / MLMR / MLLF)
 

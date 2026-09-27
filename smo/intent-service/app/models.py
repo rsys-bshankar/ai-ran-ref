@@ -18,6 +18,11 @@ class Intent(Base):
     intent_priority: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     intent_preemption_capability: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     rmio_id: Mapped[str] = mapped_column(String, nullable=False)
+    # Wave 3 (docs/ownership/INTENT_SERVICE_OWNERSHIP.md's "Open item
+    # carried into Wave 3"): consumer-side RMIH selection — TS28.312's
+    # own NRM containment (IntentHandlingFunction *contains* Intent).
+    # ON DELETE CASCADE matches that containment literally.
+    rmih_id: Mapped[str] = mapped_column(String, ForeignKey("intent_handling_function.rmih_id", ondelete="CASCADE"), nullable=False)
 
 
 class IntentReport(Base):

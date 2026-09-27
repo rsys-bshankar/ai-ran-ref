@@ -231,8 +231,10 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert performance.status_code == 200
     assert performance.json() == []
 
-    # step 10: Intent Service automation — register an RMIH, create a
-    # matching Intent, observe the real dispatch notification, retract.
+    # step 10: Intent Service automation — register an RMIH, create an
+    # Intent addressed to it (Wave 3's consumer-side selection —
+    # docs/ownership/INTENT_SERVICE_OWNERSHIP.md's Wave 3 resolution),
+    # observe the real dispatch notification, retract.
     # Intercepted at the same httpx.post call create_intent makes,
     # same technique as FOCOM's step above.
     intent_notifications = []
@@ -260,7 +262,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
 
     intent = mesh["intent-service"].post("/intents", json={
         "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}],
-        "rmioId": "hello-world-rapp", "intentHandlingScope": "RAN",
+        "rmioId": "hello-world-rapp", "rmihId": "so-smos", "intentHandlingScope": "RAN",
     })
     assert intent.status_code == 201
     intent_id = intent.json()["intentId"]
@@ -272,12 +274,13 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     get_intent = mesh["intent-service"].get(f"/intents/{intent_id}")
     assert get_intent.status_code == 200
     assert get_intent.json()["intentAdminState"] == "ACTIVATED"
+    assert get_intent.json()["rmihId"] == "so-smos"
 
     # A real negative case: a second RMIH with the same capability but a
-    # different declared scope (CN-only) must NOT be notified of a
-    # RAN-scoped Intent, even though its capability matches — proves
-    # intentHandlingScope is a genuine pre-filter (_matching_rmihs), not
-    # decoration.
+    # different declared scope (CN-only) — addressing a RAN-scoped Intent
+    # at it directly is now rejected at creation (RMIH_CAPABILITY_MISMATCH),
+    # not silently un-notified — consumer-side selection means the caller's
+    # own addressing choice is validated, not just filtered around.
     rmih2 = mesh["intent-service"].post("/intent-handling-functions", json={
         "rmihId": "sa-smos", "smeServiceId": "sa-smos-svc",
         "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
@@ -286,16 +289,23 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     })
     assert rmih2.status_code == 201
 
+    rejected = mesh["intent-service"].post("/intents", json={
+        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}],
+        "rmioId": "hello-world-rapp", "rmihId": "sa-smos", "intentHandlingScope": "RAN",
+    })
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"]["title"] == "RMIH_CAPABILITY_MISMATCH"
+    assert sa_smos_notifications == []  # rejected before any dispatch was ever attempted
+
     intent2 = mesh["intent-service"].post("/intents", json={
         "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}],
-        "rmioId": "hello-world-rapp", "intentHandlingScope": "RAN",
+        "rmioId": "hello-world-rapp", "rmihId": "so-smos", "intentHandlingScope": "RAN",
     })
     assert intent2.status_code == 201
     intent2_id = intent2.json()["intentId"]
 
     assert len(intent_notifications) == 2  # so-smos notified again, for this second intent
     assert intent_notifications[1]["intentId"] == intent2_id
-    assert sa_smos_notifications == []  # sa-smos never notified — CN-only scope filtered it out
 
     del_intent = mesh["intent-service"].delete(f"/intents/{intent_id}")
     assert del_intent.status_code == 204

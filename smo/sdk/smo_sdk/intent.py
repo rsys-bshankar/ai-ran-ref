@@ -8,11 +8,18 @@ from ._common import BaseClient, ensure_ok
 
 
 class IntentClient(BaseClient):
-    def create_intent(self, expectations: list[dict], priority: int = 1, rmio_id: str = "",
+    def create_intent(self, expectations: list[dict], rmih_id: str, priority: int = 1, rmio_id: str = "",
                        intent_mgmt_purpose: str = "FULFILMENT_WITHOUT_NEGOTIATION",
                        intent_handling_scope: str | None = None) -> dict:
+        """`rmih_id` (Wave 3, docs/ownership/INTENT_SERVICE_OWNERSHIP.md's
+        Wave 3 resolution): consumer-side selection — the caller names
+        which already-registered IntentHandlingFunction (discovered via
+        `list_intent_handling_functions`) this Intent is addressed to.
+        404 if unknown; 422 (`RMIH_CAPABILITY_MISMATCH`) if that function
+        doesn't actually declare a matching capability/scope.
+        """
         return ensure_ok(self._r1.post("/intent-service/intents", json={
-            "expectations": expectations, "priority": priority, "rmioId": rmio_id,
+            "expectations": expectations, "priority": priority, "rmioId": rmio_id, "rmihId": rmih_id,
             "intentMgmtPurpose": intent_mgmt_purpose, "intentHandlingScope": intent_handling_scope,
         }))
 

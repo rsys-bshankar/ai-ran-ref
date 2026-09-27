@@ -62,7 +62,7 @@ export interface SwmJob { jobId: string; managedElementRef: string; ruInstanceId
 
 // ---- A1 Related / Intent Service
 export interface A1Policy { policyId: string; policyTypeId: string; nearRtRicId: string; policyObject: Record<string, unknown>; enforcementStatus: string }
-export interface Intent { intentId: string; intentAdminState: string; intentPriority: number; rmioId: string; intentMgmtPurpose: string | null }
+export interface Intent { intentId: string; intentAdminState: string; intentPriority: number; rmioId: string; intentMgmtPurpose: string | null; rmihId: string }
 export interface IntentReport { reportId: string; intentId: string; fulfilmentReport: Record<string, unknown> | null; conflictReports: unknown[] | null; lastUpdatedTime: string }
 export interface Rmih { rmihId: string; smeServiceId: string; capabilities: Record<string, unknown>[]; notificationCallbackUri: string; intentHandlingScope: string[] | null }
 

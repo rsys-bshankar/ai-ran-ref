@@ -190,8 +190,9 @@ service name changed, not the code.)*
 a design decision" language for Intent-to-RMIH matching quoted from
 `OPEN_ITEMS.md` section 1 is *stale* — a later pass (documented in the
 "Closed" section) already implemented capability-based push matching
-(`create_intent`/`_matching_rmihs` in `main.py`). The real open question
-this audit answers is whether that implementation is spec-grounded.
+(`create_intent`/`_matching_rmihs` in `main.py`, at the time). The real
+open question this audit answered was whether that implementation was
+spec-grounded — it wasn't fully, and Wave 3 (below) resolved it.
 
 **The spec doesn't validate the mechanism actually built, but it does
 hand back a different, citable answer.** `TS28312_IntentNrm.yaml` is
@@ -201,10 +202,16 @@ matching algorithm defined anywhere. But the NRM containment model
 as a named child) implies the real spec's answer is **consumer-side
 selection by LDN** — the MnS consumer picks and addresses a specific
 already-chosen RMIH when creating an Intent — not the producer-side
-push-after-creation dispatch this build built. That's a real,
-architecturally different, spec-grounded alternative, not just more
-abstraction — worth a design note citing it specifically before
-treating the current mechanism as final.
+push-after-creation dispatch this build had built at the time. **Wave 3
+resolution**: asked rather than guessed, given the real breaking-change
+cost either way — redesigned around consumer-side selection.
+`CreateIntent` now requires a real `rmihId` naming the target RMIH
+directly, validated against its declared capabilities/scope rather than
+matched-and-broadcast across every registered function; see
+`docs/ownership/INTENT_SERVICE_OWNERSHIP.md`'s own "Wave 3 resolution"
+section for the full detail (including the real `ON DELETE CASCADE`
+consequence of adopting the containment model literally). The former
+`_matching_rmihs` multi-candidate scan no longer exists.
 
 Concrete deltas, independent of the architecture question above:
 

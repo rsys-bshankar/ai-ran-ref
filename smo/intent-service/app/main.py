@@ -8,13 +8,23 @@ SMO Design v1.3 section 3.12, extended by Policy Mgmt LLD sections 1-3:
 UpdateIntentAdminState and QueryIntent close operations v1.3 never had
 (intentAdminState existed with nothing to change it), and
 DeregisterIntentHandlingFunction restores register/deregister symmetry.
+
+Wave 3 (docs/ownership/INTENT_SERVICE_OWNERSHIP.md's "Open item carried
+into Wave 3"): CreateIntent now uses consumer-side RMIH selection — the
+caller addresses a specific, already-registered IntentHandlingFunction
+by `rmihId` — matching TS28312_IntentNrm.yaml's own NRM containment
+(IntentHandlingFunction *contains* Intent), replacing the former
+producer-side push that matched and notified every capability-matching
+function after the fact. A real consequence of that containment model:
+DeregisterIntentHandlingFunction now really does end every Intent still
+addressed to it (ON DELETE CASCADE), not just leave a dangling reference.
 """
 
 import uuid
 from typing import Literal
 
 import httpx
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -42,6 +52,15 @@ class CreateIntentRequest(BaseModel):
     expectations: list[dict]
     priority: int = 1
     rmioId: str = ""
+    # Wave 3 (docs/ownership/INTENT_SERVICE_OWNERSHIP.md's "Open item
+    # carried into Wave 3"): consumer-side RMIH selection — the caller
+    # names which already-registered IntentHandlingFunction this Intent
+    # is addressed to, matching TS28312_IntentNrm.yaml's own NRM
+    # containment (IntentHandlingFunction *contains* Intent) instead of
+    # this build's former producer-side push-after-creation matching
+    # across every registered function. Required: an Intent with no
+    # target RMIH has nowhere to be contained, per that same model.
+    rmihId: str
     # SPEC_AUDIT.md items 2-3: TS28312_IntentNrm.yaml's real
     # matching-relevant field is each expectation's own
     # `expectationObject.objectType` (a closed 5-value enum), not a
@@ -61,8 +80,9 @@ class CreateIntentRequest(BaseModel):
     # SPEC_AUDIT.md item 5 (formerly 1): TS28312_IntentNrm.yaml's
     # IntentHandlingScope is a closed 2-value enum (RAN/CN) — not persisted
     # on Intent itself in the real spec either (it's IntentHandlingFunction's
-    # own declared coverage), used here purely as an optional match-time
-    # pre-filter alongside the expectation-object-type match.
+    # own declared coverage). Wave 3: now a create-time validation against
+    # the one named target RMIH's own declared scope, not a pre-filter
+    # across many candidates.
     intentHandlingScope: Literal["RAN", "CN"] | None = None
 
 
@@ -97,35 +117,39 @@ class RegisterRmihRequest(BaseModel):
 
 @app.post("/intents", status_code=201)
 def create_intent(body: CreateIntentRequest, db: Session = Depends(get_session)):
-    """CreateIntent — closes the matching/dispatch gap between this and
-    RegisterIntentHandlingFunction: previously an RMIH was never notified
-    of a new Intent it could fulfil at all.
+    """CreateIntent — Wave 3 (docs/ownership/INTENT_SERVICE_OWNERSHIP.md's
+    "Open item carried into Wave 3"): the caller now addresses a specific,
+    already-registered RMIH by `rmihId` (consumer-side selection,
+    TS28312_IntentNrm.yaml's own NRM containment — IntentHandlingFunction
+    *contains* Intent), replacing the former producer-side push that
+    matched and notified every capability-matching RMIH after the fact.
 
-    SPEC_AUDIT.md items 2-3: matching is now grounded in the real spec's
-    own matching-relevant field — each expectation's
-    `expectationObject.objectType` — read straight out of the
-    already-accepted, already-opaque `expectations` list (no deeper
-    TS 28.312 expectation grammar needed for this one field), rather than
-    an invented top-level `intentType` string with no shared vocabulary
-    with the spec, or `intentMgmtPurpose` (a different, workflow-procedure
-    field). Dispatch is best-effort: a callback failure never blocks
-    CreateIntent itself succeeding.
+    404 if `rmihId` names no registered function at all. If the Intent
+    declares expectation object types and/or a handling scope, the named
+    RMIH must actually cover them (`RMIH_CAPABILITY_MISMATCH`, 422) —
+    addressing an Intent to a handler that can't fulfil it is rejected at
+    creation, not silently accepted. Dispatch to that one RMIH is
+    best-effort: a callback failure never blocks CreateIntent succeeding.
     """
+    fn = db.get(IntentHandlingFunction, body.rmihId)
+    if fn is None:
+        raise HTTPException(status_code=404, detail="no such intent handling function")
+
+    expectation_object_types = _requested_expectation_object_types(body.expectations)
+    _validate_rmih_can_handle(fn, expectation_object_types, body.intentHandlingScope)
+
     intent = Intent(intent_expectations=body.expectations, intent_priority=body.priority, rmio_id=body.rmioId,
-                     intent_mgmt_purpose=body.intentMgmtPurpose)
+                     intent_mgmt_purpose=body.intentMgmtPurpose, rmih_id=body.rmihId)
     db.add(intent)
     db.commit()
 
-    expectation_object_types = _requested_expectation_object_types(body.expectations)
-    if expectation_object_types:
-        for fn in _matching_rmihs(db, expectation_object_types, body.intentHandlingScope):
-            try:
-                httpx.post(fn.notification_callback_uri, json={
-                    "intentId": str(intent.intent_id), "expectationObjectTypes": sorted(expectation_object_types),
-                    "priority": intent.intent_priority, "rmioId": intent.rmio_id,
-                }, timeout=5.0)
-            except httpx.HTTPError:
-                pass
+    try:
+        httpx.post(fn.notification_callback_uri, json={
+            "intentId": str(intent.intent_id), "expectationObjectTypes": sorted(expectation_object_types),
+            "priority": intent.intent_priority, "rmioId": intent.rmio_id,
+        }, timeout=5.0)
+    except httpx.HTTPError:
+        pass
     return {"intentId": str(intent.intent_id)}
 
 
@@ -145,31 +169,45 @@ def _requested_expectation_object_types(expectations: list[dict]) -> set[str]:
     return types
 
 
-def _matching_rmihs(db: Session, expectation_object_types: set[str], scope: str | None = None) -> list[IntentHandlingFunction]:
-    """Matches each registered RMIH's declared
-    `supportedExpectationObjectType` capabilities (TS28312_IntentNrm.yaml's
-    real `IntentHandlingCapability` field) against the Intent's own
-    requested expectation object types, plus SPEC_AUDIT.md item 5's
-    intentHandlingScope pre-filter: an RMIH with a declared scope that
-    doesn't cover the intent's requested scope is skipped before the
-    capability check even runs. An RMIH with no declared scope (None,
-    the pre-existing default — matches anything) is unaffected, and a
-    request with no requested scope skips the filter entirely, so every
-    caller predating that field keeps its exact prior behavior.
+def _validate_rmih_can_handle(fn: IntentHandlingFunction, expectation_object_types: set[str], scope: str | None) -> None:
+    """Wave 3: replaces the former _matching_rmihs (which scanned every
+    registered function) now that the caller names one target directly —
+    this validates that one function actually covers what the Intent is
+    asking for, rather than trusting the caller's addressing blindly.
+
+    Checks TS28312_IntentNrm.yaml's real `IntentHandlingCapability` field
+    (`supportedExpectationObjectType`) against the Intent's own requested
+    expectation object types, plus SPEC_AUDIT.md item 5's intentHandlingScope.
+    An RMIH with no declared scope (None, the pre-existing default —
+    matches anything) is unaffected, and a request with no requested scope
+    skips that half of the check entirely — same permissive shape the
+    former multi-candidate filter already used. An Intent with no
+    expectation object types at all skips the capability check too (there
+    is nothing to validate against).
     """
-    candidates = db.scalars(select(IntentHandlingFunction)).all()
-    if scope is not None:
-        candidates = [fn for fn in candidates if not fn.intent_handling_scope or scope in fn.intent_handling_scope]
-    return [fn for fn in candidates
-            if any(cap.get("supportedExpectationObjectType") in expectation_object_types for cap in fn.intent_handling_capability_list)]
+    if scope is not None and fn.intent_handling_scope and scope not in fn.intent_handling_scope:
+        raise framework_error(FrameworkError.RMIH_CAPABILITY_MISMATCH,
+                               detail=f"{fn.rmih_id} does not cover handling scope {scope!r}")
+    if expectation_object_types:
+        supported = {cap.get("supportedExpectationObjectType") for cap in fn.intent_handling_capability_list}
+        if not expectation_object_types & supported:
+            raise framework_error(FrameworkError.RMIH_CAPABILITY_MISMATCH,
+                                   detail=f"{fn.rmih_id} does not support any of {sorted(expectation_object_types)}")
 
 
 @app.get("/intents/{intent_id}")
 def query_intent(intent_id: uuid.UUID, db: Session = Depends(get_session)):
     """NEW — v1.3 had CreateIntent and subscribe/publish, but no read
     operation at all (Policy Mgmt LLD section 1).
+
+    Wave 3: a real 404 here (rather than crashing) matters more now that
+    `Intent.rmih_id`'s ON DELETE CASCADE means an Intent can legitimately
+    vanish out from under a caller mid-flight, when its addressed RMIH is
+    deregistered.
     """
     intent = db.get(Intent, intent_id)
+    if intent is None:
+        raise HTTPException(status_code=404, detail="no such intent")
     return _intent_view(intent)
 
 
@@ -242,7 +280,8 @@ def deregister_intent_handling_function(rmih_id: str, db: Session = Depends(get_
 
 def _intent_view(i: Intent) -> dict:
     return {"intentId": str(i.intent_id), "intentAdminState": i.intent_admin_state,
-            "intentPriority": i.intent_priority, "rmioId": i.rmio_id, "intentMgmtPurpose": i.intent_mgmt_purpose}
+            "intentPriority": i.intent_priority, "rmioId": i.rmio_id, "intentMgmtPurpose": i.intent_mgmt_purpose,
+            "rmihId": i.rmih_id}
 
 
 @app.get("/intent-handling-functions")

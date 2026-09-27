@@ -255,9 +255,9 @@ export function flow09(handlers: Rmih[], intent: Intent | undefined, reports: In
   return settle([
     step("rmih", "RegisterIntentHandlingFunction (framework-internal only)", "SO/SA SMOS → Intent Service", handlers.length > 0,
       handlers.length ? handlers.map((h) => h.rmihId).join(", ") : undefined),
-    step("create", "CreateIntent(expectations, priority)", "RMIO → Intent Service", !!intent, intent ? `priority ${intent.intentPriority}, RMIO ${intent.rmioId}` : undefined),
-    step("dispatch", "Matching RMIHs notified (expectationObject.objectType)", "Intent Service → RMIH", !!intent && handlers.length > 0 ? true : intent ? "warn" : false,
-      intent && !handlers.length ? "no handler registered to receive it" : undefined),
+    step("create", "CreateIntent(expectations, rmihId)", "RMIO → Intent Service", !!intent, intent ? `priority ${intent.intentPriority}, RMIO ${intent.rmioId}, RMIH ${intent.rmihId}` : undefined),
+    step("dispatch", "Named RMIH notified (consumer-side selection)", "Intent Service → RMIH", !!intent,
+      intent ? `addressed to ${intent.rmihId}` : undefined),
     step("report", "PublishIntentReport(fulfilment, conflicts)", "RMIH → Intent Service", reports.length > 0, reports.length ? `${reports.length} report(s)` : undefined),
     step("admin", "UpdateIntentAdminState (RMIO only)", "RMIO → Intent Service", intent?.intentAdminState === "DEACTIVATED", intent ? `state ${intent.intentAdminState}` : undefined),
   ]);

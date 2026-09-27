@@ -522,13 +522,16 @@ The route itself, and its filter, are real and already unit-tested
 stubbed, there is simply nothing to collect from in a docker-run-based
 Phase 1.
 
-## 10. Intent Service automation (optional) — register, dispatch, retract
+## 10. Intent Service automation (optional) — register, address, dispatch, retract
 
 Independent of the sample rApp instance above — this shows Intent
-Service's real Intent-to-RMIH dispatch mechanism firing: an SMO-internal RAN
-Management Intent Handler (RMIH) declares what it can fulfil, an rApp
-expresses an Intent, and Intent Service matches and notifies the right RMIH
-automatically.
+Service's real Intent-to-RMIH dispatch mechanism firing, Wave 3's
+consumer-side-selection shape (`docs/ownership/INTENT_SERVICE_OWNERSHIP.md`):
+an SMO-internal RAN Management Intent Handler (RMIH) declares what it can
+fulfil, and an rApp addresses its Intent directly at one already-registered
+RMIH by `rmihId` — matching `TS28312_IntentNrm.yaml`'s own NRM containment
+(`IntentHandlingFunction` *contains* `Intent`) — rather than the platform
+broadcasting to every capability-matching RMIH after the fact.
 
 Register an RMIH. Per D-SEC-POLICY-1, only an SMO-internal module may
 hold an `rmihId` — an rApp UUID is rejected — so this uses `so-smos`,
@@ -547,28 +550,30 @@ print(r.status_code, r.json())
 "
 ```
 
-Create an Intent whose `expectationObject.objectType` matches that
-RMIH's declared capability (`TS28312_IntentNrm.yaml`'s own field — not
-an invented top-level type string):
+Create an Intent addressed directly at `so-smos` (`rmihId`), whose
+`expectationObject.objectType` matches that RMIH's declared capability
+(`TS28312_IntentNrm.yaml`'s own field — not an invented top-level type
+string):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://intent-service:8000/intents', json={
     'expectations': [{'expectationObject': {'objectType': 'RAN_SUBNETWORK'}}],
-    'rmioId': 'hello-world-rapp', 'intentHandlingScope': 'RAN',
+    'rmioId': 'hello-world-rapp', 'rmihId': 'so-smos', 'intentHandlingScope': 'RAN',
 })
 print(r.status_code, r.json())
 "
 ```
 
-`CreateIntent` matched the Intent's requested `RAN_SUBNETWORK` object
-type against every registered RMIH's declared capabilities (pre-filtered
-by `intentHandlingScope`) and dispatched a real notification to
-`so-smos`'s own callback — `so-smos:8000/intents/notify` has no route
-that accepts it yet (dispatch is deliberately best-effort, same pattern
-as FOCOM's inventory notifications above), so watch `intent-service`'s own
-logs for the attempted delivery. `tests_integration/test_demo_runbook.py`
+`CreateIntent` validated that the named `so-smos` actually declares a
+matching capability and covers the requested `intentHandlingScope`
+(422 `RMIH_CAPABILITY_MISMATCH` otherwise — see the negative case
+below), then dispatched a real notification to its own callback —
+`so-smos:8000/intents/notify` has no route that accepts it yet
+(dispatch is deliberately best-effort, same pattern as FOCOM's
+inventory notifications above), so watch `intent-service`'s own logs
+for the attempted delivery. `tests_integration/test_demo_runbook.py`
 proves the real dispatch fires with the correct `intentId`/
 `expectationObjectTypes` payload, by intercepting the exact `httpx.post`
 call `create_intent` makes.
@@ -583,10 +588,10 @@ print(r.status_code, r.json())
 "
 ```
 
-**A real negative case** — `intentHandlingScope` is a genuine pre-filter
-(`_matching_rmihs`), not decoration: register a second RMIH with the
-*same* declared capability (`RAN_SUBNETWORK`) but a *different*
-declared scope (`CN`-only):
+**A real negative case** — `intentHandlingScope` is validated against
+the one named target at creation time, not decoration: register a
+second RMIH with the *same* declared capability (`RAN_SUBNETWORK`) but
+a *different* declared scope (`CN`-only):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -601,29 +606,44 @@ print(r.status_code, r.json())
 "
 ```
 
-Create a second, `RAN`-scoped Intent with the identical
-`RAN_SUBNETWORK` expectation object type both RMIHs declare support
-for:
+Address a `RAN`-scoped Intent directly at `sa-smos` — the identical
+`RAN_SUBNETWORK` expectation object type it declares support for, but
+the wrong scope:
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://intent-service:8000/intents', json={
     'expectations': [{'expectationObject': {'objectType': 'RAN_SUBNETWORK'}}],
-    'rmioId': 'hello-world-rapp', 'intentHandlingScope': 'RAN',
+    'rmioId': 'hello-world-rapp', 'rmihId': 'sa-smos', 'intentHandlingScope': 'RAN',
 })
 print(r.status_code, r.json())
 "
 ```
 
-Only `so-smos` (declared `RAN` scope) is dispatched a notification —
+This is rejected outright — `422 RMIH_CAPABILITY_MISMATCH` — before any
+Intent row is even created and before any dispatch is ever attempted:
 `sa-smos`'s matching *capability* is correctly never enough on its own,
-because its declared `CN`-only scope fails the pre-filter before the
-capability check ever runs. Watch `intent-service`'s own logs: exactly one
-delivery attempt, to `so-smos:8000/intents/notify`, never to
-`sa-smos:8000/intents/notify`. `tests_integration/test_demo_runbook.py`
-asserts this precisely — one notification, not two, and to the right
-RMIH.
+because its declared `CN`-only scope fails the check. Create a second,
+real Intent addressed at `so-smos` instead to see the successful path
+again:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+r = httpx.post('http://intent-service:8000/intents', json={
+    'expectations': [{'expectationObject': {'objectType': 'RAN_SUBNETWORK'}}],
+    'rmioId': 'hello-world-rapp', 'rmihId': 'so-smos', 'intentHandlingScope': 'RAN',
+})
+print(r.status_code, r.json())
+"
+```
+
+Watch `intent-service`'s own logs: exactly one further delivery
+attempt, to `so-smos:8000/intents/notify`, never to
+`sa-smos:8000/intents/notify` (it was rejected before dispatch, not
+silently un-notified). `tests_integration/test_demo_runbook.py` asserts
+this precisely.
 
 Retract both Intents, then deregister both RMIHs — symmetric teardown,
 same pattern as FOCOM's provision/deprovision above:

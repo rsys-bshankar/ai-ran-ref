@@ -1,6 +1,12 @@
 """Tests for Intent Service (formerly Policy Management & Info SMOS —
 see app/main.py's own module docstring; Policy Mgmt LLD sections 1, 3).
 Run with: pytest smo/intent-service/tests -q
+
+Wave 3 (docs/ownership/INTENT_SERVICE_OWNERSHIP.md's "Open item carried
+into Wave 3"): CreateIntent now requires consumer-side RMIH selection —
+every test below registers a real IntentHandlingFunction first and names
+it via `rmihId`, replacing the former multi-candidate capability-match
+tests with single-target validation ones.
 """
 
 import pytest
@@ -17,7 +23,7 @@ from app.models import Intent, IntentHandlingFunction, IntentReport
 @pytest.fixture
 def client():
     engine = make_test_engine()
-    Base.metadata.create_all(engine, tables=[Intent.__table__, IntentReport.__table__, IntentHandlingFunction.__table__])
+    Base.metadata.create_all(engine, tables=[IntentHandlingFunction.__table__, Intent.__table__, IntentReport.__table__])
     TestSession = sessionmaker(bind=engine)
 
     def override_get_session():
@@ -32,18 +38,51 @@ def client():
     app.dependency_overrides.clear()
 
 
+def _register_rmih(client, rmih_id="so-smos", capabilities=None, scope=None, callback=None):
+    body = {
+        "rmihId": rmih_id, "smeServiceId": f"svc-{rmih_id}",
+        "capabilities": capabilities if capabilities is not None else [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
+        "notificationCallbackUri": callback or f"http://{rmih_id}:8000/intents/notify",
+    }
+    if scope is not None:
+        body["intentHandlingScope"] = scope
+    resp = client.post("/intent-handling-functions", json=body)
+    assert resp.status_code == 201, resp.text
+    return rmih_id
+
+
 def test_create_and_query_intent(client):
-    created = client.post("/intents", json={"expectations": [{"target": "latency"}], "priority": 5, "rmioId": "rapp-1"}).json()
+    _register_rmih(client)
+    created = client.post("/intents", json={"expectations": [{"target": "latency"}], "priority": 5, "rmioId": "rapp-1", "rmihId": "so-smos"}).json()
     fetched = client.get(f"/intents/{created['intentId']}").json()
     assert fetched["intentPriority"] == 5
     assert fetched["intentAdminState"] == "ACTIVATED"
+    assert fetched["rmihId"] == "so-smos"
+
+
+def test_create_intent_for_unknown_rmih_is_404(client):
+    resp = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "rmihId": "no-such-rmih"})
+    assert resp.status_code == 404
+
+
+def test_query_unknown_intent_is_404(client):
+    """A real gap this Wave 3 slice's own CASCADE surfaces directly: an
+    Intent can now legitimately vanish out from under a caller (its
+    addressed RMIH was deregistered), so GET must answer 404 rather than
+    crash on the now-missing row.
+    """
+    import uuid as uuid_module
+
+    resp = client.get(f"/intents/{uuid_module.uuid4()}")
+    assert resp.status_code == 404
 
 
 def test_update_admin_state_only_allowed_by_creator(client):
     """Policy Mgmt LLD section 1: closes v1.3's gap where
     intentAdminState had no operation transitioning it — RMIO-only.
     """
-    created = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1"}).json()
+    _register_rmih(client)
+    created = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "rmihId": "so-smos"}).json()
 
     denied = client.patch(f"/intents/{created['intentId']}/admin-state", json={"newState": "DEACTIVATED", "requesterId": "rapp-2"})
     assert denied.status_code == 409
@@ -54,8 +93,9 @@ def test_update_admin_state_only_allowed_by_creator(client):
 
 
 def test_query_intents_filters_by_admin_state(client):
-    client.post("/intents", json={"expectations": [], "rmioId": "rapp-1"})
-    two = client.post("/intents", json={"expectations": [], "rmioId": "rapp-2"}).json()
+    _register_rmih(client)
+    client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "rmihId": "so-smos"})
+    two = client.post("/intents", json={"expectations": [], "rmioId": "rapp-2", "rmihId": "so-smos"}).json()
     client.patch(f"/intents/{two['intentId']}/admin-state", json={"newState": "DEACTIVATED", "requesterId": "rapp-2"})
 
     active = client.get("/intents", params={"admin_state": "ACTIVATED"}).json()
@@ -83,11 +123,28 @@ def test_register_intent_handling_function_accepts_framework_internal_caller(cli
 
 
 def test_deregister_intent_handling_function_symmetric_with_register(client):
-    client.post("/intent-handling-functions", json={
-        "rmihId": "sa-smos", "smeServiceId": "svc-2", "capabilities": [{}],
-        "notificationCallbackUri": "http://sa-smos:8000/intents/notify",
-    })
+    _register_rmih(client, "sa-smos")
     resp = client.delete("/intent-handling-functions/sa-smos")
+    assert resp.status_code == 204
+
+
+def test_deregister_intent_handling_function_of_an_intent_still_succeeds(client):
+    """Wave 3: TS28312_IntentNrm.yaml's own NRM containment
+    (IntentHandlingFunction *contains* Intent) means the migration's real
+    ON DELETE CASCADE now ends every Intent still addressed to a
+    deregistered RMIH — same house pattern as MLMR's own
+    deregister_model cascade. SQLite doesn't enforce FK constraints by
+    default (no PRAGMA foreign_keys=ON in smo_shared/testing.py), so this
+    module's own unit-test DB can't exercise the cascade firing at all —
+    the same honest, already-established carve-out this codebase uses
+    for MLMR's identical cascade. This test only proves the deregister
+    call itself doesn't error under SQLite (no cascade there to trip
+    over); the real cascade is verified separately against live Postgres.
+    """
+    _register_rmih(client, "so-smos")
+    client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "rmihId": "so-smos"})
+
+    resp = client.delete("/intent-handling-functions/so-smos")
     assert resp.status_code == 204
 
 
@@ -110,30 +167,28 @@ def test_register_intent_handling_function_persists_and_rejects_invalid_scope(cl
     assert invalid.status_code == 422
 
 
-def test_create_intent_scope_pre_filters_matching_rmihs(client, monkeypatch):
-    """SPEC_AUDIT.md item 5: intentHandlingScope was previously never
-    read at match time either — an RMIH declaring RAN-only scope must
-    not be dispatched a CN-scoped Intent even if its declared
-    supportedExpectationObjectType matches.
+def test_create_intent_rejects_when_named_rmih_scope_does_not_cover_request(client):
+    """Wave 3: the scope check now validates the ONE named target,
+    replacing the former multi-candidate pre-filter — addressing a
+    CN-scoped Intent at an RMIH declared RAN-only is rejected at
+    creation, not silently accepted.
     """
-    calls = []
-    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
-
-    client.post("/intent-handling-functions", json={
-        "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
-        "notificationCallbackUri": "http://so-smos:8000/intents/notify", "intentHandlingScope": ["RAN"],
+    _register_rmih(client, "so-smos", scope=["RAN"])
+    resp = client.post("/intents", json={
+        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}], "rmioId": "rapp-1",
+        "rmihId": "so-smos", "intentHandlingScope": "CN",
     })
-    client.post("/intent-handling-functions", json={
-        "rmihId": "sa-smos", "smeServiceId": "svc-2", "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
-        "notificationCallbackUri": "http://sa-smos:8000/intents/notify", "intentHandlingScope": ["CN"],
-    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "RMIH_CAPABILITY_MISMATCH"
 
-    client.post("/intents", json={
-        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}], "rmioId": "rapp-1", "intentHandlingScope": "CN",
-    })
 
-    assert len(calls) == 1
-    assert calls[0][0] == "http://sa-smos:8000/intents/notify"
+def test_create_intent_accepts_when_named_rmih_scope_covers_request(client):
+    _register_rmih(client, "so-smos", scope=["RAN"])
+    resp = client.post("/intents", json={
+        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}], "rmioId": "rapp-1",
+        "rmihId": "so-smos", "intentHandlingScope": "RAN",
+    })
+    assert resp.status_code == 201
 
 
 def test_create_intent_scope_matches_an_rmih_with_no_declared_scope(client, monkeypatch):
@@ -144,13 +199,12 @@ def test_create_intent_scope_matches_an_rmih_with_no_declared_scope(client, monk
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
-    client.post("/intent-handling-functions", json={
-        "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
-        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
+    _register_rmih(client, "so-smos")
+    resp = client.post("/intents", json={
+        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}], "rmioId": "rapp-1",
+        "rmihId": "so-smos", "intentHandlingScope": "CN",
     })
-    client.post("/intents", json={
-        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}], "rmioId": "rapp-1", "intentHandlingScope": "CN",
-    })
+    assert resp.status_code == 201
     assert len(calls) == 1
 
 
@@ -160,7 +214,8 @@ def test_delete_intent_removes_it_and_its_reports(client):
     to IntentReport the same way this build's other owned-child deletes
     already do (rapp_instance, aiml_model, ...).
     """
-    intent = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1"}).json()
+    _register_rmih(client)
+    intent = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "rmihId": "so-smos"}).json()
     client.post("/intent-reports", json={"intentId": intent["intentId"], "fulfilmentReport": {"met": True}})
 
     resp = client.delete(f"/intents/{intent['intentId']}")
@@ -175,78 +230,79 @@ def test_delete_intent_is_idempotent_for_an_unknown_id(client):
 
 
 def test_publish_intent_report(client):
-    intent = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1"}).json()
+    _register_rmih(client)
+    intent = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "rmihId": "so-smos"}).json()
     resp = client.post("/intent-reports", json={"intentId": intent["intentId"], "fulfilmentReport": {"met": True}})
     assert resp.status_code == 201
 
 
-def test_create_intent_dispatches_to_matching_rmih(client, monkeypatch):
-    """SPEC_AUDIT.md items 2-3: CreateIntent now notifies any RMIH whose
-    intent_handling_capability_list declares a matching
-    supportedExpectationObjectType (TS28312_IntentNrm.yaml's real
-    IntentHandlingCapability field), read from the Intent's own
-    expectations[].expectationObject.objectType — not an invented
-    top-level intentType string with no shared spec vocabulary.
+def test_create_intent_dispatches_to_the_named_rmih(client, monkeypatch):
+    """Wave 3: CreateIntent now notifies exactly the one named RMIH —
+    replacing the former broadcast-to-every-capability-match shape.
     """
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
-    client.post("/intent-handling-functions", json={
-        "rmihId": "so-smos", "smeServiceId": "svc-1",
-        "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
-        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
-    })
-    client.post("/intent-handling-functions", json={
-        "rmihId": "sa-smos", "smeServiceId": "svc-2",
-        "capabilities": [{"supportedExpectationObjectType": "5GC_SUBNETWORK"}],
-        "notificationCallbackUri": "http://sa-smos:8000/intents/notify",
-    })
+    _register_rmih(client, "so-smos", capabilities=[{"supportedExpectationObjectType": "RAN_SUBNETWORK"}])
+    _register_rmih(client, "sa-smos", capabilities=[{"supportedExpectationObjectType": "5GC_SUBNETWORK"}])
 
     resp = client.post("/intents", json={
-        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}], "rmioId": "rapp-1",
+        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}], "rmioId": "rapp-1", "rmihId": "so-smos",
     })
     intent_id = resp.json()["intentId"]
 
-    assert len(calls) == 1  # only the matching RMIH (so-smos) was notified, not sa-smos
+    assert len(calls) == 1  # only the named RMIH (so-smos) was notified, not sa-smos
     assert calls[0][0] == "http://so-smos:8000/intents/notify"
     assert calls[0][1]["intentId"] == intent_id
     assert calls[0][1]["expectationObjectTypes"] == ["RAN_SUBNETWORK"]
 
 
+def test_create_intent_rejects_a_capability_mismatch(client):
+    """Wave 3: addressing an Intent at an RMIH that doesn't declare a
+    matching supportedExpectationObjectType is now rejected at creation
+    — the former shape simply never dispatched to it, silently.
+    """
+    _register_rmih(client, "sa-smos", capabilities=[{"supportedExpectationObjectType": "5GC_SUBNETWORK"}])
+    resp = client.post("/intents", json={
+        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}], "rmioId": "rapp-1", "rmihId": "sa-smos",
+    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "RMIH_CAPABILITY_MISMATCH"
+
+
 def test_create_intent_matches_across_multiple_expectations_in_one_intent(client, monkeypatch):
     """A single Intent can carry several expectations, each with its own
-    expectationObject.objectType — an RMIH matching any one of them
-    should be notified.
+    expectationObject.objectType — the named RMIH matching any one of
+    them is enough.
     """
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
-    client.post("/intent-handling-functions", json={
-        "rmihId": "so-smos", "smeServiceId": "svc-1",
-        "capabilities": [{"supportedExpectationObjectType": "EDGE_SERVICE_SUPPORT"}],
-        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
-    })
-    client.post("/intents", json={
+    _register_rmih(client, "so-smos", capabilities=[{"supportedExpectationObjectType": "EDGE_SERVICE_SUPPORT"}])
+    resp = client.post("/intents", json={
         "expectations": [
             {"expectationObject": {"objectType": "RAN_SUBNETWORK"}},
             {"expectationObject": {"objectType": "EDGE_SERVICE_SUPPORT"}},
         ],
-        "rmioId": "rapp-1",
+        "rmioId": "rapp-1", "rmihId": "so-smos",
     })
+    assert resp.status_code == 201
     assert len(calls) == 1
     assert calls[0][1]["expectationObjectTypes"] == ["EDGE_SERVICE_SUPPORT", "RAN_SUBNETWORK"]
 
 
-def test_create_intent_without_expectation_object_type_dispatches_to_no_one(client, monkeypatch):
+def test_create_intent_without_expectation_object_type_still_dispatches_to_the_named_rmih(client, monkeypatch):
+    """No expectation object types means the capability check is skipped
+    entirely (nothing to validate against) — the named RMIH is still the
+    one addressed, unconditionally.
+    """
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
-    client.post("/intent-handling-functions", json={
-        "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
-        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
-    })
-    client.post("/intents", json={"expectations": [], "rmioId": "rapp-1"})
-    assert calls == []
+    _register_rmih(client, "so-smos")
+    resp = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "rmihId": "so-smos"})
+    assert resp.status_code == 201
+    assert len(calls) == 1
 
 
 def test_create_intent_succeeds_even_if_rmih_callback_is_unreachable(client, monkeypatch):
@@ -260,12 +316,9 @@ def test_create_intent_succeeds_even_if_rmih_callback_is_unreachable(client, mon
 
     monkeypatch.setattr("app.main.httpx.post", raise_error)
 
-    client.post("/intent-handling-functions", json={
-        "rmihId": "so-smos", "smeServiceId": "svc-1", "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
-        "notificationCallbackUri": "http://so-smos:8000/intents/notify",
-    })
+    _register_rmih(client, "so-smos")
     resp = client.post("/intents", json={
-        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}], "rmioId": "rapp-1",
+        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}], "rmioId": "rapp-1", "rmihId": "so-smos",
     })
     assert resp.status_code == 201
 
@@ -276,19 +329,21 @@ def test_create_intent_stores_and_returns_intent_mgmt_purpose(client):
     with the (now-removed) invented matching field. Defaults to the
     spec's own default when not given.
     """
-    created = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1"}).json()
+    _register_rmih(client)
+    created = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "rmihId": "so-smos"}).json()
     default = client.get(f"/intents/{created['intentId']}").json()
     assert default["intentMgmtPurpose"] == "FULFILMENT_WITHOUT_NEGOTIATION"
 
     created = client.post("/intents", json={
-        "expectations": [], "rmioId": "rapp-1", "intentMgmtPurpose": "FEASIBILITYCHECK",
+        "expectations": [], "rmioId": "rapp-1", "rmihId": "so-smos", "intentMgmtPurpose": "FEASIBILITYCHECK",
     }).json()
     explicit = client.get(f"/intents/{created['intentId']}").json()
     assert explicit["intentMgmtPurpose"] == "FEASIBILITYCHECK"
 
 
 def test_create_intent_rejects_an_invalid_intent_mgmt_purpose(client):
-    resp = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "intentMgmtPurpose": "NOT_A_REAL_PURPOSE"})
+    _register_rmih(client)
+    resp = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "rmihId": "so-smos", "intentMgmtPurpose": "NOT_A_REAL_PURPOSE"})
     assert resp.status_code == 422
 
 
@@ -310,7 +365,8 @@ def test_list_intent_handling_functions(client):
 
 
 def test_list_intent_reports_filters_by_intent(client):
-    intent_id = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1"}).json()["intentId"]
+    _register_rmih(client)
+    intent_id = client.post("/intents", json={"expectations": [], "rmioId": "rapp-1", "rmihId": "so-smos"}).json()["intentId"]
     client.post("/intent-reports", json={"intentId": intent_id, "fulfilmentReport": {"state": "FULFILLED"}})
 
     reports = client.get("/intent-reports", params={"intent_id": intent_id}).json()
