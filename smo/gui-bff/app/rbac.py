@@ -178,6 +178,15 @@ RULES: list[Rule] = [
     _rule("POST", "/dme/offers", A),
     _rule("POST", "/dme/offers/{id}/notify", A),
     _rule("DELETE", "/dme/offers/{id}", A),
+    # Wave 3 (docs/ownership/DME_OWNERSHIP.md): ingesting a real data
+    # payload is a producer-side operation, same tier as production-
+    # capabilities/offers above. Mediating an O1 action is consumer-side
+    # (an rApp's AI/ML decision) — operator, mirroring ran-nf-oam's own
+    # POST /config-jobs identity-pinning above, since this route forwards
+    # to exactly that one.
+    _rule("POST", "/dme/data-jobs/{id}/records", A),
+    _rule("POST", "/dme/actions", O,
+          json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
 
     # --- SME: registry administration is admin; event subscriptions operator.
     # Invoker onboarding returns a one-time secret, so it's admin-only and

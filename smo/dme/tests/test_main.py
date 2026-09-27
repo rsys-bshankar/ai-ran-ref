@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from smo_shared.db import Base, get_session
 
 from app.main import app
-from app.models import DataJob, DataOffer, DMEDeliverySchema, DMEType, DMETypeSubscription
+from app.models import DataJob, DataOffer, DataRecord, DmeActionRecord, DMEDeliverySchema, DMEType, DMETypeSubscription
 
 
 class FakeHealthResponse:
@@ -22,7 +22,8 @@ class FakeHealthResponse:
 @pytest.fixture
 def client():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[DMEType.__table__, DMEDeliverySchema.__table__, DataJob.__table__, DataOffer.__table__, DMETypeSubscription.__table__])
+    Base.metadata.create_all(engine, tables=[DMEType.__table__, DMEDeliverySchema.__table__, DataJob.__table__, DataOffer.__table__,
+                                              DMETypeSubscription.__table__, DataRecord.__table__, DmeActionRecord.__table__])
     TestSession = sessionmaker(bind=engine)
 
     def override_get_session():
@@ -834,3 +835,191 @@ def test_list_data_offers_filters_by_type(client):
     listed = client.get("/offers").json()
     assert [o["offerId"] for o in listed] == [offer["offerId"]]
     assert client.get("/offers", params={"dme_type_id": "00000000-0000-0000-0000-000000000000"}).json() == []
+
+
+# ---------------------------------------------------------------- Wave 3: source provenance + lifecycle eligibility
+
+def test_register_dme_type_rejects_unknown_source_domain(client):
+    resp = client.post("/production-capabilities", json=register_type_body(sourceDomain="SOMEWHERE_ELSE"))
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
+
+
+def test_register_dme_type_round_trips_source_provenance(client):
+    reg = client.post("/production-capabilities", json=register_type_body(
+        sourceDomain="DIGITAL_TWIN", sourceContext={"vendor": "acme", "instance": "dt-1"},
+    )).json()
+    view = client.get("/dme-types").json()[0]
+    assert view["dmeTypeId"] == reg["registrationId"]
+    assert view["sourceDomain"] == "DIGITAL_TWIN"
+    assert view["sourceContext"] == {"vendor": "acme", "instance": "dt-1"}
+
+
+def test_data_job_rejects_unknown_lifecycle_stage(client):
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    resp = client.post("/data-jobs", json={
+        "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1", "lifecycleStage": "REHEARSAL",
+    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
+
+
+def test_data_job_rejects_digital_twin_source_for_inference(client):
+    reg = client.post("/production-capabilities", json=register_type_body(sourceDomain="DIGITAL_TWIN")).json()
+    resp = client.post("/data-jobs", json={
+        "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1", "lifecycleStage": "INFERENCE",
+    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE"
+
+
+def test_data_job_accepts_digital_twin_source_for_training_and_emulation(client):
+    reg = client.post("/production-capabilities", json=register_type_body(sourceDomain="DIGITAL_TWIN")).json()
+    for stage in ("TRAINING", "EMULATION"):
+        resp = client.post("/data-jobs", json={
+            "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
+            "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1", "lifecycleStage": stage,
+        })
+        assert resp.status_code == 202, stage
+
+
+def test_data_job_accepts_live_ran_source_for_inference(client):
+    reg = client.post("/production-capabilities", json=register_type_body(sourceDomain="LIVE_RAN")).json()
+    resp = client.post("/data-jobs", json={
+        "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1", "lifecycleStage": "INFERENCE",
+    })
+    assert resp.status_code == 202
+
+
+def test_data_job_unaffected_by_eligibility_check_for_a_type_with_no_declared_source_domain(client):
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    resp = client.post("/data-jobs", json={
+        "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1", "lifecycleStage": "INFERENCE",
+    })
+    assert resp.status_code == 202
+
+
+def test_update_data_job_also_enforces_digital_twin_inference_eligibility(client):
+    reg = client.post("/production-capabilities", json=register_type_body(sourceDomain="DIGITAL_TWIN")).json()
+    job = client.post("/data-jobs", json={"dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
+                                           "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+                                           "lifecycleStage": "TRAINING"}).json()
+    resp = client.put(f"/data-jobs/{job['dataJobId']}", json={
+        "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1", "lifecycleStage": "INFERENCE",
+    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE"
+
+
+# ---------------------------------------------------------------- Wave 3: real data-plane store
+
+def test_ingest_and_fetch_data_records(client):
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    job = client.post("/data-jobs", json={"dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+                                           "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1"}).json()
+    ingest = client.post(f"/data-jobs/{job['dataJobId']}/records", json={"payload": {"kpi": 12.5}})
+    assert ingest.status_code == 201
+    assert "recordId" in ingest.json()
+
+    records = client.get(f"/data-jobs/{job['dataJobId']}/records").json()
+    assert len(records) == 1
+    assert records[0]["payload"] == {"kpi": 12.5}
+    assert records[0]["dataJobId"] == job["dataJobId"]
+
+
+def test_ingest_data_record_for_unknown_job_is_404(client):
+    resp = client.post("/data-jobs/00000000-0000-0000-0000-000000000000/records", json={"payload": {}})
+    assert resp.status_code == 404
+
+
+def test_fetch_data_records_for_unknown_job_is_404(client):
+    resp = client.get("/data-jobs/00000000-0000-0000-0000-000000000000/records")
+    assert resp.status_code == 404
+
+
+def test_fetch_data_records_respects_limit(client):
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    job = client.post("/data-jobs", json={"dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+                                           "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1"}).json()
+    for i in range(3):
+        client.post(f"/data-jobs/{job['dataJobId']}/records", json={"payload": {"i": i}})
+    assert len(client.get(f"/data-jobs/{job['dataJobId']}/records", params={"limit": 2}).json()) == 2
+
+
+# ---------------------------------------------------------------- Wave 3: O1 action mediation
+
+class FakeRanNfOam:
+    """A minimal double for ran-nf-oam's own POST /config-jobs — enough
+    to prove DME's /actions route mediates and forwards, without
+    duplicating ran-nf-oam's own test coverage of NETCONF dispatch
+    (ran-nf-oam/tests/test_main.py already covers that in depth).
+    """
+
+    def __init__(self):
+        self.received: list[dict] = []
+
+    def post(self, path, json=None, **kw):
+        assert path == "/ran-nf-oam/config-jobs"
+        self.received.append(json)
+        return FakeConfigJobResponse({"jobId": "11111111-1111-1111-1111-111111111111", "status": "PROCESSING"})
+
+
+class FakeConfigJobResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+@pytest.fixture
+def ran_nf_oam(monkeypatch):
+    fake = FakeRanNfOam()
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: fake.post(path, json=json, **kw))
+    return fake
+
+
+def test_mediate_action_forwards_to_ran_nf_oam_and_records_provenance(client, ran_nf_oam):
+    resp = client.post("/actions", json={
+        "requestedBy": "energy-optimizer",
+        "changes": [{"managedElementRef": "me-1", "className": "GNBDUFunction", "attributeChanges": {"txPower": 10}}],
+        "sourceContext": {"vendor": "acme"},
+    })
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["forwardedJobId"] == "11111111-1111-1111-1111-111111111111"
+    assert body["status"] == "PROCESSING"
+
+    forwarded = ran_nf_oam.received[0]
+    assert forwarded["scope"] == "single-ME"
+    assert forwarded["changes"] == [{"managedElementRef": "me-1", "attributeChanges": {"txPower": 10}}]  # className stripped before forwarding
+
+    action = client.get(f"/actions/{body['actionId']}").json()
+    assert action["managedElementRef"] == "me-1"
+    assert action["className"] == "GNBDUFunction"
+    assert action["sourceContext"] == {"vendor": "acme"}
+    assert action["forwardedJobId"] == "11111111-1111-1111-1111-111111111111"
+
+
+def test_mediate_action_rejects_empty_changes(client, ran_nf_oam):
+    resp = client.post("/actions", json={"requestedBy": "energy-optimizer", "changes": []})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
+    assert ran_nf_oam.received == []
+
+
+def test_get_unknown_action_is_404(client):
+    resp = client.get("/actions/00000000-0000-0000-0000-000000000000")
+    assert resp.status_code == 404
+
+
+def test_list_actions_filters_by_managed_element_ref(client, ran_nf_oam):
+    client.post("/actions", json={"requestedBy": "rapp-1", "changes": [{"managedElementRef": "me-1"}]})
+    client.post("/actions", json={"requestedBy": "rapp-2", "changes": [{"managedElementRef": "me-2"}]})
+    listed = client.get("/actions", params={"managed_element_ref": "me-1"}).json()
+    assert [a["requestedBy"] for a in listed] == ["rapp-1"]

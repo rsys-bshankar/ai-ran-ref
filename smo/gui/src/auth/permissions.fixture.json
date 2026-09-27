@@ -413,6 +413,18 @@
   },
   {
     "method": "POST",
+    "pattern": "^/dme/data-jobs/[^/]+/records$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/dme/actions$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/sme/provider-registrations$",
     "role": "admin",
     "queryMatch": {}

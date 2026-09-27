@@ -43,6 +43,16 @@ different and complementary ground truth).
   models (radio-unit-specific attribute/config detail this build's
   degenerate single-node Phase 1 topology doesn't model at that
   granularity — likely stays out of scope, but not yet audited against).
+- **`O1_Adaptor/O1_Adaptor_MnS_Hierarchy_Mapping_v4.xlsx`** — a curated
+  index across the above 3GPP/O-RAN files: every IOC reachable through
+  ProvMnS's single generic `/{className}={id}` endpoint (3GPP NRM IOCs
+  plus O-RAN WG10-O1NRM/WG5-O-DU/WG5-O-CU augments), the 3 genuinely
+  dedicated 3GPP APIs (PM Job Control, File Data Reporting, Streaming
+  Data Reporting), O-RAN WG4 Software Management's RPC/notification set,
+  and (informational only) WG5's O-RU schema-mount points. User-supplied
+  and hand-curated, not machine-generated — the ground truth for DME/RAN
+  NF OAM's O1 Adaptor surface; see `smo/SPEC_AUDIT.md`'s new DME/O1
+  Adaptor section for the line-by-line comparison against this build.
 - **`o-cloud-im/`** — O-RAN WG6's real O2IMS information model
   (`resources/ORAN.O2ims.*.yaml`: Inventory, Common, Artifacts, Cluster,
   Infrastructure, Provisioning). Directly relevant to FOCOM's
@@ -51,11 +61,13 @@ different and complementary ground truth).
   Python implementation of this same interface, not this formal spec
   itself.
 
-A line-by-line comparison against six modules' most directly relevant
+A line-by-line comparison against seven modules' most directly relevant
 files has been done — RAN NF OAM, FOCOM, Policy Mgmt, SME, AI/ML
-Workflow, and RAN Analytics; see `smo/SPEC_AUDIT.md` for the findings.
-Not yet compared against: DME/A1 Related/Onboarding+rApp Mgmt (no
-relevant spec file exists here for any of them) and the O-RAN WG4/WG5
-O-RU/O-CU/O-DU management-plane YANGs below (present, but RAN NF OAM's
-own audit above never touched them — likely out of scope given this
-build's single-node topology, but genuinely unconfirmed).
+Workflow, RAN Analytics, and DME/O1 Adaptor (via the curated mapping
+workbook above); see `smo/SPEC_AUDIT.md` for the findings. Not yet
+compared against: A1 Related/Onboarding+rApp Mgmt (no relevant spec file
+exists here for either) and the O-RAN WG4/WG5 O-RU/O-CU/O-DU
+management-plane YANGs' own attribute-level detail (present, and now
+partially indexed by the O1 Adaptor mapping workbook, but not compared
+attribute-by-attribute — likely out of scope given this build's
+single-node topology, but genuinely unconfirmed).
