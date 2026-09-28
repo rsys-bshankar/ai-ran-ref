@@ -341,6 +341,16 @@ const STEP_TEMPLATES: Record<string, Record<string, unknown>> = {
   DEPLOY: { stepType: "DEPLOY", targetModule: "NFO", nfDeploymentDescriptorId: "<descriptor uuid>", name: "so-deploy-1" },
   INFRA: { stepType: "INFRA", targetModule: "FOCOM", spec: { description: "GPU node" } },
   TRAINING: { stepType: "TRAINING", targetModule: "AI_ML_WORKFLOW", modelId: "<model uuid>" },
+  // OPEN_ITEMS.md section 6.6, closed: previously only TRAINING had a
+  // dispatch entry, so this was the only AI/ML step an order could
+  // compose. MODEL_DEPLOY is deliberately its own key, distinct from
+  // DEPLOY above — same stepType ("DEPLOY"), different targetModule
+  // ("AIMGF" vs "NFO"), a certified model's own runtime rather than a
+  // workload.
+  VALIDATION: { stepType: "VALIDATION", targetModule: "AI_ML_WORKFLOW", modelId: "<model uuid>" },
+  EMULATION: { stepType: "EMULATION", targetModule: "AI_ML_WORKFLOW", modelId: "<model uuid>" },
+  MODEL_DEPLOY: { stepType: "DEPLOY", targetModule: "AIMGF", modelId: "<model uuid>" },
+  INFERENCE: { stepType: "INFERENCE", targetModule: "AI_ML_WORKFLOW", modelId: "<model uuid>" },
 };
 
 function Orders() {
@@ -378,7 +388,7 @@ function SubmitOrder() {
     const model = models.data?.at(-1);
     const used = new Set((deployments.data ?? []).map((d) => d.nfDeploymentDescriptorId));
     const descriptor = descriptors.data?.filter((d) => !used.has(d.nfDeploymentDescriptorId)).at(-1);
-    if (k === "TRAINING" && model) t.modelId = model.modelId;
+    if (["TRAINING", "VALIDATION", "EMULATION", "MODEL_DEPLOY", "INFERENCE"].includes(k) && model) t.modelId = model.modelId;
     if (k === "DEPLOY") {
       if (descriptor) t.nfDeploymentDescriptorId = descriptor.nfDeploymentDescriptorId;
       t.name = `so-deploy-${Date.now().toString(36)}`;
@@ -391,7 +401,7 @@ function SubmitOrder() {
       <div className="row gap wrap"><span className="muted small">Add step:</span>{Object.keys(STEP_TEMPLATES).map((k) => <button key={k} className="btn small" onClick={() => add(k)}>{k}</button>)}</div>
       <div className="form">
         <Field label="Scope"><input value={scope} onChange={(e) => setScope(e.target.value)} placeholder="cell-cluster-7 rollout" /></Field>
-        <Field label="Steps (JSON array)" hint={parsed ? "TRAINING / DEPLOY steps are prefilled with the newest model and a not-yet-deployed NF descriptor" : <span className="text-bad">must be a JSON array</span>}><textarea rows={8} value={steps} onChange={(e) => setSteps(e.target.value)} spellCheck={false} /></Field>
+        <Field label="Steps (JSON array)" hint={parsed ? "TRAINING/VALIDATION/EMULATION/MODEL_DEPLOY/INFERENCE steps are prefilled with the newest model; DEPLOY (NFO) with a not-yet-deployed NF descriptor" : <span className="text-bad">must be a JSON array</span>}><textarea rows={8} value={steps} onChange={(e) => setSteps(e.target.value)} spellCheck={false} /></Field>
       </div>
       <ActionButton label="Submit order" tone="primary" disabled={!parsed || !scope} action={{ method: "POST", path: "/so-smos/orders", json: { scope, steps: parsed ?? [] }, success: "Order executed" }} />
     </Card>

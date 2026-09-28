@@ -70,12 +70,68 @@ def dispatch_policy(r1: R1Client, step: dict) -> dict:
     return _ensure_ok(resp)
 
 
+def dispatch_validation(r1: R1Client, step: dict) -> dict:
+    """OPEN_ITEMS.md section 6.6, closed: `DISPATCH_TABLE` previously had
+    only a TRAINING entry for the whole AI/ML pipeline — Validation could
+    only ever be reached by calling AIMgF directly, never composed into a
+    multi-step `ServiceOrder` the way Training could. Same request shape
+    as AIMgF's own `RequestValidation` (call flow 02).
+    """
+    resp = r1.post("/aimgf/validation-jobs", json={
+        "modelId": step.get("modelId"),
+        "trainingJobId": step.get("trainingJobId"),
+        "producerId": step.get("producerId", "so-smos"),
+        "validationCriteria": step.get("validationCriteria", {}),
+    })
+    return _ensure_ok(resp)
+
+
+def dispatch_emulation(r1: R1Client, step: dict) -> dict:
+    """OPEN_ITEMS.md section 6.6, closed: same gap as dispatch_validation,
+    for Emulation.
+    """
+    resp = r1.post("/aimgf/emulation-jobs", json={
+        "modelId": step.get("modelId"),
+        "producerId": step.get("producerId", "so-smos"),
+        "emulationCriteria": step.get("emulationCriteria", {}),
+    })
+    return _ensure_ok(resp)
+
+
+def dispatch_model_runtime_deploy(r1: R1Client, step: dict) -> dict:
+    """OPEN_ITEMS.md section 6.6, closed: a model-runtime deploy
+    (AIMgF's own `RequestModelRuntimeDeploy`, call flow 17) — deliberately
+    a separate (stepType, targetModule) key from `("DEPLOY", "NFO")`
+    above, which dispatches a workload's own NFO deployment, not a
+    certified model's serving runtime. Requires `ModelLifecycleState` in
+    {CERTIFIED, PROMOTED}; that guard fires inside AIMgF itself, so an
+    ungated deploy attempt surfaces as an ordinary DownstreamError here,
+    same fail-fast handling as every other dispatcher.
+    """
+    resp = r1.post(f"/aimgf/models/{step['modelId']}/runtime/deploy")
+    return _ensure_ok(resp)
+
+
+def dispatch_inference(r1: R1Client, step: dict) -> dict:
+    """OPEN_ITEMS.md section 6.6, closed: same gap as dispatch_validation,
+    for Inference (AIMgF's own `RequestInference`, gated on
+    `RuntimeLifecycleState.ACTIVE`, not composable via this table before now).
+    """
+    params = {"notification_destination": step["notificationDestination"]} if step.get("notificationDestination") else None
+    resp = r1.post(f"/aimgf/models/{step['modelId']}/inference-jobs", params=params)
+    return _ensure_ok(resp)
+
+
 # stepType -> (targetModule, dispatcher) — SO SMOS LLD section 1's table, made executable
 DISPATCH_TABLE = {
     ("CONFIG", "RAN_NF_OAM"): dispatch_config,
     ("DEPLOY", "NFO"): dispatch_deploy,
     ("INFRA", "FOCOM"): dispatch_infra,
     ("TRAINING", "AI_ML_WORKFLOW"): dispatch_training,
+    ("VALIDATION", "AI_ML_WORKFLOW"): dispatch_validation,
+    ("EMULATION", "AI_ML_WORKFLOW"): dispatch_emulation,
+    ("DEPLOY", "AIMGF"): dispatch_model_runtime_deploy,
+    ("INFERENCE", "AI_ML_WORKFLOW"): dispatch_inference,
     ("POLICY", "A1_RELATED"): dispatch_policy,
 }
 
