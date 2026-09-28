@@ -26,7 +26,7 @@ sequenceDiagram
     Producer->>R1: POST /ran-analytics/producers (producerId, analyticsType, dmeInputTypes, outputSchema, mdaType?)
     R1->>RanA: (proxied) RegisterAnalyticsProducer
     RanA->>RanA: upsert MDAFProducer on (producer_id, analytics_type) —<br/>re-registering the same pair updates in place, not a conflict
-    RanA->>RanA: mdaType: validate against the real 24-value TS28104 MDAType<br/>enum if declared; else infer_mda_type() for the two shorthand<br/>values this build honestly maps, else leave null — never guessed
+    RanA->>RanA: mdaType: validate against the real 24-value TS28104 MDAType<br/>enum if declared — else infer_mda_type() for the two shorthand<br/>values this build honestly maps, else leave null — never guessed
     RanA->>SME: RegisterService (serviceName=mdaf.{analyticsType}, serviceCapabilities.analyticsType)
     SME-->>RanA: serviceId
     RanA-->>Producer: {status: registered}

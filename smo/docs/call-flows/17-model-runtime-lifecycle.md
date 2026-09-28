@@ -39,7 +39,7 @@ sequenceDiagram
     MLLF->>AIMgF: GET /models/{id}/lifecycle
     AIMgF-->>MLLF: modelLifecycleState=CERTIFIED, runtimeLifecycleState=DEPLOYED
     MLLF->>AIMgF: PATCH /models/{id}/runtime/node-groups (clearedNodeGroups)
-    Note over AIMgF: local-only — no NFO call; the same "MLLF owns the decision,<br/>AIMgF owns the row" split as MLMR's own former column, Wave 1
+    Note over AIMgF: local-only — no NFO call — the same "MLLF owns the decision,<br/>AIMgF owns the row" split as MLMR's own former column, Wave 1
     AIMgF-->>MLLF: updated lifecycle
     end
 

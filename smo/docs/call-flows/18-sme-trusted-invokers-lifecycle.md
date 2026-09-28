@@ -24,7 +24,7 @@ sequenceDiagram
     rect rgb(240, 248, 255)
     Note over Container,SME: Invoker onboarding — the real trust direction: server mints identity, not the client
     Container->>SME: POST /invoker-registrations (apiInvokerPublicKey)
-    Note over SME: apiInvokerId is NEVER client-supplied — the real CAPIF onboarding<br/>flow "shall not" accept one; SME generates both the id and the<br/>onboarding secret and returns them
+    Note over SME: apiInvokerId is NEVER client-supplied — the real CAPIF onboarding<br/>flow "shall not" accept one — SME generates both the id and the<br/>onboarding secret and returns them
     SME-->>Container: apiInvokerId, onboardingSecret
     end
 
