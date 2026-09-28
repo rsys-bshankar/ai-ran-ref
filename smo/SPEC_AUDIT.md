@@ -543,20 +543,28 @@ architecture choice, not a bug.
    by proactive producer-push** — large/structural, confirmed
    deliberate. Matches `aiml-fw-apm`'s own reference shape, not
    TS28.104's NRM.
-2. **`analytics_type` is a free string; the spec defines a real, closed
-   24-value `MDAType` enum** (`COVERAGE_ANALYTICS_COVERAGE_PROBLEM_
+2. ~~**`analytics_type` is a free string; the spec defines a real, closed
+   24-value `MDAType` enum**~~ (`COVERAGE_ANALYTICS_COVERAGE_PROBLEM_
    ANALYSIS`, `MOBILITY_MANAGEMENT_ANALYTICS_MOBILITY_PERFORMANCE_
-   ANALYSIS`, etc.) — audited for real usage this wave (Wave 3), **not
-   closed, confirmed non-conformant rather than merely unaudited**.
-   Every real caller's actual value (`ran-analytics/app/main.py` never
-   hardcodes one; `coverage-issue-analysis`/`resource-utilization`/
-   `failure-prediction`/`RAN.Coverage` across tests/demo/samples are the
-   only real values this build has ever used) is informal shorthand,
-   not one of the spec's real wire values — none match even loosely.
-   Constraining to the closed enum now would mean renaming every real
-   caller for spec-conformance alone, not fixing a bug or closing a
-   silently-wrong behavior; left open by this explicit finding, not by
-   omission.
+   ANALYSIS`, etc.) — **closed, additively, per explicit direction.**
+   Every real caller's actual value (`coverage-issue-analysis`/
+   `resource-utilization`/`failure-prediction`/`RAN.Coverage` across
+   tests/demo/samples) is informal shorthand, not a spec wire value
+   verbatim — constraining `analytics_type` itself to the closed enum
+   would still be a real breaking rename for zero behavior gain, so it
+   stays untouched. Instead, `MDAFProducer` gained an optional, real
+   `mda_type` column: `register_analytics_producer` validates it against
+   the genuine 24-value enum when a caller declares one directly (real
+   conformance going forward), and `infer_mda_type` auto-derives it for
+   the two shorthand values with an honest, unambiguous real-spec
+   correspondence (`coverage-issue-analysis` →
+   `COVERAGE_ANALYTICS_COVERAGE_PROBLEM_ANALYSIS`, `failure-prediction`
+   → `MDA_ASSISTED_FAULT_MANAGEMENT_FAILURE_PREDICTION`) — the other two
+   (`resource-utilization`, ambiguous between the enum's virtualized-
+   vs. physical-NF resource values; `RAN.Coverage`, ambiguous between
+   three separate COVERAGE_ANALYTICS_* values) are left `null`, not
+   guessed, the same honest-partial-mapping discipline as AI/ML
+   Workflow's own `ml_training_type`.
 3. **No `ThresholdInfo`-based conditional reporting** (`UP`/`DOWN`/
    `UP_AND_DOWN` + hysteresis) — **closed this wave (Wave 3)**.
    `MDASubscription.threshold_info`/`main.py`'s `_threshold_crossed`

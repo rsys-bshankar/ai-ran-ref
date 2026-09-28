@@ -16,10 +16,15 @@ def test_register_producer(client, r1):
     client.register_producer("prod-1", "RAN.Coverage", [type_id], {"type": "object"})
     assert r1.calls[0] == {
         "verb": "post", "path": "/ran-analytics/producers",
-        "params": {"producer_id": "prod-1", "analytics_type": "RAN.Coverage"},
+        "params": {"producer_id": "prod-1", "analytics_type": "RAN.Coverage", "mda_type": None},
         "files": None,
         "json": {"dme_input_types": [str(type_id)], "output_schema": {"type": "object"}},
     }
+
+
+def test_register_producer_with_an_explicit_mda_type(client, r1):
+    client.register_producer("prod-1", "RAN.Coverage", [], {}, mda_type="PREDICTIONS_PM_DATA")
+    assert r1.calls[0]["params"]["mda_type"] == "PREDICTIONS_PM_DATA"
 
 
 def test_list_producers(client, r1):

@@ -63,12 +63,14 @@ directly, matched against its declared capabilities rather than
 matched producer-side; and RAN Analytics's (now MDAF's) missing
 threshold-based conditional reporting was built — real edge-triggered
 `UP`/`DOWN`/`UP_AND_DOWN` crossing detection with genuine hysteresis
-state. RAN Analytics's `analytics_type` enum constraint remains open —
-real but moderate/breaking (every real caller's actual value is
-informal shorthand, not one of the spec's closed 24 wire values;
-constraining to it now would mean renaming every caller for
-conformance alone, not fixing a bug), left for a deliberate follow-up
-rather than guessed at.
+state. RAN Analytics's `analytics_type` enum constraint is now closed
+too — additively: `analytics_type` itself stays a free string (every
+real caller's actual value is informal shorthand, not one of the
+spec's closed 24 wire values, and renaming callers for conformance
+alone isn't a bug fix), but a new optional `mdaType` field validates
+against the real enum when a caller declares one directly, and is
+auto-derived for the two shorthand values with an honest, unambiguous
+real-spec correspondence.
 
 Not yet audited against a formal spec at all, because no relevant spec
 file exists in `../specs/` yet: **A1 Related** (3GPP/O-RAN A1 specs
@@ -136,10 +138,7 @@ genuine production bugs got caught that no unit test had ever touched
 
 **Bottom line — what's actually remaining:** extending the formal-spec
 audit to the one still-unaudited module (A1 Related — no spec file
-exists yet) and the WG4/WG5 YANGs (real, unstarted work); RAN Analytics's own
-`analytics_type` enum constraint (real but moderate/breaking, every
-real caller's value is informal shorthand, not a spec wire value),
-left for a deliberate follow-up rather than guessed at; AIMgF's own
+exists yet) and the WG4/WG5 YANGs (real, unstarted work); AIMgF's own
 `MLMFSubscription` gap (no callback field, no unsubscribe route —
 audited during Wave 3's Subscriptions slice, building either would be
 new functionality, not a field-name unification, so out of that
