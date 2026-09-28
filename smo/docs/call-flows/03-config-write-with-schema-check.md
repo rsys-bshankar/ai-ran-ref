@@ -17,6 +17,20 @@ Dispatch is a real RFC 6241 `<edit-config>` XML RPC POSTed to the endpoint's `ad
 `docs/architecture/O1_VENDOR_ONBOARDING_GUIDE.md` for the fuller writeup of this gap and
 a sketch of what would actually close it.
 
+**Why this flow exists, and how it relates to call flow 02**: this is the CM-write
+mechanism itself — the two paths (direct rApp, or DME-mediated) by which *any* caller
+gets a configuration change onto a real ME, regardless of who or what decided the change
+was needed. Call flow 02 (AI/ML inference) is one possible *decision source* that can call
+into Path B here — an rApp that just pulled a prediction via DME may, entirely on its own
+and out-of-band, decide to call DME's `/actions` (Path B) or `ran-nf-oam` directly
+(Path A) to act on it. Nothing in this build's code links the two automatically today:
+AIMgF's `RequestInference` response is the end of call flow 02's own chain, and this
+flow's `rApp->>DME`/`rApp->>NFOAM` entry points have no caller-identity check that ties
+them back to a specific inference job. The rApp itself is the (currently manual) bridge
+between "got a prediction" (flow 02) and "wrote a config change" (this flow) — see
+`OPEN_ITEMS.md`'s rApp Autonomy Modes section for the design that would eventually make
+that bridge automatic and operator-visible rather than an rApp's own private decision.
+
 ```mermaid
 sequenceDiagram
     actor rApp
@@ -24,7 +38,6 @@ sequenceDiagram
     participant NFOAM as RAN NF OAM SMOS
     participant Registry as O1AdaptorEndpoint Registry
     participant EP1 as O1 Adaptor (ME #1)
-    participant EP2 as O1 Adaptor (ME #2)
 
     Note over EP1,Registry: Each ME's O1 Adaptor self-registers once, via<br/>POST /o1-adaptor-endpoints (vendorName, entityType, o1Protocol,<br/>protocolSupport, adaptorUri) — Option A, LLD section 1
     Registry->>Registry: health_status starts DISCOVERED, ages to<br/>UNREACHABLE without a timely heartbeat

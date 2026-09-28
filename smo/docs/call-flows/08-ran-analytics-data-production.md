@@ -20,6 +20,7 @@ sequenceDiagram
     participant R1 as R1 Termination
     participant RanA as RAN Analytics SMOS
     participant MDAF as MDAF
+    participant DME as DME
     participant SME as SME
     actor Consumer as Analytics Consumer rApp (e.g. SA SMOS)
 
@@ -38,6 +39,9 @@ sequenceDiagram
     loop per analytics cycle
         Producer->>R1: POST /mdaf/reports (analyticsType, output, inputSources, scope?)
         R1->>MDAF: (proxied) PublishAnalyticsReport
+        MDAF->>DME: GET /dme/data-jobs/{id} per inputSources entry
+        DME-->>MDAF: 200 (real DataJob) or 404
+        Note over MDAF,DME: every inputSources id must be a real DME DataJob —<br/>DME_ARTIFACT_NOT_FOUND otherwise — MDAF only proves the reference<br/>is real here, it never fetches the data itself (Wave 3)
         MDAF->>MDAF: persist MDAFReport
         MDAF->>Consumer: best-effort POST notificationDestination (reportId, analyticsType, output, inputSources)
         Note over MDAF,Consumer: A subscription with no notificationDestination stays pull-only —<br/>delivery is never guessed from requestedBy.

@@ -15,12 +15,24 @@ asks for. `README.md`'s own "Two open architectural questions" list still descri
 as open until this pass, even though its top summary already correctly called it closed —
 fixed there too.
 
+**Who creates an Intent, and when, and why**: `CreateIntent`'s only real caller identity
+is `rmioId` — any rApp acting as the Intent's owner (RMIO) may call it, for whatever reason
+that rApp has. Nothing in this build's code ties Intent creation to an AI/ML model's
+inference result or to an operator's own decision — this flow is deliberately generic
+about *why* an Intent exists, the same way call flow 03 is deliberately generic about *why*
+a CM change is being written. Today, an inference-driven rApp that wants to express its
+decision as an Intent (rather than a direct CM write, call flow 03 Path A/B) does so as its
+own private choice — there's no automated hand-off from "inference completed" (call flow
+02) to "Intent created" (here). Closing that gap with a real, spec-shaped linkage —
+`AUTONOMOUS` rApps enacting their outcome "as part of the Intent" via SO/SA-SMOS, with
+`ASSIST`/`SHADOW` variants — is the rApp Autonomy-Mode design tracked in `OPEN_ITEMS.md`;
+not built yet.
+
 ```mermaid
 sequenceDiagram
     actor SO as SO SMOS (framework-internal RMIH)
     participant R1 as R1 Termination
     participant Policy as Intent Service
-    participant SME as SME
     actor RMIO as Intent-owning rApp (RMIO)
 
     SO->>R1: POST /intent-service/intent-handling-functions<br/>(rmihId, smeServiceId, capabilities, notificationDestination, intentHandlingScope?)
