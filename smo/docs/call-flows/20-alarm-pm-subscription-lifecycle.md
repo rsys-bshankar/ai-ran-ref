@@ -58,6 +58,17 @@ sequenceDiagram
     end
 ```
 
+**Open, tracked in `OPEN_ITEMS.md`**: unlike PM, alarms/FM have no DME producer
+registration at all — `ingest_alarm` (`POST /alarms/ingest`) only ever writes an `Alarm`
+row; nothing calls `RegisterDMEType` the way `subscribe_pm` does for PM counters. An rApp
+or AI/ML model that wants outstanding-active-alarm/alarm-history context during inference
+(or during Training/Validation/Emulation, per the review that raised this) has no DME-mediated
+way to get it today — only a direct `GET /alarms` call to RAN NF OAM itself, outside DME's
+data plane entirely. This build also has no route through which DME or an rApp clears an
+alarm — clearing stays RAN NF OAM's own `PATCH /alarms/{id}/clear`, called by the source NF
+or an operator, never by DME or a consuming rApp; that stays true whether or not FM is
+registered as a DME producer type.
+
 **Key decisions this flow depends on:**
 - `correlationGroup`/`correlatedNotifications`/`rootCauseIndicator` are caller-declared, not computed by RAN NF OAM itself — this build carries the correlation a raising source already knows, it doesn't run its own root-cause-analysis algorithm (matching `OPEN_ITEMS.md`'s own confirmed elision: "Alarm-storm correlation algorithm... nothing implemented").
 - Clearing an alarm never cascades to its correlated siblings — `clear_alarm` only ever mutates the one `alarmId` it's called against; a correlation group with a cleared root cause and un-cleared symptomatic alarms is a real, representable state, not a bug.

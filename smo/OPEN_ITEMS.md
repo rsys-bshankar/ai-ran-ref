@@ -2628,8 +2628,180 @@ own §1/§2 items stand as-is.
   sweep/confirm round trip against a real local Postgres 16 instance
   found no issue.
 
+## 6. AI/ML pipeline depth — call-flow architectural review findings (this pass)
+
+A detailed, per-file review of call flows 02, 03, 04, 06, 08, 09, 10, 11, 17, and 20
+surfaced seven items beyond ordinary doc drift — real gaps, and design decisions the
+user has already made but that aren't built yet. Call flows 02/03/04/06/08/09/10/11/17/20
+were updated in place with grounding notes pointing back here; this section is the
+standalone write-up each item needs to be picked up on its own, later, one at a time.
+Two items below are **decided** (the user chose a direction; not yet built). The rest are
+**confirmed gaps** (real, verified against code) or **open sub-questions** the decisions
+above raise but don't yet answer.
+
+### 6.1 DECIDED: operator gate on Training → Validation → Emulation
+
+Today (`aimgf/app/main.py`'s `request_training`/`request_validation`/`request_emulation`
+and their `advance`/`complete` counterparts), `TRAINING_COMPLETE`/`VALIDATED`/`EMULATED`
+are producer/caller-driven — any caller holding a `modelId` can push a model through its
+entire pre-certification pipeline with zero operator involvement. Only the later
+`SUBMIT_FOR_APPROVAL`/`APPROVE`/`CERTIFY`/`PROMOTE`/`DEPRECATE`/`RETIRE` transitions go
+through the real governance `advance(event, decidedBy)` route with a `CertificationRecord`
+audit trail (call flow 02).
+
+**Decision** (user, this pass): add an explicit operator-approval gate to
+Training→Validation→Emulation as well, mirroring the existing CERTIFY/PROMOTE shape —
+likely a `decidedBy`-carrying approval step between each stage transition, with its own
+`CertificationRecord`-style entry, rather than a bare caller-pushed `advance()`. Not yet
+built. When picked up, needs its own design pass on exactly which events gain the gate
+(e.g. does `RequestValidation` itself require prior operator sign-off on the training
+result, or just `TRAINING_COMPLETE`?) and whether the gate blocks the request outright or
+introduces a new intermediate "awaiting approval" sub-state per stage.
+
+**Open sub-question this decision raises, not yet answered**: `RuntimeLifecycle` (call
+flow 17 — Deploy/Activate/Scale/Terminate) is also entirely producer-driven today, with no
+operator step beyond the `MODEL_NOT_CERTIFIED` guard it inherits from `ModelLifecycle`.
+Whether the same operator-gate treatment should extend to Runtime transitions wasn't part
+of the original question and hasn't been decided — flagged in call flow 17 as a candidate
+for the same decision, not folded into it.
+
+### 6.2 DECIDED: real NFO-backed execution runtimes for MLTF/MLVF/MLEF/MLIF
+
+Today, "MLTF trains (Phase 1: elided)" / "MLVF validates (Phase 1: elided)" / "MLEF
+emulates (Phase 1: elided)" (call flow 02) are bare comments — no NFO `CreateDescriptor`/
+`Instantiate` call exists for any of the four execution engines (Training, Validation,
+Emulation, and Inference — MLIF). This is a structurally different elision from the
+`RuntimeLifecycle`'s own genuine NFO calls (call flow 17: Deploy/Scale/Terminate all
+really call NFO) — those exist for a model's *serving* runtime only, post-certification;
+nothing analogous exists for the *execution* engines that produce a trained/validated/
+emulated model or run inference in the first place.
+
+**Decision** (user, this pass): build a real NFO-backed execution runtime for all four —
+MLTF, MLVF, MLEF, and MLIF — not just MLIF/serving as today. Not yet built. This is a
+significant new architecture layer: each of `RequestTraining`/`RequestValidation`/
+`RequestEmulation`/`RequestInference` would need to drive its own NFO
+`CreateDescriptor`/`Instantiate` (and presumably `Terminate` on completion), analogous to
+what `RequestModelRuntimeDeploy` already does, but for a transient execution job rather
+than a long-lived serving deployment. Needs its own design pass on: whether all four share
+one workload-template shape or each needs its own; how a job's NFO deployment ID surfaces
+back onto `TrainingJob`/`ValidationJob`/`EmulationJob` (which have no such field today);
+and whether `advance()`/`complete()` become NFO-driven callbacks instead of bare
+caller-pushed transitions once real execution exists to report completion from.
+
+### 6.3 DECIDED: rApp Autonomy Modes — AUTONOMOUS / ASSIST / SHADOW
+
+New concept, the user's own design (preserved verbatim below), meant to close call flow
+02's own dangling tail (an inference result pulled via DME with no automated path to a CM
+action, call flow 03) and call flow 09's own "Intent just hangs there, unlinked to any
+AI/ML or operator decision" gap. **Not built at all yet** — no `autonomy_mode` field, no
+onboarding-time flag, no SO/SA-SMOS Intent dispatch for it exists anywhere in this build
+today. This is the single largest new item from this review.
+
+**The design, as specified:**
+
+- An rApp's inference-time autonomy behavior is flagged **at onboarding time** (Onboarding/
+  rApp Management, call flows 01/06/07) as exactly one of three modes: **AUTONOMOUS**,
+  **ASSIST**, or **SHADOW**. This is a per-rApp (or per-rApp-instance) property fixed at
+  onboarding, not something chosen per-inference-call.
+- **AUTONOMOUS**: a region scope — how many RAN nodes, and how many cells/slices within
+  each RAN — is pre-configured at onboarding time. When the rApp's inference produces an
+  outcome, that outcome is enacted **as part of the Intent** — i.e., routed through Intent
+  Service / SO-SMOS / SA-SMOS (call flows 04/09/10), not a raw, direct DME `/actions` or
+  `ran-nf-oam` CM write (call flow 03's Path A/B, which stays the *manual*, non-autonomous
+  route). The rApp "shall contact SO/SA-SMOS for the intent service" — meaning the
+  outcome becomes a `CreateIntent` call (or equivalent SO/SA-SMOS dispatch), addressed at
+  the pre-configured region scope, rather than a bare CM write.
+- **ASSIST**: before/as the intent is applied, the operator helps scope *which* RAN
+  nodes/cells/slices it applies to — a human-in-the-loop scoping step, distinct from
+  AUTONOMOUS's own pre-configured, fixed scope. The rApp still produces the inference
+  outcome and still routes it as an Intent, but the region scope isn't decided at
+  onboarding — it's decided (or narrowed) by the operator at or before dispatch time.
+- **SHADOW**: the operator is notified of the intent the inference would have produced,
+  but no enforcement action is taken — observe-only/dry-run. The Intent (or its
+  equivalent) is computed and surfaced, never actually dispatched to change RAN state.
+- **All three modes always notify the operator** of the AI/ML inference outcome —
+  notification is not mode-gated; only *enforcement* (AUTONOMOUS/ASSIST apply it,
+  SHADOW doesn't) and *scoping* (AUTONOMOUS is pre-configured, ASSIST is operator-assisted,
+  SHADOW is moot since nothing is enforced) vary by mode.
+
+**When picked up, needs its own design pass on**: where `autonomy_mode` and AUTONOMOUS's
+region-scope config live (a new field on `RAppInstance`? A new onboarding-time resource?);
+the exact SO/SA-SMOS dispatch shape an AUTONOMOUS outcome takes (a new `DISPATCH_TABLE`
+entry, tying into 6.6 below?); how ASSIST's human-in-the-loop scoping step is exposed as
+an API (a new intermediate state on the Intent, awaiting operator scope input before
+dispatch?); and what "notify the operator" means concretely for SHADOW (a new
+notification type, or reuse of an existing best-effort push pattern already used
+throughout this build). This also directly informs call flow 02/03's own linkage gap and
+call flow 09's own "who creates an Intent and why" gap — once built, both flows should be
+updated to show the real, automated hand-off this section describes.
+
+### 6.4 GAP: training data never validated against real DME DataJobs
+
+`RequestTraining(modelId, requiredData, validationCriteria)` (call flow 02,
+`aimgf/app/main.py`'s `request_training`) accepts `requiredData` as an opaque field —
+nothing checks it against a real DME `DataJob`, unlike MDAF's own `publish_report`, which
+genuinely calls `GET /dme/data-jobs/{id}` for every declared `input_sources` entry and
+rejects with `DME_ARTIFACT_NOT_FOUND` if one doesn't resolve (`mdaf/app/main.py`'s
+`_validate_input_sources_are_real_dme_artifacts`, call flow 08). Training's own
+`requiredData` has no equivalent check — "how did training complete" has no real answer
+today beyond "the caller said so." Closing this would mean giving `RequestTraining` the
+same DME-artifact-validation treatment MDAF already has, presumably against the same
+`GET /dme/data-jobs/{id}` pattern.
+
+### 6.5 GAP: no training-outcome artifact or TS28.105 completion notification
+
+Nothing in `ModelLifecycle` records a saved training-outcome artifact (a model file,
+weights, or equivalent), and no `notification_uri`-style callback fires on training/
+validation/emulation completion per TS28.105's own completion-notification expectation —
+`advance(TRAINING_COMPLETE)`/`complete(validationJobId, ...)`/`complete(emulationJobId,
+...)` are bare state transitions with no side effect beyond the FSM move itself. Closing
+this needs: (a) a real field/mechanism for where a training run's output artifact is
+recorded (DME, given every other cross-module data-plane path in this build goes through
+it — see 6.3's own AUTONOMOUS-mode Intent routing for the analogous "goes through the
+established mechanism, not a new one" precedent), and (b) a real notification callback
+fired on each of the three completions, TS28.105-shaped.
+
+### 6.6 GAP: SO-SMOS `DISPATCH_TABLE` has only a TRAINING entry for AI/ML
+
+`so-smos/app/dispatch.py`'s `DISPATCH_TABLE` (call flow 10) has exactly one AI/ML-shaped
+entry: `("TRAINING", "AI_ML_WORKFLOW")`. There is no `("VALIDATION", ...)`,
+`("EMULATION", ...)`, `("DEPLOY", "AIMGF")` (model-runtime deploy — distinct from the
+existing `("DEPLOY", "NFO")` entry, which dispatches a workload, not a model runtime), or
+`("INFERENCE", ...)` entry. An operator can compose Training into a multi-step
+`ServiceOrder` (call flow 10) but cannot compose Validation, Emulation, Runtime Deploy, or
+Inference the same way — those are only ever reachable by calling AIMgF directly. This is
+a real, confirmed gap, not a design choice — closing it means adding the missing four
+dispatcher functions and `DISPATCH_TABLE` entries, following the existing `dispatch_training`
+shape (`_ensure_ok` status-code check, `DownstreamError` on failure).
+
+### 6.7 GAP: FM/alarms never registered as a DME producer type
+
+Unlike PM (`ran-nf-oam`'s `subscribe_pm` genuinely calls DME's `RegisterDMEType` to
+register itself as a producer for `PMCounters.{counterType}`, call flow 20), alarm
+ingestion (`POST /alarms/ingest`) has no DME-registration equivalent at all — confirmed by
+grep, no `RegisterDMEType` call exists anywhere near `ingest_alarm`. An rApp or AI/ML model
+that wants outstanding-active-alarm/alarm-history context — during inference, or during
+Training/Validation/Emulation once 6.2's execution runtimes exist — has no DME-mediated way
+to get it; only a direct `GET /alarms` call to RAN NF OAM itself, outside DME's data plane
+entirely. Closing this means giving RAN NF OAM's alarm surface the same
+`RegisterDMEType`-on-subscribe (or on first-ingest) treatment `subscribe_pm` already has for
+PM — the same template, a different data shape (`FaultRecords.{...}` or equivalent, not yet
+named). Note: this only closes the *visibility* gap — DME/an rApp still would never clear
+an alarm itself; clearing stays RAN NF OAM's own `PATCH /alarms/{id}/clear`, called by the
+source NF or an operator, unaffected by whether FM is DME-registered.
+
 ## Suggested next pass (priority order)
 
+0. **§6's seven AI/ML-pipeline items are the current front of the queue** — pick these up
+   one at a time, per the user's own stated preference, rather than in a batch. Suggested
+   order, easiest/most self-contained first: 6.7 (FM→DME registration — a direct copy of
+   `subscribe_pm`'s existing pattern) → 6.6 (SO-SMOS dispatch entries — four small
+   dispatcher functions following `dispatch_training`'s shape) → 6.4 (training-data-DME
+   validation — a direct copy of MDAF's existing pattern) → 6.5 (training-outcome
+   artifact/notification) → 6.1 (operator gate on Training/Validation/Emulation) → 6.2
+   (real NFO-backed execution runtimes — the largest code change of the seven) → 6.3 (rApp
+   Autonomy Modes — the largest *design* change of the seven, and the one the other six
+   don't block on, so it can move independently of where the rest land).
 1. **§5 is now fully closed — confirmed, not assumed** (see the
    "§5 audit" entry above). Every module's repo-audited completeness
    gap has been read end to end and is struck through. Do not

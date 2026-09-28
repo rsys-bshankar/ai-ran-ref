@@ -7,6 +7,18 @@ path (call flow 02 shows both together at a high level; this is the Runtime side
 dedicated walkthrough, including its one real guard and its two genuine cross-service
 calls into NFO — see call flow 15 for what NFO itself does with them).
 
+**Every stage here really is Producer-driven, with no operator/GUI step** — that's not an
+omission in this diagram, it's what the code does: `RequestModelRuntimeDeploy/Activate/
+Scale/Terminate` take no operator identity or approval at all, only the `MODEL_NOT_CERTIFIED`
+guard (which itself only checks `ModelLifecycleState`, already operator-gated upstream via
+CERTIFY/PROMOTE in call flow 02). Once a model is CERTIFIED/PROMOTED, its *runtime*
+lifecycle — deploy, activate, scale, terminate — is entirely the producer's own call, with
+no further operator involvement or GUI-driven step anywhere in this build. Whether Runtime
+transitions should also gain an operator gate (the same way call flow 02's own Training/
+Validation/Emulation transitions are slated to) hasn't been decided — it's a candidate for
+the same `OPEN_ITEMS.md` DECISION item, not folded into it, since the user's own gating
+decision so far only covers the certification path, not the runtime path.
+
 ```mermaid
 sequenceDiagram
     actor Producer as Model Producer rApp

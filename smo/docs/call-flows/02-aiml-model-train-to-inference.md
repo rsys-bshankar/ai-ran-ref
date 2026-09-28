@@ -38,16 +38,18 @@ sequenceDiagram
 
     Producer->>AIMgF: RequestTraining(modelId, requiredData, validationCriteria)
     Note over AIMgF: own ModelLifecycle row, lazily created — REGISTERED -> TRAINING
-    Note over AIMgF: MLTF trains (Phase 1: elided)
+    Note over AIMgF: MLTF trains (Phase 1: elided) — no MLMR/MLLF call here at all —<br/>the model's underlying artifact is untouched until Deploy, and no<br/>NFO-backed execution runtime exists yet for MLTF/MLVF/MLEF/MLIF —<br/>this whole box is a bare state transition (OPEN_ITEMS.md DECISION:<br/>build real NFO-backed execution runtimes for all four, not yet built)
     Producer->>AIMgF: advance(TRAINING_COMPLETE) -> TRAINED
+    Note over AIMgF: "how did training complete" has no real answer today —<br/>requiredData is never checked against an actual DME DataJob, and<br/>there's no saved training-outcome artifact or TS28.105-style<br/>completion notification_uri callback (OPEN_ITEMS.md GAPs:<br/>training-data-DME validation, training-outcome artifact/notification)
 
     Producer->>AIMgF: RequestValidation(modelId, trainingJobId) -> VALIDATING
-    Note over AIMgF: MLVF validates (Phase 1: elided)
+    Note over AIMgF: MLVF validates (Phase 1: elided) — same elisions as Training above
     Producer->>AIMgF: complete(validationJobId, succeeded=true) -> VALIDATED
 
     Producer->>AIMgF: RequestEmulation(modelId) -> EMULATING
-    Note over AIMgF: MLEF emulates (Phase 1: elided)
+    Note over AIMgF: MLEF emulates (Phase 1: elided) — same elisions as Training above
     Producer->>AIMgF: complete(emulationJobId, succeeded=true) -> EMULATED
+    Note over Producer,AIMgF: all three transitions above are producer/caller-driven —<br/>no operator step exists between them today (OPEN_ITEMS.md DECISION:<br/>gate Training->Validation->Emulation behind explicit operator<br/>approval, mirroring the CERTIFY/PROMOTE gate below — not yet built)
 
     Note over Operator,AIMgF: governance — the certification gate, still the<br/>framework's own contribution, no O-RAN equivalent
     Operator->>AIMgF: advance(SUBMIT_FOR_APPROVAL, decidedBy) -> PENDING_APPROVAL
@@ -57,6 +59,7 @@ sequenceDiagram
     Note over AIMgF: each decision writes a real CertificationRecord —<br/>GET /models/{id}/governance-history is a real audit trail
 
     Producer->>AIMgF: RequestModelRuntimeDeploy(modelId)
+    Note over AIMgF: caller is the Producer, not the Operator — but the operator has<br/>already gated this model upstream via the CERTIFY/PROMOTE governance<br/>steps above — Deploy is unreachable for anything less than<br/>ModelLifecycleState CERTIFIED/PROMOTED (see call flow 17 for the full<br/>Runtime side, including this same guard)
     Note over AIMgF: requires ModelLifecycleState in {CERTIFIED, PROMOTED}
     AIMgF->>NFO: CreateDescriptor(packageId=null, workloadTemplate={modelId})
     NFO-->>AIMgF: nfDeploymentDescriptorId
@@ -78,6 +81,7 @@ sequenceDiagram
     AIMgF->>AIMgF: resolve(succeeded=true) -> status=COMPLETED
     Consumer->>DME: pull result via the model's outputDataType DmeTypeId
     DME-->>Consumer: prediction payload
+    Note over Consumer: no linkage back into a CM action from here — an rApp that wants to<br/>act on this prediction calls DME's /actions (call flow 03, Path B) or<br/>ran-nf-oam directly on its own, out-of-band decision — AIMgF never<br/>automates that step today. See "Key decisions" and call flow 03's own<br/>opening note for how the two flows connect, and OPEN_ITEMS.md's rApp<br/>Autonomy Modes section for how this linkage is meant to work once built
 
     SA->>AIMgF: SubscribePerformanceMonitoring(modelId, metricTypes, dmeTypeId, guardKpiFloor?, notificationDestination?)
     Note over AIMgF: MLMF — new sub-function, distinct from RAN Analytics' MDAF (LLD section 2)
@@ -106,4 +110,5 @@ sequenceDiagram
 - ModelLifecycle and RuntimeLifecycle are deliberately independent FSMs: retraining a PROMOTED model doesn't force its runtime down, and a runtime can be scaled/terminated (jointly with NFO) without touching the model's own certification state.
 - AIMgF's own `model_lifecycle` row is now the single source of truth for lifecycle/runtime state and `clearedNodeGroups` — MLMR never carries any of it, not even as a Wave 1-style structural shortcut. MLLF still owns the *decision* of which node groups a model is placed on; it just writes that decision onto AIMgF's row now instead of MLMR's.
 - A model runtime has no onboarded `ApplicationPackage` behind it, unlike an rApp's own `NfDeploymentDescriptor` — NFO's `packageId` is optional since this wave for exactly that caller.
+- **Open, tracked in `OPEN_ITEMS.md`**: operator gating for Training->Validation->Emulation, real NFO-backed execution runtimes for MLTF/MLVF/MLEF/MLIF, training-data-DME validation, training-outcome artifact/notification, and the rApp Autonomy-Mode design that eventually closes the inference-to-CM-action linkage this flow's tail end still lacks — none of these are built yet; see `OPEN_ITEMS.md` for the full write-up of each.
 - **Closed since this flow was first written**: `MLMFSubscription` used to be create-and-read only, with no callback and no way to tear one down. It now carries an optional `notificationDestination` (same best-effort-push shape as MDAF's own subscriber notification, call flow 08) and a real `DELETE /mlmf/subscriptions/{id}`, idempotent like every other subscription-shaped resource's unsubscribe route in this build. See call flow 13 for the dedicated subscribe→notify→unsubscribe walkthrough, including the pull-only (no destination registered) case.

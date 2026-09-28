@@ -9,6 +9,17 @@ second producer for an already-known type identity was a hard conflict. `DMEProd
 single-producer model can't express: one type served by two producers, one producer
 serving two types, and what happens to each when health and deletion cross those links.
 
+**P1/P2 are generic on purpose** — this flow is about the many-to-many mechanism itself,
+not any one producer's own domain. A real, already-working instance of "Producer 1"
+exists today: `ran-nf-oam`'s `subscribe_pm` route calls this exact `RegisterDMEType`
+(namespace=RAN, name=`PMCounters.{counterType}`, producerId=ran-nf-oam) to register
+*itself* as a DME producer whenever an operator creates a PM subscription — see call flow
+20 for that walkthrough. That registration only ever covers PM counters; it says nothing
+about RAN NF OAM's other two, independent O1-termination axes — MnS Transport (NETCONF,
+call flow 03) and MnS IOC Data Model conformance (per-vendor own/spec/combined) — which
+`docs/architecture/O1_VENDOR_ONBOARDING_GUIDE.md` covers on their own terms. None of the
+three axes gates or implies the others today.
+
 ```mermaid
 sequenceDiagram
     actor P1 as Producer 1

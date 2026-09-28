@@ -4,6 +4,14 @@ Stitches together Onboarding/rApp Mgmt LLD section 3 (the `FAILED` terminal stat
 never modeled) and section 4 (the cascade-delete guard, concretized as a real guard
 function in `onboarding/app/statemachine.py`, not just a stated rule).
 
+**Scope note**: this flow is about the rApp *package* lifecycle (Onboarding/rApp
+Management) — failure, deprecation, cancel-delete, cascade-delete. It's a different FSM
+from an AI/ML *model's* own `ModelLifecycleState` (AIMgF, call flow 02), which already has
+real `DEPRECATED` and `RETIRED` states reachable through the same governance `advance()`
+route CERTIFY/PROMOTE use — confirmed working in `aimgf/app/statemachine.py`, just never
+walked in a dedicated call flow. A model's own deprecation/retirement isn't a gap; it's an
+undocumented existing path, and a candidate for its own future call-flow (not built here).
+
 ```mermaid
 sequenceDiagram
     actor Operator

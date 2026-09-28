@@ -3,6 +3,15 @@
 Stitches together SO/SA SMOS LLD sections 1-2 — the dispatch table (`so-smos/app/dispatch.py`)
 and SA SMOS's honestly-incomplete `RemedialAction` dispatch.
 
+**How this relates to call flow 03**: this is neither an extension of nor an alternative
+to flow 03 — it's a sibling entry point into the same underlying mechanism. Flow 03 is the
+generic "how does a CM change reach a real ME" walkthrough (Path A/B, dispatch,
+decomposition). This flow's `SA->>NFOAM: WriteConfigurationChanges` line (below) is one
+more caller of that exact same route, triggered automatically by a threshold breach
+instead of by an rApp's or operator's own decision. The dispatch, decomposition, and
+per-ME aggregation logic downstream of that call is identical either way — see call flow
+03 for that detail, which isn't repeated here.
+
 ```mermaid
 sequenceDiagram
     actor Operator

@@ -4,6 +4,17 @@ Stitches together SO/SA SMOS LLD section 1's full dispatch table (`so-smos/app/d
 across three of its five entries in one order, showing the fail-fast halt at whichever
 step actually fails — not just the two-step CONFIG→NFO example call flow 04 already covers.
 
+**How this relates to call flow 02's own AI/ML pipeline**: `DISPATCH_TABLE` has exactly
+one AI/ML-shaped entry — `("TRAINING", "AI_ML_WORKFLOW")` — so an operator can only ever
+drive *Training* as a single SO-SMOS step; there is no `("VALIDATION", ...)`,
+`("EMULATION", ...)`, `("DEPLOY", "AIMGF")` (model-runtime deploy, distinct from the
+`("DEPLOY", "NFO")` entry this flow's own step 3 uses for a workload, not a model), or
+`("INFERENCE", ...)` entry at all. Call flow 02's own Validation/Emulation/
+Deploy(runtime)/Inference steps are only ever reachable by calling AIMgF directly —
+they cannot be composed into a multi-step `ServiceOrder` the way Training can be here.
+This is a real, confirmed gap (`OPEN_ITEMS.md`), not a design choice — nothing in the
+LLD says Training alone should be orchestratable while the rest of the pipeline isn't.
+
 ```mermaid
 sequenceDiagram
     actor Operator
