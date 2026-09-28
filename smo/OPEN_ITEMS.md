@@ -2761,18 +2761,27 @@ it — see 6.3's own AUTONOMOUS-mode Intent routing for the analogous "goes thro
 established mechanism, not a new one" precedent), and (b) a real notification callback
 fired on each of the three completions, TS28.105-shaped.
 
-### 6.6 GAP: SO-SMOS `DISPATCH_TABLE` has only a TRAINING entry for AI/ML
+### 6.6 GAP: SO-SMOS `DISPATCH_TABLE` has only a TRAINING entry for AI/ML — CLOSED
 
-`so-smos/app/dispatch.py`'s `DISPATCH_TABLE` (call flow 10) has exactly one AI/ML-shaped
-entry: `("TRAINING", "AI_ML_WORKFLOW")`. There is no `("VALIDATION", ...)`,
+`so-smos/app/dispatch.py`'s `DISPATCH_TABLE` (call flow 10) had exactly one AI/ML-shaped
+entry: `("TRAINING", "AI_ML_WORKFLOW")`. There was no `("VALIDATION", ...)`,
 `("EMULATION", ...)`, `("DEPLOY", "AIMGF")` (model-runtime deploy — distinct from the
 existing `("DEPLOY", "NFO")` entry, which dispatches a workload, not a model runtime), or
-`("INFERENCE", ...)` entry. An operator can compose Training into a multi-step
-`ServiceOrder` (call flow 10) but cannot compose Validation, Emulation, Runtime Deploy, or
-Inference the same way — those are only ever reachable by calling AIMgF directly. This is
-a real, confirmed gap, not a design choice — closing it means adding the missing four
-dispatcher functions and `DISPATCH_TABLE` entries, following the existing `dispatch_training`
-shape (`_ensure_ok` status-code check, `DownstreamError` on failure).
+`("INFERENCE", ...)` entry. An operator could compose Training into a multi-step
+`ServiceOrder` (call flow 10) but not Validation, Emulation, Runtime Deploy, or Inference —
+those were only ever reachable by calling AIMgF directly.
+
+**Closed.** Added `dispatch_validation`/`dispatch_emulation`/`dispatch_model_runtime_deploy`/
+`dispatch_inference`, following `dispatch_training`'s own shape exactly (`_ensure_ok`
+status-code check, `DownstreamError` on failure) — each a thin forward to the real AIMgF
+route call flow 02/17 already document, no new logic of its own, the same "Path B never
+duplicates Path A's dispatch logic" principle call flow 03 already states for DME's O1
+action-mediation route. `("DEPLOY", "AIMGF")` is deliberately a distinct key from
+`("DEPLOY", "NFO")` — same `stepType`, different `targetModule`, exactly the disambiguation
+every other entry in this table already relies on. Call flow 10 now shows all five AI/ML
+step types composed in one order; the GUI's `Infrastructure.tsx` step-template picker
+gained matching `VALIDATION`/`EMULATION`/`MODEL_DEPLOY`/`INFERENCE` buttons, prefilled with
+the newest model like `TRAINING` already was.
 
 ### 6.7 GAP: FM/alarms never registered as a DME producer type — CLOSED
 
@@ -2807,10 +2816,9 @@ source NF or an operator, unaffected by FM's DME registration.
 
 0. **§6's seven AI/ML-pipeline items are the current front of the queue** — pick these up
    one at a time, per the user's own stated preference, rather than in a batch.
-   ~~6.7 (FM→DME registration)~~ — **closed**, first item off this list (see 6.7's own
-   entry above). Remaining suggested order, easiest/most self-contained first:
-   6.6 (SO-SMOS dispatch entries — four small
-   dispatcher functions following `dispatch_training`'s shape) → 6.4 (training-data-DME
+   ~~6.7 (FM→DME registration)~~ and ~~6.6 (SO-SMOS dispatch entries)~~ — **both closed**,
+   the first two items off this list (see each one's own entry above). Remaining suggested
+   order, easiest/most self-contained first: 6.4 (training-data-DME
    validation — a direct copy of MDAF's existing pattern) → 6.5 (training-outcome
    artifact/notification) → 6.1 (operator gate on Training/Validation/Emulation) → 6.2
    (real NFO-backed execution runtimes — the largest code change of the seven) → 6.3 (rApp
