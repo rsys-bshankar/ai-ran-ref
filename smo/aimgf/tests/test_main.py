@@ -262,6 +262,140 @@ def test_training_job_status_exposes_dme_data_job_ids(client, monkeypatch):
     assert status["dmeDataJobIds"] == [str(data_job_id)]
 
 
+def test_complete_training_succeeds_records_outcome_artifact_and_advances_lifecycle(client, mlmr):
+    """OPEN_ITEMS.md section 6.5, closed: unlike Validation/Emulation,
+    Training's own completion previously had no dedicated route at all —
+    only the generic /models/{id}/advance(TRAINING_COMPLETE), which has
+    no way to record what the run produced.
+    """
+    model_id = mlmr.add_model()
+    training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.TRAINING
+
+    artifact_id = uuid.uuid4()
+    resp = client.post(f"/training-jobs/{training_job_id}/complete", json={
+        "succeeded": True, "metrics": {"loss": 0.02}, "outcomeArtifactDmeTypeId": str(artifact_id),
+    })
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "FINISHED"
+    assert resp.json()["outcomeArtifactDmeTypeId"] == str(artifact_id)
+    assert resp.json()["modelMetrics"] == {"loss": 0.02}
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.TRAINED
+
+
+def test_complete_training_failure_routes_the_model_to_failed(client, mlmr):
+    model_id = mlmr.add_model()
+    training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+
+    resp = client.post(f"/training-jobs/{training_job_id}/complete", json={"succeeded": False})
+    assert resp.json()["status"] == "FAILED"
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.FAILED
+
+
+def test_complete_training_for_unknown_job_is_a_clean_404(client):
+    resp = client.post(f"/training-jobs/{uuid.uuid4()}/complete", json={"succeeded": True})
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["title"] == "TRAINING_JOB_NOT_FOUND"
+
+
+def test_complete_training_for_coordination_group_job_never_touches_a_model_lifecycle(client, monkeypatch):
+    """A group-targeted TrainingJob has no single model to advance — the
+    same asymmetry request_training itself already has (no lifecycle
+    event fired at creation either for a group target).
+    """
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeResponse(200, {}))
+    training_job_id = client.post("/training-jobs", json={
+        "modelCoordinationGroupId": str(uuid.uuid4()), "producerId": "rapp-1",
+    }).json()["trainingJobId"]
+
+    resp = client.post(f"/training-jobs/{training_job_id}/complete", json={"succeeded": True})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "FINISHED"
+
+
+def test_complete_training_notifies_the_registered_destination(client, mlmr, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    model_id = mlmr.add_model()
+    training_job_id = client.post("/training-jobs", json={
+        "modelId": str(model_id), "producerId": "rapp-1", "notificationUri": "http://consumer/training-cb",
+    }).json()["trainingJobId"]
+    artifact_id = uuid.uuid4()
+
+    client.post(f"/training-jobs/{training_job_id}/complete", json={"succeeded": True, "outcomeArtifactDmeTypeId": str(artifact_id)})
+
+    assert len(calls) == 1
+    url, body = calls[0]
+    assert url == "http://consumer/training-cb"
+    assert body["jobKind"] == "TRAINING"
+    assert body["jobId"] == training_job_id
+    assert body["succeeded"] is True
+    assert body["outcomeArtifactDmeTypeId"] == str(artifact_id)
+
+
+def test_complete_training_without_notification_uri_never_calls_out(client, mlmr, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    model_id = mlmr.add_model()
+    training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+
+    client.post(f"/training-jobs/{training_job_id}/complete", json={"succeeded": True})
+
+    assert calls == []
+
+
+def test_complete_training_notification_delivery_survives_an_unreachable_destination(client, mlmr, monkeypatch):
+    import httpx as httpx_module
+
+    def raise_error(url, json=None, timeout=None):
+        raise httpx_module.HTTPError("unreachable")
+
+    monkeypatch.setattr("app.main.httpx.post", raise_error)
+    model_id = mlmr.add_model()
+    training_job_id = client.post("/training-jobs", json={
+        "modelId": str(model_id), "producerId": "rapp-1", "notificationUri": "http://unreachable/cb",
+    }).json()["trainingJobId"]
+
+    resp = client.post(f"/training-jobs/{training_job_id}/complete", json={"succeeded": True})
+    assert resp.status_code == 200
+
+
+def test_complete_validation_records_outcome_artifact_and_notifies(client, mlmr, db_session_factory, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
+    job_id = client.post("/validation-jobs", json={
+        "modelId": str(model_id), "producerId": "rapp-1", "notificationUri": "http://consumer/validation-cb",
+    }).json()["validationJobId"]
+    artifact_id = uuid.uuid4()
+
+    resp = client.post(f"/validation-jobs/{job_id}/complete", json={"succeeded": True, "outcomeArtifactDmeTypeId": str(artifact_id)})
+
+    assert resp.json()["outcomeArtifactDmeTypeId"] == str(artifact_id)
+    assert len(calls) == 1
+    assert calls[0][0] == "http://consumer/validation-cb"
+    assert calls[0][1]["jobKind"] == "VALIDATION"
+
+
+def test_complete_emulation_records_outcome_artifact_and_notifies(client, mlmr, db_session_factory, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED)
+    job_id = client.post("/emulation-jobs", json={
+        "modelId": str(model_id), "producerId": "rapp-1", "notificationUri": "http://consumer/emulation-cb",
+    }).json()["emulationJobId"]
+    artifact_id = uuid.uuid4()
+
+    resp = client.post(f"/emulation-jobs/{job_id}/complete", json={"succeeded": True, "outcomeArtifactDmeTypeId": str(artifact_id)})
+
+    assert resp.json()["outcomeArtifactDmeTypeId"] == str(artifact_id)
+    assert len(calls) == 1
+    assert calls[0][0] == "http://consumer/emulation-cb"
+    assert calls[0][1]["jobKind"] == "EMULATION"
+
+
 def test_update_and_get_training_job_model_metrics(client, mlmr):
     model_id = mlmr.add_model()
     training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]

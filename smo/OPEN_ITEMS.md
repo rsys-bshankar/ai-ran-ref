@@ -2757,18 +2757,29 @@ requirement on every training request. The declared ids are stored on `TrainingJ
 dme_data_job_ids` (new column) and exposed on `GET /training-jobs/{id}/status`. Call flow 02
 updated to show the new cross-check.
 
-### 6.5 GAP: no training-outcome artifact or TS28.105 completion notification
+### 6.5 GAP: no training-outcome artifact or TS28.105 completion notification — CLOSED
 
-Nothing in `ModelLifecycle` records a saved training-outcome artifact (a model file,
-weights, or equivalent), and no `notification_uri`-style callback fires on training/
+Nothing in `ModelLifecycle` recorded a saved training-outcome artifact (a model file,
+weights, or equivalent), and no `notification_uri`-style callback fired on training/
 validation/emulation completion per TS28.105's own completion-notification expectation —
 `advance(TRAINING_COMPLETE)`/`complete(validationJobId, ...)`/`complete(emulationJobId,
-...)` are bare state transitions with no side effect beyond the FSM move itself. Closing
-this needs: (a) a real field/mechanism for where a training run's output artifact is
-recorded (DME, given every other cross-module data-plane path in this build goes through
-it — see 6.3's own AUTONOMOUS-mode Intent routing for the analogous "goes through the
-established mechanism, not a new one" precedent), and (b) a real notification callback
-fired on each of the three completions, TS28.105-shaped.
+...)` were bare state transitions with no side effect beyond the FSM move itself.
+
+**Closed.** (a) Added `outcome_artifact_dme_type_id` to `TrainingJob`/`ValidationJob`/
+`EmulationJob` — a DME `DmeTypeId` reference, the same "route it through DME" shape
+`MLModel.outputDataType` already uses for an inference result, rather than inventing a
+second data-plane path; set on completion (`CompleteJobRequest.outcomeArtifactDmeTypeId`),
+not at request time, since the artifact doesn't exist until the run actually produces one.
+(b) Added a `_notify_job_completion` helper (best-effort, same pattern as every other
+subscription-shaped notification in this build) fired from all three completions, using
+each job's own `notificationUri` (a new field on `RequestValidationRequest`/
+`RequestEmulationRequest`; `TrainingJob`'s own `notificationUri` already existed but was
+dead — never actually called — until now). Training itself gained a genuinely new,
+dedicated `POST /training-jobs/{id}/complete` route to carry this — previously Training's
+completion only ever went through the generic `/models/{id}/advance(TRAINING_COMPLETE)`,
+which has no way to attach job-level data at all. Additive, not a replacement: the generic
+`advance()` route is untouched and still works for any caller that doesn't need job-level
+bookkeeping. Call flow 02 updated to show both the outcome artifact and the notification.
 
 ### 6.6 GAP: SO-SMOS `DISPATCH_TABLE` has only a TRAINING entry for AI/ML — CLOSED
 
@@ -2825,11 +2836,11 @@ source NF or an operator, unaffected by FM's DME registration.
 
 0. **§6's seven AI/ML-pipeline items are the current front of the queue** — pick these up
    one at a time, per the user's own stated preference, rather than in a batch.
-   ~~6.7 (FM→DME registration)~~, ~~6.6 (SO-SMOS dispatch entries)~~, and ~~6.4
-   (training-data-DME validation)~~ — **all three closed**, the first three items off this
-   list (see each one's own entry above). Remaining suggested order, easiest/most
-   self-contained first: 6.5 (training-outcome
-   artifact/notification) → 6.1 (operator gate on Training/Validation/Emulation) → 6.2
+   ~~6.7 (FM→DME registration)~~, ~~6.6 (SO-SMOS dispatch entries)~~, ~~6.4
+   (training-data-DME validation)~~, and ~~6.5 (training-outcome artifact/notification)~~ —
+   **four closed**, the first four items off this list (see each one's own entry above).
+   Remaining suggested order, easiest/most self-contained first: 6.1 (operator gate on
+   Training/Validation/Emulation) → 6.2
    (real NFO-backed execution runtimes — the largest code change of the seven) → 6.3 (rApp
    Autonomy Modes — the largest *design* change of the seven, and the one the other six
    don't block on, so it can move independently of where the rest land).

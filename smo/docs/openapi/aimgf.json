@@ -37,6 +37,18 @@
             "title": "Metrics",
             "type": "object"
           },
+          "outcomeArtifactDmeTypeId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcomeartifactdmetypeid"
+          },
           "succeeded": {
             "title": "Succeeded",
             "type": "boolean"
@@ -164,6 +176,17 @@
             "format": "uuid",
             "title": "Modelid",
             "type": "string"
+          },
+          "notificationUri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notificationuri"
           },
           "producerId": {
             "title": "Producerid",
@@ -307,6 +330,17 @@
             "format": "uuid",
             "title": "Modelid",
             "type": "string"
+          },
+          "notificationUri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notificationuri"
           },
           "producerId": {
             "title": "Producerid",
@@ -1988,6 +2022,55 @@
           }
         },
         "summary": "Cancel Training"
+      }
+    },
+    "/training-jobs/{training_job_id}/complete": {
+      "post": {
+        "description": "OPEN_ITEMS.md section 6.5, closed: unlike Validation/Emulation\n(which already had their own dedicated `.../complete` routes),\nTraining's own completion only ever went through the generic\n`POST /models/{id}/advance(TRAINING_COMPLETE)` route \u2014 real for the\nmodel's own lifecycle state, but with no way to record what the run\nactually produced or notify anyone. This is additive, not a\nreplacement: that generic route still fires\nTRAINING_COMPLETE/TRAINING_FAILED directly for any caller that\ndoesn't need job-level bookkeeping. This route brings Training up to\nthe same real request/tracking-aggregate parity Validation/Emulation\nalready had \u2014 job status (TrainingJob's own FINISHED/FAILED\nvocabulary, not COMPLETED), the outcome artifact, and a best-effort\ncompletion notification, plus the same model-lifecycle transition\nthe generic route fires (skipped for a coordination-group-targeted\njob, which has no single model to advance \u2014 the same asymmetry\n`request_training` itself already has).",
+        "operationId": "complete_training_training_jobs__training_job_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "training_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Training Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Training"
       }
     },
     "/training-jobs/{training_job_id}/model-metrics": {

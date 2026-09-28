@@ -164,17 +164,28 @@ class RequestValidationRequest(BaseModel):
     trainingJobId: uuid.UUID | None = None
     producerId: str
     validationCriteria: dict = {}
+    # OPEN_ITEMS.md section 6.5: TS28.105-style completion notification —
+    # same optional, best-effort shape TrainingJob's own notificationUri
+    # already had (and never used); now genuinely fired on completion.
+    notificationUri: str | None = None
 
 
 class RequestEmulationRequest(BaseModel):
     modelId: uuid.UUID
     producerId: str
     emulationCriteria: dict = {}
+    notificationUri: str | None = None
 
 
 class CompleteJobRequest(BaseModel):
     succeeded: bool
     metrics: dict = {}
+    # OPEN_ITEMS.md section 6.5: where the real output artifact lives —
+    # a DME DmeTypeId reference, the same "route it through DME" shape
+    # MLModel's own outputDataType already uses. Optional: a job the
+    # producer doesn't attach an artifact to (e.g. a failed run) simply
+    # leaves this null.
+    outcomeArtifactDmeTypeId: uuid.UUID | None = None
 
 
 class UpdateNodeGroupsRequest(BaseModel):
@@ -212,6 +223,29 @@ def _validate_dme_data_job_ids(dme_data_job_ids: list[uuid.UUID]) -> None:
         resp = _r1.get(f"/dme/data-jobs/{data_job_id}")
         if resp.status_code != 200:
             raise framework_error(FrameworkError.DME_ARTIFACT_NOT_FOUND, detail=f"no such DME data job {data_job_id}")
+
+
+def _notify_job_completion(notification_uri: str | None, job_kind: str, job_id: uuid.UUID, succeeded: bool,
+                            outcome_artifact_dme_type_id: uuid.UUID | None, metrics: dict) -> None:
+    """OPEN_ITEMS.md section 6.5: TS28.105-style completion notification —
+    `advance(TRAINING_COMPLETE)`/`complete(validationJobId, ...)`/
+    `complete(emulationJobId, ...)` used to be bare state transitions
+    with no side effect beyond the FSM move itself. Best-effort, the
+    same pattern as every other subscription-shaped notification in
+    this build (report_performance's own subscriber push, MDAF's
+    publish_report, Intent Service's CreateIntent) — an unreachable
+    destination never fails the completion call itself.
+    """
+    if not notification_uri:
+        return
+    try:
+        httpx.post(notification_uri, json={
+            "jobKind": job_kind, "jobId": str(job_id), "succeeded": succeeded,
+            "outcomeArtifactDmeTypeId": str(outcome_artifact_dme_type_id) if outcome_artifact_dme_type_id else None,
+            "metrics": metrics,
+        }, timeout=2.0)
+    except httpx.HTTPError:
+        pass
 
 
 @app.post("/training-jobs", status_code=201)
@@ -280,7 +314,42 @@ def query_training_job_status(training_job_id: uuid.UUID, db: Session = Depends(
         "trainingDataset": job.training_dataset, "validationDataset": job.validation_dataset,
         "consumerRappId": job.consumer_rapp_id, "producerRappId": job.producer_rapp_id,
         "mlTrainingType": job.ml_training_type, "dmeDataJobIds": [str(i) for i in job.dme_data_job_ids],
+        "outcomeArtifactDmeTypeId": str(job.outcome_artifact_dme_type_id) if job.outcome_artifact_dme_type_id else None,
     }
+
+
+@app.post("/training-jobs/{training_job_id}/complete")
+def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: Session = Depends(get_session)):
+    """OPEN_ITEMS.md section 6.5, closed: unlike Validation/Emulation
+    (which already had their own dedicated `.../complete` routes),
+    Training's own completion only ever went through the generic
+    `POST /models/{id}/advance(TRAINING_COMPLETE)` route — real for the
+    model's own lifecycle state, but with no way to record what the run
+    actually produced or notify anyone. This is additive, not a
+    replacement: that generic route still fires
+    TRAINING_COMPLETE/TRAINING_FAILED directly for any caller that
+    doesn't need job-level bookkeeping. This route brings Training up to
+    the same real request/tracking-aggregate parity Validation/Emulation
+    already had — job status (TrainingJob's own FINISHED/FAILED
+    vocabulary, not COMPLETED), the outcome artifact, and a best-effort
+    completion notification, plus the same model-lifecycle transition
+    the generic route fires (skipped for a coordination-group-targeted
+    job, which has no single model to advance — the same asymmetry
+    `request_training` itself already has).
+    """
+    job = db.get(TrainingJob, training_job_id)
+    if job is None:
+        raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
+    job.status = "FINISHED" if body.succeeded else "FAILED"
+    job.model_metrics = body.metrics
+    job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
+    if job.model_id is not None:
+        event = ModelLifecycleEvent.TRAINING_COMPLETE if body.succeeded else ModelLifecycleEvent.TRAINING_FAILED
+        _fire_model_event(db, job.model_id, event)
+    db.commit()
+    _notify_job_completion(job.notification_uri, "TRAINING", job.training_job_id, body.succeeded,
+                            job.outcome_artifact_dme_type_id, job.model_metrics)
+    return _training_job_view(job)
 
 
 @app.delete("/training-jobs/{training_job_id}", status_code=204)
@@ -378,7 +447,8 @@ def request_validation(body: RequestValidationRequest, db: Session = Depends(get
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
                                detail=f"cannot request validation for a model in state {lifecycle.model_lifecycle_state}")
     job = ValidationJob(model_id=body.modelId, training_job_id=body.trainingJobId, producer_id=body.producerId,
-                         validation_criteria=body.validationCriteria, status="RUNNING")
+                         validation_criteria=body.validationCriteria, status="RUNNING",
+                         notification_uri=body.notificationUri)
     db.add(job)
     db.flush()
     _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_VALIDATION)
@@ -401,9 +471,12 @@ def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, 
         raise framework_error(FrameworkError.VALIDATION_JOB_NOT_FOUND, detail="no such validation job")
     job.status = "COMPLETED" if body.succeeded else "FAILED"
     job.metrics = body.metrics
+    job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
     event = ModelLifecycleEvent.VALIDATION_COMPLETE if body.succeeded else ModelLifecycleEvent.VALIDATION_FAILED
     _fire_model_event(db, job.model_id, event)
     db.commit()
+    _notify_job_completion(job.notification_uri, "VALIDATION", job.validation_job_id, body.succeeded,
+                            job.outcome_artifact_dme_type_id, job.metrics)
     return _validation_job_view(job)
 
 
@@ -432,7 +505,8 @@ def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_s
     if lifecycle.model_lifecycle_state != ModelLifecycleState.VALIDATED:
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
                                detail=f"cannot request emulation for a model in state {lifecycle.model_lifecycle_state}")
-    job = EmulationJob(model_id=body.modelId, producer_id=body.producerId, emulation_criteria=body.emulationCriteria, status="RUNNING")
+    job = EmulationJob(model_id=body.modelId, producer_id=body.producerId, emulation_criteria=body.emulationCriteria,
+                        status="RUNNING", notification_uri=body.notificationUri)
     db.add(job)
     db.flush()
     _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_EMULATION)
@@ -455,9 +529,12 @@ def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db
         raise framework_error(FrameworkError.EMULATION_JOB_NOT_FOUND, detail="no such emulation job")
     job.status = "COMPLETED" if body.succeeded else "FAILED"
     job.metrics = body.metrics
+    job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
     event = ModelLifecycleEvent.EMULATION_COMPLETE if body.succeeded else ModelLifecycleEvent.EMULATION_FAILED
     _fire_model_event(db, job.model_id, event)
     db.commit()
+    _notify_job_completion(job.notification_uri, "EMULATION", job.emulation_job_id, body.succeeded,
+                            job.outcome_artifact_dme_type_id, job.metrics)
     return _emulation_job_view(job)
 
 
@@ -827,19 +904,22 @@ def _training_job_view(j: TrainingJob) -> dict:
             "modelCoordinationGroupId": str(j.model_coordination_group_id) if j.model_coordination_group_id else None,
             "producerId": j.producer_id, "status": j.status, "runId": j.run_id,
             "trainingDataset": j.training_dataset, "validationDataset": j.validation_dataset,
-            "modelMetrics": j.model_metrics, "mlTrainingType": j.ml_training_type}
+            "modelMetrics": j.model_metrics, "mlTrainingType": j.ml_training_type,
+            "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None}
 
 
 def _validation_job_view(j: ValidationJob) -> dict:
     return {"validationJobId": str(j.validation_job_id), "modelId": str(j.model_id),
             "trainingJobId": str(j.training_job_id) if j.training_job_id else None,
             "producerId": j.producer_id, "validationCriteria": j.validation_criteria or {},
-            "status": j.status, "metrics": j.metrics or {}}
+            "status": j.status, "metrics": j.metrics or {},
+            "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None}
 
 
 def _emulation_job_view(j: EmulationJob) -> dict:
     return {"emulationJobId": str(j.emulation_job_id), "modelId": str(j.model_id), "producerId": j.producer_id,
-            "emulationCriteria": j.emulation_criteria or {}, "status": j.status, "metrics": j.metrics or {}}
+            "emulationCriteria": j.emulation_criteria or {}, "status": j.status, "metrics": j.metrics or {},
+            "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None}
 
 
 def _certification_record_view(r: CertificationRecord) -> dict:
