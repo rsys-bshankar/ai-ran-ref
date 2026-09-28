@@ -8,7 +8,8 @@ sequenceDiagram
     actor Operator
     participant SO as SO SMOS
     participant SA as SA SMOS
-    participant RanA as RAN Analytics SMOS
+    participant MDAF as MDAF
+    participant AIMgF as AIMgF
     participant NFOAM as RAN NF OAM SMOS
     participant NFO as NFO SMOS
 
@@ -22,8 +23,12 @@ sequenceDiagram
     SO-->>Operator: orderId, steps=[COMPLETED, COMPLETED]
 
     SA->>SA: RegisterAssuranceMonitor(targetOrderId, thresholds)
-    loop periodic, aligned with RAN Analytics' subscription cadence
-        RanA-->>SA: MDAFReport (or MLMF PerformanceReport, if model-scoped)
+    loop periodic, aligned with each subscription's own report cadence
+        alt RAN-behavior scoped
+            MDAF-->>SA: best-effort push: MDAFReport (call flow 08 — RAN Analytics<br/>only registers the producer; MDAF owns report storage/push since Wave 1)
+        else model-scoped
+            AIMgF-->>SA: best-effort push: MLMF PerformanceReport (call flow 02/13 —<br/>AIMgF pushes directly, distinct domain from MDAF's RAN-behavior analytics)
+        end
         SA->>SA: EvaluateThresholds() — compare against requirementThresholds
     end
 
@@ -54,3 +59,4 @@ sequenceDiagram
 - `RECONNECT` resolves its target the same way every other remedial action does — through the `AssuranceMonitor`'s `targetOrderId`, read back from SO SMOS's own order record — rather than needing a new resource-reference field on the monitor itself.
 - `ROLLBACK` stays unsupported, but now for a concrete, checked reason (`ROLLBACK_HISTORY_UNAVAILABLE`) rather than a vague "ambiguous meaning" refusal: rApp Management's own upgrade machinery (`rapp-mgmt/app/upgrade.py`) deletes the prior `RAppInstance` row on a successful commit, so there is no version history anywhere in this build to roll back to — a rApp Management gap, not an SA SMOS design question.
 - A coordination-group-scoped `AssuranceMonitor` (via `targetCoordinationGroupId`) would route through AI/ML Workflow's `should_trigger_group_retrain` instead of a single `ServiceOrder` — see call flow 02. A coordination-group-scoped `RECONNECT`/`ROLLBACK` isn't resolved by this pass either — only the `targetOrderId` path is.
+- **Reconciled since this flow was first written**: the actor pushing reports into SA SMOS is whichever service actually owns them post-Wave-1 decomposition — MDAF for RAN-behavior analytics, AIMgF for model performance (MLMF) — not RAN Analytics SMOS directly. RAN Analytics only registers the producer capability (call flow 08); it was never the one holding or pushing reports, even before the split.

@@ -31,6 +31,7 @@ sequenceDiagram
     participant DME as DME
     actor Operator as Operator (governance)
     actor Consumer as Inference Consumer rApp
+    actor SA as SA SMOS (MLMF subscriber)
 
     Producer->>MLMR: RegisterModel(modelType, version)
     MLMR-->>Producer: modelId
@@ -78,10 +79,13 @@ sequenceDiagram
     Consumer->>DME: pull result via the model's outputDataType DmeTypeId
     DME-->>Consumer: prediction payload
 
-    Producer->>AIMgF: SubscribePerformanceMonitoring(modelId, metricTypes, guardKpiFloor)
+    SA->>AIMgF: SubscribePerformanceMonitoring(modelId, metricTypes, dmeTypeId, guardKpiFloor?, notificationDestination?)
     Note over AIMgF: MLMF — new sub-function, distinct from RAN Analytics' MDAF (LLD section 2)
+    AIMgF-->>SA: subscriptionId
     Producer->>AIMgF: ReportPerformance(subscriptionId, metrics)
     AIMgF->>AIMgF: breachedFloor = metrics violate guardKpiFloor
+    AIMgF->>SA: best-effort POST notificationDestination (reportId, modelId, metrics, breachedFloor)
+    Note over AIMgF,SA: same unreachable-subscriber-never-fails-the-publish pattern<br/>as MDAF's own subscriber push (call flow 08) — a subscription<br/>with no notificationDestination stays query-only
     alt breached and model belongs to a MLModelCoordinationGroup
         AIMgF->>MLMR: GET /coordination-groups (find this model's group)
         MLMR-->>AIMgF: group + memberModelIds
@@ -89,6 +93,10 @@ sequenceDiagram
         Note over AIMgF: ANY_MEMBER_TRIGGERS (checked-in default) fires on ONE breach —<br/>all group members retrain together (LLD section 4.3-4.4)
         AIMgF->>AIMgF: CreateTraining(memberId) per PROMOTED member -> TRAINING
     end
+
+    SA->>AIMgF: DELETE /mlmf/subscriptions/{subscriptionId}
+    Note over AIMgF: idempotent — a second DELETE of the same (or unknown) id<br/>still returns 204, matching every other subscription-shaped<br/>resource's own unsubscribe route in this build
+    AIMgF-->>SA: 204
 ```
 
 **Key decisions this flow depends on:**
@@ -98,3 +106,4 @@ sequenceDiagram
 - ModelLifecycle and RuntimeLifecycle are deliberately independent FSMs: retraining a PROMOTED model doesn't force its runtime down, and a runtime can be scaled/terminated (jointly with NFO) without touching the model's own certification state.
 - AIMgF's own `model_lifecycle` row is now the single source of truth for lifecycle/runtime state and `clearedNodeGroups` — MLMR never carries any of it, not even as a Wave 1-style structural shortcut. MLLF still owns the *decision* of which node groups a model is placed on; it just writes that decision onto AIMgF's row now instead of MLMR's.
 - A model runtime has no onboarded `ApplicationPackage` behind it, unlike an rApp's own `NfDeploymentDescriptor` — NFO's `packageId` is optional since this wave for exactly that caller.
+- **Closed since this flow was first written**: `MLMFSubscription` used to be create-and-read only, with no callback and no way to tear one down. It now carries an optional `notificationDestination` (same best-effort-push shape as MDAF's own subscriber notification, call flow 08) and a real `DELETE /mlmf/subscriptions/{id}`, idempotent like every other subscription-shaped resource's unsubscribe route in this build. See call flow 13 for the dedicated subscribe→notify→unsubscribe walkthrough, including the pull-only (no destination registered) case.

@@ -23,9 +23,10 @@ sequenceDiagram
     participant SME as SME
     actor Consumer as Analytics Consumer rApp (e.g. SA SMOS)
 
-    Producer->>R1: POST /ran-analytics/producers (producerId, analyticsType, dmeInputTypes, outputSchema)
+    Producer->>R1: POST /ran-analytics/producers (producerId, analyticsType, dmeInputTypes, outputSchema, mdaType?)
     R1->>RanA: (proxied) RegisterAnalyticsProducer
     RanA->>RanA: upsert MDAFProducer on (producer_id, analytics_type) —<br/>re-registering the same pair updates in place, not a conflict
+    RanA->>RanA: mdaType: validate against the real 24-value TS28104 MDAType<br/>enum if declared; else infer_mda_type() for the two shorthand<br/>values this build honestly maps, else leave null — never guessed
     RanA->>SME: RegisterService (serviceName=mdaf.{analyticsType}, serviceCapabilities.analyticsType)
     SME-->>RanA: serviceId
     RanA-->>Producer: {status: registered}
@@ -56,3 +57,4 @@ sequenceDiagram
 - RAN Analytics registers its producer's capability through SME (`RegisterService`), making it independently discoverable via `service-apis` like any other R1 service — not a private RAN-Analytics-only registry.
 - **Closed since this flow was first written**: `PublishAnalyticsReport`'s subscriber-notification loop used to be a deliberate no-op (`for sub in subs: pass`) — a `MDASubscription`'s `requestedBy` was recorded but never actually called back. `SubscribeAnalytics` now also accepts an optional `notificationDestination` (same shape as A1 Related's/Intent Service's own subscription callbacks), and a published report is best-effort POSTed to every matching subscriber that registered one, same delivery guarantees as those two (an unreachable subscriber never fails the publish). A subscriber that never registers a destination stays pull-only via `QueryAnalyticsReport`.
 - This is architecturally distinct from AI/ML Workflow's MLMF (call flow 02, now AIMgF's) even though both look like "metrics in, subscribers out" — RAN Analytics' `analyticsType` describes RAN *behavior* (coverage, interference, resource utilization), never a model's own performance, which stays MLMF's domain exclusively (RAN Analytics LLD section 2).
+- **Closed since this flow was first written**: `analyticsType` stays a free string — every real caller's value is informal shorthand, not one of TS28104's 24 closed wire values, and renaming callers for conformance alone isn't a bug fix. Additive instead: an optional `mdaType` validates against the real enum when a caller declares one directly, and is auto-derived for the two shorthand values with an honest, unambiguous real-spec correspondence — anything else stays `null`, not fabricated.
