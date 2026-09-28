@@ -205,6 +205,63 @@ def test_request_training_stores_and_exposes_extended_fields(client, mlmr):
     assert status["producerRappId"] == "rapp-producer"
 
 
+def test_request_training_rejects_unknown_dme_data_job_id(client, monkeypatch):
+    """OPEN_ITEMS.md section 6.4, closed: mirrors MDAF's own
+    `_validate_input_sources_are_real_dme_artifacts` test coverage exactly
+    (`mdaf/tests/test_main.py`'s `test_publish_report_rejects_unknown_dme_input_source`).
+    Uses a coordination-group-targeted request so no MLMR model lookup is
+    involved — this test is purely about the new DME cross-check.
+    """
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeResponse(404, {}))
+    resp = client.post("/training-jobs", json={
+        "modelCoordinationGroupId": str(uuid.uuid4()), "producerId": "rapp-1",
+        "dmeDataJobIds": [str(uuid.uuid4())],
+    })
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "DME_ARTIFACT_NOT_FOUND"
+
+
+def test_request_training_accepts_known_dme_data_job_ids(client, monkeypatch):
+    calls = []
+
+    def fake_get(self, path, **kw):
+        calls.append(path)
+        return FakeResponse(200, {})
+
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    data_job_id = uuid.uuid4()
+    resp = client.post("/training-jobs", json={
+        "modelCoordinationGroupId": str(uuid.uuid4()), "producerId": "rapp-1",
+        "dmeDataJobIds": [str(data_job_id)],
+    })
+    assert resp.status_code == 201
+    assert calls == [f"/dme/data-jobs/{data_job_id}"]
+
+
+def test_request_training_without_dme_data_job_ids_skips_the_check_entirely(client, monkeypatch):
+    """The check is additive, not a new hard requirement on every training
+    request — an empty/omitted list (every existing caller's own shape)
+    never touches DME at all.
+    """
+    called = []
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: called.append(path))
+    resp = client.post("/training-jobs", json={"modelCoordinationGroupId": str(uuid.uuid4()), "producerId": "rapp-1"})
+    assert resp.status_code == 201
+    assert called == []
+
+
+def test_training_job_status_exposes_dme_data_job_ids(client, monkeypatch):
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeResponse(200, {}))
+    data_job_id = uuid.uuid4()
+    resp = client.post("/training-jobs", json={
+        "modelCoordinationGroupId": str(uuid.uuid4()), "producerId": "rapp-1", "dmeDataJobIds": [str(data_job_id)],
+    })
+    training_job_id = resp.json()["trainingJobId"]
+
+    status = client.get(f"/training-jobs/{training_job_id}/status").json()
+    assert status["dmeDataJobIds"] == [str(data_job_id)]
+
+
 def test_update_and_get_training_job_model_metrics(client, mlmr):
     model_id = mlmr.add_model()
     training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]

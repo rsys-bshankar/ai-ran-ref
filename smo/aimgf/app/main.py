@@ -143,6 +143,13 @@ class RequestTrainingRequest(BaseModel):
     modelCoordinationGroupId: uuid.UUID | None = None
     producerId: str
     requiredData: dict = {}
+    # OPEN_ITEMS.md section 6.4: a separate, explicitly-typed reference to
+    # the real DME DataJob(s) training actually consumes — requiredData
+    # itself stays the opaque blob it always was. Optional and additive:
+    # an empty/omitted list skips the check entirely, the same permissive
+    # shape DME's own sourceDomain/sourceContext already uses for an
+    # optional cross-reference.
+    dmeDataJobIds: list[uuid.UUID] = []
     validationCriteria: dict = {}
     notificationUri: str | None = None
     runId: str | None = None
@@ -192,6 +199,21 @@ class CreateFeatureGroupRequest(BaseModel):
 
 # ---------------------------------------------------------------- Training
 
+def _validate_dme_data_job_ids(dme_data_job_ids: list[uuid.UUID]) -> None:
+    """OPEN_ITEMS.md section 6.4: mirrors MDAF's own
+    `_validate_input_sources_are_real_dme_artifacts` (`mdaf/app/main.py`)
+    exactly — every declared id must resolve to a real DME `DataJob`.
+    AIMgF doesn't fetch the data itself here either, only proves the
+    reference is real, the same division of responsibility MDAF's own
+    docstring states. An empty list (the default) is a no-op: this check
+    is additive, not a new hard requirement on every training request.
+    """
+    for data_job_id in dme_data_job_ids:
+        resp = _r1.get(f"/dme/data-jobs/{data_job_id}")
+        if resp.status_code != 200:
+            raise framework_error(FrameworkError.DME_ARTIFACT_NOT_FOUND, detail=f"no such DME data job {data_job_id}")
+
+
 @app.post("/training-jobs", status_code=201)
 def request_training(body: RequestTrainingRequest, db: Session = Depends(get_session)):
     """RequestTraining — exactly one of modelId/modelCoordinationGroupId,
@@ -207,6 +229,7 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
     """
     if (body.modelId is None) == (body.modelCoordinationGroupId is None):
         raise framework_error(FrameworkError.COORDINATION_GROUP_MISMATCH)
+    _validate_dme_data_job_ids(body.dmeDataJobIds)
 
     lifecycle = None
     if body.modelId is not None:
@@ -226,6 +249,7 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
 
     job = TrainingJob(model_id=body.modelId, model_coordination_group_id=body.modelCoordinationGroupId,
                        producer_id=body.producerId, required_data=body.requiredData,
+                       dme_data_job_ids=body.dmeDataJobIds,
                        validation_criteria=body.validationCriteria, notification_uri=body.notificationUri,
                        status="IN_PROGRESS", run_id=body.runId, training_dataset=body.trainingDataset,
                        validation_dataset=body.validationDataset, consumer_rapp_id=body.consumerRappId,
@@ -255,7 +279,7 @@ def query_training_job_status(training_job_id: uuid.UUID, db: Session = Depends(
         "trainingJobId": str(job.training_job_id), "status": job.status, "runId": job.run_id,
         "trainingDataset": job.training_dataset, "validationDataset": job.validation_dataset,
         "consumerRappId": job.consumer_rapp_id, "producerRappId": job.producer_rapp_id,
-        "mlTrainingType": job.ml_training_type,
+        "mlTrainingType": job.ml_training_type, "dmeDataJobIds": [str(i) for i in job.dme_data_job_ids],
     }
 
 
