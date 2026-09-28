@@ -70,6 +70,7 @@ export interface Alarm {
   alarmType: string | null; ackUserId: string | null; changedAt: string | null; clearedAt: string | null; clearUserId: string | null;
 }
 export interface PmSubscription { subscriptionId: string; managedElementRef: string; counterType: string; deliveryMethod: string; southboundEngine: string; granularityPeriod: number | null }
+export interface FmSubscription { subscriptionId: string; managedElementRef: string; deliveryMethod: string; southboundEngine: string }
 export interface O1Endpoint { endpointId: string; managedElementRef: string; adaptorUri: string; protocolSupport: string[]; registeredVia: string; healthStatus: string; lastHeartbeatAt: string | null }
 export interface ConfigJobSummary { jobId: string; requestedBy: string; scope: string; status: string; msacRole: string | null }
 export interface ConfigJob { jobId: string; status: string; subChanges: { managedElementRef: string; operation: string; status: string; rejectionReason: string | null }[] }

@@ -15,7 +15,7 @@ from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import Alarm, CMSchemaCache, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from app.models import Alarm, CMSchemaCache, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def db_session_factory():
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__,
-        WriteConfigJob.__table__, WriteConfigSubChange.__table__, PMSubscription.__table__, SoftwareManagementJob.__table__,
+        WriteConfigJob.__table__, WriteConfigSubChange.__table__, PMSubscription.__table__, FMSubscription.__table__, SoftwareManagementJob.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -321,6 +321,69 @@ def test_unsubscribe_pm(client, db_session_factory, monkeypatch):
 
 def test_unsubscribe_unknown_pm_subscription_is_idempotent(client):
     resp = client.delete(f"/pm-subscriptions/{uuid.uuid4()}")
+    assert resp.status_code == 204
+
+
+def test_subscribe_fm_registers_ran_nf_oam_as_a_dme_producer(client, db_session_factory, monkeypatch):
+    """OPEN_ITEMS.md section 6.7, closed: unlike PM (subscribe_pm calls
+    RegisterDMEType), FM/alarms had no DME producer registration at all.
+    subscribe_fm mirrors subscribe_pm's own shape exactly.
+    """
+    calls = []
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: calls.append((path, json)))
+
+    resp = client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "push"})
+    assert resp.status_code == 200
+    assert resp.json()["southboundEngine"] == "FaultMnS"
+
+    assert len(calls) == 1
+    path, body = calls[0]
+    assert path == "/dme/production-capabilities"
+    assert body["namespace"] == "RAN"
+    assert body["name"] == "FaultRecords"
+    assert body["producerId"] == "ran-nf-oam"
+    assert body["producerHealthCallbackUrl"] == "http://ran-nf-oam:8000/health"
+    assert body["jobCallbackUrl"] == "http://ran-nf-oam:8000/dme-jobs"
+
+    db = db_session_factory()
+    sub = db.get(FMSubscription, uuid.UUID(resp.json()["subscriptionId"]))
+    assert sub.managed_element_ref == "ME-1"
+    assert sub.delivery_method == "push"
+
+
+def test_subscribe_fm_unknown_delivery_method_defaults_to_faultmns(client, db_session_factory, monkeypatch):
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+
+    resp = client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "pull"})
+    assert resp.status_code == 200
+    assert resp.json()["southboundEngine"] == "FaultMnS"
+
+
+def test_list_fm_subscriptions_filters_by_managed_element_ref(client, db_session_factory, monkeypatch):
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "push"})
+    client.post("/fm-subscriptions", params={"managed_element_ref": "ME-2", "delivery_method": "push"})
+
+    resp = client.get("/fm-subscriptions", params={"managed_element_ref": "ME-1"})
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["managedElementRef"] == "ME-1"
+
+
+def test_unsubscribe_fm(client, db_session_factory, monkeypatch):
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    sub_id = client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "push"}).json()["subscriptionId"]
+
+    resp = client.delete(f"/fm-subscriptions/{sub_id}")
+    assert resp.status_code == 204
+
+    db = db_session_factory()
+    assert db.get(FMSubscription, uuid.UUID(sub_id)) is None
+
+
+def test_unsubscribe_unknown_fm_subscription_is_idempotent(client):
+    resp = client.delete(f"/fm-subscriptions/{uuid.uuid4()}")
     assert resp.status_code == 204
 
 
