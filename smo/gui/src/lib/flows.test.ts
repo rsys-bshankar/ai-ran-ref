@@ -90,7 +90,7 @@ describe("flow 05 — A1 EI → consumption", () => {
   it("progresses from registration to an active consumer job", () => {
     const ei = { eiTypeId: "ei", registeredBy: "rapp", eiSourceDmeTypeId: "t" };
     expect(statuses(flow05(ei, undefined, [], []))).toEqual(["done", "current", "todo", "todo", "todo", "todo"]);
-    const done = flow05(ei, { dmeTypeId: "t", dmeTypeIdStruct: {}, typeName: "RAN.X", producerId: "p", typeStatus: "ENABLED" },
+    const done = flow05(ei, { dmeTypeId: "t", dmeTypeIdStruct: {}, typeName: "RAN.X", producerIds: ["p"], typeStatus: "ENABLED" },
       [{ offerId: "o", dmeTypeId: "t", dataDeliveryMethodsOffered: ["PULL_HTTP"], committedMethod: "PULL_HTTP", dataAvailabilityNotificationUri: null, dataOfferTerminationNotificationUri: "x" }],
       [{ dataJobId: "j", dataDeliveryMode: "CONTINUOUS", dmeTypeId: "t", productionJobDefinition: {}, dataDeliveryMethod: "PULL_HTTP", deliveryDetails: {}, consumerId: "c", status: "ACTIVE" }]);
     expect(progress(done).complete).toBe(true);

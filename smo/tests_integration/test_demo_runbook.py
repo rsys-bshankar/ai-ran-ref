@@ -642,10 +642,25 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
 
     deregistered = mesh["dme"].delete("/production-capabilities", params={"producer_id": "hello-world-rapp"})
     assert deregistered.status_code == 204
-    # tears down both hello-world-rapp's DmeTypes: step 4's hello-world-metrics
-    # and the new demo one above, each firing its own DEREGISTERED notification.
-    assert len(dme_type_notifications) == 3
-    assert {n["status"] for n in dme_type_notifications[1:]} == {"DEREGISTERED"}
+    # SPEC_AUDIT.md's Producer/Type conflation finding, closed: Producer
+    # and Type are two real, separately-owned entities now (ICS's own
+    # deleteInfoProducer never touches info-types at all) — no
+    # notification fires here; both hello-world-rapp's DmeTypes (step 4's
+    # hello-world-metrics and the new demo one above) stay registered,
+    # just DISABLED (no producer left).
+    assert len(dme_type_notifications) == 1
+    remaining = {t["typeName"]: t for t in mesh["dme"].get("/dme-types").json()}
+    assert remaining["dme-type-sub-demo-v1"]["producerIds"] == []
+    assert remaining["dme-type-sub-demo-v1"]["typeStatus"] == "DISABLED"
+
+    # Only delete_dme_type (ICS's own DELETE /info-types/{id}) actually
+    # removes a type, and only once every producer has left it — this is
+    # what fires the real DEREGISTERED notification.
+    deleted = mesh["dme"].delete(f"/dme-types/{new_type_id}")
+    assert deleted.status_code == 204
+    assert len(dme_type_notifications) == 2
+    assert dme_type_notifications[1]["infoTypeId"] == new_type_id
+    assert dme_type_notifications[1]["status"] == "DEREGISTERED"
 
     dme_unsub = mesh["dme"].delete(f"/type-subscriptions/{dme_subscription_id}")
     assert dme_unsub.status_code == 204

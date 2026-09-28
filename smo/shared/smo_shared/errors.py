@@ -62,6 +62,13 @@ class FrameworkError:
     # Foundational Platform LLD section 5
     SERVICE_NAME_CONFLICT = ("SERVICE_NAME_CONFLICT", 409)
     DME_TYPE_VERSION_CONFLICT = ("DME_TYPE_VERSION_CONFLICT", 409)
+    # SPEC_AUDIT.md — DME vs. the real ICS API, Producer/Type conflation
+    # finding, closed: a real ICS deleteInfoType 409 ("has one or several
+    # active producers"), and its own 404 for an unknown type — the type
+    # itself never had a dedicated not-found code before since it was
+    # never independently addressable from its producer.
+    DME_TYPE_NOT_FOUND = ("DME_TYPE_NOT_FOUND", 404)
+    DME_TYPE_HAS_ACTIVE_PRODUCERS = ("DME_TYPE_HAS_ACTIVE_PRODUCERS", 409)
     DELIVERY_METHOD_NOT_OFFERED = ("DELIVERY_METHOD_NOT_OFFERED", 409)
     DATA_JOB_TARGET_IMMUTABLE = ("DATA_JOB_TARGET_IMMUTABLE", 400)
     APF_NOT_REGISTERED = ("APF_NOT_REGISTERED", 403)

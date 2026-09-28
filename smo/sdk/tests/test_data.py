@@ -38,9 +38,27 @@ def test_discover_types(client, r1):
     assert result == [{"dmeTypeId": "x"}]
 
 
+def test_list_producers(client, r1):
+    r1.script(200, [{"producerId": "rapp-1"}])
+    result = client.list_producers()
+    assert r1.calls[0] == {"verb": "get", "path": "/dme/production-capabilities", "params": None}
+    assert result == [{"producerId": "rapp-1"}]
+
+
+def test_get_producer(client, r1):
+    client.get_producer("rapp-1")
+    assert r1.calls[0] == {"verb": "get", "path": "/dme/production-capabilities/rapp-1", "params": None}
+
+
 def test_deregister_producer(client, r1):
     client.deregister_producer("rapp-1")
     assert r1.calls[0] == {"verb": "delete", "path": "/dme/production-capabilities", "params": {"producer_id": "rapp-1"}}
+
+
+def test_delete_type(client, r1):
+    dme_type_id = uuid.uuid4()
+    client.delete_type(dme_type_id)
+    assert r1.calls[0] == {"verb": "delete", "path": f"/dme/dme-types/{dme_type_id}", "params": None}
 
 
 def test_query_producer_status(client, r1):

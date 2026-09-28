@@ -11,7 +11,10 @@ from sqlalchemy.pool import StaticPool
 from smo_shared.db import Base, get_session
 
 from app.main import app
-from app.models import DataJob, DataOffer, DataRecord, DmeActionRecord, DMEDeliverySchema, DMEType, DMETypeSubscription
+from app.models import (
+    DataJob, DataOffer, DataRecord, DmeActionRecord, DMEDeliverySchema, DMEProducer, DMEProducerType, DMEType,
+    DMETypeSubscription,
+)
 
 
 class FakeHealthResponse:
@@ -22,8 +25,9 @@ class FakeHealthResponse:
 @pytest.fixture
 def client():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[DMEType.__table__, DMEDeliverySchema.__table__, DataJob.__table__, DataOffer.__table__,
-                                              DMETypeSubscription.__table__, DataRecord.__table__, DmeActionRecord.__table__])
+    Base.metadata.create_all(engine, tables=[DMEProducer.__table__, DMEType.__table__, DMEProducerType.__table__, DMEDeliverySchema.__table__,
+                                              DataJob.__table__, DataOffer.__table__, DMETypeSubscription.__table__, DataRecord.__table__,
+                                              DmeActionRecord.__table__])
     TestSession = sessionmaker(bind=engine)
 
     def override_get_session():
@@ -65,13 +69,6 @@ def test_register_dme_type_returns_registration_id(client):
     resp = client.post("/production-capabilities", json=register_type_body())
     assert resp.status_code == 201
     assert "registrationId" in resp.json()
-
-
-def test_duplicate_namespace_name_version_is_conflict(client):
-    client.post("/production-capabilities", json=register_type_body())
-    resp = client.post("/production-capabilities", json=register_type_body())
-    assert resp.status_code == 409
-    assert resp.json()["detail"]["title"] == "DME_TYPE_VERSION_CONFLICT"
 
 
 def test_different_version_is_not_a_conflict(client):
@@ -311,20 +308,31 @@ def test_data_job_unaffected_by_offer_check_when_no_offer_exists(client):
     assert resp.status_code == 202
 
 
-def test_deregister_producer_removes_all_its_types(client):
-    """The DME half of rApp Management's producer-reconsideration trigger
-    (OPEN_ITEMS.md section 1) — deregistering a producer must remove
-    every DMEType it registered, not just one.
+def test_deregister_producer_leaves_its_types_registered_but_disabled(client):
+    """SPEC_AUDIT.md — DME vs. the real ICS API, Producer/Type conflation
+    finding, closed: ICS's own deleteInfoProducer never touches
+    info-types at all (those are only ever removed via their own
+    DELETE /info-types/{id}, see the delete_dme_type tests below) — this
+    used to delete every DMEType a producer registered, which was only
+    "correct" because the old schema conflated a type with its one
+    producer. TypeB's OTHER producer (rapp-2) keeps it ENABLED even
+    after rapp-1 leaves.
     """
     client.post("/production-capabilities", json=register_type_body(name="TypeA", producerId="rapp-1"))
     client.post("/production-capabilities", json=register_type_body(name="TypeB", producerId="rapp-1"))
-    client.post("/production-capabilities", json=register_type_body(name="TypeC", producerId="rapp-2"))
+    client.post("/production-capabilities", json=register_type_body(name="TypeB", producerId="rapp-2"))
 
     resp = client.delete("/production-capabilities", params={"producer_id": "rapp-1"})
     assert resp.status_code == 204
 
-    remaining = client.get("/dme-types").json()
-    assert {t["producerId"] for t in remaining} == {"rapp-2"}
+    remaining = {t["typeName"]: t for t in client.get("/dme-types").json()}
+    assert remaining.keys() == {"RAN.TypeA", "RAN.TypeB"}
+    assert remaining["RAN.TypeA"]["producerIds"] == []
+    assert remaining["RAN.TypeA"]["typeStatus"] == "DISABLED"  # its only producer is gone
+    assert remaining["RAN.TypeB"]["producerIds"] == ["rapp-2"]
+    assert remaining["RAN.TypeB"]["typeStatus"] == "ENABLED"  # rapp-2 still supports it
+
+    assert client.get("/production-capabilities/rapp-1/status").status_code == 404
 
 
 def test_deregister_unknown_producer_is_idempotent(client):
@@ -332,15 +340,11 @@ def test_deregister_unknown_producer_is_idempotent(client):
     assert resp.status_code == 204
 
 
-def test_deregister_producer_removes_dependent_data_jobs_and_offers(client):
-    """OPEN_ITEMS.md section 5: deregistering a producer used to delete
-    its DMEType rows unconditionally, leaving any DataJob/DataOffer
-    still referencing that type either orphaned (SQLite, no FK
-    enforcement) or crashing with an unhandled IntegrityError (real
-    Postgres — neither FK had an ON DELETE CASCADE, unlike
-    dme_delivery_schema's own already-cascading one). A job/offer for a
-    type nobody produces anymore is meaningless once the producer is
-    gone, so both are cleaned up now.
+def test_deregister_producer_does_not_remove_dependent_data_jobs_and_offers(client):
+    """The real fix, not a cosmetic rename: a DataJob/DataOffer is
+    type-scoped, not producer-scoped (ICS's own InfoJob/InfoJobs model),
+    so it must survive its producer's own deregistration — an existing
+    or future producer for the same type may still serve it.
     """
     reg = client.post("/production-capabilities", json=register_type_body(producerId="rapp-1")).json()
     job = client.post("/data-jobs", json={
@@ -356,8 +360,96 @@ def test_deregister_producer_removes_dependent_data_jobs_and_offers(client):
     resp = client.delete("/production-capabilities", params={"producer_id": "rapp-1"})
     assert resp.status_code == 204
 
+    assert client.get(f"/data-jobs/{job['dataJobId']}").status_code == 200
+    assert client.get(f"/offers/{offer['offerId']}").status_code == 200
+
+
+def test_reregistering_the_same_type_by_the_same_producer_is_idempotent(client):
+    """ICS's own PUT is create-or-update, not create-only — a producer
+    re-registering after a restart must not 409 the way this used to
+    (DME_TYPE_VERSION_CONFLICT on the old global UniqueConstraint).
+    """
+    first = client.post("/production-capabilities", json=register_type_body()).json()
+    second = client.post("/production-capabilities", json=register_type_body()).json()
+    assert second["registrationId"] == first["registrationId"]
+    types = client.get("/dme-types").json()
+    assert len(types) == 1
+    assert types[0]["producerIds"] == ["ran-nf-oam"]
+
+
+def test_a_second_producer_can_register_an_already_known_type(client):
+    """The actual fix: ICS's own model allows several producers per type
+    (consumer_information_type.no_of_producers) — this used to be
+    structurally impossible, a global UniqueConstraint on
+    namespace/name/version regardless of which producer registered it.
+    """
+    first = client.post("/production-capabilities", json=register_type_body(producerId="ran-nf-oam")).json()
+    second = client.post("/production-capabilities", json=register_type_body(producerId="a1-related")).json()
+    assert second["registrationId"] == first["registrationId"]
+    types = client.get("/dme-types").json()
+    assert len(types) == 1
+    assert types[0]["producerIds"] == ["a1-related", "ran-nf-oam"]
+
+
+def test_list_producers_returns_every_registered_producer(client):
+    client.post("/production-capabilities", json=register_type_body(producerId="ran-nf-oam"))
+    client.post("/production-capabilities", json=register_type_body(name="Other", producerId="a1-related"))
+    ids = {p["producerId"] for p in client.get("/production-capabilities").json()}
+    assert ids == {"ran-nf-oam", "a1-related"}
+
+
+def test_get_producer_returns_its_supported_type_ids(client):
+    reg = client.post("/production-capabilities", json=register_type_body(producerId="ran-nf-oam")).json()
+    p = client.get("/production-capabilities/ran-nf-oam").json()
+    assert p == {
+        "producerId": "ran-nf-oam", "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
+        "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs", "supportedTypeIds": [reg["registrationId"]],
+    }
+
+
+def test_get_unknown_producer_is_404(client):
+    assert client.get("/production-capabilities/never-registered").status_code == 404
+
+
+def test_delete_dme_type_rejects_a_type_with_an_active_producer(client):
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    resp = client.delete(f"/dme-types/{reg['registrationId']}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "DME_TYPE_HAS_ACTIVE_PRODUCERS"
+
+
+def test_delete_dme_type_succeeds_once_its_last_producer_is_gone_and_notifies_subscribers(client, monkeypatch):
+    notified = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: notified.append(json) or FakeHealthResponse(200))
+
+    client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/dme-type-events", "owner": "consumer-1"})
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    client.delete("/production-capabilities", params={"producer_id": "ran-nf-oam"})
+    notified.clear()  # only care about the delete_dme_type notification below
+
+    resp = client.delete(f"/dme-types/{reg['registrationId']}")
+    assert resp.status_code == 204
+    assert client.get("/dme-types").json() == []
+    assert notified == [{"infoTypeId": reg["registrationId"], "jobDataSchema": {"type": "object"}, "status": "DEREGISTERED"}]
+
+
+def test_delete_dme_type_also_removes_dependent_data_jobs_and_offers(client):
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+    job = client.post("/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
+        "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
+    }).json()
+    client.delete("/production-capabilities", params={"producer_id": "ran-nf-oam"})
+
+    resp = client.delete(f"/dme-types/{reg['registrationId']}")
+    assert resp.status_code == 204
     assert client.get(f"/data-jobs/{job['dataJobId']}").status_code == 404
-    assert client.get(f"/offers/{offer['offerId']}").status_code == 404
+
+
+def test_delete_unknown_dme_type_is_404(client):
+    resp = client.delete("/dme-types/00000000-0000-0000-0000-000000000000")
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["title"] == "DME_TYPE_NOT_FOUND"
 
 
 def test_terminate_data_offer_fires_termination_notification(client, monkeypatch):
@@ -693,10 +785,14 @@ def test_terminate_data_jobs_for_consumer_deletes_every_matching_job(client, mon
     assert client.get(f"/data-jobs/{other['dataJobId']}/status").status_code == 200
 
 
-def test_register_dme_type_exposes_job_callback_url(client):
+def test_register_dme_type_exposes_job_callback_url_on_its_producer(client):
+    """jobCallbackUrl is now a producer-level field (ICS's own
+    producer_registration_info), not a type-level one — a type can have
+    several producers, each with its own callback URLs.
+    """
     client.post("/production-capabilities", json=register_type_body())
-    resp = client.get("/dme-types")
-    assert resp.json()[0]["jobCallbackUrl"] == "http://ran-nf-oam:8000/dme-jobs"
+    resp = client.get("/production-capabilities/ran-nf-oam")
+    assert resp.json()["jobCallbackUrl"] == "http://ran-nf-oam:8000/dme-jobs"
 
 
 def test_query_producer_status_enabled_when_healthy(client, monkeypatch):
@@ -801,18 +897,22 @@ def test_register_dme_type_notifies_subscribers(client, monkeypatch):
     assert calls[0][1]["status"] == "REGISTERED"
 
 
-def test_deregister_producer_notifies_subscribers_per_removed_type(client, monkeypatch):
-    """ICS's own ConsumerCallbacks.notifyTypeRemoved — fired once per
-    DmeType a producer's deregistration actually removes.
+def test_deleting_a_types_last_producer_notifies_subscribers_per_type(client, monkeypatch):
+    """ICS's own ConsumerCallbacks.notifyTypeRemoved fires from
+    deleteInfoType, not from a producer's own deregistration (which
+    never touches info-types at all) — fired once per DmeType actually
+    deleted, here via delete_dme_type after rapp-1 is its last producer.
     """
-    client.post("/production-capabilities", json=register_type_body(name="TypeA", producerId="rapp-1"))
-    client.post("/production-capabilities", json=register_type_body(name="TypeB", producerId="rapp-1"))
+    reg_a = client.post("/production-capabilities", json=register_type_body(name="TypeA", producerId="rapp-1")).json()
+    reg_b = client.post("/production-capabilities", json=register_type_body(name="TypeB", producerId="rapp-1")).json()
 
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"})
 
     client.delete("/production-capabilities", params={"producer_id": "rapp-1"})
+    client.delete(f"/dme-types/{reg_a['registrationId']}")
+    client.delete(f"/dme-types/{reg_b['registrationId']}")
 
     assert len(calls) == 2
     assert {c[1]["status"] for c in calls} == {"DEREGISTERED"}

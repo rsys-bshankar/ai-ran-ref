@@ -14,7 +14,6 @@ import jsonschema
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
@@ -24,7 +23,10 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
-from .models import DELIVERY_METHODS, LIFECYCLE_STAGES, SOURCE_DOMAINS, DataJob, DataOffer, DataRecord, DmeActionRecord, DMEType, DMETypeSubscription
+from .models import (
+    DELIVERY_METHODS, LIFECYCLE_STAGES, SOURCE_DOMAINS, DataJob, DataOffer, DataRecord, DmeActionRecord,
+    DMEProducer, DMEProducerType, DMEType, DMETypeSubscription,
+)
 
 app = FastAPI(title="DME — Data Management and Exposure")
 apply_r1_gateway_security(app)
@@ -109,28 +111,51 @@ class TypeSubscriptionRequest(BaseModel):
 
 @app.post("/production-capabilities", status_code=201)
 def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_session)):
+    """SPEC_AUDIT.md — DME vs. the real ICS API, Producer/Type conflation
+    finding, closed: ICS's own `PUT .../info-producers/{id}` and
+    `PUT .../info-types/{id}` are two separate, idempotent create-or-update
+    calls against two separate entities, many-to-many. This build keeps
+    one wire-compatible request body (no caller needs to change), but now
+    upserts a real `DMEProducer` row, upserts a real `DMEType` row keyed
+    on (namespace, name, version) rather than erroring on an existing one,
+    and links them — so a second producer registering an already-known
+    type identity, or the same producer re-registering after a restart,
+    both succeed instead of the old global `DME_TYPE_VERSION_CONFLICT`.
+    """
     if body.sourceDomain is not None and body.sourceDomain not in SOURCE_DOMAINS:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"unknown sourceDomain {body.sourceDomain!r}")
-    t = DMEType(
-        namespace=body.namespace,
-        name=body.name,
-        version=body.version,
-        type_name=body.typeName,
-        producer_id=body.producerId,
-        data_production_schema=body.dataProductionSchema,
-        collection_spec=body.collectionSpec,
-        producer_health_callback_url=body.producerHealthCallbackUrl,
-        job_callback_url=body.jobCallbackUrl,
-        source_domain=body.sourceDomain,
-        source_context=body.sourceContext,
-    )
-    db.add(t)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise framework_error(FrameworkError.DME_TYPE_VERSION_CONFLICT, detail=f"{body.namespace}:{body.name}:{body.version} already registered")
-    _notify_type_subscribers(db, t.dme_type_id, t.data_production_schema, "REGISTERED")
+
+    producer = db.get(DMEProducer, body.producerId)
+    if producer is None:
+        producer = DMEProducer(producer_id=body.producerId, producer_health_callback_url=body.producerHealthCallbackUrl,
+                                job_callback_url=body.jobCallbackUrl)
+        db.add(producer)
+    else:
+        producer.producer_health_callback_url = body.producerHealthCallbackUrl
+        producer.job_callback_url = body.jobCallbackUrl
+
+    t = db.scalar(select(DMEType).where(DMEType.namespace == body.namespace, DMEType.name == body.name, DMEType.version == body.version))
+    is_new_type = t is None
+    if t is None:
+        t = DMEType(namespace=body.namespace, name=body.name, version=body.version)
+        db.add(t)
+    t.type_name = body.typeName
+    t.data_production_schema = body.dataProductionSchema
+    t.collection_spec = body.collectionSpec
+    t.source_domain = body.sourceDomain
+    t.source_context = body.sourceContext
+    db.flush()  # populate t.dme_type_id for a brand-new row before the link lookup below
+
+    if db.get(DMEProducerType, (body.producerId, t.dme_type_id)) is None:
+        db.add(DMEProducerType(producer_id=body.producerId, dme_type_id=t.dme_type_id))
+    db.commit()
+    if is_new_type:
+        # ICS's own notifyTypeRegistered fires from putInfoType (the
+        # type's own declaration), not from a producer joining an
+        # already-known type — an existing type gaining a second
+        # producer, or a producer's idempotent re-registration, is
+        # neither event.
+        _notify_type_subscribers(db, t.dme_type_id, t.data_production_schema, "REGISTERED")
     return {"registrationId": str(t.dme_type_id)}
 
 
@@ -146,58 +171,90 @@ def discover_dme_types(data_category: str | None = None, db: Session = Depends(g
     if data_category:
         stmt = stmt.where(DMEType.namespace == data_category)
     rows = db.scalars(stmt).all()
-    return [_type_view(r) for r in rows]
+    return [_type_view(db, r) for r in rows]
+
+
+@app.get("/production-capabilities")
+def list_producers(db: Session = Depends(get_session)):
+    """ICS's own `GET /data-producer/v1/info-producers` — previously no
+    way at all to see a producer independent of the DmeType rows it
+    happened to conflate with.
+    """
+    return [_producer_view(db, p) for p in db.scalars(select(DMEProducer)).all()]
+
+
+@app.get("/production-capabilities/{producer_id}")
+def get_producer(producer_id: str, db: Session = Depends(get_session)):
+    p = db.get(DMEProducer, producer_id)
+    if p is None:
+        raise framework_error(FrameworkError.PRODUCER_NOT_FOUND, detail="no such producer")
+    return _producer_view(db, p)
 
 
 @app.delete("/production-capabilities", status_code=204)
 def deregister_producer(producer_id: str, db: Session = Depends(get_session)):
     """The DME half of rApp Management's producer-reconsideration trigger
     (OPEN_ITEMS.md section 1): when a RAppInstance crashes or terminates,
-    its own DME registrations (keyed by producer_id == the rApp's
-    oauth_client_id) are no longer trustworthy and are torn down here,
-    same as terminate_data_job's shape. Idempotent — a producer_id with
-    nothing registered is a no-op, not an error.
+    its own DME registration is no longer trustworthy and is torn down
+    here. Idempotent — a producer_id with nothing registered is a no-op,
+    not an error.
 
-    OPEN_ITEMS.md section 5: this used to delete each DMEType row
-    unconditionally, leaving any DataJob/DataOffer still referencing
-    that type either orphaned (no FK enforcement under SQLite) or
-    crashing with an unhandled IntegrityError (real Postgres — neither
-    FK had an ON DELETE CASCADE, unlike dme_delivery_schema's own
-    already-cascading one). A job or offer for a type nobody produces
-    anymore is meaningless once the producer is gone, so this cleans
-    them up explicitly — the DB-level ON DELETE CASCADE (added
-    alongside this) is a defense-in-depth backstop, not the only line
-    of defense.
+    SPEC_AUDIT.md — DME vs. the real ICS API: this used to also delete
+    every DmeType (and dependent DataJob/DataOffer rows) this producer_id
+    happened to have registered, because the old schema conflated a type
+    with its one-and-only producer. Now that Producer and Type are two
+    real, separately-owned entities (ICS's own deleteInfoProducer never
+    touches info-types at all — those are only ever removed via their own
+    `DELETE /info-types/{id}`, see `delete_dme_type` below), this only
+    removes the producer and its producer-type links; a type some other
+    producer still supports keeps serving, and a type this was the last
+    producer for simply goes DISABLED until deleted or re-registered —
+    the real fix for the conflation, not a cosmetic rename.
     """
-    types = db.scalars(select(DMEType).where(DMEType.producer_id == producer_id)).all()
-    removed = [(t.dme_type_id, t.data_production_schema) for t in types]  # snapshot before delete — post-commit access on a deleted row would fail
-    for t in types:
-        db.query(DataJob).filter(DataJob.dme_type_id == t.dme_type_id).delete()
-        db.query(DataOffer).filter(DataOffer.dme_type_id == t.dme_type_id).delete()
-        db.delete(t)
+    p = db.get(DMEProducer, producer_id)
+    if p is None:
+        return
+    db.query(DMEProducerType).filter(DMEProducerType.producer_id == producer_id).delete()
+    db.delete(p)
     db.commit()
-    for dme_type_id, schema in removed:
-        _notify_type_subscribers(db, dme_type_id, schema, "DEREGISTERED")
+
+
+@app.delete("/dme-types/{dme_type_id}", status_code=204)
+def delete_dme_type(dme_type_id: uuid.UUID, db: Session = Depends(get_session)):
+    """ICS's own `DELETE /data-producer/v1/info-types/{infoTypeId}`
+    (deleteInfoType) — 409 ("has one or several active producers") if any
+    producer still supports it, otherwise deletes it and every dependent
+    DataJob/DataOffer (the cleanup `deregister_producer` used to do
+    unconditionally, now correctly gated on the type actually having zero
+    producers left, not merely on ONE producer having left).
+    """
+    t = db.get(DMEType, dme_type_id)
+    if t is None:
+        raise framework_error(FrameworkError.DME_TYPE_NOT_FOUND, detail="no such DME type")
+    if db.scalar(select(DMEProducerType).where(DMEProducerType.dme_type_id == dme_type_id).limit(1)) is not None:
+        raise framework_error(FrameworkError.DME_TYPE_HAS_ACTIVE_PRODUCERS, detail="type has one or several active producers")
+    db.query(DataJob).filter(DataJob.dme_type_id == dme_type_id).delete()
+    db.query(DataOffer).filter(DataOffer.dme_type_id == dme_type_id).delete()
+    schema = t.data_production_schema
+    db.delete(t)
+    db.commit()
+    _notify_type_subscribers(db, dme_type_id, schema, "DEREGISTERED")
 
 
 @app.get("/production-capabilities/{producer_id}/status")
 def query_producer_status(producer_id: str, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: no producer-status endpoint existed at
-    all. ICS's own GET .../info-producers/{id}/status
+    """ICS's own GET .../info-producers/{id}/status
     (ProducerController.getInfoProducerStatus) returns a single
     ENABLED/DISABLED operational_state per producer, derived from the
     same producer-availability signal typeStatus itself now uses
-    (ProducerStatusInfo, producer.isAvailable()). Our schema has no
-    separate InfoProducer entity — a producer is however many DMEType
-    rows share its producer_id — so this reuses the first one's
-    producer_health_callback_url, live, same as _computed_type_status.
-    404 if the producer has nothing registered at all, matching ICS's
-    own getProducer-not-found behavior.
+    (ProducerStatusInfo, producer.isAvailable()). 404 if the producer has
+    nothing registered at all, matching ICS's own getProducer-not-found
+    behavior.
     """
-    t = db.scalar(select(DMEType).where(DMEType.producer_id == producer_id).limit(1))
-    if t is None:
+    p = db.get(DMEProducer, producer_id)
+    if p is None:
         raise framework_error(FrameworkError.PRODUCER_NOT_FOUND, detail="no such producer")
-    operational_state = "ENABLED" if _producer_is_healthy(t.producer_health_callback_url) else "DISABLED"
+    operational_state = "ENABLED" if _producer_is_healthy(p.producer_health_callback_url) else "DISABLED"
     return {"producerId": producer_id, "operationalState": operational_state}
 
 
@@ -337,7 +394,7 @@ def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
     db.commit()
     dme_type = db.get(DMEType, body.dmeTypeId)
     if dme_type is not None:
-        _push_job_to_producer(dme_type, job)
+        _push_job_to_producers(db, dme_type, job)
     return {"dataJobId": str(job.data_job_id)}
 
 
@@ -382,7 +439,7 @@ def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, db: Session = 
         # ICS re-runs startInfoSubscriptionJob on every PUT, new or
         # updated — the producer is re-notified with the new job
         # definition, not just on first creation.
-        _push_job_to_producer(dme_type, job)
+        _push_job_to_producers(db, dme_type, job)
     return _job_view(job)
 
 
@@ -407,7 +464,7 @@ def terminate_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session
     db.delete(job)
     db.commit()
     if dme_type is not None:
-        _stop_job_at_producer(dme_type, data_job_id)
+        _stop_job_at_producers(db, dme_type, data_job_id)
 
 
 @app.delete("/data-jobs", status_code=204)
@@ -425,7 +482,7 @@ def terminate_data_jobs_for_consumer(consumer_id: str, db: Session = Depends(get
         db.delete(job)
         db.commit()
         if dme_type is not None:
-            _stop_job_at_producer(dme_type, job.data_job_id)
+            _stop_job_at_producers(db, dme_type, job.data_job_id)
 
 
 @app.post("/offers", status_code=201)
@@ -484,36 +541,50 @@ def offer_data_availability(offer_id: uuid.UUID, body: dict, db: Session = Depen
     # transport handler (dme-pull/dme-push routes), this endpoint just acks.
 
 
-def _push_job_to_producer(dme_type: DMEType, job: DataJob) -> None:
+def _producers_for_type(db: Session, dme_type_id: uuid.UUID) -> list[DMEProducer]:
+    """ICS's own InfoProducers.getProducersSupportingType — real ICS
+    fans job start/stop out to every producer currently registered for a
+    type (ProducerCallbacks.startInfoSubscriptionJob/stopInfoJob), not
+    just one; confirmed by reading that source directly, not assumed.
+    """
+    stmt = select(DMEProducer).join(DMEProducerType, DMEProducerType.producer_id == DMEProducer.producer_id).where(
+        DMEProducerType.dme_type_id == dme_type_id)
+    return db.scalars(stmt).all()
+
+
+def _push_job_to_producers(db: Session, dme_type: DMEType, job: DataJob) -> None:
     """OPEN_ITEMS.md section 5: no job push to producers existed at
     all — create_data_job/terminate_data_job only ever touched our own
-    DB. ICS's own ProducerCallbacks.startInfoJob POSTs the job to the
-    producer's jobCallbackUrl (ProducerJobInfo's wire shape); best-effort,
-    same pattern as every other DME/FOCOM/A1-Related notification in this
-    build — an unreachable producer never fails the consumer-facing call,
-    matching the reference's own onErrorResume-and-continue behavior.
+    DB. ICS's own ProducerCallbacks.startInfoJob POSTs the job to every
+    producer supporting the type (jobCallbackUrl, ProducerJobInfo's wire
+    shape); best-effort per producer, same pattern as every other
+    DME/FOCOM/A1-Related notification in this build — an unreachable
+    producer never fails the consumer-facing call, matching the
+    reference's own onErrorResume-and-continue behavior.
     """
-    try:
-        httpx.post(dme_type.job_callback_url, json={
-            "infoJobIdentity": str(job.data_job_id),
-            "infoTypeIdentity": str(dme_type.dme_type_id),
-            "infoJobData": job.production_job_definition or {},
-            "targetUri": (job.delivery_details or {}).get("targetUri", ""),
-            "owner": job.consumer_id,
-            "lastUpdated": datetime.datetime.now(datetime.UTC).isoformat(),
-        }, timeout=5.0)
-    except httpx.HTTPError:
-        pass
+    for producer in _producers_for_type(db, dme_type.dme_type_id):
+        try:
+            httpx.post(producer.job_callback_url, json={
+                "infoJobIdentity": str(job.data_job_id),
+                "infoTypeIdentity": str(dme_type.dme_type_id),
+                "infoJobData": job.production_job_definition or {},
+                "targetUri": (job.delivery_details or {}).get("targetUri", ""),
+                "owner": job.consumer_id,
+                "lastUpdated": datetime.datetime.now(datetime.UTC).isoformat(),
+            }, timeout=5.0)
+        except httpx.HTTPError:
+            pass
 
 
-def _stop_job_at_producer(dme_type: DMEType, data_job_id: uuid.UUID) -> None:
-    """ICS's own ProducerCallbacks.stopInfoJob — DELETE to
-    jobCallbackUrl/{jobId}, best-effort.
+def _stop_job_at_producers(db: Session, dme_type: DMEType, data_job_id: uuid.UUID) -> None:
+    """ICS's own ProducerCallbacks.stopInfoJob — DELETE to every
+    supporting producer's jobCallbackUrl/{jobId}, best-effort.
     """
-    try:
-        httpx.delete(f"{dme_type.job_callback_url}/{data_job_id}", timeout=5.0)
-    except httpx.HTTPError:
-        pass
+    for producer in _producers_for_type(db, dme_type.dme_type_id):
+        try:
+            httpx.delete(f"{producer.job_callback_url}/{data_job_id}", timeout=5.0)
+        except httpx.HTTPError:
+            pass
 
 
 def _job_view(j: DataJob) -> dict:
@@ -541,34 +612,43 @@ def _offer_view(o: DataOffer) -> dict:
     }
 
 
-def _type_view(t: DMEType) -> dict:
+def _type_view(db: Session, t: DMEType) -> dict:
+    producer_ids = sorted(db.scalars(select(DMEProducerType.producer_id).where(DMEProducerType.dme_type_id == t.dme_type_id)).all())
     return {
         "dmeTypeId": str(t.dme_type_id),
         "dmeTypeIdStruct": t.dme_type_id_struct,
         "typeName": t.type_name,
-        "producerId": t.producer_id,
-        "typeStatus": _computed_type_status(t),  # ADOPT from ICS, section 3.4
-        "producerHealthCallbackUrl": t.producer_health_callback_url,
-        "jobCallbackUrl": t.job_callback_url,
+        "producerIds": producer_ids,
+        "typeStatus": _computed_type_status(db, t),  # ADOPT from ICS, section 3.4
         "sourceDomain": t.source_domain,
         "sourceContext": t.source_context,
     }
 
 
-def _computed_type_status(t: DMEType) -> str:
+def _producer_view(db: Session, p: DMEProducer) -> dict:
+    type_ids = sorted(str(i) for i in db.scalars(select(DMEProducerType.dme_type_id).where(DMEProducerType.producer_id == p.producer_id)).all())
+    return {
+        "producerId": p.producer_id,
+        "producerHealthCallbackUrl": p.producer_health_callback_url,
+        "jobCallbackUrl": p.job_callback_url,
+        "supportedTypeIds": type_ids,
+    }
+
+
+def _computed_type_status(db: Session, t: DMEType) -> str:
     """OPEN_ITEMS.md section 5: this used to check only whether a DataJob
     row was ACTIVE — a dead producer with an active job still reported
     ENABLED, and producerHealthCallbackUrl was stored but never actually
     called. ICS's own typeStatus (ConsumerController.typeStatus) is
-    driven entirely by real producer availability
-    (ProducerSupervision.checkOneProducer's periodic health poll); this
+    ENABLED if ANY producer supporting the type is available
+    (`for (InfoProducer producer : infoProducers.getProducersSupportingType(type))`),
+    DISABLED otherwise (confirmed by reading that source directly) — this
     mirrors that signal — computed live at read time rather than via a
     background scheduler, since no scheduler exists anywhere in this
     build (elided, same as the real PM file-collection pipeline
-    elsewhere) — so a producer that's actually unreachable is never
-    silently reported ENABLED just because a job happens to be ACTIVE.
+    elsewhere).
     """
-    return "ENABLED" if _producer_is_healthy(t.producer_health_callback_url) else "DISABLED"
+    return "ENABLED" if any(_producer_is_healthy(p.producer_health_callback_url) for p in _producers_for_type(db, t.dme_type_id)) else "DISABLED"
 
 
 def _producer_is_healthy(callback_url: str) -> bool:
