@@ -138,13 +138,10 @@ genuine production bugs got caught that no unit test had ever touched
 
 **Bottom line — what's actually remaining:** extending the formal-spec
 audit to the one still-unaudited module (A1 Related — no spec file
-exists yet) and the WG4/WG5 YANGs (real, unstarted work); AIMgF's own
-`MLMFSubscription` gap (no callback field, no unsubscribe route —
-audited during Wave 3's Subscriptions slice, building either would be
-new functionality, not a field-name unification, so out of that
-slice's own scope); and the three section 1 design
-decisions (blocked on real data/algorithm/scope input). Everything else
-large/structural is a **confirmed** Phase-1 scope cut, not a gap.
+exists yet) and the WG4/WG5 YANGs (real, unstarted work); and the three
+section 1 design decisions (blocked on real data/algorithm/scope input).
+Everything else large/structural is a **confirmed** Phase-1 scope cut,
+not a gap.
 
 **Phase 2 — AI Platform Service Decomposition (in progress, new
 direction).** Per an external architecture review (the "SMO Actions"

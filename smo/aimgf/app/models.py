@@ -186,6 +186,12 @@ class MLMFSubscription(Base):
     metric_types: Mapped[list[str]] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False)
     dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     guard_kpi_floor: Mapped[dict | None] = mapped_column(JSON)
+    # SPEC_AUDIT.md's `MLMFSubscription` finding, closed: every other
+    # subscription-shaped resource in this build (DME/MDAF/A1-Related/
+    # Intent Service) notifies a real notification_destination and can
+    # be torn down with a real DELETE — this one could previously only
+    # be created and read.
+    notification_destination: Mapped[str | None] = mapped_column(String)
 
 
 class PerformanceReport(Base):

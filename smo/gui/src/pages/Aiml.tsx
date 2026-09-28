@@ -350,6 +350,8 @@ export function Mlmf() {
             { header: "Model", render: (s) => modelName(s.modelId) ?? <Id value={s.modelId} /> },
             { header: "Metrics", render: (s) => s.metricTypes.join(", ") },
             { header: "Guard KPI floor", render: (s) => s.guardKpiFloor ? Object.entries(s.guardKpiFloor).map(([k, v]) => `${k} ≥ ${v}`).join(", ") : <span className="muted">none</span> },
+            { header: "Delivery", render: (s) => s.notificationDestination ?? <span className="muted">poll</span> },
+            { header: "", className: "actions", render: (s) => <ActionButton label="Unsubscribe" action={{ method: "DELETE", path: `/aimgf/mlmf/subscriptions/${s.subscriptionId}`, success: "Unsubscribed" }} /> },
           ]} />
       </Card>
       {selected && <MlmfReports sub={subs.data?.find((s) => s.subscriptionId === selected)} />}
@@ -392,6 +394,7 @@ function SubscribeMlmf() {
   const [dmeTypeId, setDmeTypeId] = useState("");
   const [metricTypes, setMetricTypes] = useState("accuracy");
   const [floor, setFloor] = useState('{"accuracy": 0.9}');
+  const [notificationDestination, setNotificationDestination] = useState("");
   const parsed = parseJsonObject(floor);
   const action = useSmoAction();
   return (
@@ -399,7 +402,8 @@ function SubscribeMlmf() {
       <form className="form inline" onSubmit={(e) => {
         e.preventDefault();
         if (!parsed.ok) return;
-        action.mutate({ method: "POST", path: "/aimgf/mlmf/subscriptions", query: { model_id: modelId, dme_type_id: dmeTypeId },
+        action.mutate({ method: "POST", path: "/aimgf/mlmf/subscriptions",
+          query: { model_id: modelId, dme_type_id: dmeTypeId, notification_destination: notificationDestination || undefined },
           json: { metric_types: splitList(metricTypes), guard_kpi_floor: Object.keys(parsed.value).length ? parsed.value : null }, success: "MLMF subscription created" });
       }}>
         <Field label="Model"><select value={modelId} onChange={(e) => setModelId(e.target.value)} required><option value="">Choose…</option>{models.data?.map((m) => <option key={m.modelId} value={m.modelId}>{m.modelType} {m.version}</option>)}</select></Field>
@@ -409,6 +413,7 @@ function SubscribeMlmf() {
         </Field>
         <Field label="Metric types"><input value={metricTypes} onChange={(e) => setMetricTypes(e.target.value)} /></Field>
         <Field label="Guard KPI floor (JSON)" hint={parsed.ok ? undefined : <span className="text-bad">{parsed.error}</span>}><input value={floor} onChange={(e) => setFloor(e.target.value)} /></Field>
+        <Field label="Notification URL (optional)" hint="Leave blank to poll instead"><input value={notificationDestination} onChange={(e) => setNotificationDestination(e.target.value)} placeholder="http://consumer/mlmf-events" /></Field>
         <button className="btn primary" disabled={!parsed.ok || action.isPending}>Subscribe</button>
       </form>
     </Card>
