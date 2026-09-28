@@ -64,7 +64,7 @@ sequenceDiagram
     Note over DME: T1 and T2 both lose their last producer at once — deregistering<br/>a producer never cascades to the types it supported, only its own links
     DME-->>Operator: 204
     Operator->>DME: DELETE /dme-types/T1
-    Note over DME: zero producers now linked — guard passes; cascades the<br/>dependent DataJob/DataOffer this type owned, notifies subscribers DEREGISTERED
+    Note over DME: zero producers now linked — guard passes, cascades the<br/>dependent DataJob/DataOffer this type owned, notifies subscribers DEREGISTERED
     DME-->>Operator: 204
     Operator->>DME: DELETE /dme-types/T2
     Note over DME: independent from T1's own deletion — never touches T1's<br/>own rows, even though the same producer (P1) supported both

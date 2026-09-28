@@ -25,7 +25,7 @@ sequenceDiagram
     SA->>SA: RegisterAssuranceMonitor(targetOrderId, thresholds)
     loop periodic, aligned with each subscription's own report cadence
         alt RAN-behavior scoped
-            MDAF-->>SA: best-effort push: MDAFReport (call flow 08 — RAN Analytics<br/>only registers the producer; MDAF owns report storage/push since Wave 1)
+            MDAF-->>SA: best-effort push: MDAFReport (call flow 08 — RAN Analytics<br/>only registers the producer — MDAF owns report storage/push since Wave 1)
         else model-scoped
             AIMgF-->>SA: best-effort push: MLMF PerformanceReport (call flow 02/13 —<br/>AIMgF pushes directly, distinct domain from MDAF's RAN-behavior analytics)
         end

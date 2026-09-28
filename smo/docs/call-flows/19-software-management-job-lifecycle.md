@@ -29,7 +29,7 @@ sequenceDiagram
     NFOAM-->>Operator: jobId, status=IN_PROGRESS, phase=ACTIVATE
 
     Operator->>NFOAM: POST /software-management-jobs/{id}/advance (succeeded=true)
-    NFOAM->>NFOAM: phase=ACTIVATE -> event=ACTIVATE_OK -> status=COMPLETED (terminal; phase stays ACTIVATE — not in PHASE_ORDER, nothing left to advance to)
+    NFOAM->>NFOAM: phase=ACTIVATE -> event=ACTIVATE_OK -> status=COMPLETED (terminal — phase stays ACTIVATE — not in PHASE_ORDER, nothing left to advance to)
     NFOAM-->>Operator: jobId, status=COMPLETED, phase=ACTIVATE
     end
 
@@ -42,7 +42,7 @@ sequenceDiagram
     Operator->>NFOAM: POST /software-management-jobs/{id2}/advance (succeeded=false)
     NFOAM->>NFOAM: event=PHASE_FAILED (fires regardless of which phase this job was in) -> status=FAILED
     NFOAM-->>Operator: jobId2, status=FAILED, phase=INSTALL (frozen at the phase that failed)
-    Note over Operator,NFOAM: FAILED is terminal — there is no retry/resume transition;<br/>a failed job is re-attempted as a brand-new POST /software-management-jobs,<br/>same "no lightweight update path" principle call flow 02's own<br/>retraining re-entry and call flow 07's own RECOVER re-entry both follow
+    Note over Operator,NFOAM: FAILED is terminal — there is no retry/resume transition —<br/>a failed job is re-attempted as a brand-new POST /software-management-jobs,<br/>same "no lightweight update path" principle call flow 02's own<br/>retraining re-entry and call flow 07's own RECOVER re-entry both follow
     end
 ```
 

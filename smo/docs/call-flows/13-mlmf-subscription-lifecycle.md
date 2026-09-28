@@ -36,7 +36,7 @@ sequenceDiagram
 
         Producer->>AIMgF: ReportPerformance(subscriptionId=S2, metrics)
         AIMgF->>AIMgF: persist PerformanceReport
-        Note over AIMgF,Auditor: S2 registered no destination — nothing is POSTed;<br/>S2 must poll GET /mlmf/subscriptions/{id}/reports instead
+        Note over AIMgF,Auditor: S2 registered no destination — nothing is POSTed —<br/>S2 must poll GET /mlmf/subscriptions/{id}/reports instead
         AIMgF-->>Producer: reportId, breachedFloor
     end
 

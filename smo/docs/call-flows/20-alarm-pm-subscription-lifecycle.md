@@ -38,7 +38,7 @@ sequenceDiagram
     NFOAM-->>Source: updated alarm
 
     Operator->>NFOAM: GET /alarms?severity=cleared
-    NFOAM-->>Operator: [alarm X1] — X2 (the symptomatic alarm) is untouched;<br/>clearing the root cause doesn't cascade-clear its correlated alarms
+    NFOAM-->>Operator: [alarm X1] — X2 (the symptomatic alarm) is untouched —<br/>clearing the root cause doesn't cascade-clear its correlated alarms
     end
 
     rect rgb(255, 240, 240)

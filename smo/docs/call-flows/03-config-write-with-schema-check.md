@@ -33,7 +33,7 @@ sequenceDiagram
     Note over rApp,NFOAM: Path A — direct rApp -> RAN NF OAM
     rApp->>NFOAM: WriteConfigurationChanges(scope, changes: [ME#1 change, ME#2 change])
     NFOAM->>NFOAM: MSAC gate check (entire-RAN scope requires admin role)
-    NFOAM->>NFOAM: job.schemaValidatedAt = now() (a timestamp only —<br/>no schema is actually consulted; see note above)
+    NFOAM->>NFOAM: job.schemaValidatedAt = now() (a timestamp only —<br/>no schema is actually consulted — see note above)
     NFOAM->>NFOAM: job.status: PENDING -> PROCESSING
     end
 

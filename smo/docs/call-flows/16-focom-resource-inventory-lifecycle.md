@@ -21,7 +21,7 @@ sequenceDiagram
     rect rgb(240, 248, 255)
     Note over Operator,Focom: Provision — a real Resource row, not a random UUID
     Operator->>Focom: POST /resources/provision (resourceTypeId?, description, globalAssetId?, tags?, groups?)
-    Focom->>Focom: resourceTypeId unrecognized -> auto-register a new ResourceType<br/>(Phase 1 never validated this field; rejecting it now would be scope creep)
+    Focom->>Focom: resourceTypeId unrecognized -> auto-register a new ResourceType<br/>(Phase 1 never validated this field — rejecting it now would be scope creep)
     Note over Focom: real bug caught here, against real Postgres only: the new<br/>ResourceType row must be flush()'d before the Resource row that<br/>references it, or a genuine ForeignKeyViolation follows — SQLite's<br/>test harness never enforces the FK, so no unit test had caught it
     Focom->>Focom: create Resource(resourceTypeId, resourcePoolId=PHASE1_POOL_ID, description, globalAssetId, tags, groups)
     Focom->>NFO: best-effort POST callback (objectType=resource,<br/>notificationEventType=CREATE, resourceId, resourceTypeId, consumerSubscriptionId)
