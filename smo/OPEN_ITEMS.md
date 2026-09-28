@@ -2774,28 +2774,42 @@ a real, confirmed gap, not a design choice — closing it means adding the missi
 dispatcher functions and `DISPATCH_TABLE` entries, following the existing `dispatch_training`
 shape (`_ensure_ok` status-code check, `DownstreamError` on failure).
 
-### 6.7 GAP: FM/alarms never registered as a DME producer type
+### 6.7 GAP: FM/alarms never registered as a DME producer type — CLOSED
 
 Unlike PM (`ran-nf-oam`'s `subscribe_pm` genuinely calls DME's `RegisterDMEType` to
 register itself as a producer for `PMCounters.{counterType}`, call flow 20), alarm
-ingestion (`POST /alarms/ingest`) has no DME-registration equivalent at all — confirmed by
-grep, no `RegisterDMEType` call exists anywhere near `ingest_alarm`. An rApp or AI/ML model
-that wants outstanding-active-alarm/alarm-history context — during inference, or during
-Training/Validation/Emulation once 6.2's execution runtimes exist — has no DME-mediated way
-to get it; only a direct `GET /alarms` call to RAN NF OAM itself, outside DME's data plane
-entirely. Closing this means giving RAN NF OAM's alarm surface the same
-`RegisterDMEType`-on-subscribe (or on first-ingest) treatment `subscribe_pm` already has for
-PM — the same template, a different data shape (`FaultRecords.{...}` or equivalent, not yet
-named). Note: this only closes the *visibility* gap — DME/an rApp still would never clear
-an alarm itself; clearing stays RAN NF OAM's own `PATCH /alarms/{id}/clear`, called by the
-source NF or an operator, unaffected by whether FM is DME-registered.
+ingestion (`POST /alarms/ingest`) had no DME-registration equivalent at all — confirmed by
+grep, no `RegisterDMEType` call existed anywhere near `ingest_alarm`. An rApp or AI/ML
+model that wants outstanding-active-alarm/alarm-history context — during inference, or
+during Training/Validation/Emulation once 6.2's execution runtimes exist — had no
+DME-mediated way to get it; only a direct `GET /alarms` call to RAN NF OAM itself, outside
+DME's data plane entirely.
+
+**Closed.** Added a new `POST`/`GET`/`DELETE /fm-subscriptions` route set to `ran-nf-oam`,
+mirroring `subscribe_pm`'s own `RegisterDMEType` shape exactly (same
+`producerHealthCallbackUrl`/`jobCallbackUrl`, same DME payload structure). One structural
+difference from PM, by design rather than oversight: PM keys its DME type identity on
+`PMCounters.{counterType}` (one type per counter type), but alarms have no natural
+per-counter-type split — every subscribing ME's fault records now join one single, shared
+`RAN.FaultRecords` type instead, exercising the exact many-producers-one-type join call
+flow 11 already documents for any other multi-producer type. `FMSubscription` (new table,
+`managed_element_ref`/`delivery_method`/`southbound_engine`, no `counter_type` or
+`granularity_period` equivalent — alarms have neither) got the same list/idempotent-
+unsubscribe routes every other subscription-shaped resource in this build already has, and
+the GUI's Alarms page gained a matching "FM subscriptions" section alongside the existing
+Ack/Clear actions (Kpis.tsx's own PM subscriptions section was the template). Call flow 20
+now shows both PM and FM subscription side by side. As already flagged when this item was
+opened: this only ever closes the *visibility* gap — DME/a consuming rApp still cannot
+clear an alarm; that stays RAN NF OAM's own `PATCH /alarms/{id}/clear`, called by the
+source NF or an operator, unaffected by FM's DME registration.
 
 ## Suggested next pass (priority order)
 
 0. **§6's seven AI/ML-pipeline items are the current front of the queue** — pick these up
-   one at a time, per the user's own stated preference, rather than in a batch. Suggested
-   order, easiest/most self-contained first: 6.7 (FM→DME registration — a direct copy of
-   `subscribe_pm`'s existing pattern) → 6.6 (SO-SMOS dispatch entries — four small
+   one at a time, per the user's own stated preference, rather than in a batch.
+   ~~6.7 (FM→DME registration)~~ — **closed**, first item off this list (see 6.7's own
+   entry above). Remaining suggested order, easiest/most self-contained first:
+   6.6 (SO-SMOS dispatch entries — four small
    dispatcher functions following `dispatch_training`'s shape) → 6.4 (training-data-DME
    validation — a direct copy of MDAF's existing pattern) → 6.5 (training-outcome
    artifact/notification) → 6.1 (operator gate on Training/Validation/Emulation) → 6.2

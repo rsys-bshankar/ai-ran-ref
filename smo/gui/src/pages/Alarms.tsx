@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { POLL, useSmo } from "../api/hooks";
-import type { Alarm, OCloudAlarm } from "../api/types";
+import type { Alarm, FmSubscription, O1Endpoint, OCloudAlarm } from "../api/types";
 import { ActionButton, Can, Card, DataTable, Drawer, Field, Id, KeyValue, PageHeader, SeverityChip, StateBadge, Tabs, useHashTab } from "../components/ui";
 import { countBySeverity, formatTime, SEVERITIES, sortAlarms } from "../lib/domain";
 
@@ -59,7 +59,40 @@ function RanAlarms() {
           ]} />
       </Card>
       <Can method="POST" path="/ran-nf-oam/alarms/ingest"><InjectAlarm /></Can>
+      <FmSubscriptions />
       {current && <AlarmDrawer alarm={current} onClose={() => setSelected(null)} />}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- FM → DME (OPEN_ITEMS.md 6.7)
+
+function FmSubscriptions() {
+  const subs = useSmo<FmSubscription[]>("/ran-nf-oam/fm-subscriptions");
+  const endpoints = useSmo<O1Endpoint[]>("/ran-nf-oam/o1-adaptor-endpoints");
+  const [f, setF] = useState({ managed_element_ref: "", delivery_method: "push" });
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  return (
+    <>
+      <Can method="POST" path="/ran-nf-oam/fm-subscriptions">
+        <Card title="New FM subscription">
+          <p className="muted small">SubscribeFM registers RAN NF OAM as a DME producer for RAN.FaultRecords (mirrors SubscribePM) — gives an rApp/AI-ML model DME-mediated visibility into outstanding/historical alarms. It never clears an alarm; that stays the Ack/Clear actions above.</p>
+          <div className="form inline">
+            <Field label="Managed element"><select value={f.managed_element_ref} onChange={set("managed_element_ref")}><option value="">Choose…</option>{endpoints.data?.map((e) => <option key={e.endpointId}>{e.managedElementRef}</option>)}</select></Field>
+            <Field label="Delivery"><select value={f.delivery_method} onChange={set("delivery_method")}><option value="pull">pull</option><option value="push">push</option><option value="stream">stream</option></select></Field>
+            <ActionButton label="Subscribe" tone="primary" disabled={!f.managed_element_ref} action={{ method: "POST", path: "/ran-nf-oam/fm-subscriptions", query: f, success: "FM subscription created" }} />
+          </div>
+        </Card>
+      </Can>
+      <Card title="FM subscriptions">
+        <DataTable rows={subs.data} loading={subs.isLoading} error={subs.error} rowKey={(s) => s.subscriptionId} empty="No FM subscriptions." columns={[
+          { header: "Subscription", render: (s) => <Id value={s.subscriptionId} /> },
+          { header: "Managed element", render: (s) => s.managedElementRef },
+          { header: "Delivery", render: (s) => s.deliveryMethod },
+          { header: "Southbound engine", render: (s) => s.southboundEngine },
+          { header: "", className: "actions", render: (s) => <ActionButton label="Unsubscribe" action={{ method: "DELETE", path: `/ran-nf-oam/fm-subscriptions/${s.subscriptionId}`, success: "Unsubscribed" }} /> },
+        ]} />
+      </Card>
     </>
   );
 }

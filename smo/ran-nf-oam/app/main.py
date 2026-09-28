@@ -28,7 +28,7 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
-from .models import Alarm, CMSchemaCache, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, CMSchemaCache, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from .netconf_client import send_edit_config
 from .statemachine import (
     ENDPOINT_HEALTH_FSM,
@@ -426,6 +426,60 @@ def unsubscribe_pm(subscription_id: uuid.UUID, db: Session = Depends(get_session
     those.
     """
     sub = db.get(PMSubscription, subscription_id)
+    if sub is not None:
+        db.delete(sub)
+        db.commit()
+
+
+@app.post("/fm-subscriptions")
+def subscribe_fm(managed_element_ref: str, delivery_method: str, db: Session = Depends(get_session)):
+    """SubscribeFM — OPEN_ITEMS.md section 6.7, closed: mirrors
+    subscribe_pm's own DME-producer registration wrapper shape exactly
+    (RAN NF OAM LLD section 3.5's SubscribePM pattern), for alarms
+    instead of PM counters. Unlike PM, there is no per-counter-type
+    identity — every ME's fault records register under one shared
+    `RAN.FaultRecords` DME type, joined many-to-many across every
+    managed element that subscribes (the same DMEType join behavior
+    call flow 11 walks for any other multi-producer type). Gives an
+    rApp/AI-ML model DME-mediated visibility into outstanding-active/
+    historical alarms — it does NOT give DME or a consuming rApp any way
+    to clear an alarm; that stays RAN NF OAM's own
+    PATCH /alarms/{alarm_id}/clear, called by the source NF or an
+    operator, unaffected by whether FM is DME-registered.
+    """
+    engine = {"pull": "FaultMnS", "push": "FaultMnS", "stream": "StreamingDataReporting"}.get(delivery_method, "FaultMnS")
+    sub = FMSubscription(managed_element_ref=managed_element_ref, delivery_method=delivery_method, southbound_engine=engine)
+    db.add(sub)
+    db.commit()
+
+    r1 = R1Client()
+    r1.post("/dme/production-capabilities", json={
+        "namespace": "RAN", "name": "FaultRecords", "version": "1.0.0",
+        "typeName": "RAN.FaultRecords", "producerId": "ran-nf-oam",
+        "dataProductionSchema": {}, "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
+        "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs",
+    })
+    return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine}
+
+
+@app.get("/fm-subscriptions")
+def list_fm_subscriptions(managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                           db: Session = Depends(get_session)):
+    stmt = select(FMSubscription)
+    if managed_element_ref:
+        stmt = stmt.where(FMSubscription.managed_element_ref == managed_element_ref)
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"subscriptionId": str(s.subscription_id), "managedElementRef": s.managed_element_ref,
+             "deliveryMethod": s.delivery_method, "southboundEngine": s.southbound_engine}
+            for s in page["items"]]}
+
+
+@app.delete("/fm-subscriptions/{subscription_id}", status_code=204)
+def unsubscribe_fm(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Idempotent, matching pm-subscriptions' own unsubscribe route and
+    every other subscription-shaped resource in this build.
+    """
+    sub = db.get(FMSubscription, subscription_id)
     if sub is not None:
         db.delete(sub)
         db.commit()

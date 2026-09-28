@@ -130,6 +130,22 @@ class PMSubscription(Base):
     granularity_period: Mapped[int | None] = mapped_column(Integer)
 
 
+class FMSubscription(Base):
+    __tablename__ = "fm_subscription"
+
+    # OPEN_ITEMS.md section 6.7: unlike PM (subscribe_pm registers RAN NF
+    # OAM as a DME producer for PMCounters.{counter_type}), FM/alarms had
+    # no DME producer registration at all — an rApp/AI-ML model wanting
+    # outstanding-active-alarm/alarm-history context had no DME-mediated
+    # way to get it. This mirrors PMSubscription's own shape; alarm
+    # clearing itself is unaffected (stays RAN NF OAM's own
+    # PATCH /alarms/{id}/clear, never DME's or a consuming rApp's call).
+    subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    managed_element_ref: Mapped[str] = mapped_column(String, ForeignKey("managed_entity.managed_element_ref"))
+    delivery_method: Mapped[str] = mapped_column(String, nullable=False)
+    southbound_engine: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class SoftwareManagementJob(Base):
     __tablename__ = "software_management_job"
 

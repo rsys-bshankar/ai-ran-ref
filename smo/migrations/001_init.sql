@@ -368,6 +368,16 @@ CREATE TABLE pm_subscription (
   granularity_period      INTEGER
 );
 
+-- OPEN_ITEMS.md section 6.7: FM's own analog of pm_subscription — RAN NF
+-- OAM registering itself as a DME producer for alarm/fault visibility,
+-- mirroring subscribe_pm's own PMCounters.{counter_type} registration.
+CREATE TABLE fm_subscription (
+  subscription_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  managed_element_ref  TEXT NOT NULL REFERENCES managed_entity(managed_element_ref),
+  delivery_method         TEXT NOT NULL CHECK (delivery_method IN ('pull','push','stream')),
+  southbound_engine         TEXT NOT NULL CHECK (southbound_engine IN ('FaultMnS','StreamingDataReporting'))
+);
+
 CREATE TABLE software_management_job (
   job_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   managed_element_ref  TEXT NOT NULL REFERENCES managed_entity(managed_element_ref),

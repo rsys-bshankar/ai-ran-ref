@@ -1,4 +1,4 @@
-# Call Flow: Alarm Raise → Ack → Clear (Correlated) + PM Subscription → DME Registration
+# Call Flow: Alarm Raise → Ack → Clear (Correlated) + PM/FM Subscription → DME Registration
 
 Stitches together `OPEN_ITEMS.md` section 5's fault-lifecycle closure and `SPEC_AUDIT.md`'s
 TS28111_FaultNrm/TS28550_PerfMeasJobCtrlMnS findings — both only ever touched in passing
@@ -56,18 +56,40 @@ sequenceDiagram
     Note over Operator,NFOAM: idempotent, matching every other subscription-shaped<br/>resource's own unsubscribe route (see "Key decisions")
     NFOAM-->>Operator: 204
     end
+
+    rect rgb(230, 240, 255)
+    Note over Operator,DME: FM subscription (OPEN_ITEMS.md 6.7, closed) — same wrapper<br/>shape as PM, one shared type instead of one per counter
+    Operator->>NFOAM: POST /fm-subscriptions (managedElementRef, deliveryMethod=push)
+    NFOAM->>NFOAM: southboundEngine = {pull:FaultMnS, push:FaultMnS, stream:StreamingDataReporting}[deliveryMethod]
+    NFOAM->>DME: RegisterDMEType(namespace=RAN, name=FaultRecords,<br/>producerId=ran-nf-oam, producerHealthCallbackUrl, jobCallbackUrl)
+    Note over NFOAM,DME: every subscribing ME joins the SAME RAN.FaultRecords type —<br/>unlike PM's per-counterType identity, FM has no per-ME split —<br/>this is exactly the many-producers-one-type join call flow 11 walks
+    DME-->>NFOAM: registrationId
+    NFOAM-->>Operator: subscriptionId, southboundEngine
+
+    Operator->>NFOAM: GET /fm-subscriptions?managed_element_ref=ME
+    NFOAM-->>Operator: [FMSubscription, ...]
+    Operator->>NFOAM: DELETE /fm-subscriptions/{subscriptionId}
+    Note over Operator,NFOAM: idempotent, same shape as pm-subscriptions' own unsubscribe
+    NFOAM-->>Operator: 204
+    Note over NFOAM: this only ever closes the VISIBILITY gap — DME/a consuming rApp<br/>still never clears an alarm — that stays the Ack/Clear block above,<br/>called by the source NF or an operator, unaffected by FM registration
+    end
 ```
 
-**Open, tracked in `OPEN_ITEMS.md`**: unlike PM, alarms/FM have no DME producer
-registration at all — `ingest_alarm` (`POST /alarms/ingest`) only ever writes an `Alarm`
-row; nothing calls `RegisterDMEType` the way `subscribe_pm` does for PM counters. An rApp
-or AI/ML model that wants outstanding-active-alarm/alarm-history context during inference
-(or during Training/Validation/Emulation, per the review that raised this) has no DME-mediated
-way to get it today — only a direct `GET /alarms` call to RAN NF OAM itself, outside DME's
-data plane entirely. This build also has no route through which DME or an rApp clears an
-alarm — clearing stays RAN NF OAM's own `PATCH /alarms/{id}/clear`, called by the source NF
-or an operator, never by DME or a consuming rApp; that stays true whether or not FM is
-registered as a DME producer type.
+**Closed since this flow was first written** (`OPEN_ITEMS.md` section 6.7): unlike PM,
+alarms/FM had no DME producer registration at all — `ingest_alarm` (`POST /alarms/ingest`)
+only ever wrote an `Alarm` row; nothing called `RegisterDMEType` the way `subscribe_pm`
+does for PM counters. An rApp or AI/ML model that wants outstanding-active-alarm/
+alarm-history context during inference (or during Training/Validation/Emulation, once call
+flow 02's own execution runtimes exist) had no DME-mediated way to get it — only a direct
+`GET /alarms` call to RAN NF OAM itself, outside DME's data plane entirely. `POST
+/fm-subscriptions` (the block above) now mirrors `subscribe_pm`'s own shape, registering
+RAN NF OAM as a DME producer for a single, shared `RAN.FaultRecords` type — every
+subscribing ME's alarms join that one type rather than getting a type of their own, since
+alarms (unlike PM counters) have no natural per-counter-type split to key on. This only
+ever closes the *visibility* gap: this build still has no route through which DME or a
+consuming rApp clears an alarm — clearing stays RAN NF OAM's own `PATCH
+/alarms/{id}/clear`, called by the source NF or an operator, unaffected by whether FM is
+DME-registered.
 
 **Key decisions this flow depends on:**
 - `correlationGroup`/`correlatedNotifications`/`rootCauseIndicator` are caller-declared, not computed by RAN NF OAM itself — this build carries the correlation a raising source already knows, it doesn't run its own root-cause-analysis algorithm (matching `OPEN_ITEMS.md`'s own confirmed elision: "Alarm-storm correlation algorithm... nothing implemented").

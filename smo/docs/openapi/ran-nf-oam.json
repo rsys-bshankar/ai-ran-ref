@@ -747,6 +747,156 @@
         "summary": "Stop Dme Job"
       }
     },
+    "/fm-subscriptions": {
+      "get": {
+        "operationId": "list_fm_subscriptions_fm_subscriptions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Fm Subscriptions"
+      },
+      "post": {
+        "description": "SubscribeFM \u2014 OPEN_ITEMS.md section 6.7, closed: mirrors\nsubscribe_pm's own DME-producer registration wrapper shape exactly\n(RAN NF OAM LLD section 3.5's SubscribePM pattern), for alarms\ninstead of PM counters. Unlike PM, there is no per-counter-type\nidentity \u2014 every ME's fault records register under one shared\n`RAN.FaultRecords` DME type, joined many-to-many across every\nmanaged element that subscribes (the same DMEType join behavior\ncall flow 11 walks for any other multi-producer type). Gives an\nrApp/AI-ML model DME-mediated visibility into outstanding-active/\nhistorical alarms \u2014 it does NOT give DME or a consuming rApp any way\nto clear an alarm; that stays RAN NF OAM's own\nPATCH /alarms/{alarm_id}/clear, called by the source NF or an\noperator, unaffected by whether FM is DME-registered.",
+        "operationId": "subscribe_fm_fm_subscriptions_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "delivery_method",
+            "required": true,
+            "schema": {
+              "title": "Delivery Method",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Subscribe Fm"
+      }
+    },
+    "/fm-subscriptions/{subscription_id}": {
+      "delete": {
+        "description": "Idempotent, matching pm-subscriptions' own unsubscribe route and\nevery other subscription-shaped resource in this build.",
+        "operationId": "unsubscribe_fm_fm_subscriptions__subscription_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unsubscribe Fm"
+      }
+    },
     "/health": {
       "get": {
         "description": "Producer health-supervision callback (OPEN_ITEMS.md section 5):\nsubscribe_pm registers this exact URL with DME as its\nproducerHealthCallbackUrl, but no route ever answered it \u2014 a health\npoller hitting the registered callback would 404 against a producer\nthis module itself just told DME was healthy. A plain liveness\ncheck: reachable and 200 means this RAN NF OAM instance is up.",
