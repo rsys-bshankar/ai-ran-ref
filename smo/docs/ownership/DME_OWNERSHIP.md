@@ -123,4 +123,8 @@ multi-vendor, multi-DT deployment can never silently mix data across
 producers. A full per-vendor capability registry (tracking which IOCs/
 protocols/extensions each vendor's O1 Adaptor actually supports) is the
 next natural step once a second vendor makes it real rather than
-speculative — not built this wave.
+speculative — not built this wave. See
+`docs/architecture/O1_VENDOR_ONBOARDING_GUIDE.md` for a concrete sketch
+of that registry's shape (checked against the real, already-generic
+`ran-nf-oam` endpoint-registration/NETCONF-dispatch code), ready to build
+the day a second real vendor exists.
