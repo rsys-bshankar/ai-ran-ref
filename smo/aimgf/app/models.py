@@ -131,7 +131,17 @@ class TrainingJob(Base):
     producer_id: Mapped[str] = mapped_column(String, nullable=False)
     required_data: Mapped[dict | None] = mapped_column(JSON)
     validation_criteria: Mapped[dict | None] = mapped_column(JSON)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
+    # SPEC_AUDIT.md's `requestStatus` vocabulary finding, closed: renamed
+    # to TS28.105's own real 6-value enum (NOT_STARTED/IN_PROGRESS/
+    # SUSPENDED/FINISHED/CANCELLED/CANCELLING) — SUSPENDED/CANCELLED
+    # already matched (SUSPENDED adopted in an earlier pass). FAILED is
+    # this build's own honest addition beyond the spec (a training job
+    # that genuinely fails needs a distinct terminal state the spec
+    # doesn't model); CANCELLING is never produced — this build has no
+    # asynchronous in-flight-cancellation step, the same "spec value
+    # this build's own design never reaches" honesty as
+    # PRE_SPECIALISED_TRAINING/FINE_TUNING on `ml_training_type`.
+    status: Mapped[str] = mapped_column(String, nullable=False, default="NOT_STARTED")
     notification_uri: Mapped[str | None] = mapped_column(String)
     # NEW section 5: the reference's own TrainingJob (trainingmgr/models/trainingjob.py)
     # carries these too — run_id, distinct training/validation dataset

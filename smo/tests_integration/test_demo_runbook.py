@@ -749,7 +749,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert group_remedial.status_code == 201
     assert group_remedial.json()["outcome"] == "RESOLVED"
 
-    running_jobs = mesh["aimgf"].get("/training-jobs", params={"status": "RUNNING"})
+    running_jobs = mesh["aimgf"].get("/training-jobs", params={"status": "IN_PROGRESS"})
     assert running_jobs.status_code == 200
     matching_jobs = [j for j in running_jobs.json()["items"] if j["modelCoordinationGroupId"] == group_id]
     assert len(matching_jobs) == 1

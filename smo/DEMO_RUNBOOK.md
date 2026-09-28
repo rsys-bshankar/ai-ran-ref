@@ -1546,7 +1546,7 @@ this created:
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.get('http://aimgf:8000/training-jobs', params={'status': 'RUNNING'})
+r = httpx.get('http://aimgf:8000/training-jobs', params={'status': 'IN_PROGRESS'})
 print(r.status_code, [j for j in r.json() if j['modelCoordinationGroupId'] == '<groupId>'])
 "
 ```

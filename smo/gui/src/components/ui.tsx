@@ -64,9 +64,9 @@ export function useHashTab<T extends string>(ids: readonly T[], fallback: T): [T
 
 const TONES: Record<string, string> = {
   RUNNING: "ok", ACTIVE: "ok", AVAILABLE: "ok", PRIMED: "ok", ENFORCED: "ok", COMPLETED: "ok", RESOLVED: "ok",
-  APPLIED: "ok", ACTIVATED: "ok", ENABLED: "ok", ACKNOWLEDGED: "ok", CERTIFIED: "info", LOADED: "info",
+  APPLIED: "ok", ACTIVATED: "ok", ENABLED: "ok", ACKNOWLEDGED: "ok", CERTIFIED: "info", LOADED: "info", FINISHED: "ok",
   DEPLOYING: "warn", TRAINING: "warn", TESTED: "info", EMULATED: "info", PRIMING: "warn", DEPRIMING: "warn",
-  PENDING: "warn", PROCESSING: "warn", IN_PROGRESS: "warn", UPGRADING: "warn", INSTANTIATING: "warn",
+  PENDING: "warn", PROCESSING: "warn", IN_PROGRESS: "warn", UPGRADING: "warn", INSTANTIATING: "warn", NOT_STARTED: "warn", SUSPENDED: "warn",
   UPDATING: "warn", TERMINATING: "warn", DEGRADED: "warn", ONBOARDING: "warn", DISCOVERED: "info", PARTIAL_SUCCESS: "warn",
   FAILED: "bad", FAULTED: "bad", ABNORMAL: "bad", REJECTED: "bad", ESCALATED: "bad", UNREACHABLE: "bad",
   UNACKNOWLEDGED: "warn", DISABLED: "bad", DELETING: "muted", DEPRECATED: "muted", UNDEPLOYED: "muted",
