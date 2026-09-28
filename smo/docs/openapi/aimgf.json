@@ -1198,6 +1198,7 @@
         "summary": "List Performance Reports"
       },
       "post": {
+        "description": "`docs/call-flows/13-mlmf-subscription-lifecycle.md`'s own gap,\nclosed: a report against an unsubscribed or never-existed\nsubscription used to raise an unhandled `AttributeError` (a bare\n500) \u2014 `sub` was read directly with no null-check. Now a clean\n404, matching every comparable cross-reference elsewhere in this\nbuild.",
         "operationId": "report_performance_mlmf_subscriptions__subscription_id__reports_post",
         "parameters": [
           {

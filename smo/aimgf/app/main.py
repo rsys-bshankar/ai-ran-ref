@@ -698,7 +698,16 @@ def _find_coordination_group_for_model(model_id: uuid.UUID) -> dict | None:
 
 @app.post("/mlmf/subscriptions/{subscription_id}/reports")
 def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = Depends(get_session)):
+    """`docs/call-flows/13-mlmf-subscription-lifecycle.md`'s own gap,
+    closed: a report against an unsubscribed or never-existed
+    subscription used to raise an unhandled `AttributeError` (a bare
+    500) — `sub` was read directly with no null-check. Now a clean
+    404, matching every comparable cross-reference elsewhere in this
+    build.
+    """
     sub = db.get(MLMFSubscription, subscription_id)
+    if sub is None:
+        raise framework_error(FrameworkError.MLMF_SUBSCRIPTION_NOT_FOUND, detail="no such MLMF subscription")
     breached = bool(sub.guard_kpi_floor) and any(metrics.get(k, 0) < v for k, v in (sub.guard_kpi_floor or {}).items())
     report = PerformanceReport(subscription_id=subscription_id, metrics=metrics, breached_floor=breached)
     db.add(report)

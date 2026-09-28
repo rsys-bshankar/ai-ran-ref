@@ -415,6 +415,22 @@ def list_pm_subscriptions(managed_element_ref: str | None = None, limit: int = P
             for s in page["items"]]}
 
 
+@app.delete("/pm-subscriptions/{subscription_id}", status_code=204)
+def unsubscribe_pm(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    """`docs/call-flows/20-alarm-pm-subscription-lifecycle.md`'s own
+    gap, closed: every other subscription-shaped resource in this build
+    (DME's type subscriptions, MDAF's, A1 Related's EI jobs, Intent
+    Service's RMIH registration, MLMF's) has a real unsubscribe route —
+    `PMSubscription` could previously only be created and listed, never
+    torn down through this build's own API. Idempotent, matching all of
+    those.
+    """
+    sub = db.get(PMSubscription, subscription_id)
+    if sub is not None:
+        db.delete(sub)
+        db.commit()
+
+
 @app.get("/o1-adaptor-endpoints")
 def list_o1_adaptor_endpoints(health_status: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                                db: Session = Depends(get_session)):
