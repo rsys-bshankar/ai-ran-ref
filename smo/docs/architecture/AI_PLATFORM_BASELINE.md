@@ -373,11 +373,11 @@ Frozen wave order — do not reorder without updating this document first:
     `SubscribeAnalyticsRequest`'s body as `notificationDestination` — the
     one subscription-shaped resource in this build that had taken its
     callback outside the body. AIMgF's `MLMFSubscription` — audited and
-    deliberately left open, not built: it declares no callback field at
-    all and has no unsubscribe route, but adding either would be building
-    new functionality, not unifying an existing field name, and so falls
-    outside this slice's scope (same precedent as the MDAF slice's own
-    `analytics_type` enum finding: audited, named, left open).
+    left open here (adding a callback field/unsubscribe route was new
+    functionality, not a field-name unification, so outside this
+    slice's own scope) — is now closed too, in a later pass: gained its
+    own `notification_destination` and a real `DELETE` unsubscribe
+    route, matching every other subscription-shaped resource here.
     `AIMgF/InferenceJob.notificationDestination` and
     `TrainingJob.notificationUri` are deliberately untouched — one-off
     job-completion callbacks, not subscription resources, and outside the

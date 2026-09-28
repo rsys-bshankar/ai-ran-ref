@@ -642,7 +642,8 @@ CREATE TABLE mlmf_subscription (
   model_id          UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
   metric_types      TEXT[] NOT NULL,
   dme_type_id       UUID NOT NULL REFERENCES dme_type(dme_type_id),
-  guard_kpi_floor   JSONB
+  guard_kpi_floor   JSONB,
+  notification_destination TEXT  -- SPEC_AUDIT.md's MLMFSubscription finding, closed
 );
 
 CREATE TABLE performance_report (

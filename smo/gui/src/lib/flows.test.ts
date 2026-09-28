@@ -65,7 +65,7 @@ describe("flow 02 — AI/ML model", () => {
 
   it("flags a floor breach as a warning, not a failure", () => {
     const steps = flow02(model(), lifecycle("PROMOTED", "ACTIVE", ["g"]), [], [{ inferenceJobId: "j", modelId: "m1", status: "COMPLETED", notificationDestination: null }],
-      [{ subscriptionId: "s", modelId: "m1", metricTypes: ["acc"], dmeTypeId: "t", guardKpiFloor: { acc: 0.9 } }],
+      [{ subscriptionId: "s", modelId: "m1", metricTypes: ["acc"], dmeTypeId: "t", guardKpiFloor: { acc: 0.9 }, notificationDestination: null }],
       [{ reportId: "r", subscriptionId: "s", metrics: { acc: 0.5 }, breachedFloor: true, reportedAt: "2026-01-01T00:00:00Z" }]);
     expect(steps.at(-1)?.status).toBe("warn");
     expect(progress(steps).complete).toBe(true);

@@ -723,6 +723,101 @@ def test_list_mlmf_reports_404_on_an_unknown_subscription(client):
     assert client.get(f"/mlmf/subscriptions/{uuid.uuid4()}/reports").status_code == 404
 
 
+def test_subscribe_performance_monitoring_round_trips_notification_destination(client, mlmr):
+    """SPEC_AUDIT.md's `MLMFSubscription` finding, closed: every other
+    subscription-shaped resource in this build notifies a real
+    notification_destination — this one previously had no such field.
+    """
+    model_id = mlmr.add_model()
+    sub_id = client.post("/mlmf/subscriptions", params={
+        "model_id": str(model_id), "dme_type_id": str(uuid.uuid4()), "notification_destination": "http://consumer/mlmf-events",
+    }, json={"metric_types": ["accuracy"], "guard_kpi_floor": {"accuracy": 0.9}}).json()["subscriptionId"]
+
+    subs = client.get("/mlmf/subscriptions", params={"model_id": str(model_id)}).json()["items"]
+    assert subs[0]["notificationDestination"] == "http://consumer/mlmf-events"
+
+
+def test_subscribe_performance_monitoring_without_notification_destination_is_still_legal(client, mlmr):
+    """A purely poll-based consumer may still omit it, same permissive
+    shape as every other subscription-shaped resource in this build.
+    """
+    model_id = mlmr.add_model()
+    sub_id = client.post("/mlmf/subscriptions", params={"model_id": str(model_id), "dme_type_id": str(uuid.uuid4())},
+                          json={"metric_types": ["accuracy"], "guard_kpi_floor": None}).json()["subscriptionId"]
+    subs = client.get("/mlmf/subscriptions", params={"model_id": str(model_id)}).json()["items"]
+    assert subs[0]["notificationDestination"] is None
+
+
+def test_report_performance_notifies_the_subscribers_own_destination(client, mlmr, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    model_id = mlmr.add_model()
+    sub_id = client.post("/mlmf/subscriptions", params={
+        "model_id": str(model_id), "dme_type_id": str(uuid.uuid4()), "notification_destination": "http://consumer/mlmf-events",
+    }, json={"metric_types": ["accuracy"], "guard_kpi_floor": {"accuracy": 0.9}}).json()["subscriptionId"]
+
+    resp = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5})
+    assert resp.status_code == 200
+
+    assert len(calls) == 1
+    url, payload = calls[0]
+    assert url == "http://consumer/mlmf-events"
+    assert payload["modelId"] == str(model_id)
+    assert payload["metrics"] == {"accuracy": 0.5}
+    assert payload["breachedFloor"] is True
+
+
+def test_report_performance_skips_notification_when_no_destination_registered(client, mlmr, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+
+    model_id = mlmr.add_model()
+    sub_id = client.post("/mlmf/subscriptions", params={"model_id": str(model_id), "dme_type_id": str(uuid.uuid4())},
+                          json={"metric_types": ["accuracy"], "guard_kpi_floor": None}).json()["subscriptionId"]
+
+    resp = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5})
+    assert resp.status_code == 200
+    assert calls == []
+
+
+def test_report_performance_succeeds_even_if_the_subscriber_is_unreachable(client, mlmr, monkeypatch):
+    import httpx as httpx_module
+
+    def raise_error(url, json=None, timeout=None):
+        raise httpx_module.ConnectError("unreachable")
+
+    monkeypatch.setattr("app.main.httpx.post", raise_error)
+
+    model_id = mlmr.add_model()
+    sub_id = client.post("/mlmf/subscriptions", params={
+        "model_id": str(model_id), "dme_type_id": str(uuid.uuid4()), "notification_destination": "http://consumer/mlmf-events",
+    }, json={"metric_types": ["accuracy"], "guard_kpi_floor": None}).json()["subscriptionId"]
+
+    resp = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5})
+    assert resp.status_code == 200  # must not raise despite the unreachable subscriber
+
+
+def test_unsubscribe_performance_monitoring(client, mlmr):
+    """SPEC_AUDIT.md's `MLMFSubscription` finding, closed: previously
+    this subscription could only be created and read, never torn down.
+    """
+    model_id = mlmr.add_model()
+    sub_id = client.post("/mlmf/subscriptions", params={"model_id": str(model_id), "dme_type_id": str(uuid.uuid4())},
+                          json={"metric_types": ["accuracy"], "guard_kpi_floor": None}).json()["subscriptionId"]
+
+    resp = client.delete(f"/mlmf/subscriptions/{sub_id}")
+    assert resp.status_code == 204
+
+    subs = client.get("/mlmf/subscriptions", params={"model_id": str(model_id)}).json()["items"]
+    assert subs == []
+
+
+def test_unsubscribe_unknown_performance_monitoring_is_idempotent(client):
+    resp = client.delete(f"/mlmf/subscriptions/{uuid.uuid4()}")
+    assert resp.status_code == 204
+
+
 def _feature_group_body(feature_group_name="cellCounters", **extra):
     return {
         "featureGroupName": feature_group_name, "featureList": "throughput,latency", "datalakeSource": "influxdb",

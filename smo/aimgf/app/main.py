@@ -34,6 +34,7 @@ past Wave 1's structural shortcut.
 import re
 import uuid
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -660,14 +661,33 @@ def list_inference_jobs(model_id: uuid.UUID | None = None, status: str | None = 
 # ---------------------------------------------------------------- MLMF performance monitoring
 
 @app.post("/mlmf/subscriptions", status_code=201)
-def subscribe_performance_monitoring(model_id: uuid.UUID, metric_types: list[str], dme_type_id: uuid.UUID, guard_kpi_floor: dict | None = None, db: Session = Depends(get_session)):
+def subscribe_performance_monitoring(model_id: uuid.UUID, metric_types: list[str], dme_type_id: uuid.UUID, guard_kpi_floor: dict | None = None,
+                                      notification_destination: str | None = None, db: Session = Depends(get_session)):
     """MLMF — new sub-function, AI/ML Workflow LLD section 2. Distinct
     domain from RAN Analytics' MDAF (model performance, not RAN behavior).
+
+    SPEC_AUDIT.md's `MLMFSubscription` finding, closed: `notification_destination`
+    (optional, matching every other subscription-shaped resource's own
+    permissive shape — a purely poll-based consumer may still omit it).
     """
-    sub = MLMFSubscription(model_id=model_id, metric_types=metric_types, dme_type_id=dme_type_id, guard_kpi_floor=guard_kpi_floor)
+    sub = MLMFSubscription(model_id=model_id, metric_types=metric_types, dme_type_id=dme_type_id, guard_kpi_floor=guard_kpi_floor,
+                            notification_destination=notification_destination)
     db.add(sub)
     db.commit()
     return {"subscriptionId": str(sub.subscription_id)}
+
+
+@app.delete("/mlmf/subscriptions/{subscription_id}", status_code=204)
+def unsubscribe_performance_monitoring(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    """SPEC_AUDIT.md's `MLMFSubscription` finding, closed: previously
+    this subscription could only be created and read, never torn down —
+    idempotent, matching every other subscription-shaped resource's own
+    unsubscribe route (DME/MDAF/A1-Related/Intent Service).
+    """
+    sub = db.get(MLMFSubscription, subscription_id)
+    if sub is not None:
+        db.delete(sub)
+        db.commit()
 
 
 def _find_coordination_group_for_model(model_id: uuid.UUID) -> dict | None:
@@ -683,6 +703,18 @@ def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = 
     report = PerformanceReport(subscription_id=subscription_id, metrics=metrics, breached_floor=breached)
     db.add(report)
     db.commit()
+
+    if sub.notification_destination:
+        # SPEC_AUDIT.md's `MLMFSubscription` finding, closed: best-effort,
+        # same pattern as every other subscription notification in this
+        # build — an unreachable subscriber never fails the report call
+        # that triggered it.
+        try:
+            httpx.post(sub.notification_destination, json={
+                "reportId": str(report.id), "modelId": str(sub.model_id), "metrics": metrics, "breachedFloor": breached,
+            }, timeout=2.0)
+        except httpx.HTTPError:
+            pass
 
     result = {"reportId": str(report.id), "breachedFloor": breached}
     if breached:
@@ -707,7 +739,8 @@ def list_performance_subscriptions(model_id: uuid.UUID | None = None, limit: int
         stmt = stmt.where(MLMFSubscription.model_id == model_id)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"subscriptionId": str(sub.subscription_id), "modelId": str(sub.model_id), "metricTypes": sub.metric_types,
-             "dmeTypeId": str(sub.dme_type_id), "guardKpiFloor": sub.guard_kpi_floor} for sub in page["items"]]}
+             "dmeTypeId": str(sub.dme_type_id), "guardKpiFloor": sub.guard_kpi_floor,
+             "notificationDestination": sub.notification_destination} for sub in page["items"]]}
 
 
 @app.get("/mlmf/subscriptions/{subscription_id}/reports")

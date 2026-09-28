@@ -405,17 +405,17 @@ FOCOM's O2IMS mismatch below, not a bug.
    a real, working, functionally equivalent threshold mechanism
    already, just under this build's own `aiml-fw`-derived name/shape
    rather than TS28.105's `ThresholdMonitor`.
-8. **`MLMFSubscription` declares no callback field, and there is no
-   unsubscribe route** — audited this wave (Wave 3, cross-cutting
-   Subscriptions slice), **not closed, left open by this explicit
-   finding**. Every other subscription-shaped resource in this build
-   (DME/MDAF/A1-Related/Intent Service) notifies a real
-   `notificationDestination` and can be torn down with a real `DELETE`;
-   `MLMFSubscription` can currently only be created and read. Adding
-   either would be building new functionality, not unifying an existing
-   field name across already-equivalent resources — outside that
-   slice's scope, so left open rather than folded in as a "while we're
-   here" addition.
+8. ~~**`MLMFSubscription` declares no callback field, and there is no
+   unsubscribe route**~~ — **closed**, per explicit direction to build
+   the new functionality this finding's own Wave 3 audit deliberately
+   left out of that slice's narrower unify-an-existing-field scope.
+   `MLMFSubscription` gains an optional `notification_destination`
+   column, matching every other subscription-shaped resource in this
+   build (DME/MDAF/A1-Related/Intent Service): `report_performance`
+   best-effort-notifies it (same unreachable-subscriber-never-fails
+   pattern as every other notification in this build) with
+   `{reportId, modelId, metrics, breachedFloor}`, and a new
+   `DELETE /mlmf/subscriptions/{id}` (idempotent) tears it down.
 
 ## MLMR vs. TS29482 MLR (AIMLE) — Wave 3
 

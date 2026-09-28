@@ -1026,7 +1026,7 @@
         "summary": "List Performance Subscriptions"
       },
       "post": {
-        "description": "MLMF \u2014 new sub-function, AI/ML Workflow LLD section 2. Distinct\ndomain from RAN Analytics' MDAF (model performance, not RAN behavior).",
+        "description": "MLMF \u2014 new sub-function, AI/ML Workflow LLD section 2. Distinct\ndomain from RAN Analytics' MDAF (model performance, not RAN behavior).\n\nSPEC_AUDIT.md's `MLMFSubscription` finding, closed: `notification_destination`\n(optional, matching every other subscription-shaped resource's own\npermissive shape \u2014 a purely poll-based consumer may still omit it).",
         "operationId": "subscribe_performance_monitoring_mlmf_subscriptions_post",
         "parameters": [
           {
@@ -1047,6 +1047,22 @@
               "format": "uuid",
               "title": "Dme Type Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "notification_destination",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Notification Destination"
             }
           }
         ],
@@ -1081,6 +1097,40 @@
           }
         },
         "summary": "Subscribe Performance Monitoring"
+      }
+    },
+    "/mlmf/subscriptions/{subscription_id}": {
+      "delete": {
+        "description": "SPEC_AUDIT.md's `MLMFSubscription` finding, closed: previously\nthis subscription could only be created and read, never torn down \u2014\nidempotent, matching every other subscription-shaped resource's own\nunsubscribe route (DME/MDAF/A1-Related/Intent Service).",
+        "operationId": "unsubscribe_performance_monitoring_mlmf_subscriptions__subscription_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unsubscribe Performance Monitoring"
       }
     },
     "/mlmf/subscriptions/{subscription_id}/reports": {

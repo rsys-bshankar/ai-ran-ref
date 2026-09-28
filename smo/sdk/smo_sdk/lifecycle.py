@@ -86,10 +86,18 @@ class LifecycleClient(BaseClient):
     # ---------------------------------------------------------------- AIMgF: MLMF performance monitoring
 
     def subscribe_performance_monitoring(self, model_id: uuid.UUID | str, metric_types: list[str],
-                                          dme_type_id: uuid.UUID | str, guard_kpi_floor: dict | None = None) -> dict:
+                                          dme_type_id: uuid.UUID | str, guard_kpi_floor: dict | None = None,
+                                          notification_destination: str | None = None) -> dict:
+        """`notification_destination` (SPEC_AUDIT.md's `MLMFSubscription`
+        finding, closed): optional, matching every other subscription-
+        shaped resource's own permissive shape.
+        """
         return ensure_ok(self._r1.post("/aimgf/mlmf/subscriptions", params={
-            "model_id": str(model_id), "dme_type_id": str(dme_type_id),
+            "model_id": str(model_id), "dme_type_id": str(dme_type_id), "notification_destination": notification_destination,
         }, json={"metric_types": metric_types, "guard_kpi_floor": guard_kpi_floor}))
+
+    def unsubscribe_performance_monitoring(self, subscription_id: uuid.UUID | str) -> None:
+        ensure_ok(self._r1.delete(f"/aimgf/mlmf/subscriptions/{subscription_id}"))
 
     def report_performance(self, subscription_id: uuid.UUID | str, metrics: dict) -> dict:
         # metrics is the route's only body-eligible parameter — unwrapped.

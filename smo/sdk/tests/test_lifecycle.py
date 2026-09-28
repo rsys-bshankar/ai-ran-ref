@@ -121,8 +121,20 @@ def test_subscribe_performance_monitoring_embeds_body_under_two_params(client, r
     client.subscribe_performance_monitoring(model_id, ["latency"], dme_type_id, guard_kpi_floor={"latency": 100})
     call = r1.calls[0]
     assert call["path"] == "/aimgf/mlmf/subscriptions"
-    assert call["params"] == {"model_id": str(model_id), "dme_type_id": str(dme_type_id)}
+    assert call["params"] == {"model_id": str(model_id), "dme_type_id": str(dme_type_id), "notification_destination": None}
     assert call["json"] == {"metric_types": ["latency"], "guard_kpi_floor": {"latency": 100}}
+
+
+def test_subscribe_performance_monitoring_with_notification_destination(client, r1):
+    model_id, dme_type_id = uuid.uuid4(), uuid.uuid4()
+    client.subscribe_performance_monitoring(model_id, ["latency"], dme_type_id, notification_destination="http://x/notify")
+    assert r1.calls[0]["params"]["notification_destination"] == "http://x/notify"
+
+
+def test_unsubscribe_performance_monitoring(client, r1):
+    sub_id = uuid.uuid4()
+    client.unsubscribe_performance_monitoring(sub_id)
+    assert r1.calls[0] == {"verb": "delete", "path": f"/aimgf/mlmf/subscriptions/{sub_id}", "params": None}
 
 
 def test_report_performance_sends_raw_unwrapped_body(client, r1):

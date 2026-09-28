@@ -59,7 +59,7 @@ export interface CoordinationGroup {
   groupId: string; groupType: string; memberModelIds: string[]; memberUseCases: string[];
   sharedFeaturePipelineRef: string | null; retrainPropagation: string;
 }
-export interface MlmfSubscription { subscriptionId: string; modelId: string; metricTypes: string[]; dmeTypeId: string; guardKpiFloor: Record<string, number> | null }
+export interface MlmfSubscription { subscriptionId: string; modelId: string; metricTypes: string[]; dmeTypeId: string; guardKpiFloor: Record<string, number> | null; notificationDestination: string | null }
 export interface MlmfReport { reportId: string; subscriptionId: string; metrics: Record<string, unknown>; breachedFloor: boolean; reportedAt: string }
 
 // ---- RAN NF OAM

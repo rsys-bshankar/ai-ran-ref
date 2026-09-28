@@ -145,11 +145,8 @@ and left open, not attempted without being asked); AIMgF's own
 `requestStatus` vocabulary mismatch (adopting `SUSPENDED`
 during Wave 2 didn't rename the rest of the vocabulary, a real
 breaking change deferred deliberately) — both audited, named, and left
-for a deliberate follow-up rather than guessed at; AIMgF's own
-`MLMFSubscription` gap (no callback field, no unsubscribe route —
-audited during Wave 3's Subscriptions slice, building either would be
-new functionality, not a field-name unification, so out of that
-slice's own scope); and the three section 1 design
+for a deliberate follow-up rather than guessed at; and the three
+section 1 design
 decisions (blocked on real data/algorithm/scope input). Everything else
 large/structural is a **confirmed** Phase-1 scope cut, not a gap.
 
