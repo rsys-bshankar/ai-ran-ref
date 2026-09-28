@@ -43,11 +43,24 @@ different and complementary ground truth).
   own O1 Network Resource Model and Information/Data Model YANG modules.
   Relevant to RAN NF OAM's `ManagedEntity`/CM write shape and
   `mock-o1-adaptor`'s NETCONF surface.
-- **`O-RAN-WG4-MP-YANGs/`**, **`O-RAN-WG5-O-CU-MP-YANGs/`**,
-  **`O-RAN-WG5-O-DU-MP-YANGs/`** — O-RU/O-CU/O-DU management-plane YANG
-  models (radio-unit-specific attribute/config detail this build's
-  degenerate single-node Phase 1 topology doesn't model at that
-  granularity — likely stays out of scope, but not yet audited against).
+- **`O-RAN-WG4-MP-YANGs/`** — O-RU management-plane YANGs.
+  **Confirmed out of scope**, per explicit direction: this build's
+  degenerate single-node Phase 1 topology doesn't model
+  radio-unit-specific attribute/config detail at that granularity, and
+  won't. The one already-relevant WG4 piece, Software Management's base
+  RPC set (`o-ran-software-management.yang`), is separately already
+  implemented (`smo/SPEC_AUDIT.md`'s DME/O1 Adaptor section item 3); any
+  further WG4 "logic" beyond that base RPC engine is confirmed not
+  needed either.
+- **`O-RAN-WG5-O-CU-MP-YANGs/`**, **`O-RAN-WG5-O-DU-MP-YANGs/`** —
+  O-DU/O-CU/O-RU-Aggregator management-plane YANGs. Not a flat gap:
+  per confirmed architecture direction, DME/RAN NF OAM's MnS services
+  and O1 IOC data model conformance for these NF types follow a
+  per-vendor own/spec/combined approach (a vendor's own model, the
+  formal spec's model, or a hybrid) rather than one hard-coded shape —
+  the same per-vendor capability-registry principle
+  `smo/docs/ownership/DME_OWNERSHIP.md` already names as this build's
+  next natural step once a second RAN vendor exists to make it real.
 - **`O1_Adaptor/O1_Adaptor_MnS_Hierarchy_Mapping_v4.xlsx`** — a curated
   index across the above 3GPP/O-RAN files: every IOC reachable through
   ProvMnS's single generic `/{className}={id}` endpoint (3GPP NRM IOCs
@@ -71,8 +84,10 @@ files has been done — RAN NF OAM, FOCOM, Policy Mgmt, SME, AI/ML
 Workflow, RAN Analytics, and DME/O1 Adaptor (via the curated mapping
 workbook above); see `smo/SPEC_AUDIT.md` for the findings. Not yet
 compared against: A1 Related/Onboarding+rApp Mgmt (no relevant spec file
-exists here for either) and the O-RAN WG4/WG5 O-RU/O-CU/O-DU
-management-plane YANGs' own attribute-level detail (present, and now
-partially indexed by the O1 Adaptor mapping workbook, but not compared
-attribute-by-attribute — likely out of scope given this build's
-single-node topology, but genuinely unconfirmed).
+exists here for either). The O-RAN WG4 O-RU management-plane YANGs'
+attribute-level detail is confirmed out of scope, not merely unaudited
+(see above); WG5's O-DU/O-CU/O-RU-Aggregator YANGs are partially indexed
+by the O1 Adaptor mapping workbook but deliberately not compared
+attribute-by-attribute against one fixed shape — per-vendor own/spec/
+combined conformance is the confirmed design, not a gap to close by
+picking one model.
