@@ -23,12 +23,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
+from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
-from .models import MDAFProducer
+from .models import MDA_TYPES, MDAFProducer, infer_mda_type
 
 app = FastAPI(title="RAN Analytics SMOS")
 apply_r1_gateway_security(app)
@@ -46,20 +47,31 @@ def health_check():
 
 
 @app.post("/producers", status_code=201)
-def register_analytics_producer(producer_id: str, analytics_type: str, dme_input_types: list[uuid.UUID], output_schema: dict, db: Session = Depends(get_session)):
+def register_analytics_producer(producer_id: str, analytics_type: str, dme_input_types: list[uuid.UUID], output_schema: dict,
+                                 mda_type: str | None = None, db: Session = Depends(get_session)):
     """RegisterAnalyticsProducer — an update-in-place upsert on
     (producer_id, analytics_type), not just an insert: the same producer
     re-registering the same analytics_type (e.g. on restart) is a normal
     occurrence, not a conflict, and previously crashed with an unhandled
     IntegrityError on the composite primary key instead. Same shape of
     fix as SME's RegisterService (Foundational Platform LLD section 5).
+
+    SPEC_AUDIT.md's `analytics_type` enum finding: `mda_type`, TS28104's
+    own real closed MDAType enum, is optional and additive — a caller may
+    declare one directly (validated against the real 24 values), or, if
+    omitted, `infer_mda_type` derives it for the two shorthand values
+    this build already honestly maps; anything else stays `None`, not
+    guessed.
     """
+    if mda_type is not None and mda_type not in MDA_TYPES:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"unknown mda_type {mda_type!r}")
     prod = db.get(MDAFProducer, (producer_id, analytics_type))
     if prod is None:
         prod = MDAFProducer(producer_id=producer_id, analytics_type=analytics_type)
         db.add(prod)
     prod.dme_input_types = dme_input_types
     prod.output_schema = output_schema
+    prod.mda_type = mda_type if mda_type is not None else infer_mda_type(analytics_type)
     db.commit()
     # OPEN_ITEMS.md section 5: SME's register_service now requires the
     # apf_id to be a registered publishing function (Provider (APF)
@@ -90,5 +102,5 @@ def list_analytics_producers(analytics_type: str | None = None, producer_id: str
 
 
 def _producer_view(p: MDAFProducer) -> dict:
-    return {"producerId": p.producer_id, "analyticsType": p.analytics_type,
+    return {"producerId": p.producer_id, "analyticsType": p.analytics_type, "mdaType": p.mda_type,
             "dmeInputTypes": [str(t) for t in p.dme_input_types], "outputSchema": p.output_schema}

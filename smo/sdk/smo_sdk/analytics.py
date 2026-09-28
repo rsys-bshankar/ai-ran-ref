@@ -17,9 +17,15 @@ from ._common import BaseClient, ensure_ok
 
 class AnalyticsClient(BaseClient):
     def register_producer(self, producer_id: str, analytics_type: str, dme_input_types: list[uuid.UUID | str],
-                           output_schema: dict) -> dict:
+                           output_schema: dict, mda_type: str | None = None) -> dict:
+        """`mda_type` (SPEC_AUDIT.md): TS28104's own real, closed MDAType
+        enum — optional; omit it to let the route derive one for this
+        build's own known-unambiguous shorthand values, or pass one of
+        the 24 real spec values directly for genuine conformance.
+        """
         return ensure_ok(self._r1.post(
-            "/ran-analytics/producers", params={"producer_id": producer_id, "analytics_type": analytics_type},
+            "/ran-analytics/producers",
+            params={"producer_id": producer_id, "analytics_type": analytics_type, "mda_type": mda_type},
             json={"dme_input_types": [str(t) for t in dme_input_types], "output_schema": output_schema},
         ))
 

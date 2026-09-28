@@ -96,7 +96,7 @@ export interface ServiceOrder { orderId: string; scope: string; steps: OrderStep
 export interface Monitor { monitorId: string; targetOrderId: string | null; targetCoordinationGroupId: string | null; analyticsSubscriptionId: string | null; thresholds: Record<string, number> }
 export interface RemedialAction { actionId: string; monitorId: string; actionType: string; autoExecuted: boolean; outcome: string | null }
 export interface AnalyticsReport { reportId: string; analyticsType: string; output: Record<string, unknown> }
-export interface AnalyticsProducer { producerId: string; analyticsType: string; dmeInputTypes: string[]; outputSchema: Record<string, unknown> }
+export interface AnalyticsProducer { producerId: string; analyticsType: string; mdaType: string | null; dmeInputTypes: string[]; outputSchema: Record<string, unknown> }
 export interface AnalyticsSubscription { subscriptionId: string; analyticsType: string; requestedBy: string; notificationDestination: string | null; scope: Record<string, unknown> | null }
 export interface DmeType { dmeTypeId: string; dmeTypeIdStruct: Record<string, string>; typeName: string; producerIds: string[]; typeStatus: string }
 export interface DmeProducer { producerId: string; producerHealthCallbackUrl: string; jobCallbackUrl: string; supportedTypeIds: string[] }
