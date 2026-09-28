@@ -40,7 +40,7 @@ class LifecycleClient(BaseClient):
 
     def suspend_training(self, training_job_id: uuid.UUID | str) -> dict:
         """Wave 3, SPEC_AUDIT.md's AI/ML Workflow section item 6 — only
-        legal against a RUNNING job; 409s otherwise.
+        legal against an IN_PROGRESS job; 409s otherwise.
         """
         return ensure_ok(self._r1.post(f"/aimgf/training-jobs/{training_job_id}/suspend"))
 

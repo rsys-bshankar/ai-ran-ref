@@ -229,7 +229,7 @@ function TrainingJobs() {
   const [status, setStatus] = useState("");
   const jobs = useSmo<TrainingJob[]>("/aimgf/training-jobs", { status });
   return (
-    <Card title="Training jobs" actions={<select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status"><option value="">All</option>{["RUNNING", "COMPLETED", "CANCELLED", "FAILED"].map((s) => <option key={s}>{s}</option>)}</select>}>
+    <Card title="Training jobs" actions={<select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status"><option value="">All</option>{["NOT_STARTED", "IN_PROGRESS", "SUSPENDED", "FINISHED", "CANCELLED", "FAILED"].map((s) => <option key={s}>{s}</option>)}</select>}>
       <p className="muted small">Completing a job is a model transition: advance the model with <em>Training complete</em>. Metrics are written back by the trainer (MLTF).</p>
       <TrainingTable rows={jobs.data} loading={jobs.isLoading} error={jobs.error} />
     </Card>

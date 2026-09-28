@@ -244,14 +244,14 @@ def test_suspend_and_resume_a_running_training_job(client, mlmr):
 
     resume = client.post(f"/training-jobs/{job_id}/resume")
     assert resume.status_code == 200
-    assert resume.json()["status"] == "RUNNING"
-    assert client.get(f"/training-jobs/{job_id}/status").json()["status"] == "RUNNING"
+    assert resume.json()["status"] == "IN_PROGRESS"
+    assert client.get(f"/training-jobs/{job_id}/status").json()["status"] == "IN_PROGRESS"
 
 
 def test_suspend_does_not_touch_model_lifecycle_state(client, mlmr):
     """Wave 2's two real FSMs operate one level up — a job-level suspend
     is deliberately not a third state machine and must not reach into
-    ModelLifecycleState, the same way COMPLETED/FAILED/CANCELLED
+    ModelLifecycleState, the same way FINISHED/FAILED/CANCELLED
     transitions on job.status already don't either.
     """
     model_id = mlmr.add_model()
@@ -302,10 +302,10 @@ def test_request_training_on_promoted_model_fires_create_training_not_a_shortcut
 
 
 def test_request_training_while_already_training_cancels_the_orphaned_job(client, mlmr):
-    """A second RequestTraining against a model that already has a
-    RUNNING TrainingJob is treated as the operator's decision to
+    """A second RequestTraining against a model that already has an
+    IN_PROGRESS TrainingJob is treated as the operator's decision to
     supersede it — the earlier job is marked CANCELLED rather than left
-    silently RUNNING and unreachable.
+    silently IN_PROGRESS and unreachable.
     """
     model_id = mlmr.add_model()
     first = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()
@@ -684,7 +684,7 @@ def test_list_training_jobs_filters_by_model_and_status(client, mlmr):
     assert client.get("/training-jobs").json()["total"] == 2
     only_a = client.get("/training-jobs", params={"model_id": str(model_a)}).json()["items"]
     assert [j["trainingJobId"] for j in only_a] == [job_a]
-    assert only_a[0]["status"] == "RUNNING" and only_a[0]["modelId"] == str(model_a)
+    assert only_a[0]["status"] == "IN_PROGRESS" and only_a[0]["modelId"] == str(model_a)
 
     client.delete(f"/training-jobs/{job_a}")
     assert [j["trainingJobId"] for j in client.get("/training-jobs", params={"status": "CANCELLED"}).json()["items"]] == [job_a]

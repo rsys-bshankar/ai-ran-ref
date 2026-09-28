@@ -378,18 +378,27 @@ FOCOM's O2IMS mismatch below, not a bug.
    Postgres 16 instance (the new `CHECK` constraint accepts all four
    spec values, live-exercised for both produced ones) and the full
    unit/integration suites.
-5. **`requestStatus`'s real 6-value enum
+5. ~~**`requestStatus`'s real 6-value enum
    (NOT_STARTED/IN_PROGRESS/SUSPENDED/FINISHED/CANCELLED/CANCELLING) vs.
    this build's own `TrainingJob.status`
-   (PENDING/RUNNING/SUSPENDED/COMPLETED/FAILED/CANCELLED)** —
-   moderate/breaking, reconfirmed still open in Wave 3 (only
-   `SUSPENDED` was adopted, as item 6's own real value, not a full
-   vocabulary rename). A vocabulary mismatch only, not a functional gap
-   (same shape as RAN NF OAM's `scope`/`ScopeType` naming collision
-   below), but renaming an established, widely-depended-on field's
-   remaining values would be a real breaking change across every
-   existing caller — left for a deliberate follow-up pass, not a quick
-   fix.
+   (PENDING/RUNNING/SUSPENDED/COMPLETED/FAILED/CANCELLED)**~~ —
+   **closed**, per explicit direction to make the real breaking rename
+   this finding named. `TrainingJob.status` (and only `TrainingJob` —
+   `ValidationJob`/`EmulationJob`/`InferenceJob` are separate resources
+   with their own status vocabularies, out of this finding's scope)
+   renamed: `PENDING`→`NOT_STARTED`, `RUNNING`→`IN_PROGRESS`,
+   `COMPLETED`→`FINISHED`; `SUSPENDED`/`CANCELLED` already matched the
+   spec verbatim. `FAILED` stays as this build's own honest addition
+   beyond the spec (a training job that genuinely fails needs a
+   distinct terminal state the spec doesn't model — confirmed no code
+   path actually produces it for `TrainingJob` today, unlike
+   `ValidationJob`/`EmulationJob`, but the DB `CHECK` constraint and the
+   GUI's own status filter both already declared it as a legal future
+   value, so it's kept, not invented). `CANCELLING` is never produced —
+   this build has no asynchronous in-flight-cancellation step to model
+   it against, the same "spec value this design never reaches" honesty
+   already used for `ml_training_type`'s own partial mapping
+   (`PRE_SPECIALISED_TRAINING`/`FINE_TUNING`).
 6. **No `cancelRequest`/`suspendRequest` in-place flag mechanism** —
    **closed this wave (Wave 3).** `TrainingJob.status` gains
    `SUSPENDED`; new `POST /training-jobs/{id}/suspend`/`.../resume`

@@ -233,9 +233,15 @@ Frozen wave order — do not reorder without updating this document first:
     `SUSPENDED` status plus `POST .../suspend`/`.../resume` routes, a
     plain status flip that deliberately does not become a third state
     machine (Wave 2's two real FSMs are untouched by it). The
-    `requestStatus` vocabulary-mismatch finding is reconfirmed still
-    open — only `SUSPENDED` itself was adopted, not a full rename of
-    the remaining values, which would be a real breaking change.
+    `requestStatus` vocabulary-mismatch finding, once reconfirmed still
+    open here (only `SUSPENDED` itself was adopted), is now closed too
+    — `TrainingJob.status` renamed to TS28.105's own real vocabulary
+    (`PENDING`/`RUNNING`/`COMPLETED` → `NOT_STARTED`/`IN_PROGRESS`/
+    `FINISHED`; `SUSPENDED`/`CANCELLED` already matched). `FAILED` stays
+    as this build's own honest addition beyond the spec; `CANCELLING`
+    is never produced — this build has no asynchronous in-flight-
+    cancellation step, the same "spec value this design never reaches"
+    honesty already used for `ml_training_type`'s own partial mapping.
   - **MLLF slice** (done, doc-only): MLLF was still a Wave-1 stub (one
     gate route, no models of its own) whose ownership doc described a
     "load/unload/activate/deactivate + deployment record" surface as

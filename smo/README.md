@@ -138,17 +138,10 @@ genuine production bugs got caught that no unit test had ever touched
 
 **Bottom line — what's actually remaining:** extending the formal-spec
 audit to the one still-unaudited module (A1 Related — no spec file
-exists yet) and the WG4/WG5 YANGs (real, unstarted work); DME's own
-Producer/Type conflation finding (`SPEC_AUDIT.md`'s new DME vs. ICS
-section — a real, moderate-to-large breaking schema change, audited
-and left open, not attempted without being asked); AIMgF's own
-`requestStatus` vocabulary mismatch (adopting `SUSPENDED`
-during Wave 2 didn't rename the rest of the vocabulary, a real
-breaking change deferred deliberately) — both audited, named, and left
-for a deliberate follow-up rather than guessed at; and the three
-section 1 design
-decisions (blocked on real data/algorithm/scope input). Everything else
-large/structural is a **confirmed** Phase-1 scope cut, not a gap.
+exists yet) and the WG4/WG5 YANGs (real, unstarted work); and the three
+section 1 design decisions (blocked on real data/algorithm/scope input).
+Everything else large/structural is a **confirmed** Phase-1 scope cut,
+not a gap.
 
 **Phase 2 — AI Platform Service Decomposition (in progress, new
 direction).** Per an external architecture review (the "SMO Actions"
