@@ -1489,31 +1489,18 @@ yet attempted for lack of a spec file:**
   `../specs/` but never compared against. Likely out of scope given this
   build's single-node topology, but genuinely unconfirmed.
 
-**Two open architectural questions, not code gaps:**
-
-- Policy Mgmt's Intent-to-RMIH matching is producer-side push
-  (`create_intent`'s own `_matching_rmihs`); TS28312 IntentNrm's NRM
-  containment model (`IntentHandlingFunction-Single` *contains*
-  `Intent`) implies the spec's real answer is consumer-side LDN
-  selection instead — an MnS consumer picks and addresses an
-  already-chosen RMIH when creating an Intent. A real, architecturally
-  different, spec-grounded alternative worth a design note before
-  treating the current mechanism as final. Moot for `DEMO_RUNBOOK.md`
-  — neither `CreateIntent` nor `RegisterIntentHandlingFunction` is ever
-  called there.
-- RAN Analytics implements TS28104 MDA's own `MDAType` domain (coverage/
-  mobility/energy-saving analytics) via `aiml-fw-apm`'s proactive
-  producer-push shape rather than TS28104's consumer-request
-  (`MDARequest`/`MDAReport`) NRM model — the same confirmed,
-  deliberate architecture choice as AI/ML Workflow's below. Two smaller,
-  real deltas within that choice are moderate/breaking, not closed:
-  `analytics_type` is a free string where the spec defines a real,
-  closed 24-value enum (constraining it would reject whatever strings
-  any existing caller already uses, not yet audited), and there's no
-  `ThresholdInfo`-based conditional reporting at all (every report
-  always fires) — AI/ML Workflow's own `MLMFSubscription.guard_kpi_floor`
-  is a directly analogous mechanism already in this codebase this
-  module could crib from. See `SPEC_AUDIT.md` for the full findings.
+**Two formerly-open architectural questions — both closed during Wave 3**
+(this subsection was stale until this pass; the summary above already
+had it right, this detailed list just hadn't been pruned to match):
+Intent-to-RMIH matching was redesigned to the spec's own implied
+consumer-side selection (a caller addresses one already-registered
+`IntentHandlingFunction` directly, validated against its declared
+capabilities and scope — `RMIH_CAPABILITY_MISMATCH` otherwise — rather
+than matched producer-side against every candidate); and RAN Analytics'
+two real deltas within its confirmed producer-push architecture choice
+(`analytics_type` vs. TS28104's closed enum, and no `ThresholdInfo`-based
+conditional reporting) are both closed too — see the summary above and
+`SPEC_AUDIT.md` for the full findings on both.
 
 **Confirmed, deliberate Phase-1 scope cuts — not gaps, not pickable as
 scoped PRs:**

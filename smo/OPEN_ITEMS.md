@@ -233,11 +233,18 @@ moved to §1 instead:
 - DME's `CreateDataJob` validated `dataDeliveryMethod` against the
   global known-methods set only, never against the specific `DataOffer`
   the `dmeTypeId` is actually associated with (call flow 05). Closed.
-- Policy Mgmt has no matching/dispatch step between `CreateIntent` and
-  `RegisterIntentHandlingFunction` — an RMIH is never notified of a new
-  Intent it could fulfil; `IntentHandlingFunction.intent_handling_scope`
-  is modeled but no code path ever sets or reads it (call flow 09). Needs
-  a design decision — see §1.
+- Policy Mgmt (now Intent Service) had no matching/dispatch step between
+  `CreateIntent` and `RegisterIntentHandlingFunction` — an RMIH was never
+  notified of a new Intent it could fulfil; `IntentHandlingFunction.
+  intent_handling_scope` was modeled but no code path ever set or read
+  it (call flow 09). Closed during Wave 3, per the design decision §1
+  flagged: consumer-side selection (the caller addresses one
+  already-registered RMIH by `rmihId` directly, TS28312_IntentNrm.yaml's
+  own NRM containment model), validated against both
+  `intentHandlingCapabilityList` and `intentHandlingScope`
+  (`RMIH_CAPABILITY_MISMATCH`, 422, if the named RMIH can't actually
+  fulfil it) — not the former producer-side push-and-notify-everyone
+  shape this bullet originally described.
 
 ## 4. Test coverage is uneven
 

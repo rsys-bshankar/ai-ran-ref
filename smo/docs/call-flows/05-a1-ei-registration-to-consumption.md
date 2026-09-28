@@ -15,7 +15,8 @@ sequenceDiagram
     Producer->>R1: POST /a1-related/ei-types/register (eiTypeId, dme_namespace, dme_name, dme_version)
     R1->>A1R: (proxied) RegisterEIType
     Note over A1R: NOT a distinct R1AP call (A1 Related LLD section 3) —<br/>wraps DME's RegisterDMEType rather than minting a parallel registry
-    A1R->>DME: RegisterDMEType(namespace, name, version, producerHealthCallbackUrl)
+    A1R->>DME: RegisterDMEType(producerId, namespace, name, version, producerHealthCallbackUrl, jobCallbackUrl)
+    Note over DME: one wire-compatible request body, but internally upserts<br/>two separate entities and links them (DME's own Producer/Type<br/>split, closed since this flow was first written) — a second<br/>producer registering this same (namespace, name, version) identity<br/>later would join the link, not conflict with this one
     DME-->>A1R: registrationId (dmeTypeId)
     A1R->>A1R: record A1EIType{eiTypeId, registeredBy, eiSourceDmeTypeId}
     A1R-->>Producer: eiTypeId, eiSourceDmeTypeId
@@ -47,3 +48,4 @@ sequenceDiagram
 - `DataOffer.dataAvailabilityNotification` flows framework → consumer for every other DME interaction; the producer's own "data is ready" signal (`offer_data_availability`) is the one deliberate exception, flowing the opposite way (Foundational Platform LLD section 3.5).
 - This flow never reaches the actual Near-RT RIC — `mock-near-rt-ric/` only implements the A1-P policy interface (RT-7's isolated segment), not an EI consumer; the Consumer actor here stands in for what a real xApp/Near-RT RIC integration would do against DME directly.
 - **Gap surfaced by writing this flow, not previously documented**: `CreateDataJob` validates `dataDeliveryMethod` against the global `DELIVERY_METHODS` set only (`dme/app/main.py`), never against the specific `DataOffer` the `dmeTypeId` is actually associated with — a consumer can request `STREAMING_KAFKA` against a type whose producer only ever offered `PULL_HTTP`, and DME accepts it without complaint.
+- **Closed since this flow was first written**: DME's own `DMEType` used to conflate Producer and Type as one entity with a global uniqueness constraint — a second producer registering the same type identity got a hard conflict. `DMEProducer`/`DMEType` are now two real, many-to-many entities linked by `DMEProducerType`, matching ICS's own real API shape; see call flow 11 for the dedicated multi-producer walkthrough.
