@@ -2735,18 +2735,27 @@ throughout this build). This also directly informs call flow 02/03's own linkage
 call flow 09's own "who creates an Intent and why" gap — once built, both flows should be
 updated to show the real, automated hand-off this section describes.
 
-### 6.4 GAP: training data never validated against real DME DataJobs
+### 6.4 GAP: training data never validated against real DME DataJobs — CLOSED
 
 `RequestTraining(modelId, requiredData, validationCriteria)` (call flow 02,
-`aimgf/app/main.py`'s `request_training`) accepts `requiredData` as an opaque field —
-nothing checks it against a real DME `DataJob`, unlike MDAF's own `publish_report`, which
+`aimgf/app/main.py`'s `request_training`) accepted `requiredData` as an opaque field —
+nothing checked it against a real DME `DataJob`, unlike MDAF's own `publish_report`, which
 genuinely calls `GET /dme/data-jobs/{id}` for every declared `input_sources` entry and
 rejects with `DME_ARTIFACT_NOT_FOUND` if one doesn't resolve (`mdaf/app/main.py`'s
 `_validate_input_sources_are_real_dme_artifacts`, call flow 08). Training's own
-`requiredData` has no equivalent check — "how did training complete" has no real answer
-today beyond "the caller said so." Closing this would mean giving `RequestTraining` the
-same DME-artifact-validation treatment MDAF already has, presumably against the same
-`GET /dme/data-jobs/{id}` pattern.
+`requiredData` had no equivalent check — "how did training complete" had no real answer
+beyond "the caller said so."
+
+**Closed.** Added an optional `dmeDataJobIds: list[uuid.UUID]` field to
+`RequestTrainingRequest`, additive alongside `requiredData` (which stays the opaque blob it
+always was — this doesn't try to interpret or replace it). A new `_validate_dme_data_job_ids`
+helper mirrors MDAF's own check exactly (same `GET /dme/data-jobs/{id}` call, same
+`DME_ARTIFACT_NOT_FOUND` error), called from `request_training` before any lifecycle
+transition fires. Permissive by design: an empty/omitted list (every existing caller's own
+shape) skips the check entirely — this is a new optional capability, not a new hard
+requirement on every training request. The declared ids are stored on `TrainingJob.
+dme_data_job_ids` (new column) and exposed on `GET /training-jobs/{id}/status`. Call flow 02
+updated to show the new cross-check.
 
 ### 6.5 GAP: no training-outcome artifact or TS28.105 completion notification
 
@@ -2816,10 +2825,10 @@ source NF or an operator, unaffected by FM's DME registration.
 
 0. **§6's seven AI/ML-pipeline items are the current front of the queue** — pick these up
    one at a time, per the user's own stated preference, rather than in a batch.
-   ~~6.7 (FM→DME registration)~~ and ~~6.6 (SO-SMOS dispatch entries)~~ — **both closed**,
-   the first two items off this list (see each one's own entry above). Remaining suggested
-   order, easiest/most self-contained first: 6.4 (training-data-DME
-   validation — a direct copy of MDAF's existing pattern) → 6.5 (training-outcome
+   ~~6.7 (FM→DME registration)~~, ~~6.6 (SO-SMOS dispatch entries)~~, and ~~6.4
+   (training-data-DME validation)~~ — **all three closed**, the first three items off this
+   list (see each one's own entry above). Remaining suggested order, easiest/most
+   self-contained first: 6.5 (training-outcome
    artifact/notification) → 6.1 (operator gate on Training/Validation/Emulation) → 6.2
    (real NFO-backed execution runtimes — the largest code change of the seven) → 6.3 (rApp
    Autonomy Modes — the largest *design* change of the seven, and the one the other six

@@ -36,11 +36,16 @@ sequenceDiagram
     Producer->>MLMR: RegisterModel(modelType, version)
     MLMR-->>Producer: modelId
 
-    Producer->>AIMgF: RequestTraining(modelId, requiredData, validationCriteria)
+    Producer->>AIMgF: RequestTraining(modelId, requiredData, dmeDataJobIds?, validationCriteria)
+    opt dmeDataJobIds declared
+        AIMgF->>DME: GET /dme/data-jobs/{id} per dmeDataJobIds entry
+        DME-->>AIMgF: 200 (real DataJob) or 404
+        Note over AIMgF,DME: OPEN_ITEMS.md 6.4, closed — mirrors MDAF's own<br/>publish_report cross-check (call flow 08) exactly — DME_ARTIFACT_NOT_FOUND<br/>otherwise. Optional and additive — requiredData itself stays opaque,<br/>and an omitted list skips the check entirely
+    end
     Note over AIMgF: own ModelLifecycle row, lazily created — REGISTERED -> TRAINING
     Note over AIMgF: MLTF trains (Phase 1: elided) — no MLMR/MLLF call here at all —<br/>the model's underlying artifact is untouched until Deploy, and no<br/>NFO-backed execution runtime exists yet for MLTF/MLVF/MLEF/MLIF —<br/>this whole box is a bare state transition (OPEN_ITEMS.md DECISION:<br/>build real NFO-backed execution runtimes for all four, not yet built)
     Producer->>AIMgF: advance(TRAINING_COMPLETE) -> TRAINED
-    Note over AIMgF: "how did training complete" has no real answer today —<br/>requiredData is never checked against an actual DME DataJob, and<br/>there's no saved training-outcome artifact or TS28.105-style<br/>completion notification_uri callback (OPEN_ITEMS.md GAPs:<br/>training-data-DME validation, training-outcome artifact/notification)
+    Note over AIMgF: there's still no saved training-outcome artifact or TS28.105-style<br/>completion notification_uri callback (OPEN_ITEMS.md GAP:<br/>training-outcome artifact/notification, not yet built)
 
     Producer->>AIMgF: RequestValidation(modelId, trainingJobId) -> VALIDATING
     Note over AIMgF: MLVF validates (Phase 1: elided) — same elisions as Training above
@@ -110,5 +115,6 @@ sequenceDiagram
 - ModelLifecycle and RuntimeLifecycle are deliberately independent FSMs: retraining a PROMOTED model doesn't force its runtime down, and a runtime can be scaled/terminated (jointly with NFO) without touching the model's own certification state.
 - AIMgF's own `model_lifecycle` row is now the single source of truth for lifecycle/runtime state and `clearedNodeGroups` — MLMR never carries any of it, not even as a Wave 1-style structural shortcut. MLLF still owns the *decision* of which node groups a model is placed on; it just writes that decision onto AIMgF's row now instead of MLMR's.
 - A model runtime has no onboarded `ApplicationPackage` behind it, unlike an rApp's own `NfDeploymentDescriptor` — NFO's `packageId` is optional since this wave for exactly that caller.
-- **Open, tracked in `OPEN_ITEMS.md`**: operator gating for Training->Validation->Emulation, real NFO-backed execution runtimes for MLTF/MLVF/MLEF/MLIF, training-data-DME validation, training-outcome artifact/notification, and the rApp Autonomy-Mode design that eventually closes the inference-to-CM-action linkage this flow's tail end still lacks — none of these are built yet; see `OPEN_ITEMS.md` for the full write-up of each.
+- **Closed since this flow was first written**: `RequestTraining` had no way to check `requiredData` against anything real — an optional `dmeDataJobIds` field now cross-checks each declared id against a real DME `DataJob` (`DME_ARTIFACT_NOT_FOUND` otherwise), the same treatment MDAF's own `publish_report` already had (call flow 08). Additive only — `requiredData` itself stays the opaque blob it always was, and an omitted list skips the check entirely (`OPEN_ITEMS.md` section 6.4).
+- **Open, tracked in `OPEN_ITEMS.md`**: operator gating for Training->Validation->Emulation, real NFO-backed execution runtimes for MLTF/MLVF/MLEF/MLIF, training-outcome artifact/notification, and the rApp Autonomy-Mode design that eventually closes the inference-to-CM-action linkage this flow's tail end still lacks — none of these are built yet; see `OPEN_ITEMS.md` for the full write-up of each.
 - **Closed since this flow was first written**: `MLMFSubscription` used to be create-and-read only, with no callback and no way to tear one down. It now carries an optional `notificationDestination` (same best-effort-push shape as MDAF's own subscriber notification, call flow 08) and a real `DELETE /mlmf/subscriptions/{id}`, idempotent like every other subscription-shaped resource's unsubscribe route in this build. See call flow 13 for the dedicated subscribe→notify→unsubscribe walkthrough, including the pull-only (no destination registered) case.

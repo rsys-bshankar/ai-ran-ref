@@ -190,6 +190,15 @@
             ],
             "title": "Consumerrappid"
           },
+          "dmeDataJobIds": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Dmedatajobids",
+            "type": "array"
+          },
           "modelCoordinationGroupId": {
             "anyOf": [
               {

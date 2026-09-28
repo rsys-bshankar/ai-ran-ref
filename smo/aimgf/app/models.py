@@ -130,6 +130,15 @@ class TrainingJob(Base):
     producer_type: Mapped[str] = mapped_column(String, nullable=False, default="rApp")
     producer_id: Mapped[str] = mapped_column(String, nullable=False)
     required_data: Mapped[dict | None] = mapped_column(JSON)
+    # OPEN_ITEMS.md section 6.4: `requiredData` itself stays the opaque
+    # blob it always was — this is a separate, optional, explicitly-typed
+    # reference to the real DME DataJob(s) training actually consumed,
+    # the same "additive, not replacing the existing field" shape DME's
+    # own sourceDomain/sourceContext already used for the analogous
+    # producer-side declaration. Validated against DME on request (see
+    # `_validate_dme_data_job_ids` in main.py); empty/omitted skips the
+    # check, matching every other optional cross-reference in this build.
+    dme_data_job_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False, default=list)
     validation_criteria: Mapped[dict | None] = mapped_column(JSON)
     # SPEC_AUDIT.md's `requestStatus` vocabulary finding, closed: renamed
     # to TS28.105's own real 6-value enum (NOT_STARTED/IN_PROGRESS/

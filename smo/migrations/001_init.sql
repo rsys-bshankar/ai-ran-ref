@@ -623,6 +623,10 @@ CREATE TABLE training_job (
   producer_type                  TEXT NOT NULL DEFAULT 'rApp' CHECK (producer_type = 'rApp'),
   producer_id                      TEXT NOT NULL,
   required_data                       JSONB,
+  -- OPEN_ITEMS.md section 6.4: a separate, explicitly-typed reference to
+  -- the real DME DataJob(s) training actually consumed, additive to
+  -- required_data's own opaque blob — validated against DME on request.
+  dme_data_job_ids                    UUID[] NOT NULL DEFAULT '{}',
   validation_criteria                   JSONB,
   status                                   TEXT NOT NULL DEFAULT 'NOT_STARTED'
                                              CHECK (status IN ('NOT_STARTED','IN_PROGRESS','SUSPENDED','FINISHED','FAILED','CANCELLED')),  -- SPEC_AUDIT.md's requestStatus vocabulary finding, closed (FAILED is this build's own honest addition beyond the real spec; CANCELLING is never produced)
