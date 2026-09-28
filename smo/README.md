@@ -75,10 +75,16 @@ real-spec correspondence.
 Not yet audited against a formal spec at all, because no relevant spec
 file exists in `../specs/` yet: **A1 Related** (3GPP/O-RAN A1 specs
 aren't there — section 5's source-code audit remains the only ground
-truth). Also cataloged in `../specs/` but never compared against: the
-O-RAN WG4/WG5 O-RU/O-CU/O-DU management-plane YANGs — likely out of
-scope given this build's single-node topology, but genuinely
-unconfirmed, not assumed.
+truth). Also cataloged in `../specs/`: the O-RAN WG4 O-RU
+management-plane YANGs — **confirmed out of scope**, not merely
+unaudited, per explicit direction (the one already-relevant WG4 piece,
+Software Management's base RPC set, is separately already implemented —
+see item 3 below; any further WG4 "logic" beyond that is confirmed not
+needed either). WG5's O-DU/O-CU/O-RU-Aggregator YANGs aren't a flat gap
+either: DME/RAN NF OAM's MnS services and O1 IOC data model conformance
+for these NF types follow a confirmed per-vendor own/spec/combined
+approach, not one hard-coded shape — see
+`docs/ownership/DME_OWNERSHIP.md`'s capability-registry principle.
 
 **DME is now audited too**, against ICS's own real OpenAPI spec
 (`nonrtric-plt-informationcoordinatorservice/api/ics-api.yaml`,
@@ -138,10 +144,12 @@ genuine production bugs got caught that no unit test had ever touched
 
 **Bottom line — what's actually remaining:** extending the formal-spec
 audit to the one still-unaudited module (A1 Related — no spec file
-exists yet) and the WG4/WG5 YANGs (real, unstarted work); and the three
-section 1 design decisions (blocked on real data/algorithm/scope input).
-Everything else large/structural is a **confirmed** Phase-1 scope cut,
-not a gap.
+exists yet); and the three section 1 design decisions (blocked on real
+data/algorithm/scope input). The O-RAN WG4/WG5 YANGs are resolved, not
+remaining: WG4 (O-RU) is a confirmed scope cut, and WG5 (O-DU/O-CU/
+O-RU-Aggregator) is a confirmed per-vendor own/spec/combined
+architecture principle rather than a gap to close. Everything else
+large/structural is a **confirmed** Phase-1 scope cut, not a gap.
 
 **Phase 2 — AI Platform Service Decomposition (in progress, new
 direction).** Per an external architecture review (the "SMO Actions"
@@ -1485,35 +1493,26 @@ yet attempted for lack of a spec file:**
 - **A1 Related** — the 3GPP/O-RAN A1 specs aren't in `../specs/` either;
   the `sim-a1-interface`/`a1pms` source-code audit in `OPEN_ITEMS.md`
   section 5 remains the only ground truth for this module.
-- **O-RAN WG4/WG5 O-RU/O-CU/O-DU management-plane YANGs** — present in
-  `../specs/` but never compared against. Likely out of scope given this
-  build's single-node topology, but genuinely unconfirmed.
 
-**Two open architectural questions, not code gaps:**
+(The O-RAN WG4/WG5 O-RU/O-CU/O-DU management-plane YANGs, previously
+listed here as unconfirmed, are now resolved — not a gap of this kind at
+all. WG4 is confirmed out of scope; WG5 is a confirmed per-vendor
+own/spec/combined architecture principle, not something to attempt by
+picking one model. See "Project status" above and `SPEC_AUDIT.md`'s
+DME/O1 Adaptor section for the full disposition.)
 
-- Policy Mgmt's Intent-to-RMIH matching is producer-side push
-  (`create_intent`'s own `_matching_rmihs`); TS28312 IntentNrm's NRM
-  containment model (`IntentHandlingFunction-Single` *contains*
-  `Intent`) implies the spec's real answer is consumer-side LDN
-  selection instead — an MnS consumer picks and addresses an
-  already-chosen RMIH when creating an Intent. A real, architecturally
-  different, spec-grounded alternative worth a design note before
-  treating the current mechanism as final. Moot for `DEMO_RUNBOOK.md`
-  — neither `CreateIntent` nor `RegisterIntentHandlingFunction` is ever
-  called there.
-- RAN Analytics implements TS28104 MDA's own `MDAType` domain (coverage/
-  mobility/energy-saving analytics) via `aiml-fw-apm`'s proactive
-  producer-push shape rather than TS28104's consumer-request
-  (`MDARequest`/`MDAReport`) NRM model — the same confirmed,
-  deliberate architecture choice as AI/ML Workflow's below. Two smaller,
-  real deltas within that choice are moderate/breaking, not closed:
-  `analytics_type` is a free string where the spec defines a real,
-  closed 24-value enum (constraining it would reject whatever strings
-  any existing caller already uses, not yet audited), and there's no
-  `ThresholdInfo`-based conditional reporting at all (every report
-  always fires) — AI/ML Workflow's own `MLMFSubscription.guard_kpi_floor`
-  is a directly analogous mechanism already in this codebase this
-  module could crib from. See `SPEC_AUDIT.md` for the full findings.
+**Two formerly-open architectural questions — both closed during Wave 3**
+(this subsection was stale until this pass; the summary above already
+had it right, this detailed list just hadn't been pruned to match):
+Intent-to-RMIH matching was redesigned to the spec's own implied
+consumer-side selection (a caller addresses one already-registered
+`IntentHandlingFunction` directly, validated against its declared
+capabilities and scope — `RMIH_CAPABILITY_MISMATCH` otherwise — rather
+than matched producer-side against every candidate); and RAN Analytics'
+two real deltas within its confirmed producer-push architecture choice
+(`analytics_type` vs. TS28104's closed enum, and no `ThresholdInfo`-based
+conditional reporting) are both closed too — see the summary above and
+`SPEC_AUDIT.md` for the full findings on both.
 
 **Confirmed, deliberate Phase-1 scope cuts — not gaps, not pickable as
 scoped PRs:**

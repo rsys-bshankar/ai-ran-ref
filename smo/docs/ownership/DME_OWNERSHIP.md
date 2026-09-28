@@ -128,3 +128,16 @@ speculative — not built this wave. See
 of that registry's shape (checked against the real, already-generic
 `ran-nf-oam` endpoint-registration/NETCONF-dispatch code), ready to build
 the day a second real vendor exists.
+
+**O-RAN WG5 conformance is confirmed to follow this same per-vendor
+principle**, not one fixed shape: for O-DU/O-CU/O-RU-Aggregator NF
+types, each vendor's (RAN or Digital Twin) DME/RAN NF OAM MnS services
+and O1 IOC data model will conform via its own model, the formal WG5
+spec's model, or a combined/hybrid approach, chosen per-vendor rather
+than hard-coded once-for-all — the same "flexible dict, not forced
+columns" philosophy `source_context` already applies to source
+provenance, extended here to conformance shape itself. (WG4, by
+contrast — O-RU-only management-plane YANGs — is confirmed fully out of
+scope for this build, aside from the Software Management RPC engine
+`ran-nf-oam` already implements; see `SPEC_AUDIT.md`'s DME/O1 Adaptor
+section items 3-4.)
