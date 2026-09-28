@@ -50,6 +50,12 @@ class ValidationJob(Base):
     validation_criteria: Mapped[dict | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
     metrics: Mapped[dict | None] = mapped_column(JSON)
+    # OPEN_ITEMS.md section 6.5: same additive pair TrainingJob gained —
+    # who to best-effort notify on completion (set at request time, the
+    # requester's own callback), and where the validated artifact lives
+    # (a DME DmeTypeId, set on completion).
+    notification_uri: Mapped[str | None] = mapped_column(String)
+    outcome_artifact_dme_type_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
 
 
 class EmulationJob(Base):
@@ -65,6 +71,9 @@ class EmulationJob(Base):
     emulation_criteria: Mapped[dict | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
     metrics: Mapped[dict | None] = mapped_column(JSON)
+    # OPEN_ITEMS.md section 6.5: same pair as ValidationJob's own.
+    notification_uri: Mapped[str | None] = mapped_column(String)
+    outcome_artifact_dme_type_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
 
 
 class CertificationRecord(Base):
@@ -167,6 +176,13 @@ class TrainingJob(Base):
     consumer_rapp_id: Mapped[str | None] = mapped_column(String)
     producer_rapp_id: Mapped[str | None] = mapped_column(String)
     model_metrics: Mapped[dict | None] = mapped_column(JSON)
+    # OPEN_ITEMS.md section 6.5: where the training run's real output
+    # artifact lives — a DME DmeTypeId reference, the same "route it
+    # through DME" shape MLModel's own outputDataType already uses for an
+    # inference result, rather than inventing a second data-plane path.
+    # Set on completion (POST .../complete), not at request time — the
+    # artifact doesn't exist until training actually produces one.
+    outcome_artifact_dme_type_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     # NEW SPEC_AUDIT.md: TS28.105 AI/ML NRM's own real, closed 4-value
     # mLTrainingType enum on both MLModel and MLTrainingRequest —
     # request_training already computes this exact INITIAL_TRAINING-vs-

@@ -639,6 +639,9 @@ CREATE TABLE training_job (
   model_metrics                                               JSONB, -- NEW section 5: writeback target, POST .../model-metrics
   ml_training_type                                               TEXT CHECK (ml_training_type IN
     ('INITIAL_TRAINING','PRE_SPECIALISED_TRAINING','RE_TRAINING','FINE_TUNING')), -- NEW SPEC_AUDIT.md: TS28.105's own real enum
+  -- OPEN_ITEMS.md section 6.5: where the training run's real output
+  -- artifact lives — a DME DmeTypeId reference, set on completion.
+  outcome_artifact_dme_type_id                                     UUID,
   CONSTRAINT exactly_one_target CHECK (
     (model_id IS NOT NULL AND model_coordination_group_id IS NULL)
     OR (model_id IS NULL AND model_coordination_group_id IS NOT NULL)
@@ -703,7 +706,10 @@ CREATE TABLE validation_job (
   producer_id             TEXT NOT NULL,
   validation_criteria       JSONB,
   status                      TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','COMPLETED','FAILED','CANCELLED')),
-  metrics                       JSONB
+  metrics                       JSONB,
+  -- OPEN_ITEMS.md section 6.5: same additive pair training_job gained.
+  notification_uri                TEXT,
+  outcome_artifact_dme_type_id       UUID
 );
 
 CREATE TABLE emulation_job (
@@ -712,7 +718,10 @@ CREATE TABLE emulation_job (
   producer_id          TEXT NOT NULL,
   emulation_criteria     JSONB,
   status                   TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','COMPLETED','FAILED','CANCELLED')),
-  metrics                    JSONB
+  metrics                    JSONB,
+  -- OPEN_ITEMS.md section 6.5: same pair as validation_job's own.
+  notification_uri             TEXT,
+  outcome_artifact_dme_type_id    UUID
 );
 
 CREATE TABLE certification_record (
