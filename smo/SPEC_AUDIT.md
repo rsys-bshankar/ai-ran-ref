@@ -642,7 +642,13 @@ for the full breakdown.
    1:1 with the 3 RPCs and their 3 completion notifications
    (`download-event`/`install-event`/`activation-event`). This build's
    implementation is already ahead of what the base spec's own RPCs
-   support unaugmented.
+   support unaugmented. This is also the *only* WG4 element in this
+   build's confirmed scope: WG4 covers O-RU management-plane YANGs
+   exclusively (`o-ran-uplane-conf`/`o-ran-beamforming`/etc.'s
+   radio-unit-specific attribute/config detail), confirmed out of scope
+   given this build's degenerate single-node topology, per explicit
+   direction. Any WG4 Software Management "logic" beyond the 3-RPC
+   engine already covered above is confirmed not needed either.
 4. **O-RAN WG10-O1NRM's new IOCs (ORU, NearRTRICFunction, EP_D2C/D2U/E2,
    D2Params, NESPolicy/NESPolicyRelation, RRMPolicyRBAlloc) and WG5-O-DU's
    CTI\* family (CTIFunction/CTIClient/CTISessionGroup/CTISession/
@@ -653,7 +659,14 @@ for the full breakdown.
    DME_OWNERSHIP.md`) is meant to eventually track per-vendor rather
    than hard-code; not built this wave, since no second RAN vendor
    exists in this build to make the registry's per-vendor branching
-   real rather than speculative.
+   real rather than speculative. Confirmed scope, not just this wave's
+   deferral: WG5 covers O-DU/O-CU/O-RU-Aggregator (unlike WG4's O-RU-only
+   scope above), and per explicit direction, DME/RAN NF OAM's MnS
+   services and O1 IOC data model conformance for these NF types will
+   follow a per-vendor own/spec/combined approach — a vendor's own
+   model, the formal spec's model, or a hybrid, picked per-vendor rather
+   than hard-coded to one shape — for both the MnS operations themselves
+   and the underlying IOC data model.
 5. **Sheet 7's WG5 O-RU aggregation mount points confirmed genuinely
    out of scope** — not a gap. The workbook's own notes mark these as
    "NOT part of O1 Adaptor's northbound surface" (internal
