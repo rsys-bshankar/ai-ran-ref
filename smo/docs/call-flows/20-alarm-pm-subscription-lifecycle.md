@@ -52,7 +52,9 @@ sequenceDiagram
 
     Operator->>NFOAM: GET /pm-subscriptions?managed_element_ref=ME
     NFOAM-->>Operator: [PMSubscription, ...]
-    Note over Operator,NFOAM: no DELETE /pm-subscriptions/{id} route exists in this build —<br/>unlike DME/MDAF/A1-Related/Intent Service/MLMF, a PM subscription<br/>can be created and listed but never torn down (see "Key decisions")
+    Operator->>NFOAM: DELETE /pm-subscriptions/{subscriptionId}
+    Note over Operator,NFOAM: idempotent, matching every other subscription-shaped<br/>resource's own unsubscribe route (see "Key decisions")
+    NFOAM-->>Operator: 204
     end
 ```
 
@@ -60,4 +62,4 @@ sequenceDiagram
 - `correlationGroup`/`correlatedNotifications`/`rootCauseIndicator` are caller-declared, not computed by RAN NF OAM itself — this build carries the correlation a raising source already knows, it doesn't run its own root-cause-analysis algorithm (matching `OPEN_ITEMS.md`'s own confirmed elision: "Alarm-storm correlation algorithm... nothing implemented").
 - Clearing an alarm never cascades to its correlated siblings — `clear_alarm` only ever mutates the one `alarmId` it's called against; a correlation group with a cleared root cause and un-cleared symptomatic alarms is a real, representable state, not a bug.
 - `SubscribePM` is explicitly *not* a clause-8 PM job — RAN NF OAM LLD section 3.5's own documented design intent, confirmed by this route's very shape: it's a DME-producer registration wrapper (`RegisterDMEType` under the hood) that happens to also record `granularityPeriod`, the one job-control field judged worth keeping despite the wrapper scope cut. `schedule`/`priority`/`multi-instance`/`reportingPeriod` all stay out.
-- **Gap surfaced by writing this flow, not previously documented**: every other subscription-shaped resource in this build (DME's type subscriptions, MDAF's, A1 Related's EI jobs, Intent Service's RMIH registration, MLMF's) has a real `DELETE`/unsubscribe route. `PMSubscription` doesn't — `POST /pm-subscriptions` and `GET /pm-subscriptions` both exist, but there is no `DELETE /pm-subscriptions/{id}` anywhere in `ran-nf-oam/app/main.py`. Worth adding to `OPEN_ITEMS.md`: a subscription created here can never be torn down through this build's own API, only by direct DB access.
+- **Closed since this flow was first written**: every other subscription-shaped resource in this build (DME's type subscriptions, MDAF's, A1 Related's EI jobs, Intent Service's RMIH registration, MLMF's) already had a real `DELETE`/unsubscribe route — `PMSubscription` didn't. `DELETE /pm-subscriptions/{id}` is now real and idempotent, matching all of those; the GUI's own PM subscriptions table gained a matching "Unsubscribe" action alongside MDAF's own.

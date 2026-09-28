@@ -818,6 +818,27 @@ def test_unsubscribe_unknown_performance_monitoring_is_idempotent(client):
     assert resp.status_code == 204
 
 
+def test_report_performance_against_unknown_subscription_is_a_clean_404(client):
+    """`docs/call-flows/13-mlmf-subscription-lifecycle.md`'s own gap,
+    closed: this used to raise an unhandled AttributeError (a bare 500)
+    reading `sub.guard_kpi_floor` with no null-check.
+    """
+    resp = client.post(f"/mlmf/subscriptions/{uuid.uuid4()}/reports", json={"accuracy": 0.5})
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["title"] == "MLMF_SUBSCRIPTION_NOT_FOUND"
+
+
+def test_report_performance_after_unsubscribe_is_a_clean_404(client, mlmr):
+    model_id = mlmr.add_model()
+    sub_id = client.post("/mlmf/subscriptions", params={"model_id": str(model_id), "dme_type_id": str(uuid.uuid4())},
+                          json={"metric_types": ["accuracy"], "guard_kpi_floor": None}).json()["subscriptionId"]
+    client.delete(f"/mlmf/subscriptions/{sub_id}")
+
+    resp = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5})
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["title"] == "MLMF_SUBSCRIPTION_NOT_FOUND"
+
+
 def _feature_group_body(feature_group_name="cellCounters", **extra):
     return {
         "featureGroupName": feature_group_name, "featureList": "throughput,latency", "datalakeSource": "influxdb",

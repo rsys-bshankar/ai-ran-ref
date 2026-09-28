@@ -50,7 +50,7 @@ sequenceDiagram
     AIMgF-->>SA: 204
 
     Producer->>AIMgF: ReportPerformance(subscriptionId=S1, metrics)
-    AIMgF--xAIMgF: sub = None post-unsubscribe — report_performance never<br/>null-checks it before sub.guard_kpi_floor: unhandled 500,<br/>not a clean 404 (see "Key decisions" below)
+    AIMgF-->>Producer: 404 MLMF_SUBSCRIPTION_NOT_FOUND — sub is None post-unsubscribe<br/>(see "Key decisions" below: this used to be an unhandled 500)
 ```
 
 **Key decisions this flow depends on:**
@@ -58,4 +58,4 @@ sequenceDiagram
 - `notificationDestination` is optional on creation, exactly like DME's `DMETypeSubscription`, MDAF's own subscriptions, and A1 Related's EI jobs — a purely poll-based consumer (the `Auditor` actor here) is a first-class, fully-supported shape, not a degraded one.
 - The push is best-effort per report, not per subscription lifetime — an unreachable `SA` on one `ReportPerformance` call doesn't disable future pushes; each call tries independently and swallows its own `httpx.HTTPError`.
 - `DELETE /mlmf/subscriptions/{id}` is idempotent by construction (`if sub is not None: delete`), matching every other subscription-shaped resource's own unsubscribe route in this build (DME's type subscriptions, MDAF's, A1 Related's, Intent Service's RMIH deregistration) — deleting twice, or deleting an id that never existed, is never an error.
-- **Gap surfaced by writing this flow, not previously documented**: `report_performance` (`aimgf/app/main.py`) does `sub = db.get(MLMFSubscription, subscription_id)` and then reads `sub.guard_kpi_floor`/`sub.notification_destination` with no null-check in between — `ReportPerformance` against an unsubscribed or never-existed `subscriptionId` raises an unhandled `AttributeError` (a bare 500), not a clean 404. Every comparable cross-reference elsewhere in this build (`_validate_job_definition_schema`'s type-existence check, DME's `_validate_lifecycle_eligibility`) treats a missing referenced row as "skip the check," not "crash" — worth adding to `OPEN_ITEMS.md`: a `db.get(...)` is None check raising a real `SUBSCRIPTION_NOT_FOUND` would close this the same way.
+- **Closed since this flow was first written**: `report_performance` (`aimgf/app/main.py`) used to read `sub.guard_kpi_floor`/`sub.notification_destination` straight off `db.get(MLMFSubscription, subscription_id)` with no null-check in between — `ReportPerformance` against an unsubscribed or never-existed `subscriptionId` raised an unhandled `AttributeError` (a bare 500), not a clean 404. Now a real `MLMF_SUBSCRIPTION_NOT_FOUND` (404), matching every comparable cross-reference elsewhere in this build.

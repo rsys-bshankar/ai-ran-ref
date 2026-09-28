@@ -1066,6 +1066,40 @@
         "summary": "Subscribe Pm"
       }
     },
+    "/pm-subscriptions/{subscription_id}": {
+      "delete": {
+        "description": "`docs/call-flows/20-alarm-pm-subscription-lifecycle.md`'s own\ngap, closed: every other subscription-shaped resource in this build\n(DME's type subscriptions, MDAF's, A1 Related's EI jobs, Intent\nService's RMIH registration, MLMF's) has a real unsubscribe route \u2014\n`PMSubscription` could previously only be created and listed, never\ntorn down through this build's own API. Idempotent, matching all of\nthose.",
+        "operationId": "unsubscribe_pm_pm_subscriptions__subscription_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unsubscribe Pm"
+      }
+    },
     "/software-management-jobs": {
       "get": {
         "operationId": "list_software_management_jobs_software_management_jobs_get",

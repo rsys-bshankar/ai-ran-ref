@@ -246,6 +246,47 @@ moved to §1 instead:
   fulfil it) — not the former producer-side push-and-notify-everyone
   shape this bullet originally described.
 
+A second pass added 10 more flows (11 through 20 — DME's Producer/Type
+LCM, DME's DataRecord movement + lifecycle-stage eligibility, MLMF's
+subscription LCM, correlation-ID mechanics, NFO's workload LCM, FOCOM's
+resource/inventory LCM, AIMgF's Model Runtime LCM, SME's CAPIF security
+LCM, RAN NF OAM's Software Management job FSM, and Alarm+PM subscription
+LCM), also refreshing six flows that had drifted from real current code.
+This pass surfaced three more real findings, two closed and one
+confirmed correct-but-currently-unreachable, not a gap:
+
+- `report_performance` (`aimgf/`) read `sub.guard_kpi_floor`/
+  `sub.notification_destination` straight off `db.get(...)` with no
+  null-check — `ReportPerformance` against an unsubscribed or
+  never-existed `subscriptionId` raised an unhandled `AttributeError`
+  (a bare 500), not a clean 404 (call flow 13). Closed: a real
+  `MLMF_SUBSCRIPTION_NOT_FOUND` (404), matching every comparable
+  cross-reference elsewhere in this build.
+- `PMSubscription` (`ran-nf-oam/`) had no `DELETE`/unsubscribe route at
+  all, unlike every other subscription-shaped resource in this build
+  (call flow 20). Closed: `DELETE /pm-subscriptions/{id}`, idempotent,
+  same shape as the rest; the GUI's own PM subscriptions table gained a
+  matching "Unsubscribe" action.
+- NFO's `DeploymentState.ABNORMAL`/`DELETING` (`nfo/`) are real states
+  with real dispatch logic mirroring the reference's own
+  `dms_lcm_nfdeployment.py` exactly, but neither is reachable by any
+  sequence of real API calls in this build today (call flow 15) — every
+  `Terminate` call that computes `DELETING` as an intermediate FSM value
+  falls straight through to synchronous row deletion in that same
+  request (matching Instantiate/Scale's own Phase-1 elision), so a
+  second `Terminate` can never actually find a row still sitting in
+  `DELETING` to trigger the `ABNORMAL` catch-all. **Not a gap** — this
+  is confirmed-correct dispatch logic, unreachable only because
+  `Terminate` is still a synchronous elision; revisit only if `Terminate`
+  ever becomes genuinely asynchronous (a real Helm uninstall that
+  doesn't complete within one request), which is exactly the condition
+  under which a second `Terminate` racing the first would become
+  possible. This build's own unit tests already exercise both branches
+  only via direct DB-fixture writes (`state = "DELETING"`/`"ABNORMAL"`),
+  never two real HTTP calls in sequence — confirming this isn't an
+  oversight in the tests, it's the only way those branches are reachable
+  at all today.
+
 ## 4. Test coverage is uneven
 
 Per-module unit test counts:

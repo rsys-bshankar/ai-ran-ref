@@ -86,6 +86,7 @@ function PmSubscriptions() {
           { header: "Delivery", render: (s) => s.deliveryMethod },
           { header: "Southbound engine", render: (s) => s.southboundEngine },
           { header: "Granularity", render: (s) => (s.granularityPeriod ? `${s.granularityPeriod} s` : "—") },
+          { header: "", className: "actions", render: (s) => <ActionButton label="Unsubscribe" action={{ method: "DELETE", path: `/ran-nf-oam/pm-subscriptions/${s.subscriptionId}`, success: "Unsubscribed" }} /> },
         ]} />
       </Card>
     </>

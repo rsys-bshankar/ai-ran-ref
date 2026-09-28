@@ -302,6 +302,28 @@ def test_subscribe_pm_without_granularity_period_defaults_to_null(client, db_ses
     assert resp.json()["granularityPeriod"] is None
 
 
+def test_unsubscribe_pm(client, db_session_factory, monkeypatch):
+    """`docs/call-flows/20-alarm-pm-subscription-lifecycle.md`'s own
+    gap, closed: PMSubscription previously had no DELETE route at all,
+    unlike every other subscription-shaped resource in this build.
+    """
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
+    sub_id = client.post("/pm-subscriptions", params={
+        "managed_element_ref": "ME-1", "counter_type": "PRB.Usage", "delivery_method": "pull",
+    }).json()["subscriptionId"]
+
+    resp = client.delete(f"/pm-subscriptions/{sub_id}")
+    assert resp.status_code == 204
+
+    db = db_session_factory()
+    assert db.get(PMSubscription, uuid.UUID(sub_id)) is None
+
+
+def test_unsubscribe_unknown_pm_subscription_is_idempotent(client):
+    resp = client.delete(f"/pm-subscriptions/{uuid.uuid4()}")
+    assert resp.status_code == 204
+
+
 def test_health_endpoint_answers_the_callback_url_subscribe_pm_registers(client):
     """OPEN_ITEMS.md section 5: subscribe_pm registers
     http://ran-nf-oam:8000/health as this producer's health-supervision
