@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Standards basis | Internal logic (assurance monitors, remedial actions); its O1-CM handler acts as a 3GPP TS 28.312 intent handling function (RMIH) |
+| Standards basis | O-RAN SMO-ARCH §4.2.8 SMOS (role and capabilities); interfaces unspecified, so monitors and remedial actions are internal logic; its O1-CM handler acts as a 3GPP TS 28.312 intent handling function (RMIH) |
 | R1 route / port | `/sa-smos` via R1 Termination (container :8000) |
 | Depends on (over R1) | Intent Service; DME (`/dme/actions`); RAN NF OAM (`/ran-nf-oam/config-jobs`); NFO (`/nfo/deployments/{id}/heal`); SO SMOS (`/so-smos/orders/{id}`); rApp Management (`/rapp-mgmt/instances/...`); AIMgF (`/aimgf/training-jobs`) |
 | Called by | GUI BFF (monitors, evaluate, escalate, remedial actions); Intent Service (new-intent push to the O1-CM handler); rApp demos and integration environments (O1-CM registration) |
@@ -31,7 +31,7 @@ It does not own intents (Intent Service), configuration jobs (RAN NF OAM), O1 ac
 
 ### 1.2 Standards basis
 
-The assurance part is internal logic. The O1-CM handler is a TS 28.312 intent handling function: it registers an
+SA SMOS is the "Service and Slice Subnet Assurance SMOS" of O-RAN WG1 SMO-ARCH §4.2.8. That clause states capabilities only (NOTE 2: SMOS interfaces and modelling are not specified), so the assurance part is internal design. The O1-CM handler is a TS 28.312 intent handling function: it registers an
 `IntentHandlingFunction` with an `IntentHandlingCapability` (object type `RAN_SUBNETWORK`, target infos for each CM
 target with condition `IS_EQUAL_TO`), receives intents, and publishes `IntentFulfilmentReport`s. See
 [`../intent-service/README.md`](../intent-service/README.md) and
