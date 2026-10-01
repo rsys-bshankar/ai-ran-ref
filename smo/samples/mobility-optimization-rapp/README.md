@@ -116,5 +116,5 @@ Ids persist between steps in `$DEMO_STATE` (default `/tmp/mobility-optimization-
 - Thresholds (5 %, 2 %, 50 attempts, 60 and 30 minutes, 6 dB) are fixed in code, not configurable per relation.
 - The model is a persistence-anchored linear regression with a rule-based classifier; it has no learned failure classification.
 - Coordination with EnergySaving and Traffic Steering is by polling their R1 routes; an unreachable peer is treated as "no information", not as a block.
-- `supportedVendorModes` lists `O1_RESTCONF`, but RAN NF OAM dispatches only NETCONF-shaped `edit-config` (see RAPP_PACKAGING.md).
+- `supportedVendorModes` lists `O1_NETCONF` and `O1_RESTCONF`; RAN NF OAM dispatches over whichever the managed element is provisioned for.
 - Open items for the platform are in [OPEN_ITEMS.md](../../OPEN_ITEMS.md); none is specific to this rApp.

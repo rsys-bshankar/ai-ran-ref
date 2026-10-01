@@ -105,6 +105,7 @@ export interface MlmfReport { reportId: string; subscriptionId: string; metrics:
 // ---- RAN NF OAM
 export interface Alarm {
   alarmId: string; sourceAlarmId: string; managedElementRef: string; severity: string; ackState: string;
+  managedFunctionRef: string | null;  // W10-alarm-cellref: the cell it is about; null = the whole element
   raisedAt: string | null; correlationGroup: string | null; probableCause: string | null; specificProblem: string | null;
   rootCauseIndicator: boolean; correlatedNotifications: string[]; proposedRepairActions: string | null;
   alarmType: string | null; ackUserId: string | null; changedAt: string | null; clearedAt: string | null; clearUserId: string | null;

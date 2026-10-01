@@ -157,6 +157,25 @@ def test_ts16_protected_targets_thin_samples_and_critical_alarms(mesh, loaded_ap
     assert decision(result, "411")["reason"] == "SAFETY_BLOCKED:CRITICAL_ALARM,INSUFFICIENT_SAMPLES"
 
 
+def test_a_cell_alarm_excludes_that_cell_as_a_target_only(mesh, loaded_apps, monkeypatch):
+    """W10-alarm-cellref: a critical alarm raised on 402 holds 402 and makes
+    it no target, while 401 still steers — to the other layer, as when 402
+    is protected — instead of the whole gNB being held."""
+    iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]["instanceId"]
+    alarm = ok(mesh["ran-nf-oam"].post("/alarms/ingest", params={
+        "source_alarm_id": "rru-402", "managed_element_ref": ME, "severity": "critical",
+        "probable_cause": "equipmentMalfunction", "managed_function_ref": "NRCellDU=402"}))
+    Clock(mesh, loaded_apps).hour(HOT_401)
+    result = evaluate(mesh, iid)
+
+    d = decision(result, "401")
+    assert {"target": "402", "reason": "TARGET_CRITICAL_ALARM"} in d["safety"]["excluded"]
+    assert (d["decision"], d["managedRef"]) == ("STEER_IDLE", "NRFreqRelation=401-F2100")
+    assert d["safety"]["criticalAlarmIds"] == []
+    d402 = decision(result, "402")
+    assert "CRITICAL_ALARM" in d402["reason"] and d402["safety"]["criticalAlarmIds"] == [alarm["alarmId"]]
+
+
 def test_ts17_bounds_mlb_disallowed_relations_and_the_target_capacity_limit(mesh, loaded_apps, monkeypatch):
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]["instanceId"]
     # the operator has already pushed 401's idle UEs to the other layer (priority 7) and barred load balancing on 401→402

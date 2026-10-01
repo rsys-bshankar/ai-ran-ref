@@ -9,7 +9,7 @@
 | Depends on (over R1) | R1 Termination, for routes of SME, DME, RAN NF OAM (read-only inventory), MLMR, AIMgF, MLLF, MDAF, RAN Analytics, Intent Service. Through `smo_shared.r1_client.R1Client` |
 | Called by | The four sample rApps (`../samples/{energy-saving,mobility-optimization,coverage-optimization,traffic-steering}-rapp/app/main.py`); any rApp author. No SMO module imports it |
 | Database tables | None |
-| Unit tests | 105 passed (`tests/`, no network: a recording fake `R1Client`) |
+| Unit tests | 121 passed (`tests/`, no network: a recording fake `R1Client`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -124,6 +124,7 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 | `get_action(action_id)` | `GET /dme/actions/{id}` | |
 | `list_actions(managed_element_ref=None, requested_by=None)` | `GET /dme/actions` | |
 | `query_cell_guards(managed_element_ref=None, cell_id=None, cell_class=None, sector_group=None, incident_zone=None)` | `GET /ran-nf-oam/cell-guards` | unset filters omitted |
+| `query_critical_alarms(managed_element_ref)` | `GET /ran-nf-oam/alarms?severity=critical` | returns an `AlarmScope`: `holding(cells)` / `ids_holding(cells)` give the alarms that hold any of the cells, an alarm that names no cell holding all of them. `alarm_cell(alarm)` reads the cell from `managedFunctionRef` (`NRCellDU`, `NRCellCU`, `NRSectorCarrier`, `CommonBeamformingFunction`, `CESManagementFunction` = the cell; `NRCellRelation` / `NRFreqRelation` = the cell before the `-`) |
 | `get_managed_entity(managed_element_ref)` | `GET /ran-nf-oam/managed-entities/{ref}` | |
 | `get_vendor_capability(vendor_name)` | `GET /ran-nf-oam/vendor-capabilities/{vendor}` | |
 | `get_o1_capabilities()` | `GET /ran-nf-oam/capabilities` | |
@@ -274,6 +275,7 @@ Each test asserts the verb, path, params and body the client sends against a scr
 | `tests/test_analytics.py` | Producer registration (with explicit `mda_type`), reports, subscriptions with scope and `thresholdInfo` body, `create_mda_request` dropping unset fields, `publish_mda_report`, `get_prediction` (named PM prediction, none without reports); 4xx | 13 |
 | `tests/test_intent.py` | `create_intent`, `energy_saving_expectation`, get/list/admin-state/delete, reports, RMIH register/deregister/list; 4xx | 12 |
 | `tests/test_models.py` | Register (with domain and vendors), discover, get, update, deregister, upload, download (raw response, `SdkError` on 4xx), coordination groups | 11 |
+| `tests/test_alarm_scope.py` | Which cell an alarm is about (cell IOCs, relation IOCs, element-level functions, no ref); a cell alarm holds that cell only; an element alarm holds every cell; only critical alarms hold; `query_critical_alarms` | 16 |
 | `tests/test_platform.py` | Provider register/deregister, publish/list/unpublish service, discover, event subscribe (with every CAPIFEventFilter)/list/unsubscribe; 4xx | 11 |
 | `tests/test_wave10_wrappers.py` | `get_dataset` (reuses the consumer's job, pages records oldest first; creates a job; 404 for unknown dataset), `store_model` (registers once, then adds artifact versions), the `start_*`/`complete_*` wrappers, `execute_action`, `read_config`, autonomy dispatch | 5 |
 

@@ -12,14 +12,15 @@ Per source cell, in order:
        - for a CIO change, the relation's handover failure rate rose by more
          than 2 points.
   2. Source guards. Any one of these holds the cell:
-       - an EMERGENCY or incident-zone cell, or an active critical alarm;
+       - an EMERGENCY or incident-zone cell, or an active critical alarm on
+         the cell (or on the managed element as a whole);
        - the cell is asleep (O1 or EnergySaving SLEEP / PRE_SLEEP);
        - it is in a Coverage change set under observation;
        - fewer than 10 PM samples in the window;
        - the cell changed less than 60 minutes ago (pacing).
   3. Target exclusions. A neighbour is not a target if any of these hold:
        - it is protected, asleep, pre-sleep or less than 30 minutes past a
-         wake;
+         wake, or a critical alarm holds it;
        - it is in a Coverage change set under observation;
        - it steered load to this cell in the last 6 hours (anti-oscillation).
   4. Knob choice and bounds:
@@ -61,6 +62,7 @@ class Neighbour:
     asleep: bool = False
     last_woken: datetime.datetime | None = None
     coverage_observing: bool = False
+    critical_alarm: bool = False  # W10-alarm-cellref: a critical alarm raised on this cell
     # the relation source → this neighbour
     cio: int = 0
     ho_allowed: bool = True
@@ -110,6 +112,8 @@ def source_guards(s: SourceInput, now: datetime.datetime) -> dict:
 def target_exclusion(s: SourceInput, n: Neighbour, now: datetime.datetime) -> str | None:
     if n.protected:
         return "TARGET_PROTECTED"
+    if n.critical_alarm:
+        return "TARGET_CRITICAL_ALARM"
     if n.asleep:
         return "TARGET_ASLEEP"
     if n.last_woken and now - n.last_woken < AFTER_WAKE:

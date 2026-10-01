@@ -99,7 +99,9 @@ sequenceDiagram
 - **Guards hold whatever the model's confidence.**
   - HARD: emergency cell, coverage-critical cell, last awake cell of its
     sector group, incident zone.
-  - MEDIUM: a neighbour above 80 % PRB, any active critical alarm.
+  - MEDIUM: a neighbour above 80 % PRB; an active critical alarm on the
+    cell, on a neighbour it hands its traffic to, or on the managed element
+    as a whole (an alarm that names no cell).
   - SOFT: unlocked less than 30 minutes ago.
   Guard data are RAN NF OAM cell attributes (D-5, W9-06). A sector group
   is evaluated in sequence within one pass, so two low cells can't both

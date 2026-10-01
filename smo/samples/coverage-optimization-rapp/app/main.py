@@ -36,6 +36,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_sdk import AiRuntimeSdk, SdkError
+from smo_sdk.data import AlarmScope
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.db import get_session
 from smo_shared.r1_client import R1Client
@@ -434,9 +435,13 @@ def _mro_observing(inst: CoverageInstance) -> dict[str, list[str]]:
     return out
 
 
-def _critical_alarms(inst: CoverageInstance) -> list[str]:
-    resp = _r1.get("/ran-nf-oam/alarms", params={"managed_element_ref": inst.managed_element_ref, "limit": 500})
-    return [a["alarmId"] for a in resp.json().get("items", []) if a["severity"] == "critical"] if resp.status_code == 200 else []
+def _critical_alarms(inst: CoverageInstance) -> AlarmScope:
+    """W10-alarm-cellref: the element's critical alarms by the cells they hold.
+    An unreadable alarm list holds nothing, as before."""
+    try:
+        return sdk.data.query_critical_alarms(inst.managed_element_ref)
+    except SdkError:
+        return AlarmScope([])
 
 
 def _record(db, inst, execution_id, cell, state, **kw) -> CoverageDecision:
@@ -545,11 +550,12 @@ def _plan_pass(db, inst, rows, state, model, now, execution_id, out) -> dict[str
             cell=cell, total=(state.get(cell) or {}).get("total", 0.0), tilt=tilt, power=power,
             baseline_tilt=inst.baseline_tilt, baseline_power=inst.baseline_power, neighbours=neighbours,
             last_changed_at=as_utc(row.last_changed_at) if row.last_changed_at else None, guard=guards.get(cell, {}),
-            critical_alarm=bool(alarms), asleep=cell in asleep, asleep_neighbours=[n for n in neighbours if n in asleep],
+            critical_alarm=bool(alarms.holding([cell, *neighbours])), asleep=cell in asleep,
+            asleep_neighbours=[n for n in neighbours if n in asleep],
             last_woken=max(wakes) if wakes else None, mro_observing=mro.get(cell, []))
         inputs.append(c)
         safety[cell] = {**engine.evaluate_guards(c, now), "esState": (es_cells.get(cell) or {}).get("state"),
-                        "criticalAlarmIds": alarms}
+                        "criticalAlarmIds": alarms.ids_holding([cell, *neighbours])}
         live[cell] = c
 
     allowed = {c.cell: engine.allowed_moves(c) for c in inputs if safety[c.cell]["passed"] and c.cell in state}

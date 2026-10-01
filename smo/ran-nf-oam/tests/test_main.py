@@ -623,3 +623,19 @@ def test_list_config_and_software_jobs(client, db_session_factory, monkeypatch):
 
     assert [j["jobId"] for j in client.get("/config-jobs").json()["items"]] == [job["jobId"]]
     assert [(j["jobId"], j["phase"]) for j in client.get("/software-management-jobs").json()["items"]] == [(swm["jobId"], swm["phase"])]
+
+
+def test_an_alarm_can_name_the_cell_it_is_about(client, db_session_factory):
+    """W10-alarm-cellref: an alarm may name the managed function it is raised
+    on (e.g. a cell), which the list returns and filters by; omitted, it is
+    about the element as a whole."""
+    _make_me(db_session_factory)
+    client.post("/alarms/ingest", params={"source_alarm_id": "cell-101", "managed_element_ref": "ME-1",
+                                          "severity": "critical", "managed_function_ref": "NRCellDU=101"})
+    client.post("/alarms/ingest", params={"source_alarm_id": "whole", "managed_element_ref": "ME-1", "severity": "critical"})
+
+    by_source = {a["sourceAlarmId"]: a for a in client.get("/alarms").json()["items"]}
+    assert by_source["cell-101"]["managedFunctionRef"] == "NRCellDU=101"
+    assert by_source["whole"]["managedFunctionRef"] is None
+    only = client.get("/alarms", params={"managed_function_ref": "NRCellDU=101"}).json()["items"]
+    assert [a["sourceAlarmId"] for a in only] == ["cell-101"]

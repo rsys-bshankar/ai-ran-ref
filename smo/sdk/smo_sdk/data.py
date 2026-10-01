@@ -173,6 +173,13 @@ class DataClient(BaseClient):
                   "sector_group": sector_group, "incident_zone": incident_zone}
         return ensure_ok(self._r1.get("/ran-nf-oam/cell-guards", params={k: v for k, v in params.items() if v is not None}))
 
+    def query_critical_alarms(self, managed_element_ref: str) -> "AlarmScope":
+        """The element's active critical alarms, scoped to the cells they are
+        about (W10-alarm-cellref) — see `AlarmScope`."""
+        resp = self._r1.get("/ran-nf-oam/alarms", params={"managed_element_ref": managed_element_ref,
+                                                          "severity": "critical", "limit": 500})
+        return AlarmScope(ensure_ok(resp))
+
     def get_managed_entity(self, managed_element_ref: str) -> dict:
         return ensure_ok(self._r1.get(f"/ran-nf-oam/managed-entities/{managed_element_ref}"))
 
@@ -219,3 +226,45 @@ class DataClient(BaseClient):
         get-config through RAN NF OAM) — read-after-write verification."""
         return ensure_ok(self._r1.get(f"/ran-nf-oam/managed-entities/{managed_element_ref}/config",
                                       params={"managed_function_ref": managed_function_ref}))
+
+
+# ---------------------------------------------------------------- W10-alarm-cellref: which cells an alarm holds
+
+# IOCs addressed per cell (`<IOC>=<cellId>`) and per relation of a cell
+# (`<IOC>=<cellId>-<other>`): an alarm on one of them is about that cell.
+CELL_IOCS = frozenset({"NRCellDU", "NRCellCU", "NRSectorCarrier", "CommonBeamformingFunction", "CESManagementFunction"})
+RELATION_IOCS = frozenset({"NRCellRelation", "NRFreqRelation"})
+
+
+def alarm_cell(alarm: dict) -> str | None:
+    """The cell an alarm is about, from its `managedFunctionRef`; None when it
+    names no cell (no ref, or a function of the element as a whole such as
+    `DMROFunction`) — such an alarm holds the whole managed element."""
+    ioc, sep, instance = (alarm.get("managedFunctionRef") or "").partition("=")
+    if not sep or not instance:
+        return None
+    if ioc in CELL_IOCS:
+        return instance
+    if ioc in RELATION_IOCS:
+        return instance.split("-", 1)[0] or None
+    return None
+
+
+class AlarmScope:
+    """A managed element's active alarms, by the cells they hold. An alarm
+    that names no cell holds every cell (`element_wide`); one that names a
+    cell holds that cell only — callers decide whether its neighbours count
+    (`holding(cells)`)."""
+
+    def __init__(self, alarms: list[dict]):
+        self.alarms = [a for a in alarms if a.get("severity") == "critical"]
+        self.element_wide = [a for a in self.alarms if alarm_cell(a) is None]
+
+    def holding(self, cells) -> list[dict]:
+        """The alarms that hold any of `cells`: every element-wide alarm, plus
+        those raised on one of the cells."""
+        wanted = set(cells)
+        return self.element_wide + [a for a in self.alarms if (cell := alarm_cell(a)) is not None and cell in wanted]
+
+    def ids_holding(self, cells) -> list[str]:
+        return [a["alarmId"] for a in self.holding(cells)]

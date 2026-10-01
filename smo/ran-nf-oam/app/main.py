@@ -284,14 +284,19 @@ def query_write_config_job_status(job_id: uuid.UUID, db: Session = Depends(get_s
 
 
 @app.get("/alarms")
-def query_alarms(managed_element_ref: str | None = None, severity: str | None = None, limit: int = PageLimit,
+def query_alarms(managed_element_ref: str | None = None, severity: str | None = None,
+                  managed_function_ref: str | None = None, limit: int = PageLimit,
                   offset: int = PageOffset, db: Session = Depends(get_session)):
     """`severity` filter (GUI pass) — the alarm console filters by ME and
     by perceivedSeverity; `severity=cleared` isolates the cleared history.
+    `managed_function_ref` (W10-alarm-cellref) narrows to the alarms raised
+    on one managed function, e.g. a cell's `NRCellDU=101`.
     """
     stmt = select(Alarm)
     if managed_element_ref:
         stmt = stmt.where(Alarm.managed_element_ref == managed_element_ref)
+    if managed_function_ref:
+        stmt = stmt.where(Alarm.managed_function_ref == managed_function_ref)
     if severity:
         stmt = stmt.where(Alarm.severity == severity)
     page = paginate(db, stmt, limit, offset)
@@ -302,7 +307,7 @@ def query_alarms(managed_element_ref: str | None = None, severity: str | None = 
 def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, correlation_group: str | None = None,
                   probable_cause: str | None = None, specific_problem: str | None = None, root_cause_indicator: bool = False,
                   correlated_notifications: list[uuid.UUID] = Query(default=[]), proposed_repair_actions: str | None = None,
-                  alarm_type: str | None = None, db: Session = Depends(get_session)):
+                  alarm_type: str | None = None, managed_function_ref: str | None = None, db: Session = Depends(get_session)):
     """alarmId is ALWAYS a fresh UUID minted here, never the raising ME's
     native ID — RAN NF OAM LLD section 3.3, closing R1UCR's own flagged,
     unresolved collision risk under a fleet of N MEs.
@@ -313,9 +318,15 @@ def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, 
     entirely absent from this alarm model. alarmType (HISTORY.md §7,
     TS28111_FaultNrm.yaml's AlarmRecord) was the one of these fields
     still missing after that pass.
+
+    W10-alarm-cellref: `managed_function_ref` is the managed function the
+    alarm is about inside the element (AlarmRecord's objectInstance below
+    the ME), e.g. `NRCellDU=101`, so a consumer can hold that one cell
+    rather than the whole element. Omitted = the element as a whole.
     """
     require_service(db, managed_element_ref, "FM")  # Wave 9 (W9-01)
-    alarm = Alarm(source_alarm_id=source_alarm_id, managed_element_ref=managed_element_ref, severity=severity, correlation_group=correlation_group,
+    alarm = Alarm(source_alarm_id=source_alarm_id, managed_element_ref=managed_element_ref,
+                  managed_function_ref=managed_function_ref, severity=severity, correlation_group=correlation_group,
                   probable_cause=probable_cause, specific_problem=specific_problem, root_cause_indicator=root_cause_indicator,
                   correlated_notifications=correlated_notifications or [], proposed_repair_actions=proposed_repair_actions,
                   alarm_type=alarm_type)
@@ -549,6 +560,7 @@ def endpoint_heartbeat(endpoint_id: uuid.UUID, db: Session = Depends(get_session
 
 def _alarm_view(a: Alarm) -> dict:
     return {"alarmId": str(a.alarm_id), "sourceAlarmId": a.source_alarm_id, "managedElementRef": a.managed_element_ref,
+            "managedFunctionRef": a.managed_function_ref,
             "severity": a.severity, "ackState": a.ack_state,
             "raisedAt": a.raised_at.isoformat() if a.raised_at else None, "correlationGroup": a.correlation_group,
             "probableCause": a.probable_cause, "specificProblem": a.specific_problem,
