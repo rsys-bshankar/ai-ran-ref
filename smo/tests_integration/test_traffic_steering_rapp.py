@@ -205,7 +205,7 @@ def test_ts18_coordination_with_the_energy_saving_rapp(mesh, loaded_apps, monkey
                    energySavingInstanceId=es_iid)["rapp"]["instanceId"]
     es_clock = es.Clock(mesh)
     es_clock.feed(65, c101=2, c102=40, c103=40, c104=40)
-    assert es.decision(es.evaluate(mesh, es_iid), "101")["outcome"] == "EXECUTED"      # 101 asleep
+    es.executed(mesh, es.evaluate(mesh, es_iid), "101")      # 101 asleep
 
     # 102 (neighbours 101, same layer, and 104, the other layer) is a hotspot
     Clock(mesh, loaded_apps, me=es.ME, cells=cells).hour({"102": "HOTSPOT"})

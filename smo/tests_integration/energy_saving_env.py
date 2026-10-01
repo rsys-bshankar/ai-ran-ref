@@ -5,6 +5,7 @@ governance steps. Everything goes through the services' real routes.
 """
 
 import datetime
+import json
 import uuid
 from pathlib import Path
 
@@ -172,6 +173,23 @@ def evaluate(mesh, instance_id, correlation_id=None):
 
 def decision(result, cell):
     return next(d for d in result["decisions"] if d["cellId"] == cell)
+
+
+def executed(mesh, result, cell):
+    """The cell's decision, asserted EXECUTED. On failure the message carries
+    what the action, verification and rollback reported, plus the forwarded
+    config job's per-change status and rejection reason, so a failure names
+    its cause rather than only the outcome."""
+    d = decision(result, cell)
+    if d["outcome"] == "EXECUTED":
+        return d
+    detail = {k: d.get(k) for k in ("decision", "reason", "outcome", "intent", "action", "verification", "rollback")}
+    job_id = (d.get("action") or {}).get("forwardedJobId")
+    if job_id:
+        job = mesh["ran-nf-oam"].get(f"/config-jobs/{job_id}").json()
+        detail["configJob"] = {"status": job.get("status"), "subChanges": [
+            {k: c.get(k) for k in ("managedFunctionRef", "status", "rejectionReason", "attempts")} for c in job.get("subChanges", [])]}
+    raise AssertionError(f"cell {cell} not EXECUTED:\n{json.dumps(detail, indent=2, default=str)}")
 
 
 def cell_state(mesh, instance_id, cell):
