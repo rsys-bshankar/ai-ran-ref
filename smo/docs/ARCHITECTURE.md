@@ -111,7 +111,7 @@ reached this shape see [HISTORY.md](../HISTORY.md).
 | RAN NF OAM | `ran-nf-oam/` | O1 (CM/FM/PM/SWM, per-vendor capability registry) |
 | SO SMOS | `so-smos/` | O-RAN SMO-ARCH §4.2.7 SMOS (interfaces unspecified, internal design) |
 | SA SMOS | `sa-smos/` | O-RAN SMO-ARCH §4.2.8 SMOS (interfaces unspecified, internal design); O1-CM handler is a 3GPP TS 28.312 RMIH |
-| RAN Analytics | `ran-analytics/` | Use-case analytics producers; an MDAF consumer |
+| RAN Analytics | `ran-analytics/` | None (custom). A registry of analytics producers; reports go to MDAF, with no call between the two |
 
 A1 policy (`a1-related/`) is a separate concept from intents and is not part
 of the Intent Service.
@@ -163,7 +163,7 @@ and API are in each module's README):
 | MLMR | Model truth: identity, versions, artifacts, coordination groups | [mlmr](../mlmr/README.md) |
 | MLLF | The deploy-request gate and node-group targeting | [mllf](../mllf/README.md) |
 | NFO | Runtime truth: where and how a runtime executes | [nfo](../nfo/README.md) |
-| MDAF | Analytics truth: reports, predictions, drift, TS 28.104 MDA | [mdaf](../mdaf/README.md) |
+| MDAF | Analytics truth: reports, predictions, drift, TS 28.104 MDA (RAN Analytics only registers producers; it does not store or serve reports) | [mdaf](../mdaf/README.md) |
 | DME | Data truth, plus O1 action mediation (O1 protocol dispatch is RAN NF OAM's) | [dme](../dme/README.md) |
 | Intent Service | Intent truth: TS 28.312 intents, RMIH, autonomy dispatch | [intent-service](../intent-service/README.md) |
 | RAN NF OAM | O1: CM / FM / PM / SWM dispatch, per-vendor capability registry (see its O1 vendor onboarding section) | [ran-nf-oam](../ran-nf-oam/README.md) |

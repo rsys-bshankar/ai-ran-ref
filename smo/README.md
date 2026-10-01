@@ -45,8 +45,8 @@ that realises a standard and adds its own behaviour on top says so.
 | [AIMgF](aimgf/README.md) | 3GPP (TS 28.105) + Internal (lifecycle orchestration) | `aimgf/` | AI/ML lifecycle orchestration: model and runtime lifecycle FSMs, training/validation/emulation/inference jobs, feature groups, MLMF | `/aimgf` |
 | [MLMR](mlmr/README.md) | 3GPP (TS 28.105, TS 29.482) | `mlmr/` | Model repository: model identity, metadata, artifacts, coordination groups | `/mlmr` |
 | [MLLF](mllf/README.md) | Internal (informed by TS 28.105) | `mllf/` | Model loading and deployment targeting | `/mllf` |
-| [RAN Analytics](ran-analytics/README.md) | Internal | `ran-analytics/` | Analytics producer registration (an MDAF consumer) | `/ran-analytics` |
-| [MDAF](mdaf/README.md) | 3GPP (TS 28.104) | `mdaf/` | TS 28.104 analytics: reports, subscriptions, MDA requests | `/mdaf` |
+| [RAN Analytics](ran-analytics/README.md) | Custom (no 3GPP IOC; O-RAN SMO-ARCH §4.1 NOTE 1 leaves a RAN Analytics SMOS out of scope) | `ran-analytics/` | Producer registry only: which analytics a producer rApp makes, from which DME types; not a TS 28.104 function and not an MDAF consumer in code | `/ran-analytics` |
+| [MDAF](mdaf/README.md) | 3GPP (TS 28.104) | `mdaf/` | The TS 28.104 MDA function: stores and delivers analytics reports, subscriptions, MDA requests | `/mdaf` |
 | [Intent Service](intent-service/README.md) | 3GPP (TS 28.312) | `intent-service/` | TS 28.312 intents, intent handlers (RMIH), reports, autonomy dispatches | `/intent-service` |
 | [SO SMOS](so-smos/README.md) | O-RAN SMOS (WG1 SMO-ARCH §4.2.7); SMOS interfaces are unspecified, so the design is internal; does not register as an RMIH | `so-smos/` | Multi-step service orders over a dispatch table, fail-fast | `/so-smos` |
 | [SA SMOS](sa-smos/README.md) | O-RAN SMOS (WG1 SMO-ARCH §4.2.8); SMOS interfaces are unspecified, so the design is internal; its O1-CM handler acts as a 3GPP TS 28.312 RMIH | `sa-smos/` | Assurance monitors, remedial actions, O1-CM intent handler | `/sa-smos` |

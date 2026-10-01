@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Standards basis | Internal logic (use-case analytics producer registry; an MDAF consumer) |
+| Standards basis | Custom: no 3GPP IOC, no O-RAN-specified interface (SMO-ARCH §4.1 NOTE 1 excludes a RAN Analytics SMOS). Not the TS 28.104 MDAF, which is `../mdaf/` |
 | R1 route / port | `/ran-analytics` via R1 Termination (container :8000) |
 | Depends on (over R1) | SME (`/sme/provider-registrations`, `/sme/published-apis/v1/{apfId}/service-apis`) |
 | Called by | Analytics producer rApps via `sdk.analytics` (`register_producer`, `list_producers`); GUI BFF (`POST /ran-analytics/producers`, admin) |
@@ -26,7 +26,7 @@ producers publish to MDAF. The module itself makes no call to MDAF.
 
 No 3GPP IOC is realised here. The `mda_type` field links a registration to the TS 28.104 `MDAType` enum
 (`../../specs/5G_APIs/TS28104_MdaNrm.yaml`, 25 values) without constraining the free-string `analytics_type`.
-The RAN-Analytics/MDAF split is a product-organization choice, not a TS 28.104 requirement; TS 28.104's `MDAType`
+RAN Analytics is not a second implementation of the 28.104 MDA function. MDAF (`../mdaf/`) is that function; RAN Analytics only registers who produces analytics. The split is a product-organization choice, not a TS 28.104 requirement; TS 28.104's `MDAType`
 already spans these use cases (see `../mdaf/README.md`).
 
 ### 1.3 Position in the platform
