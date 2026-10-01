@@ -4,9 +4,10 @@ How a configuration change reaches real managed elements (RAN NF OAM LLD section
 Under the Option A endpoint registry, RAN NF OAM is a fleet aggregator: it decomposes one
 `WriteConfigurationChanges` call into one sub-change per managed element (ME), sends each
 to that ME's O1 Adaptor, and aggregates the outcomes — which makes `PARTIAL_SUCCESS` real
-without violating TS 28.532's all-or-nothing `PATCH` semantics. Dispatch is an RFC 6241
-`<edit-config>` XML RPC POSTed to the endpoint's `adaptor_uri` (`netconf_client.py`), not a
-REST verb.
+without violating TS 28.532's all-or-nothing `PATCH` semantics. Dispatch follows the ME's
+provisioned O1 protocol: an RFC 6241 `<edit-config>` XML RPC POSTed to the endpoint's
+`adaptor_uri` (`netconf_client.py`), or an RFC 8040 RESTCONF request on the managed object's
+data resource under that RESTCONF root (`restconf_client.py`).
 
 There are two entry paths: an rApp calls RAN NF OAM directly (Path A), or calls DME's O1
 action-mediation route `POST /dme/actions` (Path B), which records the decision's
@@ -62,9 +63,14 @@ sequenceDiagram
 
     NFOAM->>NFOAM: decompose into sub_changes, one per ME
     NFOAM->>Registry: resolve ME#1's endpoint
-    Registry-->>NFOAM: endpoint healthy, protocol=NETCONF
-    NFOAM->>EP1: POST <rpc><edit-config>...<managed-object ref="ME#1" operation="merge">...(RFC 6241, netconf_client.py)
-    EP1-->>NFOAM: <rpc-reply><ok/>
+    Registry-->>NFOAM: endpoint healthy, its protocol (NETCONF or RESTCONF)
+    alt protocol=NETCONF
+        NFOAM->>EP1: POST <rpc><edit-config>...<managed-object ref="ME#1" operation="merge">...(RFC 6241, netconf_client.py)
+        EP1-->>NFOAM: <rpc-reply><ok/>
+    else protocol=RESTCONF
+        NFOAM->>EP1: PATCH {root}/data/managed-element=ME%231 (RFC 8040, yang-data+json, restconf_client.py)
+        EP1-->>NFOAM: 204 No Content
+    end
     NFOAM->>NFOAM: sub_change[ME#1].status = APPLIED
 
     NFOAM->>Registry: resolve ME#2's endpoint
@@ -87,5 +93,6 @@ sequenceDiagram
 - Under Option A, RAN NF OAM is a fleet aggregator over *N* per-ME O1 Adaptor instances, discovered via `POST /o1-adaptor-endpoints` self-registration — not a single-endpoint client. (Real MnS Registry NRM polling is a confirmed elision — this is the same lighter self-registration substitute DME's own producer registration and SME's own provider/invoker registration both use.)
 - `PARTIAL_SUCCESS` exists in the schema but has no wire-level counterpart in TS 28.532 — it's realized entirely by decomposing one `WriteConfigurationChanges` call into independently-atomic per-ME `edit-config` RPCs and aggregating the outcomes.
 - **Path B never duplicates Path A's dispatch logic.** DME's `/actions` route is deliberately a thin forward — one HTTP call to the same `POST /config-jobs` Path A's caller hits directly — so a dispatch-logic change (a new rejection reason, a new protocol) never needs touching in two places. A 4xx from RAN NF OAM (capability or schema refusal) is passed back unchanged and the action is recorded `REJECTED`.
-- An ME provisioned for RESTCONF (`o1_protocol != "NETCONF"`) is rejected with `PROTOCOL_NOT_SUPPORTED` on either path — there is no silent fallback to "applied," and no RESTCONF dispatch exists (OPEN_ITEMS.md OI-1-cm-sync-restconf).
+- The client is chosen by the ME's `o1_protocol` (HISTORY.md OI-1-cm-sync-restconf). For RESTCONF the edit operation maps onto RFC 8040 methods: `merge` is PATCH, `replace` is PUT, `create` is POST on the parent, and `delete`/`remove` are DELETE. An ME provisioned for any other protocol is rejected with `PROTOCOL_NOT_SUPPORTED` on either path, with no silent fallback to "applied".
+- Both protocols share one retry policy and one exhaustion alarm. A timeout or an unreachable agent is retried. A definite refusal (`<rpc-error>`, or an `ietf-restconf:errors` reply) is not retried.
 - Alarm IDs raised anywhere in this flow are minted fresh (UUID) at ingestion, never trusting a raising ME's native ID directly — closing R1UCR's flagged fleet-wide collision risk.

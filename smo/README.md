@@ -41,7 +41,7 @@ service is reachable only on the compose network, by hostname.
 | SO SMOS | `so-smos/` | Multi-step service orders over a dispatch table, fail-fast | `/so-smos` |
 | SA SMOS | `sa-smos/` | Assurance monitors, remedial actions, O1-CM intent handler | `/sa-smos` |
 | Mock Near-RT RIC | `mock-near-rt-ric/` | A1-P test double, reachable only from `a1-related` on the internal `a1_mock_net` network | none |
-| Mock O1 Adaptor | `mock-o1-adaptor/` | NETCONF-shaped O1 test double that answers RAN NF OAM's NETCONF RPCs | none (`mock-o1-adaptor:8000`) |
+| Mock O1 Adaptor | `mock-o1-adaptor/` | O1 test double that answers RAN NF OAM's NETCONF RPCs (`/edit-config`) and RESTCONF requests (`/restconf`) | none (`mock-o1-adaptor:8000`) |
 | Energy Saving rApp | `samples/energy-saving-rapp/` | Wave 10.1 reference rApp (cell sleep/wake) | `/energy-saving-rapp` |
 | Mobility Optimization rApp | `samples/mobility-optimization-rapp/` | Wave 10.2 reference rApp (per-relation CIO) | `/mobility-optimization-rapp` |
 | Coverage Optimization rApp | `samples/coverage-optimization-rapp/` | Wave 10.3 reference rApp (joint tilt/power) | `/coverage-optimization-rapp` |
@@ -114,7 +114,7 @@ smo/
   <module>/app/             one directory per SMO module (models.py, statemachine.py, main.py)
   <module>/tests/           that module's unit tests (standalone, SQLite)
   mock-near-rt-ric/         A1-P test double (A1 Related's southbound)
-  mock-o1-adaptor/          NETCONF-shaped O1 test double (RAN NF OAM's southbound)
+  mock-o1-adaptor/          NETCONF / RESTCONF O1 test double (RAN NF OAM's southbound)
   sdk/smo_sdk/              AI Runtime SDK: data, analytics, models, lifecycle, intent, platform clients
   gui/                      React + TypeScript operator console (nginx)
   gui-bff/                  GUI backend-for-frontend: auth, RBAC (app/rbac.py), audit, R1 proxy

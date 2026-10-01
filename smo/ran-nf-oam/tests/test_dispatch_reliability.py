@@ -82,6 +82,44 @@ def test_read_after_write(client, db_session_factory, monkeypatch):
     assert client.get("/managed-entities/ghost/config").status_code == 503
 
 
+def test_restconf_uses_the_same_retry_policy_and_alarm(client, db_session_factory, monkeypatch):
+    """OI-1-cm-sync-restconf: a transient RESTCONF failure is retried like a
+    NETCONF one; exhausting the retries raises the same alarm."""
+    from app.restconf_client import RestconfResult
+
+    _make_me(db_session_factory, protocol="RESTCONF")
+    outcomes = [RestconfResult(False, "RESTCONF_TIMEOUT")] * 4
+    monkeypatch.setattr("app.main.restconf_client.send_edit", lambda *a, **kw: outcomes.pop(0))
+    slept = []
+    monkeypatch.setattr("app.main._sleep", slept.append)
+
+    job, sub = _write(client)
+
+    assert (job["status"], sub["rejectionReason"], sub["attempts"]) == ("FAILED", "RESTCONF_TIMEOUT", 4)
+    assert slept == [5.0, 10.0, 20.0]
+    alarm = client.get("/alarms", params={"managed_element_ref": "ME-1"}).json()["items"][0]
+    assert alarm["probableCause"] == "RESTCONF_TIMEOUT"
+
+
+def test_a_restconf_error_reply_is_not_retried(client, db_session_factory, monkeypatch):
+    from app.restconf_client import RestconfResult
+
+    _make_me(db_session_factory, protocol="RESTCONF")
+    outcomes = [RestconfResult(False, "RESTCONF_REQUEST_FAILED", "invalid-value")]
+    monkeypatch.setattr("app.main.restconf_client.send_edit", lambda *a, **kw: outcomes.pop(0))
+    job, sub = _write(client)
+    assert (job["status"], sub["attempts"], sub["rejectionReason"]) == ("FAILED", 1, "RESTCONF_REQUEST_FAILED")
+
+
+def test_read_after_write_over_restconf(client, db_session_factory, monkeypatch):
+    _make_me(db_session_factory, protocol="RESTCONF")
+    monkeypatch.setattr("app.main.send_get_config", lambda *a, **kw: pytest.fail("should not use NETCONF"))
+    monkeypatch.setattr("app.main.restconf_client.send_get", lambda uri, ref, message_id, managed_function_ref=None:
+                        {"administrativeState": "LOCKED"})
+    resp = client.get("/managed-entities/ME-1/config", params={"managed_function_ref": "NRCellDU=101"})
+    assert resp.json()["attributes"] == {"administrativeState": "LOCKED"}
+
+
 def test_pm_reports_are_delivered_to_every_data_job_of_the_counter_type(client, db_session_factory, monkeypatch):
     """Wave 10.1 (W10-04): O1 PM → RAN NF OAM → DME."""
     _make_me(db_session_factory)

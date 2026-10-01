@@ -1803,7 +1803,7 @@
     },
     "/managed-entities/{managed_element_ref}/config": {
       "get": {
-        "description": "Wave 10.1 (W10-20): read-after-write. Reads the managed object's\nrunning configuration from its O1 adaptor (NETCONF <get-config>) \u2014 the\nlive value on the NF, not what this module last asked for \u2014 so a\ncaller can verify that a write actually took effect.",
+        "description": "Wave 10.1 (W10-20): read-after-write. Reads the managed object's\nrunning configuration from its O1 adaptor (NETCONF <get-config>, or a\nRESTCONF GET of the data resource) \u2014 the live value on the NF, not what\nthis module last asked for \u2014 so a caller can verify that a write\nactually took effect.",
         "operationId": "read_configuration_managed_entities__managed_element_ref__config_get",
         "parameters": [
           {

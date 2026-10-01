@@ -24,9 +24,6 @@ Each item: what is missing, why it matters, suggested approach.
 
 ## 2. Platform gaps
 
-- **OI-1-cm-sync-restconf** — RESTCONF has no dispatch: an ME provisioned for RESTCONF is rejected
-  `PROTOCOL_NOT_SUPPORTED`, although W9 lets vendors declare `O1_RESTCONF`. Approach: add a RESTCONF
-  client beside `netconf_client.py` (PATCH/PUT/DELETE on the data resource) and a mock endpoint.
 - **OI-2-compose-e2e** — The full `docker-compose` stack has never been run end to end (no Docker
   daemon in the sandbox or CI); only `docker compose config` is checked. The `a1_mock_net` isolation
   (RT-7) is unverified. Approach: a CI job on a runner with Docker that brings the stack up and runs

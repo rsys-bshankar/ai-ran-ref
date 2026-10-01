@@ -431,7 +431,7 @@ A vendor's O1 termination differs on three independent axes:
 
 | Axis | Question | Realized by |
 |---|---|---|
-| 1. MnS transport | Which wire protocol? | `ManagedEntity.o1_protocol`; vendor modes `O1_NETCONF` / `O1_RESTCONF`. Only RFC 6241-shaped `edit-config` over HTTP is dispatched. |
+| 1. MnS transport | Which wire protocol? | `ManagedEntity.o1_protocol`; vendor modes `O1_NETCONF` / `O1_RESTCONF`. NETCONF is RFC 6241-shaped `edit-config` over HTTP (`netconf_client.py`); RESTCONF is RFC 8040 on the data resource (`restconf_client.py`). |
 | 2. MnS services | Does the vendor implement this operation category at all? (presence) | `supportedServices` ⊆ `PROV`, `FM`, `PM`, `FILE`, `STREAM`, `SWM`, `SUBSCRIPTION`, `HEARTBEAT` |
 | 3. IOC data model | Whose class / attribute names and value ranges? (shape) | `conformanceMode` `SPEC` / `OWN` / `COMBINED` + CM schema descriptors |
 
@@ -549,11 +549,11 @@ For a test vendor, `mock-o1-adaptor` serves a configurable `GET /capabilities`
 
 ### Limits
 
-- **Transport.** Only RFC 6241-shaped `edit-config` over HTTP is dispatched.
-  `O1_RESTCONF` can be declared as a vendor mode, but an ME provisioned for
-  RESTCONF is rejected at dispatch with `PROTOCOL_NOT_SUPPORTED`. A new
-  transport needs one client module per transport family, selected by
-  `ManagedEntity.o1_protocol`.
+- **Transport.** NETCONF (RFC 6241-shaped `edit-config`) and RESTCONF
+  (RFC 8040) are dispatched, both over plain HTTP without TLS or
+  authentication. Any other `o1_protocol` is rejected at dispatch with
+  `PROTOCOL_NOT_SUPPORTED`. A new transport needs one client module, added
+  to `_o1_client` in `ran-nf-oam/app/main.py`.
 - **YANG.** The ingestion script reads NRM OpenAPI only; a YANG bundle needs
   a YANG front end (`pyang`) emitting the same descriptor shape.
 - **Semantics.** A descriptor documents shape, not runtime behaviour; a
