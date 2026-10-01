@@ -78,8 +78,10 @@ what each parameter means is in [`docs/RAPP_PACKAGING.md`](docs/RAPP_PACKAGING.m
 | Traffic Steering | `samples/traffic-steering-rapp/` | Idle priority + connected CIO | `/traffic-steering-rapp` | [25](docs/call-flows/25-traffic-steering-closed-loop.md) |
 
 R1 Termination's routing table is `ROUTES` in `r1-termination/app/main.py`.
-It strips the prefix before forwarding, so `/sme/oauth2/token` reaches SME's
-`/oauth2/token`. Cross-module calls go through `smo_shared.r1_client.R1Client`,
+It strips the prefix before forwarding, so `/sme/capif-events/...` reaches SME's
+`/capif-events/...`. Tokens are obtained from SME's own address, which
+`/bootstrap` returns (`tokenEndPoint`); the gateway itself answers 401 to an
+unauthenticated `/sme/oauth2/token`. Cross-module calls go through `smo_shared.r1_client.R1Client`,
 which obtains its own SME token the same way an rApp does.
 
 ## Quickstart

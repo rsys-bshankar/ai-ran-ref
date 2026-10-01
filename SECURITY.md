@@ -57,8 +57,8 @@ What is in place, so you can judge what counts as a vulnerability:
 
 - **R1 gateway authentication.** Every call from an rApp goes through R1
   Termination, which introspects the bearer token against SME's OAuth2 issuer
-  (RFC 7662) before proxying. Only `/health`, `/bootstrap` and SME's
-  `/oauth2/token` and `/oauth2/introspect` are exempt.
+  (RFC 7662) before proxying. Only `/health` and `/bootstrap` are exempt at the
+  gateway; tokens are issued by SME directly.
   See [`smo/docs/ARCHITECTURE.md`](smo/docs/ARCHITECTURE.md#r1-api-conventions).
 - **Network exposure.** In `docker-compose.yml` only R1 Termination (`:8080`),
   the GUI (`:3000`) and Postgres (`:5432`) publish host ports. The A1 Near-RT
