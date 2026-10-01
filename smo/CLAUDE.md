@@ -29,6 +29,13 @@ yourself.
 cd smo && pip install ruff && ruff check .
 ```
 
+**Setup** — third-party packages come from the hashed lock in `requirements/`
+(how to recompile it: `requirements/README.md`):
+
+```bash
+cd smo && pip install --require-hashes -r requirements/dev.txt && pip install --no-deps -e shared
+```
+
 **1. Every module's own unit suite** (each module's `tests/` runs
 standalone against SQLite, `PYTHONPATH` pointed at both itself and
 `shared/`):

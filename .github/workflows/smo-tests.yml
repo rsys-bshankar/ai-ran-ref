@@ -29,12 +29,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: smo/requirements/*.txt
 
       # Rules and the reason for the narrow selection: smo/ruff.toml.
       - name: ruff check
         working-directory: smo
         run: |
-          pip install ruff
+          pip install --require-hashes -r requirements/lint.txt
           ruff check .
 
   unit-and-integration:
@@ -47,12 +49,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: smo/requirements/*.txt
 
       - name: Install shared library + service dependencies
         working-directory: smo
         run: |
-          pip install -e shared
-          pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic python-multipart jsonschema pyyaml pytest defusedxml "pyjwt[crypto]"
+          pip install --require-hashes -r requirements/dev.txt
+          pip install --no-deps -e shared
 
       - name: Run each module's unit test suite
         working-directory: smo
@@ -150,9 +154,9 @@ jobs:
         run: |
           docker run --rm --network smo_default --network-alias demo-consumer \
             -e SMO_E2E_LIVE=1 -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
-            -v "$PWD/..:/work" -w /work/smo python:3.11-slim sh -c '
-              pip install -q -e shared fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic \
-                python-multipart jsonschema pyyaml pytest defusedxml "pyjwt[crypto]" &&
+            -v "$PWD/..:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c '
+              pip install -q --require-hashes -r requirements/dev.txt &&
+              pip install -q --no-deps -e shared &&
               python -m pytest tests_integration/test_demo_runbook.py -v -p no:cacheprovider'
 
       - name: a1_mock_net isolation (RT-7)
@@ -197,7 +201,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
         env:
           POSTGRES_USER: smo
           POSTGRES_PASSWORD: smo
@@ -227,12 +231,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: smo/requirements/*.txt
 
       - name: Install shared library + service dependencies
         working-directory: smo
         run: |
-          pip install -e shared
-          pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic python-multipart jsonschema pyyaml defusedxml "pyjwt[crypto]"
+          pip install --require-hashes -r requirements/runtime.txt
+          pip install --no-deps -e shared
 
       - name: Every ORM-declared column actually exists in the migration, with matching nullability
         working-directory: smo

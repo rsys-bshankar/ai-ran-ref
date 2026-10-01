@@ -1,0 +1,4 @@
+# Test dependencies on top of the runtime set (CI unit/integration jobs).
+-c runtime.txt
+-r runtime.in
+pytest
