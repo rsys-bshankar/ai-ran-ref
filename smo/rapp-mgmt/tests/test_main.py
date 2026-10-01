@@ -155,6 +155,15 @@ def test_create_instance_stores_autonomous_mode_and_region_scope(client, monkeyp
     assert [i["autonomyMode"] for i in listed] == ["AUTONOMOUS"]
 
 
+@pytest.mark.parametrize("state,status", [("AVAILABLE", 202), ("PRIMED", 202), ("ONBOARDING", 409),
+                                          ("DEPRECATED", 409), ("FAILED", 409)])
+def test_create_instance_accepts_available_and_primed_packages_only(client, monkeypatch, state, status):
+    fake_get, fake_post = _route_r1_get_post(onboarding_status=state)
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    assert client.post("/instances", json={"packageId": str(uuid.uuid4())}).status_code == status
+
+
 def test_create_instance_rejects_an_invalid_autonomy_mode(client):
     resp = client.post("/instances", json={"packageId": str(uuid.uuid4()), "autonomyMode": "NOT_A_REAL_MODE"})
     assert resp.status_code == 422

@@ -56,16 +56,22 @@ class UpgradeRequest(BaseModel):
     newPackageId: uuid.UUID
 
 
+# A package an instance may be created from: validated (AVAILABLE), or
+# validated and primed (PRIMED). Priming is optional; depriming is refused
+# while an instance of the package is running (onboarding's DEPRIME guard).
+DEPLOYABLE_PACKAGE_STATES = ("AVAILABLE", "PRIMED")
+
+
 @app.post("/instances", status_code=202)
 def create_instance(body: CreateInstanceRequest, db: Session = Depends(get_session)):
-    """CreateInstance — requires packageId.state == AVAILABLE (D-SEC-RAPP-1,
-    unchanged). NFO handoff per Onboarding/rApp Mgmt LLD section 5: reads
+    """CreateInstance — requires a validated package: AVAILABLE, or PRIMED
+    (AVAILABLE plus pre-provisioned resources; D-SEC-RAPP-1). NFO handoff per Onboarding/rApp Mgmt LLD section 5: reads
     the package's TOSCA service template and issues NFO.Instantiate.
     """
     r1 = R1Client()
     pkg_resp = r1.get(f"/onboarding/packages/{body.packageId}/onboarding-status")
-    if pkg_resp.status_code != 200 or pkg_resp.json().get("state") != "AVAILABLE":
-        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail="package is not AVAILABLE")
+    if pkg_resp.status_code != 200 or pkg_resp.json().get("state") not in DEPLOYABLE_PACKAGE_STATES:
+        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail="package is not AVAILABLE or PRIMED")
     nf_deployment_descriptor_id = pkg_resp.json().get("nfDeploymentDescriptorId")
     if not nf_deployment_descriptor_id:
         # Every package that reaches AVAILABLE has one — OnboardPackage's own

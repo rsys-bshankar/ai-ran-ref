@@ -39,8 +39,8 @@ export const FLOWS: FlowDef[] = [
   { id: "03", number: "03", title: "Configuration write, schema-checked, fleet-aware", doc: "03-config-write-with-schema-check.md", subject: "config job", modules: ["ran-nf-oam"] },
   { id: "04", number: "04", title: "Closed-loop assurance: monitor → decide → remediate → escalate", doc: "04-closed-loop-assurance.md", subject: "assurance monitor", modules: ["so-smos", "sa-smos", "mdaf", "ran-nf-oam", "nfo"] },
   { id: "05", number: "05", title: "A1 EI registration → data consumption", doc: "05-a1-ei-registration-to-consumption.md", subject: "EI type", modules: ["a1-related", "dme"] },
-  { id: "06", number: "06", title: "Package failure, deprecation and the cascade-delete guard", doc: "06-onboarding-failure-deprecation-deletion.md", subject: "package", modules: ["onboarding", "rapp-mgmt"] },
-  { id: "07", number: "07", title: "rApp fault and performance reporting", doc: "07-rapp-fault-and-performance-reporting.md", subject: "rApp instance", modules: ["rapp-mgmt"] },
+  { id: "06", number: "06", title: "Package lifecycle: onboard → prime → deprecate → delete", doc: "06-package-lifecycle.md", subject: "package", modules: ["onboarding", "rapp-mgmt"] },
+  { id: "07", number: "07", title: "rApp instance lifecycle: report → fault → recover → upgrade → terminate", doc: "07-rapp-instance-lifecycle.md", subject: "rApp instance", modules: ["rapp-mgmt"] },
   { id: "08", number: "08", title: "RAN Analytics: producer → report → subscriber query", doc: "08-ran-analytics-data-production.md", subject: "analytics type", modules: ["ran-analytics", "mdaf", "sme"] },
   { id: "09", number: "09", title: "Intent registration → fulfilment reporting → admin state", doc: "09-intent-service-intent-flow.md", subject: "intent", modules: ["intent-service"] },
   { id: "10", number: "10", title: "SO SMOS multi-step order: INFRA → TRAINING → DEPLOY", doc: "10-so-smos-multi-step-infra-training-deploy.md", subject: "service order", modules: ["so-smos", "focom", "aimgf", "nfo"] },
@@ -195,12 +195,16 @@ export function flow06(pkg: Package | undefined, usage: PackageUsage[], instance
   if (!pkg) return settle([step("onboard", "OnboardPackage", "Operator → Onboarding", false)]);
   const active = usage.filter((u) => u.active).length;
   const failed = pkg.state === "FAILED";
+  const primed = ["PRIMING", "PRIMED", "DEPRIMING"].includes(pkg.state);
   return settle([
     step("onboard", "OnboardPackage → AVAILABLE or FAILED", "Onboarding", failed ? "warn" : PKG_ONBOARDED.includes(pkg.state), `state ${pkg.state}`),
-    step("refuse", failed ? "CreateInstance refused (409: never AVAILABLE)" : "Package usable: instances may reference it", "rApp Mgmt",
+    // priming is optional: an AVAILABLE package is deployable as it is
+    step("prime", "Prime (optional): AVAILABLE → PRIMED", "Operator → Onboarding", failed || pkg.state !== "ONBOARDING",
+      failed ? undefined : primed ? pkg.state : "optional — not primed"),
+    step("refuse", failed ? "CreateInstance refused (409: never AVAILABLE or PRIMED)" : "Package usable: instances may reference it", "rApp Mgmt",
       failed ? true : pkg.state !== "ONBOARDING", failed ? undefined : `${instanceCount} instance(s)`),
     step("deprecate", "Deprecate (AVAILABLE → DEPRECATED)", "Operator → Onboarding",
-      failed || ["DEPRECATED", "DELETING"].includes(pkg.state)),
+      failed || ["DEPRECATED", "DELETING"].includes(pkg.state), primed ? "deprime first (refused while usage is active)" : undefined),
     step("guard", "Cascade-delete guard: no active usage registrations", "Onboarding",
       // active usage is a hard stop for delete (and deprime): shown as the
       // failing step so the delete step reads as blocked, not next
@@ -217,17 +221,23 @@ export function flow07(instance: Instance | undefined, perf: PerfReport[], fault
   const critical = faults.filter((f) => f.severity === "critical");
   const minor = faults.filter((f) => f.severity !== "critical");
   const s = instance.state;
+  const gone = s === "UNDEPLOYED";
   return settle([
     step("running", "Instance RUNNING (call flow 01)", "rApp Mgmt", s !== "DEPLOYING" || perf.length + faults.length > 0, `state ${s}`),
-    step("perf", "ReportPerformance(metrics) — no state change", "rApp container → R1 → rApp Mgmt", perf.length > 0, perf.length ? `${perf.length} report(s)` : undefined),
-    step("minor", "ReportFault(non-critical) — recorded only", "rApp container → rApp Mgmt", minor.length > 0, minor.length ? `${minor.length} fault(s)` : undefined),
+    step("perf", "ReportPerformance(metrics) — no state change", "rApp container → R1 → rApp Mgmt", perf.length > 0 || gone, perf.length ? `${perf.length} report(s)` : undefined),
+    step("minor", "ReportFault(non-critical) — recorded only", "rApp container → rApp Mgmt", minor.length > 0 || gone, minor.length ? `${minor.length} fault(s)` : undefined),
     // a crash is an expected branch of this flow, not a dead end: shown as a
     // warning so RECOVER (the next step) stays actionable instead of blocked
-    step("crash", "ReportFault(critical) → FAULTED (CRASH)", "rApp container → rApp Mgmt", critical.length > 0 ? (s === "FAULTED" ? "warn" : true) : false,
+    step("crash", "ReportFault(critical) → FAULTED (CRASH)", "rApp container → rApp Mgmt", critical.length > 0 ? (s === "FAULTED" ? "warn" : true) : gone,
       critical.length ? `${critical.length} critical fault(s)` : undefined),
     step("recover", "RECOVER → DEPLOYING → re-bootstrap → RUNNING", "Operator → rApp Mgmt",
-      critical.length > 0 && s === "RUNNING" ? true : critical.length > 0 && s === "DEPLOYING" ? "warn" : false,
+      critical.length > 0 && ["RUNNING", "UPGRADING", "UNDEPLOYED"].includes(s) ? true : critical.length > 0 && s === "DEPLOYING" ? "warn" : gone,
       critical.length && s === "DEPLOYING" ? "awaiting re-bootstrap" : undefined),
+    // upgrade is optional; while UPGRADING the instance awaits upgrade/resolve
+    step("upgrade", "Upgrade (optional): UPGRADING → commit or roll back", "Operator → rApp Mgmt",
+      s === "UPGRADING" ? "warn" : ["RUNNING", "UNDEPLOYED"].includes(s),
+      s === "UPGRADING" ? `awaiting upgrade/resolve (replacement ${instance.pendingUpgradeInstanceId ?? "?"})` : "optional"),
+    step("terminate", "Terminate → UNDEPLOYED (usage/stop)", "Operator → rApp Mgmt", gone),
   ]);
 }
 

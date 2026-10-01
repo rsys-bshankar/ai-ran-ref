@@ -153,7 +153,7 @@ closed partially; residuals are in OPEN_ITEMS.
 ### Onboarding + rApp Management vs `nonrtric-plt-rappmanager`
 - **OI-5-onboarding-priming** — `PRIMING`/`PRIMED`/`DEPRIMING`, `POST /packages/{id}/prime|deprime`;
   deprime blocked by active usage registrations; no `DELETE` edge from `PRIMED`. Synchronous.
-  `CreateInstance` still gates on `AVAILABLE` (D-SEC-RAPP-1; residual in OPEN_ITEMS).
+  `CreateInstance` accepts `AVAILABLE` or `PRIMED` packages; priming stays optional. Call flow 06.
 - **OI-5-onboarding-validation** — `.csar` filename check, required-file check, duplicate detection
   on `integrity_hash`; failures land `FAILED` via the async 202 contract. Required-file path later
   removed (SA-ASD-2).

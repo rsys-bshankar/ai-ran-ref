@@ -32,10 +32,6 @@ Each item: what is missing, why it matters, suggested approach.
   instance without an `oauth_client_id`, so it has no SME/DME identity and producer reconsideration
   skips `UPGRADE_COMMIT`. Approach: mint an id in `start_upgrade`, re-run bootstrap registration,
   deregister the old identity on commit.
-- **OI-5-onboarding-priming** — `CreateInstance` accepts only `AVAILABLE` packages
-  (`rapp-mgmt/app/main.py`), so a `PRIMED` package cannot be instantiated and priming is not
-  required before deploy. Approach: decide whether `PRIMED` is required (D-SEC-RAPP-1 says
-  `AVAILABLE`); at minimum accept both states.
 - **OI-1-cm-sync-restconf** — RESTCONF has no dispatch: an ME provisioned for RESTCONF is rejected
   `PROTOCOL_NOT_SUPPORTED`, although W9 lets vendors declare `O1_RESTCONF`. Approach: add a RESTCONF
   client beside `netconf_client.py` (PATCH/PUT/DELETE on the data resource) and a mock endpoint.

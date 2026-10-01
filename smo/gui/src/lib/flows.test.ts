@@ -102,12 +102,18 @@ describe("flow 05 — A1 EI → consumption", () => {
 describe("flow 06 — the cascade-delete guard", () => {
   it("shows active usage as what blocks delete", () => {
     const steps = flow06(pkg("DEPRECATED"), [{ registrationId: "r", consumerId: "i1", stoppedAt: null, active: true }], 1);
-    expect(steps[3].status).toBe("failed");
-    expect(steps[3].detail).toContain("delete is blocked");
-    expect(steps[4].status).toBe("blocked");
+    expect(steps[4].status).toBe("failed");
+    expect(steps[4].detail).toContain("delete is blocked");
+    expect(steps[5].status).toBe("blocked");
   });
   it("a FAILED package skips straight to delete", () => {
-    expect(statuses(flow06(pkg("FAILED"), [], 0))).toEqual(["warn", "done", "done", "done", "current"]);
+    expect(statuses(flow06(pkg("FAILED"), [], 0))).toEqual(["warn", "done", "done", "done", "done", "current"]);
+  });
+  it("priming is optional, and a primed package must be deprimed before it is deprecated", () => {
+    expect(flow06(pkg("AVAILABLE"), [], 0)[1].detail).toBe("optional — not primed");
+    const primed = flow06(pkg("PRIMED"), [], 1);
+    expect(primed[1].detail).toBe("PRIMED");
+    expect(primed[3]).toMatchObject({ status: "current", detail: "deprime first (refused while usage is active)" });
   });
 });
 
@@ -120,6 +126,11 @@ describe("flow 07 — fault reporting", () => {
     expect(faulted[3].status).toBe("warn");
     expect(faulted[4].status).toBe("current");   // RECOVER stays actionable
     expect(flow07(instance("RUNNING"), perf, faults)[4].status).toBe("done");
+  });
+  it("an upgrade awaits resolve, and terminate ends the journey", () => {
+    const upgrading = flow07({ ...instance("UPGRADING"), pendingUpgradeInstanceId: "new-1" }, [], []);
+    expect(upgrading[5]).toMatchObject({ status: "warn", detail: "awaiting upgrade/resolve (replacement new-1)" });
+    expect(progress(flow07(instance("UNDEPLOYED"), [], [])).complete).toBe(true);
   });
 });
 
