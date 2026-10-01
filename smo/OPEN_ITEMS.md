@@ -32,6 +32,27 @@ Each item: what is missing, why it matters, suggested approach.
   instance without an `oauth_client_id`, so it has no SME/DME identity and producer reconsideration
   skips `UPGRADE_COMMIT`. Approach: mint an id in `start_upgrade`, re-run bootstrap registration,
   deregister the old identity on commit.
+- **OI-2-terminate-workload** — `TerminateInstance` (`rapp-mgmt/app/main.py`) revokes the
+  credential and stops the usage registration but makes no NFO call, so the rApp's workload keeps
+  running after the instance is `UNDEPLOYED`. Approach: store the `nfDeploymentId` from
+  `CreateInstance` and call NFO's terminate (`DELETE /nfo/deployments/{id}`) on `TERMINATE`.
+- **OI-2-upgrade-completeness** — `start_upgrade` creates a bare replacement row: no
+  configuration, autonomy mode, region scope, NFO deployment or usage registration, and
+  `newPackageId` is not checked for `AVAILABLE`/`PRIMED`. `resolve_upgrade` deletes the old row
+  without usage/stop or DME/SME deregistration, so the old package's deprime and delete guards stay
+  blocked; `upgradeTimeoutSeconds` is stored but never enforced. Call flow 07. Approach: run the
+  replacement through `CreateInstance`'s path, and on commit run the old row's `TERMINATE` side
+  effects before deleting it.
+- **OI-2-lcm-error-mapping** — Lifecycle routes return 500 for an illegal transition (recover,
+  terminate, upgrade, a critical fault on a non-`RUNNING` instance; onboarding deprecate, prime,
+  cancel-delete) and for an unknown id. Onboarding's deprime/delete map every illegal transition to
+  409 `SERVICE_NAME_CONFLICT`, so DELETE on a `PRIMED` package reports "blocked by a dependent"
+  rather than "not allowed from PRIMED". `TERMINATE` is only legal from `RUNNING`, so a `FAULTED`
+  instance must recover before it can be retired. Approach: map `IllegalTransition` to a 409 naming
+  the state and event, 404 on unknown ids, and allow `TERMINATE` from `FAULTED`.
+- **OI-2-package-redeploy** — A deleted package stays in terminal `DELETING`, and onboarding's
+  duplicate-hash check ignores state, so the same CSAR can never be onboarded again. Approach:
+  exclude `DELETING`/`FAILED` rows from the duplicate check.
 - **OI-1-cm-sync-restconf** — RESTCONF has no dispatch: an ME provisioned for RESTCONF is rejected
   `PROTOCOL_NOT_SUPPORTED`, although W9 lets vendors declare `O1_RESTCONF`. Approach: add a RESTCONF
   client beside `netconf_client.py` (PATCH/PUT/DELETE on the data resource) and a mock endpoint.
