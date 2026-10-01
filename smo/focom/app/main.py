@@ -18,6 +18,7 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
+from smo_shared.webhook import post_webhook
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import DeploymentManager, InventorySubscription, OCloudAlarm, OCloudPerformanceMetric, Resource, ResourcePool, ResourceType
@@ -298,14 +299,11 @@ def _notify_inventory_subscribers(db: Session, event_type: str, resource_id: str
     for sub in db.scalars(select(InventorySubscription)).all():
         if sub.resource_type_id is not None and resource_type_id is not None and sub.resource_type_id != resource_type_id:
             continue
-        try:
-            httpx.post(sub.callback, json={
-                "objectType": "resource", "notificationEventType": event_type,
-                "resourceId": resource_id, "resourceTypeId": resource_type_id,
-                "consumerSubscriptionId": sub.consumer_subscription_id,
-            }, timeout=2.0)
-        except httpx.HTTPError:
-            pass
+        post_webhook(sub.callback, json={
+            "objectType": "resource", "notificationEventType": event_type,
+            "resourceId": resource_id, "resourceTypeId": resource_type_id,
+            "consumerSubscriptionId": sub.consumer_subscription_id,
+        }, timeout=2.0)
 
 
 @app.post("/inventory/subscriptions", status_code=201)

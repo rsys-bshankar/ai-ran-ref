@@ -22,6 +22,7 @@ from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
+from smo_shared.webhook import delete_webhook, get_webhook, post_webhook
 
 from .models import (
     DELIVERY_METHODS, LIFECYCLE_STAGES, SOURCE_DOMAINS, DataJob, DataOffer, DataRecord, DmeActionRecord,
@@ -310,12 +311,9 @@ def _notify_type_subscribers(db: Session, dme_type_id: uuid.UUID, job_data_schem
     notification in this build.
     """
     for sub in db.scalars(select(DMETypeSubscription)).all():
-        try:
-            httpx.post(sub.notification_destination, json={
-                "infoTypeId": str(dme_type_id), "jobDataSchema": job_data_schema, "status": status,
-            }, timeout=2.0)
-        except httpx.HTTPError:
-            pass
+        post_webhook(sub.notification_destination, json={
+            "infoTypeId": str(dme_type_id), "jobDataSchema": job_data_schema, "status": status,
+        }, timeout=2.0)
 
 
 def _subscription_view(s: DMETypeSubscription) -> dict:
@@ -522,10 +520,7 @@ def terminate_data_offer(offer_id: uuid.UUID, db: Session = Depends(get_session)
     termination_uri = offer.data_offer_termination_notification_uri
     db.delete(offer)
     db.commit()
-    try:
-        httpx.post(termination_uri, json={"dataOfferId": str(offer_id)}, timeout=5.0)  # normal direction
-    except httpx.HTTPError:
-        pass
+    post_webhook(termination_uri, json={"dataOfferId": str(offer_id)}, timeout=5.0)  # normal direction
 
 
 @app.post("/offers/{offer_id}/notify", status_code=204)
@@ -563,17 +558,14 @@ def _push_job_to_producers(db: Session, dme_type: DMEType, job: DataJob) -> None
     reference's own onErrorResume-and-continue behavior.
     """
     for producer in _producers_for_type(db, dme_type.dme_type_id):
-        try:
-            httpx.post(producer.job_callback_url, json={
-                "infoJobIdentity": str(job.data_job_id),
-                "infoTypeIdentity": str(dme_type.dme_type_id),
-                "infoJobData": job.production_job_definition or {},
-                "targetUri": (job.delivery_details or {}).get("targetUri", ""),
-                "owner": job.consumer_id,
-                "lastUpdated": datetime.datetime.now(datetime.UTC).isoformat(),
-            }, timeout=5.0)
-        except httpx.HTTPError:
-            pass
+        post_webhook(producer.job_callback_url, json={
+            "infoJobIdentity": str(job.data_job_id),
+            "infoTypeIdentity": str(dme_type.dme_type_id),
+            "infoJobData": job.production_job_definition or {},
+            "targetUri": (job.delivery_details or {}).get("targetUri", ""),
+            "owner": job.consumer_id,
+            "lastUpdated": datetime.datetime.now(datetime.UTC).isoformat(),
+        }, timeout=5.0)
 
 
 def _stop_job_at_producers(db: Session, dme_type: DMEType, data_job_id: uuid.UUID) -> None:
@@ -581,10 +573,7 @@ def _stop_job_at_producers(db: Session, dme_type: DMEType, data_job_id: uuid.UUI
     supporting producer's jobCallbackUrl/{jobId}, best-effort.
     """
     for producer in _producers_for_type(db, dme_type.dme_type_id):
-        try:
-            httpx.delete(f"{producer.job_callback_url}/{data_job_id}", timeout=5.0)
-        except httpx.HTTPError:
-            pass
+        delete_webhook(f"{producer.job_callback_url}/{data_job_id}", timeout=5.0)
 
 
 def _job_view(j: DataJob) -> dict:
@@ -652,11 +641,8 @@ def _computed_type_status(db: Session, t: DMEType) -> str:
 
 
 def _producer_is_healthy(callback_url: str) -> bool:
-    try:
-        resp = httpx.get(callback_url, timeout=2.0)
-        return resp.status_code < 300
-    except httpx.HTTPError:
-        return False
+    resp = get_webhook(callback_url, timeout=2.0)
+    return resp is not None and resp.status_code < 300
 
 
 # ---------------------------------------------------------------- list reads (GUI pass 2)

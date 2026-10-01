@@ -48,6 +48,7 @@ from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
+from smo_shared.webhook import post_webhook
 
 from .models import (
     CertificationRecord, EmulationJob, FeatureGroup, InferenceJob, LifecycleTransition, MLMFSubscription,
@@ -292,16 +293,11 @@ def _notify_job_completion(notification_uri: str | None, job_kind: str, job_id: 
     publish_report, Intent Service's CreateIntent) — an unreachable
     destination never fails the completion call itself.
     """
-    if not notification_uri:
-        return
-    try:
-        httpx.post(notification_uri, json={
-            "jobKind": job_kind, "jobId": str(job_id), "succeeded": succeeded,
-            "outcomeArtifactDmeTypeId": str(outcome_artifact_dme_type_id) if outcome_artifact_dme_type_id else None,
-            "metrics": metrics,
-        }, timeout=2.0)
-    except httpx.HTTPError:
-        pass
+    post_webhook(notification_uri, json={
+        "jobKind": job_kind, "jobId": str(job_id), "succeeded": succeeded,
+        "outcomeArtifactDmeTypeId": str(outcome_artifact_dme_type_id) if outcome_artifact_dme_type_id else None,
+        "metrics": metrics,
+    }, timeout=2.0)
 
 
 @app.post("/training-jobs", status_code=201)
@@ -923,17 +919,13 @@ def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = 
     db.add(report)
     db.commit()
 
-    if sub.notification_destination:
-        # SPEC_AUDIT.md's `MLMFSubscription` finding, closed: best-effort,
-        # same pattern as every other subscription notification in this
-        # build — an unreachable subscriber never fails the report call
-        # that triggered it.
-        try:
-            httpx.post(sub.notification_destination, json={
-                "reportId": str(report.id), "modelId": str(sub.model_id), "metrics": metrics, "breachedFloor": breached,
-            }, timeout=2.0)
-        except httpx.HTTPError:
-            pass
+    # SPEC_AUDIT.md's `MLMFSubscription` finding, closed: best-effort,
+    # same pattern as every other subscription notification in this
+    # build — an unreachable subscriber never fails the report call
+    # that triggered it.
+    post_webhook(sub.notification_destination, json={
+        "reportId": str(report.id), "modelId": str(sub.model_id), "metrics": metrics, "breachedFloor": breached,
+    }, timeout=2.0)
 
     result = {"reportId": str(report.id), "breachedFloor": breached}
     if breached:

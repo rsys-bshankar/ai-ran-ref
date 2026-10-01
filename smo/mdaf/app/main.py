@@ -33,6 +33,7 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
+from smo_shared.webhook import post_webhook
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import MDAFReport, MDASubscription
@@ -143,15 +144,10 @@ def _notify_report_subscribers(db: Session, report: MDAFReport) -> None:
         crossed = _threshold_crossed(sub, report.output)
         if sub.threshold_info and not crossed:
             continue
-        if not sub.notification_destination:
-            continue
-        try:
-            httpx.post(sub.notification_destination, json={
-                "reportId": str(report.report_id), "analyticsType": report.analytics_type,
-                "output": report.output, "inputSources": [str(s) for s in report.input_sources],
-            }, timeout=2.0)
-        except httpx.HTTPError:
-            pass
+        post_webhook(sub.notification_destination, json={
+            "reportId": str(report.report_id), "analyticsType": report.analytics_type,
+            "output": report.output, "inputSources": [str(s) for s in report.input_sources],
+        }, timeout=2.0)
     db.commit()  # persists threshold_state even for subscriptions that didn't cross (or have no destination)
 
 

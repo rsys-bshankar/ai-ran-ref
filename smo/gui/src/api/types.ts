@@ -23,13 +23,20 @@ export interface Package {
   // instance at bootstrap-complete, not here at onboarding time.
   smeDeclarations: { providers: Record<string, unknown>[]; serviceApis: Record<string, unknown>[] } | null;
 }
-export interface InstanceSummary { instanceId: string; packageId: string; state: string }
+export interface InstanceSummary {
+  instanceId: string; packageId: string; state: string;
+  // OPEN_ITEMS.md section 6.3: fixed at onboarding (CreateInstance), SHADOW by default.
+  autonomyMode: string;
+}
 export interface Instance extends InstanceSummary {
   workloadRef: string | null; configuration: Record<string, unknown> | null; pendingUpgradeInstanceId: string | null;
   // The real SME serviceId(s) this instance registered at bootstrap-complete
   // from its package's own smeDeclarations — null if the package declared
   // none, or before bootstrap-complete has run.
   smeServiceIds: string[] | null;
+  // AUTONOMOUS's own pre-configured RAN node/cell/slice scope — opaque,
+  // meaningless for ASSIST/SHADOW.
+  regionScope: Record<string, unknown> | null;
 }
 export interface PerfReport { reportId: string; metrics: Record<string, unknown>; reportedAt: string }
 export interface FaultReport { faultId: string; severity: string; description: string | null; reportedAt: string }
@@ -91,6 +98,16 @@ export interface A1Policy { policyId: string; policyTypeId: string; nearRtRicId:
 export interface Intent { intentId: string; intentAdminState: string; intentPriority: number; rmioId: string; intentMgmtPurpose: string | null; rmihId: string }
 export interface IntentReport { reportId: string; intentId: string; fulfilmentReport: Record<string, unknown> | null; conflictReports: unknown[] | null; lastUpdatedTime: string }
 export interface Rmih { rmihId: string; smeServiceId: string; capabilities: Record<string, unknown>[]; notificationDestination: string; intentHandlingScope: string[] | null }
+// OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes: a real record of each
+// inference-driven dispatch decision, distinct from Intent itself since
+// not every mode actually produces one (SHADOW never does; ASSIST
+// doesn't until an operator resolves it).
+export interface AutonomyDispatch {
+  dispatchId: string; instanceId: string; modelId: string | null; autonomyMode: string;
+  expectations: Record<string, unknown>[]; priority: number; rmihId: string;
+  intentMgmtPurpose: string | null; intentHandlingScope: string | null;
+  regionScope: Record<string, unknown> | null; status: string; intentId: string | null; createdAt: string;
+}
 
 // ---- NFO / FOCOM / SO / SA / Analytics / DME
 export interface NfDeployment { nfDeploymentId: string; name: string; state: string; clusterId: string; nfDeploymentDescriptorId: string; workloadRef: string | null; requiredResourceTypeId: string | null }

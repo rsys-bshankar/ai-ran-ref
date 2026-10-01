@@ -19,6 +19,89 @@
         "title": "AdminStateRequest",
         "type": "object"
       },
+      "CreateAutonomyDispatchRequest": {
+        "properties": {
+          "expectations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Expectations",
+            "type": "array"
+          },
+          "instanceId": {
+            "format": "uuid",
+            "title": "Instanceid",
+            "type": "string"
+          },
+          "intentHandlingScope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "RAN",
+                  "CN"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intenthandlingscope"
+          },
+          "intentMgmtPurpose": {
+            "default": "FULFILMENT_WITHOUT_NEGOTIATION",
+            "enum": [
+              "FEASIBILITYCHECK",
+              "FEASIBILITYCHECK_WITH_RECOMMENDATIONS",
+              "FULFILMENT_WITHOUT_NEGOTIATION",
+              "EXPLORATION",
+              "FULFILMENT_WITH_NEGOTIATION"
+            ],
+            "title": "Intentmgmtpurpose",
+            "type": "string"
+          },
+          "modelId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelid"
+          },
+          "notificationDestination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notificationdestination"
+          },
+          "priority": {
+            "default": 1,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "rmihId": {
+            "title": "Rmihid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instanceId",
+          "expectations",
+          "rmihId"
+        ],
+        "title": "CreateAutonomyDispatchRequest",
+        "type": "object"
+      },
       "CreateIntentRequest": {
         "properties": {
           "expectations": {
@@ -173,6 +256,20 @@
         "title": "RegisterRmihRequest",
         "type": "object"
       },
+      "ResolveAutonomyDispatchRequest": {
+        "properties": {
+          "regionScope": {
+            "additionalProperties": true,
+            "title": "Regionscope",
+            "type": "object"
+          }
+        },
+        "required": [
+          "regionScope"
+        ],
+        "title": "ResolveAutonomyDispatchRequest",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -228,6 +325,216 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/autonomy-dispatches": {
+      "get": {
+        "operationId": "list_autonomy_dispatches_autonomy_dispatches_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "instance_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Instance Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Autonomy Dispatches"
+      },
+      "post": {
+        "description": "RequestAutonomyDispatch \u2014 the real, spec-shaped hand-off call flow\n02/03 lacked: an rApp that just pulled an inference result via DME\ncalls this instead of a raw CM write (call flow 03 Path A/B) or an\nunaddressed CreateIntent, and its own onboarding-time `autonomyMode`\n(rApp Mgmt's own RAppInstance) decides what happens next \u2014\nAUTONOMOUS enacts the outcome immediately, as part of a real Intent,\nscoped to the instance's own pre-configured regionScope; ASSIST holds\nit for an operator to scope before anything is dispatched; SHADOW\ncomputes nothing beyond this record \u2014 observe-only, never dispatched.\nAll three always notify the operator.",
+        "operationId": "request_autonomy_dispatch_autonomy_dispatches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAutonomyDispatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Autonomy Dispatch"
+      }
+    },
+    "/autonomy-dispatches/{dispatch_id}": {
+      "get": {
+        "operationId": "query_autonomy_dispatch_autonomy_dispatches__dispatch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dispatch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dispatch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Autonomy Dispatch"
+      }
+    },
+    "/autonomy-dispatches/{dispatch_id}/resolve": {
+      "post": {
+        "description": "ASSIST's own human-in-the-loop scoping step: the operator supplies\n(or narrows) which RAN nodes/cells/slices the dispatch applies to,\nonly now creating the real Intent \u2014 distinct from AUTONOMOUS, whose\nscope was already fixed at onboarding.",
+        "operationId": "resolve_autonomy_dispatch_autonomy_dispatches__dispatch_id__resolve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dispatch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dispatch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveAutonomyDispatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Autonomy Dispatch"
+      }
+    },
     "/health": {
       "get": {
         "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel,\nso every module answers one \u2014 previously only ran-nf-oam/a1-related\ndid (as their own DME producer-health callback URL).",

@@ -6,6 +6,7 @@ and UpgradeInstance's auto-rollback made precise (upgrade.py).
 """
 
 import uuid
+from typing import Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
@@ -42,6 +43,13 @@ def health_check():
 class CreateInstanceRequest(BaseModel):
     packageId: uuid.UUID
     config: dict = {}
+    # OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes: fixed at onboarding
+    # (this call), not chosen per-inference-call. SHADOW (no enforcement)
+    # is the safe default for every existing caller that doesn't declare
+    # one. regionScope only matters for AUTONOMOUS — opaque JSON, the
+    # same shape config already is.
+    autonomyMode: Literal["AUTONOMOUS", "ASSIST", "SHADOW"] = "SHADOW"
+    regionScope: dict | None = None
 
 
 class UpgradeRequest(BaseModel):
@@ -66,7 +74,8 @@ def create_instance(body: CreateInstanceRequest, db: Session = Depends(get_sessi
         # normal refusal.
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail="package has no nfDeploymentDescriptorId")
 
-    inst = RAppInstance(package_id=body.packageId, configuration=body.config, state=InstanceState.DEPLOYING, oauth_client_id=str(uuid.uuid4()))
+    inst = RAppInstance(package_id=body.packageId, configuration=body.config, state=InstanceState.DEPLOYING, oauth_client_id=str(uuid.uuid4()),
+                         autonomy_mode=body.autonomyMode, region_scope=body.regionScope)
     db.add(inst)
     db.flush()
 
@@ -331,7 +340,8 @@ def list_instances(state: str | None = None, limit: int = PageLimit, offset: int
     if state:
         stmt = stmt.where(RAppInstance.state == state)
     page = paginate(db, stmt, limit, offset)
-    return {**page, "items": [{"instanceId": str(i.instance_id), "packageId": str(i.package_id), "state": i.state} for i in page["items"]]}
+    return {**page, "items": [{"instanceId": str(i.instance_id), "packageId": str(i.package_id), "state": i.state,
+             "autonomyMode": i.autonomy_mode} for i in page["items"]]}
 
 
 @app.get("/instances/{instance_id}")
@@ -361,6 +371,7 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
         "workloadRef": inst.workload_ref, "configuration": inst.configuration,
         "pendingUpgradeInstanceId": str(inst.pending_upgrade_instance_id) if inst.pending_upgrade_instance_id else None,
         "smeServiceIds": inst.sme_service_ids,
+        "autonomyMode": inst.autonomy_mode, "regionScope": inst.region_scope,
     }
 
 
