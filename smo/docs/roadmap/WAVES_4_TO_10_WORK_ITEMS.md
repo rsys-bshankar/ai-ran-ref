@@ -49,7 +49,7 @@ Smaller inconsistencies resolved without a decision:
 Wave-4 (TS 28.105) ─┬───────────────► Wave-7 (Runtime) ──┐
 Wave-5 (TS 28.104) ─┤                                    ├─► Wave-8 (Autonomy) ──► Wave-10.1 (Energy Saving)
 Wave-6 (TS 28.312) ─┴────────────────────────────────────┘                          │
-Wave-9 (Multi-vendor O1) ── independent; the 10.1 O1 path must not regress it       └─► 10.2 (Mobility) ✅ / 10.3 (Coverage) ✅ / 10.4
+Wave-9 (Multi-vendor O1) ── independent; the 10.1 O1 path must not regress it       └─► 10.2 (Mobility) ✅ / 10.3 (Coverage) ✅ / 10.4 (Traffic Steering) ✅
 ```
 Wave-10 depends on Waves 4, 5, 7 and 8 `[W10]`, on Wave 6 via the Intent-routed AUTONOMOUS/ASSIST path (D-1), and on Wave 9 for the D-5 guard data and vendor-mode registry.
 
@@ -262,12 +262,37 @@ Near-RT RIC, xApps or E2. Design pass decisions, agreed with the user and **froz
 | W10.3-09 | Audit trail per cell per pass, dashboard, GUI **Coverage** page, BFF rules, R1 route, compose service | ✅ Operator sees the problem shares, the joint plan and its predicted gain, decision, intent, action, verification and revert (CCO-20; GUI `pages/Coverage.tsx`) |
 | W10.3-10 | Integration tests CCO-01..CCO-20, the runbook demo (§26), call flow 24, exit review `WAVE_10_3_EXIT_REVIEW.md` | ✅ All green: `tests_integration/test_coverage_optimization_rapp.py`, `test_demo_runbook.py::test_coverage_optimization_demo_00_to_11_runs_end_to_end` |
 
-## 10b. Wave-10.4 — backlog placeholders (D-8)
+## 10b. Wave-10.4 — Traffic Steering rApp (congestion → idle reselection priority + connected CIO bias) — ✅ DONE (PR-W10.4; exit review: `WAVE_10_4_EXIT_REVIEW.md`)
+
+Started after the 10.3 exit. It follows the 10.1–10.3 pattern: one PR, O1 PM in and O1 CM out, R1 only, no A1,
+Near-RT RIC, xApps or E2. Design pass decisions, agreed with the user and **frozen**:
+
+| # | Topic | Decision |
+|---|-------|----------|
+| D10.4-1 | O1 actuator | **Both idle and connected mode.** Idle: `NRFreqRelation.cellReselectionPriority` on the congested cell's relation to the target's frequency layer (TS 28.541, 0–7). Connected: `NRCellRelation.cellIndividualOffset` on the congested cell → target relation, which is the knob the Mobility rApp tunes. **CIO arbitration:** both rApps keep the CIO inside one envelope, baseline ± 6 dB (the DMRO bounds). Neither changes a relation the other has under observation, and the Mobility rApp gets the reciprocal guard. Knob choice: an inter-frequency target is steered in idle mode first (no handover risk); connected CIO is used for an intra-frequency target, or once the idle knob is at its bound. Relations with `isMLBAllowed=false` or `isHOAllowed=false` are never biased. |
+| D10.4-2 | Algorithm | **Congestion score + regression, pairwise.** Per cell and hourly window: score = 0.5·PRB utilisation + 0.3·connected-UE load + 0.2·throughput deficit (TS 28.552 `RRU.PrbTotDl`, `RRC.ConnMean`, `DRB.UEThpDl`). A regression forecasts the next hour's score: persistence, plus the last-hour trend, plus a learned hour-of-day profile. A cell forecast at 70 or more offloads one step to its least-loaded eligible neighbour. Between 50 and 70 nothing changes (hysteresis). Below 50, its steering is released one step at a time. The transfer per step (score points per CIO dB and per priority step) is learned from history in which the biases varied. |
+| D10.4-3 | Code structure | **A standalone sample**, `samples/traffic-steering-rapp/`, beside the other three. The only change to an earlier rApp is the Mobility rApp's optional reciprocal CIO guard. |
+| D10.4-4 | Safety | All four rule sets apply. (a) Bounds and pacing: CIO steps of 2 dB inside the shared envelope; priority within baseline ± 2 (and 0–7), steps of 1; at least 60 min between changes on a cell; at least 10 PM samples per window. (b) KPI-verified revert: after 60 min, a change is reverted if the target became congested, the source got worse, or (connected) the relation's handover failure rate rose by more than 2 points. (c) Coordination: never steer towards a cell that is asleep, pre-sleep or < 30 min past a wake (O1 state and the EnergySaving rApp's states), nor from a sleeping cell. Hold a relation the Mobility rApp has OBSERVING, and cells in a Coverage change set under observation. (d) Protected cells and anti-oscillation: skip EMERGENCY / incident-zone cells and hold everything under a critical alarm. Never push load onto a target whose forecast after the predicted transfer exceeds 55. Never steer T → S within 6 hours of steering S → T. |
+
+| ID | Work item | Done when |
+|----|-----------|-----------|
+| W10.4-01 | Package `samples/traffic-steering-rapp/` → `traffic-steering-rapp.csar` (manifest, capabilities, ASD; 4 execution modes, 3 autonomy modes, runtime profiles) | ✅ Onboards → AVAILABLE (TS-01) |
+| W10.4-02 | Model `CongestionSteeringModel`: score, next-hour regression (drift, trend, hour-of-day profile), learned transfer per CIO dB and per priority step; logic files for training, validation, emulation and inference; JSON artifact in MLMR | ✅ Trained, validated and emulated through AIMgF (TS-03..05); the learned transfer recovers the load model's (≈ 0.03 / dB, ≈ 0.06 / step); emulation steering accuracy 1.0, no false actions |
+| W10.4-03 | `LOAD_PERFORMANCE` PM per cell (`RRU.PrbTotDl`, `RRC.ConnMean`, `DRB.UEThpDl`, per-relation `HO.Att.<cell>` / `HO.Fail.<cell>`, and the CM snapshot `CM.Cio.<cell>` / `CM.Prio.<layer>`) in DME. The Digital Twin `LOAD_PERFORMANCE_SIM` producer with injected hotspots. A sample load model turns the live O1 biases into PM, so the loop closes. | ✅ rApp reads both via `sdk.data.get_dataset` (TS-02); live PM follows the live O1 steering |
+| W10.4-04 | O1 model in the mock adaptor: `NRFreqRelation` (`cellReselectionPriority`, `qOffsetFreq`), and `NRCellRelation.isMLBAllowed` | ✅ Read-back reflects writes (mock-o1-adaptor unit test, TS-08/11) |
+| W10.4-05 | Engine: thresholds and hysteresis, pairwise target choice, knob choice, guards (D10.4-4), bounds, pacing, anti-oscillation | ✅ Unit tests per rule (`samples/traffic-steering-rapp/tests/test_engine.py`) |
+| W10.4-06 | Actuation: one AutonomyDispatch per pass, one expectation per change, then Intent, the SA SMOS O1-CM handler (new `NRFreqRelation.cellReselectionPriority` CM target; CIO as in 10.2), DME and RAN NF OAM. Reverts and rollbacks go straight to DME. | ✅ Priority / CIO written, read back (TS-08, TS-11) |
+| W10.4-07 | KPI-verified revert, else CONFIRMED | ✅ Revert tests (TS-13 `HO_FAILURES`, TS-15 `TARGET_CONGESTED`, both through DME with the execution's correlation id); confirmation (TS-10) |
+| W10.4-08 | Coordination with EnergySaving, Mobility (two-way CIO arbitration) and Coverage, read over R1 | ✅ Coordination tests (TS-18: EnergySaving `TARGET_ASLEEP` / `CELL_ASLEEP`; two-way CIO arbitration `MRO_OBSERVING` / `MLB_OBSERVING`); Coverage in unit tests |
+| W10.4-09 | Audit trail per cell per pass, dashboard, GUI **Traffic Steering** page, BFF rules, R1 route, compose service | ✅ Operator sees the scores, forecasts, steering in force, decision, intent, action, verification and revert (TS-20; GUI `pages/TrafficSteering.tsx`) |
+| W10.4-10 | Integration tests TS-01..TS-20, the runbook demo (§27), call flow 25, exit review `WAVE_10_4_EXIT_REVIEW.md` | ✅ All green: `tests_integration/test_traffic_steering_rapp.py`, `test_demo_runbook.py::test_traffic_steering_demo_00_to_11_runs_end_to_end` |
+
+## 10c. Backlog (D-8)
 
 | ID | rApp | Input → Output | Next step |
 |----|------|----------------|-----------|
 | W10.3-00 | Coverage Optimization | RSRP → antenna tilt | ✅ Designed and built as Wave 10.3 (§10a) |
-| W10.4-00 | Traffic Steering | Congestion score → cell reselection bias | Design pass after 10.1 exit |
+| W10.4-00 | Traffic Steering | Congestion score → cell reselection bias | ✅ Designed and built as Wave 10.4 (§10b) |
 | W10-B1 | Energy model LSTM variant (D-6) | PRB → PRB for the next N windows | ✅ After 10.1 |
 | W10-B2 | `CESManagementFunction.energySavingControl` as an alternative actuator (D-2) | — | ✅ After 10.1 |
 

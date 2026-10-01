@@ -1,0 +1,53 @@
+# TrafficSteering_rApp package manifest (Wave 10.4, W10.4-01)
+rappManifest:
+  manifestVersion: "1.0"
+  aiRuntimeSdkVersion: "1.0"
+
+name: TrafficSteering_rApp
+version: 1.0.0
+vendor: Radisys
+ownerTeam: AI-RAN-SMO
+description: >
+  AI-driven traffic steering / mobility load balancing. It forecasts each
+  cell's congestion score and moves load off congested cells: idle UEs via
+  reselection priority towards another frequency layer, connected UEs via
+  the neighbour relation's cell individual offset, through O1.
+useCase: Traffic Steering
+domain: RAN
+deploymentModel: NonRT-RIC
+
+executionModes:
+  - TRAINING
+  - VALIDATION
+  - EMULATION
+  - INFERENCE
+
+autonomyModes:
+  - SHADOW
+  - ASSIST
+  - AUTONOMOUS
+
+requiredServices:
+  - DME
+  - AIMgF
+  - MLMR
+  - MLLF
+  - RAN-NF-OAM
+
+runtimeProfiles:
+  TRAINING:
+    cpu: 4
+    memory: 8Gi
+    gpu: 0
+  VALIDATION:
+    cpu: 2
+    memory: 4Gi
+    gpu: 0
+  EMULATION:
+    cpu: 2
+    memory: 4Gi
+    gpu: 0
+  INFERENCE:
+    cpu: 1
+    memory: 2Gi
+    gpu: 0

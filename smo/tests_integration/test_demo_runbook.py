@@ -981,3 +981,36 @@ def test_coverage_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, 
     assert state["kpi"]["postObjective"] < state["kpi"]["preObjective"]
     cells = {c["cellId"]: c for c in state["dashboard"]["cells"]}                 # Demo 11
     assert cells["301"]["digitalTilt"] == 70 and cells["301"]["state"] == "STEADY" and cells["301"]["shareTrend"]
+
+
+def test_traffic_steering_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, monkeypatch, capsys):
+    """DEMO_RUNBOOK.md §27 — the Wave 10.4 Traffic Steering rApp demo (Demo
+    00–11). It runs the runbook's own script,
+    samples/traffic-steering-rapp/demo.py, step by step through the mesh."""
+    import importlib.util
+
+    from traffic_env import CSAR_URL, serve_csar
+
+    spec = importlib.util.spec_from_file_location("traffic_demo", Path(__file__).resolve().parent.parent
+                                                  / "samples" / "traffic-steering-rapp" / "demo.py")
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    monkeypatch.setattr(demo, "CSAR_URL", CSAR_URL)
+    serve_csar(loaded_apps, monkeypatch)
+    mesh["mock-o1-adaptor"].delete("/state")
+
+    state = {}
+    for step in demo.STEPS:
+        demo.run(step, state)
+    out = capsys.readouterr().out
+    assert "Demo 11" in out
+    assert state["historyRecords"] == 72 * 4                                       # Demo 02
+    assert state["emulation"]["steeringAccuracy"] >= 0.9                           # Demo 05
+    assert state["promoted"] == "PROMOTED" and state["runtime"] == "ACTIVE"       # Demo 06/07
+    d = state["decision"]                                                          # Demo 08
+    assert d["decision"].startswith("STEER_") and d["prediction"]["plan"]["targetForecastAfter"] <= 55
+    assert state["action"]["status"] == "COMPLETED"                               # Demo 09
+    assert state["kpi"]["verdict"] == "IMPROVED_OR_EQUAL"                          # Demo 10
+    cells = {c["cellId"]: c for c in state["dashboard"]["cells"]}                 # Demo 11
+    assert cells["401"]["state"] == "STEADY" and cells["401"]["scoreTrend"]
+    assert cells["401"]["steering"]["cio"] or cells["401"]["steering"]["prio"]

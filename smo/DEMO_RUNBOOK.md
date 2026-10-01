@@ -1979,6 +1979,78 @@ Things to try afterwards:
 The integration suite covers CCO-01..CCO-20 the same way:
 `tests_integration/test_coverage_optimization_rapp.py`.
 
+## 27. Wave 10.4 — the Traffic Steering rApp (Demo 00–11)
+
+This section is independent of §24–§26. The Traffic Steering reference rApp
+(`samples/traffic-steering-rapp/`) is deployed beside the platform as the
+`traffic-steering-rapp` service. Using only O1 PM data, it:
+
+* scores each cell's congestion from PRB utilisation, connected UEs and UE
+  throughput;
+* forecasts the next hour's score;
+* moves load off a cell forecast congested towards its least-loaded
+  neighbour, one step at a time:
+  - idle UEs by reselection priority towards another frequency layer;
+  - connected UEs by the relation's CIO;
+* never pushes a neighbour above its own limit;
+* verifies every write;
+* reverts a step that congested its target, didn't help, or raised
+  handover failures;
+* releases its steering when the load falls.
+
+The rApp shares the CIO with the Mobility rApp, within one ± 6 dB envelope.
+Neither touches a relation the other is observing. It holds steering around
+cells that are asleep or just woken (EnergySaving) and around cells in a
+Coverage change set. It also leaves protected cells alone and never reverses
+a steering direction within 6 hours. There is no A1, Near-RT RIC, xApp or E2.
+Design: `docs/call-flows/25-traffic-steering-closed-loop.md`; scope and tests:
+`docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md` §10b.
+
+The demo is a script, `samples/traffic-steering-rapp/demo.py`, one step per
+Demo number. `tests_integration/test_demo_runbook.py` runs it through the
+in-process mesh on every CI run. Live PM is produced from each cell's CIO and
+reselection priority as read back over O1, so the rApp's own steps show up in
+the next hour's PM. Timestamps are simulation time (history 2026-09-01..03,
+live PM from noon on the 4th).
+
+```bash
+python3 samples/build_csar.py traffic-steering-rapp      # only after editing the sample
+docker compose cp samples/traffic-steering-rapp.csar r1-termination:/tmp/traffic-steering-rapp.csar
+docker compose cp samples/traffic-steering-rapp r1-termination:/tmp/traffic-steering-rapp
+docker compose exec -d r1-termination python3 -m http.server 8899 --directory /tmp   # if not already serving
+```
+
+Then run one step at a time:
+
+| Step | Command (`docker compose exec r1-termination …`) | What to observe |
+|------|------|------|
+| Demo 00 — prepare the RAN | `python3 /tmp/traffic-steering-rapp/demo.py 00` | `gnb-mlb-demo-01` registered behind `mock-o1-adaptor`, LOAD_PERFORMANCE PM subscribed; layers F3500 (401, 402) and F2100 (411, 412) |
+| Demo 01 — onboard | `… demo.py 01` | package `AVAILABLE`; an AUTONOMOUS instance whose region scope names every relation and frequency relation it may write |
+| Demo 02 — dataset | `… demo.py 02` | 288 hourly per-cell windows → DME, with each cell's CIO or priority stepped in turn; datasets TRAINING/INFERENCE = `LOAD_PERFORMANCE`, EMULATION = `LOAD_PERFORMANCE_SIM` |
+| Demo 03 — train | `… demo.py 03` | `TRAINING → TRAINED`; the learned transfer: about 3 % of the source's score per CIO dB, 6 % per priority step |
+| Demo 04 — validate | `… demo.py 04` | `VALIDATING → VALIDATED`, held-out band score and RMSE |
+| Demo 05 — emulate | `… demo.py 05` | the Digital Twin injects hotspots; steering accuracy 1.0, no false actions |
+| Demo 06 — promote | `… demo.py 06` | `CERTIFIED → PROMOTED` (operator governance decisions) |
+| Demo 07 — deploy | `… demo.py 07` | RuntimeLifecycle `ACTIVE` |
+| Demo 08 — live inference | `… demo.py 08` | 401 forecast ≈ 81 (`CONGESTED`); one step towards its least-loaded neighbour, which stays ≤ 55 after the transfer |
+| Demo 09 — DME action and O1 | `… demo.py 09` | the action record and the execution → dispatch → intent → action chain; the steered attribute read back |
+| Demo 10 — KPI check | `… demo.py 10` | an hour later 401 is below its no-steering forecast and the target is fine: `CONFIRMED` |
+| Demo 11 — dashboard | `… demo.py 11` | per cell: layer, score, steering in force, decision, outcome. In the GUI: **Traffic Steering** |
+
+Things to try afterwards:
+
+* **More steps.** Keep reporting the hotspot each hour and evaluate. The
+  next step goes to the other neighbour, in idle mode towards the other
+  layer. Once both neighbours are near 55, the result is
+  `NO_ELIGIBLE_TARGET`.
+* **Release.** Report hours without the hotspot into the evening: the
+  steering is released step by step (`RELEASE_CONNECTED`, `RELEASE_IDLE`).
+* **ASSIST mode.** A step waits in **Policy & Intents → Autonomy
+  dispatches**; Resolve or Reject it, then press **Reconcile approvals**.
+
+The integration suite covers TS-01..TS-20 the same way:
+`tests_integration/test_traffic_steering_rapp.py`.
+
 ## Known rough edges for a live walkthrough
 
 - `smo/docs/call-flows/01-rapp-onboarding-to-deployment.md`'s own

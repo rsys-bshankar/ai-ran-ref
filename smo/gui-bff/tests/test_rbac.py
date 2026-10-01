@@ -100,6 +100,11 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/coverage-optimization-rapp/instances/i/evaluate", "operator"),
     ("POST", "/coverage-optimization-rapp/instances/i/lifecycle/train", "operator"),
     ("POST", "/coverage-optimization-rapp/sim-producer/register", "admin"),
+    # Wave 10.4: the Traffic Steering rApp
+    ("GET", "/traffic-steering-rapp/instances/i/relations", "viewer"),
+    ("POST", "/traffic-steering-rapp/instances/i/evaluate", "operator"),
+    ("POST", "/traffic-steering-rapp/instances/i/lifecycle/emulate", "operator"),
+    ("POST", "/traffic-steering-rapp/sim-producer/publish", "admin"),
 ])
 def test_minimum_role_per_route(method, path, minimum):
     order = ["viewer", "operator", "admin"]

@@ -60,7 +60,7 @@ def test_registration_declares_the_cm_targets(client, platform):
     names = [t["supportedTargetName"] for t in body["intentHandlingCapabilityList"][0]["supportedExpectationTargetInfoList"]]
     assert names == ["NRCellDU.administrativeState", "CESManagementFunction.energySavingControl",
                      "NRCellRelation.cellIndividualOffset", "CommonBeamformingFunction.digitalTilt",
-                     "NRSectorCarrier.configuredMaxTxPower"]
+                     "NRSectorCarrier.configuredMaxTxPower", "NRFreqRelation.cellReselectionPriority"]
     assert platform["deletes"] == ["/intent-service/intent-handling-functions/sa-smos"]  # idempotent re-register
     assert client.post("/o1-cm-handler/registration", json={"cmTargets": {"noDot": []}}).status_code == 422
 

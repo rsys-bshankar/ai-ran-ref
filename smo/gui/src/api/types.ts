@@ -239,3 +239,37 @@ export interface CcoCell extends CcoSetting {
   shareTrend: ({ t: string } & CcoShares)[]; excessTrend: { t: string; v: number }[]; latestDecision: CcoDecision | null;
 }
 export interface CcoDashboard { instance: CcoInstance; cells: CcoCell[] }
+
+// ---- Wave 10.4: Traffic Steering reference rApp (samples/traffic-steering-rapp)
+export interface TsSteering { cio: Record<string, number>; prio: Record<string, number> }
+export interface TsInstance {
+  instanceId: string; packageId: string | null; managedElementRef: string; cells: { cellId: string; layer: string }[];
+  baselineCio: number; baselinePriority: number; autonomyMode: string; rmihId: string;
+  energySavingInstanceId: string | null; mobilityInstanceId: string | null; coverageInstanceId: string | null;
+  steeringLog: { source: string; targets: string[]; at: string }[]; pendingDispatchId: string | null;
+  datasets: Record<string, { dataset: string; dmeTypeId: string; dataJobId: string; sourceDomain: string | null }>;
+  modelId: string | null; modelVersion: string | null; artifactVersion: number | null; model: Record<string, unknown> | null;
+  lifecycleJobs: Record<string, string>;
+}
+export interface TsPlan {
+  decision: string; reason: string; move?: { knob: string; ref: string; target?: string; layer?: string; targets?: string[]; from: number; to: number };
+  movedScore?: number; targetForecastAfter?: number; sourceForecastAfter?: number; rejected?: Record<string, unknown>[];
+}
+export interface TsDecision {
+  decisionId: string; executionId: string; cellId: string; observedAt: string | null; score: number | null; forecast: number | null;
+  prediction: { model: { score: number; forecast: number; band: string; confidence: number }; plan: TsPlan } | null;
+  safety: { passed: boolean; blocks: { guard: string; level: string; detail?: unknown }[]; excluded?: Record<string, string>[] } | null;
+  decision: string; reason: string; knob: string | null; managedRef: string | null; targets: string[] | null;
+  fromValue: number | null; toValue: number | null;
+  kpi: { verdict: string; causes: string[]; postSource: number | null; preForecast: number } | null;
+  intent: { dispatchId: string; autonomyMode: string; status: string; intentId: string | null } | null;
+  action: { path: string; actionId: string; status: string } | null;
+  verification: { result: string } | null;
+  rollback: { trigger: string; performed: boolean; result: string } | null;
+  outcome: string; finalState: { state: string; steering: TsSteering } | null; createdAt: string;
+}
+export interface TsCell {
+  cellId: string; layer: string; state: string; steering: TsSteering; lastChangedAt: string | null;
+  scoreTrend: { t: string; v: number }[]; latestDecision: TsDecision | null;
+}
+export interface TsDashboard { instance: TsInstance; cells: TsCell[] }

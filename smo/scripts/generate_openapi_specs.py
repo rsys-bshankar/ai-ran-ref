@@ -25,6 +25,7 @@ ALL_MODULES = [
     "a1-related", "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
     "intent-service", "so-smos", "sa-smos", "mock-near-rt-ric", "mock-o1-adaptor",
     "samples/energy-saving-rapp", "samples/mobility-optimization-rapp", "samples/coverage-optimization-rapp",
+    "samples/traffic-steering-rapp",
 ]
 sys.path.insert(0, str(SMO_ROOT / "shared"))
 sys.path.insert(0, str(SMO_ROOT / "sdk"))

@@ -35,6 +35,7 @@ ALL_MODULES = [
     # Wave 10.2: the Mobility Optimization reference rApp
     "samples/mobility-optimization-rapp",
     "samples/coverage-optimization-rapp",  # Wave 10.3
+    "samples/traffic-steering-rapp",  # Wave 10.4
 ]
 
 

@@ -6,7 +6,7 @@ package, and the operator's governance steps — all through real routes."""
 import datetime
 from pathlib import Path
 
-from energy_saving_env import OPERATOR, governance, ok
+from energy_saving_env import OPERATOR, governance, heartbeat, ok
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
 CSAR = SMO_ROOT / "samples" / "mobility-optimization-rapp.csar"
@@ -122,6 +122,7 @@ class Clock:
 
     def hour(self, hours=1, overrides=None, **scenarios):
         """scenarios: r201_202="TOO_LATE" … (relation ids with '_' for '-')."""
+        heartbeat(self.mesh, self.me)
         report(self.mesh, self.apps, {k.removeprefix("r").replace("_", "-"): v for k, v in scenarios.items()},
                self.now, hours, self.me, overrides)
         self.now += datetime.timedelta(hours=hours)

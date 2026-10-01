@@ -52,6 +52,7 @@ def test_route_table_covers_every_module():
         "/energy-saving-rapp",  # Wave 10.1: the reference rApp's own northbound API
         "/mobility-optimization-rapp",  # Wave 10.2
         "/coverage-optimization-rapp",  # Wave 10.3
+        "/traffic-steering-rapp",  # Wave 10.4
     }
     assert set(ROUTES.keys()) == expected_prefixes
 

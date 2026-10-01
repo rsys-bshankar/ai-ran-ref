@@ -15,7 +15,9 @@ Per neighbour relation, in order:
          EnergySaving rApp has it in SLEEP or PRE_SLEEP;
        - the target woke less than 30 minutes ago;
        - fewer than 50 handover attempts in the window;
-       - the relation changed less than 60 minutes ago (pacing).
+       - the relation changed less than 60 minutes ago (pacing);
+       - the Traffic Steering rApp has a CIO change on the relation under
+         observation (the two rApps share the CIO, Wave 10.4 D10.4-1).
   3. Prediction. Act only when the predicted next-hour rate is at least
      5 %; 2–5 % is a hold zone.
   4. Bounded step. The dominant failure class sets the direction:
@@ -58,6 +60,7 @@ class RelationInput:
     target_o1_asleep: bool = False
     target_es_state: str | None = None     # the EnergySaving rApp's SERVING / PRE_SLEEP / SLEEP
     target_last_woken: datetime.datetime | None = None
+    mlb_observing: bool = False            # the Traffic Steering rApp is observing a CIO change on it
 
 
 @dataclass
@@ -94,6 +97,8 @@ def evaluate_guards(r: RelationInput, now: datetime.datetime, window: dict) -> d
         blocks.append({"guard": "INSUFFICIENT_SAMPLES", "level": "SOFT", "detail": f"{attempts(window):.0f} attempts"})
     if r.last_changed_at and now - r.last_changed_at < PACING:
         blocks.append({"guard": "PACING", "level": "SOFT", "detail": f"changed at {r.last_changed_at.isoformat()}"})
+    if r.mlb_observing:
+        blocks.append({"guard": "MLB_OBSERVING", "level": "MEDIUM"})
     return {"passed": not blocks, "blocks": blocks}
 
 

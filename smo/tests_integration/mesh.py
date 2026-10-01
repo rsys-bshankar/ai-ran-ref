@@ -23,6 +23,7 @@ R1_PREFIX_TO_SERVICE = {
     "/energy-saving-rapp": "energy-saving-rapp",
     "/mobility-optimization-rapp": "mobility-optimization-rapp",
     "/coverage-optimization-rapp": "coverage-optimization-rapp",
+    "/traffic-steering-rapp": "traffic-steering-rapp",
 }
 
 

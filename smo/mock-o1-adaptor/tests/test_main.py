@@ -188,7 +188,8 @@ def test_injected_faults_are_consumed_in_order():
 
 def test_neighbour_relation_and_dmro_defaults_and_writes():
     """Wave 10.2 (W10.2-04)."""
-    assert _get("gnb-1", "NRCellRelation=201-202") == {"cellIndividualOffset": "[0, 0, 0, 0, 0, 0]", "isHOAllowed": "true"}
+    assert _get("gnb-1", "NRCellRelation=201-202") == {"cellIndividualOffset": "[0, 0, 0, 0, 0, 0]", "isHOAllowed": "true",
+                                                       "isMLBAllowed": "true"}
     _edit("gnb-1", "NRCellRelation=201-202", {"cellIndividualOffset": "[2, 2, 2, 2, 2, 2]"})
     assert _get("gnb-1", "NRCellRelation=201-202")["cellIndividualOffset"] == "[2, 2, 2, 2, 2, 2]"
     assert _get("gnb-1", "DMROFunction=gnb-1")["dmroControl"] == "true"
@@ -203,3 +204,11 @@ def test_coverage_knob_defaults_and_writes():
     assert _get("gnb-1", "CommonBeamformingFunction=301")["digitalTilt"] == "70"
     assert _get("gnb-1", "CommonBeamformingFunction=302")["digitalTilt"] == "60"
     assert _get("gnb-1", "NRSectorCarrier=302")["configuredMaxTxPower"] == "44"
+
+
+def test_frequency_relation_defaults_and_writes():
+    """Wave 10.4 (W10.4-04): idle-mode reselection priority per cell and layer."""
+    assert _get("gnb-1", "NRFreqRelation=401-F2100") == {"cellReselectionPriority": "5", "qOffsetFreq": "0"}
+    _edit("gnb-1", "NRFreqRelation=401-F2100", {"cellReselectionPriority": "6"})
+    assert _get("gnb-1", "NRFreqRelation=401-F2100")["cellReselectionPriority"] == "6"
+    assert _get("gnb-1", "NRFreqRelation=402-F2100")["cellReselectionPriority"] == "5"

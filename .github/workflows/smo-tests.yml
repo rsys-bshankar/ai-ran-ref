@@ -53,6 +53,10 @@ jobs:
         working-directory: smo/samples/coverage-optimization-rapp
         run: PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -v
 
+      - name: Run the sample rApps' own tests (Traffic Steering rApp model + steering engine)
+        working-directory: smo/samples/traffic-steering-rapp
+        run: PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -v
+
       - name: Run the shared library's tests (R1Client's OAuth2 client flow)
         working-directory: smo/shared
         run: PYTHONPATH=. python -m pytest tests/ -v

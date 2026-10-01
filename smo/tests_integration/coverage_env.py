@@ -10,7 +10,7 @@ power change the rApp makes is therefore visible in the next hour's PM."""
 import datetime
 from pathlib import Path
 
-from energy_saving_env import OPERATOR, governance, ok  # noqa: F401 (OPERATOR re-exported for the tests)
+from energy_saving_env import OPERATOR, governance, heartbeat, ok  # noqa: F401 (OPERATOR re-exported for the tests)
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
 CSAR = SMO_ROOT / "samples" / "coverage-optimization-rapp.csar"
@@ -132,6 +132,7 @@ class Clock:
         return {c: setting(self.mesh, c, self.me) for c in self.neighbours}
 
     def hour(self, faults=None, hours=1, overrides=None):
+        heartbeat(self.mesh, self.me)
         gen = producer(self.apps)
         for _ in range(hours):
             report(self.mesh, gen.measurements(self.neighbours, self.settings(), faults or {}, self.now, overrides), self.me)
