@@ -36,6 +36,7 @@ RANK = {Role.VIEWER: 0, Role.OPERATOR: 1, Role.ADMIN: 2}
 MODULES = [
     "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "a1-related", "nfo", "focom",
     "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf", "intent-service", "so-smos", "sa-smos",
+    "energy-saving-rapp",  # Wave 10.1: the reference rApp's operator API (its dashboard and loop controls)
 ]
 
 # The RMIO identity every GUI-created intent carries. Intent Service only lets
@@ -254,6 +255,17 @@ RULES: list[Rule] = [
     _rule("POST", "/sa-smos/monitors/{id}/(evaluate|escalate)", O),
     _rule("POST", "/sa-smos/monitors/{id}/remedial-actions", O,
           query_overrides=lambda u: {"requester_is_admin": "true" if u.role == Role.ADMIN else "false"}),
+
+    # --- Wave 10.1: the EnergySaving reference rApp (W10-15/W10-24). Driving
+    # its loop and lifecycle is operator work (certification itself stays an
+    # AIMgF governance decision); a manual override is attributed to the GUI
+    # user; seeding Digital Twin data is test-data injection.
+    _rule("POST", "/energy-saving-rapp/instances/{id}/(start|evaluate|reconcile)", O),
+    _rule("POST", "/energy-saving-rapp/instances/{id}/lifecycle/(train|validate|emulate|deploy)", O),
+    _rule("POST", "/energy-saving-rapp/instances/{id}/cells/{id}/override", O,
+          json_overrides=lambda u: {"operator": f"smo-gui:{u.username}"}),
+    _rule("DELETE", "/energy-saving-rapp/instances/{id}/cells/{id}/override", O),
+    _rule("POST", "/energy-saving-rapp/sim-producer/(register|publish)", A),
 
     # --- every other read under a known module prefix
     _rule("GET", "/(" + "|".join(re.escape(m) for m in MODULES) + ")(/.*)?", V),

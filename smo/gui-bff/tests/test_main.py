@@ -286,6 +286,12 @@ def test_assist_rejection_is_attributed_to_the_gui_user(app, smo):
     assert login(app, "viewer").post("/api/smo/intent-service/autonomy-dispatches/d-1/reject", json={}).status_code == 403
 
 
+def test_energy_saving_override_is_attributed_to_the_gui_user(app, smo):
+    login(app, "operator").post("/api/smo/energy-saving-rapp/instances/i-1/cells/101/override",
+                                json={"operator": "someone-else", "reason": "site visit"})
+    assert json.loads(smo.proxied[0].content) == {"operator": "smo-gui:operator", "reason": "site visit"}
+
+
 def test_role_change_applies_on_the_next_request(app, db):
     operator = login(app, "operator")
     assert operator.post("/api/smo/so-smos/orders", json={"scope": "s", "steps": []}).status_code == 200
@@ -393,7 +399,7 @@ def test_modules_status_probes_every_module_via_r1(app, smo):
     smo.down_modules.add("nfo")
     body = login(app, "viewer").get("/api/modules/status").json()
     by_module = {m["module"]: m for m in body["modules"]}
-    assert list(by_module) == STATUS_MODULES and len(STATUS_MODULES) == 17
+    assert list(by_module) == STATUS_MODULES and len(STATUS_MODULES) == 18  # incl. the Wave 10.1 reference rApp
     assert by_module["nfo"]["healthy"] is False and by_module["nfo"]["error"] == "unreachable"
     assert all(m["healthy"] for name, m in by_module.items() if name != "nfo")
     assert all(isinstance(m["latencyMs"], float) for m in body["modules"])

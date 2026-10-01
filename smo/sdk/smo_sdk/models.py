@@ -56,6 +56,15 @@ class ModelsClient(BaseClient):
             "file": (filename, content, "application/zip"),
         }))
 
+    def store_model(self, model_type: str, version: str, artifact: bytes, filename: str = "model.zip", **metadata) -> dict:
+        """Wave 10.1 (W10-03, D-4): registers the model in MLMR — or reuses
+        the one already registered under (model_type, version) — and stores
+        `artifact` as its next artifact version. Returns {modelId,
+        artifactVersion, ...}."""
+        existing = next((m for m in self.discover_models(model_type) if m.get("version") == version), None)
+        model_id = existing["modelId"] if existing else self.register_model(model_type, version, **metadata)["modelId"]
+        return self.upload_artifact(model_id, filename, artifact)
+
     def download_artifact(self, model_id: uuid.UUID | str, artifact_version: int):
         """Returns the raw response (not JSON) — the artifact's bytes are
         in `.content`, matching download_model_artifact's own

@@ -167,4 +167,6 @@ class DmeActionRecord(Base):
     source_context: Mapped[dict | None] = mapped_column(JSON)
     forwarded_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     status: Mapped[str] = mapped_column(String, nullable=False, default="FORWARDED")
+    # Wave 10.1 (W10-23): the X-Correlation-ID of the request that caused it
+    correlation_id: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))

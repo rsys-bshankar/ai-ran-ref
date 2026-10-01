@@ -57,7 +57,7 @@ def _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heart
 
 def test_config_change_dispatches_netconf_and_applies(client, db_session_factory, monkeypatch):
     _make_me(db_session_factory, protocol="NETCONF")
-    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge": True)
+    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge", **kw: True)
 
     resp = client.post("/config-jobs", json={
         "requestedBy": "operator", "scope": "cell",
@@ -81,7 +81,7 @@ def test_config_change_threads_operation_and_allows_empty_payload_for_delete(cli
     _make_me(db_session_factory, protocol="NETCONF")
     seen = {}
 
-    def fake_send_edit_config(adaptor_uri, target_ref, attribute_changes, message_id, operation="merge"):
+    def fake_send_edit_config(adaptor_uri, target_ref, attribute_changes, message_id, operation="merge", **kw):
         seen["attribute_changes"] = attribute_changes
         seen["operation"] = operation
         return True
@@ -103,7 +103,7 @@ def test_config_change_threads_operation_and_allows_empty_payload_for_delete(cli
 
 def test_config_change_rejects_when_netconf_rpc_fails(client, db_session_factory, monkeypatch):
     _make_me(db_session_factory, protocol="NETCONF")
-    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge": False)
+    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge", **kw: False)
 
     resp = client.post("/config-jobs", json={
         "requestedBy": "operator", "scope": "cell",
@@ -167,7 +167,7 @@ def test_config_change_rejects_a_stale_active_endpoint_live_without_an_explicit_
 def test_config_change_proceeds_for_a_freshly_heartbeated_active_endpoint(client, db_session_factory, monkeypatch):
     fresh = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=5)
     _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heartbeat_at=fresh)
-    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge": True)
+    monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge", **kw: True)
 
     resp = client.post("/config-jobs", json={
         "requestedBy": "operator", "scope": "cell",

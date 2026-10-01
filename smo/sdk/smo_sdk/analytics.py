@@ -97,9 +97,11 @@ class AnalyticsClient(BaseClient):
 
     def query_mda_reports(self, mda_type: str | None = None, report_kind: str | None = None,
                           managed_entity: str | None = None, mda_request_id: uuid.UUID | str | None = None) -> list[dict]:
-        return ensure_ok(self._r1.get("/mdaf/mda-reports", params={
-            "mda_type": mda_type, "report_kind": report_kind, "managed_entity": managed_entity,
-            "mda_request_id": str(mda_request_id) if mda_request_id else None}))
+        # unset filters are left out: httpx would send None as an empty
+        # string, which the UUID-typed mda_request_id filter rejects (422)
+        params = {"mda_type": mda_type, "report_kind": report_kind, "managed_entity": managed_entity,
+                  "mda_request_id": str(mda_request_id) if mda_request_id else None}
+        return ensure_ok(self._r1.get("/mdaf/mda-reports", params={k: v for k, v in params.items() if v is not None}))
 
     def get_prediction(self, managed_entity: str, pm_name: str | None = None) -> dict | None:
         """The latest PREDICTION report (W5-03's TrafficTrendReport: a

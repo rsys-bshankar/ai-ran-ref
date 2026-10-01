@@ -40,6 +40,7 @@ services:
       INTENT_SERVICE_URL: http://intent-service:8000
       SO_SMOS_URL: http://so-smos:8000
       SA_SMOS_URL: http://sa-smos:8000
+      ENERGY_SAVING_RAPP_URL: http://energy-saving-rapp:8000
 
   sme:
     build: { context: ., args: { MODULE: sme } }
@@ -81,6 +82,17 @@ services:
     # ManagedElement's own adaptor_uri (o1_adaptor_endpoint.adaptor_uri)
     # would point at http://mock-o1-adaptor:8000/edit-config once one is
     # ever registered against this service — see OPEN_ITEMS.md section 2.
+
+  # Wave 10.1: the EnergySaving reference rApp (samples/energy-saving-rapp)
+  # — an R1 consumer of the platform, deployed beside it for the demo
+  # (DEMO_RUNBOOK.md, Demo 01–11). It reaches every SMO service only
+  # through R1 Termination, and is reached by the GUI the same way.
+  energy-saving-rapp:
+    build: { context: ., args: { MODULE: samples/energy-saving-rapp } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
 
   a1-related:
     build: { context: ., args: { MODULE: a1-related } }

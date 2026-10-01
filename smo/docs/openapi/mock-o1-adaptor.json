@@ -1,6 +1,35 @@
 {
   "components": {
     "schemas": {
+      "FaultBody": {
+        "properties": {
+          "count": {
+            "default": 1,
+            "title": "Count",
+            "type": "integer"
+          },
+          "managedObjectRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Managedobjectref"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "FaultBody",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -132,6 +161,109 @@
           }
         },
         "summary": "Query Last Applied"
+      }
+    },
+    "/faults": {
+      "post": {
+        "description": "Test-only (like GET /edit-config/{ref}): make the next `count`\nmatching edit-configs misbehave, so the SMO's retry, verification and\nrollback paths can be exercised against a real round trip.",
+        "operationId": "inject_fault_faults_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FaultBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inject Fault"
+      }
+    },
+    "/objects/{managed_object_ref}": {
+      "get": {
+        "description": "Test-only introspection of one managed function's running config.",
+        "operationId": "query_object_objects__managed_object_ref__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "managed_object_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Object Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "function_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Function Ref"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Object"
+      }
+    },
+    "/state": {
+      "delete": {
+        "description": "Test-only: forget every applied change and pending fault.",
+        "operationId": "reset_state_state_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reset State"
       }
     }
   }

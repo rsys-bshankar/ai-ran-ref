@@ -203,6 +203,6 @@ def test_ran_inventory_reads(client, r1):
     client.get_vendor_capability("acme")
     client.get_o1_capabilities()
     assert r1.calls[0] == {"verb": "get", "path": "/ran-nf-oam/cell-guards", "params": {
-        "managed_element_ref": "me-1", "cell_id": None, "cell_class": "EMERGENCY", "sector_group": None, "incident_zone": None}}
+        "managed_element_ref": "me-1", "cell_class": "EMERGENCY"}}
     assert [c["path"] for c in r1.calls[1:]] == [
         "/ran-nf-oam/managed-entities/me-1", "/ran-nf-oam/vendor-capabilities/acme", "/ran-nf-oam/capabilities"]

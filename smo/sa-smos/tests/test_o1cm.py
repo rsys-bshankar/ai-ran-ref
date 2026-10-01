@@ -113,3 +113,25 @@ def test_deactivated_foreign_and_unknown_intents(client, platform):
     assert client.post("/o1-cm-handler/intents", json={"intentId": str(b)}).status_code == 422
     assert client.post("/o1-cm-handler/intents", json={"intentId": str(uuid.uuid4())}).status_code == 404
     assert client.get("/o1-cm-handler/enactments").json()["total"] == 0
+
+
+def test_a_re_pushed_intent_replays_the_same_action_id(client, platform, monkeypatch):
+    """Wave 10.1 (W10-18): the DME action id is derived from the intent and
+    expectation; when DME reports the replay IGNORED, the original outcome
+    still decides fulfilment."""
+    intent_id = uuid.uuid4()
+    platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK], cells=("101",))
+    client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)})
+
+    def replay(self, path, json=None, **kw):
+        platform["posts"].append((path, json))
+        if path == "/dme/actions":
+            return FakeR1Response(200, {"actionId": json["actionId"], "status": "IGNORED", "originalStatus": "COMPLETED"})
+        return FakeR1Response(201, {"reportId": str(uuid.uuid4())})
+
+    import app.o1cm
+    monkeypatch.setattr("app.o1cm.R1Client.post", replay)
+    enactment = client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)}).json()
+    ids = [body["actionId"] for path, body in platform["posts"] if path == "/dme/actions"]
+    assert len(ids) == 2 and ids[0] == ids[1] == str(uuid.uuid5(app.o1cm.ACTION_ID_NAMESPACE, f"{intent_id}:e1"))
+    assert enactment["status"] == "FULFILLED" and enactment["actions"][0]["replayed"] is True

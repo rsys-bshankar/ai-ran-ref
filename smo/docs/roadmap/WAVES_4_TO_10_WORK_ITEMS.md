@@ -152,65 +152,65 @@ Depends on: `O1_VENDOR_ONBOARDING_GUIDE.md` (exists).
 
 ---
 
-## 9. Wave-10.1 — EnergySaving_rApp (direct O1 closed loop)
+## 9. Wave-10.1 — EnergySaving_rApp (direct O1 closed loop) — ✅ DONE (PR-W10.1; exit review: `WAVE_10_1_EXIT_REVIEW.md`)
 Depends on: Waves 4, 5, 7, 8. Planes: R1 (control), O1 (management). Excludes A1, Near-RT RIC, xApps, E2.
 
 ### 9.1 Package & model
 | ID | Work item | Source | Done when |
 |----|-----------|--------|-----------|
-| W10-01 | `samples/energy-saving-rapp/` → `energy-saving-rapp.csar`: `manifest.yaml`, `capabilities.yaml`, `EnergyModel.py`, `TrainingLogic.py`, `ValidationLogic.py`, `EmulationLogic.py`, `InferenceLogic.py` | D1 | Onboards → AVAILABLE; declares 4 execution modes + 3 autonomy modes + runtime profiles (TC01) |
-| W10-02 | Energy model: Threshold (min) + linear Regression predicting next-hour PRB (D-6); outputs `{futurePrb, recommendedState, confidence}`; plain serialized artifact | D2, §6 | Model artifact stored in MLMR |
-| W10-03 | SDK convenience wrappers matching the doc names (D-4): `sdk.data.get_dataset`, `sdk.lifecycle.start_training`, `sdk.models.store_model`, `sdk.analytics.get_prediction`, `sdk.platform.execute_action`, built on existing calls | `[W10]` API mapping | Wrappers + unit tests |
+| W10-01 | `samples/energy-saving-rapp/` → `energy-saving-rapp.csar`: `manifest.yaml`, `capabilities.yaml`, `EnergyModel.py`, `TrainingLogic.py`, `ValidationLogic.py`, `EmulationLogic.py`, `InferenceLogic.py` | D1 | ✅ Onboards → AVAILABLE; declares 4 execution modes + 3 autonomy modes + runtime profiles (TC01) |
+| W10-02 | Energy model: Threshold (min) + linear Regression predicting next-hour PRB (D-6); outputs `{futurePrb, recommendedState, confidence}`; plain serialized artifact | D2, §6 | ✅ Model artifact stored in MLMR |
+| W10-03 | SDK convenience wrappers matching the doc names (D-4): `sdk.data.get_dataset`, `sdk.lifecycle.start_training`, `sdk.models.store_model`, `sdk.analytics.get_prediction`, `sdk.platform.execute_action`, built on existing calls | `[W10]` API mapping | ✅ Wrappers + unit tests |
 
 ### 9.2 Data & analytics
 | ID | Work item | Source | Done when |
 |----|-----------|--------|-----------|
-| W10-04 | PRB utilization PM → RAN NF OAM → DME type `PRB_UTILIZATION` (per-cell time series), plus a sample producer | D4, §3 | rApp discovers the type and reads history via `sdk.data` only, with no direct DB access (TC02) |
-| W10-05 | Synthetic emulation dataset `PRB_UTILIZATION_SIM` (D-7) | §5 | MLEF consumes it |
-| W10-06 | Consume `TrafficTrendReport`/PredictionReport via `sdk.analytics` (depends on W5-03) | D5 | rApp reads the MDAF prediction |
+| W10-04 | PRB utilization PM → RAN NF OAM → DME type `PRB_UTILIZATION` (per-cell time series), plus a sample producer | D4, §3 | ✅ rApp discovers the type and reads history via `sdk.data` only, with no direct DB access (TC02) |
+| W10-05 | Synthetic emulation dataset `PRB_UTILIZATION_SIM` (D-7) | §5 | ✅ MLEF consumes it |
+| W10-06 | Consume `TrafficTrendReport`/PredictionReport via `sdk.analytics` (depends on W5-03) | D5 | ✅ rApp reads the MDAF prediction |
 
 ### 9.3 Lifecycle & runtime
 | ID | Work item | Source | Done when |
 |----|-----------|--------|-----------|
-| W10-07 | End-to-end AIMgF lifecycle run for the energy model: REGISTERED → TRAINING → TRAINED → VALIDATING → VALIDATED → EMULATING → EMULATED → (approval) → CERTIFIED → PROMOTED, on MLTF/MLVF/MLEF runtimes | D3 | TC03–TC06 |
-| W10-08 | MLIF deployment AIMgF → NFO → RuntimeLifecycle ACTIVE (MLLF checks CERTIFIED) | D6 | TC07 |
-| W10-09 | Inference via `POST /models/{id}/inference-jobs` | §12 | PRB=2–3% → LOCK recommendation (TC08) |
+| W10-07 | End-to-end AIMgF lifecycle run for the energy model: REGISTERED → TRAINING → TRAINED → VALIDATING → VALIDATED → EMULATING → EMULATED → (approval) → CERTIFIED → PROMOTED, on MLTF/MLVF/MLEF runtimes | D3 | ✅ TC03–TC06 |
+| W10-08 | MLIF deployment AIMgF → NFO → RuntimeLifecycle ACTIVE (MLLF checks CERTIFIED) | D6 | ✅ TC07 |
+| W10-09 | Inference via `POST /models/{id}/inference-jobs` | §12 | ✅ PRB=2–3% → LOCK recommendation (TC08) |
 
 ### 9.4 Decision engine (inside the rApp)
 | ID | Work item | Source | Done when |
 |----|-----------|--------|-----------|
-| W10-10 | Pipeline: Input → Prediction → Safety Evaluation → Decision {LOCK, UNLOCK, NO_CHANGE} → O1 Execution → Verification → Audit | §7 | Each stage recorded |
-| W10-11 | Sleep policy: PRB < 5% sustained 60 min **and** all guards pass; rApp-internal states SERVING/PRE_SLEEP/SLEEP (D-3) | §8, §10 | TC08 |
-| W10-12 | Wake policy: predicted PRB > 15% OR neighbour PRB > 80% OR critical coverage alarm OR operator override | §9 | TC19–TC22 |
-| W10-13 | Hysteresis: 5–15% → NO_CHANGE | §10 | TC23 |
-| W10-14 | Safety guards. Hard: emergency, coverage-critical, last sector, incident zone. Medium: neighbour congestion, active critical alarm. Soft: recently unlocked < 30 min. Guards apply **independent of AI confidence**; data read from RAN NF OAM cell attributes (W9-06) + `/alarms` | §11 | TC24–TC26 |
-| W10-15 | Operator override (manual UNLOCK via GUI) suppresses AI recommendations | §9 | TC21 |
+| W10-10 | Pipeline: Input → Prediction → Safety Evaluation → Decision {LOCK, UNLOCK, NO_CHANGE} → O1 Execution → Verification → Audit | §7 | ✅ Each stage recorded |
+| W10-11 | Sleep policy: PRB < 5% sustained 60 min **and** all guards pass; rApp-internal states SERVING/PRE_SLEEP/SLEEP (D-3) | §8, §10 | ✅ TC08 |
+| W10-12 | Wake policy: predicted PRB > 15% OR neighbour PRB > 80% OR critical coverage alarm OR operator override | §9 | ✅ TC19–TC22 |
+| W10-13 | Hysteresis: 5–15% → NO_CHANGE | §10 | ✅ TC23 |
+| W10-14 | Safety guards. Hard: emergency, coverage-critical, last sector, incident zone. Medium: neighbour congestion, active critical alarm. Soft: recently unlocked < 30 min. Guards apply **independent of AI confidence**; data read from RAN NF OAM cell attributes (W9-06) + `/alarms` | §11 | ✅ TC24–TC26 |
+| W10-15 | Operator override (manual UNLOCK via GUI) suppresses AI recommendations | §9 | ✅ TC21 |
 
 ### 9.5 O1 actuation & reliability
 | ID | Work item | Source | Done when |
 |----|-----------|--------|-----------|
-| W10-16 | Action path per autonomy mode: AUTONOMOUS/ASSIST → AutonomyDispatch → Intent → O1-CM RMIH (W8-07) → DME `/actions` → RAN NF OAM `/config-jobs` → NETCONF/RESTCONF → O1 adaptor; actuator configurable per instance (D-2): `NRCellDU.administrativeState` or `CESManagementFunction.energySavingControl` | D7, §12 | DmeActionRecord created, cell LOCKED / ES active (TC09) |
-| W10-17 | Mock O1 adaptor: model `NRCellDU.administrativeState` and `CESManagementFunction.energySavingControl/energySavingState` (read + write) for the demo cells | D7 | Read-back reflects writes |
-| W10-18 | Idempotency: skip if already in the desired state; `actionId` dedup in DME → duplicates IGNORED | §13 | TC14, TC15, TC29 |
-| W10-19 | Timeouts DME→RAN NF OAM 10 s, NETCONF/RESTCONF 30 s; retries immediate/+5/+10/+20 s; then `ACTION_FAILED` + alarm, no lifecycle corruption | §13 | TC16, TC17 |
-| W10-20 | Read-after-write verification (GET administrativeState) → `VERIFY_FAILED` on mismatch | §14 | TC10, TC18, TC33 |
-| W10-21 | Rollback to UNLOCKED on VERIFY_FAILED / NETCONF_FAILED / PARTIAL_SUCCESS / neighbour congestion / coverage alarm, through the same DME → RAN NF OAM path | §15 | TC27, TC28 |
+| W10-16 | Action path per autonomy mode: AUTONOMOUS/ASSIST → AutonomyDispatch → Intent → O1-CM RMIH (W8-07) → DME `/actions` → RAN NF OAM `/config-jobs` → NETCONF/RESTCONF → O1 adaptor; actuator configurable per instance (D-2): `NRCellDU.administrativeState` or `CESManagementFunction.energySavingControl` | D7, §12 | ✅ DmeActionRecord created, cell LOCKED / ES active (TC09) |
+| W10-17 | Mock O1 adaptor: model `NRCellDU.administrativeState` and `CESManagementFunction.energySavingControl/energySavingState` (read + write) for the demo cells | D7 | ✅ Read-back reflects writes |
+| W10-18 | Idempotency: skip if already in the desired state; `actionId` dedup in DME → duplicates IGNORED | §13 | ✅ TC14, TC15, TC29 |
+| W10-19 | Timeouts DME→RAN NF OAM 10 s, NETCONF/RESTCONF 30 s; retries immediate/+5/+10/+20 s; then `ACTION_FAILED` + alarm, no lifecycle corruption | §13 | ✅ TC16, TC17 |
+| W10-20 | Read-after-write verification (GET administrativeState) → `VERIFY_FAILED` on mismatch | §14 | ✅ TC10, TC18, TC33 |
+| W10-21 | Rollback to UNLOCKED on VERIFY_FAILED / NETCONF_FAILED / PARTIAL_SUCCESS / neighbour congestion / coverage alarm, through the same DME → RAN NF OAM path | §15 | ✅ TC27, TC28 |
 
 ### 9.6 Autonomy, audit & UX
 | ID | Work item | Source | Done when |
 |----|-----------|--------|-----------|
-| W10-22 | Apply Wave-8 modes to the rApp via AutonomyDispatch. SHADOW: recommend + notify, no change. ASSIST: no action until the operator approves (resolve); reject → no action. AUTONOMOUS: no human | §16 | TC11–TC13 |
-| W10-23 | Audit trace chain Prediction → Safety → Decision → (Intent) → Action → Verification → Rollback → Final state, joined by correlation-id; queryable via GUI/Audit/Lifecycle views | D8, §19 | TC30 |
-| W10-24 | GUI Energy Saving dashboard: PRB trend, prediction, safety evaluation, decision, intent, action, verification, rollback, final cell state | §19, Demo 11 | Operator acceptance §19 met |
-| W10-25 | Carrier-grade tests: false wake-up prediction, neighbour overload recovery, read-after-write mismatch | §18 | TC31–TC33 |
+| W10-22 | Apply Wave-8 modes to the rApp via AutonomyDispatch. SHADOW: recommend + notify, no change. ASSIST: no action until the operator approves (resolve); reject → no action. AUTONOMOUS: no human | §16 | ✅ TC11–TC13 |
+| W10-23 | Audit trace chain Prediction → Safety → Decision → (Intent) → Action → Verification → Rollback → Final state, joined by correlation-id; queryable via GUI/Audit/Lifecycle views | D8, §19 | ✅ TC30 |
+| W10-24 | GUI Energy Saving dashboard: PRB trend, prediction, safety evaluation, decision, intent, action, verification, rollback, final cell state | §19, Demo 11 | ✅ Operator acceptance §19 met |
+| W10-25 | Carrier-grade tests: false wake-up prediction, neighbour overload recovery, read-after-write mismatch | §18 | ✅ TC31–TC33 |
 
 ### 9.7 Verification & demo
 | ID | Work item | Source | Done when |
 |----|-----------|--------|-----------|
-| W10-26 | Integration test suite TC01–TC33 (`tests_integration/test_energy_saving_rapp.py`) | §18 | All green |
-| W10-27 | DEMO_RUNBOOK section: Demo 01–11 (`[W10]` demo script) + matching demo-runbook test steps | `[W10]` | Runbook executes end to end |
-| W10-28 | Call-flow doc `21-energy-saving-closed-loop.md` (mermaid) | §4, §12 | Renders on GitHub |
-| W10-29 | Wave-10.1 exit review against `[W10C]` §20 (15 checks) + success statement | §20 | All checked |
+| W10-26 | Integration test suite TC01–TC33 (`tests_integration/test_energy_saving_rapp.py`) | §18 | ✅ All green |
+| W10-27 | DEMO_RUNBOOK section: Demo 01–11 (`[W10]` demo script) + matching demo-runbook test steps | `[W10]` | ✅ Runbook executes end to end |
+| W10-28 | Call-flow doc `22-energy-saving-closed-loop.md` (mermaid; 21 went to W9's vendor onboarding) | §4, §12 | ✅ Renders on GitHub |
+| W10-29 | Wave-10.1 exit review against `[W10C]` §20 (15 checks) + success statement | §20 | ✅ All checked |
 
 ## 10. Wave-10.2 / 10.3 / 10.4 — backlog placeholders (D-8)
 
@@ -219,8 +219,8 @@ Depends on: Waves 4, 5, 7, 8. Planes: R1 (control), O1 (management). Excludes A1
 | W10.2-00 | Mobility Optimization | Handover failure rate → Cell Individual Offset (CIO) | Design pass after 10.1 exit |
 | W10.3-00 | Coverage Optimization | RSRP → antenna tilt | Design pass after 10.1 exit |
 | W10.4-00 | Traffic Steering | Congestion score → cell reselection bias | Design pass after 10.1 exit |
-| W10-B1 | Energy model LSTM variant (D-6) | PRB → PRB for the next N windows | After 10.1 |
-| W10-B2 | `CESManagementFunction.energySavingControl` as an alternative actuator (D-2) | — | After 10.1 |
+| W10-B1 | Energy model LSTM variant (D-6) | PRB → PRB for the next N windows | ✅ After 10.1 |
+| W10-B2 | `CESManagementFunction.energySavingControl` as an alternative actuator (D-2) | — | ✅ After 10.1 |
 
 ---
 

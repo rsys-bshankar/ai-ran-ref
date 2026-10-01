@@ -71,6 +71,23 @@ class IntentClient(BaseClient):
         return ensure_ok(self._r1.get("/intent-service/intent-handling-functions"))
 
 
+    # ---------------------------------------------------------------- Wave 10.1: autonomy dispatch
+    def request_autonomy_dispatch(self, instance_id: uuid.UUID | str, expectations: list[dict], rmih_id: str,
+                                  model_id: uuid.UUID | str | None = None, notification_destination: str | None = None,
+                                  user_label: str | None = None, priority: int = 1) -> dict:
+        """An inference outcome handed to the platform: the instance's own
+        autonomy mode decides (AUTONOMOUS → Intent now, ASSIST → awaits the
+        operator, SHADOW → never enacted)."""
+        return ensure_ok(self._r1.post("/intent-service/autonomy-dispatches", json={
+            "instanceId": str(instance_id), "expectations": expectations, "rmihId": rmih_id,
+            "modelId": str(model_id) if model_id else None, "notificationDestination": notification_destination,
+            "userLabel": user_label, "priority": priority,
+        }))
+
+    def get_autonomy_dispatch(self, dispatch_id: uuid.UUID | str) -> dict:
+        return ensure_ok(self._r1.get(f"/intent-service/autonomy-dispatches/{dispatch_id}"))
+
+
 def energy_saving_expectation(object_instance: str, cells: list[dict] | None = None, max_energy_consumption: int | None = None,
                               daily_window: tuple[str, str] | None = ("00:00", "05:00"),
                               expectation_id: str = "energy-saving") -> dict:

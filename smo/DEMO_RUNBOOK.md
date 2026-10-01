@@ -1785,6 +1785,68 @@ automation, A1 Policy Management, SME Trusted Invokers, AI/ML Workflow,
 RAN Analytics, SO SMOS, SA SMOS, package priming, retire — is now
 complete against a real running stack.
 
+## 24. Wave 10.1 — the EnergySaving rApp (Demo 00–11)
+
+This section is independent of the hello-world package above. The
+EnergySaving reference rApp (`samples/energy-saving-rapp/`) is deployed
+beside the platform as the `energy-saving-rapp` service. Using only O1 PM
+data, it:
+
+* predicts sustained low PRB utilisation;
+* runs its model through the governed TS 28.105 lifecycle;
+* puts cells to sleep through O1, verifies every write, and rolls back
+  when one doesn't take;
+* wakes cells before load returns.
+
+There is no A1, Near-RT RIC, xApp or E2. Design:
+`docs/call-flows/22-energy-saving-closed-loop.md`; scope and tests:
+`docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md` §9.
+
+The demo is a script, `samples/energy-saving-rapp/demo.py`, one step per
+Demo number, and it keeps the ids it needs between steps.
+`tests_integration/test_demo_runbook.py` runs the same script through the
+in-process mesh, so these steps are exercised on every CI run. Timestamps
+are simulation time (history 2026-09-01..03, live PM from midnight on the
+4th), so "midnight behaviour" reproduces on any day.
+
+```bash
+python3 samples/build_csar.py energy-saving-rapp      # only after editing the sample
+docker compose cp samples/energy-saving-rapp.csar r1-termination:/tmp/energy-saving-rapp.csar
+docker compose cp samples/energy-saving-rapp r1-termination:/tmp/energy-saving-rapp
+docker compose exec -d r1-termination python3 -m http.server 8899 --directory /tmp   # if §1 isn't already serving
+```
+
+Then run one step at a time and look at what each prints:
+
+| Step | Command (`docker compose exec r1-termination …`) | What to observe |
+|------|------|------|
+| Demo 00 — prepare the RAN | `python3 /tmp/energy-saving-rapp/demo.py 00` | `gnb-du-demo-01` registered behind `mock-o1-adaptor`, PRB PM subscribed, cell 103 marked EMERGENCY, the Digital Twin dataset and the O1-CM intent handler registered |
+| Demo 01 — onboard | `… demo.py 01` | package `AVAILABLE`; 4 execution modes, 3 autonomy modes; an AUTONOMOUS instance started |
+| Demo 02 — dataset | `… demo.py 02` | 288 PM measurements → DME; datasets TRAINING/INFERENCE = `PRB_UTILIZATION`, EMULATION = `PRB_UTILIZATION_SIM` |
+| Demo 03 — train | `… demo.py 03` | `TRAINING → TRAINED` on the MLTF runtime; RMSE and confidence; artifact stored in MLMR |
+| Demo 04 — validate | `… demo.py 04` | `VALIDATING → VALIDATED`, held-out score |
+| Demo 05 — emulate | `… demo.py 05` | Digital Twin trend in, midnight recommendation `LOCKED`, estimated kWh saved |
+| Demo 06 — promote | `… demo.py 06` | `CERTIFIED → PROMOTED` (operator governance decisions) |
+| Demo 07 — deploy runtime | `… demo.py 07` | RuntimeLifecycle `ACTIVE` |
+| Demo 08 — live inference | `… demo.py 08` | cell 101 at PRB 2 % for an hour → `LOCK`; cell 103 blocked `EMERGENCY_CELL` |
+| Demo 09 — DME action | `… demo.py 09` | the action record, its source (`sa-smos:o1-cm-intent-handler`, intent/expectation ids) and the correlation chain execution → dispatch → intent → action |
+| Demo 10 — O1 update | `… demo.py 10` | `NRCellDU=101` read back over NETCONF get-config: `administrativeState: LOCKED`, verification `VERIFIED` |
+| Demo 11 — dashboard | `… demo.py 11` | per cell: state, PRB, predicted PRB, decision, outcome. In the GUI: **Energy Saving** |
+
+`python3 /tmp/energy-saving-rapp/demo.py all` runs every step. Things to
+try afterwards:
+
+* **Wake the cell.** Report a load spike and run the loop:
+  `POST http://energy-saving-rapp:8000/instances/<id>/evaluate`.
+* **Operator override.** Press **Override: unlock** on the Energy Saving
+  page.
+* **ASSIST mode.** Deploy a second instance with `autonomyMode: "ASSIST"`.
+  Its LOCK waits in **Policy & Intents → Autonomy dispatches** until you
+  Resolve or Reject it; then press **Reconcile approvals**.
+
+The integration suite covers every Wave 10 test case (TC01–TC33) the same
+way: `tests_integration/test_energy_saving_rapp.py`.
+
 ## Known rough edges for a live walkthrough
 
 - `smo/docs/call-flows/01-rapp-onboarding-to-deployment.md`'s own

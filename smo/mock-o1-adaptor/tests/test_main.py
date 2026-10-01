@@ -19,7 +19,7 @@ def _reset_mock_state():
     not a real persistent service) — same reset shape mock-near-rt-ric's
     own fixture already uses for the identical reason.
     """
-    _applied_changes.clear()
+    client.delete("/state")
 
 
 def _edit_config_rpc(message_id: str, ref: str, attribute_changes: dict, operation: str = "merge") -> str:
@@ -138,3 +138,49 @@ def test_capability_declaration_is_configurable(monkeypatch):
     monkeypatch.setenv("MOCK_O1_SUPPORTED_SERVICES", "PROV,FM")
     assert client.get("/capabilities").json()["supportedServices"] == ["PROV", "FM"]
     assert client.get("/capabilities").json()["vendorName"] == "acme"
+
+
+# ---------------------------------------------------------------- Wave 10.1 (W10-17/W10-19/W10-20)
+
+def _rpc(body: str, message_id: str = "200") -> str:
+    return f'<rpc message-id="{message_id}" xmlns="{NETCONF_BASE_NS}">{body}</rpc>'
+
+
+def _edit(ref, function_ref, changes):
+    obj = f'<managed-object ref="{ref}" function-ref="{function_ref}" operation="merge">'
+    body = "".join(f"<{k}>{v}</{k}>" for k, v in changes.items())
+    return client.post("/edit-config", content=_rpc(f"<edit-config><target><running/></target><config>{obj}{body}"
+                                                     "</managed-object></config></edit-config>"),
+                       headers={"Content-Type": "application/xml"})
+
+
+def _get(ref, function_ref):
+    resp = client.post("/edit-config", content=_rpc(f'<get-config><source><running/></source><filter>'
+                                                    f'<managed-object ref="{ref}" function-ref="{function_ref}"/>'
+                                                    "</filter></get-config>"))
+    obj = ET.fromstring(resp.text).find(f".//{{{NETCONF_BASE_NS}}}managed-object")
+    return {_local_tag(c): c.text for c in obj}
+
+
+def test_per_function_state_is_read_back_with_get_config():
+    assert _get("gnb-1", "NRCellDU=101")["administrativeState"] == "UNLOCKED"  # IOC default
+    _edit("gnb-1", "NRCellDU=101", {"administrativeState": "LOCKED"})
+    assert _get("gnb-1", "NRCellDU=101")["administrativeState"] == "LOCKED"
+    assert _get("gnb-1", "NRCellDU=102")["administrativeState"] == "UNLOCKED"  # a sibling cell is untouched
+    _edit("gnb-1", "CESManagementFunction=101", {"energySavingControl": "TO_BE_ENERGY_SAVING"})
+    assert _get("gnb-1", "CESManagementFunction=101") == {"energySavingControl": "TO_BE_ENERGY_SAVING",
+                                                         "energySavingState": "IS_ENERGY_SAVING"}
+    assert client.get("/objects/gnb-1", params={"function_ref": "NRCellDU=101"}).json()["attributes"]["administrativeState"] == "LOCKED"
+
+
+def test_injected_faults_are_consumed_in_order():
+    client.post("/faults", json={"mode": "TIMEOUT", "count": 2, "managedObjectRef": "gnb-1/NRCellDU=101"})
+    client.post("/faults", json={"mode": "IGNORE_WRITE", "managedObjectRef": "gnb-1/NRCellDU=102"})
+    assert _edit("gnb-1", "NRCellDU=101", {"administrativeState": "LOCKED"}).status_code == 504
+    assert _edit("gnb-1", "NRCellDU=101", {"administrativeState": "LOCKED"}).status_code == 504
+    assert "<ok/>" in _edit("gnb-1", "NRCellDU=101", {"administrativeState": "LOCKED"}).text
+    assert "<ok/>" in _edit("gnb-1", "NRCellDU=102", {"administrativeState": "LOCKED"}).text
+    assert _get("gnb-1", "NRCellDU=102")["administrativeState"] == "UNLOCKED"  # acknowledged, never applied
+    client.post("/faults", json={"mode": "RPC_ERROR"})
+    assert "rpc-error" in _edit("gnb-1", "NRCellDU=103", {"administrativeState": "LOCKED"}).text
+    assert client.post("/faults", json={"mode": "MELT"}).status_code == 422

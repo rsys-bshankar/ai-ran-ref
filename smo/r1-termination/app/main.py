@@ -66,6 +66,10 @@ ROUTES = {
     "/intent-service": os.environ.get("INTENT_SERVICE_URL", "http://intent-service:8000"),
     "/so-smos": os.environ.get("SO_SMOS_URL", "http://so-smos:8000"),
     "/sa-smos": os.environ.get("SA_SMOS_URL", "http://sa-smos:8000"),
+    # Wave 10.1: the EnergySaving reference rApp's own northbound API (its
+    # operator dashboard, override and loop controls) — reached by the GUI
+    # through the same gateway as the SMO modules.
+    "/energy-saving-rapp": os.environ.get("ENERGY_SAVING_RAPP_URL", "http://energy-saving-rapp:8000"),
 }
 
 

@@ -102,6 +102,56 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "PmMeasurement": {
+        "properties": {
+          "cellId": {
+            "title": "Cellid",
+            "type": "string"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "cellId",
+          "value",
+          "timestamp"
+        ],
+        "title": "PmMeasurement",
+        "type": "object"
+      },
+      "PmReportRequest": {
+        "properties": {
+          "counterType": {
+            "title": "Countertype",
+            "type": "string"
+          },
+          "managedElementRef": {
+            "title": "Managedelementref",
+            "type": "string"
+          },
+          "measurements": {
+            "items": {
+              "$ref": "#/components/schemas/PmMeasurement"
+            },
+            "title": "Measurements",
+            "type": "array"
+          }
+        },
+        "required": [
+          "managedElementRef",
+          "counterType",
+          "measurements"
+        ],
+        "title": "PmReportRequest",
+        "type": "object"
+      },
       "RegisterO1AdaptorEndpointRequest": {
         "properties": {
           "adaptorUri": {
@@ -1720,6 +1770,60 @@
         "summary": "Set Cell Guards"
       }
     },
+    "/managed-entities/{managed_element_ref}/config": {
+      "get": {
+        "description": "Wave 10.1 (W10-20): read-after-write. Reads the managed object's\nrunning configuration from its O1 adaptor (NETCONF <get-config>) \u2014 the\nlive value on the NF, not what this module last asked for \u2014 so a\ncaller can verify that a write actually took effect.",
+        "operationId": "read_configuration_managed_entities__managed_element_ref__config_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "managed_function_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Function Ref"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Configuration"
+      }
+    },
     "/o1-adaptor-endpoints": {
       "get": {
         "operationId": "list_o1_adaptor_endpoints_o1_adaptor_endpoints_get",
@@ -1879,6 +1983,43 @@
           }
         },
         "summary": "Endpoint Heartbeat"
+      }
+    },
+    "/pm-reports": {
+      "post": {
+        "description": "Wave 10.1 (W10-04): the PM data path O1 PM \u2192 RAN NF OAM \u2192 DME. An\nNF's PM report (here a simplified JSON shape of a measurement file or\nstream) for a counter RAN NF OAM has a PM subscription on is delivered\nas DME records \u2014 one per cell and sample \u2014 to every data job open on\nthat counter's DME type (`RAN.PMCounters.<counterType>`, registered by\nSubscribePM). Consumers (e.g. the EnergySaving rApp reading\nPRB_UTILIZATION) only ever see DME, never this module.",
+        "operationId": "receive_pm_report_pm_reports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PmReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Receive Pm Report"
       }
     },
     "/pm-subscriptions": {

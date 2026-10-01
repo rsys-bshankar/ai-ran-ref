@@ -702,3 +702,24 @@ def test_region_scope_is_folded_into_the_dispatched_intent(client, rapp_mgmt):
                            json={"regionScope": {"objectInstance": "gnb-du-02", "cells": ["201"]}}).json()
     obj = client.get(f"/intents/{resolved['intentId']}").json()["attributes"]["intentExpectations"][0]["expectationObject"]
     assert (obj["objectInstance"], obj["objectContexts"][0]["contextValueRange"]) == ("gnb-du-02", ["201"])
+
+
+def test_an_expectation_naming_its_cells_is_bounded_by_the_region_scope(client, rapp_mgmt):
+    """Wave 10.1: an rApp that decided to act on one cell gets exactly that
+    cell — the instance's region scope bounds it, never widens it to every
+    cell in the region; a cell (or element) outside the region is refused."""
+    _register_rmih(client)
+    auto = rapp_mgmt.add_instance(autonomy_mode="AUTONOMOUS", region_scope={"objectInstance": "gnb-du-01", "cells": ["101", "102"]})
+
+    def expectation(instance, cells):
+        e = _expectation()
+        e["expectationObject"] = {**e["expectationObject"], "objectInstance": instance, "objectContexts": [
+            {"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF", "contextValueRange": cells}]}
+        return e
+
+    intent_id = client.post("/autonomy-dispatches", json=_dispatch(auto, expectations=[expectation("gnb-du-01", ["102", "999"])])).json()["intentId"]
+    obj = client.get(f"/intents/{intent_id}").json()["attributes"]["intentExpectations"][0]["expectationObject"]
+    assert [c["contextValueRange"] for c in obj["objectContexts"]] == [["102"]]
+    for exp in (expectation("gnb-du-01", ["999"]), expectation("gnb-du-09", ["101"])):
+        resp = client.post("/autonomy-dispatches", json=_dispatch(auto, expectations=[exp]))
+        assert resp.status_code == 422 and "outside the dispatch's regionScope" in resp.json()["detail"]["detail"]

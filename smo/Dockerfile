@@ -11,12 +11,15 @@ WORKDIR /srv
 
 COPY shared /srv/shared
 RUN pip install --no-cache-dir -e /srv/shared
+# The AI Runtime SDK (smo_sdk) — what a sample rApp (MODULE=samples/...)
+# builds on; the SMO modules themselves never import it.
+COPY sdk /srv/sdk
 
 COPY ${MODULE}/pyproject.toml* /srv/module/
 COPY ${MODULE}/app /srv/module/app
 WORKDIR /srv/module
 RUN pip install --no-cache-dir fastapi uvicorn[standard] sqlalchemy psycopg[binary] httpx pydantic python-multipart jsonschema pyyaml
 
-ENV PYTHONPATH=/srv/module
+ENV PYTHONPATH=/srv/module:/srv/sdk
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

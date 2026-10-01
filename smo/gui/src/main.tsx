@@ -18,6 +18,7 @@ import { Infrastructure } from "./pages/Infrastructure";
 import { Kpis } from "./pages/Kpis";
 import { Login } from "./pages/Login";
 import { Policy } from "./pages/Policy";
+import { EnergySaving } from "./pages/EnergySaving";
 import { Rapps } from "./pages/Rapps";
 import "./styles.css";
 
@@ -57,6 +58,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="alarms" element={<Alarms />} />
                 <Route path="kpis" element={<Kpis />} />
                 <Route path="policy" element={<Policy />} />
+                <Route path="energy-saving" element={<EnergySaving />} />
                 <Route path="infrastructure" element={<Infrastructure />} />
                 <Route path="data" element={<Data />} />
                 <Route path="admin" element={<RequireAuth minRole="admin"><Admin /></RequireAuth>} />

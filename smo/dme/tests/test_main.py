@@ -2,6 +2,7 @@
 Run with: pytest smo/dme/tests -q
 """
 
+import uuid
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -1177,3 +1178,19 @@ def test_list_actions_filters_by_managed_element_ref(client, ran_nf_oam):
     client.post("/actions", json={"requestedBy": "rapp-2", "changes": [{"managedElementRef": "me-2"}]})
     listed = client.get("/actions", params={"managed_element_ref": "me-1"}).json()["items"]
     assert [a["requestedBy"] for a in listed] == ["rapp-1"]
+
+
+def test_a_replayed_action_id_is_ignored_not_forwarded_twice(client, ran_nf_oam):
+    """Wave 10.1 (W10-18, TC29): a caller-supplied actionId is an
+    idempotency key; the correlation id of the causing request is kept."""
+    action_id = str(uuid.uuid4())
+    body = {"requestedBy": "es-rapp", "actionId": action_id,
+            "changes": [{"managedElementRef": "me-1", "attributeChanges": {"administrativeState": "LOCKED"}}]}
+    first = client.post("/actions", json=body, headers={"X-Correlation-ID": "exec-42"})
+    assert first.status_code == 202 and first.json()["actionId"] == action_id
+    replay = client.post("/actions", json=body)
+    assert replay.status_code == 200
+    assert replay.json() == {"actionId": action_id, "status": "IGNORED", "originalStatus": "PROCESSING",
+                             "forwardedJobId": "11111111-1111-1111-1111-111111111111"}
+    assert len(ran_nf_oam.received) == 1
+    assert client.get(f"/actions/{action_id}").json()["correlationId"] == "exec-42"

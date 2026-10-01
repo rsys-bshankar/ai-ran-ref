@@ -20,7 +20,7 @@ ACME = {"schemaName": "acme-nr", "revision": "2.1", "location": "s3://vendors/ac
 def dispatched(monkeypatch):
     sent = []
     monkeypatch.setattr("app.main.send_edit_config",
-                        lambda uri, ref, changes, message_id, operation="merge": sent.append((ref, changes)) or True)
+                        lambda uri, ref, changes, message_id, operation="merge", **kw: sent.append((ref, changes)) or True)
     return sent
 
 
