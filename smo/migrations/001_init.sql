@@ -761,6 +761,11 @@ CREATE TABLE training_job (
   expected_inference_scope                            JSONB,
   clustering_info                                      JSONB,
   ml_update_process_id                                  UUID REFERENCES ml_update_process(ml_update_process_id) ON DELETE SET NULL,
+  -- Wave 7 (W7-03/W7-04): the runtime profile the run was sized with and
+  -- its execution deadline (started_at + timeout_seconds).
+  runtime_profile                          JSONB,
+  started_at                                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+  timeout_seconds                              INTEGER CHECK (timeout_seconds > 0),
   CONSTRAINT exactly_one_target CHECK (
     (model_id IS NOT NULL AND model_coordination_group_id IS NULL)
     OR (model_id IS NULL AND model_coordination_group_id IS NOT NULL)
@@ -803,7 +808,10 @@ CREATE TABLE inference_job (
   nf_deployment_id UUID,
   -- Wave 4 — the TS 28.105 AIMLInferenceFunction it ran on, and its consumer.
   aiml_inference_function_id UUID REFERENCES aiml_inference_function(aiml_inference_function_id) ON DELETE SET NULL,
-  consumer_ref               TEXT
+  consumer_ref               TEXT,
+  -- Wave 7 (W7-04): inference deadline (default 5 s).
+  started_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+  timeout_seconds            INTEGER CHECK (timeout_seconds > 0)
 );
 
 -- Wave 2 (AI Platform Service Decomposition): the full eight-aggregate
@@ -827,7 +835,9 @@ CREATE TABLE model_lifecycle (
   -- OPEN_ITEMS.md section 6.1: operator gate on Training->Validation->
   -- Emulation. Reset to false whenever CREATE_TRAINING fires.
   training_approved                           BOOLEAN NOT NULL DEFAULT false,
-  validation_approved                           BOOLEAN NOT NULL DEFAULT false
+  validation_approved                           BOOLEAN NOT NULL DEFAULT false,
+  -- Wave 7 (W7-03): the INFERENCE runtime profile the serving runtime was deployed with.
+  runtime_profile                                 JSONB
 );
 
 CREATE TABLE validation_job (
@@ -850,6 +860,11 @@ CREATE TABLE validation_job (
   ml_testing_function_id                     UUID REFERENCES ml_testing_function(ml_testing_function_id) ON DELETE SET NULL,
   cancel_request                                BOOLEAN NOT NULL DEFAULT false,
   suspend_request                                 BOOLEAN NOT NULL DEFAULT false,
+  -- Wave 7 (W7-03/W7-04): the runtime profile the run was sized with and
+  -- its execution deadline (started_at + timeout_seconds).
+  runtime_profile                          JSONB,
+  started_at                                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+  timeout_seconds                              INTEGER CHECK (timeout_seconds > 0),
   CONSTRAINT validation_exactly_one_target CHECK (
     (model_id IS NOT NULL AND model_coordination_group_id IS NULL)
     OR (model_id IS NULL AND model_coordination_group_id IS NOT NULL)
@@ -869,7 +884,12 @@ CREATE TABLE emulation_job (
   -- OPEN_ITEMS.md section 6.2: same pair as training_job's own.
   nf_deployment_descriptor_id        UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
   nf_deployment_id                      UUID,
-  aiml_inference_emulation_function_id     UUID REFERENCES aiml_inference_emulation_function(aiml_inference_emulation_function_id) ON DELETE SET NULL
+  aiml_inference_emulation_function_id     UUID REFERENCES aiml_inference_emulation_function(aiml_inference_emulation_function_id) ON DELETE SET NULL,
+  -- Wave 7 (W7-03/W7-04): the runtime profile the run was sized with and
+  -- its execution deadline (started_at + timeout_seconds).
+  runtime_profile                          JSONB,
+  started_at                                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+  timeout_seconds                              INTEGER CHECK (timeout_seconds > 0)
 );
 
 -- Wave 4 — TS 28.105 process/report IOCs (aimgf/app/models.py).

@@ -127,6 +127,9 @@ class FrameworkError:
     MODEL_NOT_LOADED = ("MODEL_NOT_LOADED", 409)
     # Wave 5 — TS 28.104 MDARequest addressed to an MDAFunction.
     MDA_CAPABILITY_NOT_SUPPORTED = ("MDA_CAPABILITY_NOT_SUPPORTED", 422)
+    # Wave 7 — runtime profiles (rApp package lookup) and inference reads.
+    PACKAGE_NOT_FOUND = ("PACKAGE_NOT_FOUND", 404)
+    INFERENCE_JOB_NOT_FOUND = ("INFERENCE_JOB_NOT_FOUND", 404)
 
 
 def framework_error(code: tuple[str, int], detail: str | None = None) -> HTTPException:

@@ -31,12 +31,14 @@ truth, not lifecycle truth, and never was meant to carry either field
 past Wave 1's structural shortcut.
 """
 
+import datetime
+import os
 import re
 import uuid
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -152,7 +154,29 @@ def _fire_runtime_event(db: Session, model_id: uuid.UUID, event: RuntimeLifecycl
     return lifecycle
 
 
-class RequestTrainingRequest(BaseModel):
+class RuntimeProfile(BaseModel):
+    """Wave 7 (W7-03): the compute an execution runtime is sized with —
+    the same {cpu, memory, gpu} shape as an rApp manifest's
+    runtimeProfiles entry."""
+    model_config = ConfigDict(extra="forbid")
+
+    cpu: float | None = Field(default=None, ge=0)
+    memory: str | None = None
+    gpu: float | None = Field(default=None, ge=0)
+
+
+class RuntimeSizing(BaseModel):
+    """Wave 7: optional on every Training/Validation/Emulation request.
+    `runtimeProfile` overrides; otherwise `packageId` names the rApp
+    package whose manifest's runtimeProfiles[<mode>] is used. Neither ->
+    the runtime is created unsized, as before. `timeoutSeconds` overrides
+    the stage's default execution timeout (W7-04)."""
+    packageId: uuid.UUID | None = None
+    runtimeProfile: RuntimeProfile | None = None
+    timeoutSeconds: int | None = Field(default=None, gt=0)
+
+
+class RequestTrainingRequest(RuntimeSizing):
     modelId: uuid.UUID | None = None
     modelCoordinationGroupId: uuid.UUID | None = None
     producerId: str
@@ -173,7 +197,7 @@ class RequestTrainingRequest(BaseModel):
     producerRappId: str | None = None
 
 
-class RequestValidationRequest(BaseModel):
+class RequestValidationRequest(RuntimeSizing):
     modelId: uuid.UUID
     trainingJobId: uuid.UUID | None = None
     producerId: str
@@ -184,7 +208,7 @@ class RequestValidationRequest(BaseModel):
     notificationUri: str | None = None
 
 
-class RequestEmulationRequest(BaseModel):
+class RequestEmulationRequest(RuntimeSizing):
     modelId: uuid.UUID
     producerId: str
     emulationCriteria: dict = {}
@@ -247,7 +271,7 @@ class CreateFeatureGroupRequest(BaseModel):
 
 # ---------------------------------------------------------------- Execution runtimes (jointly with NFO)
 
-def _nfo_create_execution_descriptor(job_kind: str, job_id: uuid.UUID) -> uuid.UUID:
+def _nfo_create_execution_descriptor(job_kind: str, job_id: uuid.UUID, runtime_profile: dict | None = None) -> uuid.UUID:
     """OPEN_ITEMS.md section 6.2: a real NFO-backed execution runtime for
     Training/Validation/Emulation — "MLTF trains (Phase 1: elided)" /
     "MLVF validates (Phase 1: elided)" / "MLEF emulates (Phase 1: elided)"
@@ -262,9 +286,11 @@ def _nfo_create_execution_descriptor(job_kind: str, job_id: uuid.UUID) -> uuid.U
     helper; Inference doesn't, see InferenceJob's own docstring) use one
     workload-template shape rather than each inventing its own.
     """
+    workload = {"jobKind": job_kind, "jobId": str(job_id)}
+    if runtime_profile:
+        workload["resources"] = runtime_profile  # Wave 7 (W7-03): the mode's runtime profile
     resp = _r1.post("/nfo/descriptors", json={
-        "packageId": None, "name": f"aimgf-{job_kind.lower()}-{job_id}",
-        "workloadTemplate": {"jobKind": job_kind, "jobId": str(job_id)},
+        "packageId": None, "name": f"aimgf-{job_kind.lower()}-{job_id}", "workloadTemplate": workload,
     })
     return uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
 
@@ -288,6 +314,114 @@ def _nfo_terminate_execution(nf_deployment_id: uuid.UUID | None) -> None:
     """
     if nf_deployment_id is not None:
         _r1.delete(f"/nfo/deployments/{nf_deployment_id}")
+
+
+# ---------------------------------------------------------------- Wave 7: runtime profiles and execution timeouts
+
+# W7-04 (SMO_Wave_10_Consolidated §13): Training 30 min, Validation 15 min,
+# Emulation 30 min, Inference 5 s. Overridable per deployment by
+# AIMGF_TIMEOUT_<KIND>_SECONDS and per request by `timeoutSeconds`.
+DEFAULT_TIMEOUT_SECONDS = {"TRAINING": 1800, "VALIDATION": 900, "EMULATION": 1800, "INFERENCE": 5}
+
+
+def _timeout_for(kind: str, override: int | None) -> int:
+    if override is not None:
+        return override
+    return int(os.environ.get(f"AIMGF_TIMEOUT_{kind}_SECONDS", DEFAULT_TIMEOUT_SECONDS[kind]))
+
+
+def _resolve_runtime_profile(kind: str, package_id: uuid.UUID | None, explicit: "RuntimeProfile | None") -> dict | None:
+    """W7-03: an explicit profile wins; otherwise the rApp package's own
+    manifest runtimeProfiles[kind] (read from Onboarding); otherwise none."""
+    if explicit is not None:
+        return explicit.model_dump(exclude_none=True)
+    if package_id is None:
+        return None
+    resp = _r1.get(f"/onboarding/packages/{package_id}/onboarding-status")
+    if resp.status_code != 200:
+        raise framework_error(FrameworkError.PACKAGE_NOT_FOUND, detail=f"no such rApp package {package_id}")
+    profiles = ((resp.json().get("aiCapabilities") or {}).get("runtimeProfiles") or {})
+    return profiles.get(kind)
+
+
+def _aware(value: datetime.datetime) -> datetime.datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=datetime.UTC)
+
+
+def _overdue(started_at: datetime.datetime, timeout_seconds: int | None, now: datetime.datetime) -> bool:
+    return timeout_seconds is not None and _aware(started_at) + datetime.timedelta(seconds=timeout_seconds) <= now
+
+
+def _fire_if_legal(db: Session, model_id: uuid.UUID | None, event: ModelLifecycleEvent) -> None:
+    """A timed-out run fails its model's lifecycle stage only if the model
+    is still in that stage — never forcing an illegal transition (no
+    lifecycle corruption, W7-04)."""
+    if model_id is None:
+        return
+    try:
+        _fire_model_event(db, model_id, event)
+    except HTTPException:
+        pass
+
+
+def _expire_overdue_jobs(db: Session) -> list[dict]:
+    """W7-04: every run past its deadline fails cleanly — status FAILED,
+    its NFO execution runtime torn down, the model's lifecycle stage failed
+    (when still legal), the training process/testing report marked, and the
+    requester notified (best-effort, reason TIMEOUT). A SUSPENDED training
+    run is paused and never expires; its clock restarts on resume.
+
+    Enforced lazily (on every job read and completion, the same pattern as
+    A1 Related's supervision sweep) and on demand via
+    `POST /execution-timeouts/sweep` for a scheduler to call.
+    """
+    now = datetime.datetime.now(datetime.UTC)
+    expired: list[dict] = []
+    for job in db.scalars(select(TrainingJob).where(TrainingJob.status == "IN_PROGRESS")).all():
+        if not _overdue(job.started_at, job.timeout_seconds, now):
+            continue
+        job.status = "FAILED"
+        _nfo_terminate_execution(job.nf_deployment_id)
+        job.nf_deployment_id = None
+        _fire_if_legal(db, job.model_id, ModelLifecycleEvent.TRAINING_FAILED)
+        _sync_training_process(db, job)
+        process = db.scalar(select(MLTrainingProcess).where(MLTrainingProcess.training_job_id == job.training_job_id))
+        if process is not None:
+            process.result_state_info = "TIMEOUT"
+        if job.ml_update_process_id is not None:
+            _advance_ml_update_process(db, job.ml_update_process_id)
+        expired.append(("TRAINING", job.training_job_id, job.notification_uri))
+    for kind, cls, event in (("VALIDATION", ValidationJob, ModelLifecycleEvent.VALIDATION_FAILED),
+                             ("EMULATION", EmulationJob, ModelLifecycleEvent.EMULATION_FAILED)):
+        for job in db.scalars(select(cls).where(cls.status == "RUNNING")).all():
+            if not _overdue(job.started_at, job.timeout_seconds, now):
+                continue
+            job.status = "FAILED"
+            job.metrics = {**(job.metrics or {}), "failureReason": "TIMEOUT"}
+            _nfo_terminate_execution(job.nf_deployment_id)
+            job.nf_deployment_id = None
+            _fire_if_legal(db, job.model_id, event)
+            job_id = job.validation_job_id if kind == "VALIDATION" else job.emulation_job_id
+            if kind == "VALIDATION":
+                db.add(MLTestingReport(validation_job_id=job_id, ml_testing_function_id=job.ml_testing_function_id,
+                                       ml_testing_result="FAILED"))
+            expired.append((kind, job_id, job.notification_uri))
+    for job in db.scalars(select(InferenceJob).where(InferenceJob.status == InferenceState.RUNNING)).all():
+        if _overdue(job.started_at, job.timeout_seconds, now):
+            job.status = INFERENCE_JOB_FSM.fire(InferenceState(job.status), InferenceEvent.FAIL)
+            expired.append(("INFERENCE", job.inference_job_id, job.notification_destination))
+    if expired:
+        db.commit()
+        for kind, job_id, destination in expired:
+            _notify_job_completion(destination, kind, job_id, False, None, {"failureReason": "TIMEOUT"})
+    return [{"jobKind": kind, "jobId": str(job_id)} for kind, job_id, _ in expired]
+
+
+@app.post("/execution-timeouts/sweep")
+def sweep_execution_timeouts(db: Session = Depends(get_session)):
+    """W7-04: fail every overdue Training/Validation/Emulation/Inference run
+    now (for a scheduler; reads and completions also sweep lazily)."""
+    return {"expired": _expire_overdue_jobs(db), "defaultTimeoutSeconds": {k: _timeout_for(k, None) for k in DEFAULT_TIMEOUT_SECONDS}}
 
 
 # ---------------------------------------------------------------- Training
@@ -348,6 +482,7 @@ def _sync_training_process(db: Session, job: TrainingJob) -> None:
 
 def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.UUID | None, producer_id: str,
                     ml_training_type: str | None = None, priority: int = 0, termination_conditions: str | None = None,
+                    runtime_profile: dict | None = None, timeout_seconds: int | None = None,
                     **job_fields) -> TrainingJob:
     """The one place a training run starts — RequestTraining
     (`POST /training-jobs`), TS 28.105 MLTrainingRequest
@@ -387,7 +522,8 @@ def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.U
                                detail=f"INITIAL_TRAINING requires a REGISTERED model, not {lifecycle.model_lifecycle_state}")
 
     job = TrainingJob(model_id=model_id, model_coordination_group_id=group_id, producer_id=producer_id,
-                       status="IN_PROGRESS", ml_training_type=ml_training_type, **job_fields)
+                       status="IN_PROGRESS", ml_training_type=ml_training_type, runtime_profile=runtime_profile,
+                       timeout_seconds=_timeout_for("TRAINING", timeout_seconds), **job_fields)
     db.add(job)
     db.flush()
     db.add(MLTrainingProcess(training_job_id=job.training_job_id, priority=priority,
@@ -403,7 +539,7 @@ def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.U
     # training run needs somewhere to actually execute regardless of
     # which kind of target it names, the same way the job row itself is
     # always created either way.
-    descriptor_id = _nfo_create_execution_descriptor("TRAINING", job.training_job_id)
+    descriptor_id = _nfo_create_execution_descriptor("TRAINING", job.training_job_id, job.runtime_profile)
     job.nf_deployment_descriptor_id = descriptor_id
     job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "TRAINING", job.training_job_id)
 
@@ -440,14 +576,19 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
                           dme_data_job_ids=body.dmeDataJobIds, validation_criteria=body.validationCriteria,
                           notification_uri=body.notificationUri, run_id=body.runId,
                           training_dataset=body.trainingDataset, validation_dataset=body.validationDataset,
-                          consumer_rapp_id=body.consumerRappId, producer_rapp_id=body.producerRappId)
+                          consumer_rapp_id=body.consumerRappId, producer_rapp_id=body.producerRappId,
+                          runtime_profile=_resolve_runtime_profile("TRAINING", body.packageId, body.runtimeProfile),
+                          timeout_seconds=body.timeoutSeconds)
     db.commit()
     return {"trainingJobId": str(job.training_job_id)}
 
 
 @app.get("/training-jobs/{training_job_id}/status")
 def query_training_job_status(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     job = db.get(TrainingJob, training_job_id)
+    if job is None:
+        raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
     return {
         "trainingJobId": str(job.training_job_id), "status": job.status, "runId": job.run_id,
         "trainingDataset": job.training_dataset, "validationDataset": job.validation_dataset,
@@ -455,6 +596,8 @@ def query_training_job_status(training_job_id: uuid.UUID, db: Session = Depends(
         "mlTrainingType": job.ml_training_type, "dmeDataJobIds": [str(i) for i in job.dme_data_job_ids],
         "outcomeArtifactDmeTypeId": str(job.outcome_artifact_dme_type_id) if job.outcome_artifact_dme_type_id else None,
         "nfDeploymentId": str(job.nf_deployment_id) if job.nf_deployment_id else None,
+        "runtimeProfile": job.runtime_profile, "timeoutSeconds": job.timeout_seconds,
+        "startedAt": _aware(job.started_at).isoformat(),
     }
 
 
@@ -477,9 +620,15 @@ def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: 
     job, which has no single model to advance — the same asymmetry
     `request_training` itself already has).
     """
+    _expire_overdue_jobs(db)
     job = db.get(TrainingJob, training_job_id)
     if job is None:
         raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
+    if job.status not in ("IN_PROGRESS", "SUSPENDED"):
+        # Wave 7: a run that already ended (timed out, cancelled, completed)
+        # can't be completed again — a late result must not resurrect it.
+        raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
+                               detail=f"cannot complete a training job in status {job.status}")
     job.status = "FINISHED" if body.succeeded else "FAILED"
     job.model_metrics = body.metrics
     job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
@@ -554,6 +703,8 @@ def resume_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessio
                                detail=f"cannot resume a training job in status {job.status}")
     job.status = "IN_PROGRESS"
     job.suspend_request = False
+    # Wave 7: a suspended run's clock is paused — it restarts on resume.
+    job.started_at = datetime.datetime.now(datetime.UTC)
     _sync_training_process(db, job)
     db.commit()
     return {"trainingJobId": str(job.training_job_id), "status": job.status}
@@ -585,6 +736,7 @@ def get_training_job_model_metrics(training_job_id: uuid.UUID, db: Session = Dep
 @app.get("/training-jobs")
 def list_training_jobs(model_id: uuid.UUID | None = None, status: str | None = None, limit: int = PageLimit,
                         offset: int = PageOffset, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     stmt = select(TrainingJob)
     if model_id:
         stmt = stmt.where(TrainingJob.model_id == model_id)
@@ -620,12 +772,14 @@ def _start_validation(db: Session, *, model_id: uuid.UUID | None, group_id: uuid
         if not lifecycle.training_approved:
             raise framework_error(FrameworkError.TRAINING_NOT_APPROVED,
                                    detail="an operator must advance(APPROVE_TRAINING, decidedBy) before validation can start")
+    job_fields.setdefault("timeout_seconds", None)
+    job_fields["timeout_seconds"] = _timeout_for("VALIDATION", job_fields["timeout_seconds"])
     job = ValidationJob(model_id=model_id, model_coordination_group_id=group_id, producer_id=producer_id,
                          status="RUNNING", **job_fields)
     db.add(job)
     db.flush()
     # OPEN_ITEMS.md section 6.2: MLVF's own real execution runtime.
-    descriptor_id = _nfo_create_execution_descriptor("VALIDATION", job.validation_job_id)
+    descriptor_id = _nfo_create_execution_descriptor("VALIDATION", job.validation_job_id, job.runtime_profile)
     job.nf_deployment_descriptor_id = descriptor_id
     job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "VALIDATION", job.validation_job_id)
     if model_id is not None:
@@ -639,13 +793,16 @@ def request_validation(body: RequestValidationRequest, db: Session = Depends(get
     """CreateValidation — see `_start_validation`."""
     job = _start_validation(db, model_id=body.modelId, group_id=None, producer_id=body.producerId,
                             training_job_id=body.trainingJobId, validation_criteria=body.validationCriteria,
-                            notification_uri=body.notificationUri)
+                            notification_uri=body.notificationUri,
+                            runtime_profile=_resolve_runtime_profile("VALIDATION", body.packageId, body.runtimeProfile),
+                            timeout_seconds=body.timeoutSeconds)
     db.commit()
     return {"validationJobId": str(job.validation_job_id)}
 
 
 @app.get("/validation-jobs/{validation_job_id}/status")
 def query_validation_job_status(validation_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     job = db.get(ValidationJob, validation_job_id)
     if job is None:
         raise framework_error(FrameworkError.VALIDATION_JOB_NOT_FOUND, detail="no such validation job")
@@ -654,6 +811,7 @@ def query_validation_job_status(validation_job_id: uuid.UUID, db: Session = Depe
 
 @app.post("/validation-jobs/{validation_job_id}/complete")
 def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     job = db.get(ValidationJob, validation_job_id)
     if job is None:
         raise framework_error(FrameworkError.VALIDATION_JOB_NOT_FOUND, detail="no such validation job")
@@ -682,6 +840,7 @@ def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, 
 @app.get("/validation-jobs")
 def list_validation_jobs(model_id: uuid.UUID | None = None, status: str | None = None, limit: int = PageLimit,
                           offset: int = PageOffset, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     stmt = select(ValidationJob)
     if model_id:
         stmt = stmt.where(ValidationJob.model_id == model_id)
@@ -714,11 +873,13 @@ def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_s
             raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail="no such AIMLInferenceEmulationFunction")
     job = EmulationJob(model_id=body.modelId, producer_id=body.producerId, emulation_criteria=body.emulationCriteria,
                         status="RUNNING", notification_uri=body.notificationUri,
-                        aiml_inference_emulation_function_id=body.aIMLInferenceEmulationFunctionRef)
+                        aiml_inference_emulation_function_id=body.aIMLInferenceEmulationFunctionRef,
+                        runtime_profile=_resolve_runtime_profile("EMULATION", body.packageId, body.runtimeProfile),
+                        timeout_seconds=_timeout_for("EMULATION", body.timeoutSeconds))
     db.add(job)
     db.flush()
     # OPEN_ITEMS.md section 6.2: MLEF's own real execution runtime.
-    descriptor_id = _nfo_create_execution_descriptor("EMULATION", job.emulation_job_id)
+    descriptor_id = _nfo_create_execution_descriptor("EMULATION", job.emulation_job_id, job.runtime_profile)
     job.nf_deployment_descriptor_id = descriptor_id
     job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "EMULATION", job.emulation_job_id)
     _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_EMULATION)
@@ -728,6 +889,7 @@ def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_s
 
 @app.get("/emulation-jobs/{emulation_job_id}/status")
 def query_emulation_job_status(emulation_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     job = db.get(EmulationJob, emulation_job_id)
     if job is None:
         raise framework_error(FrameworkError.EMULATION_JOB_NOT_FOUND, detail="no such emulation job")
@@ -736,9 +898,13 @@ def query_emulation_job_status(emulation_job_id: uuid.UUID, db: Session = Depend
 
 @app.post("/emulation-jobs/{emulation_job_id}/complete")
 def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     job = db.get(EmulationJob, emulation_job_id)
     if job is None:
         raise framework_error(FrameworkError.EMULATION_JOB_NOT_FOUND, detail="no such emulation job")
+    if job.status != "RUNNING":
+        raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
+                               detail=f"cannot complete an emulation job in status {job.status}")
     job.status = "COMPLETED" if body.succeeded else "FAILED"
     job.metrics = body.metrics
     job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
@@ -764,6 +930,7 @@ def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db
 @app.get("/emulation-jobs")
 def list_emulation_jobs(model_id: uuid.UUID | None = None, status: str | None = None, limit: int = PageLimit,
                          offset: int = PageOffset, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     stmt = select(EmulationJob)
     if model_id:
         stmt = stmt.where(EmulationJob.model_id == model_id)
@@ -839,14 +1006,17 @@ def list_lifecycle_history(model_id: uuid.UUID, fsm: str | None = None, limit: i
 
 # ---------------------------------------------------------------- RuntimeLifecycle (jointly with NFO)
 
-def _nfo_create_descriptor(model_id: uuid.UUID) -> uuid.UUID:
+def _nfo_create_descriptor(model_id: uuid.UUID, runtime_profile: dict | None = None) -> uuid.UUID:
     """A model runtime has no onboarded ApplicationPackage behind it —
     unlike Onboarding's own CreateDescriptor call, packageId is omitted
     (NFO's own `nf_deployment_descriptor.package_id` is nullable since
     this wave, migrations/001_init.sql).
     """
+    workload = {"modelId": str(model_id), "jobKind": "INFERENCE"}
+    if runtime_profile:
+        workload["resources"] = runtime_profile  # Wave 7 (W7-03): the INFERENCE runtime profile
     resp = _r1.post("/nfo/descriptors", json={
-        "packageId": None, "name": f"aimgf-model-{model_id}-runtime", "workloadTemplate": {"modelId": str(model_id)},
+        "packageId": None, "name": f"aimgf-model-{model_id}-runtime", "workloadTemplate": workload,
     })
     return uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
 
@@ -859,7 +1029,8 @@ def _nfo_instantiate(descriptor_id: uuid.UUID, model_id: uuid.UUID) -> uuid.UUID
 
 
 @app.post("/models/{model_id}/runtime/deploy", status_code=201)
-def deploy_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)):
+def deploy_model_runtime(model_id: uuid.UUID, package_id: uuid.UUID | None = None, body: RuntimeProfile | None = None,
+                         db: Session = Depends(get_session)):
     """RuntimeLifecycle's own DEPLOY — jointly owned with NFO
     (AIMGF_OWNERSHIP.md's "NFO invocation: request runtime creation").
     Requires the model to have cleared governance (CERTIFIED or
@@ -868,20 +1039,21 @@ def deploy_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)
     never touches NFO at all.
     """
     _get_model(model_id)
-    lifecycle = _deploy_runtime(db, model_id)
+    lifecycle = _deploy_runtime(db, model_id, _resolve_runtime_profile("INFERENCE", package_id, body))
     db.commit()
     return _lifecycle_view(lifecycle)
 
 
-def _deploy_runtime(db: Session, model_id: uuid.UUID) -> ModelLifecycle:
+def _deploy_runtime(db: Session, model_id: uuid.UUID, runtime_profile: dict | None = None) -> ModelLifecycle:
     lifecycle = _get_or_create_lifecycle(db, model_id)
     if lifecycle.model_lifecycle_state not in (ModelLifecycleState.CERTIFIED, ModelLifecycleState.PROMOTED):
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
                                detail=f"cannot deploy a runtime for a model in state {lifecycle.model_lifecycle_state}")
     _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.REQUEST_DEPLOYMENT)
 
-    descriptor_id = _nfo_create_descriptor(model_id)
+    descriptor_id = _nfo_create_descriptor(model_id, runtime_profile)
     deployment_id = _nfo_instantiate(descriptor_id, model_id)
+    lifecycle.runtime_profile = runtime_profile
     lifecycle.nf_deployment_descriptor_id = descriptor_id
     lifecycle.nf_deployment_id = deployment_id
 
@@ -949,7 +1121,7 @@ def update_node_groups(model_id: uuid.UUID, body: UpdateNodeGroupsRequest, db: S
 @app.post("/models/{model_id}/inference-jobs", status_code=201)
 def request_inference(model_id: uuid.UUID, notification_destination: str | None = None,
                       aiml_inference_function_id: uuid.UUID | None = None, consumer_ref: str | None = None,
-                      db: Session = Depends(get_session)):
+                      timeout_seconds: int | None = None, db: Session = Depends(get_session)):
     """RequestInference — MLEF-hosted (AI/ML Workflow LLD section 3).
     Gated on RuntimeLifecycleState.ACTIVE (a serving question), not
     ModelLifecycleState — a PROMOTED-but-not-yet-deployed model, or one
@@ -977,7 +1149,7 @@ def request_inference(model_id: uuid.UUID, notification_destination: str | None 
     # for why this differs from Training/Validation/Emulation.
     job = InferenceJob(model_id=model_id, status=InferenceState.RUNNING, notification_destination=notification_destination,
                         nf_deployment_id=lifecycle.nf_deployment_id, aiml_inference_function_id=aiml_inference_function_id,
-                        consumer_ref=consumer_ref)
+                        consumer_ref=consumer_ref, timeout_seconds=_timeout_for("INFERENCE", timeout_seconds))
     db.add(job)
     db.commit()
     return {"inferenceJobId": str(job.inference_job_id)}
@@ -985,15 +1157,26 @@ def request_inference(model_id: uuid.UUID, notification_destination: str | None 
 
 @app.get("/inference-jobs/{inference_job_id}/status")
 def query_inference_status(inference_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     job = db.get(InferenceJob, inference_job_id)
+    if job is None:
+        raise framework_error(FrameworkError.INFERENCE_JOB_NOT_FOUND, detail="no such inference job")
     return {"inferenceJobId": str(job.inference_job_id), "status": job.status,
-            "nfDeploymentId": str(job.nf_deployment_id) if job.nf_deployment_id else None}
+            "nfDeploymentId": str(job.nf_deployment_id) if job.nf_deployment_id else None,
+            "timeoutSeconds": job.timeout_seconds, "startedAt": _aware(job.started_at).isoformat()}
 
 
 @app.post("/inference-jobs/{inference_job_id}/resolve")
 def resolve_inference(inference_job_id: uuid.UUID, succeeded: bool, body: ResolveInferenceRequest | None = None,
                       db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     job = db.get(InferenceJob, inference_job_id)
+    if job is None:
+        raise framework_error(FrameworkError.INFERENCE_JOB_NOT_FOUND, detail="no such inference job")
+    if job.status != InferenceState.RUNNING:
+        # Wave 7: e.g. already failed on its 5 s timeout — a late result is refused.
+        raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
+                               detail=f"cannot resolve an inference job in status {job.status}")
     job.status = INFERENCE_JOB_FSM.fire(InferenceState(job.status), InferenceEvent.COMPLETE if succeeded else InferenceEvent.FAIL)
     # Wave 4 — TS 28.105 AIMLInferenceReport for a successful inference.
     # The bulk result is still pulled via DME against the model's
@@ -1016,6 +1199,7 @@ def resolve_inference(inference_job_id: uuid.UUID, succeeded: bool, body: Resolv
 @app.get("/inference-jobs")
 def list_inference_jobs(model_id: uuid.UUID | None = None, status: str | None = None, limit: int = PageLimit,
                          offset: int = PageOffset, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     stmt = select(InferenceJob)
     if model_id:
         stmt = stmt.where(InferenceJob.model_id == model_id)
@@ -1201,7 +1385,8 @@ def _training_job_view(j: TrainingJob) -> dict:
             "trainingDataset": j.training_dataset, "validationDataset": j.validation_dataset,
             "modelMetrics": j.model_metrics, "mlTrainingType": j.ml_training_type,
             "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None,
-            "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None}
+            "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None,
+            "runtimeProfile": j.runtime_profile, "timeoutSeconds": j.timeout_seconds}
 
 
 def _validation_job_view(j: ValidationJob) -> dict:
@@ -1211,7 +1396,8 @@ def _validation_job_view(j: ValidationJob) -> dict:
             "producerId": j.producer_id, "validationCriteria": j.validation_criteria or {},
             "status": j.status, "metrics": j.metrics or {},
             "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None,
-            "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None}
+            "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None,
+            "runtimeProfile": j.runtime_profile, "timeoutSeconds": j.timeout_seconds}
 
 
 def _emulation_job_view(j: EmulationJob) -> dict:
@@ -1219,7 +1405,8 @@ def _emulation_job_view(j: EmulationJob) -> dict:
             "aIMLInferenceEmulationFunctionRef": str(j.aiml_inference_emulation_function_id) if j.aiml_inference_emulation_function_id else None,
             "emulationCriteria": j.emulation_criteria or {}, "status": j.status, "metrics": j.metrics or {},
             "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None,
-            "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None}
+            "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None,
+            "runtimeProfile": j.runtime_profile, "timeoutSeconds": j.timeout_seconds}
 
 
 def _certification_record_view(r: CertificationRecord) -> dict:
@@ -1241,6 +1428,7 @@ def _lifecycle_view(l: ModelLifecycle) -> dict:
         "nfDeploymentDescriptorId": str(l.nf_deployment_descriptor_id) if l.nf_deployment_descriptor_id else None,
         "nfDeploymentId": str(l.nf_deployment_id) if l.nf_deployment_id else None,
         "trainingApproved": l.training_approved, "validationApproved": l.validation_approved,
+        "runtimeProfile": l.runtime_profile,
     }
 
 

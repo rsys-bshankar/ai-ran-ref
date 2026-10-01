@@ -1929,9 +1929,43 @@
             ],
             "title": "Notificationuri"
           },
+          "packageId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packageid"
+          },
           "producerId": {
             "title": "Producerid",
             "type": "string"
+          },
+          "runtimeProfile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeoutSeconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeoutseconds"
           }
         },
         "required": [
@@ -2028,6 +2062,18 @@
             ],
             "title": "Notificationuri"
           },
+          "packageId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packageid"
+          },
           "producerId": {
             "title": "Producerid",
             "type": "string"
@@ -2059,6 +2105,28 @@
               }
             ],
             "title": "Runid"
+          },
+          "runtimeProfile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeoutSeconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeoutseconds"
           },
           "trainingDataset": {
             "anyOf": [
@@ -2113,9 +2181,43 @@
             ],
             "title": "Notificationuri"
           },
+          "packageId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packageid"
+          },
           "producerId": {
             "title": "Producerid",
             "type": "string"
+          },
+          "runtimeProfile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeoutSeconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeoutseconds"
           },
           "trainingJobId": {
             "anyOf": [
@@ -2166,6 +2268,49 @@
           }
         },
         "title": "ResolveInferenceRequest",
+        "type": "object"
+      },
+      "RuntimeProfile": {
+        "additionalProperties": false,
+        "description": "Wave 7 (W7-03): the compute an execution runtime is sized with \u2014\nthe same {cpu, memory, gpu} shape as an rApp manifest's\nruntimeProfiles entry.",
+        "properties": {
+          "cpu": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu"
+          },
+          "gpu": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu"
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory"
+          }
+        },
+        "title": "RuntimeProfile",
         "type": "object"
       },
       "SupportedLearningTechnology": {
@@ -3084,6 +3229,23 @@
           }
         },
         "summary": "Query Emulation Job Status"
+      }
+    },
+    "/execution-timeouts/sweep": {
+      "post": {
+        "description": "W7-04: fail every overdue Training/Validation/Emulation/Inference run\nnow (for a scheduler; reads and completions also sweep lazily).",
+        "operationId": "sweep_execution_timeouts_execution_timeouts_sweep_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sweep Execution Timeouts"
       }
     },
     "/feature-groups": {
@@ -6227,6 +6389,22 @@
               ],
               "title": "Consumer Ref"
             }
+          },
+          {
+            "in": "query",
+            "name": "timeout_seconds",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Timeout Seconds"
+            }
           }
         ],
         "responses": {
@@ -6424,8 +6602,42 @@
               "title": "Model Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "package_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Package Id"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeProfile"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "content": {
