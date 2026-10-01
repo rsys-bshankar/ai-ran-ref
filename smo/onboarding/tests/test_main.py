@@ -644,3 +644,43 @@ def test_list_usage_registrations_shows_what_blocks_delete(client, db_session_fa
     assert usage["active"] is False and usage["stoppedAt"]
 
     assert [a["path"] for a in client.get(f"/packages/{package_id}/artifacts").json()["items"]] == ["Files/Helm/app.tgz"]
+
+
+# ---------------------------------------------------------------- Wave 7: runtime profiles (W7-03)
+
+def _onboard_with_manifest(client, monkeypatch, manifest_yaml):
+    _mock_fetch(monkeypatch, _real_package_bytes(manifest_yaml=manifest_yaml))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+    package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+    return next(p for p in client.get("/packages").json()["items"] if p["packageId"] == package_id)
+
+
+def test_onboard_parses_execution_modes_and_runtime_profiles(client, monkeypatch):
+    """Top-level keys (the SMO_Wave_10 package layout) are accepted next to rappManifest."""
+    manifest_yaml = (
+        "rappManifest:\n  manifestVersion: \"1.0\"\n"
+        "executionModes: [TRAINING, INFERENCE]\n"
+        "autonomyModes: [SHADOW, ASSIST, AUTONOMOUS]\n"
+        "runtimeProfiles:\n"
+        "  TRAINING: {cpu: 8, memory: 16Gi, gpu: 0}\n"
+        "  INFERENCE: {cpu: 2, memory: 4Gi, gpu: 0}\n"
+    )
+    pkg = _onboard_with_manifest(client, monkeypatch, manifest_yaml)
+    assert pkg["state"] == "AVAILABLE"
+    caps = pkg["aiCapabilities"]
+    assert caps["executionModes"] == ["TRAINING", "INFERENCE"]
+    assert caps["autonomyModes"] == ["SHADOW", "ASSIST", "AUTONOMOUS"]
+    assert caps["runtimeProfiles"] == {"TRAINING": {"cpu": 8, "gpu": 0, "memory": "16Gi"},
+                                       "INFERENCE": {"cpu": 2, "gpu": 0, "memory": "4Gi"}}
+
+
+
+@pytest.mark.parametrize("profiles", [
+    "runtimeProfiles:\n  TRAINING: {cpu: -1}\n",                                   # negative cpu
+    "runtimeProfiles:\n  COMPILING: {cpu: 1}\n",                                   # unknown mode
+    "executionModes: [INFERENCE]\nruntimeProfiles:\n  TRAINING: {cpu: 1}\n",       # undeclared mode
+    "runtimeProfiles: [1, 2]\n",                                                   # not a mapping
+])
+def test_onboard_fails_on_an_invalid_runtime_profile(client, monkeypatch, profiles):
+    pkg = _onboard_with_manifest(client, monkeypatch, profiles)
+    assert pkg["state"] == "FAILED"

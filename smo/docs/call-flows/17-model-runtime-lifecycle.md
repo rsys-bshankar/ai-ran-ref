@@ -36,9 +36,10 @@ sequenceDiagram
     rect rgb(240, 255, 240)
     Note over Producer,NFO: Deploy — RuntimeLifecycle: NOT_DEPLOYED -> DEPLOYMENT_REQUESTED -> DEPLOYED
     Note over AIMgF: (model has since reached CERTIFIED, via call flow 02's own governance gate)
-    Producer->>AIMgF: RequestModelRuntimeDeploy(modelId)
+    Producer->>AIMgF: RequestModelRuntimeDeploy(modelId, package_id?, runtimeProfile?)
     AIMgF->>AIMgF: RuntimeLifecycle: NOT_DEPLOYED -> DEPLOYMENT_REQUESTED
-    AIMgF->>NFO: CreateDescriptor(packageId=null, workloadTemplate={modelId})
+    Note over AIMgF: Wave 7: INFERENCE profile = explicit body, else the rApp package's<br/>manifest runtimeProfiles.INFERENCE (Onboarding onboarding-status)
+    AIMgF->>NFO: CreateDescriptor(packageId=null, workloadTemplate={modelId, jobKind: INFERENCE, resources})
     NFO-->>AIMgF: nfDeploymentDescriptorId
     AIMgF->>NFO: Instantiate(nfDeploymentDescriptorId, name)
     NFO-->>AIMgF: nfDeploymentId, state=RUNNING (call flow 15's own synchronous elision)
@@ -81,6 +82,7 @@ sequenceDiagram
 ```
 
 **Key decisions this flow depends on:**
+- Wave 7 (W7-03): every execution runtime is sized from its execution mode's runtime profile — `workloadTemplate.resources` = {cpu, memory, gpu} — taken from an explicit `runtimeProfile` or from the rApp package's own manifest `runtimeProfiles[<MODE>]`. The same applies to the transient Training/Validation/Emulation runtimes (call flow 02), each with its own mode. Execution timeouts (W7-04: Training 30 min, Validation 15 min, Emulation 30 min, Inference 5 s) fail an overdue run cleanly and are documented in `docs/roadmap/RUNTIME_REALIZATION.md`.
 - `RuntimeLifecycle` and `ModelLifecycle` are deliberately independent FSMs sharing one row — retraining a `PROMOTED` model doesn't force its runtime down, and a runtime can be scaled/terminated without touching the model's own certification state (already stated in call flow 02; this flow is the concrete walkthrough of the side that claim is about).
 - The `MODEL_NOT_CERTIFIED` guard fires *before* any NFO call — `deploy_model_runtime` checks `ModelLifecycleState` first, so a premature or duplicate deploy attempt never creates an orphaned `NFDeploymentDescriptor`/`NFDeployment` that would then need cleanup.
 - Scale and Terminate are the only two RuntimeLifecycle transitions that make a real cross-service call — both go through `R1Client` to NFO's own `/deployments/{id}/scale`/`DELETE /deployments/{id}`, landing exactly in call flow 15's own dispatch (including its own synchronous-elision behavior and its dead-end `ABNORMAL`/`DELETING` branches, which apply here identically since it's the same NFO code either caller reaches).

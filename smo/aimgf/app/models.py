@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, Boolean, CheckConstraint, Float, ForeignKey, Integer, JSON, String, Uuid
+from sqlalchemy import ARRAY, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -39,6 +39,9 @@ class ModelLifecycle(Base):
     # cycle should never silently carry forward into a new one.
     training_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     validation_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Wave 7 (W7-03): the INFERENCE runtime profile the serving runtime was
+    # deployed with.
+    runtime_profile: Mapped[dict | None] = mapped_column(JSON)
 
 
 class ValidationJob(Base):
@@ -80,6 +83,14 @@ class ValidationJob(Base):
     ml_testing_function_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("ml_testing_function.ml_testing_function_id", ondelete="SET NULL"))
     cancel_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     suspend_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Wave 7 (W7-03/W7-04): the compute the run was sized with (from the
+    # rApp package's runtimeProfiles, or an explicit override), and its
+    # execution timeout — `started_at` + `timeout_seconds` is the deadline
+    # `_expire_overdue_jobs` enforces.
+    runtime_profile: Mapped[dict | None] = mapped_column(JSON)
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                           default=lambda: datetime.datetime.now(datetime.UTC))
+    timeout_seconds: Mapped[int | None] = mapped_column(Integer)
     # OPEN_ITEMS.md section 6.2: a real NFO-backed execution runtime for
     # this validation run — same bare-UUID cross-module-reference shape as
     # ModelLifecycle's own nf_deployment_descriptor_id/nf_deployment_id
@@ -111,6 +122,14 @@ class EmulationJob(Base):
     # (optional); completion writes an AIMLInferenceReport under it.
     aiml_inference_emulation_function_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("aiml_inference_emulation_function.aiml_inference_emulation_function_id", ondelete="SET NULL"))
+    # Wave 7 (W7-03/W7-04): the compute the run was sized with (from the
+    # rApp package's runtimeProfiles, or an explicit override), and its
+    # execution timeout — `started_at` + `timeout_seconds` is the deadline
+    # `_expire_overdue_jobs` enforces.
+    runtime_profile: Mapped[dict | None] = mapped_column(JSON)
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                           default=lambda: datetime.datetime.now(datetime.UTC))
+    timeout_seconds: Mapped[int | None] = mapped_column(Integer)
     # OPEN_ITEMS.md section 6.2: same pair as ValidationJob's own.
     nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
@@ -260,6 +279,14 @@ class TrainingJob(Base):
     # Set when an MLUpdateProcess started this run (FINE_TUNING) — its
     # completion advances that process.
     ml_update_process_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("ml_update_process.ml_update_process_id", ondelete="SET NULL"))
+    # Wave 7 (W7-03/W7-04): the compute the run was sized with (from the
+    # rApp package's runtimeProfiles, or an explicit override), and its
+    # execution timeout — `started_at` + `timeout_seconds` is the deadline
+    # `_expire_overdue_jobs` enforces.
+    runtime_profile: Mapped[dict | None] = mapped_column(JSON)
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                           default=lambda: datetime.datetime.now(datetime.UTC))
+    timeout_seconds: Mapped[int | None] = mapped_column(Integer)
 
 
 class InferenceJob(Base):
@@ -287,6 +314,10 @@ class InferenceJob(Base):
     aiml_inference_function_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("aiml_inference_function.aiml_inference_function_id", ondelete="SET NULL"))
     consumer_ref: Mapped[str | None] = mapped_column(String)
+    # Wave 7 (W7-04): inference deadline (default 5 s).
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                           default=lambda: datetime.datetime.now(datetime.UTC))
+    timeout_seconds: Mapped[int | None] = mapped_column(Integer)
 
 
 class MLMFSubscription(Base):

@@ -455,3 +455,46 @@ def test_ts28105_cross_module_paths_resolve_inside_the_mesh(mesh):
     emulation = mesh["aimgf"].post("/emulation-jobs", json={"modelId": other, "producerId": "p",
                                                             "aIMLInferenceEmulationFunctionRef": emu_fn})
     assert emulation.status_code == 201, emulation.text
+
+
+def test_runtime_profile_flows_from_rapp_manifest_to_nfo_descriptor(mesh, loaded_apps, monkeypatch):
+    """Wave 7 (W7-03): a real CSAR whose manifest.yaml declares
+    runtimeProfiles onboards through the real Onboarding validator; an AIMgF
+    training run naming that package gets an NFO descriptor sized with the
+    TRAINING profile, read back from NFO itself."""
+    import io
+    import zipfile
+
+    import httpx
+
+    original = (Path(__file__).resolve().parent.parent / "samples" / "hello-world-rapp.csar").read_bytes()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(original)) as src, zipfile.ZipFile(buf, "w") as dst:
+        for item in src.infolist():
+            if item.filename != "manifest.yaml":
+                dst.writestr(item, src.read(item.filename))
+        dst.writestr("manifest.yaml", "rappManifest:\n  manifestVersion: \"1.0\"\n"
+                                      "executionModes: [TRAINING, INFERENCE]\n"
+                                      "runtimeProfiles:\n  TRAINING: {cpu: 8, memory: 16Gi, gpu: 0}\n")
+    csar = buf.getvalue()
+
+    class FakeResp:
+        content = csar
+
+        def raise_for_status(self):
+            pass
+
+    real_get = httpx.get
+    monkeypatch.setattr(loaded_apps["onboarding"].httpx, "get",
+                        lambda location, timeout=None, **kw: FakeResp() if location == "http://example/es.csar"
+                        else real_get(location, timeout=timeout, **kw))
+    package_id = mesh["onboarding"].post("/packages", json={"location": "http://example/es.csar"}).json()["packageId"]
+    assert mesh["onboarding"].get(f"/packages/{package_id}/onboarding-status").json()["state"] == "AVAILABLE"
+
+    model_id = mesh["mlmr"].post("/models", json={"modelType": "w7-profile", "version": "1"}).json()["modelId"]
+    job = mesh["aimgf"].post("/training-jobs", json={"modelId": model_id, "producerId": "p", "packageId": package_id})
+    assert job.status_code == 201, job.text
+    job_id = job.json()["trainingJobId"]
+    descriptors = mesh["nfo"].get("/descriptors", params={"limit": 500}).json()["items"]
+    mine = next(d for d in descriptors if d["name"] == f"aimgf-training-{job_id}")
+    assert mine["workloadTemplate"]["resources"] == {"cpu": 8, "memory": "16Gi", "gpu": 0}

@@ -219,12 +219,55 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
         rapp_manifest = manifest.get("rappManifest") or {}
         result["manifestVersion"] = rapp_manifest.get("manifestVersion")
         result["aiRuntimeSdkVersion"] = rapp_manifest.get("aiRuntimeSdkVersion")
+        # Wave 7 (WAVES_4_TO_10_WORK_ITEMS.md W7-03): the AI-runtime part of
+        # the manifest — which execution modes the package supports and the
+        # compute each one needs. Accepted either under `rappManifest` or at
+        # the manifest's top level (the SMO_Wave_10 package layout).
+        for key in ("executionModes", "autonomyModes", "requiredServices", "runtimeProfiles"):
+            value = rapp_manifest.get(key, manifest.get(key))
+            if value is not None:
+                result[key] = value
+        profiles = result.get("runtimeProfiles")
+        if profiles is not None:
+            result["runtimeProfiles"] = _validate_runtime_profiles(profiles, result.get("executionModes"))
     if "capabilities.yaml" in names:
         parsed = yaml.safe_load(z.read("capabilities.yaml")) or {}
         caps = parsed.get("capabilities") or {}
         result["consumes"] = caps.get("consumes") or []
         result["provides"] = caps.get("provides") or []
     return result or None
+
+
+EXECUTION_MODES = ("TRAINING", "VALIDATION", "EMULATION", "INFERENCE")
+
+
+def _validate_runtime_profiles(profiles, execution_modes) -> dict:
+    """W7-03: `runtimeProfiles` maps an execution mode (TRAINING /
+    VALIDATION / EMULATION / INFERENCE) to {cpu, memory, gpu}. A profile
+    for a mode the manifest doesn't declare in `executionModes` (when it
+    declares any) is a packaging error, as is an unknown mode or a
+    non-numeric cpu/gpu. Raises PackageValidationFailed -> the package fails onboarding (FAILED).
+    """
+    if not isinstance(profiles, dict):
+        raise PackageValidationFailed("runtimeProfiles must be a mapping of execution mode -> profile")
+    out = {}
+    for mode, profile in profiles.items():
+        if mode not in EXECUTION_MODES:
+            raise PackageValidationFailed(f"runtimeProfiles: unknown execution mode {mode!r}")
+        if execution_modes and mode not in execution_modes:
+            raise PackageValidationFailed(f"runtimeProfiles: {mode} is not one of the declared executionModes")
+        if not isinstance(profile, dict):
+            raise PackageValidationFailed(f"runtimeProfiles.{mode} must be a mapping")
+        clean = {}
+        for field in ("cpu", "gpu"):
+            if field in profile:
+                if not isinstance(profile[field], (int, float)) or isinstance(profile[field], bool) or profile[field] < 0:
+                    raise PackageValidationFailed(f"runtimeProfiles.{mode}.{field} must be a non-negative number")
+                clean[field] = profile[field]
+        if "memory" in profile:
+            clean["memory"] = str(profile["memory"])
+        out[mode] = clean
+    return out
 
 
 def _parse_sme_declarations(z: zipfile.ZipFile) -> dict | None:
@@ -307,6 +350,9 @@ def query_onboarding_status(package_id: uuid.UUID, db: Session = Depends(get_ses
         # per-instance SME registration (SPEC_AUDIT.md's Onboarding/rApp
         # Mgmt finding 3).
         "smeDeclarations": pkg.sme_declarations,
+        # Wave 7 (W7-03): AIMgF reads the package's runtimeProfiles from here
+        # when it sizes a Training/Validation/Emulation/Inference runtime.
+        "aiCapabilities": pkg.ai_capabilities,
     }
 
 

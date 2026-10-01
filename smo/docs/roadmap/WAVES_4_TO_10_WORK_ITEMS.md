@@ -112,16 +112,16 @@ Depends on: M4. Result: `docs/roadmap/TS28312_COMPLIANCE_MATRIX.md` (83/91 compl
 | W6-04 | ✅ IntentReport fulfilment status linked to downstream actions (DME action IDs, correlation-id) | IntentReport shows FULFILLED / NOT_FULFILLED with action refs |
 | W6-05 | ✅ Exit criteria | Matrix reviewed; tests green |
 
-## 6. Wave-7 — Runtime realization (MLTF / MLVF / MLEF / MLIF)
+## 6. Wave-7 — Runtime realization (MLTF / MLVF / MLEF / MLIF) — ✅ DONE (PR-W7)
 Depends on: M1, M5, M6. OPEN_ITEMS §6.2 (real NFO-backed runtimes) is **already closed**, so this wave is mostly gap analysis plus hardening.
 
 | ID | Work item | Done when |
 |----|-----------|-----------|
-| W7-01 | **Runtime realization gap analysis** (`[W49]` M5 output) against the §6.2 build | `RUNTIME_REALIZATION_GAP_ANALYSIS.md` |
-| W7-02 | **MLTF/MLVF/MLEF/MLIF deployment model** doc (`[W49]` M6 output): descriptor → deployment → lifecycle → scale/heal/terminate per role | Doc + call flow 17 updated |
-| W7-03 | Per-execution-mode **runtime profiles** (cpu/memory/gpu) from the rApp manifest, carried to the NFO descriptor (`[W10]` manifest `runtimeProfiles`) | NFO deployment reflects the profile of the mode requested |
-| W7-04 | **Stage timeouts**: Training 30 min, Validation 15 min, Emulation 30 min, Inference 5 s (`[W10C]` §13). Expiry → job FAILED + lifecycle FAILED event, no corruption | Configurable timeouts; tests for each expiry |
-| W7-05 | Exit criteria | Gap analysis reviewed; tests green |
+| W7-01 | ✅ **Runtime realization gap analysis** (`[W49]` M5 output) against the §6.2 build | `docs/roadmap/RUNTIME_REALIZATION.md` |
+| W7-02 | ✅ **MLTF/MLVF/MLEF/MLIF deployment model** doc (`[W49]` M6 output): descriptor → deployment → lifecycle → scale/heal/terminate per role | Doc + call flow 17 updated |
+| W7-03 | ✅ Per-execution-mode **runtime profiles** (cpu/memory/gpu) from the rApp manifest, carried to the NFO descriptor (`[W10]` manifest `runtimeProfiles`) | NFO deployment reflects the profile of the mode requested |
+| W7-04 | ✅ **Stage timeouts**: Training 30 min, Validation 15 min, Emulation 30 min, Inference 5 s (`[W10C]` §13). Expiry → job FAILED + lifecycle FAILED event, no corruption | Configurable timeouts; tests for each expiry |
+| W7-05 | ✅ Exit criteria | Gap analysis reviewed; tests green |
 
 ## 7. Wave-8 — Autonomy modes (AUTONOMOUS / ASSIST / SHADOW) = OPEN_ITEMS §6.3
 Depends on: Wave-6, Wave-7. **Platform model closed by PR #138**; the remaining items come from D-1/D-1b.
