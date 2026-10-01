@@ -10,7 +10,8 @@ is copy-pasteable and matches this build's routes.
 Run it in your own environment with a Docker daemon.
 `tests_integration/test_demo_runbook.py` replays the same requests (§2–§23)
 and the four `demo.py` scripts (§24–§27) through the in-process mesh on
-every CI run.
+every CI run, and the `compose-e2e` job replays the same test file against
+a live `docker compose up` stack (`SMO_E2E_LIVE=1`, `tests_integration/live.py`).
 
 Sections §6–§22 are optional and independent of the sample rApp instance,
 except where a step says it reuses an id from an earlier step. There is no
