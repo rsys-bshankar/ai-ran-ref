@@ -388,3 +388,70 @@ def test_ts28105_nrm_pipeline_across_aimgf_mlmr_and_nfo(mesh):
     assert nrm["mLTrainingType"] == "INITIAL_TRAINING"
     assert nrm["usedByFunctionRefList"] == [function_id]
     assert nrm["aIMLInferenceName"] == "NG_RAN_NETWORK_ENERGY_SAVING"
+
+
+def test_ts28104_drift_report_reaches_aimgf_mlmf_and_request_delivery(mesh):
+    """Wave 5 (TS 28.104 at REST level): an MDARequest receives a matching
+    PREDICTION report, and a DRIFT report naming a model is forwarded
+    through R1 to the real AIMgF MLMF subscription, whose guard-KPI floor
+    marks the breach."""
+    request = mesh["mdaf"].post("/mda-requests", json={
+        "reportingMethod": "STREAMING", "requestedMDAOutputs": [{"mDAType": "PREDICTIONS_PM_DATA"}],
+        "analyticsScope": {"managedEntitiesScope": ["cell-101"]}})
+    assert request.status_code == 201, request.text
+    report = mesh["mdaf"].post("/mda-reports", json={"managedEntitiesScope": ["cell-101"], "mDAOutputs": [{
+        "mDAType": "PREDICTIONS_PM_DATA", "mDAOutputList": {"pmPredictions": [{"pmName": "RRU.PrbUsedDl", "pmPredictedValue": 2.8}]}}]})
+    assert report.json()["attributes"]["deliveredToRequestRefList"] == [request.json()["id"]]
+
+    model_id = mesh["mlmr"].post("/models", json={"modelType": "drifty", "version": "1"}).json()["modelId"]
+    sub = mesh["aimgf"].post("/mlmf/subscriptions", params={"model_id": model_id, "dme_type_id": str(uuid.uuid4())},
+                             json={"metric_types": ["accuracy"], "guard_kpi_floor": {"accuracy": 0.8}})
+    assert sub.status_code == 201, sub.text
+    drift = mesh["mdaf"].post("/mda-reports", json={"reportKind": "DRIFT", "mDAOutputs": [{
+        "mDAType": "CORRELATION_ANALYTICS_TRAINING_DATA_ANALYSIS",
+        "mDAOutputList": [{"mDAOutputIEName": "mLModelRef", "mDAOutputIEValue": model_id},
+                          {"mDAOutputIEName": "accuracy", "mDAOutputIEValue": 0.61}]}]})
+    assert drift.status_code == 201, drift.text
+    reports = mesh["aimgf"].get(f"/mlmf/subscriptions/{sub.json()['subscriptionId']}/reports").json()["items"]
+    assert reports[0]["metrics"] == {"accuracy": 0.61} and reports[0]["breachedFloor"] is True
+
+
+def test_ts28105_cross_module_paths_resolve_inside_the_mesh(mesh):
+    """Regression guard: AIMgF's ML-update completion, emulation on an
+    AIMLInferenceEmulationFunction and testing-request cancel all reach
+    code in app/nrm.py from app/main.py (and back). Those references must
+    be bound at load time — a call-time `from .nrm import ...` breaks in
+    this mesh, whose loader evicts `app.*` from sys.modules per service.
+    """
+    def promoted_model(name):
+        model_id = mesh["mlmr"].post("/models", json={"modelType": name, "version": "1"}).json()["modelId"]
+        job = mesh["aimgf"].post("/training-jobs", json={"modelId": model_id, "producerId": "p"}).json()["trainingJobId"]
+        mesh["aimgf"].post(f"/training-jobs/{job}/complete", json={"succeeded": True})
+        return model_id
+
+    model_id = promoted_model("mesh-update")
+    mesh["aimgf"].post(f"/models/{model_id}/advance", params={"event": "APPROVE_TRAINING", "decided_by": "op"})
+    testing = mesh["aimgf"].post("/ml-testing-requests", json={"mLModelRef": model_id}).json()
+    cancelled = mesh["aimgf"].patch(f"/ml-testing-requests/{testing['id']}", json={"cancelRequest": True})
+    assert cancelled.status_code == 200, cancelled.text
+    assert mesh["aimgf"].get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == "FAILED"
+
+    update = mesh["aimgf"].post("/ml-update-requests", json={"mLModelRefList": [model_id], "newCapabilityVersionId": ["v2"]})
+    assert update.status_code == 201, update.text
+    process_id = update.json()["attributes"]["mLUpdateProcessRef"]
+    job_id = mesh["aimgf"].get(f"/ml-update-processes/{process_id}").json()["attributes"]["trainingRequestRefList"][0]
+    done = mesh["aimgf"].post(f"/training-jobs/{job_id}/complete", json={"succeeded": True, "metrics": {"MAE": 1.2}})
+    assert done.status_code == 200, done.text
+    assert mesh["aimgf"].get(f"/ml-update-processes/{process_id}").json()["attributes"]["progressStatus"]["status"] == "FINISHED"
+
+    emu_fn = mesh["aimgf"].post("/aiml-inference-emulation-functions", json={}).json()["id"]
+    other = mesh["mlmr"].post("/models", json={"modelType": "mesh-emu", "version": "1"}).json()["modelId"]
+    job = mesh["aimgf"].post("/training-jobs", json={"modelId": other, "producerId": "p"}).json()["trainingJobId"]
+    mesh["aimgf"].post(f"/training-jobs/{job}/complete", json={"succeeded": True})
+    mesh["aimgf"].post(f"/models/{other}/advance", params={"event": "APPROVE_TRAINING", "decided_by": "op"})
+    validation = mesh["aimgf"].post("/validation-jobs", json={"modelId": other, "producerId": "p"}).json()["validationJobId"]
+    mesh["aimgf"].post(f"/validation-jobs/{validation}/complete", json={"succeeded": True})
+    mesh["aimgf"].post(f"/models/{other}/advance", params={"event": "APPROVE_VALIDATION", "decided_by": "op"})
+    emulation = mesh["aimgf"].post("/emulation-jobs", json={"modelId": other, "producerId": "p",
+                                                            "aIMLInferenceEmulationFunctionRef": emu_fn})
+    assert emulation.status_code == 201, emulation.text

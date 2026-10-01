@@ -1020,6 +1020,35 @@ CREATE TABLE mdaf_producer (
   PRIMARY KEY (producer_id, analytics_type)
 );
 
+-- Wave 5 — TS 28.104 MDAFunction / MDARequest (mdaf/app/models.py).
+CREATE TABLE mda_function (
+  mda_function_id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_label                     TEXT,
+  supported_mda_capabilities      JSONB NOT NULL DEFAULT '[]',
+  supported_mda_domain              TEXT CHECK (supported_mda_domain IN ('CN','RAN','CROSS_DOMAIN')),
+  ml_model_refs                       JSONB NOT NULL DEFAULT '[]',
+  aiml_inference_function_refs          JSONB NOT NULL DEFAULT '[]',
+  created_at                              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE mda_request (
+  mda_request_id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  mda_function_id               UUID REFERENCES mda_function(mda_function_id) ON DELETE SET NULL,
+  requested_by                    TEXT,
+  requested_mda_outputs             JSONB NOT NULL,
+  reporting_method                    TEXT NOT NULL CHECK (reporting_method IN ('FILE','STREAMING','NOTIFICATION')),
+  reporting_target                      TEXT,
+  analytics_scope                         JSONB,
+  start_time                                TIMESTAMPTZ,
+  stop_time                                   TIMESTAMPTZ,
+  recommendation_filter                         JSONB,
+  performance_threshold_info                      JSONB,
+  analysis_requirements                             JSONB,
+  threshold_monitor_refs                              JSONB,
+  threshold_state                                       JSONB,
+  created_at                                              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE mdaf_report (
   report_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   analytics_type      TEXT NOT NULL,
@@ -1027,7 +1056,22 @@ CREATE TABLE mdaf_report (
   input_sources          UUID[] NOT NULL,
   output                  JSONB NOT NULL,
   generated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
-  subscriber_attribution    TEXT
+  subscriber_attribution    TEXT,
+  -- Wave 5 — TS 28.104 MDAReport: typed mDAOutputs + this build's report kind.
+  report_kind                 TEXT NOT NULL DEFAULT 'ANALYTICS' CHECK (report_kind IN ('ANALYTICS','PREDICTION','DRIFT')),
+  mda_type                      TEXT,
+  mda_outputs                     JSONB,
+  mda_function_id                   UUID REFERENCES mda_function(mda_function_id) ON DELETE SET NULL,
+  mda_request_id                      UUID REFERENCES mda_request(mda_request_id) ON DELETE SET NULL
+);
+
+CREATE TABLE mda_report_delivery (
+  delivery_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  report_id          UUID NOT NULL REFERENCES mdaf_report(report_id) ON DELETE CASCADE,
+  mda_request_id      UUID NOT NULL REFERENCES mda_request(mda_request_id) ON DELETE CASCADE,
+  reporting_method      TEXT NOT NULL CHECK (reporting_method IN ('FILE','STREAMING','NOTIFICATION')),
+  notified                BOOLEAN NOT NULL DEFAULT false,
+  delivered_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE mda_subscription (

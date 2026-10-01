@@ -90,16 +90,16 @@ Depends on: M1, M2, M5. Result: `docs/roadmap/TS28105_COMPLIANCE_MATRIX.md`. 20/
 | W4-04 | ✅ Implement **every** TS 28.105 IOC at REST level (D-9): MLTrainingFunction/Request/Process/Report, MLTestingFunction/Request/Report, MLModelLoadingRequest/Policy/Process, MLModel, MLModelRepository, MLModelCoordinationGroup, MLUpdateFunction/Request/Process/Report, AIMLInferenceFunction/Report, AIMLInferenceEmulationFunction, with spec attribute names/enums + notifications | Every matrix row is Compliant or 'Deviation: addressing only' |
 | W4-05 | ✅ Exit criteria for Wave-4 | Matrix reviewed; remaining gaps in SPEC_AUDIT.md; tests green |
 
-## 4. Wave-5 — TS 28.104 alignment (MDAF)
-Depends on: M3.
+## 4. Wave-5 — TS 28.104 alignment (MDAF) — ✅ DONE (PR-W5)
+Depends on: M3. Result: `docs/roadmap/TS28104_COMPLIANCE_MATRIX.md` (48/48 compliant; deviations: addressing, STREAMING transport). The traffic-trend report is a spec PREDICTIONS_PM_DATA report.
 
 | ID | Work item | Done when |
 |----|-----------|-----------|
-| W5-01 | **TS 28.104 mapping matrix** (MDA request/report/subscription, ThresholdInfo, MDA types) | `TS28104_MAPPING_MATRIX.md` |
-| W5-02 | Implement **every** TS 28.104 IOC/datatype at REST level (D-9): MDAFunction, MDARequest, MDAReport (+ MdaOutputs, ThresholdInfo, reporting methods), with **AnalyticsReport / PredictionReport / DriftReport** as typed report kinds (additive; `analytics_type` stays) | Every matrix row is Compliant or 'Deviation: addressing only' |
-| W5-03 | `TRAFFIC_FORECAST` analytics type + `TrafficTrendReport` (`[W10]` D5, optional initial version) consumable via `sdk.analytics` | An rApp can subscribe/query a PredictionReport for a cell |
-| W5-04 | Drift report hook: MDAF DriftReport → AIMgF retrain signal (wire only; reuse the MLMFSubscription guard pattern) | A DriftReport above threshold produces a notification AIMgF can consume |
-| W5-05 | Exit criteria | Matrix reviewed; tests green |
+| W5-01 | ✅ **TS 28.104 mapping matrix** (MDA request/report/subscription, ThresholdInfo, MDA types) | `docs/roadmap/TS28104_COMPLIANCE_MATRIX.md` |
+| W5-02 | ✅ Implement **every** TS 28.104 IOC/datatype at REST level (D-9): MDAFunction, MDARequest, MDAReport (+ MdaOutputs, ThresholdInfo, reporting methods), with **AnalyticsReport / PredictionReport / DriftReport** as typed report kinds (additive; `analytics_type` stays) | Every matrix row is Compliant or 'Deviation: addressing only' |
+| W5-03 | ✅ `TRAFFIC_FORECAST` analytics type + `TrafficTrendReport` (`[W10]` D5, optional initial version) consumable via `sdk.analytics` | An rApp can subscribe/query a PredictionReport for a cell |
+| W5-04 | ✅ Drift report hook: MDAF DriftReport → AIMgF retrain signal (wire only; reuse the MLMFSubscription guard pattern) | A DriftReport above threshold produces a notification AIMgF can consume |
+| W5-05 | ✅ Exit criteria | Matrix reviewed; tests green |
 
 ## 5. Wave-6 — TS 28.312 alignment (Intent Service)
 Depends on: M4.

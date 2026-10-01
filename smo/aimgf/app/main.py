@@ -51,7 +51,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.webhook import post_webhook
 
 from .models import (
-    AIMLInferenceFunction, AIMLInferenceReport, CertificationRecord, EmulationJob, FeatureGroup, InferenceJob,
+    AIMLInferenceEmulationFunction, AIMLInferenceFunction, AIMLInferenceReport, CertificationRecord, EmulationJob, FeatureGroup, InferenceJob,
     LifecycleTransition, MLMFSubscription, MLTestingReport, MLTrainingFunction, MLTrainingProcess, MLTrainingReport,
     ModelLifecycle, PerformanceReport, TrainingJob, ValidationJob,
 )
@@ -493,8 +493,7 @@ def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: 
     _sync_training_process(db, job)
     _write_training_report(db, job, body)
     if job.ml_update_process_id is not None:
-        from .nrm import advance_ml_update_process
-        advance_ml_update_process(db, job.ml_update_process_id)
+        _advance_ml_update_process(db, job.ml_update_process_id)
     db.commit()
     _notify_job_completion(job.notification_uri, "TRAINING", job.training_job_id, body.succeeded,
                             job.outcome_artifact_dme_type_id, job.model_metrics)
@@ -516,8 +515,7 @@ def _cancel_training_job(db: Session, job: TrainingJob) -> None:
     job.nf_deployment_id = None
     _sync_training_process(db, job)
     if job.ml_update_process_id is not None:
-        from .nrm import advance_ml_update_process
-        advance_ml_update_process(db, job.ml_update_process_id)
+        _advance_ml_update_process(db, job.ml_update_process_id)
 
 
 @app.post("/training-jobs/{training_job_id}/suspend")
@@ -712,7 +710,6 @@ def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_s
         raise framework_error(FrameworkError.VALIDATION_NOT_APPROVED,
                                detail="an operator must advance(APPROVE_VALIDATION, decidedBy) before emulation can start")
     if body.aIMLInferenceEmulationFunctionRef is not None:
-        from .models import AIMLInferenceEmulationFunction
         if db.get(AIMLInferenceEmulationFunction, body.aIMLInferenceEmulationFunctionRef) is None:
             raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail="no such AIMLInferenceEmulationFunction")
     job = EmulationJob(model_id=body.modelId, producer_id=body.producerId, emulation_criteria=body.emulationCriteria,
@@ -1298,6 +1295,10 @@ def _feature_group_view(g: FeatureGroup) -> dict:
 # Imported last: app/nrm.py reuses the helpers above (_start_training,
 # _start_validation, _deploy_runtime, ...), so it can only be loaded once
 # they exist.
-from .nrm import router as _nrm_router  # noqa: E402
+# Bound here, at load time — never imported lazily inside a route: the
+# integration mesh's loader (tests_integration/loader.py) evicts `app.*`
+# from sys.modules after loading each service, so a call-time
+# `from .nrm import ...` would fail there.
+from .nrm import advance_ml_update_process as _advance_ml_update_process, router as _nrm_router  # noqa: E402
 
 app.include_router(_nrm_router)

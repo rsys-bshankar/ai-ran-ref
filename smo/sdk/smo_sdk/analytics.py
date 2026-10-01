@@ -66,3 +66,57 @@ class AnalyticsClient(BaseClient):
 
     def list_subscriptions(self, analytics_type: str | None = None, requested_by: str | None = None) -> list[dict]:
         return ensure_ok(self._r1.get("/mdaf/subscriptions", params={"analytics_type": analytics_type, "requested_by": requested_by}))
+
+    # ------------------------------------------------------------ Wave 5: TS 28.104 MDA NRM
+
+    def create_mda_request(self, requested_mda_outputs: list[dict], reporting_method: str,
+                           reporting_target: str | None = None, analytics_scope: dict | None = None,
+                           mda_function_ref: uuid.UUID | str | None = None, requested_by: str | None = None,
+                           start_time: str | None = None, stop_time: str | None = None) -> dict:
+        """TS 28.104 MDARequest. `requested_mda_outputs` is a list of
+        MDAOutputPerMDAType ({mDAType, mDAOutputIEFilters?}); delivery is
+        per `reporting_method` (NOTIFICATION | FILE | STREAMING)."""
+        body = {"requestedMDAOutputs": requested_mda_outputs, "reportingMethod": reporting_method,
+                "reportingTarget": reporting_target, "analyticsScope": analytics_scope,
+                "mDAFunctionRef": str(mda_function_ref) if mda_function_ref else None, "requestedBy": requested_by,
+                "startTime": start_time, "stopTime": stop_time}
+        return ensure_ok(self._r1.post("/mdaf/mda-requests", json={k: v for k, v in body.items() if v is not None}))
+
+    def delete_mda_request(self, request_id: uuid.UUID | str) -> None:
+        ensure_ok(self._r1.delete(f"/mdaf/mda-requests/{request_id}"))
+
+    def publish_mda_report(self, mda_outputs: list[dict], managed_entities: list[str] | None = None,
+                           report_kind: str | None = None, mda_request_ref: uuid.UUID | str | None = None,
+                           input_sources: list[uuid.UUID | str] | None = None) -> dict:
+        """TS 28.104 MDAReport with typed mDAOutputs; report_kind is
+        ANALYTICS | PREDICTION | DRIFT (inferred when omitted)."""
+        body = {"mDAOutputs": mda_outputs, "managedEntitiesScope": managed_entities, "reportKind": report_kind,
+                "mDARequestRef": str(mda_request_ref) if mda_request_ref else None,
+                "inputSources": [str(s) for s in (input_sources or [])]}
+        return ensure_ok(self._r1.post("/mdaf/mda-reports", json={k: v for k, v in body.items() if v is not None}))
+
+    def query_mda_reports(self, mda_type: str | None = None, report_kind: str | None = None,
+                          managed_entity: str | None = None, mda_request_id: uuid.UUID | str | None = None) -> list[dict]:
+        return ensure_ok(self._r1.get("/mdaf/mda-reports", params={
+            "mda_type": mda_type, "report_kind": report_kind, "managed_entity": managed_entity,
+            "mda_request_id": str(mda_request_id) if mda_request_id else None}))
+
+    def get_prediction(self, managed_entity: str, pm_name: str | None = None) -> dict | None:
+        """The latest PREDICTION report (W5-03's TrafficTrendReport: a
+        TS 28.104 PREDICTIONS_PM_DATA report) for one managed entity, e.g.
+        a cell's predicted PRB utilisation. With `pm_name`, returns just
+        that PmPrediction ({pmName, pmPredictedValue, ...}); None if no
+        report exists yet."""
+        reports = self.query_mda_reports(report_kind="PREDICTION", managed_entity=managed_entity)
+        if not reports:
+            return None
+        report = reports[0]  # newest first
+        if pm_name is None:
+            return report
+        for output in report["attributes"]["mDAOutputs"]:
+            output_list = output["mDAOutputList"]
+            if isinstance(output_list, dict):
+                for prediction in output_list.get("pmPredictions") or []:
+                    if prediction["pmName"] == pm_name:
+                        return prediction
+        return None

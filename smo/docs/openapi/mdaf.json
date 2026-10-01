@@ -1,6 +1,109 @@
 {
   "components": {
     "schemas": {
+      "AnalysisRequirement": {
+        "additionalProperties": false,
+        "properties": {
+          "resourceConstraint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resourceconstraint"
+          },
+          "timeConstraint": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeconstraint"
+          }
+        },
+        "title": "AnalysisRequirement",
+        "type": "object"
+      },
+      "AnalyticsSchedule": {
+        "additionalProperties": false,
+        "properties": {
+          "granularityPeriod": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Granularityperiod"
+          },
+          "timeDurations": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timedurations"
+          }
+        },
+        "title": "AnalyticsSchedule",
+        "type": "object"
+      },
+      "AnalyticsScopeType": {
+        "additionalProperties": false,
+        "description": "oneOf in the spec (managedEntitiesScope | areaScope).",
+        "properties": {
+          "areaScope": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Areascope"
+          },
+          "managedEntitiesScope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Managedentitiesscope"
+          }
+        },
+        "title": "AnalyticsScopeType",
+        "type": "object"
+      },
       "Body_publish_report_reports_post": {
         "properties": {
           "input_sources": {
@@ -49,6 +152,527 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "MDAFunctionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "aIMLInferenceFunctionRefList": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Aimlinferencefunctionreflist",
+            "type": "array"
+          },
+          "mLModelRefList": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Mlmodelreflist",
+            "type": "array"
+          },
+          "supportedMDACapabilities": {
+            "default": [],
+            "items": {
+              "enum": [
+                "COVERAGE_ANALYTICS_COVERAGE_PROBLEM_ANALYSIS",
+                "COVERAGE_ANALYTICS_PAGING_OPTIMIZATION",
+                "COVERAGE_ANALYTICS_RET_TP_ANALYTICS",
+                "SLS_ANALYSIS_SERVICE_EXPERIENCE_ANALYSIS",
+                "SLS_ANALYSIS_NETWORK_SLICE_THROUGHPUT_ANALYSIS",
+                "SLS_ANALYSIS_NETWORK_SLICE_TRAFFIC_ANALYSIS",
+                "SLS_ANALYSIS_E2E_LATENCY_ANALYSIS",
+                "SLS_ANALYSIS_NETWORK_SLICE_LOAD_ANALYSIS",
+                "UE_THROUGHPUT_ANALYSIS_TRAFFIC_CONGESTION_PROBLEM_ANALYSIS",
+                "SLS_ANALYSIS_EDGE_APPLICATION_DEPLOYMENT_LOCATION_ANALYSIS",
+                "SLS_ANALYSIS_EDGE_COMPUTING_PERFORMANCE_ANALYSIS",
+                "SLS_ANALYSIS_TRAFFIC_CONGESTION_PREDICTION_ANALYSIS",
+                "MDA_ASSISTED_FAULT_MANAGEMENT_FAILURE_PREDICTION",
+                "MDA_ASSISTED_ENERGY_SAVING_ENERGY_SAVING_ANALYSIS",
+                "MOBILITY_MANAGEMENT_ANALYTICS_MOBILITY_PERFORMANCE_ANALYSIS",
+                "MOBILITY_MANAGEMENT_ANALYTICS_HANDOVER_OPTIMIZATION",
+                "MAINTENANCE_MAINTENANCE_ANALYTICS",
+                "MAINTENANCE_SOFTWARE_UPGRADE_VALIDATION_ANALYTICS",
+                "RESOURCE_ANALYTICS_VIRTUALIZED_RESOURCE_UTILIZATION_ANALYSIS_NF",
+                "RESOURCE_ANALYTICS_PHYSICAL_RESOURCE_UTILIZATION_ANALYSIS_NF",
+                "RESOURCE_ANALYTICS_5GC_CONTROL_PLANE_CONGESTION_ANALYSIS",
+                "PREDICTIONS_PM_DATA",
+                "ATSSS_PERFORMANCE_TRAFFIC_STEERING_ANALYTICS",
+                "CORRELATION_ANALYTICS_TRAINING_DATA_ANALYSIS",
+                "CORRELATION_ANALYTICS_NF_SCALING_DIMENSIONING_DATA_ANALYSIS"
+              ],
+              "type": "string"
+            },
+            "title": "Supportedmdacapabilities",
+            "type": "array"
+          },
+          "supportedMDADomain": {
+            "anyOf": [
+              {
+                "enum": [
+                  "CN",
+                  "RAN",
+                  "CROSS_DOMAIN"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedmdadomain"
+          },
+          "userLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Userlabel"
+          }
+        },
+        "title": "MDAFunctionBody",
+        "type": "object"
+      },
+      "MDAOutputEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "mDAOutputIEName": {
+            "title": "Mdaoutputiename",
+            "type": "string"
+          },
+          "mDAOutputIEValue": {
+            "title": "Mdaoutputievalue"
+          }
+        },
+        "required": [
+          "mDAOutputIEName"
+        ],
+        "title": "MDAOutputEntry",
+        "type": "object"
+      },
+      "MDAOutputIEFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "analyticsPeriod": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "filterValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filtervalue"
+          },
+          "mDAOutputIEName": {
+            "title": "Mdaoutputiename",
+            "type": "string"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/app__ts28104__ThresholdInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "timeOut": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout"
+          }
+        },
+        "required": [
+          "mDAOutputIEName"
+        ],
+        "title": "MDAOutputIEFilter",
+        "type": "object"
+      },
+      "MDAOutputPerMDAType": {
+        "additionalProperties": false,
+        "properties": {
+          "mDAOutputIEFilters": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MDAOutputIEFilter"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mdaoutputiefilters"
+          },
+          "mDAType": {
+            "enum": [
+              "COVERAGE_ANALYTICS_COVERAGE_PROBLEM_ANALYSIS",
+              "COVERAGE_ANALYTICS_PAGING_OPTIMIZATION",
+              "COVERAGE_ANALYTICS_RET_TP_ANALYTICS",
+              "SLS_ANALYSIS_SERVICE_EXPERIENCE_ANALYSIS",
+              "SLS_ANALYSIS_NETWORK_SLICE_THROUGHPUT_ANALYSIS",
+              "SLS_ANALYSIS_NETWORK_SLICE_TRAFFIC_ANALYSIS",
+              "SLS_ANALYSIS_E2E_LATENCY_ANALYSIS",
+              "SLS_ANALYSIS_NETWORK_SLICE_LOAD_ANALYSIS",
+              "UE_THROUGHPUT_ANALYSIS_TRAFFIC_CONGESTION_PROBLEM_ANALYSIS",
+              "SLS_ANALYSIS_EDGE_APPLICATION_DEPLOYMENT_LOCATION_ANALYSIS",
+              "SLS_ANALYSIS_EDGE_COMPUTING_PERFORMANCE_ANALYSIS",
+              "SLS_ANALYSIS_TRAFFIC_CONGESTION_PREDICTION_ANALYSIS",
+              "MDA_ASSISTED_FAULT_MANAGEMENT_FAILURE_PREDICTION",
+              "MDA_ASSISTED_ENERGY_SAVING_ENERGY_SAVING_ANALYSIS",
+              "MOBILITY_MANAGEMENT_ANALYTICS_MOBILITY_PERFORMANCE_ANALYSIS",
+              "MOBILITY_MANAGEMENT_ANALYTICS_HANDOVER_OPTIMIZATION",
+              "MAINTENANCE_MAINTENANCE_ANALYTICS",
+              "MAINTENANCE_SOFTWARE_UPGRADE_VALIDATION_ANALYTICS",
+              "RESOURCE_ANALYTICS_VIRTUALIZED_RESOURCE_UTILIZATION_ANALYSIS_NF",
+              "RESOURCE_ANALYTICS_PHYSICAL_RESOURCE_UTILIZATION_ANALYSIS_NF",
+              "RESOURCE_ANALYTICS_5GC_CONTROL_PLANE_CONGESTION_ANALYSIS",
+              "PREDICTIONS_PM_DATA",
+              "ATSSS_PERFORMANCE_TRAFFIC_STEERING_ANALYTICS",
+              "CORRELATION_ANALYTICS_TRAINING_DATA_ANALYSIS",
+              "CORRELATION_ANALYTICS_NF_SCALING_DIMENSIONING_DATA_ANALYSIS"
+            ],
+            "title": "Mdatype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mDAType"
+        ],
+        "title": "MDAOutputPerMDAType",
+        "type": "object"
+      },
+      "MDAOutputs": {
+        "additionalProperties": false,
+        "description": "One entry of MDAReport.mDAOutputs.",
+        "properties": {
+          "analyticsWindow": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analyticswindow"
+          },
+          "confidenceDegree": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidencedegree"
+          },
+          "mDAOutputList": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MDAOutputEntry"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Mdaoutputlist"
+          },
+          "mDAType": {
+            "enum": [
+              "COVERAGE_ANALYTICS_COVERAGE_PROBLEM_ANALYSIS",
+              "COVERAGE_ANALYTICS_PAGING_OPTIMIZATION",
+              "COVERAGE_ANALYTICS_RET_TP_ANALYTICS",
+              "SLS_ANALYSIS_SERVICE_EXPERIENCE_ANALYSIS",
+              "SLS_ANALYSIS_NETWORK_SLICE_THROUGHPUT_ANALYSIS",
+              "SLS_ANALYSIS_NETWORK_SLICE_TRAFFIC_ANALYSIS",
+              "SLS_ANALYSIS_E2E_LATENCY_ANALYSIS",
+              "SLS_ANALYSIS_NETWORK_SLICE_LOAD_ANALYSIS",
+              "UE_THROUGHPUT_ANALYSIS_TRAFFIC_CONGESTION_PROBLEM_ANALYSIS",
+              "SLS_ANALYSIS_EDGE_APPLICATION_DEPLOYMENT_LOCATION_ANALYSIS",
+              "SLS_ANALYSIS_EDGE_COMPUTING_PERFORMANCE_ANALYSIS",
+              "SLS_ANALYSIS_TRAFFIC_CONGESTION_PREDICTION_ANALYSIS",
+              "MDA_ASSISTED_FAULT_MANAGEMENT_FAILURE_PREDICTION",
+              "MDA_ASSISTED_ENERGY_SAVING_ENERGY_SAVING_ANALYSIS",
+              "MOBILITY_MANAGEMENT_ANALYTICS_MOBILITY_PERFORMANCE_ANALYSIS",
+              "MOBILITY_MANAGEMENT_ANALYTICS_HANDOVER_OPTIMIZATION",
+              "MAINTENANCE_MAINTENANCE_ANALYTICS",
+              "MAINTENANCE_SOFTWARE_UPGRADE_VALIDATION_ANALYTICS",
+              "RESOURCE_ANALYTICS_VIRTUALIZED_RESOURCE_UTILIZATION_ANALYSIS_NF",
+              "RESOURCE_ANALYTICS_PHYSICAL_RESOURCE_UTILIZATION_ANALYSIS_NF",
+              "RESOURCE_ANALYTICS_5GC_CONTROL_PLANE_CONGESTION_ANALYSIS",
+              "PREDICTIONS_PM_DATA",
+              "ATSSS_PERFORMANCE_TRAFFIC_STEERING_ANALYTICS",
+              "CORRELATION_ANALYTICS_TRAINING_DATA_ANALYSIS",
+              "CORRELATION_ANALYTICS_NF_SCALING_DIMENSIONING_DATA_ANALYSIS"
+            ],
+            "title": "Mdatype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mDAType",
+          "mDAOutputList"
+        ],
+        "title": "MDAOutputs",
+        "type": "object"
+      },
+      "MDAReportBody": {
+        "additionalProperties": false,
+        "properties": {
+          "inputSources": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Inputsources",
+            "type": "array"
+          },
+          "mDAFunctionRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mdafunctionref"
+          },
+          "mDAOutputs": {
+            "items": {
+              "$ref": "#/components/schemas/MDAOutputs"
+            },
+            "title": "Mdaoutputs",
+            "type": "array"
+          },
+          "mDARequestRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mdarequestref"
+          },
+          "managedEntitiesScope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Managedentitiesscope"
+          },
+          "reportKind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ANALYTICS",
+                  "PREDICTION",
+                  "DRIFT"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reportkind"
+          }
+        },
+        "required": [
+          "mDAOutputs"
+        ],
+        "title": "MDAReportBody",
+        "type": "object"
+      },
+      "MDARequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "analysisRequirements": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisRequirement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "analyticsScope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsScopeType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mDAFunctionRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mdafunctionref"
+          },
+          "performanceThresholdInfo": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/app__ts28104__ThresholdInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performancethresholdinfo"
+          },
+          "recommendationFilter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalyticsScopeType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reportingMethod": {
+            "enum": [
+              "FILE",
+              "STREAMING",
+              "NOTIFICATION"
+            ],
+            "title": "Reportingmethod",
+            "type": "string"
+          },
+          "reportingTarget": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reportingtarget"
+          },
+          "requestedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requestedby"
+          },
+          "requestedMDAOutputs": {
+            "items": {
+              "$ref": "#/components/schemas/MDAOutputPerMDAType"
+            },
+            "title": "Requestedmdaoutputs",
+            "type": "array"
+          },
+          "startTime": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starttime"
+          },
+          "stopTime": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stoptime"
+          },
+          "thresholdMonitorRefList": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thresholdmonitorreflist"
+          }
+        },
+        "required": [
+          "requestedMDAOutputs",
+          "reportingMethod"
+        ],
+        "title": "MDARequestBody",
+        "type": "object"
+      },
       "SubscribeAnalyticsRequest": {
         "description": "`scope`'s wire shape changes here from a bare JSON body to this\nnamed model \u2014 FastAPI can't leave `scope` as the implicit unwrapped\nbody once a second body-eligible field (`thresholdInfo`) exists\nalongside it. No real caller sets `scope` on a subscription today\n(grepped: ran-analytics never does, and no test did either before\nthis pass), so this is a real but zero-blast-radius wire change.",
         "properties": {
@@ -79,7 +703,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/ThresholdInfo"
+                  "$ref": "#/components/schemas/app__main__ThresholdInfo"
                 },
                 "type": "array"
               },
@@ -91,34 +715,6 @@
           }
         },
         "title": "SubscribeAnalyticsRequest",
-        "type": "object"
-      },
-      "ThresholdInfo": {
-        "properties": {
-          "hysteresis": {
-            "default": 0,
-            "title": "Hysteresis",
-            "type": "number"
-          },
-          "monitoredMDAOutputIE": {
-            "title": "Monitoredmdaoutputie",
-            "type": "string"
-          },
-          "thresholdDirection": {
-            "title": "Thresholddirection",
-            "type": "string"
-          },
-          "thresholdValue": {
-            "title": "Thresholdvalue",
-            "type": "number"
-          }
-        },
-        "required": [
-          "monitoredMDAOutputIE",
-          "thresholdDirection",
-          "thresholdValue"
-        ],
-        "title": "ThresholdInfo",
         "type": "object"
       },
       "ValidationError": {
@@ -160,6 +756,69 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "app__main__ThresholdInfo": {
+        "properties": {
+          "hysteresis": {
+            "default": 0,
+            "title": "Hysteresis",
+            "type": "number"
+          },
+          "monitoredMDAOutputIE": {
+            "title": "Monitoredmdaoutputie",
+            "type": "string"
+          },
+          "thresholdDirection": {
+            "title": "Thresholddirection",
+            "type": "string"
+          },
+          "thresholdValue": {
+            "title": "Thresholdvalue",
+            "type": "number"
+          }
+        },
+        "required": [
+          "monitoredMDAOutputIE",
+          "thresholdDirection",
+          "thresholdValue"
+        ],
+        "title": "ThresholdInfo",
+        "type": "object"
+      },
+      "app__ts28104__ThresholdInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "hysteresis": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Hysteresis",
+            "type": "number"
+          },
+          "monitoredMDAOutputIE": {
+            "title": "Monitoredmdaoutputie",
+            "type": "string"
+          },
+          "thresholdDirection": {
+            "enum": [
+              "UP",
+              "DOWN",
+              "UP_AND_DOWN"
+            ],
+            "title": "Thresholddirection",
+            "type": "string"
+          },
+          "thresholdValue": {
+            "title": "Thresholdvalue",
+            "type": "number"
+          }
+        },
+        "required": [
+          "monitoredMDAOutputIE",
+          "thresholdDirection",
+          "thresholdValue"
+        ],
+        "title": "ThresholdInfo",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -191,6 +850,618 @@
           }
         },
         "summary": "Health Check"
+      }
+    },
+    "/mda-functions": {
+      "get": {
+        "operationId": "list_mda_functions_mda_functions_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Mda Functions"
+      },
+      "post": {
+        "operationId": "create_mda_function_mda_functions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MDAFunctionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Mda Function"
+      }
+    },
+    "/mda-functions/{function_id}": {
+      "delete": {
+        "operationId": "delete_mda_function_mda_functions__function_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Mda Function"
+      },
+      "get": {
+        "operationId": "get_mda_function_mda_functions__function_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mda Function"
+      },
+      "put": {
+        "operationId": "replace_mda_function_mda_functions__function_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MDAFunctionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Mda Function"
+      }
+    },
+    "/mda-reports": {
+      "get": {
+        "description": "Filters: mDAType, report kind (ANALYTICS/PREDICTION/DRIFT), the\nrequest it was delivered to, and a managed entity in its scope.",
+        "operationId": "list_mda_reports_mda_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "mda_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mda Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "report_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Report Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mda_request_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mda Request Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "managed_entity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Entity"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Mda Reports"
+      },
+      "post": {
+        "operationId": "publish_mda_report_mda_reports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MDAReportBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Mda Report"
+      }
+    },
+    "/mda-reports/{report_id}": {
+      "get": {
+        "operationId": "get_mda_report_mda_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mda Report"
+      }
+    },
+    "/mda-reports/{report_id}/file": {
+      "get": {
+        "description": "FILE reportingMethod: the report as a downloadable JSON file.",
+        "operationId": "download_mda_report_file_mda_reports__report_id__file_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Mda Report File"
+      }
+    },
+    "/mda-requests": {
+      "get": {
+        "operationId": "list_mda_requests_mda_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "requested_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Requested By"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Mda Requests"
+      },
+      "post": {
+        "description": "A request names the MDA outputs it wants. When it is addressed to an\nMDAFunction, every requested mDAType must be one of that function's\nsupportedMDACapabilities. NOTIFICATION and FILE delivery need a\nreportingTarget.",
+        "operationId": "create_mda_request_mda_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MDARequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Mda Request"
+      }
+    },
+    "/mda-requests/{request_id}": {
+      "delete": {
+        "description": "Withdraws the request: no further reports are matched to it.",
+        "operationId": "delete_mda_request_mda_requests__request_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Mda Request"
+      },
+      "get": {
+        "operationId": "get_mda_request_mda_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mda Request"
       }
     },
     "/reports": {

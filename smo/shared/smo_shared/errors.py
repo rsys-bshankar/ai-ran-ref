@@ -125,6 +125,8 @@ class FrameworkError:
     NRM_OBJECT_NOT_FOUND = ("NRM_OBJECT_NOT_FOUND", 404)
     INFERENCE_FUNCTION_NOT_ACTIVATED = ("INFERENCE_FUNCTION_NOT_ACTIVATED", 409)
     MODEL_NOT_LOADED = ("MODEL_NOT_LOADED", 409)
+    # Wave 5 — TS 28.104 MDARequest addressed to an MDAFunction.
+    MDA_CAPABILITY_NOT_SUPPORTED = ("MDA_CAPABILITY_NOT_SUPPORTED", 422)
 
 
 def framework_error(code: tuple[str, int], detail: str | None = None) -> HTTPException:
