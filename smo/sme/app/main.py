@@ -257,6 +257,24 @@ def _token_error(error: str, description: str) -> JSONResponse:
     return JSONResponse(status_code=400, content={"error": error, "error_description": description})
 
 
+REQUIRED_ASSERTION_CLAIMS = ("iss", "sub", "aud", "exp", "jti")
+
+
+def _assertion_failure(exc: jwt.PyJWTError) -> str:
+    if isinstance(exc, jwt.InvalidSignatureError):
+        return "Signature verification failed"
+    if isinstance(exc, jwt.ExpiredSignatureError):
+        return "Signature has expired"
+    if isinstance(exc, jwt.InvalidAudienceError):
+        return "Audience does not name this token endpoint"
+    if isinstance(exc, jwt.MissingRequiredClaimError):
+        missing = next((claim for claim in REQUIRED_ASSERTION_CLAIMS if claim == exc.claim), "a required")
+        return f"Token is missing the {missing} claim"
+    if isinstance(exc, jwt.InvalidAlgorithmError):
+        return "The specified alg value is not allowed"
+    return "malformed or unverifiable JWT"
+
+
 def _verify_client_assertion(db: Session, inv: InvokerRegistration, body: AccessTokenRequest) -> str | None:
     """RFC 7523 `private_key_jwt`: None when the assertion authenticates the
     invoker, else why not. The JWT must be signed with the invoker's
@@ -271,9 +289,11 @@ def _verify_client_assertion(db: Session, inv: InvokerRegistration, body: Access
         return "invoker has no PEM public key to verify an assertion with"
     try:
         claims = jwt.decode(body.client_assertion, key=key, algorithms=ASSERTION_ALGORITHMS,
-                            audience=TOKEN_ENDPOINT_AUDIENCE, options={"require": ["iss", "sub", "aud", "exp", "jti"]})
+                            audience=TOKEN_ENDPOINT_AUDIENCE, options={"require": list(REQUIRED_ASSERTION_CLAIMS)})
     except jwt.PyJWTError as exc:
-        return f"client assertion not valid: {exc}"
+        # A fixed message per failure kind, never the library's own text
+        # (CodeQL py/stack-trace-exposure)
+        return f"client assertion not valid: {_assertion_failure(exc)}"
     if claims["iss"] != inv.api_invoker_id or claims["sub"] != inv.api_invoker_id:
         return "client assertion iss and sub must both be the client_id"
     now = datetime.datetime.now(datetime.UTC)
