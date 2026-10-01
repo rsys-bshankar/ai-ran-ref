@@ -1,16 +1,18 @@
 # Call Flow: Closed-Loop Assurance — Monitor → Decide → Remediate → Escalate
 
-Stitches together SO/SA SMOS LLD sections 1-2 — the dispatch table (`so-smos/app/dispatch.py`)
-and SA SMOS's honestly-incomplete `RemedialAction` dispatch.
+An SO SMOS service order is monitored by SA SMOS (SO/SA SMOS LLD sections 1-2): a threshold
+breach in a pushed report triggers a `RemedialAction`, and anything left unresolved is
+escalated to the operator. `CONFIG_CHANGE` and `RECONNECT` are dispatched, `SCALE` escalates,
+and `ROLLBACK` is refused. The order itself runs through SO SMOS's dispatch table
+(`so-smos/app/dispatch.py`).
 
-**How this relates to call flow 03**: this is neither an extension of nor an alternative
-to flow 03 — it's a sibling entry point into the same underlying mechanism. Flow 03 is the
-generic "how does a CM change reach a real ME" walkthrough (Path A/B, dispatch,
-decomposition). This flow's `SA->>NFOAM: WriteConfigurationChanges` line (below) is one
-more caller of that exact same route, triggered automatically by a threshold breach
-instead of by an rApp's or operator's own decision. The dispatch, decomposition, and
-per-ME aggregation logic downstream of that call is identical either way — see call flow
-03 for that detail, which isn't repeated here.
+**How this relates to call flow 03**: this is a sibling entry point into the same CM-write
+mechanism, not an extension of or alternative to it. Flow 03 is the generic "how does a CM
+change reach a real ME" walkthrough (Path A/B, dispatch, decomposition). This flow's
+`SA->>NFOAM: WriteConfigurationChanges` line is one more caller of that route, triggered
+automatically by a threshold breach instead of by an rApp's or operator's own decision.
+The dispatch, decomposition and per-ME aggregation downstream of that call are identical —
+see call flow 03.
 
 ```mermaid
 sequenceDiagram
@@ -64,8 +66,8 @@ sequenceDiagram
 ```
 
 **Key decisions this flow depends on:**
-- SO SMOS never rolls back completed steps on a later failure — Phase 1 has no compensating-transaction mechanism, matching every other Phase-1-thin limitation in this framework (stated explicitly, not silently assumed).
-- `RECONNECT` resolves its target the same way every other remedial action does — through the `AssuranceMonitor`'s `targetOrderId`, read back from SO SMOS's own order record — rather than needing a new resource-reference field on the monitor itself.
-- `ROLLBACK` stays unsupported, but now for a concrete, checked reason (`ROLLBACK_HISTORY_UNAVAILABLE`) rather than a vague "ambiguous meaning" refusal: rApp Management's own upgrade machinery (`rapp-mgmt/app/upgrade.py`) deletes the prior `RAppInstance` row on a successful commit, so there is no version history anywhere in this build to roll back to — a rApp Management gap, not an SA SMOS design question.
-- A coordination-group-scoped `AssuranceMonitor` (via `targetCoordinationGroupId`) would route through AI/ML Workflow's `should_trigger_group_retrain` instead of a single `ServiceOrder` — see call flow 02. A coordination-group-scoped `RECONNECT`/`ROLLBACK` isn't resolved by this pass either — only the `targetOrderId` path is.
-- **Reconciled since this flow was first written**: the actor pushing reports into SA SMOS is whichever service actually owns them post-Wave-1 decomposition — MDAF for RAN-behavior analytics, AIMgF for model performance (MLMF) — not RAN Analytics SMOS directly. RAN Analytics only registers the producer capability (call flow 08); it was never the one holding or pushing reports, even before the split.
+- SO SMOS never rolls back completed steps on a later failure — Phase 1 has no compensating-transaction mechanism (stated explicitly, not silently assumed).
+- `RECONNECT` resolves its target through the `AssuranceMonitor`'s `targetOrderId`, read back from SO SMOS's own order record (the DEPLOY step's `nfDeploymentId`), and heals that deployment through NFO — rather than needing a new resource-reference field on the monitor itself.
+- `ROLLBACK` is refused for a concrete, checked reason (`ROLLBACK_HISTORY_UNAVAILABLE`, 501): rApp Management's upgrade machinery (`rapp-mgmt/app/upgrade.py`) deletes the prior `RAppInstance` row on a successful commit, so there is no version history to roll back to — a rApp Management gap, not an SA SMOS design question (OPEN_ITEMS.md OI-1-sa-rollback).
+- A coordination-group-scoped `AssuranceMonitor` (`targetCoordinationGroupId`) bypasses the actionType branches entirely: it watches model performance, not an NF deployment, so its remedial action is always a group retrain through AIMgF's `POST /training-jobs` (`modelCoordinationGroupId`) — see call flow 02.
+- The actor pushing reports into SA SMOS is whichever service owns them — MDAF for RAN-behavior analytics, AIMgF for model performance (MLMF). RAN Analytics only registers the producer capability (call flow 08); it never holds or pushes reports.

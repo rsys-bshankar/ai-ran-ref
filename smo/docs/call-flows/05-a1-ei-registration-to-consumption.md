@@ -1,8 +1,9 @@
 # Call Flow: A1 EI Registration → Data Consumption
 
-Stitches together A1 Related LLD section 3 (RegisterEIType wraps DME's RegisterDMEType —
-clause 9 of R1AP has no distinct 9.2) and Foundational Platform LLD section 3 (DME's
-DataOffer/DataJob split).
+An EI producer registers an EI type through A1 Related, and a consumer creates a data job
+against it in DME (A1 Related LLD section 3; Foundational Platform LLD section 3).
+`RegisterEIType` wraps DME's `RegisterDMEType` — clause 9 of R1AP has no distinct 9.2 — and
+DME's DataOffer/DataJob split carries the rest of the flow.
 
 ```mermaid
 sequenceDiagram
@@ -30,8 +31,7 @@ sequenceDiagram
     Note over DME: REVERSED direction — the only DME notification that flows<br/>producer -> framework instead of framework -> consumer (section 3.5)
 
     Consumer->>DME: POST /data-jobs (dmeTypeId, dataDeliveryMode=CONTINUOUS, dataDeliveryMethod=PULL_HTTP, consumerId)
-    DME->>DME: validate dataDeliveryMethod against the known DELIVERY_METHODS set
-    Note over DME: NOT cross-checked against this dmeTypeId's own DataOffer —<br/>a DataJob can request a method the offer never actually committed to
+    DME->>DME: validate dataDeliveryMethod against DELIVERY_METHODS and,<br/>when the type has DataOffers, against the methods they committed to
     DME-->>Consumer: dataJobId, status=ACTIVE
 
     loop per collection interval
@@ -47,5 +47,5 @@ sequenceDiagram
 - `RegisterEIType` is a thin wrapper, not a parallel registry — A1 Related's own bookkeeping (`A1EIType`) exists purely to remember *which* DME type an EI registration maps to; the actual production-capability record lives in DME, closing the "operation with no backing object" gap A1 Related LLD section 1.2 also flags for subscriptions.
 - `DataOffer.dataAvailabilityNotification` flows framework → consumer for every other DME interaction; the producer's own "data is ready" signal (`offer_data_availability`) is the one deliberate exception, flowing the opposite way (Foundational Platform LLD section 3.5).
 - This flow never reaches the actual Near-RT RIC — `mock-near-rt-ric/` only implements the A1-P policy interface (RT-7's isolated segment), not an EI consumer; the Consumer actor here stands in for what a real xApp/Near-RT RIC integration would do against DME directly.
-- **Gap surfaced by writing this flow, not previously documented**: `CreateDataJob` validates `dataDeliveryMethod` against the global `DELIVERY_METHODS` set only (`dme/app/main.py`), never against the specific `DataOffer` the `dmeTypeId` is actually associated with — a consumer can request `STREAMING_KAFKA` against a type whose producer only ever offered `PULL_HTTP`, and DME accepts it without complaint.
-- **Closed since this flow was first written**: DME's own `DMEType` used to conflate Producer and Type as one entity with a global uniqueness constraint — a second producer registering the same type identity got a hard conflict. `DMEProducer`/`DMEType` are now two real, many-to-many entities linked by `DMEProducerType`, matching ICS's own real API shape; see call flow 11 for the dedicated multi-producer walkthrough.
+- `CreateDataJob` checks `dataDeliveryMethod` against the global `DELIVERY_METHODS` set and, when the type has at least one `DataOffer`, against the methods those offers committed to (`_validate_delivery_method` in `dme/app/main.py`, `DELIVERY_METHOD_NOT_OFFERED` otherwise); a type with no offer skips the second check (HISTORY.md OI-2-dataoffer-check).
+- `DMEProducer` and `DMEType` are separate, many-to-many entities linked by `DMEProducerType`, matching ICS's API shape: a second producer registering the same type identity joins that type instead of conflicting (HISTORY.md SA-ICS-1). Call flow 11 walks the multi-producer case.

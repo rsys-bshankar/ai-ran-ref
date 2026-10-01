@@ -1,7 +1,7 @@
 # Call Flow: Mobility Optimization rApp — HO PM → Classification → Prediction → Safety → CIO → Verification → KPI check
 
-Wave 10.2 (`docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md` §10) is the second
-reference rApp (`samples/mobility-optimization-rapp/`). It tunes handover
+The Mobility Optimization rApp (`samples/mobility-optimization-rapp/`; Wave 10.2 in
+`docs/ROADMAP.md`) is the second reference rApp. It tunes handover
 per neighbour relation from O1 handover PM. Like the EnergySaving rApp (call
 flow 22), it uses the R1 control plane only; there is no A1, Near-RT RIC, xApp
 or E2.
@@ -109,7 +109,7 @@ sequenceDiagram
   - one whose source or target is in an incident zone.
 
   Every guard that blocks is recorded in the decision's reason.
-- **The CIO is shared with the Traffic Steering rApp** (Wave 10.4,
+- **The CIO is shared with the Traffic Steering rApp** (call flow 25,
   D10.4-1). When the instance is given `trafficSteeringInstanceId`, a
   relation that rApp is observing a CIO step on is held (`MLB_OBSERVING`).
   The two rApps keep the CIO inside the same baseline ± 6 dB envelope.
