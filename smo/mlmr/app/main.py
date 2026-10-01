@@ -11,10 +11,11 @@ gone along with them. AIMgF's `GET/PATCH /aimgf/models/{id}/lifecycle`
 is the real thing now.
 """
 
+import json
 import uuid
 
-from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -23,16 +24,19 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
+from smo_shared.invoker import invoker_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.r1_client import R1Client
 
-from .models import MODEL_DOMAINS, MLModel, MLModelCoordinationGroup, MLModelRepository, ModelArtifact
+from . import mlr
+from .models import MODEL_DOMAINS, MLModel, MLModelCoordinationGroup, MLModelProfile, MLModelRepository, ModelArtifact
 
 _r1 = R1Client()
 
 app = FastAPI(title="MLMR")
 apply_r1_gateway_security(app)
 apply_correlation_id(app)
+app.include_router(mlr.router)
 
 
 @app.get("/health")
@@ -105,7 +109,7 @@ def _apply_ts28105(db: Session, model: MLModel, body: TS28105ModelAttributes) ->
     model.ml_model_repository_id = body.mLModelRepositoryRef
 
 
-class RegisterModelRequest(TS28105ModelAttributes):
+class RegisterModelRequest(TS28105ModelAttributes, mlr.SpecAttributes):
     modelType: str
     version: str
     requiredResourceTypeId: str | None = None
@@ -128,7 +132,7 @@ class CreateCoordinationGroupRequest(BaseModel):
     mLModelRepositoryRef: uuid.UUID | None = None
 
 
-class UpdateModelRequest(TS28105ModelAttributes):
+class UpdateModelRequest(TS28105ModelAttributes, mlr.SpecAttributes):
     modelType: str
     version: str
     requiredResourceTypeId: str | None = None
@@ -175,6 +179,7 @@ def register_model(body: RegisterModelRequest, db: Session = Depends(get_session
                      target_environments=body.targetEnvironments,
                      domain=body.domain, custom_domain=body.customDomain, vendors=body.vendors)
     _apply_ts28105(db, model, body)
+    mlr.apply_spec_attributes(model, body)
     db.add(model)
     try:
         db.commit()
@@ -185,8 +190,24 @@ def register_model(body: RegisterModelRequest, db: Session = Depends(get_session
 
 
 @app.get("/models")
-def discover_models(model_type: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
-                     db: Session = Depends(get_session)):
+def discover_models(request: Request, model_type: str | None = None,
+                    filt_criteria: str | None = Query(default=None, alias="filt-criteria"),
+                    supported_features: str | None = Query(default=None, alias="supported-features"),
+                    include_models: bool = Query(default=False, alias="include-models"),
+                    limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """Without `filt-criteria`: MLMR's own paginated list (filter `model_type`).
+    With it: TS 29.482 ModelInformationDiscovery (SA-MLMR-9): the whole-object
+    MLModel criteria are matched (see `mlr.py`) and a `DiscoveryResp` returns
+    (`profiles`, or with `include-models=true`, an extension of ours, the model
+    files in `mlModels`); 404 when nothing matches. `supported-features` is
+    accepted and ignored (no optional feature is negotiated).
+    """
+    if filt_criteria is not None:
+        try:
+            criteria = mlr.MLModelInfo.model_validate(json.loads(filt_criteria))
+        except (json.JSONDecodeError, ValidationError) as exc:
+            raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"filt-criteria is not an MLModel: {exc}") from exc
+        return mlr.discover(db, criteria, invoker_id(request), include_models, limit, offset)
     stmt = select(MLModel)
     if model_type:
         stmt = stmt.where(MLModel.model_type == model_type)
@@ -240,6 +261,7 @@ def update_model(model_id: uuid.UUID, body: UpdateModelRequest, db: Session = De
     model.target_environments = body.targetEnvironments
     model.domain, model.custom_domain, model.vendors = body.domain, body.customDomain, body.vendors
     _apply_ts28105(db, model, body)
+    mlr.apply_spec_attributes(model, body)  # an omitted spec attribute is kept (AIMgF writes phaseInfo)
     db.commit()
     return _model_view(model)
 
@@ -271,6 +293,7 @@ def deregister_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
     if model is None:
         return
     db.query(ModelArtifact).filter(ModelArtifact.model_id == model_id).delete()
+    db.query(MLModelProfile).filter(MLModelProfile.model_id == model_id).delete()
     db.delete(model)
     db.commit()
 
@@ -304,10 +327,15 @@ def upload_model_artifact(model_id: uuid.UUID, file: UploadFile = File(...), db:
 
 
 @app.get("/models/{model_id}/artifact/{artifact_version}")
-def download_model_artifact(model_id: uuid.UUID, artifact_version: int, db: Session = Depends(get_session)):
+def download_model_artifact(request: Request, model_id: uuid.UUID, artifact_version: int, db: Session = Depends(get_session)):
     """DownloadModel — same modelId+artifactVersion lookup as the reference's
-    modelName+modelVersion+artifactVersion modelKey.
+    modelName+modelVersion+artifactVersion modelKey. A model's `storeDiscReqs`
+    are enforced here (SA-MLMR-6): 410 `MODEL_EXPIRED` past its `duration`,
+    403 `MODEL_ACCESS_DENIED` for a caller its `accessReqs` exclude.
     """
+    model = db.get(MLModel, model_id)
+    if model is not None:
+        mlr.require_usable(model, invoker_id(request))
     artifact = db.scalar(
         select(ModelArtifact).where(ModelArtifact.model_id == model_id, ModelArtifact.artifact_version == artifact_version)
     )
@@ -368,7 +396,7 @@ def _model_view(m: MLModel) -> dict:
             "inputDataType": m.input_data_type, "outputDataType": m.output_data_type,
             "targetEnvironments": m.target_environments or [],
             "domain": m.domain, "customDomain": m.custom_domain, "vendors": m.vendors or [],
-            **_ts28105_writable_view(m)}
+            **mlr.spec_attributes_view(m), **_ts28105_writable_view(m)}
 
 
 def _ts28105_writable_view(m: MLModel) -> dict:

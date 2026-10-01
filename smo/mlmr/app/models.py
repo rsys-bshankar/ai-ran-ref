@@ -111,6 +111,39 @@ class MLModel(Base):
     source_trained_ml_model_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     ml_model_repository_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("ml_model_repository.ml_model_repository_id", ondelete="SET NULL"))
+    # TS 29.482 MLModel (TS29482_MLR_MLModelManagement.yaml): the rest of the
+    # spec's attributes. SA-MLMR-6 / 7 / 8: storeDiscReqs, phaseInfo (with
+    # trainingInfo.baseModelId) and usageReqs, stored spec-shaped.
+    registered_at: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))
+    ml_model_src_id: Mapped[str | None] = mapped_column(String)
+    interop_info: Mapped[str | None] = mapped_column(String)
+    val_service_ids: Mapped[list | None] = mapped_column(JSON)
+    adae_analytics_id: Mapped[str | None] = mapped_column(String)
+    usage_reqs: Mapped[dict | None] = mapped_column(JSON)
+    phase_info: Mapped[dict | None] = mapped_column(JSON)
+    store_disc_reqs: Mapped[dict | None] = mapped_column(JSON)
+
+
+class MLModelsStorage(Base):
+    """TS 29.482 MLModelsStorage (SA-MLMR-1): a group of model profiles."""
+    __tablename__ = "ml_models_storage"
+
+    storage_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    ml_models_addresses: Mapped[list | None] = mapped_column(JSON)  # EndPoint list
+    supp_feat: Mapped[str | None] = mapped_column(String)
+
+
+class MLModelProfile(Base):
+    """TS 29.482 MLModelProfile: names a registered model (`mlModelInfo.mlModelId`)
+    inside a storage, with the AIMLE ids and the model's URI."""
+    __tablename__ = "ml_model_profile"
+
+    profile_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    storage_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("ml_models_storage.storage_id", ondelete="CASCADE"), nullable=False)
+    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("aiml_model.model_id", ondelete="CASCADE"), nullable=False)
+    aimle_serv_id: Mapped[str | None] = mapped_column(String)
+    aimle_rep_id: Mapped[str | None] = mapped_column(String)
+    ml_model_uri: Mapped[dict | None] = mapped_column(JSON)  # EndPoint
 
 
 class ModelArtifact(Base):

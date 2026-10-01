@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 
 from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
+from smo_shared.invoker import INVOKER_ID_HEADER
 from smo_shared.openapi_security import apply_r1_gateway_security
 
 app = FastAPI(title="R1 Termination")
@@ -125,7 +126,8 @@ async def proxy(full_path: str, request: Request):
     if backend is None:
         return JSONResponse(status_code=404, content={"title": "NO_ROUTE", "status": 404})
 
-    if not await _authorized(request):
+    invoker_id = await _introspect(request)
+    if invoker_id is None:
         return JSONResponse(status_code=401, content={"title": "UNAUTHORIZED", "status": 401})
 
     # Strip the module prefix before forwarding — no backend service's own
@@ -146,8 +148,13 @@ async def proxy(full_path: str, request: Request):
     # with, so a caller that omitted the header still gets a consistent
     # ID threaded through its own request's whole downstream fan-out.
     forwarded_headers = {k: v for k, v in request.headers.items()
-                          if k.lower() not in ("host", CORRELATION_ID_HEADER.lower())}
+                          if k.lower() not in ("host", CORRELATION_ID_HEADER.lower(), INVOKER_ID_HEADER.lower())}
     forwarded_headers[CORRELATION_ID_HEADER] = get_correlation_id()
+    # The caller's own id, from the introspected token: any inbound value of
+    # this header is dropped above, so a backend can trust it. Empty when the
+    # token carries no client id.
+    if invoker_id:
+        forwarded_headers[INVOKER_ID_HEADER] = invoker_id
     async with httpx.AsyncClient() as client:
         upstream = await client.request(
             request.method,
@@ -159,7 +166,7 @@ async def proxy(full_path: str, request: Request):
     return Response(content=upstream.content, status_code=upstream.status_code, headers=dict(upstream.headers))
 
 
-async def _authorized(request: Request) -> bool:
+async def _introspect(request: Request) -> str | None:
     """HISTORY.md §2: "No real OAuth2/token enforcement at R1
     Termination — only a comment and a tokenEndPoint URI in the bootstrap
     response; no actual validation code path." This is that path, per
@@ -180,13 +187,19 @@ async def _authorized(request: Request) -> bool:
     """
     auth = request.headers.get("authorization", "")
     if not auth.lower().startswith("bearer "):
-        return False
+        return None
     token = auth[len("bearer "):].strip()
     if not token:
-        return False
+        return None
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.request("POST", f"{ROUTES['/sme']}/oauth2/introspect", json={"token": token})
         except httpx.HTTPError:
-            return False
-    return resp.status_code == 200 and resp.json().get("active") is True
+            return None
+    if resp.status_code != 200 or resp.json().get("active") is not True:
+        return None
+    return str(resp.json().get("client_id") or "")
+
+
+async def _authorized(request: Request) -> bool:
+    return await _introspect(request) is not None

@@ -12,7 +12,7 @@ from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import MLModel, MLModelCoordinationGroup, MLModelRepository, ModelArtifact
+from app.models import MLModel, MLModelCoordinationGroup, MLModelRepository, ModelArtifact, MLModelProfile, MLModelsStorage
 
 
 @pytest.fixture
@@ -24,6 +24,7 @@ def db_session_factory():
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
         MLModelRepository.__table__, MLModel.__table__, MLModelCoordinationGroup.__table__, ModelArtifact.__table__,
+        MLModelsStorage.__table__, MLModelProfile.__table__,
     ])
     return sessionmaker(bind=engine)
 

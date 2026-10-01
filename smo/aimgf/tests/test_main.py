@@ -51,6 +51,7 @@ class FakeMlmr:
     def __init__(self):
         self.models: dict[str, dict] = {}
         self.groups: list[dict] = []
+        self.phase_writes: list[tuple] = []
 
     def add_model(self, model_id=None) -> uuid.UUID:
         model_id = model_id or uuid.uuid4()
@@ -140,9 +141,14 @@ def mlmr(monkeypatch):
     def fake_delete(self, path, **kw):
         return fake_nfo.delete(path, **kw)
 
+    def fake_patch(self, path, json=None, **kw):
+        fake_mlmr.phase_writes.append((path, json))  # SA-MLMR-7: the phaseInfo write-back to MLMR
+        return FakeResponse(200, {})
+
     monkeypatch.setattr("app.main.R1Client.get", fake_get)
     monkeypatch.setattr("app.main.R1Client.post", fake_post)
     monkeypatch.setattr("app.main.R1Client.delete", fake_delete)
+    monkeypatch.setattr("app.main.R1Client.patch", fake_patch)
     fake_mlmr.nfo = fake_nfo
     return fake_mlmr
 
@@ -195,6 +201,39 @@ def test_request_training_on_registered_model_fires_create_training(client, mlmr
     resp = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
     assert resp.status_code == 201
     assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.TRAINING
+
+
+def test_training_writes_phase_and_lineage_back_to_mlmr(client, mlmr, db_session_factory):
+    """SA-MLMR-7: the first cycle is IN_TRAINING with no baseModelId; a retrain is
+    IN_RETRAINING with the model (or its source) as the baseModelId; success is TRAINED."""
+    model_id = mlmr.add_model()
+    job = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "r", "trainingDataset": "s3://t.csv"}).json()["trainingJobId"]
+    assert mlmr.phase_writes == [(f"/mlmr/models/{model_id}/phase-info", {"phase": "IN_TRAINING", "trainingInfo": {"dataSources": "s3://t.csv"}})]
+    mlmr.phase_writes.clear()
+    assert client.post(f"/training-jobs/{job}/complete", json={"succeeded": True, "metrics": {}}).status_code == 200
+    assert mlmr.phase_writes == [(f"/mlmr/models/{model_id}/phase-info", {"phase": "TRAINED"})]
+    mlmr.phase_writes.clear()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
+    client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "r"})
+    assert mlmr.phase_writes == [(f"/mlmr/models/{model_id}/phase-info", {"phase": "IN_RETRAINING", "trainingInfo": {"baseModelId": str(model_id)}})]
+
+
+def test_a_retrain_of_a_derived_model_names_its_source_as_the_base(client, mlmr, db_session_factory):
+    source = str(uuid.uuid4())
+    model_id = mlmr.add_model()
+    mlmr.models[str(model_id)]["sourceTrainedMLModelRef"] = source
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
+    client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "r"})
+    assert mlmr.phase_writes[-1][1]["trainingInfo"]["baseModelId"] == source
+
+
+def test_a_failed_phase_write_never_fails_training(client, mlmr, monkeypatch):
+    def broken(self, path, json=None, **kw):
+        raise RuntimeError("MLMR unreachable")
+
+    monkeypatch.setattr("app.main.R1Client.patch", broken)
+    model_id = mlmr.add_model()
+    assert client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "r"}).status_code == 201
 
 
 def test_request_training_ml_training_type_initial_then_retrain(client, mlmr, db_session_factory):
