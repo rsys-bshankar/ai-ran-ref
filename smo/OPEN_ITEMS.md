@@ -24,13 +24,6 @@ Each item: what is missing, why it matters, suggested approach.
 
 ## 2. Platform gaps
 
-- **OI-2-compose-e2e** — The full `docker-compose` stack has never been run end to end (no Docker
-  daemon in the sandbox or CI); only `docker compose config` is checked. The `a1_mock_net` isolation
-  (RT-7) is unverified. A `compose-e2e` CI job
-  (`smo-tests.yml`, `scripts/compose_e2e.py`) now brings the stack up on a GitHub runner, replays
-  DEMO_RUNBOOK §1-§4 and checks the `a1_mock_net` isolation; **close this item (move to HISTORY.md)
-  once that job has passed on a real runner** — it has not been run yet. Remaining approach: extend
-  it past §4 to the rest of the runbook.
 - **OI-5-a1-scope** — `subscriptionScope` OWN/OTHERS is treated as ALL; no subscriber identity is
   tracked. Approach: record the subscriber's rApp id (from the R1 token) and compare with
   `creator_id`.
@@ -92,14 +85,7 @@ Each item: what is missing, why it matters, suggested approach.
   bundled TS 28.541 descriptor ships. Approach: ingest the YANG-derived descriptors with
   `scripts/ingest_cm_schema.py` when a vendor needs them.
 
-## 4. Wave backlog
-
-- **W10-B1** — EnergySaving LSTM model variant (D-6 backlog); the shipped model is threshold +
-  regression. Approach: add as a second model type in the same package, compared in validation.
-- **W10.3-thresholds** — Coverage objective uses fixed 5 % thresholds per problem class; per-cell,
-  per-class thresholds from the TS 28.541 CCO parameter sets are a refinement.
-
-## 5. Test coverage
+## 4. Test coverage
 
 - **OI-4** — Coverage is uneven. By `def test_` count today the shallowest suites are `mllf` (5),
   `ran-analytics` (13), `mock-o1-adaptor` (14), `so-smos` (15), `mock-near-rt-ric` (16) and

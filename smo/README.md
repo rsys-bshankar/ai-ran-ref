@@ -117,8 +117,8 @@ also checks `docs/openapi/*.json` against each live schema), the
 migration-vs-models check against a real Postgres, and the GUI typecheck,
 tests, build and call-flow diagram validation. CI
 (`../.github/workflows/smo-tests.yml`) runs the same checks on every change
-under `smo/`. CI validates `docker-compose.yml` with `docker compose config`
-but does not start the stack.
+under `smo/`. CI validates `docker-compose.yml` with `docker compose config` and
+brings the full stack up (`compose-e2e`: runbook §1–§4, `a1_mock_net` isolation).
 
 After editing a sample rApp, rebuild its package with
 `python3 samples/build_csar.py <name>`. The integration suite fails if a
