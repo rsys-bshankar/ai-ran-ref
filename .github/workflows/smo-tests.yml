@@ -1,11 +1,11 @@
 name: SMO tests
 
+# No `paths:` filter, on purpose: these jobs are required status checks on `main`,
+# and a required check that never runs (a docs-only PR) would block the merge.
 on:
   push:
     branches: [main]
-    paths: ["smo/**", ".github/workflows/smo-tests.yml"]
   pull_request:
-    paths: ["smo/**", ".github/workflows/smo-tests.yml"]
   workflow_dispatch:
 
 # Every job only checks out and runs tests: the GITHUB_TOKEN needs nothing
