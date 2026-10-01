@@ -13,7 +13,8 @@ from sqlalchemy.pool import StaticPool
 from smo_shared.db import Base, get_session
 
 from app.main import app, PHASE1_CLUSTER_ID, PHASE1_DEPLOYMENT_MANAGER_ID, PHASE1_POOL_ID, PHASE1_RESOURCE_TYPE_ID
-from app.models import DeploymentManager, InventorySubscription, OCloudAlarm, OCloudPerformanceMetric, Resource, ResourcePool, ResourceType
+from app.models import (AlarmSubscription, DeploymentManager, InventorySubscription, Location, O2imsObject, OCloudAlarm, OCloudPerformanceMetric,
+                        OCloudSite, PerformanceJob, PerformanceSubscription, Resource, ResourcePool, ResourceType)
 
 
 @pytest.fixture
@@ -22,6 +23,8 @@ def db_session():
     Base.metadata.create_all(engine, tables=[
         OCloudAlarm.__table__, OCloudPerformanceMetric.__table__, InventorySubscription.__table__,
         ResourceType.__table__, ResourcePool.__table__, Resource.__table__, DeploymentManager.__table__,
+        Location.__table__, OCloudSite.__table__, AlarmSubscription.__table__, PerformanceJob.__table__,
+        PerformanceSubscription.__table__, O2imsObject.__table__,
     ])
     TestSession = sessionmaker(bind=engine)
     return TestSession
@@ -52,18 +55,15 @@ def test_query_inventory_returns_degenerate_cluster(client):
 def test_query_inventory_includes_the_real_seeded_resource_type_and_deployment_manager(client):
     resp = client.get("/inventory")
     body = resp.json()
-    assert [t["resourceTypeId"] for t in body["resourceTypes"]] == [PHASE1_RESOURCE_TYPE_ID]
+    assert {t["resourceTypeId"] for t in body["resourceTypes"]} == {PHASE1_RESOURCE_TYPE_ID, "gpu-l40", "pserver"}
     assert [d["deploymentManagerId"] for d in body["deploymentManagers"]] == [PHASE1_DEPLOYMENT_MANAGER_ID]
 
 
-def test_query_inventory_has_no_fabricated_location_data(client):
-    """HISTORY.md §7 item 8: the real spec requires locations/oCloudSites
-    (minItems: 1) but FOCOM has no OCloudSite/Location concept at all —
-    honestly empty rather than fabricated.
-    """
+def test_query_inventory_carries_the_seeded_location_and_site(client):
+    """SA-FOCOM-2: the spec's required locations / oCloudSites (minItems 1) are the seeded default pair."""
     body = client.get("/inventory").json()
-    assert body["locations"] == []
-    assert body["oCloudSites"] == []
+    assert [l["globalLocationId"] for l in body["locations"]] == ["loc-0"]
+    assert [s["oCloudSiteId"] for s in body["oCloudSites"]] == ["site-0"]
 
 
 def test_query_inventory_filters_resource_types_by_the_requested_type(client):
@@ -280,11 +280,10 @@ def test_query_performance_returns_empty_list_when_none_seeded(client):
 
 def test_query_inventory_defaults_to_every_registered_resource_type(client):
     """No resource_type given — the no-filter path returns every
-    registered ResourceType, which after the Phase 1 seed is just
-    "generic".
+    registered ResourceType: the seeded generic, gpu-l40 and pserver.
     """
     resp = client.get("/inventory")
-    assert [t["resourceTypeId"] for t in resp.json()["resourceTypes"]] == [PHASE1_RESOURCE_TYPE_ID]
+    assert {t["resourceTypeId"] for t in resp.json()["resourceTypes"]} == {PHASE1_RESOURCE_TYPE_ID, "gpu-l40", "pserver"}
 
 
 def test_query_inventory_reflects_the_real_seeded_deployment_manager_row(client, db_session):
@@ -347,8 +346,8 @@ def test_list_resource_types_returns_seeded_phase1_type(client):
     real, seeded rows, not a hardcoded literal.
     """
     resp = client.get("/resource-types")
-    ids = [t["resourceTypeId"] for t in resp.json()["items"]]
-    assert ids == [PHASE1_RESOURCE_TYPE_ID]
+    ids = {t["resourceTypeId"] for t in resp.json()["items"]}
+    assert ids == {PHASE1_RESOURCE_TYPE_ID, "gpu-l40", "pserver"}
 
 
 def test_get_resource_type_by_id(client):
@@ -376,16 +375,19 @@ def test_resource_type_view_exposes_the_new_spec_fields(client):
         assert body[field] is None
 
 
-def test_provision_with_unrecognized_type_auto_registers_it(client):
-    """provision_resource never validated resourceTypeId before this
-    pass — auto-registering an unrecognized one preserves that, rather
-    than rejecting it now that a real ResourceType table exists.
-    """
-    client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"})
+def test_provision_with_unrecognized_type_is_refused(client):
+    """SA-FOCOM-9: O2IMS ResourceType is read-only; an unknown id is a 404, not a new type."""
+    resp = client.post("/resources/provision", json={"resourceTypeId": "tpu-v5"})
+    assert resp.status_code == 404
+    ids = {t["resourceTypeId"] for t in client.get("/resource-types").json()["items"]}
+    assert "tpu-v5" not in ids
 
-    resp = client.get("/resource-types")
-    ids = {t["resourceTypeId"] for t in resp.json()["items"]}
-    assert ids == {PHASE1_RESOURCE_TYPE_ID, "gpu-l40"}
+
+def test_provision_with_unrecognized_type_auto_registers_it_behind_the_flag(client, monkeypatch):
+    monkeypatch.setenv("FOCOM_AUTO_REGISTER_RESOURCE_TYPES", "true")
+    assert client.post("/resources/provision", json={"resourceTypeId": "tpu-v5"}).status_code == 200
+    ids = {t["resourceTypeId"] for t in client.get("/resource-types").json()["items"]}
+    assert "tpu-v5" in ids
 
 
 def test_list_resource_pools_returns_seeded_phase1_pool(client):

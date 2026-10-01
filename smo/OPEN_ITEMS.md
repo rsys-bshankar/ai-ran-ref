@@ -49,17 +49,17 @@ SA-RANOAM-2 (`accessScope`, `scope` kept as an alias), SA-RANOAM-6-severity (`Pe
 `INDETERMINATE`, upper-case `perceivedSeverity`).
 
 ### FOCOM (O2IMS)
-- **SA-FOCOM-2** — `ResourcePool` lacks `oCloudSiteId` and the inline `resources` array; no
-  `OCloudSite`/`Location`, so `GET /inventory` returns empty `locations`/`oCloudSites`. Approach:
-  add a seeded `OCloudSite`, link pools to it, inline resources in the pool view.
-- **SA-FOCOM-6** — Alarms/performance are flat (three-field `OCloudAlarm`, no subscribe/notify, no
-  performance ingest). Approach: `AlarmEventRecord` with X.733 `eventType` and an `AlarmSubscription`
-  notify path reusing `smo_shared.webhook`.
-- **SA-FOCOM-7** — No ProvisioningRequest, Artifacts, NodeCluster or Infrastructure resources
-  (single-cluster Phase 1 scope). Build only with multi-cluster support.
-- **SA-FOCOM-9** — `provision_resource` auto-registers unknown `resourceTypeId`s although O2IMS
-  `ResourceType` is read-only. Approach: reject unknown types (404) behind a flag, after seeding the
-  types callers use.
+- **SA-FOCOM-6 (performance depth)** — `FILE` / `STREAM` performance reporting, `PerformanceMeasurementStore`
+  retention and the `reportInterval` / `heartbeatInterval` schedule are not built; records are ingested, not
+  collected. Approach: a collector and a file writer when FOCOM talks to a real O-Cloud.
+- **SA-FOCOM-7 (real clusters)** — `ProvisioningRequest` is fulfilled at the model level (a `NodeCluster` row);
+  nothing is deployed on an O-Cloud, so `PENDING` / `PROGRESSING` / `FAILED` are never observed. Approach:
+  drive a real DMS asynchronously and report phases.
+
+Closed in this wave: SA-FOCOM-2 (Location, OCloudSite, pool links, inline resources), SA-FOCOM-6
+(AlarmEventRecord, AlarmSubscription, performance records / jobs / NOTIFICATION subscriptions), SA-FOCOM-7
+(Artifacts, Cluster, Infrastructure, ProvisioningRequest resources), SA-FOCOM-9 (closed resource types, seeded,
+`POST /resource-types`, auto-registration behind `FOCOM_AUTO_REGISTER_RESOURCE_TYPES`).
 
 ### MLMR (TS 29.482)
 - **SA-MLMR-1** — No `MLModelsStorage`/`MLModelProfile` layer (accepted flat shape).

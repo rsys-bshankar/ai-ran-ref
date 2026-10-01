@@ -7,10 +7,11 @@ Phase 1: degenerate single-node cluster (D-DEPLOY-FOCOM-1, unchanged).
 """
 
 import uuid
+from typing import Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,7 +22,11 @@ from smo_shared.correlation import apply_correlation_id
 from smo_shared.webhook import post_webhook
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
-from .models import DeploymentManager, InventorySubscription, OCloudAlarm, OCloudPerformanceMetric, Resource, ResourcePool, ResourceType
+from . import fcaps, provisioning, sites
+from .common import (IMS_ENDPOINT, PHASE1_CLUSTER_ID, PHASE1_DEPLOYMENT_MANAGER_ID, PHASE1_POOL_ID, PHASE1_RESOURCE_TYPE_ID,
+                     SMO_REGISTRATION_SERVICE, auto_register_resource_types, ensure_phase1_topology, global_cloud_id, ioc,
+                     location_view, pool_view, site_view)
+from .models import DeploymentManager, InventorySubscription, Location, OCloudSite, Resource, ResourcePool, ResourceType
 
 app = FastAPI(title="FOCOM SMOS (O2ims)")
 apply_r1_gateway_security(app)
@@ -37,28 +42,11 @@ def health_check():
     """
     return {"status": "healthy"}
 
-PHASE1_CLUSTER_ID = "phase1-degenerate-cluster"
-PHASE1_RESOURCE_TYPE_ID = "generic"
-PHASE1_POOL_ID = "pool-0"
-PHASE1_DEPLOYMENT_MANAGER_ID = "dm-0"
+_ensure_phase1_topology = ensure_phase1_topology  # seeded lazily on first read (common.py)
 
-
-def _ensure_phase1_topology(db: Session) -> None:
-    """Lazily seeds the single degenerate ResourceType/ResourcePool/
-    DeploymentManager row on first read, rather than at app startup —
-    no other module in this build seeds data at startup, and Phase 1's
-    topology (D-DEPLOY-FOCOM-1) never changes, so this keeps the same
-    pragmatic, no-new-pattern shape as the rest of this codebase.
-    """
-    if db.get(ResourcePool, PHASE1_POOL_ID) is None:
-        db.add(ResourceType(resource_type_id=PHASE1_RESOURCE_TYPE_ID, name="generic",
-                             description="Phase 1 degenerate single-node resource type"))
-        db.add(ResourcePool(resource_pool_id=PHASE1_POOL_ID, name="pool-0",
-                             description="Phase 1 degenerate single-node resource pool", o_cloud_id=PHASE1_CLUSTER_ID))
-        db.add(DeploymentManager(deployment_manager_id=PHASE1_DEPLOYMENT_MANAGER_ID, name=PHASE1_CLUSTER_ID,
-                                  description="Phase 1 degenerate single-node deployment manager",
-                                  o_cloud_id=PHASE1_CLUSTER_ID, service_uri=f"http://{PHASE1_CLUSTER_ID}:6443"))
-        db.commit()
+app.include_router(sites.router)
+app.include_router(fcaps.router)
+app.include_router(provisioning.router)
 
 
 class SubscribeInventoryRequest(BaseModel):
@@ -85,12 +73,11 @@ def query_inventory(resource_type: str = "", db: Session = Depends(get_session))
     are populated from this build's own real, already-seeded topology
     (the same rows every drill-down route already reads — no new
     fabricated data). `locations`/`oCloudSites` are required
-    (`minItems: 1`) in the real spec, but genuinely empty here: FOCOM
-    has no `OCloudSite`/`Location` concept at all (a confirmed
-    large/structural scope cut, OPEN_ITEMS.md §3, FOCOM), so
-    they're honestly empty rather than fabricated —
-    `globalCloudId`/`infrastructureManagementServicesEndPoint`/
-    `smoRegistrationService` are `None` for the same reason.
+    (`minItems: 1`) and are populated from FOCOM's own Location and
+    OCloudSite rows (a seeded default pair, more via `POST /locations`
+    and `POST /o-cloud-sites`; SA-FOCOM-2). `globalCloudId` is a stable
+    SMO-side id derived from `oCloudId`; the two endpoint fields come
+    from `FOCOM_IMS_ENDPOINT` / `FOCOM_SMO_REGISTRATION_SERVICE`.
 
     `resource_type`, if given, now genuinely filters `resourceTypes` to
     the matching entry (or an empty list if none is registered) — real
@@ -111,12 +98,43 @@ def query_inventory(resource_type: str = "", db: Session = Depends(get_session))
         "description": dm.description,
         "resourceTypes": [_resource_type_view(t) for t in resource_types],
         "deploymentManagers": [_deployment_manager_view(dm)],
-        "locations": [],
-        "oCloudSites": [],
-        "globalCloudId": None,
-        "infrastructureManagementServicesEndPoint": None,
-        "smoRegistrationService": None,
+        "locations": [location_view(db, loc) for loc in db.scalars(select(Location)).all()],
+        "oCloudSites": [site_view(db, site) for site in db.scalars(select(OCloudSite)).all()],
+        "globalCloudId": global_cloud_id(dm.o_cloud_id),
+        "infrastructureManagementServicesEndPoint": IMS_ENDPOINT,
+        "smoRegistrationService": SMO_REGISTRATION_SERVICE,
+        "extensions": [],
     }
+
+
+class RegisterResourceTypeRequest(BaseModel):
+    """Registers a ResourceType (SA-FOCOM-9): the O2 interface treats the type
+    list as read-only, so this is the SMO-side seeding path."""
+    model_config = ConfigDict(extra="forbid")
+    resourceTypeId: str
+    name: str
+    description: str | None = None
+    vendor: str | None = None
+    model: str | None = None
+    version: str | None = None
+    alarmDictionaryId: str | None = None
+    performanceDictionaryId: str | None = None
+    resourceKind: Literal["UNDEFINED", "LOGICAL", "PHYSICAL"] | None = None
+    resourceClass: Literal["UNDEFINED", "COMPUTE", "NETWORKING", "STORAGE"] | None = None
+
+
+@app.post("/resource-types", status_code=201)
+def register_resource_type(body: RegisterResourceTypeRequest, db: Session = Depends(get_session)):
+    _ensure_phase1_topology(db)
+    if db.get(ResourceType, body.resourceTypeId) is not None:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"resource type {body.resourceTypeId!r} already exists")
+    row = ResourceType(resource_type_id=body.resourceTypeId, name=body.name, description=body.description, vendor=body.vendor,
+                       model=body.model, version=body.version, alarm_dictionary_id=body.alarmDictionaryId,
+                       performance_dictionary_id=body.performanceDictionaryId, resource_kind=body.resourceKind,
+                       resource_class=body.resourceClass)
+    db.add(row)
+    db.commit()
+    return _resource_type_view(row)
 
 
 @app.get("/resource-types")
@@ -145,7 +163,7 @@ def get_resource_type(resource_type_id: str, db: Session = Depends(get_session))
 def list_resource_pools(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     _ensure_phase1_topology(db)
     page = paginate(db, select(ResourcePool), limit, offset)
-    return {**page, "items": [_resource_pool_view(p) for p in page["items"]]}
+    return {**page, "items": [pool_view(db, p) for p in page["items"]]}
 
 
 @app.get("/resource-pools/{resource_pool_id}")
@@ -154,7 +172,7 @@ def get_resource_pool(resource_pool_id: str, db: Session = Depends(get_session))
     p = db.get(ResourcePool, resource_pool_id)
     if p is None:
         raise framework_error(FrameworkError.RESOURCE_POOL_NOT_FOUND, detail="no such resource pool")
-    return _resource_pool_view(p)
+    return pool_view(db, p)
 
 
 @app.get("/resource-pools/{resource_pool_id}/resources")
@@ -337,6 +355,9 @@ def provision_resource(spec: dict, db: Session = Depends(get_session)):
     _ensure_phase1_topology(db)
     resource_type_id = spec.get("resourceTypeId") or PHASE1_RESOURCE_TYPE_ID
     if db.get(ResourceType, resource_type_id) is None:
+        if not auto_register_resource_types():
+            raise framework_error(FrameworkError.RESOURCE_TYPE_NOT_FOUND,
+                                  detail=f"resource type {resource_type_id!r} is not registered (POST /resource-types, or set FOCOM_AUTO_REGISTER_RESOURCE_TYPES=true)")
         db.add(ResourceType(resource_type_id=resource_type_id, name=resource_type_id))
         # A real bug against real Postgres, never caught by SQLite: flushing
         # this new ResourceType row together with the new Resource row below
@@ -378,39 +399,11 @@ def monitor_resource(resource_id: str):
     return {"resourceId": resource_id, "status": "healthy"}
 
 
-@app.get("/alarms")
-def query_ocloud_alarms(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    page = paginate(db, select(OCloudAlarm), limit, offset)
-    return {**page, "items": [{"alarmId": str(a.alarm_id), "resourceRef": a.resource_ref, "severity": a.severity} for a in page["items"]]}
-
-
-@app.post("/alarms/ingest")
-def ingest_ocloud_alarm(resource_ref: str, severity: str, db: Session = Depends(get_session)):
-    alarm = OCloudAlarm(resource_ref=resource_ref, severity=severity)
-    db.add(alarm)
-    db.commit()
-    return {"alarmId": str(alarm.alarm_id)}
-
-
-@app.get("/performance")
-def query_ocloud_performance(resource_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
-                              db: Session = Depends(get_session)):
-    stmt = select(OCloudPerformanceMetric)
-    if resource_ref:
-        stmt = stmt.where(OCloudPerformanceMetric.resource_ref == resource_ref)
-    page = paginate(db, stmt, limit, offset)
-    return {**page, "items": [{"resourceRef": m.resource_ref, "metricName": m.metric_name, "value": m.value} for m in page["items"]]}
-
-
 def _resource_type_view(t: ResourceType) -> dict:
     return {"resourceTypeId": t.resource_type_id, "name": t.name, "description": t.description,
             "vendor": t.vendor, "model": t.model, "version": t.version,
             "alarmDictionaryId": t.alarm_dictionary_id, "performanceDictionaryId": t.performance_dictionary_id,
             "resourceKind": t.resource_kind, "resourceClass": t.resource_class, "extensions": t.extensions}
-
-
-def _resource_pool_view(p: ResourcePool) -> dict:
-    return {"resourcePoolId": p.resource_pool_id, "name": p.name, "description": p.description, "oCloudId": p.o_cloud_id}
 
 
 def _resource_view(r: Resource) -> dict:

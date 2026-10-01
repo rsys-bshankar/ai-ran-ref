@@ -4,13 +4,13 @@
 
 | | |
 |---|---|
-| Standards basis | O-RAN O2-IMS (FOCOM) |
+| Standards basis | O-RAN O2-IMS (FOCOM): Inventory, Fault and Performance, Artifacts, Cluster, Infrastructure, Provisioning |
 | R1 route / port | `/focom` via R1 Termination (container :8000) |
 | Depends on (over R1) | none (inventory-change callbacks go to subscriber URLs via `smo_shared.webhook`) |
 | Called by | NFO (`GET /focom/inventory`, to resolve `oCloudId`), SO SMOS (`POST /focom/resources/provision`), GUI / GUI BFF |
-| Database tables | `inventory_subscription`, `resource_type`, `resource_pool`, `resource`, `deployment_manager`, `ocloud_alarm`, `ocloud_performance_metric` |
-| Unit tests | 50 passed (`tests/`, SQLite, standalone) |
-| Status | Done for the Phase 1 single-cluster scope. Open: `SA-FOCOM-2`, `SA-FOCOM-6`, `SA-FOCOM-7`, `SA-FOCOM-9` (see [section 2.8](#28-limits-and-open-items)) |
+| Database tables | `inventory_subscription`, `resource_type`, `resource_pool`, `resource`, `deployment_manager`, `ocloud_alarm`, `ocloud_alarm_subscription`, `ocloud_performance_metric`, `ocloud_performance_job`, `ocloud_performance_subscription`, `ocloud_location`, `ocloud_site`, `o2ims_object` |
+| Unit tests | 73 passed (`tests/`, SQLite, standalone) |
+| Status | Done for the Phase 1 single-cluster scope. `SA-FOCOM-2`, `-6`, `-7` and `-9` are closed at the REST level; limits in [section 2.8](#28-limits-and-open-items) |
 
 ## 1. High-level design (HLD)
 
@@ -25,7 +25,10 @@ Phase 1 topology is one degenerate O-Cloud: one cluster (`phase1-degenerate-clus
 | Spec | What is realised | What is deliberately not |
 |---|---|---|
 | O-RAN WG6 O2-IMS information model ([`../../specs/o-cloud-im/resources/ORAN.O2ims.Inventory.yaml`](../../specs/o-cloud-im/resources/ORAN.O2ims.Inventory.yaml), [`Common`](../../specs/o-cloud-im/resources/ORAN.O2ims.Common.yaml)) | `OCloud` aggregate (`GET /inventory`: `oCloudId`, `name`, `description`, `resourceTypes`, `deploymentManagers`); `ResourceType` (vendor, model, version, dictionary ids, `resourceKind`, `resourceClass`, `extensions`); `ResourcePool`; `Resource` (`globalAssetId`, `tags`, `groups`, parent / child); `DeploymentManager` (`supportedLocations`, `capabilities`, `capacity`); `InventorySubscription` with `callback` and `consumerSubscriptionId` and typed notifications | `locations` / `oCloudSites` are returned empty (the spec requires at least one; FOCOM has no `OCloudSite` / `Location`); `globalCloudId`, `infrastructureManagementServicesEndPoint`, `smoRegistrationService` are null (`SA-FOCOM-2`). No ProvisioningRequest, Artifacts, NodeCluster or Infrastructure resources ([`Provisioning`](../../specs/o-cloud-im/resources/ORAN.O2ims.Provisioning.yaml), [`Artifacts`](../../specs/o-cloud-im/resources/ORAN.O2ims.Artifacts.yaml), [`Cluster`](../../specs/o-cloud-im/resources/ORAN.O2ims.Cluster.yaml), [`Infrastructure`](../../specs/o-cloud-im/resources/ORAN.O2ims.Infrastructure.yaml)); single-cluster scope (`SA-FOCOM-7`) |
-| O2-IMS alarms / performance | A flat three-field `OCloudAlarm` and a metric record, read-only for performance | No `AlarmEventRecord` with an X.733 `eventType`, no alarm subscription / notify, no performance ingest (`SA-FOCOM-6`) |
+| O2-IMS Location / OCloudSite | `Location`, `OCloudSite` (with inline `resourcePools`) and `ResourcePool` (`oCloudSiteId`, inline `resources`) as resources; `GET /inventory` returns them, a stable `globalCloudId` and the IMS / SMO endpoints (`FOCOM_IMS_ENDPOINT`, `FOCOM_SMO_REGISTRATION_SERVICE`). A default `loc-0` / `site-0` / `pool-0` is seeded | `oCloudId` is always the single Phase 1 cloud |
+| O2-IMS fault | `AlarmEventRecord` (X.733 `eventType`, `PerceivedSeverity`, raised / changed / cleared / acknowledged times), ack / clear / severity-change, `AlarmSubscription` with the NEW / CHANGE / CLEAR / ACKNOWLEDGE filter and `AlarmEvent` notifications | Stored `severity` stays lowercase (the GUI reads it); `perceivedSeverity` is the upper-case spec value. No `AlarmList` retention sweep; no alarm dictionary lookup |
+| O2-IMS performance | `PerformanceMeasurementRecord` ingest, `PerformanceMeasurementJob` (create, list, get, suspend / activate, delete; `measuredResources` / `collectedMeasurements` derived from records), `PerformanceSubscription` with `NOTIFICATION` reporting and `PerformanceMeasurementReport` | `FILE` and `STREAM` reporting are refused; `reportInterval` / `suppressRedundant` / `heartbeatInterval` are stored, a report goes out as a matching job record arrives; a record with no job is stored but never reported (the report format needs a job id); nothing collects measurements, they are ingested; subscription criteria support one key per list (`performanceMeasurementJobId`, `resourceTypeId`, `resourceId`, `performanceMeasurementDefinitionId`); `PerformanceMeasurementStore` retention is not enforced; `CollectedMeasurement` carries the spec's misspelt `performanceMeasurementDefnitionId` beside the correct key |
+| O2-IMS Artifacts / Cluster / Infrastructure / Provisioning | `ArtifactResourceType`, `ArtifactResource`, `NodeClusterType`, `NodeCluster`, `ClusterResourceType`, `ClusterResource`, `ClusterResourceGroup`, `InfrastructureResourceType`, `InfrastructureResource` and `ProvisioningRequest` as REST resources with the spec attribute names and referential checks; a request resolves its `templateName` + `templateVersion` to an `ArtifactResource` and is fulfilled by creating a `NodeCluster` (`provisionedResourceSet`, status `FULFILLED`) | Model-level only: no cluster is deployed on an O-Cloud, `clusterDistributionDescription` says so. A request is fulfilled synchronously, so `PENDING` / `PROGRESSING` / `DELETING` / `FAILED` are never observed. `Gateway`, `SiteNetwork`, `AttachmentCircuit` and `Port` are carried in an `InfrastructureResource`'s `extensions`, not validated |
 | O-RAN-SC `focom-to-teiv-adapter` (wire shape) | `GET /topology` exports entities and relationships in the adapter's `o-ran-smo-teiv-cloud:*` shape, pull-based | The adapter's Kubernetes CRD reads, kubeconfig access and Kafka CloudEvents push are out of scope |
 
 The route names (`/resource-types`, `/resource-pools`, `/deployment-managers`, `/inventory`) follow the O2-IMS collection names in kebab-case; the O2-IMS spec files were audited against the O-RAN-SC `pti-o2` reference ([specs README](../../specs/README.md)).
@@ -53,11 +56,11 @@ The route names (`/resource-types`, `/resource-pools`, `/deployment-managers`, `
 ### 1.5 Design decisions
 
 - **Lazy seeding.** The single Phase 1 topology is inserted on the first read (`_ensure_phase1_topology`), not at startup, so no module needs a startup seeding step.
-- **No fabricated data.** `locations` and `oCloudSites` are empty rather than invented; spec-required fields FOCOM cannot know are null.
+- **Seeded, not discovered.** `locations` / `oCloudSites` are a seeded default plus whatever an operator registers; FOCOM discovers nothing.
 - **`oCloudId` is the placement contract.** NFO reads `oCloudId` (not the filtered `resourceTypes`); `resource_type` filters `resourceTypes` only.
 - **Spec field names where a spec fixes them.** The subscription callback is `callback` (O2-IMS), not `notificationDestination`; `consumerSubscriptionId` is stored and echoed on every notification.
 - **Best-effort notification.** Delivery through `smo_shared.webhook` with a 2 s timeout; an unreachable subscriber never fails provisioning.
-- **Permissive provisioning.** `POST /resources/provision` auto-registers an unknown `resourceTypeId` as a `ResourceType` rather than rejecting it (O2-IMS `ResourceType` is read-only; `SA-FOCOM-9`). Deprovisioning an unknown or non-UUID id is a successful no-op and still notifies.
+- **Closed resource types.** `POST /resources/provision` refuses an unknown `resourceTypeId` with 404 `RESOURCE_TYPE_NOT_FOUND` (O2-IMS `ResourceType` is read-only; `SA-FOCOM-9`). `generic`, `gpu-l40` and `pserver` are seeded and `POST /resource-types` registers more; `FOCOM_AUTO_REGISTER_RESOURCE_TYPES=true` restores the old auto-registration. Deprovisioning an unknown or non-UUID id is a successful no-op and still notifies.
 - **Security.** No in-module authorization; R1 Termination introspects tokens. GUI BFF: provision, deprovision and alarm ingest are admin; inventory subscriptions are operator.
 
 ## 2. Low-level design (LLD)
@@ -122,9 +125,18 @@ All routes are under `/focom` through R1. Lists return `{items, total, limit, of
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/alarms/ingest` | Query `resource_ref`, `severity`; returns `{alarmId}` |
-| GET | `/alarms` | List (`alarmId`, `resourceRef`, `severity`) |
-| GET | `/performance` | List; filter `resource_ref` (`resourceRef`, `metricName`, `value`) |
+| POST | `/alarms/ingest` | Query `resource_ref`, `severity` (any case of `PerceivedSeverity`, else 422), optional `event_type` (X.733, default `OTHER`), `alarm_definition_id`, `probable_cause_id`, `resource_type_id`; returns `{alarmId}`; notifies NEW |
+| GET | `/alarms`, `/alarms/{id}` | List (filters `severity`, `event_type`, `resource_ref`) / one `AlarmEventRecord` (the old `alarmId`, `resourceRef`, `severity` stay beside `alarmEventRecordId`, `resourceId`, `perceivedSeverity`, times, `eventType`) |
+| PATCH | `/alarms/{id}/ack`, `/alarms/{id}/clear`, `/alarms/{id}/severity?severity=` | Acknowledge / clear / change severity; each sets its time and notifies ACKNOWLEDGE / CLEAR / CHANGE |
+| POST / GET / DELETE | `/alarm-subscriptions` | `callback`, `consumerSubscriptionId?`, `filter?` (`NEW` / `CHANGE` / `CLEAR` / `ACKNOWLEDGE`); `GET /{id}` too |
+| GET | `/performance` | List; filters `resource_ref`, `performance_measurement_job_id`, `performance_measurement_definition_id` (old `resourceRef`, `metricName`, `value` plus the spec fields) |
+| POST | `/performance/ingest` | A `PerformanceMeasurementRecord`: `resourceId`, `performanceMeasurementDefinitionId`, `measurementValue` (number or object), `performanceMeasurementJobId?`, `timeStamp?`, `isSuspect?` (201); 422 for an unknown or non-`ACTIVE` job; reports to matching subscriptions when job-linked |
+| POST / GET / PATCH / DELETE | `/performance-jobs`, `/performance-jobs/{id}` | `PerformanceMeasurementJob` (`PATCH ?state=` suspends / activates) |
+| POST / GET / DELETE | `/performance-subscriptions` | `PerformanceSubscription`; `NOTIFICATION` only (422 otherwise) |
+| POST / GET / DELETE | `/locations`, `/o-cloud-sites`, `/resource-pools` (POST, DELETE) | Site model (SA-FOCOM-2); deleting a parent that still has children is 422 |
+| POST | `/resource-types` | Register a `ResourceType` (SA-FOCOM-9) |
+| POST / GET / DELETE | `/artifact-resource-types`, `/artifact-resources`, `/node-cluster-types`, `/node-clusters`, `/cluster-resource-types`, `/cluster-resources`, `/cluster-resource-groups`, `/infrastructure-resource-types`, `/infrastructure-resources` | Spec resources (SA-FOCOM-7); 422 on an unknown attribute, a dangling reference, or deleting an object another still names |
+| POST / GET / DELETE | `/provisioning-requests` | Resolves the template, creates the `NodeCluster`; deleting the request deletes that cluster |
 
 **Liveness**: `GET /health` (GUI BFF module-status fan-out).
 
@@ -154,11 +166,10 @@ Returned as `{"detail": {"type": "about:blank", "title": <code>, "status", "deta
 
 ### 2.8 Limits and open items
 
-- **Sites and locations.** No `OCloudSite` / `Location`; `GET /inventory` returns empty `locations` / `oCloudSites`; pools carry no `oCloudSiteId` and no inline `resources` (`SA-FOCOM-2`).
-- **Alarms and performance.** Flat three-field alarm, no subscribe / notify, no performance ingest route (`SA-FOCOM-6`).
-- **Provisioning model.** No ProvisioningRequest, Artifacts, NodeCluster or Infrastructure (`SA-FOCOM-7`); provisioning auto-registers unknown resource types (`SA-FOCOM-9`); `provision` takes an untyped dict.
+- **Sites and locations.** A seeded `loc-0` / `site-0` / `pool-0`; `provision` still always creates resources in `pool-0` (`SA-FOCOM-2`, closed).
+- **Alarms and performance.** Built as in 1.2 (`SA-FOCOM-6`, closed); `FILE` / `STREAM` performance reporting, retention and dictionary lookups are not.
+- **Provisioning model.** Built at the model level (`SA-FOCOM-7`, closed): FOCOM deploys no real cluster; `provision` takes an untyped dict.
 - **Stubbed health.** `GET /resources/{id}/status` is a constant; no hardware telemetry populates the resource tree (only the `parent_id` shape exists).
-- **Pool.** Resources are always created in `pool-0`.
 - **No topology push.** `/topology` is a pull; no Kafka / CRD integration.
 
 ## 3. Unit tests
@@ -173,14 +184,15 @@ cd smo/focom && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 | Test file | Covers | Count |
 |---|---|---|
-| `tests/test_main.py` | `/inventory` shape, seeded type / manager, no fabricated locations, `resource_type` filtering; subscriptions (create, `consumerSubscriptionId`, delete idempotent, list); notifications on provision / deprovision (match, filtered out, delete regardless of filter, real type on delete, unreachable subscriber, id pass-through); provision / deprovision (incl. unknown id, new fields, auto-registered type); resource types, pools, pool resources, deployment managers (list, get, 404, spec-field exposure); alarms and performance (ingest, filter, empty); `/topology` entities and relationships; `/resources/{id}/status`; `/health` | 50 |
+| `tests/test_o2ims_conformance.py` | Sites, locations and pools (links, inline resources, guarded deletes), `AlarmEventRecord` fields and validation, ack / clear / change and filtered notifications, performance records / jobs / subscriptions and reports, artifact / cluster / infrastructure resources and their references, provisioning requests, closed and registrable resource types | 23 |
+| `tests/test_main.py` | `/inventory` shape, seeded types / manager / location / site, `resource_type` filtering; subscriptions (create, `consumerSubscriptionId`, delete idempotent, list); notifications on provision / deprovision (match, filtered out, delete regardless of filter, real type on delete, unreachable subscriber, id pass-through); provision / deprovision (incl. unknown id, new fields, auto-registered type); resource types, pools, pool resources, deployment managers (list, get, 404, spec-field exposure); alarms and performance (ingest, filter, empty); `/topology` entities and relationships; `/resources/{id}/status`; `/health` | 50 |
 
 Subscriber callbacks are intercepted by patching `httpx.post`.
 
 ### 3.3 What is not covered here
 
 - NFO resolving a cluster from a real FOCOM, SO SMOS provisioning: `tests_integration/`.
-- Foreign-key behaviour when auto-registering a type and provisioning in one request (found against Postgres; SQLite does not enforce it): Postgres verification via `scripts/check_migration_matches_models.py`.
+- Foreign-key behaviour when auto-registering a type (flag) and provisioning in one request (found against Postgres; SQLite does not enforce it): Postgres verification via `scripts/check_migration_matches_models.py`.
 - Anything in the open items above.
 
 ## 4. References

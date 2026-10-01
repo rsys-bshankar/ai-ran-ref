@@ -1,6 +1,239 @@
 {
   "components": {
     "schemas": {
+      "AlarmSubscriptionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "callback": {
+            "title": "Callback",
+            "type": "string"
+          },
+          "consumerSubscriptionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumersubscriptionid"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "enum": [
+                  "NEW",
+                  "CHANGE",
+                  "CLEAR",
+                  "ACKNOWLEDGE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter"
+          }
+        },
+        "required": [
+          "callback"
+        ],
+        "title": "AlarmSubscriptionBody",
+        "type": "object"
+      },
+      "ArtifactResource": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parameterSchema": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Parameterschema",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "description"
+        ],
+        "title": "ArtifactResource",
+        "type": "object"
+      },
+      "ArtifactResourceType": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "ArtifactResourceType",
+        "type": "object"
+      },
+      "AttributeValuePair": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "AttributeValuePair",
+        "type": "object"
+      },
+      "ClusterResource": {
+        "additionalProperties": false,
+        "properties": {
+          "artifactResourceIds": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Artifactresourceids",
+            "type": "array"
+          },
+          "clusterResourceTypeId": {
+            "title": "Clusterresourcetypeid",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "memberOf": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Memberof",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "resourceId": {
+            "title": "Resourceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "clusterResourceTypeId",
+          "resourceId"
+        ],
+        "title": "ClusterResource",
+        "type": "object"
+      },
+      "ClusterResourceGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "clusterResources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Clusterresources",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "clusterResources"
+        ],
+        "title": "ClusterResourceGroup",
+        "type": "object"
+      },
+      "ClusterResourceType": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "ClusterResourceType",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -12,6 +245,742 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InfrastructureResource": {
+        "additionalProperties": false,
+        "properties": {
+          "artifactResourceId": {
+            "title": "Artifactresourceid",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "infrastructureResourceTypeId": {
+            "title": "Infrastructureresourcetypeid",
+            "type": "string"
+          },
+          "inventoryResourceIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Inventoryresourceids",
+            "type": "array"
+          },
+          "linkedInfrastructureResourceIds": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Linkedinfrastructureresourceids",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "infrastructureResourceTypeId",
+          "inventoryResourceIds",
+          "artifactResourceId"
+        ],
+        "title": "InfrastructureResource",
+        "type": "object"
+      },
+      "InfrastructureResourceType": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "InfrastructureResourceType",
+        "type": "object"
+      },
+      "LocationBody": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "coordinate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coordinate"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "globalLocationId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Globallocationid"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "LocationBody",
+        "type": "object"
+      },
+      "NodeCluster": {
+        "additionalProperties": false,
+        "properties": {
+          "artifactResourceId": {
+            "title": "Artifactresourceid",
+            "type": "string"
+          },
+          "clientNodeClusterId": {
+            "title": "Clientnodeclusterid",
+            "type": "string"
+          },
+          "clusterDistributionDescription": {
+            "title": "Clusterdistributiondescription",
+            "type": "string"
+          },
+          "clusterResourceGroups": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Clusterresourcegroups",
+            "type": "array"
+          },
+          "clusterResourceIds": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Clusterresourceids",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "nodeClusterTypeId": {
+            "title": "Nodeclustertypeid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientNodeClusterId",
+          "name",
+          "description",
+          "clusterDistributionDescription",
+          "nodeClusterTypeId",
+          "artifactResourceId"
+        ],
+        "title": "NodeCluster",
+        "type": "object"
+      },
+      "NodeClusterType": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "NodeClusterType",
+        "type": "object"
+      },
+      "PerformanceIngestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "isSuspect": {
+            "default": false,
+            "title": "Issuspect",
+            "type": "boolean"
+          },
+          "measurementValue": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
+            "title": "Measurementvalue"
+          },
+          "performanceMeasurementDefinitionId": {
+            "title": "Performancemeasurementdefinitionid",
+            "type": "string"
+          },
+          "performanceMeasurementJobId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performancemeasurementjobid"
+          },
+          "resourceId": {
+            "title": "Resourceid",
+            "type": "string"
+          },
+          "timeStamp": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          }
+        },
+        "required": [
+          "resourceId",
+          "performanceMeasurementDefinitionId",
+          "measurementValue"
+        ],
+        "title": "PerformanceIngestBody",
+        "type": "object"
+      },
+      "PerformanceJobBody": {
+        "additionalProperties": false,
+        "properties": {
+          "collectionInterval": {
+            "exclusiveMinimum": 0.0,
+            "title": "Collectioninterval",
+            "type": "integer"
+          },
+          "consumerPerformanceJobId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumerperformancejobid"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "measurementSelectionCriteria": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Measurementselectioncriteria",
+            "type": "array"
+          },
+          "qualifiedResourceTypes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Qualifiedresourcetypes",
+            "type": "array"
+          },
+          "resourceScopeCriteria": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Resourcescopecriteria",
+            "type": "array"
+          },
+          "state": {
+            "default": "ACTIVE",
+            "enum": [
+              "ACTIVE",
+              "SUSPENDED",
+              "DEPRECATED"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "collectionInterval"
+        ],
+        "title": "PerformanceJobBody",
+        "type": "object"
+      },
+      "PerformanceSubscriptionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "callback": {
+            "title": "Callback",
+            "type": "string"
+          },
+          "consumerPerformanceSubscriptionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumerperformancesubscriptionid"
+          },
+          "globalSubscriptionCriteria": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Globalsubscriptioncriteria",
+            "type": "array"
+          },
+          "measurementReportingFrequencies": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ReportingFrequency"
+            },
+            "title": "Measurementreportingfrequencies",
+            "type": "array"
+          },
+          "remoteFileLocation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remotefilelocation"
+          },
+          "reportFormat": {
+            "default": "NOTIFICATION",
+            "enum": [
+              "NOTIFICATION",
+              "FILE",
+              "STREAM"
+            ],
+            "title": "Reportformat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "callback"
+        ],
+        "title": "PerformanceSubscriptionBody",
+        "type": "object"
+      },
+      "PoolBody": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "oCloudSiteId": {
+            "title": "Ocloudsiteid",
+            "type": "string"
+          },
+          "resourcePoolId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resourcepoolid"
+          }
+        },
+        "required": [
+          "name",
+          "oCloudSiteId"
+        ],
+        "title": "PoolBody",
+        "type": "object"
+      },
+      "ProvisioningRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provisioningRequestReference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provisioningrequestreference"
+          },
+          "templateName": {
+            "title": "Templatename",
+            "type": "string"
+          },
+          "templateParameters": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Templateparameters",
+            "type": "array"
+          },
+          "templateVersion": {
+            "title": "Templateversion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "templateName",
+          "templateVersion"
+        ],
+        "title": "ProvisioningRequest",
+        "type": "object"
+      },
+      "RegisterResourceTypeRequest": {
+        "additionalProperties": false,
+        "description": "Registers a ResourceType (SA-FOCOM-9): the O2 interface treats the type\nlist as read-only, so this is the SMO-side seeding path.",
+        "properties": {
+          "alarmDictionaryId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alarmdictionaryid"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "performanceDictionaryId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performancedictionaryid"
+          },
+          "resourceClass": {
+            "anyOf": [
+              {
+                "enum": [
+                  "UNDEFINED",
+                  "COMPUTE",
+                  "NETWORKING",
+                  "STORAGE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resourceclass"
+          },
+          "resourceKind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "UNDEFINED",
+                  "LOGICAL",
+                  "PHYSICAL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resourcekind"
+          },
+          "resourceTypeId": {
+            "title": "Resourcetypeid",
+            "type": "string"
+          },
+          "vendor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "resourceTypeId",
+          "name"
+        ],
+        "title": "RegisterResourceTypeRequest",
+        "type": "object"
+      },
+      "ReportingFrequency": {
+        "additionalProperties": false,
+        "properties": {
+          "heartbeatInterval": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeatinterval"
+          },
+          "reportInterval": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reportinterval"
+          },
+          "subscriptionCriteria": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Subscriptioncriteria",
+            "type": "array"
+          },
+          "subscriptionMode": {
+            "enum": [
+              "TARGET_DEFINED",
+              "ON_CHANGE",
+              "SAMPLE"
+            ],
+            "title": "Subscriptionmode",
+            "type": "string"
+          },
+          "suppressRedundant": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suppressredundant"
+          }
+        },
+        "required": [
+          "subscriptionMode"
+        ],
+        "title": "ReportingFrequency",
+        "type": "object"
+      },
+      "SiteBody": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttributeValuePair"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "locationId": {
+            "title": "Locationid",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "oCloudSiteId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocloudsiteid"
+          }
+        },
+        "required": [
+          "locationId",
+          "name"
+        ],
+        "title": "SiteBody",
         "type": "object"
       },
       "SubscribeInventoryRequest": {
@@ -105,10 +1074,216 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/alarm-subscriptions": {
+      "get": {
+        "operationId": "list_alarm_subscriptions_alarm_subscriptions_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Alarm Subscriptions"
+      },
+      "post": {
+        "operationId": "create_alarm_subscription_alarm_subscriptions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlarmSubscriptionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Alarm Subscription"
+      }
+    },
+    "/alarm-subscriptions/{subscription_id}": {
+      "delete": {
+        "operationId": "delete_alarm_subscription_alarm_subscriptions__subscription_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Alarm Subscription"
+      },
+      "get": {
+        "operationId": "get_alarm_subscription_alarm_subscriptions__subscription_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Alarm Subscription"
+      }
+    },
     "/alarms": {
       "get": {
         "operationId": "query_ocloud_alarms_alarms_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Ref"
+            }
+          },
           {
             "description": "Max rows to return (1-500).",
             "in": "query",
@@ -181,6 +1356,64 @@
               "title": "Severity",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "event_type",
+            "required": false,
+            "schema": {
+              "default": "OTHER",
+              "title": "Event Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "alarm_definition_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Alarm Definition Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "probable_cause_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Probable Cause Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_type_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Type Id"
+            }
           }
         ],
         "responses": {
@@ -204,6 +1437,947 @@
           }
         },
         "summary": "Ingest Ocloud Alarm"
+      }
+    },
+    "/alarms/{alarm_id}": {
+      "get": {
+        "operationId": "get_ocloud_alarm_alarms__alarm_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alarm_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alarm Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ocloud Alarm"
+      }
+    },
+    "/alarms/{alarm_id}/ack": {
+      "patch": {
+        "operationId": "acknowledge_alarm_alarms__alarm_id__ack_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alarm_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alarm Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Acknowledge Alarm"
+      }
+    },
+    "/alarms/{alarm_id}/clear": {
+      "patch": {
+        "operationId": "clear_alarm_alarms__alarm_id__clear_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alarm_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alarm Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Alarm"
+      }
+    },
+    "/alarms/{alarm_id}/severity": {
+      "patch": {
+        "operationId": "change_alarm_severity_alarms__alarm_id__severity_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alarm_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alarm Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": true,
+            "schema": {
+              "title": "Severity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Alarm Severity"
+      }
+    },
+    "/artifact-resource-types": {
+      "get": {
+        "operationId": "list_artifact_resource_types_artifact_resource_types_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Artifact Resource Types"
+      },
+      "post": {
+        "operationId": "create_artifact_resource_types_artifact_resource_types_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactResourceType"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Artifact Resource Types"
+      }
+    },
+    "/artifact-resource-types/{object_id}": {
+      "delete": {
+        "operationId": "delete_artifact_resource_types_artifact_resource_types__object_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Artifact Resource Types"
+      },
+      "get": {
+        "operationId": "get_artifact_resource_types_artifact_resource_types__object_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Artifact Resource Types"
+      }
+    },
+    "/artifact-resources": {
+      "get": {
+        "operationId": "list_artifact_resources_artifact_resources_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Artifact Resources"
+      },
+      "post": {
+        "operationId": "create_artifact_resources_artifact_resources_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactResource"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Artifact Resources"
+      }
+    },
+    "/artifact-resources/{object_id}": {
+      "delete": {
+        "operationId": "delete_artifact_resources_artifact_resources__object_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Artifact Resources"
+      },
+      "get": {
+        "operationId": "get_artifact_resources_artifact_resources__object_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Artifact Resources"
+      }
+    },
+    "/cluster-resource-groups": {
+      "get": {
+        "operationId": "list_cluster_resource_groups_cluster_resource_groups_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Cluster Resource Groups"
+      },
+      "post": {
+        "operationId": "create_cluster_resource_groups_cluster_resource_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClusterResourceGroup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Cluster Resource Groups"
+      }
+    },
+    "/cluster-resource-groups/{object_id}": {
+      "delete": {
+        "operationId": "delete_cluster_resource_groups_cluster_resource_groups__object_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Cluster Resource Groups"
+      },
+      "get": {
+        "operationId": "get_cluster_resource_groups_cluster_resource_groups__object_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Cluster Resource Groups"
+      }
+    },
+    "/cluster-resource-types": {
+      "get": {
+        "operationId": "list_cluster_resource_types_cluster_resource_types_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Cluster Resource Types"
+      },
+      "post": {
+        "operationId": "create_cluster_resource_types_cluster_resource_types_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClusterResourceType"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Cluster Resource Types"
+      }
+    },
+    "/cluster-resource-types/{object_id}": {
+      "delete": {
+        "operationId": "delete_cluster_resource_types_cluster_resource_types__object_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Cluster Resource Types"
+      },
+      "get": {
+        "operationId": "get_cluster_resource_types_cluster_resource_types__object_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Cluster Resource Types"
+      }
+    },
+    "/cluster-resources": {
+      "get": {
+        "operationId": "list_cluster_resources_cluster_resources_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Cluster Resources"
+      },
+      "post": {
+        "operationId": "create_cluster_resources_cluster_resources_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClusterResource"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Cluster Resources"
+      }
+    },
+    "/cluster-resources/{object_id}": {
+      "delete": {
+        "operationId": "delete_cluster_resources_cluster_resources__object_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Cluster Resources"
+      },
+      "get": {
+        "operationId": "get_cluster_resources_cluster_resources__object_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Cluster Resources"
       }
     },
     "/deployment-managers": {
@@ -315,9 +2489,321 @@
         "summary": "Health Check"
       }
     },
+    "/infrastructure-resource-types": {
+      "get": {
+        "operationId": "list_infrastructure_resource_types_infrastructure_resource_types_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Infrastructure Resource Types"
+      },
+      "post": {
+        "operationId": "create_infrastructure_resource_types_infrastructure_resource_types_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InfrastructureResourceType"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Infrastructure Resource Types"
+      }
+    },
+    "/infrastructure-resource-types/{object_id}": {
+      "delete": {
+        "operationId": "delete_infrastructure_resource_types_infrastructure_resource_types__object_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Infrastructure Resource Types"
+      },
+      "get": {
+        "operationId": "get_infrastructure_resource_types_infrastructure_resource_types__object_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Infrastructure Resource Types"
+      }
+    },
+    "/infrastructure-resources": {
+      "get": {
+        "operationId": "list_infrastructure_resources_infrastructure_resources_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Infrastructure Resources"
+      },
+      "post": {
+        "operationId": "create_infrastructure_resources_infrastructure_resources_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InfrastructureResource"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Infrastructure Resources"
+      }
+    },
+    "/infrastructure-resources/{object_id}": {
+      "delete": {
+        "operationId": "delete_infrastructure_resources_infrastructure_resources__object_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Infrastructure Resources"
+      },
+      "get": {
+        "operationId": "get_infrastructure_resources_infrastructure_resources__object_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Infrastructure Resources"
+      }
+    },
     "/inventory": {
       "get": {
-        "description": "QueryInventory \u2014 HISTORY.md \u00a77 item 8 (formerly moderate item 2 of\nthe \"Moderate/breaking-shape items\" list): reshaped toward the real\nO2IMS `OCloud` schema (`ORAN.O2ims.Inventory.yaml`), the spec's own\naggregate root \u2014 this route previously returned an ad hoc\n`{clusterId, resourcePools:[...]}` shape matching neither `OCloud`\nnor any wrapped list.\n\n`oCloudId`/`name`/`description`/`resourceTypes`/`deploymentManagers`\nare populated from this build's own real, already-seeded topology\n(the same rows every drill-down route already reads \u2014 no new\nfabricated data). `locations`/`oCloudSites` are required\n(`minItems: 1`) in the real spec, but genuinely empty here: FOCOM\nhas no `OCloudSite`/`Location` concept at all (a confirmed\nlarge/structural scope cut, OPEN_ITEMS.md \u00a73, FOCOM), so\nthey're honestly empty rather than fabricated \u2014\n`globalCloudId`/`infrastructureManagementServicesEndPoint`/\n`smoRegistrationService` are `None` for the same reason.\n\n`resource_type`, if given, now genuinely filters `resourceTypes` to\nthe matching entry (or an empty list if none is registered) \u2014 real\nvalidation against a known `ResourceType`, closing this route's own\npreviously-documented gap (\"still only echoed back, not validated\").\nNFO's real Instantiate caller (NFO+FOCOM LLD section 4) reads\n`oCloudId`, not this filtered list, so this has no effect on it\neither way.",
+        "description": "QueryInventory \u2014 HISTORY.md \u00a77 item 8 (formerly moderate item 2 of\nthe \"Moderate/breaking-shape items\" list): reshaped toward the real\nO2IMS `OCloud` schema (`ORAN.O2ims.Inventory.yaml`), the spec's own\naggregate root \u2014 this route previously returned an ad hoc\n`{clusterId, resourcePools:[...]}` shape matching neither `OCloud`\nnor any wrapped list.\n\n`oCloudId`/`name`/`description`/`resourceTypes`/`deploymentManagers`\nare populated from this build's own real, already-seeded topology\n(the same rows every drill-down route already reads \u2014 no new\nfabricated data). `locations`/`oCloudSites` are required\n(`minItems: 1`) and are populated from FOCOM's own Location and\nOCloudSite rows (a seeded default pair, more via `POST /locations`\nand `POST /o-cloud-sites`; SA-FOCOM-2). `globalCloudId` is a stable\nSMO-side id derived from `oCloudId`; the two endpoint fields come\nfrom `FOCOM_IMS_ENDPOINT` / `FOCOM_SMO_REGISTRATION_SERVICE`.\n\n`resource_type`, if given, now genuinely filters `resourceTypes` to\nthe matching entry (or an empty list if none is registered) \u2014 real\nvalidation against a known `ResourceType`, closing this route's own\npreviously-documented gap (\"still only echoed back, not validated\").\nNFO's real Instantiate caller (NFO+FOCOM LLD section 4) reads\n`oCloudId`, not this filtered list, so this has no effect on it\neither way.",
         "operationId": "query_inventory_inventory_get",
         "parameters": [
           {
@@ -477,6 +2963,630 @@
         "summary": "Unsubscribe Inventory Changes"
       }
     },
+    "/locations": {
+      "get": {
+        "operationId": "list_locations_locations_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Locations"
+      },
+      "post": {
+        "operationId": "create_location_locations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Location"
+      }
+    },
+    "/locations/{location_id}": {
+      "delete": {
+        "operationId": "delete_location_locations__location_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "location_id",
+            "required": true,
+            "schema": {
+              "title": "Location Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Location"
+      },
+      "get": {
+        "operationId": "get_location_locations__location_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "location_id",
+            "required": true,
+            "schema": {
+              "title": "Location Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Location"
+      }
+    },
+    "/node-cluster-types": {
+      "get": {
+        "operationId": "list_node_cluster_types_node_cluster_types_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Node Cluster Types"
+      },
+      "post": {
+        "operationId": "create_node_cluster_types_node_cluster_types_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeClusterType"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Node Cluster Types"
+      }
+    },
+    "/node-cluster-types/{object_id}": {
+      "delete": {
+        "operationId": "delete_node_cluster_types_node_cluster_types__object_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Node Cluster Types"
+      },
+      "get": {
+        "operationId": "get_node_cluster_types_node_cluster_types__object_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Node Cluster Types"
+      }
+    },
+    "/node-clusters": {
+      "get": {
+        "operationId": "list_node_clusters_node_clusters_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Node Clusters"
+      },
+      "post": {
+        "operationId": "create_node_clusters_node_clusters_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeCluster"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Node Clusters"
+      }
+    },
+    "/node-clusters/{object_id}": {
+      "delete": {
+        "operationId": "delete_node_clusters_node_clusters__object_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Node Clusters"
+      },
+      "get": {
+        "operationId": "get_node_clusters_node_clusters__object_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_id",
+            "required": true,
+            "schema": {
+              "title": "Object Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Node Clusters"
+      }
+    },
+    "/o-cloud-sites": {
+      "get": {
+        "operationId": "list_sites_o_cloud_sites_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sites"
+      },
+      "post": {
+        "operationId": "create_site_o_cloud_sites_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Site"
+      }
+    },
+    "/o-cloud-sites/{site_id}": {
+      "delete": {
+        "operationId": "delete_site_o_cloud_sites__site_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Site"
+      },
+      "get": {
+        "operationId": "get_site_o_cloud_sites__site_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Site"
+      }
+    },
     "/performance": {
       "get": {
         "operationId": "query_ocloud_performance_performance_get",
@@ -495,6 +3605,38 @@
                 }
               ],
               "title": "Resource Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "performance_measurement_job_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Performance Measurement Job Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "performance_measurement_definition_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Performance Measurement Definition Id"
             }
           },
           {
@@ -546,6 +3688,566 @@
           }
         },
         "summary": "Query Ocloud Performance"
+      }
+    },
+    "/performance-jobs": {
+      "get": {
+        "operationId": "list_performance_jobs_performance_jobs_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Performance Jobs"
+      },
+      "post": {
+        "operationId": "create_performance_job_performance_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PerformanceJobBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Performance Job"
+      }
+    },
+    "/performance-jobs/{job_id}": {
+      "delete": {
+        "operationId": "delete_performance_job_performance_jobs__job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Performance Job"
+      },
+      "get": {
+        "operationId": "get_performance_job_performance_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Performance Job"
+      },
+      "patch": {
+        "operationId": "set_performance_job_state_performance_jobs__job_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "enum": [
+                "ACTIVE",
+                "SUSPENDED",
+                "DEPRECATED"
+              ],
+              "title": "State",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Performance Job State"
+      }
+    },
+    "/performance-subscriptions": {
+      "get": {
+        "operationId": "list_performance_subscriptions_performance_subscriptions_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Performance Subscriptions"
+      },
+      "post": {
+        "operationId": "create_performance_subscription_performance_subscriptions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PerformanceSubscriptionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Performance Subscription"
+      }
+    },
+    "/performance-subscriptions/{subscription_id}": {
+      "delete": {
+        "operationId": "delete_performance_subscription_performance_subscriptions__subscription_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Performance Subscription"
+      },
+      "get": {
+        "operationId": "get_performance_subscription_performance_subscriptions__subscription_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Performance Subscription"
+      }
+    },
+    "/performance/ingest": {
+      "post": {
+        "operationId": "ingest_performance_record_performance_ingest_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PerformanceIngestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest Performance Record"
+      }
+    },
+    "/provisioning-requests": {
+      "get": {
+        "operationId": "list_provisioning_requests_provisioning_requests_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Provisioning Requests"
+      },
+      "post": {
+        "description": "Resolve the template, create the NodeCluster, record the outcome.",
+        "operationId": "create_provisioning_request_provisioning_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProvisioningRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Provisioning Request"
+      }
+    },
+    "/provisioning-requests/{request_id}": {
+      "delete": {
+        "description": "The request is deleted with the NodeCluster it created.",
+        "operationId": "delete_provisioning_request_provisioning_requests__request_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Provisioning Request"
+      },
+      "get": {
+        "operationId": "get_provisioning_request_provisioning_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Provisioning Request"
       }
     },
     "/resource-pools": {
@@ -601,9 +4303,73 @@
           }
         },
         "summary": "List Resource Pools"
+      },
+      "post": {
+        "operationId": "create_resource_pool_resource_pools_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PoolBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Resource Pool"
       }
     },
     "/resource-pools/{resource_pool_id}": {
+      "delete": {
+        "operationId": "delete_resource_pool_resource_pools__resource_pool_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_pool_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Pool Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Resource Pool"
+      },
       "get": {
         "operationId": "get_resource_pool_resource_pools__resource_pool_id__get",
         "parameters": [
@@ -758,6 +4524,40 @@
           }
         },
         "summary": "List Resource Types"
+      },
+      "post": {
+        "operationId": "register_resource_type_resource_types_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterResourceTypeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Resource Type"
       }
     },
     "/resource-types/{resource_type_id}": {
