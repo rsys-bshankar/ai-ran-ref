@@ -2823,6 +2823,37 @@ outright. Every existing caller keeps its best-effort, swallow-on-failure semant
 unchanged; `post_webhook`/`get_webhook`/`delete_webhook` just silently no-op instead of
 attempting the request when the destination is disallowed.
 
+**Wave 8 follow-ons (`docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md` W8-07..09, decisions
+D-1/D-1b):** (a) **ASSIST reject.** An `AWAITING_SCOPE` dispatch now has two operator
+exits, and stays `AWAITING_SCOPE` until one of them is taken: `resolve` (scope it — an
+`Intent` is created) or the new `POST /autonomy-dispatches/{id}/reject` (`rejectedBy`,
+optional `reason`) — status `REJECTED`, no `Intent` ever created, `rejectedBy`/
+`rejectionReason` persisted on the row and in its view, and the operator destination
+notified like every other transition. Rejecting anything not `AWAITING_SCOPE` is the same
+409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE`. GUI: a Reject button (with an optional
+reason) beside Resolve, and `REJECTED` in the status filter; the BFF pins `rejectedBy` to
+the GUI identity (`smo-gui:<user>`) and gates create/resolve/reject at operator — those
+three routes had no BFF rule before, so the tab's create/resolve actions were hidden.
+(b) **The dispatched Intent now carries its scope.** `regionScope.objectInstance` and
+`regionScope.cells` are folded into each expectation's `expectationObject`
+(`objectInstance`, and a `Cell` `IS_ALL_OF` object context) for both AUTONOMOUS and
+resolved-ASSIST dispatches, so the handler sees *where* to act, not just what. (c) **A
+real enactment path — the generic O1-CM intent handler** (D-1: lives in SA SMOS,
+`sa-smos/app/o1cm.py`). `POST /sa-smos/o1-cm-handler/registration` registers SA SMOS as
+RMIH `sa-smos` for `RAN_SUBNETWORK` expectations whose targets are O1 CM attributes named
+`<IOC>.<attribute>` with `IS_EQUAL_TO` (defaults: `NRCellDU.administrativeState`
+∈ {LOCKED, UNLOCKED}, `CESManagementFunction.energySavingControl` ∈
+{TO_BE_ENERGY_SAVING, TO_BE_NOT_ENERGY_SAVING}; a registration may declare others).
+When Intent Service pushes a new Intent to it, the handler reads the Intent back, turns
+each supported target into a per-cell attribute change (`managedFunctionRef`
+`<IOC>=<cell>`), writes it through `POST /dme/actions` (the same audited O1 path a manual
+CM write takes, with the intent/expectation ids as source context), publishes the
+Intent's `IntentReport` (FULFILLED, or NOT_FULFILLED/DEGRADED with reasons, the DME
+action and RAN NF OAM job references in `additionalFulfilmentInfo`) and records an
+`o1_cm_enactment` row (`GET /sa-smos/o1-cm-handler/enactments`). So an AUTONOMOUS or
+resolved-ASSIST dispatch now ends in a real O1 change and a fulfilment report — the
+EnergySaving rApp (Wave 10.1) is its first consumer.
+
 ### 6.4 GAP: training data never validated against real DME DataJobs — CLOSED
 
 `RequestTraining(modelId, requiredData, validationCriteria)` (call flow 02,

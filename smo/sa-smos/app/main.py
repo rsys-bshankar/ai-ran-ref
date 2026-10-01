@@ -189,3 +189,9 @@ def _monitor_view(m: AssuranceMonitor) -> dict:
             "targetCoordinationGroupId": str(m.target_coordination_group_id) if m.target_coordination_group_id else None,
             "analyticsSubscriptionId": str(m.analytics_subscription_id) if m.analytics_subscription_id else None,
             "thresholds": m.requirement_thresholds}
+
+
+# ---------------------------------------------------------------- Wave 8: generic O1-CM intent handler (W8-07)
+from .o1cm import router as _o1cm_router  # noqa: E402
+
+app.include_router(_o1cm_router)

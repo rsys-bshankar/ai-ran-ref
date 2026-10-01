@@ -1806,6 +1806,31 @@
         "title": "RegisterRmihRequest",
         "type": "object"
       },
+      "RejectAutonomyDispatchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "rejectedBy": {
+            "title": "Rejectedby",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rejectedBy"
+        ],
+        "title": "RejectAutonomyDispatchRequest",
+        "type": "object"
+      },
       "ResolveAutonomyDispatchRequest": {
         "properties": {
           "regionScope": {
@@ -2322,6 +2347,55 @@
           }
         },
         "summary": "Query Autonomy Dispatch"
+      }
+    },
+    "/autonomy-dispatches/{dispatch_id}/reject": {
+      "post": {
+        "description": "Wave 8 (W8-08, decision D-1b): ASSIST's other operator answer \u2014 the\noperator declines the recommendation outright. Only from AWAITING_SCOPE\n(an ASSIST dispatch stays there until it is either resolved or\nrejected); no Intent is ever created, and the operator destination is\nnotified like every other dispatch outcome.",
+        "operationId": "reject_autonomy_dispatch_autonomy_dispatches__dispatch_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dispatch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dispatch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectAutonomyDispatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Autonomy Dispatch"
       }
     },
     "/autonomy-dispatches/{dispatch_id}/resolve": {

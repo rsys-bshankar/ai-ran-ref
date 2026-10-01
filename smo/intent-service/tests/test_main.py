@@ -654,3 +654,51 @@ def test_list_and_get_autonomy_dispatches(client, rapp_mgmt):
     assert [d["dispatchId"] for d in listed] == [created["dispatchId"]]
 
     assert client.get(f"/autonomy-dispatches/{uuid.uuid4()}").status_code == 404
+
+
+# ---------------------------------------------------------------- Wave 8: ASSIST reject (W8-08) and region scope
+
+def test_assist_dispatch_can_be_rejected_and_then_neither_resolved_nor_rejected_again(client, rapp_mgmt, webhooks):
+    _register_rmih(client)
+    instance_id = rapp_mgmt.add_instance(autonomy_mode="ASSIST")
+    created = client.post("/autonomy-dispatches", json=_dispatch(instance_id, notificationDestination="http://operator/assist")).json()
+
+    rejected = client.post(f"/autonomy-dispatches/{created['dispatchId']}/reject",
+                           json={"rejectedBy": "operator-1", "reason": "maintenance window"})
+    assert rejected.status_code == 200
+    body = rejected.json()
+    assert (body["status"], body["rejectedBy"], body["rejectionReason"], body["intentId"]) == ("REJECTED", "operator-1", "maintenance window", None)
+    assert [b["status"] for u, b in webhooks if u == "http://operator/assist"] == ["AWAITING_SCOPE", "REJECTED"]
+    assert client.get("/intents").json()["total"] == 0
+
+    for path, payload in (("resolve", {"regionScope": {}}), ("reject", {"rejectedBy": "x"})):
+        resp = client.post(f"/autonomy-dispatches/{created['dispatchId']}/{path}", json=payload)
+        assert resp.status_code == 409 and resp.json()["detail"]["title"] == "AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE"
+    assert client.get("/autonomy-dispatches", params={"status": "REJECTED"}).json()["total"] == 1
+
+
+def test_reject_only_from_awaiting_scope_and_unknown_is_404(client, rapp_mgmt):
+    _register_rmih(client)
+    shadow = client.post("/autonomy-dispatches", json=_dispatch(rapp_mgmt.add_instance(autonomy_mode="SHADOW"))).json()
+    assert client.post(f"/autonomy-dispatches/{shadow['dispatchId']}/reject", json={"rejectedBy": "op"}).status_code == 409
+    assert client.post(f"/autonomy-dispatches/{uuid.uuid4()}/reject", json={"rejectedBy": "op"}).status_code == 404
+
+
+def test_region_scope_is_folded_into_the_dispatched_intent(client, rapp_mgmt):
+    """AUTONOMOUS: the instance's pre-configured regionScope; ASSIST: the
+    operator's resolve — either becomes the Intent's objectInstance and
+    Cell object context."""
+    _register_rmih(client)
+    auto = rapp_mgmt.add_instance(autonomy_mode="AUTONOMOUS", region_scope={"objectInstance": "gnb-du-01", "cells": ["101", "102"]})
+    intent_id = client.post("/autonomy-dispatches", json=_dispatch(auto)).json()["intentId"]
+    obj = client.get(f"/intents/{intent_id}").json()["attributes"]["intentExpectations"][0]["expectationObject"]
+    assert obj["objectInstance"] == "gnb-du-01"
+    assert obj["objectContexts"] == [{"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF",
+                                      "contextValueRange": ["101", "102"], "contextInvariant": False}]
+
+    assist = rapp_mgmt.add_instance(autonomy_mode="ASSIST")
+    dispatch = client.post("/autonomy-dispatches", json=_dispatch(assist)).json()
+    resolved = client.post(f"/autonomy-dispatches/{dispatch['dispatchId']}/resolve",
+                           json={"regionScope": {"objectInstance": "gnb-du-02", "cells": ["201"]}}).json()
+    obj = client.get(f"/intents/{resolved['intentId']}").json()["attributes"]["intentExpectations"][0]["expectationObject"]
+    assert (obj["objectInstance"], obj["objectContexts"][0]["contextValueRange"]) == ("gnb-du-02", ["201"])

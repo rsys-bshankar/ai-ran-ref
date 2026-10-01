@@ -119,7 +119,10 @@ class AutonomyDispatch(Base):
     # value for ASSIST. Null for SHADOW (nothing is ever enforced) and
     # for an ASSIST dispatch still AWAITING_SCOPE.
     region_scope: Mapped[dict | None] = mapped_column(JSON)
-    status: Mapped[str] = mapped_column(String, nullable=False)  # AWAITING_SCOPE | DISPATCHED | SHADOWED
+    status: Mapped[str] = mapped_column(String, nullable=False)  # AWAITING_SCOPE | DISPATCHED | SHADOWED | REJECTED
+    # Wave 8 (W8-08): an ASSIST dispatch the operator declined.
+    rejected_by: Mapped[str | None] = mapped_column(String)
+    rejection_reason: Mapped[str | None] = mapped_column(String)
     intent_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("intent.intent_id", ondelete="SET NULL"))
     # All three modes always notify the operator — not mode-gated.
     notification_destination: Mapped[str | None] = mapped_column(String)

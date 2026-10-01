@@ -123,7 +123,7 @@ Depends on: M1, M5, M6. OPEN_ITEMS §6.2 (real NFO-backed runtimes) is **already
 | W7-04 | ✅ **Stage timeouts**: Training 30 min, Validation 15 min, Emulation 30 min, Inference 5 s (`[W10C]` §13). Expiry → job FAILED + lifecycle FAILED event, no corruption | Configurable timeouts; tests for each expiry |
 | W7-05 | ✅ Exit criteria | Gap analysis reviewed; tests green |
 
-## 7. Wave-8 — Autonomy modes (AUTONOMOUS / ASSIST / SHADOW) = OPEN_ITEMS §6.3
+## 7. Wave-8 — Autonomy modes (AUTONOMOUS / ASSIST / SHADOW) = OPEN_ITEMS §6.3 — ✅ DONE (PR-W8)
 Depends on: Wave-6, Wave-7. **Platform model closed by PR #138**; the remaining items come from D-1/D-1b.
 
 | ID | Work item | Done when |
@@ -134,9 +134,9 @@ Depends on: Wave-6, Wave-7. **Platform model closed by PR #138**; the remaining 
 | W8-04 | ~~SHADOW observe-only~~ | **Closed by #138** (`SHADOWED`) |
 | W8-05 | ~~Operator notification in all modes~~ | **Closed by #138** (best-effort, via `smo_shared.webhook`) |
 | W8-06 | ~~Call flows 01/02/03/09 updated~~ | **Closed by #138** |
-| W8-07 | **Generic O1-CM Intent handler (D-1)** in SA-SMOS: registers as an IntentHandlingFunction for CM-shaped expectations; on an Intent, issues DME `/actions` (→ RAN NF OAM) per target in the region scope, tracks the forwarded config jobs, and posts IntentReport FULFILLED / NOT_FULFILLED with action refs + correlation-id | An AUTONOMOUS dispatch changes the mock O1 cell and produces a FULFILLED IntentReport |
-| W8-08 | **ASSIST reject (D-1b)**: `POST /autonomy-dispatches/{id}/reject` → `REJECTED` (409 unless `AWAITING_SCOPE`), with notification + GUI button | ASSIST stays `AWAITING_SCOPE` until approve or reject |
-| W8-09 | Call flow 09 + OPEN_ITEMS updated for W8-07/W8-08 | Mermaid validates |
+| W8-07 | **Generic O1-CM Intent handler (D-1)** in SA-SMOS: registers as an IntentHandlingFunction for CM-shaped expectations; on an Intent, issues DME `/actions` (→ RAN NF OAM) per target in the region scope, tracks the forwarded config jobs, and posts IntentReport FULFILLED / NOT_FULFILLED with action refs + correlation-id | ✅ `sa-smos/app/o1cm.py` (`/sa-smos/o1-cm-handler/registration`, `/intents`, `/enactments`); integration test drives an Intent through DME to the mock O1 adaptor |
+| W8-08 | **ASSIST reject (D-1b)**: `POST /autonomy-dispatches/{id}/reject` → `REJECTED` (409 unless `AWAITING_SCOPE`), with notification + GUI button | ✅ `POST /intent-service/autonomy-dispatches/{id}/reject`; GUI Reject button; BFF pins `rejectedBy` |
+| W8-09 | Call flow 09 + OPEN_ITEMS updated for W8-07/W8-08 | ✅ call flow 09 + `OPEN_ITEMS.md` §6.3 Wave 8 follow-ons |
 
 ## 8. Wave-9 — Multi-vendor O1 framework
 Depends on: `O1_VENDOR_ONBOARDING_GUIDE.md` (exists).

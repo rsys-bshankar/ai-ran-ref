@@ -569,6 +569,24 @@
   },
   {
     "method": "POST",
+    "pattern": "^/intent-service/autonomy-dispatches$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/intent-service/autonomy-dispatches/[^/]+/resolve$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/intent-service/autonomy-dispatches/[^/]+/reject$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/mdaf/subscriptions$",
     "role": "operator",
     "queryMatch": {}

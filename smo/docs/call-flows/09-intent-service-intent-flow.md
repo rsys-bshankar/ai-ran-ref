@@ -38,6 +38,8 @@ sequenceDiagram
     participant RappMgmt as rApp Mgmt
     actor RMIO as Intent-owning rApp (RMIO)
     actor Operator as Operator
+    participant SA as SA SMOS (O1-CM intent handler)
+    participant O1 as O1 adaptor
 
     SO->>R1: POST /intent-service/intent-handling-functions<br/>(rmihId, smeServiceId, intentHandlingCapabilityList, notificationDestination, intentHandlingScope?, supportedNegotiationFunctionalities?)
     R1->>Policy: (proxied) RegisterIntentHandlingFunction
@@ -94,6 +96,27 @@ sequenceDiagram
     Policy->>Operator: best-effort POST notificationDestination — again, dispatch resolved
     Policy-->>Operator: dispatchId, status=DISPATCHED, intentId
     Note over Policy: 409 AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE if called on a<br/>dispatch that isn't AWAITING_SCOPE — AUTONOMOUS's own scope was<br/>already fixed at onboarding, SHADOW is never resolvable at all
+    end
+
+    opt ASSIST dispatch rejected instead (Wave 8, W8-08)
+    Operator->>R1: POST /intent-service/autonomy-dispatches/{id}/reject (rejectedBy, reason?)
+    R1->>Policy: (proxied) RejectAutonomyDispatch
+    Policy->>Policy: status=REJECTED — no Intent is ever created
+    Policy->>Operator: best-effort POST notificationDestination — dispatch rejected
+    Policy-->>Operator: dispatchId, status=REJECTED, rejectedBy, rejectionReason
+    Note over Policy: until resolve or reject, the dispatch stays AWAITING_SCOPE.<br/>Reject is the same 409 on any other status
+    end
+
+    rect rgb(235, 245, 255)
+    Note over SA,O1: Wave 8 (W8-07) — the generic O1-CM intent handler in SA SMOS enacts<br/>a dispatched Intent whose targets are IOC.attribute CM values
+    SA->>R1: POST /intent-service/intent-handling-functions (rmihId=sa-smos, RAN_SUBNETWORK,<br/>targets NRCellDU.administrativeState, CESManagementFunction.energySavingControl)
+    Policy->>SA: best-effort POST /sa-smos/o1-cm-handler/intents (intentId)
+    SA->>R1: GET /intent-service/intents/{intentId}
+    SA->>SA: per expectation — objectInstance is the managed element, Cell context gives the cells,<br/>each IS_EQUAL_TO target becomes a change with managedFunctionRef IOC=cell
+    SA->>R1: POST /dme/actions (changes, sourceContext intentId and expectationId)
+    R1->>O1: (via DME, then a RAN NF OAM config job) edit-config
+    SA->>R1: POST /intent-service/intent-reports (FULFILLED, or NOT_FULFILLED and DEGRADED,<br/>with action and job references in additionalFulfilmentInfo)
+    SA->>SA: record o1_cm_enactment
     end
 
     loop RMIH's own fulfilment cycle

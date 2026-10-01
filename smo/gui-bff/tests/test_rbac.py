@@ -72,6 +72,10 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/dme/actions", "operator"),
     ("POST", "/aimgf/training-jobs/j/suspend", "operator"),
     ("POST", "/aimgf/training-jobs/j/resume", "operator"),
+    # Wave 8 (W8-08): ASSIST dispatches are scoped or rejected by an operator
+    ("POST", "/intent-service/autonomy-dispatches", "operator"),
+    ("POST", "/intent-service/autonomy-dispatches/d/resolve", "operator"),
+    ("POST", "/intent-service/autonomy-dispatches/d/reject", "operator"),
 ])
 def test_minimum_role_per_route(method, path, minimum):
     order = ["viewer", "operator", "admin"]
