@@ -156,9 +156,9 @@ jobs:
             echo "::error::mock-near-rt-ric has a route out of a1_mock_net"; exit 1
           fi
           # Only the documented host ports are published.
-          published=$(docker compose ps --format '{{.Service}} {{.Publishers}}' | grep -E ':[0-9]+->' | awk '{print $1}' | sort -u | tr '\n' ' ')
+          published=$(docker compose ps --format json | jq -rs '[.[] | select(any(.Publishers[]?; .PublishedPort > 0)) | .Service] | unique | join(" ")')
           echo "services publishing host ports: $published"
-          [ "$published" = "gui postgres r1-termination " ]
+          [ "$published" = "gui postgres r1-termination" ]
 
       - name: GUI serves the SPA and proxies /api to the BFF
         run: |
