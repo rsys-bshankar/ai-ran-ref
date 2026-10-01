@@ -598,3 +598,65 @@ def test_vendor_onboarding_gates_o1_writes_by_capability_and_schema(mesh):
     assert refused.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED" and "warpDrive" in refused.json()["detail"]["detail"]
     statuses = [a["status"] for a in mesh["dme"].get("/actions").json()["items"]]
     assert sorted(statuses) == ["COMPLETED", "REJECTED"]
+
+
+def test_sa_smos_rollback_returns_a_rapp_to_its_previous_version(mesh, loaded_apps, db_connection, monkeypatch):
+    """OI-1-sa-rollback, end to end: a rApp instance is upgraded v1 -> v2
+    (two real packages through Onboarding and NFO); an SA SMOS monitor
+    registered on the v1 instance id — superseded by the upgrade — issues
+    ROLLBACK, which rApp Management resolves through its version history to
+    the v2 instance and turns into an upgrade back to v1. Committing it
+    deploys v1 again through NFO (its descriptor was released when v1 was
+    retired) and retires v2's deployment. A second ROLLBACK has nothing
+    left to undo and is escalated."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    monkeypatch.setattr(
+        loaded_apps["onboarding"], "_validate_package",
+        lambda location: ("Definitions/main.yaml", [], f"hash-{location}", {}),
+    )
+    v1 = mesh["onboarding"].post("/packages", json={"location": "http://example/rollback-v1.csar"}).json()["packageId"]
+    v2 = mesh["onboarding"].post("/packages", json={"location": "http://example/rollback-v2.csar"}).json()["packageId"]
+    for package_id in (v1, v2):
+        assert mesh["onboarding"].get(f"/packages/{package_id}/onboarding-status").json()["state"] == "AVAILABLE"
+
+    rapp = mesh["rapp-mgmt"]
+    v1_instance = rapp.post("/instances", json={"packageId": v1, "config": {"threshold": 1}}).json()["instanceId"]
+    assert rapp.post(f"/instances/{v1_instance}/bootstrap-complete").status_code == 200
+    v1_workload = rapp.get(f"/instances/{v1_instance}").json()["workloadRef"]
+
+    monitor = mesh["sa-smos"].post("/monitors", params={"target_rapp_instance_id": v1_instance}, json={"kpi": 10}).json()
+
+    v2_instance = rapp.post(f"/instances/{v1_instance}/upgrade", json={"newPackageId": v2}).json()["newInstanceId"]
+    rapp.put(f"/instances/{v2_instance}/config", json={"threshold": 9})
+    rapp.post(f"/instances/{v2_instance}/bootstrap-complete")
+    assert rapp.post(f"/instances/{v1_instance}/upgrade/resolve", params={"succeeded": True}).json()["instanceId"] == v2_instance
+    v2_workload = rapp.get(f"/instances/{v2_instance}").json()["workloadRef"]
+
+    rollback = mesh["sa-smos"].post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "ROLLBACK"})
+
+    assert rollback.status_code == 201 and rollback.json()["outcome"] == "RESOLVED"
+    started = rollback.json()["result"]
+    assert (started["instanceId"], started["fromPackageId"], started["toPackageId"]) == (v2_instance, v2, v1)
+    v1_again = started["newInstanceId"]
+    assert rapp.get(f"/instances/{v1_again}").json()["configuration"] == {"threshold": 1}
+    rapp.post(f"/instances/{v1_again}/bootstrap-complete")
+    assert rapp.post(f"/instances/{v2_instance}/upgrade/resolve", params={"succeeded": True}).json()["state"] == "RUNNING"
+
+    history = rapp.get(f"/instances/{v1_instance}/versions").json()
+    assert (history["instanceId"], history["packageId"], history["rollbackTarget"]) == (v1_again, v1, None)
+    assert [v["kind"] for v in history["versions"]] == ["ROLLBACK", "UPGRADE"]
+
+    NFDeployment = loaded_apps["nfo"].NFDeployment
+    with Session(bind=db_connection, join_transaction_mode="create_savepoint") as session:
+        live = {str(d.nf_deployment_id) for d in session.scalars(select(NFDeployment))}
+    v1_again_workload = rapp.get(f"/instances/{v1_again}").json()["workloadRef"]
+    assert v1_again_workload in live and v1_workload not in live and v2_workload not in live
+
+    again = mesh["sa-smos"].post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "ROLLBACK"})
+    assert again.status_code == 201 and again.json()["outcome"] == "ESCALATED"
+    assert again.json()["detail"].startswith("ROLLBACK_HISTORY_UNAVAILABLE")
+
+    reconnect = mesh["sa-smos"].post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "RECONNECT"})
+    assert reconnect.json()["outcome"] == "RESOLVED"  # heals the current (v1 again) instance's workload

@@ -191,6 +191,7 @@
         "summary": "List Assurance Monitors"
       },
       "post": {
+        "description": "At most one target: a service order (NF deployment remediation), a\nmodel coordination group (retrain), or a rApp instance (remediation\nthrough rApp Management, including ROLLBACK).",
         "operationId": "register_assurance_monitor_monitors_post",
         "parameters": [
           {
@@ -225,6 +226,23 @@
                 }
               ],
               "title": "Target Coordination Group Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_rapp_instance_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Rapp Instance Id"
             }
           },
           {
@@ -417,7 +435,7 @@
     },
     "/monitors/{monitor_id}/remedial-actions": {
       "post": {
-        "description": "ExecuteRemedialAction \u2014 gated by autoExecutionScopeConfig, admin-only\nto change (REQ-CNFG-ADM pattern, unchanged). Dispatch per SO/SA SMOS\nLLD section 2.1: CONFIG_CHANGE, SCALE, and RECONNECT are resolved;\nROLLBACK stays unsupported for a concrete, checked reason (see the\nmodule docstring), not a generic \"ambiguous\" refusal. A\ncoordination-group-scoped monitor bypasses all four actionType\nbranches below \u2014 see the module docstring's MLModelCoordinationGroup\nconvergence note.",
+        "description": "ExecuteRemedialAction \u2014 gated by autoExecutionScopeConfig, admin-only\nto change (REQ-CNFG-ADM pattern, unchanged). Dispatch per SO/SA SMOS\nLLD section 2.1: CONFIG_CHANGE, SCALE, and RECONNECT are resolved;\nROLLBACK is resolved for a rApp-instance-scoped monitor and refused\n(409 ROLLBACK_HISTORY_UNAVAILABLE) for any other (see the module\ndocstring). A coordination-group-scoped monitor bypasses all four\nactionType branches below \u2014 see the module docstring's\nMLModelCoordinationGroup convergence note.\n\nA rApp Management refusal (nothing left to roll back, the instance not\nRUNNING, the earlier package gone) is not an error here: the action is\nrecorded ESCALATED, with rApp Management's reason in `detail`. A\nRESOLVED rollback has started an upgrade back; `result` names the\nreplacement instance, which rApp Management resolves like any upgrade.",
         "operationId": "execute_remedial_action_monitors__monitor_id__remedial_actions_post",
         "parameters": [
           {

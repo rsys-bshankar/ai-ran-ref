@@ -198,7 +198,7 @@ function Assurance() {
         <DataTable rows={monitors.data} loading={monitors.isLoading} error={monitors.error} rowKey={(m) => m.monitorId} empty="No assurance monitors."
           onRowClick={setSelected} selectedKey={selected?.monitorId} columns={[
             { header: "Monitor", render: (m) => <Id value={m.monitorId} /> },
-            { header: "Scope", render: (m) => m.targetOrderId ? <>order <Id value={m.targetOrderId} /></> : m.targetCoordinationGroupId ? <>model group <Id value={m.targetCoordinationGroupId} /></> : <span className="muted">unscoped</span> },
+            { header: "Scope", render: (m) => m.targetOrderId ? <>order <Id value={m.targetOrderId} /></> : m.targetCoordinationGroupId ? <>model group <Id value={m.targetCoordinationGroupId} /></> : m.targetRappInstanceId ? <>rApp instance <Id value={m.targetRappInstanceId} /></> : <span className="muted">unscoped</span> },
             { header: "Thresholds (floor)", render: (m) => Object.entries(m.thresholds).map(([k, v]) => `${k} ≥ ${v}`).join(", ") || "—" },
             { header: "Actions taken", render: (m) => (actions.data ?? []).filter((a) => a.monitorId === m.monitorId).length },
           ]} />
@@ -210,7 +210,7 @@ function Assurance() {
           { header: "Monitor", render: (a) => <Id value={a.monitorId} /> },
           { header: "Scope", render: (a) => {
             const m = monitors.data?.find((x) => x.monitorId === a.monitorId);
-            return m?.targetCoordinationGroupId ? "model group (retrain)" : m?.targetOrderId ? "service order" : "—";
+            return m?.targetCoordinationGroupId ? "model group (retrain)" : m?.targetOrderId ? "service order" : m?.targetRappInstanceId ? "rApp instance" : "—";
           } },
           { header: "Type", render: (a) => a.actionType },
           { header: "Auto-executed", render: (a) => (a.autoExecuted ? "yes" : "no") },
@@ -224,6 +224,7 @@ function Assurance() {
 function RegisterMonitor() {
   const orders = useSmo<ServiceOrder[]>("/so-smos/orders");
   const groups = useSmo<CoordinationGroup[]>("/mlmr/coordination-groups");
+  const instances = useSmo<InstanceSummary[]>("/rapp-mgmt/instances");
   const [target, setTarget] = useState("");
   const [thresholds, setThresholds] = useState('{"throughputMbps": 100}');
   const parsed = parseJsonObject(thresholds);
@@ -231,17 +232,19 @@ function RegisterMonitor() {
   return (
     <Card title="Register assurance monitor">
       <div className="form inline">
-        <Field label="Scope" hint="Order-scoped monitors remediate NF deployments; group-scoped ones retrain models">
+        <Field label="Scope" hint="Order-scoped monitors remediate NF deployments; group-scoped ones retrain models; rApp-scoped ones can roll the rApp back">
           <select value={target} onChange={(e) => setTarget(e.target.value)}>
             <option value="">Unscoped</option>
             <optgroup label="SO SMOS orders">{orders.data?.map((o) => <option key={o.orderId} value={`order:${o.orderId}`}>{o.scope} ({o.orderId.slice(0, 8)})</option>)}</optgroup>
             <optgroup label="Model coordination groups">{groups.data?.map((g) => <option key={g.groupId} value={`group:${g.groupId}`}>group {g.groupId.slice(0, 8)}</option>)}</optgroup>
+            <optgroup label="rApp instances">{instances.data?.filter((i) => i.state !== "UNDEPLOYED").map((i) => <option key={i.instanceId} value={`rapp:${i.instanceId}`}>instance {i.instanceId.slice(0, 8)} ({i.state})</option>)}</optgroup>
           </select>
         </Field>
         <Field label="Thresholds — metric floors (JSON)" hint={parsed.ok ? undefined : <span className="text-bad">{parsed.error}</span>}><input value={thresholds} onChange={(e) => setThresholds(e.target.value)} /></Field>
         <ActionButton label="Register" tone="primary" disabled={!parsed.ok} action={{
           method: "POST", path: "/sa-smos/monitors", json: parsed.ok ? parsed.value : {},
-          query: { target_order_id: kind === "order" ? id : undefined, target_coordination_group_id: kind === "group" ? id : undefined },
+          query: { target_order_id: kind === "order" ? id : undefined, target_coordination_group_id: kind === "group" ? id : undefined,
+                   target_rapp_instance_id: kind === "rapp" ? id : undefined },
           success: "Monitor registered",
         }} />
       </div>
@@ -272,7 +275,7 @@ function MonitorPanel({ monitor, onClose }: { monitor: Monitor; onClose: () => v
         <div>
           <h3>Remedial action</h3>
           {monitor.targetCoordinationGroupId && <p className="muted small">Group-scoped: any action type dispatches a group retrain via AI/ML Workflow.</p>}
-          <Field label="Action type" hint={monitor.targetCoordinationGroupId ? undefined : actionType === "ROLLBACK" ? "Not supported: rApp Management keeps no prior-version history (SA SMOS returns ROLLBACK_HISTORY_UNAVAILABLE)." : actionType === "SCALE" ? "Always escalates in Phase 1 (NFO scale is a stub)." : undefined}>
+          <Field label="Action type" hint={monitor.targetCoordinationGroupId ? undefined : actionType === "ROLLBACK" ? (monitor.targetRappInstanceId ? "Upgrades the rApp back to its previous version (rApp Management's version history); escalated if there is none." : "Needs a rApp-instance-scoped monitor: only rApp Management keeps a version history (409 ROLLBACK_HISTORY_UNAVAILABLE).") : actionType === "SCALE" ? "Always escalates in Phase 1 (NFO scale is a stub)." : undefined}>
             <select value={actionType} onChange={(e) => setActionType(e.target.value)}>{["CONFIG_CHANGE", "SCALE", "RECONNECT", "ROLLBACK"].map((t) => <option key={t}>{t}</option>)}</select>
           </Field>
           <ActionButton label="Execute" tone="primary" action={{ method: "POST", path: `${base}/remedial-actions`, query: { action_type: actionType }, success: `${actionType} dispatched` }} />

@@ -24,10 +24,6 @@ Each item: what is missing, why it matters, suggested approach.
 
 ## 2. Platform gaps
 
-- **OI-1-sa-rollback** — SA SMOS `ROLLBACK` always returns `ROLLBACK_HISTORY_UNAVAILABLE` (501):
-  rApp Mgmt deletes the prior `RAppInstance` row on a successful upgrade commit, so no version
-  history exists. Approach: keep the superseded instance (or a version record) in rApp Mgmt, then
-  dispatch a rollback upgrade from SA SMOS.
 - **OI-1-cm-sync-restconf** — RESTCONF has no dispatch: an ME provisioned for RESTCONF is rejected
   `PROTOCOL_NOT_SUPPORTED`, although W9 lets vendors declare `O1_RESTCONF`. Approach: add a RESTCONF
   client beside `netconf_client.py` (PATCH/PUT/DELETE on the data resource) and a mock endpoint.
@@ -116,7 +112,6 @@ Each item: what is missing, why it matters, suggested approach.
 
 ## 4. Wave backlog
 
-- **W10.4-merge** — Wave 10.4 (Traffic Steering) exists as a WIP commit (`784c5f6`); no merged PR yet.
 - **W10-B1** — EnergySaving LSTM model variant (D-6 backlog); the shipped model is threshold +
   regression. Approach: add as a second model type in the same package, compared in validation.
 - **W10.3-thresholds** — Coverage objective uses fixed 5 % thresholds per problem class; per-cell,

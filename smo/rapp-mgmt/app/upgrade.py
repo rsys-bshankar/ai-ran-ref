@@ -14,6 +14,12 @@ TERMINATE tears an instance down — DME/SME deregistration and credential
 revocation (the FSM action), then NFO Terminate and usage/stop
 (`release_instance_resources`) — before its row is deleted.
 
+Every commit is recorded as a RAppInstanceVersion (OI-1-sa-rollback): what
+the retired row ran, and the lineage link from it to its successor. A
+rollback (`start_rollback`) is an upgrade back to the newest version not
+already rolled back — the same two-row choreography, timeout and
+auto-rollback, so a failed rollback leaves the current version running.
+
 upgradeTimeoutSeconds is enforced lazily: no scheduler exists in this
 build, so an unresolved upgrade whose replacement was created more than
 `old.upgrade_timeout_seconds` ago is rolled back the next time either row
@@ -26,27 +32,39 @@ import datetime
 import uuid
 from typing import Callable
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.timeutil import as_utc
 
-from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
+from .models import RAppFaultReport, RAppInstance, RAppInstanceVersion, RAppPerformanceReport
 from .provisioning import provision_instance, release_instance_resources
 from .statemachine import RAPP_INSTANCE_FSM, InstanceEvent, InstanceState, _terminate_side_effects
 
 
-def start_upgrade(db: Session, old: RAppInstance, new_package_id: uuid.UUID) -> RAppInstance:
+def start_upgrade(db: Session, old: RAppInstance, new_package_id: uuid.UUID,
+                  restore: RAppInstanceVersion | None = None) -> RAppInstance:
     """An instance that is not RUNNING is refused (IllegalTransition) before
     anything is provisioned; a package that is not AVAILABLE/PRIMED is
     refused by provision_instance before any NFO call — either way the old
-    row is left untouched."""
+    row is left untouched.
+
+    The replacement inherits the old row's configuration, autonomy mode and
+    region scope — or, for a rollback (`restore`), the snapshot that version
+    recorded for the instance it retired."""
     old_state = InstanceState(old.state)
     if InstanceEvent.START_UPGRADE not in RAPP_INSTANCE_FSM.legal_events(old_state):
         raise IllegalTransition(old_state, InstanceEvent.START_UPGRADE)
-    new = provision_instance(db, new_package_id, configuration=copy.deepcopy(old.configuration),
-                             autonomy_mode=old.autonomy_mode, region_scope=copy.deepcopy(old.region_scope))
+    if restore is None:
+        configuration, autonomy_mode, region_scope = old.configuration, old.autonomy_mode, old.region_scope
+    else:
+        configuration = restore.previous_configuration
+        autonomy_mode, region_scope = restore.previous_autonomy_mode, restore.previous_region_scope
+    new = provision_instance(db, new_package_id, configuration=copy.deepcopy(configuration),
+                             autonomy_mode=autonomy_mode, region_scope=copy.deepcopy(region_scope))
     new.upgrade_timeout_seconds = old.upgrade_timeout_seconds
+    new.rollback_of_version_id = restore.version_id if restore is not None else None
     old.state = RAPP_INSTANCE_FSM.fire(old_state, InstanceEvent.START_UPGRADE, instance=old)
     old.pending_upgrade_instance_id = new.instance_id
     return new
@@ -90,7 +108,8 @@ def resolve_upgrade(db: Session, old: RAppInstance, new: RAppInstance, new_boots
     already RUNNING (its container called bootstrap-complete itself); any
     other state raises IllegalTransition before anything is changed. The old
     row is then retired like a TERMINATE and deleted; its teardown outcome
-    is recorded on the replacement's `last_teardown`.
+    is recorded on the replacement's `last_teardown`, and the commit as a
+    RAppInstanceVersion (`_record_version`).
     """
     if new_bootstrap_succeeded:
         new_state = InstanceState(new.state)
@@ -103,6 +122,7 @@ def resolve_upgrade(db: Session, old: RAppInstance, new: RAppInstance, new_boots
             if register_identity is not None:
                 register_identity(new)
         old.state = RAPP_INSTANCE_FSM.fire(InstanceState(old.state), InstanceEvent.UPGRADE_COMMIT, instance=old)
+        _record_version(db, old, new)
         new.last_teardown = release_instance_resources(old, "UPGRADE_COMMIT")
         _delete_row(db, old)  # old row torn down once its replacement is confirmed RUNNING
     else:
@@ -121,3 +141,79 @@ def expire_overdue_upgrade(db: Session, old: RAppInstance, now: datetime.datetim
         return False
     _roll_back(db, old, new, "UPGRADE_TIMEOUT")
     return True
+
+
+# ---------------------------------------------------------------- version history (OI-1-sa-rollback)
+
+def _record_version(db: Session, old: RAppInstance, new: RAppInstance) -> RAppInstanceVersion:
+    """Records the commit that retired `old` in favour of `new`. A rollback's
+    replacement records kind ROLLBACK and marks the upgrade it undid."""
+    version = RAppInstanceVersion(
+        version_id=uuid.uuid4(), instance_id=new.instance_id, previous_instance_id=old.instance_id,
+        package_id=new.package_id, previous_package_id=old.package_id,
+        previous_configuration=copy.deepcopy(old.configuration), previous_autonomy_mode=old.autonomy_mode,
+        previous_region_scope=copy.deepcopy(old.region_scope),
+        kind="ROLLBACK" if new.rollback_of_version_id is not None else "UPGRADE",
+    )
+    db.add(version)
+    # Inserted before the undone row's update references it: the ORM emits a
+    # mapper's UPDATEs before its INSERTs, and only the migration declares
+    # rolled_back_by_version_id's FK.
+    db.flush()
+    if new.rollback_of_version_id is not None:
+        undone = db.get(RAppInstanceVersion, new.rollback_of_version_id)
+        if undone is not None:
+            undone.rolled_back_by_version_id = version.version_id
+    return version
+
+
+def _version_that_made(db: Session, instance_id: uuid.UUID) -> RAppInstanceVersion | None:
+    return db.scalar(select(RAppInstanceVersion).where(RAppInstanceVersion.instance_id == instance_id))
+
+
+def current_instance_id(db: Session, instance_id: uuid.UUID) -> uuid.UUID | None:
+    """Follows the lineage forward from a possibly superseded instance id to
+    the row that replaced it last. None if the id is neither a live row nor
+    in the history."""
+    seen = set()
+    while db.get(RAppInstance, instance_id) is None:
+        successor = db.scalar(select(RAppInstanceVersion.instance_id)
+                              .where(RAppInstanceVersion.previous_instance_id == instance_id))
+        if successor is None or successor in seen:
+            return None
+        seen.add(instance_id)
+        instance_id = successor
+    return instance_id
+
+
+def version_history(db: Session, instance_id: uuid.UUID) -> list[RAppInstanceVersion]:
+    """The versions behind `instance_id`, newest first."""
+    history, seen = [], set()
+    version = _version_that_made(db, instance_id)
+    while version is not None and version.version_id not in seen:
+        seen.add(version.version_id)
+        history.append(version)
+        version = _version_that_made(db, version.previous_instance_id)
+    return history
+
+
+def rollback_target(db: Session, instance_id: uuid.UUID) -> RAppInstanceVersion | None:
+    """The newest UPGRADE in the instance's history not already rolled back:
+    rolling back returns to what it retired. ROLLBACK rows and the upgrades
+    they undid are stepped over, so repeated rollbacks walk further back
+    (v3 -> v2 -> v1) instead of flip-flopping."""
+    for version in version_history(db, instance_id):
+        if version.kind == "UPGRADE" and version.rolled_back_by_version_id is None:
+            return version
+    return None
+
+
+def start_rollback(db: Session, current: RAppInstance) -> tuple[RAppInstance, RAppInstanceVersion] | None:
+    """Starts an upgrade of `current` back to the version `rollback_target`
+    names, restoring that version's configuration snapshot. None if there is
+    nothing to roll back to; IllegalTransition / the provisioning refusals
+    as for start_upgrade otherwise."""
+    target = rollback_target(db, current.instance_id)
+    if target is None:
+        return None
+    return start_upgrade(db, current, target.previous_package_id, restore=target), target

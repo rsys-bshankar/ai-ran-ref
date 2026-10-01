@@ -721,6 +721,45 @@
         "summary": "Recover Instance"
       }
     },
+    "/instances/{instance_id}/rollback": {
+      "post": {
+        "description": "RollbackInstance (OI-1-sa-rollback) \u2014 an upgrade back to the newest\nversion in this instance's history that has not been rolled back\nalready, restoring the package, configuration, autonomy mode and region\nscope that version's instance ran. Same two-row choreography as\nUpgradeInstance: the current instance goes UPGRADING, the replacement\nis resolved through upgrade/resolve (or rolls back on its own after\nupgradeTimeoutSeconds, leaving the current version running). Repeated\nrollbacks walk further back rather than flip-flopping.\n\n`instance_id` may be one an upgrade has since superseded (an SA SMOS\nmonitor registered before the upgrade): the rollback applies to the\ninstance that replaced it last, named in the answer as instanceId.\n\n404 unknown id; 409 ROLLBACK_HISTORY_UNAVAILABLE when there is nothing\nto roll back to; 409 LIFECYCLE_ILLEGAL_TRANSITION when the current\ninstance is not RUNNING; 404/409 from provisioning when the earlier\npackage is gone or no longer deployable.",
+        "operationId": "rollback_instance_instances__instance_id__rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback Instance"
+      }
+    },
     "/instances/{instance_id}/terminate": {
       "post": {
         "description": "TerminateInstance \u2014 Annex A.1.2.3. Legal from RUNNING, FAULTED (a\ncrashed instance is retired without recovering it first) and DEPLOYING\n(one whose container never bootstrapped); 409 otherwise, and 409 for an\nupgrade's pending replacement (resolve the upgrade instead).\n\nCredential revocation is part of this transition itself\n(statemachine.py's _revoke_credential action), not a separate step\n(closes RT-3), after the DME/SME deregistration keyed on that\ncredential. Then the workload itself: NFO Terminate for workloadRef\n(the nfDeploymentId CreateInstance received) and usage/stop for the\nPackageUsageRegistration that Onboarding's deprime and cascade-delete\nguards read. Both are best-effort \u2014 an unreachable NFO or Onboarding\nnever blocks the teardown \u2014 but their outcome is recorded in\nlastTeardown.\n\nHISTORY.md \u00a75: this used to delete the instance row\noutright, in the same call \u2014 undeploy and delete collapsed into one\nirreversible step, with no way to observe an instance post-teardown\nor to delete one that was already torn down some other way (e.g.\nCRASH). The reference's own split (`RappService.undeployRappInstance`/\n`deleteRappInstance`, DEPLOYED -> UNDEPLOYING -> UNDEPLOYED, delete\nonly legal from UNDEPLOYED) is adopted here: TERMINATE now only tears\nthe workload down (this action) and lands in the terminal UNDEPLOYED\nstate with the row still present; removing the row itself is the\nseparate `delete_instance` below.",
@@ -855,6 +894,45 @@
           }
         },
         "summary": "Resolve Upgrade Outcome"
+      }
+    },
+    "/instances/{instance_id}/versions": {
+      "get": {
+        "description": "The version history behind an instance (OI-1-sa-rollback), newest\nfirst: one entry per committed upgrade or rollback, with what the\nretired instance ran. A superseded id resolves to the current instance,\nas for rollback. rollbackTarget is the version a rollback would undo\nnow (null: nothing to roll back to).",
+        "operationId": "list_instance_versions_instances__instance_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Instance Versions"
       }
     }
   },

@@ -1,4 +1,4 @@
-# Call Flow: rApp Instance Lifecycle — Run → Report → Fault → Recover → Upgrade → Reconfigure → Terminate → Delete
+# Call Flow: rApp Instance Lifecycle — Run → Report → Fault → Recover → Upgrade → Roll back → Reconfigure → Terminate → Delete
 
 A `RAppInstance` moves through rApp Management's instance FSM
 (`rapp-mgmt/app/statemachine.py`, Onboarding/rApp Mgmt LLD sections 5-6) once
@@ -125,6 +125,7 @@ sequenceDiagram
         Rapp->>Rapp: revoke the old credential
         Rapp->>NFO: DELETE /nfo/deployments/{old workloadRef}
         Rapp->>Onb: POST /packages/P1/usage/{old registrationId}/stop
+        Rapp->>Rapp: record version UPGRADE: replacement retired old,<br/>snapshot of old package P1, configuration, autonomyMode, regionScope
         Rapp->>Rapp: replacement.lastTeardown = outcome, old row deleted
         Rapp-->>Operator: instanceId=replacement, state=RUNNING, packageId=P2
     else replacement failed (succeeded=false)
@@ -143,6 +144,39 @@ sequenceDiagram
         Operator->>Rapp: POST /instances/{oldId}/upgrade/resolve?succeeded=true
         Rapp-->>Operator: 409 RAPP_UPGRADE_TIMED_OUT — already rolled back
     end
+```
+
+## Roll back to the previous version
+
+Every committed upgrade is recorded in `rapp_instance_version` with what the retired instance
+ran. A rollback is an upgrade back to the newest version not already rolled back. SA SMOS issues
+it for a rApp-instance-scoped monitor (call flow 04), and an operator can issue it from the GUI.
+
+```mermaid
+sequenceDiagram
+    actor Caller as Operator or SA SMOS
+    participant Rapp as rApp Management SMOS
+    participant Onb as Onboarding SMOS
+    participant NFO as NFO SMOS
+
+    Note over Caller,Rapp: instance v2 RUNNING on P2, the upgrade from v1 on P1 is in the version history
+    Caller->>Rapp: POST /instances/{id}/rollback (id may be v1, superseded)
+    Rapp->>Rapp: follow the version lineage from id to the current instance v2
+    Rapp->>Rapp: target = newest UPGRADE version not rolled back, here v1 -> v2
+    alt no such version
+        Rapp-->>Caller: 409 ROLLBACK_HISTORY_UNAVAILABLE
+    else v2 is not RUNNING
+        Rapp-->>Caller: 409 LIFECYCLE_ILLEGAL_TRANSITION
+    else
+        Rapp->>Onb: GET /packages/P1/onboarding-status
+        Onb-->>Rapp: AVAILABLE or PRIMED, else 409 and v2 stays RUNNING
+        Rapp->>Rapp: replacement on P1, DEPLOYING, rollback_of_version_id = target,<br/>configuration, autonomyMode and regionScope from the target's snapshot
+        Rapp->>NFO: POST /nfo/deployments (descriptor of P1, released when v1 was retired)
+        Rapp->>Onb: POST /packages/P1/usage/start
+        Rapp->>Rapp: v2: RUNNING -> UPGRADING (START_UPGRADE)
+        Rapp-->>Caller: instanceId=v2, newInstanceId, fromPackageId=P2, toPackageId=P1
+    end
+    Note over Caller,Rapp: resolved like any upgrade, upgrade/resolve or the timeout.<br/>A commit records version ROLLBACK and marks the target rolled back,<br/>a failure or timeout leaves v2 RUNNING and its history unchanged
 ```
 
 ## Reconfigure, terminate, delete
@@ -191,6 +225,7 @@ sequenceDiagram
 - An upgrade is two rows in choreography (`rapp-mgmt/app/upgrade.py`, LLD section 6), not one row changing package in place. The replacement goes through `CreateInstance`'s own `provision_instance`: the target package must be `AVAILABLE` or `PRIMED`, and the replacement gets its own `oauth_client_id`, NFO deployment and usage registration, plus the old instance's configuration, `autonomyMode` and `regionScope`. Auto-rollback needs no manual intervention, and the old instance keeps its package, credential and identity throughout a failed attempt.
 - Whichever row loses an upgrade is torn down like a `TERMINATE` before its row is deleted. On commit that is the old instance, which releases the old package's usage registration, so its deprime and delete guards (call flow 06) pass. On rollback it is the replacement. The outcome is recorded in the survivor's `lastTeardown`.
 - `upgradeTimeoutSeconds` (default 300 s, HISTORY.md OI-1-upgrade-timeout) is copied to the replacement and enforced lazily, since this build has no scheduler. An unresolved upgrade whose replacement is older than the timeout is rolled back (reason `UPGRADE_TIMEOUT`) the next time either row is read or acted on, and `resolve?succeeded=true` then answers 409 `RAPP_UPGRADE_TIMED_OUT`.
-- On commit, the old row passes through `UNDEPLOYED` with its credential revoked and is then deleted, so no version history remains (OPEN_ITEMS OI-1-sa-rollback).
+- On commit, the old row passes through `UNDEPLOYED` with its credential revoked and is then deleted. What it ran (package, configuration, `autonomyMode`, `regionScope`) is kept in a `rapp_instance_version` row (HISTORY.md OI-1-sa-rollback), which also links the old instance id to its successor. `GET /instances/{id}/versions` lists the history newest first, and resolves a superseded id to the current instance.
+- A rollback is an upgrade back to the newest `UPGRADE` version that has not been rolled back, so it has the same safety: the current instance keeps running until the replacement is committed, and a failed or timed-out rollback leaves it running with its history unchanged. Repeated rollbacks walk further back (v3 → v2 → v1) rather than flip-flopping between two versions, and an upgrade made after a rollback can itself be rolled back.
 - `PUT /instances/{id}/config` replaces `configuration` wholesale in any state, with no schema check and no FSM event. `autonomyMode` and `regionScope` are not part of it: they are fixed at `CreateInstance` (HISTORY.md OI-6.3) and carried over by an upgrade.
 - Undeploy and delete are separate operations: `terminate` keeps the row in `UNDEPLOYED`, and `DELETE /instances/{id}` is legal only from `UNDEPLOYED` (409 `RAPP_INSTANCE_NOT_UNDEPLOYED` otherwise, 404 `RAPP_INSTANCE_NOT_FOUND` for an unknown id). Delete removes the instance's fault and performance reports explicitly, in addition to their `ON DELETE CASCADE` foreign keys.

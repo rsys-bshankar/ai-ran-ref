@@ -551,7 +551,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
 
     # step 15: SA SMOS — a real assurance monitor, a genuine RECONNECT
     # heal (resolving a concrete nfDeploymentId via a live SO SMOS order
-    # lookup), and a genuine ROLLBACK refusal. RECONNECT needs a real,
+    # lookup), and a ROLLBACK refusal for an order-scoped monitor. RECONNECT needs a real,
     # RUNNING NFDeployment distinct from the sample rApp's own deployment
     # above (NFO's real duplication guard means a descriptor can only be
     # deployed once), so this creates a second descriptor against the
@@ -586,8 +586,11 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert reconnect.status_code == 201
     assert reconnect.json()["outcome"] == "RESOLVED"
 
+    # An order-scoped monitor watches a bare NF deployment, which keeps no
+    # version history; ROLLBACK needs a rApp-instance-scoped monitor
+    # (test_cross_service.py's SA SMOS rollback test, OI-1-sa-rollback).
     rollback = mesh["sa-smos"].post(f"/monitors/{monitor_id}/remedial-actions", params={"action_type": "ROLLBACK"})
-    assert rollback.status_code == 501
+    assert rollback.status_code == 409
     assert rollback.json()["detail"]["title"] == "ROLLBACK_HISTORY_UNAVAILABLE"
 
     terminate_second = mesh["nfo"].delete(f"/deployments/{nf_deployment_id}")

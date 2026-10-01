@@ -963,7 +963,7 @@ print(r.status_code)
 "
 ```
 
-## 15. SA SMOS (optional) — a real assurance monitor, a genuine `RECONNECT` heal, and a genuine `ROLLBACK` refusal
+## 15. SA SMOS (optional) — a real assurance monitor, a genuine `RECONNECT` heal, and `ROLLBACK` scoping
 
 SA SMOS's remedial-action dispatch (SO/SA SMOS LLD section 2.1).
 `RECONNECT` needs a `RUNNING` `NFDeployment`. The sample rApp's deployment
@@ -1042,9 +1042,9 @@ print(r.status_code, r.json())
 `outcome` is `RESOLVED`; NFO's `Heal` fired (idempotent from `RUNNING` —
 see `heal()` in `nfo/app/main.py`) and recorded an `LCMOperation` row.
 
-**`ROLLBACK` refusal.** rApp Management's `UpgradeInstance` deletes the
-previous `RAppInstance` row on commit, so no version history exists to roll
-back to:
+**`ROLLBACK` needs a rApp instance.** Only rApp Management keeps a version
+history (its committed upgrades); NFO keeps none for a bare NF deployment
+like this order's. On this order-scoped monitor `ROLLBACK` is refused:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1054,8 +1054,14 @@ print(r.status_code, r.json())
 "
 ```
 
-`501`, with `detail.title` = `ROLLBACK_HISTORY_UNAVAILABLE` and an
-explanation.
+`409`, with `detail.title` = `ROLLBACK_HISTORY_UNAVAILABLE` and an
+explanation. A monitor registered with `target_rapp_instance_id` instead
+rolls that rApp back to the version it ran before its last upgrade: SA SMOS
+calls rApp Management's `POST /instances/{id}/rollback`, an upgrade back to
+the previous package and configuration, resolved like any upgrade
+(`upgrade/resolve`). It needs an instance that has been upgraded at least
+once, so it is not repeated here; call flows 04 and 07 show it, and
+`GET /rapp-mgmt/instances/{id}/versions` lists an instance's history.
 
 Retire the second deployment — NFO's `Terminate` (completes synchronously
 in Phase 1):

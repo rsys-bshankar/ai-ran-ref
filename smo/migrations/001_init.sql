@@ -267,8 +267,30 @@ CREATE TABLE rapp_instance (
   -- OI-2-terminate-workload: outcome of the most recent best-effort
   -- teardown (NFO terminate, usage/stop) this row performed or inherited
   -- through an upgrade commit/rollback — {instanceId, reason, nfoTerminate, usageStop, at}.
-  last_teardown                                         JSONB
+  last_teardown                                         JSONB,
+  -- OI-1-sa-rollback: on a rollback's replacement, the UPGRADE version it undoes.
+  rollback_of_version_id                                  UUID
 );
+
+-- OI-1-sa-rollback: rApp Management's version history, one row per committed
+-- upgrade or rollback. Instance ids are bare references: the retired row is
+-- deleted on commit and the history outlives it. The previous_* columns are
+-- what the retired instance ran, so a rollback re-provisions exactly that.
+CREATE TABLE rapp_instance_version (
+  version_id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  instance_id                UUID NOT NULL,
+  previous_instance_id       UUID NOT NULL,
+  package_id                 UUID NOT NULL,
+  previous_package_id        UUID NOT NULL,
+  previous_configuration     JSONB,
+  previous_autonomy_mode     TEXT NOT NULL,
+  previous_region_scope      JSONB,
+  kind                       TEXT NOT NULL CHECK (kind IN ('UPGRADE','ROLLBACK')),
+  rolled_back_by_version_id  UUID REFERENCES rapp_instance_version(version_id),
+  committed_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX rapp_instance_version_instance_idx ON rapp_instance_version (instance_id);
+CREATE INDEX rapp_instance_version_previous_idx ON rapp_instance_version (previous_instance_id);
 
 CREATE TABLE rapp_fault_report (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1252,10 +1274,16 @@ CREATE TABLE assurance_monitor (
   monitor_id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   target_order_id                UUID REFERENCES service_order(order_id),
   target_coordination_group_id     UUID REFERENCES ml_model_coordination_group(group_id),   -- NEW section 2.2
+  -- OI-1-sa-rollback: a monitor on one rApp instance. No FK: an upgrade
+  -- supersedes (and deletes) the instance row; rApp Management resolves the
+  -- id through its version history.
+  target_rapp_instance_id            UUID,
   analytics_subscription_id           UUID REFERENCES mda_subscription(subscription_id),
   requirement_thresholds                 JSONB NOT NULL,
   CONSTRAINT one_target_only CHECK (
-    NOT (target_order_id IS NOT NULL AND target_coordination_group_id IS NOT NULL)
+    (CASE WHEN target_order_id IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN target_coordination_group_id IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN target_rapp_instance_id IS NULL THEN 0 ELSE 1 END) <= 1
   )
 );
 

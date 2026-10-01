@@ -25,7 +25,8 @@ from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
 from .provisioning import (DEPLOYABLE_PACKAGE_STATES, provision_instance, register_sme_declarations,  # noqa: F401
                            release_instance_resources)
 from .statemachine import RAPP_INSTANCE_FSM, InstanceEvent, InstanceState
-from .upgrade import expire_overdue_upgrade, resolve_upgrade, start_upgrade
+from .upgrade import (current_instance_id, expire_overdue_upgrade, resolve_upgrade, rollback_target, start_rollback,
+                      start_upgrade, version_history)
 
 app = FastAPI(title="rApp Management SMOS")
 apply_r1_gateway_security(app)
@@ -203,6 +204,75 @@ def resolve_upgrade_outcome(instance_id: uuid.UUID, succeeded: bool, db: Session
     db.commit()
     survivor = new if succeeded else old
     return {"instanceId": str(survivor.instance_id), "state": survivor.state, "packageId": str(survivor.package_id)}
+
+
+def _resolve_current(db: Session, instance_id: uuid.UUID) -> RAppInstance:
+    """A live instance, or — for an id an upgrade has since superseded — the
+    instance that replaced it last (the lineage in the version history).
+    404 if the id is neither."""
+    current_id = current_instance_id(db, instance_id)
+    if current_id is None:
+        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail=f"no such RAppInstance {instance_id}")
+    return _load_instance(db, current_id)
+
+
+def _version_view(v) -> dict:
+    return {"versionId": str(v.version_id), "kind": v.kind, "instanceId": str(v.instance_id),
+            "packageId": str(v.package_id), "previousInstanceId": str(v.previous_instance_id),
+            "previousPackageId": str(v.previous_package_id), "previousConfiguration": v.previous_configuration,
+            "rolledBackByVersionId": str(v.rolled_back_by_version_id) if v.rolled_back_by_version_id else None,
+            "committedAt": v.committed_at.isoformat()}
+
+
+@app.post("/instances/{instance_id}/rollback")
+def rollback_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """RollbackInstance (OI-1-sa-rollback) — an upgrade back to the newest
+    version in this instance's history that has not been rolled back
+    already, restoring the package, configuration, autonomy mode and region
+    scope that version's instance ran. Same two-row choreography as
+    UpgradeInstance: the current instance goes UPGRADING, the replacement
+    is resolved through upgrade/resolve (or rolls back on its own after
+    upgradeTimeoutSeconds, leaving the current version running). Repeated
+    rollbacks walk further back rather than flip-flopping.
+
+    `instance_id` may be one an upgrade has since superseded (an SA SMOS
+    monitor registered before the upgrade): the rollback applies to the
+    instance that replaced it last, named in the answer as instanceId.
+
+    404 unknown id; 409 ROLLBACK_HISTORY_UNAVAILABLE when there is nothing
+    to roll back to; 409 LIFECYCLE_ILLEGAL_TRANSITION when the current
+    instance is not RUNNING; 404/409 from provisioning when the earlier
+    package is gone or no longer deployable.
+    """
+    current = _resolve_current(db, instance_id)
+    try:
+        started = start_rollback(db, current)
+    except IllegalTransition as exc:
+        raise illegal_transition_error(exc, f"RAppInstance {current.instance_id}")
+    if started is None:
+        raise framework_error(FrameworkError.ROLLBACK_HISTORY_UNAVAILABLE,
+                              detail=f"RAppInstance {current.instance_id} has no upgrade left to roll back")
+    new, target = started
+    db.commit()
+    return {"instanceId": str(current.instance_id), "newInstanceId": str(new.instance_id),
+            "oldInstanceState": current.state, "fromPackageId": str(current.package_id),
+            "toPackageId": str(new.package_id), "rollbackOfVersionId": str(target.version_id),
+            "oauthClientId": new.oauth_client_id}
+
+
+@app.get("/instances/{instance_id}/versions")
+def list_instance_versions(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """The version history behind an instance (OI-1-sa-rollback), newest
+    first: one entry per committed upgrade or rollback, with what the
+    retired instance ran. A superseded id resolves to the current instance,
+    as for rollback. rollbackTarget is the version a rollback would undo
+    now (null: nothing to roll back to)."""
+    current = _resolve_current(db, instance_id)
+    target = rollback_target(db, current.instance_id)
+    return {"instanceId": str(current.instance_id), "packageId": str(current.package_id), "state": current.state,
+            "workloadRef": current.workload_ref,
+            "rollbackTarget": _version_view(target) if target else None,
+            "versions": [_version_view(v) for v in version_history(db, current.instance_id)]}
 
 
 @app.post("/instances/{instance_id}/terminate")

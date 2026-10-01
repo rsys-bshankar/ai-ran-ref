@@ -51,6 +51,40 @@ class RAppInstance(Base):
     # {instanceId, reason, nfoTerminate, usageStop, at}; each step is DONE,
     # SKIPPED (nothing to release) or FAILED: <why>. None until a teardown ran.
     last_teardown: Mapped[dict | None] = mapped_column(JSON)
+    # OI-1-sa-rollback: set on a replacement provisioned by a rollback, naming
+    # the UPGRADE version it undoes; resolve_upgrade's commit marks that
+    # version rolled back. None for an ordinary upgrade's replacement.
+    rollback_of_version_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+
+
+class RAppInstanceVersion(Base):
+    """OI-1-sa-rollback: one row per committed upgrade or rollback — the
+    version history an upgrade commit used to throw away with the old row.
+
+    Instance ids are bare references (no FK): the retired row is deleted on
+    commit, and the history must outlive it. The snapshot is what the
+    retired instance ran — package, configuration, autonomy mode, region
+    scope — so a rollback can re-provision exactly that. Each commit also
+    chains the lineage: `previous_instance_id` -> `instance_id`, which is how
+    a caller holding a superseded instance id (an SA SMOS monitor
+    registered before the upgrade) finds the current one.
+    """
+    __tablename__ = "rapp_instance_version"
+
+    version_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    instance_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)           # the row that became current
+    previous_instance_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)  # the row it retired
+    package_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    previous_package_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    previous_configuration: Mapped[dict | None] = mapped_column(JSON)
+    previous_autonomy_mode: Mapped[str] = mapped_column(String, nullable=False)
+    previous_region_scope: Mapped[dict | None] = mapped_column(JSON)
+    kind: Mapped[str] = mapped_column(String, nullable=False)  # UPGRADE | ROLLBACK
+    # UPGRADE rows only: the ROLLBACK version that undid this one. A rolled-back
+    # upgrade is skipped when looking for the next version to roll back to.
+    rolled_back_by_version_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    committed_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                            default=lambda: datetime.datetime.now(datetime.UTC))
 
 
 class RAppFaultReport(Base):

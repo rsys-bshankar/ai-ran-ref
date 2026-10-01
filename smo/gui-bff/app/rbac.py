@@ -99,7 +99,7 @@ RULES: list[Rule] = [
     # --- rApp Management
     _rule("POST", "/rapp-mgmt/instances", O),
     _rule("PUT", "/rapp-mgmt/instances/{id}/config", O),
-    _rule("POST", "/rapp-mgmt/instances/{id}/(upgrade|upgrade/resolve|recover|bootstrap-complete)", O),
+    _rule("POST", "/rapp-mgmt/instances/{id}/(upgrade|upgrade/resolve|rollback|recover|bootstrap-complete)", O),
     _rule("POST", "/rapp-mgmt/instances/{id}/terminate", A),
     _rule("DELETE", "/rapp-mgmt/instances/{id}", A),
     _rule("POST", "/rapp-mgmt/instances/{id}/(performance|fault)", A),   # test-data injection

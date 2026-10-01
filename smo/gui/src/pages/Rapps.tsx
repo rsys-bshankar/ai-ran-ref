@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
 import { useSmo, useSmoAction } from "../api/hooks";
-import type { FaultReport, Instance, InstanceSummary, Package, PackageArtifact, PackageUsage, PerfReport } from "../api/types";
+import type { FaultReport, Instance, InstanceSummary, InstanceVersions, Package, PackageArtifact, PackageUsage, PerfReport } from "../api/types";
 import { Sparkline } from "../components/charts";
 import {
   ActionButton, Can, Card, DataTable, Drawer, ErrorBox, Field, Id, Json, KeyValue, Modal, PageHeader, SeverityChip,
@@ -272,6 +272,7 @@ function InstanceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
             : <span className="muted">—</span>],
         ]} />
         <ConfigEditor id={id} config={inst.data.configuration ?? {}} />
+        <VersionHistory id={id} state={inst.data.state} />
       </>}
       <h3>Performance</h3>
       {keys.length === 0 ? <p className="muted">No performance reports.</p> : <div className="spark-list">{keys.map((k) => <Sparkline key={k} points={metricSeries(perf.data!, k)} label={k} width={300} />)}</div>}
@@ -284,6 +285,33 @@ function InstanceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
       <Can method="POST" path={`${base}/performance`}><InjectReports id={id} /></Can>
       {upgrading && inst.data && <UpgradeModal inst={inst.data} onClose={() => setUpgrading(false)} />}
     </Drawer>
+  );
+}
+
+// OI-1-sa-rollback: committed upgrades and rollbacks, newest first. Rollback
+// is an upgrade back to the newest version not already rolled back — resolve
+// it like any upgrade once the replacement bootstraps.
+function VersionHistory({ id, state }: { id: string; state: string }) {
+  const base = `/rapp-mgmt/instances/${id}`;
+  const history = useSmo<InstanceVersions>(`${base}/versions`);
+  const target = history.data?.rollbackTarget;
+  return (
+    <>
+      <div className="row between">
+        <h3>Version history</h3>
+        {state === "RUNNING" && target && <ActionButton label="Roll back" tone="danger"
+          confirm={`Roll back to package ${target.previousPackageId.slice(0, 8)} and the configuration it ran?`}
+          action={{ method: "POST", path: `${base}/rollback`, success: "Rollback started — resolve it once the replacement bootstraps" }} />}
+      </div>
+      <DataTable rows={history.data?.versions} loading={history.isLoading} error={history.error} rowKey={(v) => v.versionId}
+        empty="No upgrades committed — nothing to roll back to." columns={[
+          { header: "Kind", render: (v) => <StateBadge state={v.kind} /> },
+          { header: "From package", render: (v) => <code>{v.previousPackageId.slice(0, 8)}</code> },
+          { header: "To package", render: (v) => <code>{v.packageId.slice(0, 8)}</code> },
+          { header: "Rolled back", render: (v) => (v.kind === "UPGRADE" ? (v.rolledBackByVersionId ? "yes" : "no") : "—") },
+          { header: "Committed", render: (v) => formatTime(v.committedAt) },
+        ]} />
+    </>
   );
 }
 

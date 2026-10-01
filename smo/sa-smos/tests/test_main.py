@@ -100,15 +100,74 @@ def test_scale_always_escalates_phase1_stub(client):
     assert resp.json()["outcome"] == "ESCALATED"
 
 
-def test_rollback_is_explicitly_unsupported_not_ambiguous(client):
-    """ROLLBACK stays unsupported, but for a concrete, checked reason now
-    — rApp Management retains no version history to roll back to at all
-    — not a vague "ambiguous meaning" refusal (LLD section 2.1).
-    """
-    monitor = client.post("/monitors", params={}, json={}).json()
+@pytest.mark.parametrize("scope", [{}, {"target_order_id": str(uuid.uuid4())}])
+def test_rollback_without_a_rapp_instance_target_is_409(client, scope):
+    """OI-1-sa-rollback: only rApp Management keeps a version history; an
+    unscoped or order-scoped monitor (a bare NF deployment) has nothing to
+    roll back to."""
+    monitor = client.post("/monitors", params=scope, json={}).json()
     resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "ROLLBACK"})
-    assert resp.status_code == 501
+    assert resp.status_code == 409
     assert resp.json()["detail"]["title"] == "ROLLBACK_HISTORY_UNAVAILABLE"
+
+
+def test_rollback_of_a_rapp_scoped_monitor_dispatches_rapp_mgmt_rollback(client, monkeypatch):
+    instance_id = uuid.uuid4()
+    started = {"instanceId": str(uuid.uuid4()), "newInstanceId": str(uuid.uuid4()), "toPackageId": str(uuid.uuid4())}
+    calls = []
+
+    def fake_post(self, path, json=None, **kw):
+        calls.append(path)
+        return FakeR1Response(200, started)
+
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    monitor = client.post("/monitors", params={"target_rapp_instance_id": str(instance_id)}, json={}).json()
+    assert client.get(f"/monitors/{monitor['monitorId']}").json()["targetRappInstanceId"] == str(instance_id)
+
+    resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "ROLLBACK"})
+
+    assert resp.status_code == 201
+    assert resp.json()["outcome"] == "RESOLVED" and resp.json()["result"] == started
+    assert calls == [f"/rapp-mgmt/instances/{instance_id}/rollback"]
+
+
+def test_rollback_refused_by_rapp_mgmt_is_escalated_with_its_reason(client, monkeypatch):
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(409, {"detail": {
+        "title": "ROLLBACK_HISTORY_UNAVAILABLE", "detail": "no upgrade left to roll back"}}))
+    monitor = client.post("/monitors", params={"target_rapp_instance_id": str(uuid.uuid4())}, json={}).json()
+
+    resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "ROLLBACK"})
+
+    assert resp.status_code == 201
+    assert resp.json()["outcome"] == "ESCALATED"
+    assert resp.json()["detail"] == "ROLLBACK_HISTORY_UNAVAILABLE: no upgrade left to roll back"
+    actions = client.get("/remedial-actions", params={"outcome": "ESCALATED"}).json()["items"]
+    assert [a["actionType"] for a in actions] == ["ROLLBACK"]
+
+
+def test_reconnect_of_a_rapp_scoped_monitor_heals_the_current_instance_workload(client, monkeypatch):
+    instance_id, workload = uuid.uuid4(), str(uuid.uuid4())
+    posts = []
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"workloadRef": workload})
+                        if path == f"/rapp-mgmt/instances/{instance_id}/versions" else FakeR1Response(404))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: posts.append(path) or FakeR1Response(200))
+    monitor = client.post("/monitors", params={"target_rapp_instance_id": str(instance_id)}, json={}).json()
+
+    resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "RECONNECT"})
+
+    assert resp.json()["outcome"] == "RESOLVED"
+    assert posts == [f"/nfo/deployments/{workload}/heal"]
+
+
+def test_a_monitor_takes_at_most_one_target(client):
+    resp = client.post("/monitors", params={"target_order_id": str(uuid.uuid4()),
+                                            "target_rapp_instance_id": str(uuid.uuid4())}, json={})
+    assert resp.status_code == 422
+
+
+def test_remedial_action_on_an_unknown_monitor_is_404(client):
+    resp = client.post(f"/monitors/{uuid.uuid4()}/remedial-actions", params={"action_type": "SCALE"})
+    assert resp.status_code == 404
 
 
 def test_reconnect_resolves_deployment_via_order_and_heals(client, monkeypatch):
