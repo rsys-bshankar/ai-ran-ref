@@ -2805,6 +2805,24 @@ updated to reflect the real, automated hand-off this section used to say wasn't 
 GUI: `RAppInstance`'s deploy form gained an autonomy-mode picker and region-scope field;
 Policy & Intents gained a new "Autonomy dispatches" tab (create + list + resolve).
 
+**Follow-on hardening (same PR, prompted by CodeQL `py/full-ssrf` on this section's own
+`notificationDestination` callback):** this `notificationDestination`-is-caller-chosen
+shape wasn't new — it's the pattern every subscription/callback field in this build
+already used (DME's `producerHealthCallbackUrl`/`jobCallbackUrl`, SME's `callbackUri`,
+AIMgF's `notificationUri`, A1-Related/FOCOM/MDAF/Intent Service's own
+`notification_destination`/`callback`), just not flagged before because none of those
+call sites were in a PR's diff. A hostname allowlist isn't viable here — a real
+deployment's legitimate targets are rApp/producer containers whose hostnames are
+assigned at deploy time and never known in advance — so `shared/smo_shared/webhook.py`
+is a new, single SSRF guard applied to every one of those call sites (12 of them, across
+aimgf/sme/a1-related/dme/focom/mdaf/intent-service): scheme restricted to http/https
+(no `file://`/`gopher://`/`data:`), and the handful of literal addresses that are never
+a legitimate webhook target anywhere — loopback, link-local (including the
+`169.254.169.254` cloud metadata endpoint), multicast, unspecified/reserved — rejected
+outright. Every existing caller keeps its best-effort, swallow-on-failure semantics
+unchanged; `post_webhook`/`get_webhook`/`delete_webhook` just silently no-op instead of
+attempting the request when the destination is disallowed.
+
 ### 6.4 GAP: training data never validated against real DME DataJobs — CLOSED
 
 `RequestTraining(modelId, requiredData, validationCriteria)` (call flow 02,

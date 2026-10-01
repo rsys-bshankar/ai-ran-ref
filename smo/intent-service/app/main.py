@@ -22,7 +22,6 @@ addressed to it (ON DELETE CASCADE), not just leave a dangling reference.
 
 import uuid
 from typing import Literal
-from urllib.parse import urlsplit
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
@@ -37,6 +36,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.r1_client import R1Client
+from smo_shared.webhook import post_webhook
 
 from .models import AutonomyDispatch, Intent, IntentHandlingFunction, IntentReport
 
@@ -198,13 +198,10 @@ def _create_intent_row(db: Session, rmih_id: str, expectations: list[dict], prio
     db.add(intent)
     db.commit()
 
-    try:
-        httpx.post(fn.notification_destination, json={
-            "intentId": str(intent.intent_id), "expectationObjectTypes": sorted(expectation_object_types),
-            "priority": intent.intent_priority, "rmioId": intent.rmio_id,
-        }, timeout=5.0)
-    except httpx.HTTPError:
-        pass
+    post_webhook(fn.notification_destination, json={
+        "intentId": str(intent.intent_id), "expectationObjectTypes": sorted(expectation_object_types),
+        "priority": intent.intent_priority, "rmioId": intent.rmio_id,
+    }, timeout=5.0)
     return intent
 
 
@@ -370,33 +367,17 @@ def _notify_autonomy_operator(notification_destination: str | None, dispatch: Au
     """All three modes always notify the operator of the AI/ML inference
     outcome — not mode-gated; only enforcement (AUTONOMOUS/ASSIST apply
     it, SHADOW doesn't) and scoping vary by mode. Same best-effort push
-    pattern as every other notification in this build.
-
-    CodeQL py/full-ssrf: `notification_destination` is caller-supplied
-    (request-body) and this does make an outbound request to it, same as
-    every other callback-shaped field in this build (DME's
-    producerHealthCallbackUrl, AIMgF's notificationUri, this module's own
-    RegisterIntentHandlingFunction notificationDestination, ...) — a
-    webhook destination is meant to be caller-chosen. The one real
-    mitigation that doesn't break that design (an allowlisted host would
-    make every legitimate in-cluster destination, e.g. http://operator:8000,
-    unreachable) is restricting the scheme: http(s) only, never
-    file/gopher/data/etc, which is the actual class of request this
-    helper is for and the only thing worth blocking without defeating
-    the feature.
+    pattern as every other notification in this build, routed through
+    smo_shared.webhook's SSRF guard like every other caller-chosen
+    callback destination (see that module's docstring for why).
     """
-    if not notification_destination or urlsplit(notification_destination).scheme not in ("http", "https"):
-        return
-    try:
-        httpx.post(notification_destination, json={
-            "dispatchId": str(dispatch.dispatch_id), "instanceId": str(dispatch.instance_id),
-            "modelId": str(dispatch.model_id) if dispatch.model_id else None,
-            "autonomyMode": dispatch.autonomy_mode, "status": dispatch.status,
-            "expectations": dispatch.expectations, "priority": dispatch.priority,
-            "intentId": str(dispatch.intent_id) if dispatch.intent_id else None,
-        }, timeout=5.0)
-    except httpx.HTTPError:
-        pass
+    post_webhook(notification_destination, json={
+        "dispatchId": str(dispatch.dispatch_id), "instanceId": str(dispatch.instance_id),
+        "modelId": str(dispatch.model_id) if dispatch.model_id else None,
+        "autonomyMode": dispatch.autonomy_mode, "status": dispatch.status,
+        "expectations": dispatch.expectations, "priority": dispatch.priority,
+        "intentId": str(dispatch.intent_id) if dispatch.intent_id else None,
+    }, timeout=5.0)
 
 
 @app.post("/autonomy-dispatches", status_code=201)

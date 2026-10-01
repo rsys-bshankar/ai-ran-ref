@@ -24,6 +24,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.timeutil import as_utc
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
+from smo_shared.webhook import post_webhook
 
 from .a1_termination_client import A1TerminationClient
 from .models import A1EIType, A1Policy, A1ServiceRegistration, PolicyStatusSubscription
@@ -206,13 +207,10 @@ def _notify_policy_status_subscribers(db: Session, policy: A1Policy) -> None:
             continue
         if sub.near_rt_ric_id_list is not None and policy.near_rt_ric_id not in sub.near_rt_ric_id_list:
             continue
-        try:
-            httpx.post(sub.notification_destination, json={
-                "policyId": str(policy.policy_id), "policyTypeId": policy.policy_type_id,
-                "nearRtRicId": policy.near_rt_ric_id, "enforcementStatus": policy.enforcement_status,
-            }, timeout=2.0)
-        except httpx.HTTPError:
-            pass
+        post_webhook(sub.notification_destination, json={
+            "policyId": str(policy.policy_id), "policyTypeId": policy.policy_type_id,
+            "nearRtRicId": policy.near_rt_ric_id, "enforcementStatus": policy.enforcement_status,
+        }, timeout=2.0)
 
 
 @app.post("/policies/subscriptions", status_code=201)
