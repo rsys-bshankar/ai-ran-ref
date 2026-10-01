@@ -472,6 +472,10 @@ Large-structural items are confirmed Phase 1 scope cuts unless noted; open ones 
 - **SA-INTENT-5** `DELETE /intents/{id}`, cascades `IntentReport` (#66). (Closeable item 6.)
 - **SA-INTENT-6** All seven IntentReport kinds — closed in W6.
 - **SA-INTENT-arch** Consumer-side RMIH selection by `rmihId` (W3, #110); see OI-1-intent-rmih.
+- **SA-INTENT-partial** Closed: `Frequency`, `UEGroup`, `QoSId`, `CivicArea`, `CivicAddress`, `ReportingCondition`,
+  `TimeCondition`, `TargetFulfilmentCondition` structure-checked (`ts28312_datatypes.py`); `ValueRangeType` enforced for
+  generic values. The SDK's `energy_saving_expectation` sent a non-spec `schedulingTime` value and now sends a
+  `SchedulingTime` (`timeIntervals`).
 
 ### SME vs CAPIF core source (`SA-SME-n`)
 - **SA-SME-1** Invoker onboarding takes only `apiInvokerPublicKey`; server mints `apiInvokerId` and

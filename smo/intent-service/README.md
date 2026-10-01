@@ -9,8 +9,8 @@
 | Depends on (over R1) | rApp Management (`GET /rapp-mgmt/instances/{id}`, autonomy dispatch only); outbound webhooks to RMIHs, report recipients and operator destinations |
 | Called by | rApps via `sdk.intent`; GUI BFF (intents, autonomy dispatches); SA SMOS O1-CM handler (reads intents, publishes reports, registers as RMIH `sa-smos`, see [`../sa-smos/README.md`](../sa-smos/README.md)); SO SMOS identity may register as an RMIH |
 | Database tables | `intent`, `intent_utility_formula`, `intent_report`, `intent_handling_function`, `autonomy_dispatch` |
-| Unit tests | 56 passed (`tests/`, SQLite, standalone) |
-| Status | Done. 8 value datatypes are accepted without inner-structure checks (`../OPEN_ITEMS.md` SA-INTENT-partial) |
+| Unit tests | 73 passed (`tests/`, SQLite, standalone) |
+| Status | Done. The 8 value datatypes are checked by structure (`SA-INTENT-partial`, closed); `GeoArea` is the one `ValueRangeType` alternative with a documented simplification (1.2) |
 
 ## 1. High-level design (HLD)
 
@@ -42,9 +42,19 @@ Realises `../../specs/5G_APIs/TS28312_IntentNrm.yaml` plus the five expectation-
 | `IntentFulfilmentNegotiationFeedback` | `/intents/{id}/negotiation-feedback` |
 | `IntentReportControl` report delivery | `_deliver_report` |
 
-Not realised or deviating: DN-typed attributes carry plain strings (flat REST, no containment tree); 8 value
-datatypes (UEGroup, QoSId, CivicArea, CivicAddress, Frequency, ReportingCondition, TimeCondition,
-TargetFulfilmentCondition) are accepted without enforcing inner structure (`../OPEN_ITEMS.md` SA-INTENT-partial).
+Value datatypes (`app/ts28312_datatypes.py`, SA-INTENT-partial): `Frequency`, `UEGroup` (with `PlmnId`, `Snssai`,
+`QoSId`), `CivicArea` with `CivicAddress`, `ReportingCondition` = `TimeCondition` (a `SchedulingTime`:
+`TimeWindow`, `timeIntervals`, `daysOfWeek` or `daysOfMonth`) or `TargetFulfilmentCondition`, are checked by
+structure: required and exclusive keys (`QoSId`: exactly one of `qCI` / `fiveQI`; `CivicArea`: exactly one of
+`civicAddress` / `locationLabel`), the TS 28.541 / 28.623 patterns and ranges (MCC, MNC, SST, SD, 5QI, days) and
+unknown keys refused. `ValueRangeType` is enforced as a whole for every unspecialised target or context: a scalar,
+a list of them, or one object matching a structured alternative (a `{"nCI": 101}`-style free object is refused). A
+specialised name bound to a datatype (`UEGroup`, `CivicArea`, `DlFrequency`, `UlFrequency`, `schedulingTime`)
+must carry that datatype. Specialised names with a family value schema (`Cell` and the like) keep that schema.
+
+Not realised or deviating: DN-typed attributes carry plain strings (flat REST, no containment tree); `DateTime` and
+`FullTime` strings are checked by their RFC 3339 shape, not calendar validity; `GeoArea` / `GeoCoordinate` check
+the structure and the latitude / longitude ranges but not polygon closure.
 `rmihId`, `rmioId` and `intentHandlingScope` on an intent, and `notificationDestination` on an RMIH, are this
 build's own additions. A1 policy is a separate concept and is not part of this service.
 
@@ -131,6 +141,7 @@ The mode is snapshotted onto the dispatch at request time and never rewritten by
 |---|---|
 | `app/main.py` | All routes; `_create_intent_row` (shared by `POST /intents` and the autonomy paths); capability, feasibility and conflict checks; report delivery; autonomy dispatch and region-scope folding |
 | `app/ts28312.py` | Pydantic models for the Intent NRM datatypes, enums, `PURPOSE_NEEDS`, `REPORT_TYPE_OF`, family validation (`_check_specialised`, `_value_problem`) |
+| `app/ts28312_datatypes.py` | The value datatypes and `ValueRangeType` / `ReportingCondition` validators |
 | `app/ts28312_families.py` | Generated family tables: allowed conditions and simplified value schema per specialised target/context, per object type |
 | `app/models.py` | SQLAlchemy tables |
 
@@ -280,7 +291,7 @@ No Intent-Service-specific variables.
 
 ### 2.8 Limits and open items
 
-- 8 value datatypes are not inner-structure checked: `../OPEN_ITEMS.md` SA-INTENT-partial.
+- Value datatypes are structure-checked (1.2); a caller that sent a free-form object as a generic target or context value (the old SDK `schedulingTime` shape did) is now refused with 422.
 - `ts28312_families.py` is generated from the spec text and carries its spelling as-is, including conditions such
   as `IS_less_THAN` (5GC `5GSession`) and `S_EQUAL_TO` (radio-service `AssuranceDuration`) that cannot equal any
   value of the `Condition` enum, so those two specialised contexts can never validate.
@@ -298,6 +309,8 @@ cd smo/intent-service && PYTHONPATH=.:../shared python -m pytest tests/ -q
 ```
 
 ### 3.2 What is covered
+
+`tests/test_ts28312_datatypes.py` (17 tests): good and bad values for each datatype and as lists, `ValueRangeType` forms, `ReportingCondition`, and the same checks through `POST /intents` (contexts, guarantee periods, generic values, `intentReportControl`).
 
 | File | Covers | Tests |
 |---|---|---|

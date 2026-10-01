@@ -218,7 +218,7 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 | `request_autonomy_dispatch(instance_id, expectations, rmih_id, model_id=None, notification_destination=None, user_label=None, priority=1)` | `POST /intent-service/autonomy-dispatches` | the instance's autonomy mode decides: AUTONOMOUS creates an Intent now, ASSIST awaits the operator, SHADOW is never enacted |
 | `get_autonomy_dispatch(dispatch_id)` | `GET /intent-service/autonomy-dispatches/{id}` | |
 
-Module function `energy_saving_expectation(object_instance, cells=None, max_energy_consumption=None, daily_window=("00:00", "05:00"), expectation_id="energy-saving") -> dict`: builds the energy-saving TS 28.312 `RadioNetworkExpectation` (a `RAN_SUBNETWORK` object, optionally narrowed to `cells`; target `RANEnergyConsumption` `IS_LESS_THAN`, value 0 when no max is given; a daily `schedulingTime` guarantee period unless `daily_window` is falsy). Pure; no R1 call.
+Module function `energy_saving_expectation(object_instance, cells=None, max_energy_consumption=None, daily_window=("00:00", "05:00"), expectation_id="energy-saving") -> dict`: builds the energy-saving TS 28.312 `RadioNetworkExpectation` (a `RAN_SUBNETWORK` object, optionally narrowed to `cells`; target `RANEnergyConsumption` `IS_LESS_THAN`, value 0 when no max is given; a daily `schedulingTime` guarantee period unless `daily_window` is falsy: a TS 28.623 `SchedulingTime` of `timeIntervals`, clock times sent as RFC 3339 full-times, `"05:00"` becoming `"05:00:00Z"`). Pure; no R1 call.
 
 #### `sdk.platform` (`PlatformClient`, SME and O1 actions)
 
