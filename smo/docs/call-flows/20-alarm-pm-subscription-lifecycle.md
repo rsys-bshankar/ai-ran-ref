@@ -79,8 +79,8 @@ sequenceDiagram
 alarms/FM had no DME producer registration at all — `ingest_alarm` (`POST /alarms/ingest`)
 only ever wrote an `Alarm` row; nothing called `RegisterDMEType` the way `subscribe_pm`
 does for PM counters. An rApp or AI/ML model that wants outstanding-active-alarm/
-alarm-history context during inference (or during Training/Validation/Emulation, once call
-flow 02's own execution runtimes exist) had no DME-mediated way to get it — only a direct
+alarm-history context during inference (or during Training/Validation/Emulation, call flow
+02's own execution runtimes, `OPEN_ITEMS.md` section 6.2) had no DME-mediated way to get it — only a direct
 `GET /alarms` call to RAN NF OAM itself, outside DME's data plane entirely. `POST
 /fm-subscriptions` (the block above) now mirrors `subscribe_pm`'s own shape, registering
 RAN NF OAM as a DME producer for a single, shared `RAN.FaultRecords` type — every
