@@ -22,6 +22,7 @@ addressed to it (ON DELETE CASCADE), not just leave a dangling reference.
 
 import uuid
 from typing import Literal
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
@@ -370,8 +371,21 @@ def _notify_autonomy_operator(notification_destination: str | None, dispatch: Au
     outcome — not mode-gated; only enforcement (AUTONOMOUS/ASSIST apply
     it, SHADOW doesn't) and scoping vary by mode. Same best-effort push
     pattern as every other notification in this build.
+
+    CodeQL py/full-ssrf: `notification_destination` is caller-supplied
+    (request-body) and this does make an outbound request to it, same as
+    every other callback-shaped field in this build (DME's
+    producerHealthCallbackUrl, AIMgF's notificationUri, this module's own
+    RegisterIntentHandlingFunction notificationDestination, ...) — a
+    webhook destination is meant to be caller-chosen. The one real
+    mitigation that doesn't break that design (an allowlisted host would
+    make every legitimate in-cluster destination, e.g. http://operator:8000,
+    unreachable) is restricting the scheme: http(s) only, never
+    file/gopher/data/etc, which is the actual class of request this
+    helper is for and the only thing worth blocking without defeating
+    the feature.
     """
-    if not notification_destination:
+    if not notification_destination or urlsplit(notification_destination).scheme not in ("http", "https"):
         return
     try:
         httpx.post(notification_destination, json={

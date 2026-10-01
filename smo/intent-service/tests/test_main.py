@@ -510,6 +510,27 @@ def test_autonomy_dispatch_without_notification_destination_never_calls_out(clie
     assert calls == []
 
 
+def test_autonomy_dispatch_notification_rejects_a_non_http_scheme(client, rapp_mgmt, monkeypatch):
+    """CodeQL py/full-ssrf: a caller-supplied notificationDestination is a
+    webhook, meant to be caller-chosen — same as every other callback-shaped
+    field in this build — but only ever over http(s), never
+    file/gopher/data/etc. The request still succeeds; only the outbound
+    notification is skipped, the same silent-skip shape an unset
+    destination already has.
+    """
+    _register_rmih(client)
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    instance_id = rapp_mgmt.add_instance(autonomy_mode="SHADOW")
+
+    resp = client.post("/autonomy-dispatches", json={
+        "instanceId": str(instance_id), "expectations": [], "rmihId": "so-smos",
+        "notificationDestination": "file:///etc/passwd",
+    })
+    assert resp.status_code == 201
+    assert calls == []
+
+
 def test_request_autonomy_dispatch_for_unknown_instance_is_404(client, rapp_mgmt):
     _register_rmih(client)
     resp = client.post("/autonomy-dispatches", json={"instanceId": str(uuid.uuid4()), "expectations": [], "rmihId": "so-smos"})
