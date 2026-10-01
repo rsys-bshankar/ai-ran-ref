@@ -454,7 +454,13 @@ Large-structural items are confirmed Phase 1 scope cuts unless noted; open ones 
 - **SA-FOCOM-8** `GET /inventory` returns an `OCloud` shape (`oCloudId`, `name`, `resourceTypes`,
   `deploymentManagers`; `locations`/`oCloudSites` empty); `resource_type` filters. NFO reads `oCloudId`
   with the same fallback. (Moderate item 2.)
-- **SA-FOCOM-2/6/7/9** open or accepted — see OPEN_ITEMS.
+- **SA-FOCOM-2** `Location`, `OCloudSite`, `ResourcePool.oCloudSiteId` / `resources`; `/inventory` returns them. Closed.
+- **SA-FOCOM-6** `AlarmEventRecord` (X.733 `eventType`, `PerceivedSeverity`, times), `AlarmSubscription` + `AlarmEvent`;
+  performance records, jobs and NOTIFICATION subscriptions. Closed (FILE / STREAM reporting open).
+- **SA-FOCOM-7** Artifacts, Cluster, Infrastructure and ProvisioningRequest as REST resources; a request creates
+  a model-level `NodeCluster`. Closed (no real cluster).
+- **SA-FOCOM-9** Unknown `resourceTypeId` is 404; `generic`, `gpu-l40`, `pserver` seeded; `POST /resource-types`;
+  `FOCOM_AUTO_REGISTER_RESOURCE_TYPES` restores the old behaviour. Closed.
 
 ### Intent Service vs TS 28.312 (`SA-INTENT-n`)
 - **SA-INTENT-1** `intentHandlingScope` is `Literal["RAN","CN"]`; checked against the named RMIH

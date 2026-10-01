@@ -611,16 +611,88 @@ CREATE TABLE lcm_operation (
 CREATE TABLE ocloud_alarm (
   alarm_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   resource_ref   TEXT NOT NULL,   -- distinct domain from RAN NF OAM's alarm table — infrastructure, not RAN-function
-  severity        TEXT NOT NULL,
-  raised_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+  severity        TEXT NOT NULL CHECK (severity IN ('critical','major','minor','warning','indeterminate','cleared')),
+  raised_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- SA-FOCOM-6: O2IMS AlarmEventRecord fields
+  resource_type_id     TEXT,
+  alarm_definition_id  TEXT,
+  probable_cause_id    TEXT,
+  event_type           TEXT NOT NULL DEFAULT 'OTHER' CHECK (event_type IN ('COMMUNICATIONS_ALARM','PROCESSING_ERROR_ALARM','ENVIRONMENTAL_ALARM','QOS_ALARM','EQUIPMENT_ALARM','INTEGRITY_VIOLATION','OPERATIONAL_VIOLATION','PHYSICAL_VIOLATION','SECURITY_SERVICE_OR_MECHANISM_VIOLATION','TIME_DOMAIN_VIOLATION','OTHER')),
+  changed_at           TIMESTAMPTZ,
+  cleared_at           TIMESTAMPTZ,
+  acknowledged_at      TIMESTAMPTZ,
+  acknowledged         BOOLEAN NOT NULL DEFAULT false,
+  extensions           JSONB
+);
+
+CREATE TABLE ocloud_alarm_subscription (
+  subscription_id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  callback                  TEXT NOT NULL,
+  consumer_subscription_id  TEXT,
+  filter                    TEXT CHECK (filter IN ('NEW','CHANGE','CLEAR','ACKNOWLEDGE'))
 );
 
 CREATE TABLE ocloud_performance_metric (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   resource_ref    TEXT NOT NULL,
   metric_name      TEXT NOT NULL,
-  value             DOUBLE PRECISION NOT NULL,
-  collected_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+  value             DOUBLE PRECISION,
+  collected_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  job_id            TEXT,
+  measurement_value JSONB,
+  is_suspect        BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE TABLE ocloud_performance_job (
+  job_id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  consumer_job_id                 TEXT,
+  state                           TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (state IN ('ACTIVE','SUSPENDED','DEPRECATED')),
+  collection_interval             INTEGER NOT NULL,
+  resource_scope_criteria         JSONB NOT NULL DEFAULT '[]',
+  measurement_selection_criteria  JSONB NOT NULL DEFAULT '[]',
+  status                          TEXT NOT NULL DEFAULT 'IDLE' CHECK (status IN ('RUNNING','FAILED','DEGRADED','IDLE','PENDING_DELETE')),
+  pre_installed                   BOOLEAN NOT NULL DEFAULT false,
+  qualified_resource_types        JSONB NOT NULL DEFAULT '[]',
+  extensions                      JSONB
+);
+
+CREATE TABLE ocloud_performance_subscription (
+  subscription_id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  consumer_subscription_id           TEXT,
+  global_subscription_criteria       JSONB NOT NULL DEFAULT '[]',
+  report_format                      TEXT NOT NULL DEFAULT 'NOTIFICATION' CHECK (report_format IN ('NOTIFICATION','FILE','STREAM')),
+  callback                           TEXT NOT NULL,
+  measurement_reporting_frequencies  JSONB NOT NULL DEFAULT '[]'
+);
+
+-- SA-FOCOM-7: artifact / cluster / infrastructure / provisioning resources,
+-- one row per object (kind + id), attributes validated per kind in the module.
+CREATE TABLE o2ims_object (
+  kind        TEXT NOT NULL,
+  object_id   TEXT NOT NULL,
+  attributes  JSONB NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (kind, object_id)
+);
+
+-- SA-FOCOM-2: O2IMS Location and OCloudSite
+CREATE TABLE ocloud_location (
+  global_location_id  TEXT PRIMARY KEY,
+  name                TEXT NOT NULL,
+  description         TEXT NOT NULL DEFAULT '',
+  o_cloud_id          TEXT NOT NULL,
+  coordinate          TEXT,
+  address             TEXT,
+  extensions          JSONB
+);
+
+CREATE TABLE ocloud_site (
+  o_cloud_site_id  TEXT PRIMARY KEY,
+  location_id      TEXT NOT NULL,
+  name             TEXT NOT NULL,
+  description      TEXT NOT NULL DEFAULT '',
+  o_cloud_id       TEXT NOT NULL,
+  extensions       JSONB
 );
 
 CREATE TABLE inventory_subscription (
@@ -653,7 +725,9 @@ CREATE TABLE resource_pool (
   resource_pool_id  TEXT PRIMARY KEY,
   name               TEXT NOT NULL,
   description         TEXT,
-  o_cloud_id           TEXT NOT NULL
+  o_cloud_id           TEXT NOT NULL,
+  o_cloud_site_id      TEXT,   -- SA-FOCOM-2
+  extensions           JSONB
 );
 
 CREATE TABLE resource (
