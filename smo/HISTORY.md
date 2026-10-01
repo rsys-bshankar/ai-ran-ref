@@ -23,7 +23,7 @@ Recurring conventions referred to below:
   caller-supplied callback goes through `smo_shared.webhook` (OI-6.3).
 - **Lazy staleness**: no scheduler exists; liveness/expiry is computed at read or gate time.
 - **Owned-child delete**: `ON DELETE CASCADE` on the FK plus explicit application cleanup.
-- **Postgres verification**: schema changes are checked against a real Postgres 16 with
+- **Postgres verification**: schema changes are checked against a real Postgres 18 with
   `scripts/check_migration_matches_models.py` (OI-2-migration-check).
 
 ---
