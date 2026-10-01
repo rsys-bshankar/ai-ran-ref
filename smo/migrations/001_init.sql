@@ -535,7 +535,9 @@ CREATE TABLE nf_deployment (
                                       CHECK (state IN ('INITIAL','INSTANTIATING','RUNNING','UPDATING','TERMINATING','ABNORMAL','DELETING')),
   workload_ref                       TEXT,
   required_resource_type_id            TEXT,
-  config_secrets                         JSONB
+  config_secrets                         JSONB,
+  -- OI-3-nfo-abnormal: why the deployment is ABNORMAL (the DMS event and its detail); cleared by Heal
+  abnormal_reason                          TEXT
 );
 
 -- NEW section 5: the reference's own NfOCloudVResource — the

@@ -40,6 +40,9 @@ class NFDeployment(Base):
     workload_ref: Mapped[str | None] = mapped_column(String)
     required_resource_type_id: Mapped[str | None] = mapped_column(String)
     config_secrets: Mapped[dict | None] = mapped_column(JSON)  # reference to secrets store only, never plaintext
+    # OI-3-nfo-abnormal: why the deployment is ABNORMAL (the DMS event and its
+    # detail); cleared when Heal recovers it.
+    abnormal_reason: Mapped[str | None] = mapped_column(String)
 
 
 class NFOCloudResource(Base):
