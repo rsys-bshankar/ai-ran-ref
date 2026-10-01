@@ -539,7 +539,9 @@ Large-structural items are confirmed Phase 1 scope cuts unless noted; open ones 
 - **SA-O1-2** PM job control / file / streaming APIs — elided (SA-RANOAM-7/8).
 - **SA-O1-3** Software Management already carries `ru_instance_id` and a DOWNLOAD/INSTALL/ACTIVATE
   FSM. WG4 (O-RU) out of scope. (#125)
-- **SA-O1-4** WG10/WG5 IOCs: per-vendor own/spec/combined conformance (#125); registry built in W9.
+- **SA-O1-4** WG10/WG5 IOCs: per-vendor own/spec/combined conformance (#125); registry built in W9. The WG10 O1 NRM and
+  WG5 O-DU / O-CU descriptors now ship, generated from the YANG by `scripts/ingest_yang_schema.py` (3GPP common-module
+  attributes unresolved: OPEN_ITEMS). Closed.
 - **SA-O1-5** O-RU aggregation mount points — out of scope.
 
 ### Onboarding vs ASD/TOSCA CSAR (`SA-ASD-n`) (#116)

@@ -1,0 +1,75 @@
+{
+ "classes": {
+  "PDCPConfig": {
+   "discard-timer": {
+    "type": "integer"
+   },
+   "fiveQI": {
+    "type": "array"
+   },
+   "header-compression-enabled": {
+    "type": "boolean"
+   },
+   "pdcp-sn-size-dl": {
+    "enum": [
+     "LEN-12-BITS",
+     "LEN-18-BITS"
+    ],
+    "type": "string"
+   },
+   "pdcp-sn-size-ul": {
+    "enum": [
+     "LEN-12-BITS",
+     "LEN-18-BITS"
+    ],
+    "type": "string"
+   },
+   "qci": {
+    "type": "array"
+   },
+   "rlc-mode": {
+    "enum": [
+     "RLC-TM",
+     "RLC-AM",
+     "RLC-UM-BIDIRECTIONAL",
+     "RLC-UM-BIDIRECTIONAL-UL",
+     "RLC-UM-UNIDIRECTIONAL-DL"
+    ],
+    "type": "string"
+   },
+   "t-reordering": {
+    "type": "integer"
+   },
+   "t-reordering-ul": {
+    "type": "integer"
+   },
+   "ul-data-split-threshold": {
+    "type": "integer"
+   }
+  },
+  "SecurityHandling": {
+   "cipheringAlgoPrio": {
+    "type": "array"
+   },
+   "integrityProtectAlgoPrio": {
+    "type": "array"
+   }
+  },
+  "cu-count-groups": {
+   "cu-count-group": {
+    "type": "array"
+   }
+  }
+ },
+ "revision": "2023-11-14",
+ "schemaName": "o-ran-wg5-cu-mp",
+ "source": [
+  "O-RAN-WG5-O-CU-MP-YANGs/o-ran-cu-security-handling.yang",
+  "O-RAN-WG5-O-CU-MP-YANGs/o-ran-cucountgroup.yang",
+  "O-RAN-WG5-O-CU-MP-YANGs/o-ran-pdcp.yang"
+ ],
+ "type": "YANG",
+ "unresolved": [
+  "top3gpp:Top_Grp"
+ ]
+}
