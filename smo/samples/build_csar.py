@@ -5,7 +5,7 @@ Onboarding's `_validate_package` fetches over HTTP and opens.
     python3 smo/samples/build_csar.py                      # every sample
     python3 smo/samples/build_csar.py energy-saving-rapp   # one sample
 
-Test suites, caches and the sample's own service tests are left out, and
+Test suites, caches, the sample's own service tests and its README.md are left out, and
 every entry carries a fixed timestamp, so a rebuild of unchanged sources is
 byte-identical.
 
@@ -23,6 +23,7 @@ SAMPLES_DIR = Path(__file__).resolve().parent
 SAMPLES = ["hello-world-rapp", "energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp",
            "traffic-steering-rapp"]
 EXCLUDED_PARTS = {"__pycache__", "tests", ".pytest_cache"}
+EXCLUDED_FILES = {"README.md"}  # sample documentation, not package content
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
 
@@ -32,7 +33,7 @@ def build_bytes(name: str) -> bytes:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for path in sorted(source.rglob("*")):
             rel = path.relative_to(source)
-            if path.is_file() and not EXCLUDED_PARTS & set(rel.parts):
+            if path.is_file() and not EXCLUDED_PARTS & set(rel.parts) and rel.as_posix() not in EXCLUDED_FILES:
                 info = zipfile.ZipInfo(rel.as_posix(), FIXED_TIME)
                 info.compress_type = zipfile.ZIP_DEFLATED
                 z.writestr(info, path.read_bytes())
