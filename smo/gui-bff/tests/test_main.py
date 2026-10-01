@@ -279,6 +279,13 @@ def test_cm_write_identity_and_msac_tier_come_from_the_gui_role(app, smo):
     assert [(b["requestedBy"], b["msacRole"]) for b in sent] == [("smo-gui:operator", None), ("smo-gui:admin", "admin")]
 
 
+def test_assist_rejection_is_attributed_to_the_gui_user(app, smo):
+    login(app, "operator").post("/api/smo/intent-service/autonomy-dispatches/d-1/reject",
+                                json={"rejectedBy": "someone-else", "reason": "wrong cells"})
+    assert json.loads(smo.proxied[0].content) == {"rejectedBy": "smo-gui:operator", "reason": "wrong cells"}
+    assert login(app, "viewer").post("/api/smo/intent-service/autonomy-dispatches/d-1/reject", json={}).status_code == 403
+
+
 def test_role_change_applies_on_the_next_request(app, db):
     operator = login(app, "operator")
     assert operator.post("/api/smo/so-smos/orders", json={"scope": "s", "steps": []}).status_code == 200

@@ -13,8 +13,8 @@ deliberately absent, so the GUI can't reach them at all.
 
 Some rules also pin request parameters to the caller's GUI identity rather
 than trusting what the browser sent: who acknowledged or cleared an alarm,
-SA SMOS's requester_is_admin flag, and the RMIO identity on Intent Service
-intents.
+SA SMOS's requester_is_admin flag, the RMIO identity on Intent Service
+intents, and who rejected an ASSIST autonomy dispatch.
 """
 
 import re
@@ -225,6 +225,13 @@ RULES: list[Rule] = [
     _rule("POST", "/intent-service/intent-handling-functions", A),
     _rule("DELETE", "/intent-service/intent-handling-functions/{id}", A),
     _rule("POST", "/intent-service/intent-reports", A),
+    # rApp autonomy modes (OPEN_ITEMS.md 6.3; Wave 8 W8-08): an operator
+    # requests a dispatch, and scopes (resolve) or rejects an ASSIST one
+    # left AWAITING_SCOPE — who rejected is pinned to the GUI identity.
+    _rule("POST", "/intent-service/autonomy-dispatches", O),
+    _rule("POST", "/intent-service/autonomy-dispatches/{id}/resolve", O),
+    _rule("POST", "/intent-service/autonomy-dispatches/{id}/reject", O,
+          json_overrides=lambda u: {"rejectedBy": f"smo-gui:{u.username}"}),
 
     # --- RAN Analytics / MDAF (Wave 1 split: reports/subscriptions moved
     # to mdaf/, producer registration stays in ran-analytics/)

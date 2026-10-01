@@ -14,7 +14,7 @@ from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import AssuranceMonitor, RemedialAction
+from app.models import AssuranceMonitor, O1CmEnactment, RemedialAction
 
 
 class FakeR1Response:
@@ -42,6 +42,7 @@ def client(monkeypatch):
     Base.metadata.create_all(engine, tables=[
         Base.metadata.tables["service_order"], Base.metadata.tables["ml_model_coordination_group"],
         Base.metadata.tables["mda_subscription"], AssuranceMonitor.__table__, RemedialAction.__table__,
+        O1CmEnactment.__table__,
     ])
     TestSession = sessionmaker(bind=engine)
 

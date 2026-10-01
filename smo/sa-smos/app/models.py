@@ -1,6 +1,7 @@
+import datetime
 import uuid
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, JSON, String, Uuid
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -33,3 +34,20 @@ class RemedialAction(Base):
     auto_executed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     auto_execution_scope_config: Mapped[str | None] = mapped_column(String)
     outcome: Mapped[str | None] = mapped_column(String)
+
+
+class O1CmEnactment(Base):
+    """Wave 8 (WAVES_4_TO_10_WORK_ITEMS.md W8-07, decision D-1): one record
+    per Intent the generic O1-CM intent handler enacted — which DME actions
+    (and so which RAN NF OAM config jobs) it issued, and the outcome it
+    reported back as the Intent's fulfilment."""
+    __tablename__ = "o1_cm_enactment"
+
+    enactment_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    intent_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)  # -> intent (Intent Service), bare cross-module ref
+    status: Mapped[str] = mapped_column(String, nullable=False)  # FULFILLED | NOT_FULFILLED
+    actions: Mapped[list] = mapped_column(JSON, nullable=False)  # [{expectationId, actionId, forwardedJobId, status}]
+    unsupported_targets: Mapped[list] = mapped_column(JSON, nullable=False)
+    intent_report_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                           default=lambda: datetime.datetime.now(datetime.UTC))

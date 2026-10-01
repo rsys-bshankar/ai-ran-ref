@@ -498,3 +498,63 @@ def test_runtime_profile_flows_from_rapp_manifest_to_nfo_descriptor(mesh, loaded
     descriptors = mesh["nfo"].get("/descriptors", params={"limit": 500}).json()["items"]
     mine = next(d for d in descriptors if d["name"] == f"aimgf-training-{job_id}")
     assert mine["workloadTemplate"]["resources"] == {"cpu": 8, "memory": "16Gi", "gpu": 0}
+
+
+def _seed_managed_element(loaded_apps, db_connection, ref):
+    from sqlalchemy.orm import Session
+
+    ManagedEntity = loaded_apps["ran-nf-oam"].ManagedEntity
+    O1AdaptorEndpoint = loaded_apps["ran-nf-oam"].O1AdaptorEndpoint
+    with Session(bind=db_connection, join_transaction_mode="create_savepoint") as session:
+        endpoint = O1AdaptorEndpoint(managed_element_ref=ref, adaptor_uri="http://mock-o1-adaptor:8000/edit-config",
+                                     protocol_support=["NETCONF"])
+        session.add(endpoint)
+        session.flush()
+        session.add(ManagedEntity(managed_element_ref=ref, entity_type="O-DU", o1_protocol="NETCONF",
+                                  o1_adaptor_endpoint_id=endpoint.endpoint_id))
+        session.commit()
+
+
+def test_o1_cm_intent_handler_enacts_an_intent_through_dme_to_the_o1_adaptor(mesh, loaded_apps, db_connection):
+    """Wave 8 (W8-07, D-1): SA SMOS registers as the generic O1-CM intent
+    handler; an Intent setting NRCellDU.administrativeState=LOCKED on two
+    cells of a managed element is pushed to it, written through DME's
+    action mediation and RAN NF OAM's NETCONF edit-config to the real mock
+    O1 adaptor, and reported back to Intent Service as FULFILLED with the
+    action references."""
+    _seed_managed_element(loaded_apps, db_connection, "gnb-du-01")
+    registered = mesh["sa-smos"].post("/o1-cm-handler/registration", json={})
+    assert registered.status_code == 201, registered.text
+
+    intent = mesh["intent-service"].post("/intents", json={
+        "userLabel": "sleep cells 101/102", "rmioId": "es-rapp", "rmihId": "sa-smos",
+        "intentReportControl": [{"observationPeriod": 60}],
+        "intentExpectations": [{
+            "expectationId": "sleep", "expectationVerb": "DELIVER",
+            "expectationObject": {"objectType": "RAN_SUBNETWORK", "objectInstance": "gnb-du-01", "objectContexts": [
+                {"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF", "contextValueRange": ["101", "102"]}]},
+            "expectationTargets": [{"targetName": "NRCellDU.administrativeState", "targetCondition": "IS_EQUAL_TO",
+                                    "targetValueRange": "LOCKED"}]}],
+    })
+    assert intent.status_code == 201, intent.text
+    intent_id = intent.json()["intentId"]
+
+    enactments = mesh["sa-smos"].get("/o1-cm-handler/enactments", params={"intent_id": intent_id}).json()["items"]
+    assert enactments[0]["status"] == "FULFILLED", enactments
+    action = mesh["dme"].get(f"/actions/{enactments[0]['actions'][0]['actionId']}").json()
+    assert action["sourceContext"]["intentId"] == intent_id
+    assert [c["managedFunctionRef"] for c in action["changes"]] == ["NRCellDU=101", "NRCellDU=102"]
+    assert mesh["mock-o1-adaptor"].get("/edit-config/gnb-du-01").json()["attributeChanges"] == {"administrativeState": "LOCKED"}
+
+    current = mesh["intent-service"].get(f"/intents/{intent_id}").json()["attributes"]["intentReportReference"]
+    report = mesh["intent-service"].get(f"/intent-reports/{current}").json()["attributes"]
+    assert report["intentFulfilmentReport"]["intentFulfilmentInfo"] == {"fulfilmentStatus": "FULFILLED"}
+    assert '"forwardedJobId"' in report["intentFulfilmentReport"]["additionalFulfilmentInfo"]
+
+    # an attribute value outside the registered CM target's range is not feasible
+    rejected = mesh["intent-service"].post("/intents", json={
+        "userLabel": "bad", "rmioId": "es-rapp", "rmihId": "sa-smos", "intentReportControl": [{"observationPeriod": 60}],
+        "intentExpectations": [{"expectationId": "x", "expectationObject": {"objectType": "RAN_SUBNETWORK", "objectInstance": "gnb-du-01"},
+                                "expectationTargets": [{"targetName": "NRCellDU.operationalState", "targetCondition": "IS_EQUAL_TO",
+                                                        "targetValueRange": "DISABLED"}]}]})
+    assert rejected.status_code == 422

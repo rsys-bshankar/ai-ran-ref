@@ -290,15 +290,16 @@ function AutonomyDispatches() {
       <Can method="POST" path="/intent-service/autonomy-dispatches"><CreateAutonomyDispatch /></Can>
       <Card title="Autonomy dispatches" actions={
         <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status">
-          <option value="">All</option><option>AWAITING_SCOPE</option><option>DISPATCHED</option><option>SHADOWED</option>
+          <option value="">All</option><option>AWAITING_SCOPE</option><option>DISPATCHED</option><option>SHADOWED</option><option>REJECTED</option>
         </select>}>
-        <p className="muted small">What an rApp instance's own onboarding-time autonomy mode did with an inference outcome — AUTONOMOUS dispatches immediately at a pre-configured scope, ASSIST waits for an operator to scope it, SHADOW never dispatches at all.</p>
+        <p className="muted small">What an rApp instance's own onboarding-time autonomy mode did with an inference outcome — AUTONOMOUS dispatches immediately at a pre-configured scope, ASSIST waits in AWAITING_SCOPE until an operator either scopes it (an Intent is created) or rejects it (nothing is dispatched), SHADOW never dispatches at all.</p>
         <DataTable rows={dispatches.data} loading={dispatches.isLoading} error={dispatches.error} rowKey={(d) => d.dispatchId} empty="No autonomy dispatches." columns={[
           { header: "Dispatch", render: (d) => <Id value={d.dispatchId} /> },
           { header: "Instance", render: (d) => <Id value={d.instanceId} /> },
           { header: "Mode", render: (d) => <StateBadge state={d.autonomyMode} /> },
           { header: "Status", render: (d) => <StateBadge state={d.status} /> },
           { header: "Intent", render: (d) => d.intentId ? <Id value={d.intentId} /> : <span className="muted">—</span> },
+          { header: "Rejected", render: (d) => d.rejectedBy ? <span className="small">{d.rejectedBy}{d.rejectionReason ? ` — ${d.rejectionReason}` : ""}</span> : <span className="muted">—</span> },
           { header: "", className: "actions", render: (d) => d.status === "AWAITING_SCOPE" && <ResolveAutonomyDispatch dispatch={d} /> },
         ]} />
       </Card>
@@ -350,6 +351,7 @@ function CreateAutonomyDispatch() {
 
 function ResolveAutonomyDispatch({ dispatch }: { dispatch: AutonomyDispatch }) {
   const [scope, setScope] = useState("{}");
+  const [reason, setReason] = useState("");
   const parsed = parseJsonObject(scope);
   return (
     <div className="row gap end">
@@ -358,6 +360,14 @@ function ResolveAutonomyDispatch({ dispatch }: { dispatch: AutonomyDispatch }) {
         method: "POST", path: `/intent-service/autonomy-dispatches/${dispatch.dispatchId}/resolve`, success: "Dispatch resolved — Intent created",
         json: { regionScope: parsed.ok ? parsed.value : {} },
       }} />
+      <Can method="POST" path={`/intent-service/autonomy-dispatches/${dispatch.dispatchId}/reject`}>
+        <input className="small" style={{ width: "8rem" }} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="reason" aria-label="Rejection reason" />
+        <ActionButton label="Reject" tone="danger" action={{
+          method: "POST", path: `/intent-service/autonomy-dispatches/${dispatch.dispatchId}/reject`, success: "Dispatch rejected — nothing dispatched",
+          // rejectedBy is pinned to the GUI identity by the BFF
+          json: { rejectedBy: "smo-gui", reason: reason || null },
+        }} />
+      </Can>
     </div>
   );
 }

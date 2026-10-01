@@ -14,6 +14,55 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "IntentNotification": {
+        "description": "What Intent Service pushes to a handling function on CreateIntent.",
+        "properties": {
+          "intentId": {
+            "format": "uuid",
+            "title": "Intentid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intentId"
+        ],
+        "title": "IntentNotification",
+        "type": "object"
+      },
+      "RegistrationBody": {
+        "additionalProperties": false,
+        "properties": {
+          "cmTargets": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cmtargets"
+          },
+          "intentHandlingScope": {
+            "default": [
+              "RAN"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Intenthandlingscope",
+            "type": "array"
+          }
+        },
+        "title": "RegistrationBody",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -422,6 +471,165 @@
           }
         },
         "summary": "Execute Remedial Action"
+      }
+    },
+    "/o1-cm-handler/enactments": {
+      "get": {
+        "operationId": "list_enactments_o1_cm_handler_enactments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "intent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Intent Id"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Enactments"
+      }
+    },
+    "/o1-cm-handler/intents": {
+      "post": {
+        "description": "Intent Service's push for a new Intent addressed to this handler.",
+        "operationId": "enact_intent_o1_cm_handler_intents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntentNotification"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enact Intent"
+      }
+    },
+    "/o1-cm-handler/registration": {
+      "delete": {
+        "operationId": "deregister_o1_cm_handler_o1_cm_handler_registration_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Deregister O1 Cm Handler"
+      },
+      "post": {
+        "description": "Registers SA SMOS with Intent Service as the O1-CM intent handling\nfunction. Idempotent: an existing registration is replaced.",
+        "operationId": "register_o1_cm_handler_o1_cm_handler_registration_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationBody",
+                "default": {
+                  "intentHandlingScope": [
+                    "RAN"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register O1 Cm Handler"
       }
     },
     "/remedial-actions": {

@@ -21,6 +21,7 @@ addressed to it (ON DELETE CASCADE), not just leave a dangling reference.
 """
 
 import datetime
+import json
 import uuid
 
 import httpx
@@ -658,10 +659,10 @@ def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, db: Session =
     db.add(dispatch)
     db.flush()
     if autonomy_mode == "AUTONOMOUS":
+        dispatch.region_scope = instance.get("regionScope")
         intent = _create_intent_row(db, _dispatch_intent_request(dispatch, body.userLabel))
         dispatch.status = "DISPATCHED"
         dispatch.intent_id = intent.intent_id
-        dispatch.region_scope = instance.get("regionScope")
     elif autonomy_mode == "ASSIST":
         dispatch.status = "AWAITING_SCOPE"
     # SHADOW: dispatch.status stays "SHADOWED" — no Intent, ever, for this record.
@@ -686,10 +687,38 @@ def resolve_autonomy_dispatch(dispatch_id: uuid.UUID, body: ResolveAutonomyDispa
         raise framework_error(FrameworkError.AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE,
                                detail=f"cannot resolve a dispatch in status {dispatch.status}")
 
+    dispatch.region_scope = body.regionScope
     intent = _create_intent_row(db, _dispatch_intent_request(dispatch, None))
     dispatch.status = "DISPATCHED"
     dispatch.intent_id = intent.intent_id
-    dispatch.region_scope = body.regionScope
+    db.commit()
+    _notify_autonomy_operator(dispatch.notification_destination, dispatch)
+    return _autonomy_dispatch_view(dispatch)
+
+
+class RejectAutonomyDispatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rejectedBy: str
+    reason: str | None = None
+
+
+@app.post("/autonomy-dispatches/{dispatch_id}/reject")
+def reject_autonomy_dispatch(dispatch_id: uuid.UUID, body: RejectAutonomyDispatchRequest, db: Session = Depends(get_session)):
+    """Wave 8 (W8-08, decision D-1b): ASSIST's other operator answer — the
+    operator declines the recommendation outright. Only from AWAITING_SCOPE
+    (an ASSIST dispatch stays there until it is either resolved or
+    rejected); no Intent is ever created, and the operator destination is
+    notified like every other dispatch outcome."""
+    dispatch = db.get(AutonomyDispatch, dispatch_id)
+    if dispatch is None:
+        raise framework_error(FrameworkError.AUTONOMY_DISPATCH_NOT_FOUND, detail="no such autonomy dispatch")
+    if dispatch.status != "AWAITING_SCOPE":
+        raise framework_error(FrameworkError.AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE,
+                               detail=f"cannot reject a dispatch in status {dispatch.status}")
+    dispatch.status = "REJECTED"
+    dispatch.rejected_by = body.rejectedBy
+    dispatch.rejection_reason = body.reason
     db.commit()
     _notify_autonomy_operator(dispatch.notification_destination, dispatch)
     return _autonomy_dispatch_view(dispatch)
@@ -715,6 +744,25 @@ def list_autonomy_dispatches(instance_id: uuid.UUID | None = None, status: str |
     return {**page, "items": [_autonomy_dispatch_view(d) for d in page["items"]]}
 
 
+def _scoped(expectation: dict, region_scope: dict | None) -> dict:
+    """Wave 8: the dispatch's region scope (AUTONOMOUS: pre-configured on
+    the rApp instance; ASSIST: the operator's resolve) is where the Intent
+    applies, so it is folded into each expectation's object —
+    `regionScope.objectInstance` (the managed element / subnetwork) fills a
+    missing `objectInstance`, and `regionScope.cells` adds a TS 28.312 Cell
+    object context. Other regionScope keys are kept on the dispatch only."""
+    if not region_scope:
+        return expectation
+    scoped = json.loads(json.dumps(expectation))
+    obj = scoped["expectationObject"]
+    if region_scope.get("objectInstance") and not obj.get("objectInstance"):
+        obj["objectInstance"] = region_scope["objectInstance"]
+    if region_scope.get("cells"):
+        obj.setdefault("objectContexts", []).append(
+            {"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF", "contextValueRange": region_scope["cells"]})
+    return scoped
+
+
 def _dispatch_intent_request(dispatch: AutonomyDispatch, user_label: str | None) -> CreateIntentRequest:
     """The strict TS 28.312 Intent an AUTONOMOUS/resolved-ASSIST dispatch
     creates: its expectations as dispatched, reports delivered to the
@@ -723,7 +771,8 @@ def _dispatch_intent_request(dispatch: AutonomyDispatch, user_label: str | None)
     if dispatch.notification_destination:
         control["reportRecipientAddress"] = dispatch.notification_destination
     return CreateIntentRequest(
-        userLabel=user_label or f"autonomy-dispatch {dispatch.dispatch_id}", intentExpectations=dispatch.expectations,
+        userLabel=user_label or f"autonomy-dispatch {dispatch.dispatch_id}",
+        intentExpectations=[_scoped(e, dispatch.region_scope) for e in dispatch.expectations],
         intentPriority=dispatch.priority, intentMgmtPurpose=dispatch.intent_mgmt_purpose or "FULFILMENT_WITHOUT_NEGOTIATION",
         intentReportControl=[control], rmihId=dispatch.rmih_id, rmioId=str(dispatch.instance_id),
         intentHandlingScope=dispatch.intent_handling_scope)
@@ -737,5 +786,6 @@ def _autonomy_dispatch_view(d: AutonomyDispatch) -> dict:
         "intentMgmtPurpose": d.intent_mgmt_purpose, "intentHandlingScope": d.intent_handling_scope,
         "regionScope": d.region_scope, "status": d.status,
         "intentId": str(d.intent_id) if d.intent_id else None,
+        "rejectedBy": d.rejected_by, "rejectionReason": d.rejection_reason,
         "createdAt": d.created_at.isoformat(),
     }

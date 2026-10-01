@@ -1197,10 +1197,13 @@ CREATE TABLE autonomy_dispatch (
   intent_mgmt_purpose                   TEXT CHECK (intent_mgmt_purpose IN ('FEASIBILITYCHECK','FEASIBILITYCHECK_WITH_RECOMMENDATIONS','FULFILMENT_WITHOUT_NEGOTIATION','EXPLORATION','FULFILMENT_WITH_NEGOTIATION')),
   intent_handling_scope                    TEXT,
   region_scope                                JSONB,
-  status                                          TEXT NOT NULL CHECK (status IN ('AWAITING_SCOPE','DISPATCHED','SHADOWED')),
+  status                                          TEXT NOT NULL CHECK (status IN ('AWAITING_SCOPE','DISPATCHED','SHADOWED','REJECTED')),
   intent_id                                          UUID REFERENCES intent(intent_id) ON DELETE SET NULL,
   notification_destination                              TEXT,
-  created_at                                               TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at                                               TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- Wave 8 (W8-08): an ASSIST dispatch the operator declined.
+  rejected_by                                                 TEXT,
+  rejection_reason                                              TEXT
 );
 
 -- ============================================================
@@ -1228,6 +1231,17 @@ CREATE TABLE assurance_monitor (
   CONSTRAINT one_target_only CHECK (
     NOT (target_order_id IS NOT NULL AND target_coordination_group_id IS NOT NULL)
   )
+);
+
+-- Wave 8 (W8-07): the generic O1-CM intent handler's enactment record.
+CREATE TABLE o1_cm_enactment (
+  enactment_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  intent_id             UUID NOT NULL,   -- -> intent (Intent Service); bare: the record outlives a deleted intent
+  status                  TEXT NOT NULL CHECK (status IN ('FULFILLED','NOT_FULFILLED')),
+  actions                   JSONB NOT NULL,
+  unsupported_targets         JSONB NOT NULL,
+  intent_report_id              UUID,
+  created_at                      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE remedial_action (

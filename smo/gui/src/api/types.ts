@@ -109,6 +109,7 @@ export interface AutonomyDispatch {
   expectations: Record<string, unknown>[]; priority: number; rmihId: string;
   intentMgmtPurpose: string | null; intentHandlingScope: string | null;
   regionScope: Record<string, unknown> | null; status: string; intentId: string | null; createdAt: string;
+  rejectedBy?: string | null; rejectionReason?: string | null;
 }
 
 // ---- NFO / FOCOM / SO / SA / Analytics / DME
