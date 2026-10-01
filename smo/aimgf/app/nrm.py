@@ -33,7 +33,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from . import ts28105
 from .main import (
-    _activate_runtime, _cancel_training_job, _deploy_runtime, _get_model, _get_or_create_lifecycle, _nfo_terminate_execution,
+    _activate_runtime, _cancel_training_job, _deploy_runtime, _fire_model_event, _get_model, _get_or_create_lifecycle, _nfo_terminate_execution,
     _start_training, _start_validation, _sync_training_process, _validate_dme_data_job_ids,
 )
 from .models import (
@@ -460,7 +460,6 @@ def modify_ml_testing_request(request_id: uuid.UUID, body: RequestFlagsBody, db:
     fails the model's VALIDATING state (VALIDATION_FAILED — FAILED is the
     lifecycle's own retry point) rather than leaving it stuck VALIDATING.
     suspendRequest pauses/resumes a RUNNING job."""
-    from .main import _fire_model_event
     job = _get(db, ValidationJob, request_id, "MLTestingRequest")
     if body.cancelRequest:
         if job.status not in ("RUNNING", "SUSPENDED"):

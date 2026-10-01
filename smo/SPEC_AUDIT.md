@@ -555,8 +555,14 @@ its `analytics_type`, publishes reports on its own initiative, and a
 separate subscriber list receives them. A confirmed, deliberate
 architecture choice, not a bug.
 
-1. **Whole `MDARequest`-driven request-response model absent, replaced
-   by proactive producer-push** — large/structural, confirmed
+1. ~~**Whole `MDARequest`-driven request-response model absent, replaced
+   by proactive producer-push**~~ — **closed in Wave 5 at REST level**:
+   MDAFunction/MDARequest/MDAReport are real resources (`mdaf/app/mda.py`),
+   requests are matched and delivered per `reportingMethod`, alongside the
+   unchanged producer-push surface; see
+   `docs/roadmap/TS28104_COMPLIANCE_MATRIX.md` (48/48 rows; deviations:
+   addressing and the STREAMING transport). Original finding:
+   large/structural, confirmed
    deliberate. Matches `aiml-fw-apm`'s own reference shape, not
    TS28.104's NRM.
 2. ~~**`analytics_type` is a free string; the spec defines a real, closed

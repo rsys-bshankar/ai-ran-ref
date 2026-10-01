@@ -18,7 +18,11 @@ from app.models import MDAFReport, MDASubscription
 @pytest.fixture
 def db_session_factory():
     engine = make_test_engine()
-    Base.metadata.create_all(engine, tables=[MDAFReport.__table__, MDASubscription.__table__])
+    from app import models as mdaf_models
+    Base.metadata.create_all(engine, tables=[
+        cls.__table__ for cls in vars(mdaf_models).values()
+        if isinstance(cls, type) and issubclass(cls, Base) and cls is not Base and cls.__module__ == mdaf_models.__name__
+    ])
     return sessionmaker(bind=engine)
 
 

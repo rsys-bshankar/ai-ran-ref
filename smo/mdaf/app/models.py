@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, DateTime, JSON, String, Uuid
+from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -17,6 +17,16 @@ class MDAFReport(Base):
     output: Mapped[dict] = mapped_column(JSON, nullable=False)
     generated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
     subscriber_attribution: Mapped[str | None] = mapped_column(String)
+    # Wave 4-10 roadmap, Wave 5 — TS 28.104 MDAReport. A report published
+    # through `POST /mda-reports` carries the spec's own typed mDAOutputs;
+    # one published through the original `POST /reports` keeps its
+    # free-form `output` (and is shown as MDAOutputEntry pairs). The
+    # report kind (W5-02) types it as ANALYTICS / PREDICTION / DRIFT.
+    report_kind: Mapped[str] = mapped_column(String, nullable=False, default="ANALYTICS")
+    mda_type: Mapped[str | None] = mapped_column(String)
+    mda_outputs: Mapped[list | None] = mapped_column(JSON)
+    mda_function_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("mda_function.mda_function_id", ondelete="SET NULL"))
+    mda_request_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("mda_request.mda_request_id", ondelete="SET NULL"))
 
 
 class MDASubscription(Base):
@@ -40,3 +50,57 @@ class MDASubscription(Base):
     # previously no-op subscriber notify).
     threshold_info: Mapped[list[dict] | None] = mapped_column(JSON)
     threshold_state: Mapped[dict | None] = mapped_column(JSON)
+
+
+# ---------------------------------------------------------------- Wave 5: TS 28.104 MDA NRM IOCs
+
+class MDAFunction(Base):
+    """TS 28.104 MDAFunction — what an MDA producer can analyse
+    (supportedMDACapabilities) and in which domain."""
+    __tablename__ = "mda_function"
+
+    mda_function_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_label: Mapped[str | None] = mapped_column(String)
+    supported_mda_capabilities: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    supported_mda_domain: Mapped[str | None] = mapped_column(String)  # CN | RAN | CROSS_DOMAIN
+    ml_model_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    aiml_inference_function_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+
+
+class MDARequest(Base):
+    """TS 28.104 MDARequest — the consumer-driven side of MDA: what
+    outputs are wanted, for which scope and time, delivered how. Published
+    reports are matched against every open request (see app/mda.py)."""
+    __tablename__ = "mda_request"
+
+    mda_request_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    mda_function_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("mda_function.mda_function_id", ondelete="SET NULL"))
+    requested_by: Mapped[str | None] = mapped_column(String)
+    requested_mda_outputs: Mapped[list] = mapped_column(JSON, nullable=False)
+    reporting_method: Mapped[str] = mapped_column(String, nullable=False)  # FILE | STREAMING | NOTIFICATION
+    reporting_target: Mapped[str | None] = mapped_column(String)
+    analytics_scope: Mapped[dict | None] = mapped_column(JSON)
+    start_time: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    stop_time: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    recommendation_filter: Mapped[dict | None] = mapped_column(JSON)
+    performance_threshold_info: Mapped[list | None] = mapped_column(JSON)
+    analysis_requirements: Mapped[dict | None] = mapped_column(JSON)
+    threshold_monitor_refs: Mapped[list | None] = mapped_column(JSON)
+    # Per-IE ABOVE/BELOW state for the request's own mDAOutputIEFilters
+    # thresholds — the same edge-triggered bookkeeping MDASubscription has.
+    threshold_state: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+
+
+class MDAReportDelivery(Base):
+    """Which MDARequest a report was delivered to, and how — a report can
+    satisfy several open requests."""
+    __tablename__ = "mda_report_delivery"
+
+    delivery_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    report_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("mdaf_report.report_id", ondelete="CASCADE"), nullable=False)
+    mda_request_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("mda_request.mda_request_id", ondelete="CASCADE"), nullable=False)
+    reporting_method: Mapped[str] = mapped_column(String, nullable=False)
+    notified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    delivered_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))

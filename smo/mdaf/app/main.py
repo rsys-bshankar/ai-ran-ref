@@ -84,6 +84,8 @@ def publish_report(analytics_type: str, output: dict, input_sources: list[uuid.U
     db.add(report)
     db.commit()
     _notify_report_subscribers(db, report)
+    # Wave 5: a producer-push report also satisfies matching open MDARequests.
+    _deliver_legacy_report(db, report)
     return {"reportId": str(report.report_id)}
 
 
@@ -216,10 +218,20 @@ def query_analytics_report(analytics_type: str | None = None, limit: int = PageL
     if analytics_type:
         stmt = stmt.where(MDAFReport.analytics_type == analytics_type)
     page = paginate(db, stmt, limit, offset)
-    return {**page, "items": [{"reportId": str(r.report_id), "analyticsType": r.analytics_type, "output": r.output} for r in page["items"]]}
+    return {**page, "items": [{"reportId": str(r.report_id), "analyticsType": r.analytics_type, "output": r.output,
+                               "reportKind": r.report_kind, "mdaType": r.mda_type} for r in page["items"]]}
 
 
 def _subscription_view(s: MDASubscription) -> dict:
     return {"subscriptionId": str(s.subscription_id), "analyticsType": s.analytics_type,
             "requestedBy": s.requested_by, "notificationDestination": s.notification_destination, "scope": s.scope,
             "thresholdInfo": s.threshold_info}
+
+
+# ---------------------------------------------------------------- Wave 5: TS 28.104 MDA NRM resources
+# Imported last: app/mda.py reuses the helpers above. Bound at load time,
+# never imported lazily inside a route (the integration mesh's loader
+# evicts `app.*` from sys.modules after loading each service).
+from .mda import deliver_legacy_report as _deliver_legacy_report, router as _mda_router  # noqa: E402
+
+app.include_router(_mda_router)

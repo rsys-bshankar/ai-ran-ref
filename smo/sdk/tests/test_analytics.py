@@ -91,3 +91,33 @@ def test_raises_sdk_error_on_a_4xx_response(client, r1):
         client.subscribe("RAN.Coverage", "rapp-1", scope={"cell": "a"})
     assert exc_info.value.status_code == 422
     assert exc_info.value.body == {"detail": "bad scope"}
+
+
+# ---------------------------------------------------------------- Wave 5: TS 28.104 MDA NRM
+
+def test_create_mda_request_drops_unset_fields(client, r1):
+    client.create_mda_request([{"mDAType": "PREDICTIONS_PM_DATA"}], "NOTIFICATION",
+                              reporting_target="http://rapp/mda", analytics_scope={"managedEntitiesScope": ["cell-1"]})
+    assert r1.calls[0] == {"verb": "post", "path": "/mdaf/mda-requests", "params": None, "files": None, "json": {
+        "requestedMDAOutputs": [{"mDAType": "PREDICTIONS_PM_DATA"}], "reportingMethod": "NOTIFICATION",
+        "reportingTarget": "http://rapp/mda", "analyticsScope": {"managedEntitiesScope": ["cell-1"]}}}
+
+
+def test_publish_mda_report(client, r1):
+    client.publish_mda_report([{"mDAType": "PREDICTIONS_PM_DATA", "mDAOutputList": {}}], managed_entities=["cell-1"],
+                              report_kind="PREDICTION")
+    assert r1.calls[0]["path"] == "/mdaf/mda-reports"
+    assert r1.calls[0]["json"]["managedEntitiesScope"] == ["cell-1"] and r1.calls[0]["json"]["reportKind"] == "PREDICTION"
+
+
+def test_get_prediction_returns_the_named_pm_prediction(client, r1):
+    r1.script(200, {"items": [{"id": "r1", "attributes": {"mDAOutputs": [{"mDAType": "PREDICTIONS_PM_DATA", "mDAOutputList": {
+        "pmPredictions": [{"pmName": "RRU.PrbUsedDl", "pmPredictedValue": 2.8}]}}]}}]})
+    assert client.get_prediction("cell-1", pm_name="RRU.PrbUsedDl") == {"pmName": "RRU.PrbUsedDl", "pmPredictedValue": 2.8}
+    assert r1.calls[0]["params"] == {"mda_type": None, "report_kind": "PREDICTION", "managed_entity": "cell-1", "mda_request_id": None}
+    assert client.get_prediction("cell-1", pm_name="Other") is None
+
+
+def test_get_prediction_none_without_reports(client, r1):
+    r1.script(200, {"items": []})
+    assert client.get_prediction("cell-1") is None
