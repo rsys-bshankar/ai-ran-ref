@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Wave 10.2 demo script (DEMO_RUNBOOK.md §25, docs/ROADMAP.md
+"""The Wave 10.2 demo script (DEMO_RUNBOOK.md §25, HISTORY.md
 W10.2-10): Demo 00–11 for the Mobility Optimization rApp against a running
 stack.
 

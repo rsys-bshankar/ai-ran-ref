@@ -1,7 +1,7 @@
 # Call Flow: O1 Vendor Onboarding → Capability-Gated, Schema-Checked CM Write
 
 RAN NF OAM's vendor capability registry (`ran-nf-oam/app/vendors.py`; see "O1 vendor
-onboarding" in `docs/ARCHITECTURE.md` and Wave 9 in `docs/ROADMAP.md`) makes onboarding a
+onboarding" in `docs/ARCHITECTURE.md` and Wave 9 in `docs/STANDARDS.md`) makes onboarding a
 RAN vendor (or a Digital Twin) data fed to RAN NF OAM, not new code. The three steps are:
 
 1. **Discover** what the vendor's own O1 adaptor declares. The adaptor registers itself first, and discovery reads only that registered adaptor, never a URL supplied in a request.

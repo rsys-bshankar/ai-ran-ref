@@ -1,4 +1,4 @@
-"""EnergySaving rApp — the Wave 10.1 reference rApp (docs/ROADMAP.md
+"""EnergySaving rApp — the Wave 10.1 reference rApp (HISTORY.md
 §9, W10-01..W10-25). A Non-RT RIC rApp that sleeps lightly used cells
 through O1 and wakes them before load returns. It uses O1 PM data only;
 there is no A1, Near-RT RIC, xApp or E2.

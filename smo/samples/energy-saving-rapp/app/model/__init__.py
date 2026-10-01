@@ -1,3 +1,3 @@
 """The EnergySaving rApp's model and its four execution-mode logics
-(TRAINING / VALIDATION / EMULATION / INFERENCE) — docs/ROADMAP.md
+(TRAINING / VALIDATION / EMULATION / INFERENCE) — HISTORY.md
 W10-01/W10-02. The file names follow the Wave 10 package description."""

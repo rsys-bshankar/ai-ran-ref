@@ -137,7 +137,7 @@ class FrameworkError:
     MDA_CAPABILITY_NOT_SUPPORTED = ("MDA_CAPABILITY_NOT_SUPPORTED", 422)
     # Wave 7 — runtime profiles (rApp package lookup) and inference reads.
     PACKAGE_NOT_FOUND = ("PACKAGE_NOT_FOUND", 404)
-    # Wave 9 (docs/ROADMAP.md W9-01..06) — RAN NF OAM's
+    # Wave 9 (HISTORY.md W9-01..06) — RAN NF OAM's
     # multi-vendor capability registry, docs/ARCHITECTURE.md
     O1_SERVICE_NOT_SUPPORTED = ("O1_SERVICE_NOT_SUPPORTED", 409)
     VENDOR_CAPABILITY_NOT_FOUND = ("VENDOR_CAPABILITY_NOT_FOUND", 404)

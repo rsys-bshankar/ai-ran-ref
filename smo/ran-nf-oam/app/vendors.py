@@ -1,4 +1,4 @@
-"""Multi-vendor O1 framework — Wave 9 (docs/ROADMAP.md W9-01..06),
+"""Multi-vendor O1 framework — Wave 9 (HISTORY.md W9-01..06),
 building `docs/ARCHITECTURE.md`'s sketch.
 
 Onboarding a vendor is data, not code:

@@ -1589,7 +1589,7 @@ rApp (`samples/energy-saving-rapp/`) runs beside the platform as the
 
 There is no A1, Near-RT RIC, xApp or E2. Design:
 `docs/call-flows/22-energy-saving-closed-loop.md`; scope and tests:
-`docs/ROADMAP.md` §9.
+`docs/STANDARDS.md` §9.
 
 The demo is a script, `samples/energy-saving-rapp/demo.py`, one step per
 Demo number; it keeps the ids it needs between steps. Timestamps are
@@ -1653,7 +1653,7 @@ It never tunes towards a cell that is asleep, about to sleep or just woken
 and it leaves alone relations with `isHOAllowed=false` and EMERGENCY or
 incident-zone cells. There is no A1, Near-RT RIC, xApp or E2. Design:
 `docs/call-flows/23-mobility-optimization-closed-loop.md`; scope and tests:
-`docs/ROADMAP.md` §10.
+`docs/STANDARDS.md` §10.
 
 The demo is a script, `samples/mobility-optimization-rapp/demo.py`, one step
 per Demo number. Timestamps are simulation time (handover history
@@ -1719,7 +1719,7 @@ just woken (EnergySaving), and while the Mobility rApp is observing one of
 its relations. It also leaves EMERGENCY and incident-zone cells alone, and
 holds everything under a critical alarm. There is no A1, Near-RT RIC, xApp
 or E2. Design: `docs/call-flows/24-coverage-optimization-closed-loop.md`;
-scope and tests: `docs/ROADMAP.md` §10a.
+scope and tests: `docs/STANDARDS.md` §10a.
 
 The demo is a script, `samples/coverage-optimization-rapp/demo.py`, one step
 per Demo number. Live PM is produced from each cell's tilt and power as read
@@ -1789,7 +1789,7 @@ cells that are asleep or just woken (EnergySaving) and around cells in a
 Coverage change set. It also leaves protected cells alone and never reverses
 a steering direction within 6 hours. There is no A1, Near-RT RIC, xApp or E2.
 Design: `docs/call-flows/25-traffic-steering-closed-loop.md`; scope and tests:
-`docs/ROADMAP.md` §10b.
+`docs/STANDARDS.md` §10b.
 
 The demo is a script, `samples/traffic-steering-rapp/demo.py`, one step per
 Demo number. Live PM is produced from each cell's CIO and reselection

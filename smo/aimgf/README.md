@@ -34,7 +34,7 @@ It provides:
 | TS 28.105 ([`TS28105_AiMlNrm.yaml`](../../specs/5G_APIs/TS28105_AiMlNrm.yaml)) | Every IOC AIMgF owns as a REST resource with the spec's attribute names, as `{"id", "attributes"}`: MLTrainingFunction / Request / Process / Report, MLTestingFunction / Request / Report, AIMLInferenceFunction, AIMLInferenceEmulationFunction, AIMLInferenceReport, MLModelLoadingPolicy / Request / Process, MLUpdateFunction / Request / Process / Report. MLModel, MLModelRepository and MLModelCoordinationGroup are MLMR's | DN containment tree: DN-typed attributes carry resource ids and resources are flat collections (the one recorded deviation, platform decision D-9). `MLTrainingFunction.ThresholdMonitors` (a TS 28.623 containment) is not modelled; threshold monitoring is MLMF (`guardKpiFloor`). FL/RL attributes are validated and stored, but there is no distributed-training engine |
 | Internal | Model / runtime lifecycle FSMs, governance records, NFO-backed execution runtimes, stage timeouts, feature groups, MLMF | |
 
-Full per-IOC compliance matrix (20/20 IOCs, 125/126 attributes compliant): [`../docs/ROADMAP.md#ts-28105`](../docs/ROADMAP.md#ts-28105). Runtime realisation (MLTF / MLVF / MLEF / MLIF as NFO deployments, runtime profiles, timeouts): [`../docs/ROADMAP.md#runtime-realization`](../docs/ROADMAP.md#runtime-realization). Both are linked, not copied; section 2.3 and 2.5 below describe the behaviour the code implements.
+Full per-IOC compliance matrix (20/20 IOCs, 125/126 attributes compliant): [`../docs/STANDARDS.md#ts-28105`](../docs/STANDARDS.md#ts-28105). Runtime realisation (MLTF / MLVF / MLEF / MLIF as NFO deployments, runtime profiles, timeouts): [`../docs/STANDARDS.md#runtime-realization`](../docs/STANDARDS.md#runtime-realization). Both are linked, not copied; section 2.3 and 2.5 below describe the behaviour the code implements.
 
 ### 1.3 Position in the platform
 
@@ -83,7 +83,7 @@ Cross-module references are bare UUIDs (for example `TrainingJob.model_id` into 
 | Training / validation / emulation / inference requests and job state | Deploy-request gate, node-group targeting → MLLF |
 | Governance: approval, certification, promotion, rollback | Data, datasets, feature sets → DME |
 | NFO invocation (runtime create / scale / terminate) | Analytics reports, predictions, drift → MDAF |
-| TS 28.105 functions, requests, processes and reports (see [ROADMAP](../docs/ROADMAP.md#ts-28105)) | Business logic → rApps |
+| TS 28.105 functions, requests, processes and reports (see [STANDARDS](../docs/STANDARDS.md#ts-28105)) | Business logic → rApps |
 | MLMF performance subscriptions (`/mlmf/subscriptions`), feature groups (`/feature-groups`) | Running workloads → NFO |
 
 ### 1.5 Design decisions
@@ -316,7 +316,7 @@ Paths are relative to `/aimgf`. Lists are `{items, total, limit, offset}` with `
 | Webhook to subscription `notificationDestination` | every MLMF report | best-effort; payload `{reportId, modelId, metrics, breachedFloor}` |
 | Webhook to inference `notificationDestination` | inference timeout | best-effort |
 
-**Runtime profiles.** A request may name `packageId` (that package's manifest `runtimeProfiles[mode]`) or an explicit `runtimeProfile` (wins). The chosen profile is stored on the job or lifecycle row and sent to NFO as `workloadTemplate.resources`. Neither means an unsized runtime. Manifest rules: [`../docs/ROADMAP.md#runtime-realization`](../docs/ROADMAP.md#runtime-realization).
+**Runtime profiles.** A request may name `packageId` (that package's manifest `runtimeProfiles[mode]`) or an explicit `runtimeProfile` (wins). The chosen profile is stored on the job or lifecycle row and sent to NFO as `workloadTemplate.resources`. Neither means an unsized runtime. Manifest rules: [`../docs/STANDARDS.md#runtime-realization`](../docs/STANDARDS.md#runtime-realization).
 
 **Timeouts.** A run past `started_at + timeout_seconds` is failed: status `FAILED`, NFO runtime deleted, the model's stage failed only if still legal, MLTrainingProcess `resultStateInfo=TIMEOUT`, a `FAILED` MLTestingReport for validation, MLUpdateProcess advanced, requester notified. `SUSPENDED` runs never expire.
 
@@ -405,7 +405,7 @@ The totals are counted as test functions (172); the suite reports 189 passed bec
 
 - Call flows: [02 model train to inference](../docs/call-flows/02-aiml-model-train-to-inference.md), [13 MLMF subscription](../docs/call-flows/13-mlmf-subscription-lifecycle.md), [15 NFO workload](../docs/call-flows/15-nfo-workload-lifecycle.md), [17 runtime lifecycle](../docs/call-flows/17-model-runtime-lifecycle.md), [26 governance and end of life](../docs/call-flows/26-model-governance-and-end-of-life.md), [27 TS 28.105 provisioning](../docs/call-flows/27-ts28105-provisioning-resources.md)
 - OpenAPI: [`../docs/openapi/aimgf.json`](../docs/openapi/aimgf.json)
-- Standards behaviour: [`../docs/ROADMAP.md#ts-28105`](../docs/ROADMAP.md#ts-28105), [`../docs/ROADMAP.md#runtime-realization`](../docs/ROADMAP.md#runtime-realization)
+- Standards behaviour: [`../docs/STANDARDS.md#ts-28105`](../docs/STANDARDS.md#ts-28105), [`../docs/STANDARDS.md#runtime-realization`](../docs/STANDARDS.md#runtime-realization)
 - Spec: [`TS28105_AiMlNrm.yaml`](../../specs/5G_APIs/TS28105_AiMlNrm.yaml)
 - Platform rules: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md); open items: [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md); history: [`../HISTORY.md`](../HISTORY.md)
 - Related READMEs: [`../mlmr/README.md`](../mlmr/README.md), [`../mllf/README.md`](../mllf/README.md), [`../nfo/README.md`](../nfo/README.md)

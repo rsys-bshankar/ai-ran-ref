@@ -10,7 +10,7 @@ linked from [Service ownership](#service-ownership). Changing a rule or an
 ownership line is an architecture decision: edit this document or the module's
 README first, then the code. Packaging of rApps is in
 [RAPP_PACKAGING.md](RAPP_PACKAGING.md). For standards compliance matrices and
-the runtime realization see [ROADMAP.md](ROADMAP.md); for how the platform
+the runtime realization see [STANDARDS.md](STANDARDS.md); for how the platform
 reached this shape see [HISTORY.md](../HISTORY.md).
 
 ## Contents
@@ -84,7 +84,7 @@ reached this shape see [HISTORY.md](../HISTORY.md).
    execution modes of one runtime (TRAINING → MLTF, VALIDATION → MLVF,
    EMULATION → MLEF, INFERENCE → MLIF), scheduled by NFO. There is no
    `mltf/`, `mlvf/`, `mlef/` or `mlif/` module. See
-   [ROADMAP.md#runtime-realization](ROADMAP.md#runtime-realization).
+   [STANDARDS.md#runtime-realization](STANDARDS.md#runtime-realization).
 4. **NFO owns execution placement.** Where and how a runtime executes is
    NFO's decision, never AIMgF's.
 5. **AIMgF owns lifecycle.** AIMgF decides what state a model or runtime is
@@ -207,8 +207,8 @@ pattern:
 | Coverage Optimization | [`samples/coverage-optimization-rapp/`](../samples/coverage-optimization-rapp/README.md) | `CommonBeamformingFunction.digitalTilt`, `NRSectorCarrier.configuredMaxTxPower` | [24](call-flows/24-coverage-optimization-closed-loop.md) |
 | Traffic Steering | [`samples/traffic-steering-rapp/`](../samples/traffic-steering-rapp/README.md) | `NRFreqRelation.cellReselectionPriority` (idle), `NRCellRelation.cellIndividualOffset` (connected) | [25](call-flows/25-traffic-steering-closed-loop.md) |
 
-Design decisions, work items and evidence for each are in
-[ROADMAP.md](ROADMAP.md) (waves 10.1–10.4).
+Design decisions are in [STANDARDS.md](STANDARDS.md); how each was built and
+reviewed (waves 10.1–10.4) is in [HISTORY.md](../HISTORY.md).
 
 ## Related documents
 
@@ -216,7 +216,7 @@ Design decisions, work items and evidence for each are in
 |---|---|
 | Module READMEs (`<module>/README.md`) | HLD, LLD and unit tests of each module |
 | [RAPP_PACKAGING.md](RAPP_PACKAGING.md) | rApp CSAR layout, manifest and capabilities, per-sample parameter tables |
-| [ROADMAP.md](ROADMAP.md) | Waves 4–10.4, frozen decisions, standards compliance matrices, runtime realization, backlog |
+| [STANDARDS.md](STANDARDS.md) | Frozen decisions, standards compliance matrices, runtime realization |
 | [HISTORY.md](../HISTORY.md) | How the platform got here: decisions, audits, exit reviews (the code cites its IDs) |
 | [call-flows/](call-flows/) | Sequence diagrams 01–27 (02 and 17: AI/ML lifecycle; 09: intents; 12: DME eligibility; 14: correlation id; 21: vendor onboarding; 22–25: reference rApps; 26: model governance and end of life; 27: TS 28.105 provisioning resources) |
 | [openapi/](openapi/) | Generated OpenAPI specs per service |

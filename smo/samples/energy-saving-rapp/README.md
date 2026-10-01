@@ -123,4 +123,4 @@ Ids are kept between steps in `$DEMO_STATE` (default `/tmp/energy-saving-demo.js
 - State tables live in the shared Postgres (`migrations/001_init.sql`), not a private rApp store.
 - Training fails with 422 on fewer than 3 hourly history rows.
 - `capabilities.yaml` lists `TRAFFIC_FORECAST` as supported analytics, but the code consumes MDAF PRB predictions only.
-- See [OPEN_ITEMS.md](../../OPEN_ITEMS.md) and [ROADMAP.md](../../docs/ROADMAP.md) (Wave 10.1).
+- See [OPEN_ITEMS.md](../../OPEN_ITEMS.md) and [STANDARDS.md](../../docs/STANDARDS.md) (Wave 10.1).

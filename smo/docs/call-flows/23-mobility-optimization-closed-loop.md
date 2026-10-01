@@ -1,7 +1,7 @@
 # Call Flow: Mobility Optimization rApp — HO PM → Classification → Prediction → Safety → CIO → Verification → KPI check
 
 The Mobility Optimization rApp (`samples/mobility-optimization-rapp/`; Wave 10.2 in
-`docs/ROADMAP.md`) is the second reference rApp. It tunes handover
+`docs/STANDARDS.md`) is the second reference rApp. It tunes handover
 per neighbour relation from O1 handover PM. Like the EnergySaving rApp (call
 flow 22), it uses the R1 control plane only; there is no A1, Near-RT RIC, xApp
 or E2.

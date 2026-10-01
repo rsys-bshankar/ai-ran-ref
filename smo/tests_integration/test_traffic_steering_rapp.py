@@ -1,5 +1,5 @@
 """Wave 10.4 — the Traffic Steering rApp's integration tests
-(docs/ROADMAP.md Wave 10.4, W10.4-10): TS-01..TS-20, run against the
+(HISTORY.md Wave 10.4, W10.4-10): TS-01..TS-20, run against the
 in-process mesh with the real onboarding, AIMgF / MLMR / MLLF / NFO, DME,
 Intent Service, SA SMOS, RAN NF OAM and mock O1 adaptor.
 

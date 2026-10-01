@@ -407,7 +407,7 @@ class FeatureGroup(Base):
 
 # ---------------------------------------------------------------- Wave 4: TS 28.105 AI/ML NRM IOCs
 #
-# Every IOC of TS28105_AiMlNrm.yaml at REST level (docs/ROADMAP.md
+# Every IOC of TS28105_AiMlNrm.yaml at REST level (docs/STANDARDS.md
 # decision D-9): flat REST resources with the spec's own attribute names and
 # enums, no DN containment tree (the one recorded deviation — addressing).
 # Requests are backed by the real job aggregates (MLTrainingRequest =

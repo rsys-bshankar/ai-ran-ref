@@ -160,7 +160,7 @@ class LifecycleClient(BaseClient):
         return ensure_ok(self._r1.post(f"/mllf/models/{model_id}/deploy", json=node_groups))
 
     # ---------------------------------------------------------------- Wave 10.1: the full execution-mode lifecycle
-    # docs/ROADMAP.md W10-03 (decision D-4): convenience calls
+    # HISTORY.md W10-03 (decision D-4): convenience calls
     # named as in the Wave 10 documents, over the existing AIMgF routes.
 
     def start_training(self, model_id: uuid.UUID | str, producer_id: str, package_id: uuid.UUID | str | None = None,

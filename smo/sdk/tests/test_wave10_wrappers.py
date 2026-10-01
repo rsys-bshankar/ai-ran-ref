@@ -1,4 +1,4 @@
-"""Wave 10.1 (docs/ROADMAP.md W10-03, decision D-4): the
+"""Wave 10.1 (HISTORY.md W10-03, decision D-4): the
 convenience wrappers named as in the Wave 10 documents — get_dataset,
 start_training, store_model, get_prediction (already present),
 execute_action — plus the lifecycle, read-back and autonomy-dispatch calls

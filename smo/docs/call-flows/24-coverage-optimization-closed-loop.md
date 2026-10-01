@@ -1,7 +1,7 @@
 # Call Flow: Coverage Optimization rApp — Coverage PM → Joint plan → Safety → Tilt / power → Verification → KPI check
 
 The Coverage Optimization rApp (`samples/coverage-optimization-rapp/`; Wave 10.3 in
-`docs/ROADMAP.md`) is the third reference rApp. It tunes a cluster
+`docs/STANDARDS.md`) is the third reference rApp. It tunes a cluster
 of cells' digital tilt and transmit power, jointly, from O1 coverage PM.
 Like call flows 22 and 23, it uses the R1 control plane only; there is no
 A1, Near-RT RIC, xApp or E2.

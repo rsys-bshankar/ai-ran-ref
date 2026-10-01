@@ -6,7 +6,7 @@ This is the Phase 1 SMO reference implementation. The documentation:
 - `<module>/README.md` — each module's HLD, LLD and unit tests (update it in the same change as the module's code);
 - `docs/ARCHITECTURE.md` — layers, golden rules, R1 conventions, standards per service;
 - `docs/RAPP_PACKAGING.md` — rApp CSAR layout and the manifest / capabilities parameters;
-- `docs/ROADMAP.md` — Waves 4–10.4, frozen decisions, standards compliance matrices;
+- `docs/STANDARDS.md` — frozen design decisions, standards compliance matrices, runtime realization;
 - `OPEN_ITEMS.md` — what is still open, and why;
 - `HISTORY.md` — what was decided and built (code comments cite it as `HISTORY.md §5` or `HISTORY.md OI-6.3`);
 - `DEMO_RUNBOOK.md` — a live walkthrough; `docs/call-flows/` — one sequence diagram per flow.

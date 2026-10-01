@@ -223,7 +223,7 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
         rapp_manifest = manifest.get("rappManifest") or {}
         result["manifestVersion"] = rapp_manifest.get("manifestVersion")
         result["aiRuntimeSdkVersion"] = rapp_manifest.get("aiRuntimeSdkVersion")
-        # Wave 7 (docs/ROADMAP.md W7-03): the AI-runtime part of
+        # Wave 7 (HISTORY.md W7-03): the AI-runtime part of
         # the manifest — which execution modes the package supports and the
         # compute each one needs. Accepted either under `rappManifest` or at
         # the manifest's top level (the SMO_Wave_10 package layout).

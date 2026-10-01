@@ -1,6 +1,6 @@
 # Call Flow: EnergySaving rApp — PM → Prediction → Safety → O1 Action → Verification → Rollback
 
-The EnergySaving rApp (`samples/energy-saving-rapp/`; Wave 10.1 in `docs/ROADMAP.md`) is
+The EnergySaving rApp (`samples/energy-saving-rapp/`; Wave 10.1 in `docs/STANDARDS.md`) is
 the first reference rApp built on the platform. It uses
 O1 PM data only and the R1 control plane only; there is no A1, Near-RT RIC,
 xApp or E2.
