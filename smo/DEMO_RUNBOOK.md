@@ -1237,7 +1237,9 @@ for every `Resource`, plus `RESOURCE_CHILD_OF_RESOURCE` for any with a
 
 The reference's `CreateFeatureGroup` (`featuregroup_controller.py`):
 registration, listing, name validation and duplicate-name rejection.
-Feature-store queries and `enableDme`'s DME job creation are not included.
+Feature-store queries are not included. With `enableDme` and a `dmeTypeId`,
+creating a group also creates its DME data job (`dmeDataJobId` in the
+answer), and `DELETE /feature-groups/{name}` terminates it.
 
 ```bash
 docker compose exec r1-termination python3 -c "

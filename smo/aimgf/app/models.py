@@ -287,6 +287,17 @@ class TrainingJob(Base):
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                            default=lambda: datetime.datetime.now(datetime.UTC))
     timeout_seconds: Mapped[int | None] = mapped_column(Integer)
+    # OI-5-aiml-trainingjob-steps: the furthest step of the run (TRAINING_STEPS,
+    # in order) its execution runtime has reported reaching; a run starts in
+    # DATA_EXTRACTION. Each step's own status is derived from this and the
+    # job's `status` (main.py's `_training_steps`), so the job-level status
+    # stays the single source of truth for how the run ended.
+    current_step: Mapped[str] = mapped_column(String, nullable=False, default="DATA_EXTRACTION")
+
+
+# OI-5-aiml-trainingjob-steps: the reference Training Manager's steps
+# (trainingmgr's Steps), in the order a run passes through them.
+TRAINING_STEPS = ("DATA_EXTRACTION", "TRAINING", "TRAINED_MODEL")
 
 
 class InferenceJob(Base):
@@ -365,12 +376,11 @@ class FeatureGroup(Base):
     (aiml-fw-awmf-tm's trainingmgr/models/featuregroup.py). Real
     Cassandra-backed feature storage (the ADOPT target,
     aiml-fw-athp-sdk-feature-store) and the reference's own
-    enable_dme-triggered real DME PUT
-    (data-consumer/v1/info-jobs/{featureGroupName},
-    trainingmgr_operations.create_dme_filtered_data_job) are both
-    deliberate elisions here, consistent with this build's
-    no-real-southbound-compute design elsewhere — `enable_dme` is
-    still stored and returned faithfully, just not acted on.
+    enable_dme-triggered DME job (data-consumer/v1/info-jobs/{featureGroupName},
+    trainingmgr_operations.create_dme_filtered_data_job): the storage stays
+    elided, but since OI-5-aiml-featuregroup-dme an `enable_dme` group gets a
+    real DME DataJob of its `dme_type_id`, created with the group and
+    terminated when it is deleted.
     """
 
     __tablename__ = "feature_group"
@@ -389,6 +399,10 @@ class FeatureGroup(Base):
     measured_obj_class: Mapped[str | None] = mapped_column(String)
     dme_port: Mapped[str | None] = mapped_column(String)
     source_name: Mapped[str | None] = mapped_column(String)
+    # OI-5-aiml-featuregroup-dme: the DME type the group's data job collects,
+    # and the job itself (bare cross-module refs, DME owns both).
+    dme_type_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    dme_data_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
 
 
 # ---------------------------------------------------------------- Wave 4: TS 28.105 AI/ML NRM IOCs

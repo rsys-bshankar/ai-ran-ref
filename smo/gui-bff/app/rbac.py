@@ -86,6 +86,9 @@ V, O, A = Role.VIEWER, Role.OPERATOR, Role.ADMIN
 RULES: list[Rule] = [
     # --- the one sensitive read: feature groups carry datalake tokens
     _rule("GET", "/aimgf/feature-groups", O),
+    _rule("GET", "/aimgf/feature-groups/{id}", O),
+    _rule("POST", "/aimgf/feature-groups", O),
+    _rule("DELETE", "/aimgf/feature-groups/{id}", O),   # also terminates its DME data job
 
     # --- Onboarding
     _rule("POST", "/onboarding/packages", O),
@@ -141,6 +144,7 @@ RULES: list[Rule] = [
     # Training completes only through its job route — AIMgF's advance refuses
     # TRAINING_COMPLETE (OI-2-governance-bypass); same tier as the validation/emulation completes.
     _rule("POST", "/aimgf/training-jobs/{id}/complete", O),
+    _rule("POST", "/aimgf/training-jobs/{id}/progress", O),   # the runtime's step report (OI-5-aiml-trainingjob-steps)
     _rule("POST", "/aimgf/validation-jobs", O),
     _rule("POST", "/aimgf/validation-jobs/{id}/complete", O),
     _rule("POST", "/aimgf/emulation-jobs", O),

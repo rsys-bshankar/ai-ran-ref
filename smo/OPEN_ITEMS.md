@@ -34,11 +34,6 @@ Each item: what is missing, why it matters, suggested approach.
 - **OI-5-a1-ric-inventory** — Policy types are the hardcoded `KNOWN_POLICY_TYPES`; `policySchema` is
   a placeholder; no `GET /rics`. Approach: fetch types and schemas from the Near-RT RIC (A1-P
   `GET /policytypes`) and model a RIC inventory if more than one RIC is introduced.
-- **OI-5-aiml-trainingjob-steps** — `TrainingJob` keeps a flat `status`; the reference's step×status
-  tracking (DATA_EXTRACTION/TRAINING/TRAINED_MODEL) is not adopted. Approach: add a separate,
-  additive `step` field driven by the NFO execution runtime (OI-6.2) rather than replacing `status`.
-- **OI-5-aiml-featuregroup-dme** — `FeatureGroup.enableDme` is stored but no DME data job is
-  created. Approach: on create with `enableDme`, create a DME DataJob for the group's type.
 - **OI-3-nfo-abnormal** — NFO `DELETING`/`ABNORMAL` are unreachable through the API while Terminate
   is synchronous. Tracked only for the day Terminate becomes asynchronous (real Helm uninstall).
 - **W10-alarm-cellref** — RAN NF OAM alarms carry no cell reference, so the EnergySaving, Coverage

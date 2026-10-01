@@ -134,15 +134,23 @@ class LifecycleClient(BaseClient):
     def create_feature_group(self, feature_group_name: str, feature_list: str, datalake_source: str, host: str,
                               port: str, bucket: str, token: str, db_org: str, measurement: str,
                               enable_dme: bool = False, measured_obj_class: str | None = None,
-                              dme_port: str | None = None, source_name: str | None = None) -> dict:
+                              dme_port: str | None = None, source_name: str | None = None,
+                              dme_type_id: uuid.UUID | str | None = None, data_delivery_method: str = "PULL_HTTP") -> dict:
+        """With enable_dme, AIMgF creates the group's DME data job of
+        dme_type_id (required then) and returns its dmeDataJobId."""
         return ensure_ok(self._r1.post("/aimgf/feature-groups", json={
             "featureGroupName": feature_group_name, "featureList": feature_list, "datalakeSource": datalake_source,
             "host": host, "port": port, "bucket": bucket, "token": token, "dbOrg": db_org, "measurement": measurement,
             "enableDme": enable_dme, "measuredObjClass": measured_obj_class, "dmePort": dme_port, "sourceName": source_name,
+            "dmeTypeId": _str(dme_type_id), "dataDeliveryMethod": data_delivery_method,
         }))
 
     def list_feature_groups(self) -> list[dict]:
         return ensure_ok(self._r1.get("/aimgf/feature-groups"))
+
+    def delete_feature_group(self, feature_group_name: str) -> dict:
+        """Deletes the group and terminates its DME data job, if it has one."""
+        return ensure_ok(self._r1.delete(f"/aimgf/feature-groups/{feature_group_name}"))
 
     # ---------------------------------------------------------------- MLLF: deploy
 
@@ -167,6 +175,11 @@ class LifecycleClient(BaseClient):
             "runtimeProfile": runtime_profile, "timeoutSeconds": timeout_seconds, "notificationUri": notification_uri,
             "requiredData": required_data, "validationCriteria": validation_criteria,
         })))
+
+    def report_training_progress(self, training_job_id: uuid.UUID | str, step: str) -> dict:
+        """The execution runtime's step report: DATA_EXTRACTION, TRAINING or
+        TRAINED_MODEL, forward only (OI-5-aiml-trainingjob-steps)."""
+        return ensure_ok(self._r1.post(f"/aimgf/training-jobs/{training_job_id}/progress", json={"step": step}))
 
     def complete_training(self, training_job_id: uuid.UUID | str, succeeded: bool, metrics: dict | None = None,
                           **ts28105_fields) -> dict:

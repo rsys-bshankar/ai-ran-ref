@@ -41,6 +41,10 @@ class FrameworkError:
     MODEL_IDENTITY_IMMUTABLE = ("MODEL_IDENTITY_IMMUTABLE", 400)
     FEATURE_GROUP_NAME_INVALID = ("FEATURE_GROUP_NAME_INVALID", 400)
     FEATURE_GROUP_ALREADY_REGISTERED = ("FEATURE_GROUP_ALREADY_REGISTERED", 409)
+    # OI-5-aiml-featuregroup-dme: an enable_dme feature group without a DME
+    # type, or whose DME data job DME refused; an unknown group.
+    FEATURE_GROUP_DME_JOB_REFUSED = ("FEATURE_GROUP_DME_JOB_REFUSED", 422)
+    FEATURE_GROUP_NOT_FOUND = ("FEATURE_GROUP_NOT_FOUND", 404)
     # Wave 2 (AI Platform Service Decomposition) — AIMgF's own two real
     # state machines, docs/ARCHITECTURE.md (AIMgF)
     LIFECYCLE_ILLEGAL_TRANSITION = ("LIFECYCLE_ILLEGAL_TRANSITION", 409)

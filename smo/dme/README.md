@@ -271,7 +271,7 @@ ProblemDetails `title` / status (see [R1 API conventions](../docs/ARCHITECTURE.m
 - `dataDeliveryMode` is not validated against `ONE_TIME` / `CONTINUOUS`; a job's `dmeTypeId` need not exist.
 - `dme_delivery_schema` has a table and no route.
 - `GET /production-capabilities` and `GET /dme-types` return bare arrays, not the `{items, total, ...}` page shape the other list routes use.
-- `FeatureGroup.enableDme` in AIMgF stores the flag but creates no DME data job ([OI-5-aiml-featuregroup-dme](../OPEN_ITEMS.md)).
+- An AIMgF feature group with `enableDme` holds a DME data job (consumer `aimgf:feature-group:<name>`), created with the group and terminated with it.
 - An unreachable RAN NF OAM during `POST /actions` leaves a `FORWARDED` record that was never forwarded.
 - Digital Twin and live-RAN producers are told apart only by the producer's own declaration.
 

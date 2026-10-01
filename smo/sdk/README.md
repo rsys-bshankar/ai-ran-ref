@@ -9,7 +9,7 @@
 | Depends on (over R1) | R1 Termination, for routes of SME, DME, RAN NF OAM (read-only inventory), MLMR, AIMgF, MLLF, MDAF, RAN Analytics, Intent Service. Through `smo_shared.r1_client.R1Client` |
 | Called by | The four sample rApps (`../samples/{energy-saving,mobility-optimization,coverage-optimization,traffic-steering}-rapp/app/main.py`); any rApp author. No SMO module imports it |
 | Database tables | None |
-| Unit tests | 102 passed (`tests/`, no network: a recording fake `R1Client`) |
+| Unit tests | 105 passed (`tests/`, no network: a recording fake `R1Client`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -174,6 +174,7 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 | `suspend_training(id)` / `resume_training(id)` | `POST /aimgf/training-jobs/{id}/suspend` / `/resume` | 409 `TRAINING_JOB_ILLEGAL_TRANSITION` unless the job is in the right state |
 | `update_training_job_model_metrics(id, model_metrics)` | `POST /aimgf/training-jobs/{id}/model-metrics` | body is the metrics dict unwrapped |
 | `get_training_job_model_metrics(id)` | `GET /aimgf/training-jobs/{id}/model-metrics` | |
+| `report_training_progress(id, step)` | `POST /aimgf/training-jobs/{id}/progress` | the execution runtime's step report: `DATA_EXTRACTION`, `TRAINING`, `TRAINED_MODEL`, forward only |
 | `complete_training(id, succeeded, metrics=None, **ts28105_fields)` | `POST /aimgf/training-jobs/{id}/complete` | body `{succeeded, metrics, **fields}` |
 | `start_validation(model_id, producer_id, package_id=None, validation_criteria=None, training_job_id=None, timeout_seconds=None)` | `POST /aimgf/validation-jobs` | |
 | `complete_validation(id, succeeded, metrics=None, **fields)` | `POST /aimgf/validation-jobs/{id}/complete` | |
@@ -194,8 +195,9 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 | `report_performance(subscription_id, metrics)` | `POST /aimgf/mlmf/subscriptions/{id}/reports` | body is `metrics` unwrapped |
 | `list_performance_reports(subscription_id, limit=100)` | `GET /aimgf/mlmf/subscriptions/{id}/reports` | |
 | `list_recent_performance_reports(breached_only=False, limit=50)` | `GET /aimgf/mlmf/reports` | |
-| `create_feature_group(feature_group_name, feature_list, datalake_source, host, port, bucket, token, db_org, measurement, enable_dme=False, measured_obj_class=None, dme_port=None, source_name=None)` | `POST /aimgf/feature-groups` | |
+| `create_feature_group(feature_group_name, feature_list, datalake_source, host, port, bucket, token, db_org, measurement, enable_dme=False, measured_obj_class=None, dme_port=None, source_name=None, dme_type_id=None, data_delivery_method="PULL_HTTP")` | `POST /aimgf/feature-groups` | with `enable_dme`, AIMgF creates the group's DME data job of `dme_type_id` (required then) |
 | `list_feature_groups()` | `GET /aimgf/feature-groups` | feature groups carry datalake tokens |
+| `delete_feature_group(feature_group_name)` | `DELETE /aimgf/feature-groups/{name}` | also terminates the group's DME data job |
 | `deploy_model(model_id, node_groups: list[str])` | `POST /mllf/models/{id}/deploy` | body is the plain list; 404 `MODEL_NOT_FOUND`, 409 `MODEL_NOT_CERTIFIED` unless CERTIFIED or PROMOTED |
 
 #### `sdk.intent` (`IntentClient`, Intent Service)
@@ -268,7 +270,7 @@ Each test asserts the verb, path, params and body the client sends against a scr
 | Test file | Covers | Passed |
 |---|---|---|
 | `tests/test_data.py` | Producer/type registration (with and without provenance), discovery, deregistration, `delete_type`, status; data jobs (create, get, update, status, terminate, terminate-for-consumer, list); offers and notify (raw body); type subscriptions; record ingest/fetch; `mediate_action`, `get_action`/`list_actions`; RAN inventory reads; 4xx -> `SdkError` | 26 |
-| `tests/test_lifecycle.py` | Training (request, status, cancel, suspend/resume, model-metrics raw body); `advance_model_lifecycle` (plain and governance with `decided_by`/`rationale`); inference (request, status, resolve, list); MLMF subscriptions/reports (query plus body split); feature groups; `deploy_model` raw list body; 4xx | 24 |
+| `tests/test_lifecycle.py` | Training (request, status, cancel, suspend/resume, model-metrics raw body); `advance_model_lifecycle` (plain and governance with `decided_by`/`rationale`); inference (request, status, resolve, list); MLMF subscriptions/reports (query plus body split); feature groups (with a DME type, delete); training progress; `deploy_model` raw list body; 4xx | 27 |
 | `tests/test_analytics.py` | Producer registration (with explicit `mda_type`), reports, subscriptions with scope and `thresholdInfo` body, `create_mda_request` dropping unset fields, `publish_mda_report`, `get_prediction` (named PM prediction, none without reports); 4xx | 13 |
 | `tests/test_intent.py` | `create_intent`, `energy_saving_expectation`, get/list/admin-state/delete, reports, RMIH register/deregister/list; 4xx | 12 |
 | `tests/test_models.py` | Register (with domain and vendors), discover, get, update, deregister, upload, download (raw response, `SdkError` on 4xx), coordination groups | 11 |
