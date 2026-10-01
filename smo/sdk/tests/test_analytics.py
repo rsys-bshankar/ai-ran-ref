@@ -114,7 +114,7 @@ def test_get_prediction_returns_the_named_pm_prediction(client, r1):
     r1.script(200, {"items": [{"id": "r1", "attributes": {"mDAOutputs": [{"mDAType": "PREDICTIONS_PM_DATA", "mDAOutputList": {
         "pmPredictions": [{"pmName": "RRU.PrbUsedDl", "pmPredictedValue": 2.8}]}}]}}]})
     assert client.get_prediction("cell-1", pm_name="RRU.PrbUsedDl") == {"pmName": "RRU.PrbUsedDl", "pmPredictedValue": 2.8}
-    assert r1.calls[0]["params"] == {"mda_type": None, "report_kind": "PREDICTION", "managed_entity": "cell-1", "mda_request_id": None}
+    assert r1.calls[0]["params"] == {"report_kind": "PREDICTION", "managed_entity": "cell-1"}  # unset filters left out
     assert client.get_prediction("cell-1", pm_name="Other") is None
 
 

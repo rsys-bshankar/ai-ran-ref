@@ -77,8 +77,19 @@ class LifecycleClient(BaseClient):
     def get_inference_job_status(self, inference_job_id: uuid.UUID | str) -> dict:
         return ensure_ok(self._r1.get(f"/aimgf/inference-jobs/{inference_job_id}/status"))
 
-    def resolve_inference(self, inference_job_id: uuid.UUID | str, succeeded: bool) -> dict:
-        return ensure_ok(self._r1.post(f"/aimgf/inference-jobs/{inference_job_id}/resolve", params={"succeeded": succeeded}))
+    def resolve_inference(self, inference_job_id: uuid.UUID | str, succeeded: bool,
+                          inference_outputs: list[dict] | None = None, potential_impact_info: str | None = None) -> dict:
+        """Wave 10.1: `inference_outputs` (TS 28.105 InferenceOutput, its
+        `outputResult` carrying the rApp's own result) becomes the job's
+        AIMLInferenceReport."""
+        body = None
+        if inference_outputs is not None or potential_impact_info is not None:
+            body = {"inferenceOutputs": inference_outputs or [], "potentialImpactInfo": potential_impact_info}
+        return ensure_ok(self._r1.post(f"/aimgf/inference-jobs/{inference_job_id}/resolve",
+                                       params={"succeeded": succeeded}, json=body))
+
+    def get_inference_report(self, report_id: uuid.UUID | str) -> dict:
+        return ensure_ok(self._r1.get(f"/aimgf/aiml-inference-reports/{report_id}"))
 
     def list_inference_jobs(self, model_id: uuid.UUID | str | None = None, status: str | None = None) -> list[dict]:
         return ensure_ok(self._r1.get("/aimgf/inference-jobs", params={"model_id": model_id, "status": status}))
@@ -133,3 +144,71 @@ class LifecycleClient(BaseClient):
         # node_groups is the route's only body parameter (a plain list) —
         # unwrapped, not {"node_groups": [...]}.
         return ensure_ok(self._r1.post(f"/mllf/models/{model_id}/deploy", json=node_groups))
+
+    # ---------------------------------------------------------------- Wave 10.1: the full execution-mode lifecycle
+    # WAVES_4_TO_10_WORK_ITEMS.md W10-03 (decision D-4): convenience calls
+    # named as in the Wave 10 documents, over the existing AIMgF routes.
+
+    def start_training(self, model_id: uuid.UUID | str, producer_id: str, package_id: uuid.UUID | str | None = None,
+                       dme_data_job_ids: list[uuid.UUID | str] | None = None, runtime_profile: dict | None = None,
+                       timeout_seconds: int | None = None, notification_uri: str | None = None,
+                       required_data: dict | None = None, validation_criteria: dict | None = None) -> dict:
+        """Starts a training run on an MLTF runtime sized from the package's
+        TRAINING runtime profile (or `runtime_profile`)."""
+        return ensure_ok(self._r1.post("/aimgf/training-jobs", json=_drop_none({
+            "modelId": str(model_id), "producerId": producer_id, "packageId": _str(package_id),
+            "dmeDataJobIds": [str(j) for j in dme_data_job_ids] if dme_data_job_ids else None,
+            "runtimeProfile": runtime_profile, "timeoutSeconds": timeout_seconds, "notificationUri": notification_uri,
+            "requiredData": required_data, "validationCriteria": validation_criteria,
+        })))
+
+    def complete_training(self, training_job_id: uuid.UUID | str, succeeded: bool, metrics: dict | None = None,
+                          **ts28105_fields) -> dict:
+        return self._complete("training-jobs", training_job_id, succeeded, metrics, ts28105_fields)
+
+    def start_validation(self, model_id: uuid.UUID | str, producer_id: str, package_id: uuid.UUID | str | None = None,
+                         validation_criteria: dict | None = None, training_job_id: uuid.UUID | str | None = None,
+                         timeout_seconds: int | None = None) -> dict:
+        return ensure_ok(self._r1.post("/aimgf/validation-jobs", json=_drop_none({
+            "modelId": str(model_id), "producerId": producer_id, "packageId": _str(package_id),
+            "validationCriteria": validation_criteria, "trainingJobId": _str(training_job_id), "timeoutSeconds": timeout_seconds,
+        })))
+
+    def complete_validation(self, validation_job_id: uuid.UUID | str, succeeded: bool, metrics: dict | None = None,
+                            **ts28105_fields) -> dict:
+        return self._complete("validation-jobs", validation_job_id, succeeded, metrics, ts28105_fields)
+
+    def start_emulation(self, model_id: uuid.UUID | str, producer_id: str, package_id: uuid.UUID | str | None = None,
+                        emulation_criteria: dict | None = None, timeout_seconds: int | None = None) -> dict:
+        return ensure_ok(self._r1.post("/aimgf/emulation-jobs", json=_drop_none({
+            "modelId": str(model_id), "producerId": producer_id, "packageId": _str(package_id),
+            "emulationCriteria": emulation_criteria, "timeoutSeconds": timeout_seconds,
+        })))
+
+    def complete_emulation(self, emulation_job_id: uuid.UUID | str, succeeded: bool, metrics: dict | None = None,
+                           **ts28105_fields) -> dict:
+        return self._complete("emulation-jobs", emulation_job_id, succeeded, metrics, ts28105_fields)
+
+    def _complete(self, kind: str, job_id, succeeded: bool, metrics: dict | None, fields: dict) -> dict:
+        return ensure_ok(self._r1.post(f"/aimgf/{kind}/{job_id}/complete",
+                                       json={"succeeded": succeeded, "metrics": metrics or {}, **fields}))
+
+    def get_model_lifecycle(self, model_id: uuid.UUID | str) -> dict:
+        return ensure_ok(self._r1.get(f"/aimgf/models/{model_id}/lifecycle"))
+
+    def deploy_runtime(self, model_id: uuid.UUID | str, package_id: uuid.UUID | str | None = None,
+                       runtime_profile: dict | None = None) -> dict:
+        """MLIF: instantiates the inference runtime through NFO (needs CERTIFIED/PROMOTED)."""
+        return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/runtime/deploy",
+                                       params=_drop_none({"package_id": _str(package_id)}), json=runtime_profile))
+
+    def activate_runtime(self, model_id: uuid.UUID | str) -> dict:
+        return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/runtime/activate"))
+
+
+def _str(value) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _drop_none(d: dict) -> dict:
+    return {k: v for k, v in d.items() if v is not None}

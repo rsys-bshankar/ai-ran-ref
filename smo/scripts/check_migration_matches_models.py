@@ -34,6 +34,7 @@ from sqlalchemy import create_engine, inspect
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SMO_ROOT / "tests_integration"))
+sys.path.insert(0, str(SMO_ROOT / "sdk"))  # the sample rApp imports the AI Runtime SDK
 
 from loader import load_app_module  # noqa: E402
 
@@ -46,6 +47,7 @@ ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
     "a1-related", "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
     "intent-service", "so-smos", "sa-smos",
+    "samples/energy-saving-rapp",  # Wave 10.1: the reference rApp's own tables
 ]
 
 

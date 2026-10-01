@@ -9,6 +9,8 @@ see shared/smo_shared/r1_client.py's own module docstring), not
 something an rApp author using this SDK ever needs to touch directly.
 """
 
+import uuid
+
 from ._common import BaseClient, ensure_ok
 
 
@@ -59,3 +61,14 @@ class PlatformClient(BaseClient):
 
     def unsubscribe_from_events(self, subscriber_id: str, subscription_id: str) -> None:
         ensure_ok(self._r1.delete(f"/sme/capif-events/v1/{subscriber_id}/subscriptions/{subscription_id}"))
+
+    # ---------------------------------------------------------------- Wave 10.1: O1 actions
+    def execute_action(self, requested_by: str, changes: list[dict], action_id: uuid.UUID | str | None = None,
+                       source_context: dict | None = None, scope: str = "single-ME", msac_role: str | None = None) -> dict:
+        """W10-03 (decision D-4): an O1 configuration action, mediated by DME
+        (`POST /dme/actions` → RAN NF OAM → NETCONF). `action_id` is an
+        idempotency key: re-sending it is IGNORED, never applied twice."""
+        return ensure_ok(self._r1.post("/dme/actions", json={
+            "requestedBy": requested_by, "changes": changes, "scope": scope, "msacRole": msac_role,
+            "sourceContext": source_context, "actionId": str(action_id) if action_id else None,
+        }))

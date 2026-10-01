@@ -24,7 +24,10 @@ ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
     "a1-related", "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
     "intent-service", "so-smos", "sa-smos", "mock-near-rt-ric", "mock-o1-adaptor",
+    "samples/energy-saving-rapp",
 ]
+sys.path.insert(0, str(SMO_ROOT / "shared"))
+sys.path.insert(0, str(SMO_ROOT / "sdk"))
 
 
 def generate(module_dir: str) -> dict:
@@ -37,7 +40,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     for module_dir in ALL_MODULES:
         spec = generate(module_dir)
-        out_path = out_dir / f"{module_dir}.json"
+        out_path = out_dir / f"{Path(module_dir).name}.json"
         out_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n")
         print(f"wrote {out_path.relative_to(SMO_ROOT)}")
 

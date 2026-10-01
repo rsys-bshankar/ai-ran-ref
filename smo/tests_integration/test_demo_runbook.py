@@ -881,3 +881,35 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
 
     delete = mesh["rapp-mgmt"].delete(f"/instances/{instance_id}")
     assert delete.status_code == 204
+
+
+def test_energy_saving_demo_01_to_11_runs_end_to_end(mesh, loaded_apps, monkeypatch, capsys):
+    """DEMO_RUNBOOK.md §24 — the Wave 10.1 EnergySaving rApp demo (Demo
+    00–11). Not a mirror of the runbook: it runs the runbook's own script,
+    samples/energy-saving-rapp/demo.py, step by step through the mesh."""
+    import importlib.util
+
+    from energy_saving_env import CSAR_URL, serve_csar
+
+    spec = importlib.util.spec_from_file_location("energy_saving_demo", Path(__file__).resolve().parent.parent
+                                                  / "samples" / "energy-saving-rapp" / "demo.py")
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    monkeypatch.setattr(demo, "CSAR_URL", CSAR_URL)
+    serve_csar(loaded_apps, monkeypatch)
+    mesh["mock-o1-adaptor"].delete("/state")
+
+    state = {}
+    for step in demo.STEPS:
+        demo.run(step, state)
+    out = capsys.readouterr().out
+    assert "Demo 11" in out
+    assert state["historyRecords"] == 72 * len(demo.CELLS)                       # Demo 02
+    assert state["emulation"]["midnightRecommendation"] == "LOCKED"               # Demo 05
+    assert state["promoted"] == "PROMOTED" and state["runtime"] == "ACTIVE"       # Demo 06/07
+    assert state["decision"]["decision"] == "LOCK"                                # Demo 08
+    assert state["action"]["status"] == "COMPLETED"                               # Demo 09
+    assert state["o1"]["administrativeState"] == "LOCKED"                         # Demo 10
+    cells = {c["cellId"]: c for c in state["dashboard"]["cells"]}                 # Demo 11
+    assert cells["101"]["state"] == "SLEEP" and cells["101"]["prbTrend"]
+    assert cells["103"]["latestDecision"]["reason"] == "SAFETY_BLOCKED:EMERGENCY_CELL"

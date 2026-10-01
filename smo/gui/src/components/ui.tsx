@@ -71,6 +71,10 @@ const TONES: Record<string, string> = {
   FAILED: "bad", FAULTED: "bad", ABNORMAL: "bad", REJECTED: "bad", ESCALATED: "bad", UNREACHABLE: "bad",
   UNACKNOWLEDGED: "warn", DISABLED: "bad", DELETING: "muted", DEPRECATED: "muted", UNDEPLOYED: "muted",
   CANCELLED: "muted", DEACTIVATED: "muted", REGISTERED: "info", INITIAL: "info",
+  // Wave 10.1 EnergySaving rApp
+  SERVING: "ok", PRE_SLEEP: "warn", SLEEP: "info", LOCK: "info", UNLOCK: "ok", NO_CHANGE: "muted", LOCKED: "info",
+  EXECUTED: "ok", SHADOWED: "muted", AWAITING_APPROVAL: "warn", AWAITING_SCOPE: "warn", NO_ACTION_ALREADY_IN_STATE: "muted",
+  VERIFY_FAILED: "bad", VERIFIED: "ok", AUTONOMOUS: "info", ASSIST: "warn", SHADOW: "muted",
 };
 
 export function StateBadge({ state }: { state: string | null | undefined }) {

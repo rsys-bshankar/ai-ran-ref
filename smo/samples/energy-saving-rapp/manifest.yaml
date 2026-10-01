@@ -1,0 +1,52 @@
+# EnergySaving_rApp package manifest (Wave 10.1, W10-01) — the fields of the
+# Wave 10 package description, read by Onboarding's _parse_ai_capabilities.
+rappManifest:
+  manifestVersion: "1.0"
+  aiRuntimeSdkVersion: "1.0"
+
+name: EnergySaving_rApp
+version: 1.0.0
+vendor: Radisys
+ownerTeam: AI-RAN-SMO
+description: >
+  AI-driven Energy Saving rApp using PRB Utilization
+  to control cell administrativeState through O1.
+useCase: Energy Saving
+domain: RAN
+deploymentModel: NonRT-RIC
+
+executionModes:
+  - TRAINING
+  - VALIDATION
+  - EMULATION
+  - INFERENCE
+
+autonomyModes:
+  - SHADOW
+  - ASSIST
+  - AUTONOMOUS
+
+requiredServices:
+  - DME
+  - AIMgF
+  - MLMR
+  - MLLF
+  - RAN-NF-OAM
+
+runtimeProfiles:
+  TRAINING:
+    cpu: 8
+    memory: 16Gi
+    gpu: 0
+  VALIDATION:
+    cpu: 4
+    memory: 8Gi
+    gpu: 0
+  EMULATION:
+    cpu: 4
+    memory: 8Gi
+    gpu: 0
+  INFERENCE:
+    cpu: 2
+    memory: 4Gi
+    gpu: 0

@@ -1,0 +1,24 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: >
+  EnergySaving_rApp — the Wave 10.1 reference rApp
+  (smo/docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md §9). A Non-RT RIC rApp that
+  predicts sustained low PRB utilisation from O1 PM data and puts cells to
+  sleep through O1 (NRCellDU.administrativeState or
+  CESManagementFunction.energySavingControl), waking them before load
+  returns. No A1, Near-RT RIC, xApps or E2.
+
+topology_template:
+  node_templates:
+    applicationServiceDescriptor:
+      type: tosca.nodes.asd
+      description: "energy-saving-rapp"
+      properties:
+        descriptor_id: 8e1d2c3b-4a5f-4e6d-9c7b-1a2b3c4d5e01
+        descriptor_invariant_id: 8e1d2c3b-4a5f-4e6d-9c7b-1a2b3c4d0001
+        descriptor_version: "1.0.0"
+        schema_version: "2.0"
+        function_description: "EnergySaving_rApp — AI-driven cell sleep/wake through O1"
+        provider: "Radisys"
+        application_name: EnergySaving_rApp
+        application_version: "1.0.0"

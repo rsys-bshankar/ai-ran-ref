@@ -187,6 +187,7 @@ CREATE TABLE dme_action_record (
   source_context                   JSONB,
   forwarded_job_id                    UUID,
   status                                 TEXT NOT NULL DEFAULT 'FORWARDED',
+  correlation_id                            TEXT,  -- Wave 10.1 (W10-23): X-Correlation-ID of the causing request
   created_at                                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -379,7 +380,8 @@ CREATE TABLE write_config_sub_change (
   -- operation attribute, previously entirely absent from this model.
   operation          TEXT NOT NULL DEFAULT 'merge' CHECK (operation IN ('merge','replace','create','delete','remove')),
   status             TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','APPLIED','REJECTED')),
-  rejection_reason   TEXT
+  rejection_reason   TEXT,
+  attempts           INTEGER NOT NULL DEFAULT 0  -- Wave 10.1 (W10-19): edit-config attempts, retries included
 );
 
 CREATE TABLE pm_subscription (
@@ -1272,3 +1274,62 @@ CREATE TABLE remedial_action (
   auto_execution_scope_config       TEXT,   -- ADMIN-ONLY to change, per REQ-CNFG-ADM pattern
   outcome                              TEXT CHECK (outcome IN ('RESOLVED','ESCALATED','FAILED'))
 );
+
+-- ============================================================
+-- Wave 10.1: the EnergySaving reference rApp's own state
+-- (samples/energy-saving-rapp/app/models.py). A real rApp keeps this in
+-- its own store; this build runs one shared Postgres.
+-- ============================================================
+CREATE TABLE energy_saving_instance (
+  instance_id               UUID PRIMARY KEY,           -- the rapp-mgmt instance it is bound to
+  package_id                UUID,
+  managed_element_ref       TEXT NOT NULL,
+  cells                     JSONB NOT NULL,
+  actuator                  TEXT NOT NULL DEFAULT 'ADMINISTRATIVE_STATE' CHECK (actuator IN ('ADMINISTRATIVE_STATE','ENERGY_SAVING_CONTROL')),
+  autonomy_mode             TEXT NOT NULL CHECK (autonomy_mode IN ('AUTONOMOUS','ASSIST','SHADOW')),
+  rmih_id                   TEXT NOT NULL DEFAULT 'sa-smos',
+  operator_notification_uri TEXT,
+  data_jobs                 JSONB NOT NULL DEFAULT '{}',
+  model_id                  UUID,
+  model_version             TEXT,
+  artifact_version          INTEGER,
+  model_params              JSONB,
+  lifecycle_jobs            JSONB NOT NULL DEFAULT '{}',
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE energy_saving_cell (
+  instance_id          UUID NOT NULL,
+  cell_id              TEXT NOT NULL,
+  state                TEXT NOT NULL DEFAULT 'SERVING' CHECK (state IN ('SERVING','PRE_SLEEP','SLEEP')),
+  o1_value             TEXT,
+  last_unlocked_at     TIMESTAMPTZ,
+  override_by          TEXT,
+  override_at          TIMESTAMPTZ,
+  pending_dispatch_id  UUID,
+  pending_decision_id  UUID,
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (instance_id, cell_id)
+);
+
+CREATE TABLE energy_saving_decision (
+  decision_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  execution_id   TEXT NOT NULL,                 -- the evaluation's X-Correlation-ID
+  instance_id    UUID NOT NULL,
+  cell_id        TEXT NOT NULL,
+  observed_at    TIMESTAMPTZ,
+  prb            DOUBLE PRECISION,
+  prediction     JSONB,
+  safety         JSONB,
+  decision       TEXT NOT NULL CHECK (decision IN ('LOCK','UNLOCK','NO_CHANGE')),
+  reason         TEXT NOT NULL,
+  outcome        TEXT NOT NULL,
+  intent         JSONB,
+  action         JSONB,
+  verification   JSONB,
+  rollback       JSONB,
+  final_state    JSONB,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX energy_saving_decision_instance_cell ON energy_saving_decision (instance_id, cell_id, created_at DESC);

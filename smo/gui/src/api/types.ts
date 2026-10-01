@@ -154,3 +154,27 @@ export interface NfDescriptor { nfDeploymentDescriptorId: string; packageId: str
 export interface LcmOperation { operationId: string; operationType: string; status: string }
 export interface InventorySubscription { subscriptionId: string; callback: string; consumerSubscriptionId: string | null; resourceTypeId: string | null }
 export interface FeatureGroup { featureGroupId: string; featureGroupName: string; featureList: string; datalakeSource: string; host: string; port: string; bucket: string; dbOrg: string; measurement: string; enableDme: boolean; measuredObjClass: string | null; sourceName: string | null }
+
+// ---- Wave 10.1: EnergySaving reference rApp (samples/energy-saving-rapp)
+export interface EsInstance {
+  instanceId: string; packageId: string | null; managedElementRef: string; cells: string[]; actuator: string;
+  autonomyMode: string; rmihId: string; datasets: Record<string, { dataset: string; dmeTypeId: string; dataJobId: string; sourceDomain: string | null }>;
+  modelId: string | null; modelVersion: string | null; artifactVersion: number | null; model: Record<string, unknown> | null;
+  lifecycleJobs: Record<string, string>;
+}
+export interface EsDecision {
+  decisionId: string; executionId: string; cellId: string; observedAt: string | null; prb: number | null;
+  prediction: { model?: { futurePrb: number; recommendedState: string; confidence: number } | null; mdafFuturePrb?: number | null; lowForMinutes?: number } | null;
+  safety: { passed: boolean; blocks: { guard: string; level: string; detail?: unknown }[] } | null;
+  decision: string; reason: string; outcome: string;
+  intent: { dispatchId: string; autonomyMode: string; status: string; intentId: string | null } | null;
+  action: { path: string; actionId: string; status: string; forwardedJobId?: string | null } | null;
+  verification: { result: string; expected: string; observed: Record<string, string | null> } | null;
+  rollback: { trigger: string; performed: boolean; result: string } | null;
+  finalState: { state: string; o1: string | null } | null; createdAt: string;
+}
+export interface EsCell {
+  cellId: string; state: string; o1Value: string | null; lastUnlockedAt: string | null; overrideBy: string | null;
+  pendingDispatchId: string | null; prbTrend: { t: string; v: number }[]; latestDecision: EsDecision | null;
+}
+export interface EsDashboard { instance: EsInstance; cells: EsCell[] }

@@ -59,6 +59,7 @@ DEFAULT_CM_TARGETS = {
     "CESManagementFunction.energySavingControl": ["TO_BE_ENERGY_SAVING", "TO_BE_NOT_ENERGY_SAVING"],
 }
 SUCCESS_STATUSES = {"COMPLETED"}
+ACTION_ID_NAMESPACE = uuid.UUID("6f2b8c1e-3d4a-5b6c-8d9e-0a1b2c3d4e5f")
 
 
 class RegistrationBody(BaseModel):
@@ -182,15 +183,21 @@ def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
         unsupported.extend(bad)
         applied = None
         if changes:
+            # Wave 10.1 (W10-18): the action id is derived from the intent and
+            # expectation, so a re-pushed Intent replays the same action —
+            # which DME ignores — instead of writing the change twice.
             action = _r1.post("/dme/actions", json={
                 "requestedBy": REQUESTED_BY, "changes": changes,
+                "actionId": str(uuid.uuid5(ACTION_ID_NAMESPACE, f"{body.intentId}:{expectation['expectationId']}")),
                 "sourceContext": {"intentId": str(body.intentId), "expectationId": expectation["expectationId"],
                                   "rmioId": intent["rmioId"]},
             })
             payload = action.json() if action.status_code in (200, 202) else {"status": f"HTTP_{action.status_code}"}
+            status = payload.get("originalStatus") if payload.get("status") == "IGNORED" else payload.get("status")
             actions.append({"expectationId": expectation["expectationId"], "actionId": payload.get("actionId"),
-                            "forwardedJobId": payload.get("forwardedJobId"), "status": payload.get("status")})
-            applied = payload.get("status") in SUCCESS_STATUSES
+                            "forwardedJobId": payload.get("forwardedJobId"), "status": status,
+                            "replayed": payload.get("status") == "IGNORED"})
+            applied = status in SUCCESS_STATUSES
         bad_names = {b["targetName"] for b in bad}
         ok = applied is True and not bad_names
         info = {"fulfilmentStatus": "FULFILLED"} if ok else {"fulfilmentStatus": "NOT_FULFILLED", "notFullfilledState": "DEGRADED"}

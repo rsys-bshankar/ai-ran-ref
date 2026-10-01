@@ -28,7 +28,13 @@ for m in onboarding rapp-mgmt ran-nf-oam aimgf mlmr mllf so-smos \
 done
 (cd shared && PYTHONPATH=. python -m pytest tests/ -q)
 (cd gui-bff && PYTHONPATH=.:../shared python -m pytest tests/ -q)
+(cd samples/energy-saving-rapp && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q)
 ```
+
+After changing anything under `samples/energy-saving-rapp/`, rebuild its
+package (`python3 samples/build_csar.py energy-saving-rapp`); the
+integration suite fails if the committed `.csar` no longer matches the
+sources.
 
 **2. Cross-service integration suite** (in-process service mesh,
 `tests_integration/mesh.py` — includes the check that every committed

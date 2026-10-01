@@ -8,6 +8,7 @@ and A1TerminationClient calls land on the right module instead of going
 out over a real network.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -16,6 +17,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "shared"))
+# The AI Runtime SDK — what a sample rApp (samples/*) builds on.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk"))
 
 from smo_shared.db import Base, get_session  # noqa: E402
 from smo_shared.testing import make_test_engine  # noqa: E402
@@ -27,6 +30,8 @@ ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
     "a1-related", "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
     "intent-service", "so-smos", "sa-smos", "mock-near-rt-ric", "mock-o1-adaptor",
+    # Wave 10.1: the EnergySaving reference rApp, an R1 consumer of all of the above
+    "samples/energy-saving-rapp",
 ]
 
 
@@ -36,7 +41,9 @@ def loaded_apps():
     session — loading twice would try to redefine the same SQLAlchemy
     mapped classes against the same Base.metadata a second time.
     """
-    return {name: load_app_module(name) for name in ALL_MODULES}
+    # keyed by the service's hostname (the directory's last segment) — the
+    # name mesh.py dispatches to and docs/openapi/<name>.json is filed under
+    return {Path(name).name: load_app_module(name) for name in ALL_MODULES}
 
 
 @pytest.fixture(scope="session")
@@ -126,7 +133,8 @@ def mesh(loaded_apps, db_connection, monkeypatch):
     clients: dict[str, TestClient] = {}
     for name, main_module in loaded_apps.items():
         main_module.app.dependency_overrides[get_session] = override_get_session
-        clients[name] = TestClient(main_module.app, raise_server_exceptions=False)
+        # MESH_RAISE=1 surfaces a service's own traceback instead of a bare 500 (debugging aid)
+        clients[name] = TestClient(main_module.app, raise_server_exceptions=bool(os.environ.get("MESH_RAISE")))
 
     m = ServiceMesh(clients)
     install_mesh(monkeypatch, m)

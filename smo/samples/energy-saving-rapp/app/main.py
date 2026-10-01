@@ -1,0 +1,697 @@
+"""EnergySaving rApp — the Wave 10.1 reference rApp (WAVES_4_TO_10_WORK_ITEMS.md
+§9, W10-01..W10-25). A Non-RT RIC rApp that sleeps lightly used cells
+through O1 and wakes them before load returns. It uses O1 PM data only;
+there is no A1, Near-RT RIC, xApp or E2.
+
+Every platform interaction goes through the AI Runtime SDK (`smo_sdk`), so
+R1 only, never another module's database:
+
+  * data — the PRB_UTILIZATION dataset (O1 PM → RAN NF OAM → DME) and the
+    Digital Twin PRB_UTILIZATION_SIM dataset; cell guards; config read-back
+  * models / lifecycle — MLMR model + artifact; AIMgF training, validation,
+    emulation, certification (operator), MLLF + MLIF runtime, inference
+  * analytics — MDAF's PRB prediction for a cell, when there is one
+  * intent — AutonomyDispatch for a LOCK (AUTONOMOUS/ASSIST/SHADOW)
+  * platform — direct DME O1 actions for service-restoring writes
+
+The loop (POST /instances/{id}/evaluate):
+
+    Input → Prediction (model via an AIMgF inference job, plus MDAF)
+          → Safety evaluation → Decision (engine.py)
+          → O1 execution → Verification (read-after-write) → Rollback → Audit
+
+How a decision is written to O1:
+
+  * **LOCK** (it reduces service) is governed by the instance's autonomy mode:
+    - SHADOW: the recommendation is dispatched as SHADOWED; nothing changes.
+    - ASSIST: it waits in AWAITING_SCOPE until an operator resolves it
+      (then enacted) or rejects it (then nothing happens).
+    - AUTONOMOUS: Intent → SA SMOS O1-CM handler → DME → RAN NF OAM → NETCONF.
+  * **UNLOCK** (wake), rollback and an operator override restore service, so
+    they go straight to DME `/actions` in every enforcing mode. Each carries
+    its own `actionId`, so a replay is ignored.
+
+Every write is verified by reading the cell's live configuration back. A
+failed, partial or unverified LOCK is rolled back to UNLOCKED through the
+same DME path.
+"""
+
+import datetime
+import json
+import uuid
+
+from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from smo_sdk import AiRuntimeSdk, SdkError
+from smo_shared.correlation import apply_correlation_id, get_correlation_id
+from smo_shared.db import get_session
+from smo_shared.r1_client import R1Client
+from smo_shared.timeutil import as_utc
+
+from . import engine
+from .model import EmulationLogic, InferenceLogic, TrainingLogic, ValidationLogic
+from .model.EnergyModel import MODEL_TYPE, EnergyModel
+from .model.series import by_cell, cell_key, parse_time
+from .models import EnergySavingCell, EnergySavingDecision, EnergySavingInstance
+from .producer import SimPublishRequest, publish_sim, register_sim_type, router as producer_router
+
+app = FastAPI(title="EnergySaving rApp")
+apply_correlation_id(app)
+
+_r1 = R1Client()
+sdk = AiRuntimeSdk(_r1)
+
+RAPP_ID = "energy-saving-rapp"
+DATASET, SIM_DATASET = "PRB_UTILIZATION", "PRB_UTILIZATION_SIM"
+NODE_GROUPS = ["energy-saving"]
+
+# decision D-2: the O1 actuator, per instance
+ACTUATORS = {
+    "ADMINISTRATIVE_STATE": {"ioc": "NRCellDU", "attribute": "administrativeState", "lock": "LOCKED", "unlock": "UNLOCKED",
+                             "readAttribute": "administrativeState", "locked": "LOCKED", "unlocked": "UNLOCKED"},
+    "ENERGY_SAVING_CONTROL": {"ioc": "CESManagementFunction", "attribute": "energySavingControl",
+                              "lock": "TO_BE_ENERGY_SAVING", "unlock": "TO_BE_NOT_ENERGY_SAVING",
+                              "readAttribute": "energySavingState", "locked": "IS_ENERGY_SAVING",
+                              "unlocked": "IS_NOT_ENERGY_SAVING"},
+}
+
+
+def _problem(status: int, title: str, detail: str) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"detail": {"title": title, "status": status, "detail": detail}})
+
+
+class RappError(Exception):
+    def __init__(self, status: int, title: str, detail: str):
+        self.status, self.title, self.detail = status, title, detail
+
+
+@app.exception_handler(RappError)
+def _rapp_error(_, exc: RappError):
+    return _problem(exc.status, exc.title, exc.detail)
+
+
+@app.exception_handler(SdkError)
+def _sdk_error(_, exc: SdkError):
+    body = exc.body if isinstance(exc.body, dict) else {"detail": exc.body}
+    detail = body.get("detail", body)
+    return JSONResponse(status_code=exc.status_code if exc.status_code < 500 else 502,
+                        content={"detail": detail if isinstance(detail, dict) else {"title": "PLATFORM_ERROR", "detail": detail}})
+
+
+# ---------------------------------------------------------------- helpers
+
+def _instance(db: Session, instance_id: uuid.UUID) -> EnergySavingInstance:
+    inst = db.get(EnergySavingInstance, instance_id)
+    if inst is None:
+        raise RappError(404, "INSTANCE_NOT_STARTED", f"instance {instance_id} is not started on this rApp")
+    return inst
+
+
+def _cells(db: Session, inst: EnergySavingInstance) -> dict[str, EnergySavingCell]:
+    rows = {c.cell_id: c for c in db.scalars(select(EnergySavingCell).where(EnergySavingCell.instance_id == inst.instance_id))}
+    for cell in inst.cells:
+        if cell not in rows:
+            rows[cell] = EnergySavingCell(instance_id=inst.instance_id, cell_id=cell, state=engine.SERVING)
+            db.add(rows[cell])
+    return rows
+
+
+def _consumer(inst: EnergySavingInstance) -> str:
+    return f"{RAPP_ID}:{inst.instance_id}"
+
+
+def _mfr(inst: EnergySavingInstance, cell: str) -> str:
+    return f"{ACTUATORS[inst.actuator]['ioc']}={cell}"
+
+
+def _change(inst: EnergySavingInstance, cell: str, value: str) -> dict:
+    act = ACTUATORS[inst.actuator]
+    return {"managedElementRef": inst.managed_element_ref, "className": act["ioc"], "managedFunctionRef": _mfr(inst, cell),
+            "attributeChanges": {act["attribute"]: value}}
+
+
+def _read(inst: EnergySavingInstance, cell: str) -> str | None:
+    """The cell's live actuator state, read back over O1 (W10-20)."""
+    try:
+        attrs = sdk.data.read_config(inst.managed_element_ref, _mfr(inst, cell))["attributes"]
+    except SdkError:
+        return None
+    return attrs.get(ACTUATORS[inst.actuator]["readAttribute"])
+
+
+def _verify(inst: EnergySavingInstance, cells: list[str], want_locked: bool) -> dict:
+    act = ACTUATORS[inst.actuator]
+    expected = act["locked"] if want_locked else act["unlocked"]
+    observed = {cell: _read(inst, cell) for cell in cells}
+    return {"result": "VERIFIED" if all(v == expected for v in observed.values()) else "VERIFY_FAILED",
+            "expected": expected, "observed": observed,
+            "attribute": f"{act['ioc']}.{act['readAttribute']}"}
+
+
+def _execute_direct(inst: EnergySavingInstance, cells: list[str], lock: bool, execution_id: str, reason: str) -> dict:
+    """A DME O1 action carrying its own idempotency key and this
+    execution's correlation id (W10-16/W10-18)."""
+    action_id = str(uuid.uuid4())
+    act = ACTUATORS[inst.actuator]
+    try:
+        result = sdk.platform.execute_action(
+            f"{RAPP_ID}:{inst.instance_id}", [_change(inst, c, act["lock"] if lock else act["unlock"]) for c in cells],
+            action_id=action_id, source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason})
+        return {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"),
+                "status": result["status"]}
+    except SdkError as e:
+        return {"path": "DME_DIRECT", "actionId": action_id, "status": "REJECTED", "error": e.body}
+
+
+def _restore(inst: EnergySavingInstance, cells: list[str], execution_id: str, reason: str) -> dict:
+    """Rollback / wake: UNLOCK the cells that aren't already UNLOCKED,
+    verify, and re-send once if the read-back still disagrees (W10-21)."""
+    act = ACTUATORS[inst.actuator]
+    pending = [c for c in cells if _read(inst, c) != act["unlocked"]]
+    if not pending:
+        return {"performed": False, "result": "ALREADY_UNLOCKED", "verification": _verify(inst, cells, False)}
+    attempts = []
+    for _ in range(2):
+        action = _execute_direct(inst, pending, False, execution_id, reason)
+        verification = _verify(inst, pending, False)
+        attempts.append({"action": action, "verification": verification})
+        if verification["result"] == "VERIFIED":
+            break
+    return {"performed": True, "result": attempts[-1]["verification"]["result"], "attempts": attempts}
+
+
+def _intent_actions(intent_id: str) -> list[dict]:
+    """The DME actions the intent handler took, from the Intent's own
+    fulfilment report (TS 28.312 IntentReport, additionalFulfilmentInfo)."""
+    for report in sdk.intent.list_intent_reports(intent_id):
+        info = (report["attributes"].get("intentFulfilmentReport") or {}).get("additionalFulfilmentInfo")
+        if info:
+            try:
+                return json.loads(info).get("actions", [])
+            except ValueError:
+                return []
+    return []
+
+
+def _finish_lock(db: Session, inst: EnergySavingInstance, rows: dict, decisions: dict[str, EnergySavingDecision],
+                 cells: list[str], action: dict, execution_id: str, now: datetime.datetime | None) -> None:
+    """After a LOCK was enacted (any path): verify, roll back on failure,
+    and settle each cell's state and audit row."""
+    status = action.get("status")
+    act = ACTUATORS[inst.actuator]
+    verification = _verify(inst, cells, True) if status == "COMPLETED" else None
+    ok = status == "COMPLETED" and verification["result"] == "VERIFIED"
+    rollback = None
+    if not ok:
+        trigger = ("VERIFY_FAILED" if status == "COMPLETED" else
+                   "PARTIAL_SUCCESS" if status == "PARTIAL_SUCCESS" else "ACTION_FAILED")
+        rollback = {"trigger": trigger, **_restore(inst, cells, execution_id, f"ROLLBACK:{trigger}")}
+    for cell in cells:
+        d, row = decisions[cell], rows[cell]
+        d.action, d.verification, d.rollback = action, verification, rollback
+        if ok:
+            d.outcome = "EXECUTED"
+            row.state, row.o1_value = engine.SLEEP, act["locked"]
+        else:
+            d.outcome = f"{rollback['trigger']}_ROLLED_BACK" if rollback["result"] in ("VERIFIED", "ALREADY_UNLOCKED") \
+                else f"{rollback['trigger']}_ROLLBACK_FAILED"
+            row.state, row.o1_value = engine.SERVING, act["unlocked"]
+            if rollback["performed"]:
+                row.last_unlocked_at = now or d.observed_at or row.last_unlocked_at
+        d.final_state = {"state": row.state, "o1": row.o1_value}
+        d.updated_at = datetime.datetime.now(datetime.UTC)
+
+
+def _lock_expectation(inst: EnergySavingInstance, cells: list[str], execution_id: str) -> dict:
+    act = ACTUATORS[inst.actuator]
+    return {"expectationId": f"energy-saving-{execution_id[:8]}", "expectationVerb": "DELIVER",
+            "expectationObject": {"objectType": "RAN_SUBNETWORK", "objectInstance": inst.managed_element_ref,
+                                  "objectContexts": [{"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF",
+                                                      "contextValueRange": cells}]},
+            "expectationTargets": [{"targetName": f"{act['ioc']}.{act['attribute']}", "targetCondition": "IS_EQUAL_TO",
+                                    "targetValueRange": act["lock"]}]}
+
+
+def _follow_dispatch(db, inst, rows, decisions, cells, dispatch: dict, execution_id, now) -> None:
+    """Settle LOCK decisions according to where their AutonomyDispatch is."""
+    intent = {"dispatchId": dispatch["dispatchId"], "autonomyMode": dispatch["autonomyMode"], "status": dispatch["status"],
+              "intentId": dispatch.get("intentId"), "rejectedBy": dispatch.get("rejectedBy")}
+    for cell in cells:
+        decisions[cell].intent = intent
+    if dispatch["status"] == "SHADOWED":
+        for cell in cells:
+            decisions[cell].outcome = "SHADOWED"          # recommended + operator notified, never enacted
+            rows[cell].state = engine.PRE_SLEEP
+            decisions[cell].final_state = {"state": rows[cell].state, "o1": rows[cell].o1_value}
+    elif dispatch["status"] == "AWAITING_SCOPE":
+        for cell in cells:
+            decisions[cell].outcome = "AWAITING_APPROVAL"
+            rows[cell].state = engine.PRE_SLEEP
+            rows[cell].pending_dispatch_id = uuid.UUID(dispatch["dispatchId"])
+            rows[cell].pending_decision_id = decisions[cell].decision_id
+            decisions[cell].final_state = {"state": rows[cell].state, "o1": rows[cell].o1_value}
+    elif dispatch["status"] == "REJECTED":
+        for cell in cells:
+            decisions[cell].outcome = "REJECTED"
+            rows[cell].state = engine.SERVING
+            decisions[cell].final_state = {"state": rows[cell].state, "o1": rows[cell].o1_value}
+    elif dispatch["status"] == "DISPATCHED":
+        actions = _intent_actions(dispatch["intentId"])
+        action = {"path": "INTENT", **actions[0]} if actions else {"path": "INTENT", "status": "NOT_ENACTED"}
+        _finish_lock(db, inst, rows, decisions, cells, action, execution_id, now)
+    for cell in cells:
+        decisions[cell].updated_at = datetime.datetime.now(datetime.UTC)
+
+
+def _reconcile(db: Session, inst: EnergySavingInstance) -> list[dict]:
+    """ASSIST: follow up dispatches an operator has since resolved or rejected."""
+    rows = _cells(db, inst)
+    pending: dict[uuid.UUID, list[str]] = {}
+    for cell, row in rows.items():
+        if row.pending_dispatch_id:
+            pending.setdefault(row.pending_dispatch_id, []).append(cell)
+    settled = []
+    for dispatch_id, cells in pending.items():
+        dispatch = sdk.intent.get_autonomy_dispatch(dispatch_id)
+        if dispatch["status"] == "AWAITING_SCOPE":
+            continue
+        decisions = {c: db.get(EnergySavingDecision, rows[c].pending_decision_id) for c in cells}
+        for c in cells:
+            rows[c].pending_dispatch_id = rows[c].pending_decision_id = None
+        execution_id = next(iter(decisions.values())).execution_id
+        _follow_dispatch(db, inst, rows, decisions, cells, dispatch, execution_id, None)
+        settled.append({"dispatchId": str(dispatch_id), "status": dispatch["status"], "cells": cells,
+                        "outcomes": {c: decisions[c].outcome for c in cells}})
+    db.commit()
+    return settled
+
+
+# ---------------------------------------------------------------- instance + datasets (W10-04/05)
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
+
+@app.post("/instances/{instance_id}/start")
+def start_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Binds this rApp to its rapp-mgmt instance (cells, actuator,
+    autonomyMode come from the instance) and discovers its datasets through
+    DME — one data job per execution mode (TC02)."""
+    resp = _r1.get(f"/rapp-mgmt/instances/{instance_id}")
+    if resp.status_code != 200:
+        raise RappError(404, "INSTANCE_NOT_FOUND", f"rapp-mgmt has no instance {instance_id}")
+    info = resp.json()
+    config = info.get("configuration") or {}
+    if not config.get("managedElementRef") or not config.get("cells"):
+        raise RappError(422, "INSTANCE_CONFIG_INVALID", "instance config needs managedElementRef and cells")
+    actuator = config.get("actuator", "ADMINISTRATIVE_STATE")
+    if actuator not in ACTUATORS:
+        raise RappError(422, "INSTANCE_CONFIG_INVALID", f"actuator must be one of {sorted(ACTUATORS)}")
+    inst = db.get(EnergySavingInstance, instance_id) or EnergySavingInstance(instance_id=instance_id)
+    inst.package_id = uuid.UUID(info["packageId"]) if info.get("packageId") else None
+    inst.managed_element_ref, inst.cells = config["managedElementRef"], [str(c) for c in config["cells"]]
+    inst.actuator, inst.autonomy_mode = actuator, info.get("autonomyMode", "SHADOW")
+    inst.rmih_id = config.get("rmihId", "sa-smos")
+    inst.operator_notification_uri = config.get("operatorNotificationUri")
+    datasets = {}
+    for stage, name in (("TRAINING", DATASET), ("INFERENCE", DATASET), ("EMULATION", SIM_DATASET)):
+        found = sdk.data.get_dataset(name, _consumer(inst), lifecycle_stage=stage, max_records=1)
+        datasets[stage] = {"dataset": name, "dmeTypeId": found["dmeTypeId"], "dataJobId": found["dataJobId"],
+                           "sourceDomain": found["sourceDomain"]}
+    inst.data_jobs = datasets
+    db.add(inst)
+    _cells(db, inst)
+    db.commit()
+    return _instance_view(inst)
+
+
+@app.get("/instances")
+def list_instances(db: Session = Depends(get_session)):
+    return {"items": [_instance_view(i) for i in db.scalars(select(EnergySavingInstance).order_by(EnergySavingInstance.created_at))]}
+
+
+@app.get("/instances/{instance_id}")
+def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    return _instance_view(_instance(db, instance_id))
+
+
+def _instance_view(i: EnergySavingInstance) -> dict:
+    return {"instanceId": str(i.instance_id), "packageId": str(i.package_id) if i.package_id else None,
+            "managedElementRef": i.managed_element_ref, "cells": i.cells, "actuator": i.actuator,
+            "autonomyMode": i.autonomy_mode, "rmihId": i.rmih_id, "datasets": i.data_jobs,
+            "modelId": str(i.model_id) if i.model_id else None, "modelVersion": i.model_version,
+            "artifactVersion": i.artifact_version, "model": i.model_params, "lifecycleJobs": i.lifecycle_jobs}
+
+
+def _dataset(inst: EnergySavingInstance, stage: str) -> list[dict]:
+    name = SIM_DATASET if stage == "EMULATION" else DATASET
+    return sdk.data.get_dataset(name, _consumer(inst), lifecycle_stage=stage)["records"]
+
+
+# ---------------------------------------------------------------- lifecycle (W10-02, W10-07, W10-08)
+
+def _jobs(inst: EnergySavingInstance, **updates) -> None:
+    inst.lifecycle_jobs = {**(inst.lifecycle_jobs or {}), **updates}
+
+
+@app.post("/instances/{instance_id}/lifecycle/train")
+def train(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """TRAINING on the package's MLTF runtime profile: the model is
+    registered in MLMR, trained on PRB history and stored there as an
+    artifact (TC03)."""
+    inst = _instance(db, instance_id)
+    version = inst.model_version or f"1.0.0-{str(inst.instance_id)[:8]}"
+    if inst.model_id is None:
+        inst.model_id = uuid.UUID(sdk.models.register_model(
+            MODEL_TYPE, version, description="Threshold + linear regression: next-hour PRB per cell",
+            input_data_type=DATASET, output_data_type="recommendedState", domain="CUSTOM",
+            custom_domain="RAN_ENERGY_SAVING")["modelId"])
+        inst.model_version = version
+    job = sdk.lifecycle.start_training(inst.model_id, RAPP_ID, package_id=inst.package_id,
+                                       dme_data_job_ids=[inst.data_jobs["TRAINING"]["dataJobId"]])
+    try:
+        model, metrics = TrainingLogic.train(_dataset(inst, "TRAINING"), version=version)
+    except ValueError as e:
+        sdk.lifecycle.complete_training(job["trainingJobId"], False, metrics={"failureReason": str(e)})
+        _jobs(inst, training=job["trainingJobId"])
+        db.commit()
+        raise RappError(422, "TRAINING_FAILED", str(e))
+    stored = sdk.models.store_model(MODEL_TYPE, version, model.to_artifact(), filename="energy_model.zip")
+    inst.artifact_version, inst.model_params = stored["artifactVersion"], model.to_dict()
+    metrics["artifactVersion"] = stored["artifactVersion"]
+    completed = sdk.lifecycle.complete_training(job["trainingJobId"], True, metrics=metrics,
+                                                modelConfidenceIndication=int(model.confidence() * 100))
+    _jobs(inst, training=job["trainingJobId"])
+    db.commit()
+    return {"modelId": str(inst.model_id), "trainingJobId": job["trainingJobId"], "status": completed["status"],
+            "metrics": metrics, "lifecycle": sdk.lifecycle.get_model_lifecycle(inst.model_id)}
+
+
+@app.post("/instances/{instance_id}/lifecycle/validate")
+def validate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """VALIDATION on MLVF: held-out history must score above threshold (TC04)."""
+    inst = _instance(db, instance_id)
+    job = sdk.lifecycle.start_validation(inst.model_id, RAPP_ID, package_id=inst.package_id,
+                                         training_job_id=(inst.lifecycle_jobs or {}).get("training"),
+                                         validation_criteria={"minScore": ValidationLogic.PASS_THRESHOLD})
+    passed, metrics = ValidationLogic.validate(EnergyModel.from_dict(inst.model_params), _dataset(inst, "TRAINING"))
+    completed = sdk.lifecycle.complete_validation(job["validationJobId"], passed, metrics=metrics)
+    _jobs(inst, validation=job["validationJobId"])
+    db.commit()
+    return {"validationJobId": job["validationJobId"], "passed": passed, "status": completed["status"], "metrics": metrics,
+            "lifecycle": sdk.lifecycle.get_model_lifecycle(inst.model_id)}
+
+
+@app.post("/instances/{instance_id}/lifecycle/emulate")
+def emulate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """EMULATION on MLEF against the Digital Twin dataset (TC05)."""
+    inst = _instance(db, instance_id)
+    job = sdk.lifecycle.start_emulation(inst.model_id, RAPP_ID, package_id=inst.package_id,
+                                        emulation_criteria={"dataset": SIM_DATASET, "midnightRecommendation": "LOCKED"})
+    passed, metrics = EmulationLogic.emulate(EnergyModel.from_dict(inst.model_params), _dataset(inst, "EMULATION"))
+    completed = sdk.lifecycle.complete_emulation(job["emulationJobId"], passed, metrics=metrics)
+    _jobs(inst, emulation=job["emulationJobId"])
+    db.commit()
+    return {"emulationJobId": job["emulationJobId"], "passed": passed, "status": completed["status"], "metrics": metrics,
+            "lifecycle": sdk.lifecycle.get_model_lifecycle(inst.model_id)}
+
+
+@app.post("/instances/{instance_id}/lifecycle/deploy")
+def deploy(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """MLIF deployment once an operator has certified the model (TC07):
+    MLLF clears the node groups (it checks CERTIFIED), AIMgF instantiates
+    the inference runtime through NFO and activates it, and the serving
+    model is loaded from its MLMR artifact."""
+    inst = _instance(db, instance_id)
+    sdk.lifecycle.deploy_model(inst.model_id, NODE_GROUPS)
+    sdk.lifecycle.deploy_runtime(inst.model_id, package_id=inst.package_id)
+    sdk.lifecycle.activate_runtime(inst.model_id)
+    artifact = sdk.models.download_artifact(inst.model_id, inst.artifact_version)
+    inst.model_params = EnergyModel.from_artifact(artifact.content).to_dict()
+    db.commit()
+    return {"modelId": str(inst.model_id), "artifactVersion": inst.artifact_version, "model": inst.model_params,
+            "lifecycle": sdk.lifecycle.get_model_lifecycle(inst.model_id)}
+
+
+# ---------------------------------------------------------------- the closed loop (W10-09..W10-23)
+
+def _inputs(inst: EnergySavingInstance, rows: dict) -> dict:
+    """Everything the engine needs, read from the platform."""
+    series = by_cell(_dataset(inst, "INFERENCE"))
+    guards = {cell_key(g["managedElementRef"], g["cellId"]): g for g in sdk.data.query_cell_guards()}
+    alarms = [a for a in _r1.get("/ran-nf-oam/alarms", params={"managed_element_ref": inst.managed_element_ref,
+                                                                "limit": 500}).json().get("items", [])
+              if a["severity"] == "critical"]
+    coverage = [a for a in alarms if "coverage" in f"{a.get('probableCause')} {a.get('specificProblem')}".lower()]
+    asleep = {cell_key(inst.managed_element_ref, c) for c, r in rows.items() if r.state == engine.SLEEP}
+    return {"series": series, "guards": guards, "critical": bool(alarms), "coverage": bool(coverage), "asleep": asleep,
+            "alarmIds": [a["alarmId"] for a in alarms]}
+
+
+def _sector_peers_awake(key: str, guards: dict, asleep: set) -> int | None:
+    group = (guards.get(key) or {}).get("sectorGroup")
+    if not group:
+        return None
+    return sum(1 for k, g in guards.items() if k != key and g.get("sectorGroup") == group and k not in asleep)
+
+
+def _mdaf_prediction(key: str) -> float | None:
+    try:
+        prediction = sdk.analytics.get_prediction(key, pm_name=DATASET)
+    except SdkError:
+        return None
+    return float(prediction["pmPredictedValue"]) if prediction and "pmPredictedValue" in prediction else None
+
+
+@app.post("/instances/{instance_id}/evaluate")
+def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """One pass of the closed loop over the instance's cells. The pass's
+    X-Correlation-ID is its execution id in the audit trail."""
+    inst = _instance(db, instance_id)
+    if not inst.model_id or not inst.model_params:
+        raise RappError(409, "MODEL_NOT_DEPLOYED", "train, certify and deploy the model first")
+    reconciled = _reconcile(db, inst)
+    execution_id = get_correlation_id() or str(uuid.uuid4())
+    rows = _cells(db, inst)
+    inputs = _inputs(inst, rows)
+    model = EnergyModel.from_dict(inst.model_params)
+    keys = {cell: cell_key(inst.managed_element_ref, cell) for cell in inst.cells}
+
+    # Prediction — through an AIMgF inference job on the ACTIVE MLIF runtime (TC08)
+    job = sdk.lifecycle.request_inference(inst.model_id)
+    outputs = {cell: InferenceLogic.infer(model, cell, inputs["series"].get(keys[cell], [])) for cell in inst.cells}
+    resolved = sdk.lifecycle.resolve_inference(job["inferenceJobId"], True, inference_outputs=[
+        {"aIMLInferenceName": MODEL_TYPE, "outputResult": o} for o in outputs.values() if o])
+
+    decisions: dict[str, EnergySavingDecision] = {}
+    results: dict[str, engine.Decision] = {}
+    for cell in inst.cells:
+        row, key = rows[cell], keys[cell]
+        if row.pending_dispatch_id:
+            continue  # ASSIST: still waiting for the operator
+        mdaf = _mdaf_prediction(key)
+        g = inputs["guards"].get(key, {})
+        neighbours = {n: inputs["series"][n][-1][1] for n in g.get("neighbourRefs") or [] if inputs["series"].get(n)}
+        peers_awake = _sector_peers_awake(key, inputs["guards"], inputs["asleep"])
+        result = engine.decide(engine.CellInput(
+            cell=key, series=inputs["series"].get(key, []), state=row.state, prediction=outputs[cell],
+            mdaf_future_prb=mdaf, guards=g, sector_peers_awake=peers_awake,
+            neighbour_prb=neighbours, critical_alarm=inputs["critical"], coverage_alarm=inputs["coverage"],
+            last_unlocked_at=as_utc(row.last_unlocked_at) if row.last_unlocked_at else None,
+            override=bool(row.override_by)))
+        results[cell] = result
+        if result.decision == engine.LOCK:
+            inputs["asleep"].add(key)  # a later cell of the same sector group must see this one asleep
+        elif result.decision == engine.UNLOCK:
+            inputs["asleep"].discard(key)
+        decisions[cell] = d = EnergySavingDecision(
+            execution_id=execution_id, instance_id=inst.instance_id, cell_id=cell, observed_at=result.observed_at,
+            prb=result.prb, decision=result.decision, reason=result.reason, outcome="NONE",
+            prediction={"model": outputs[cell], "mdafFuturePrb": mdaf, "inferenceJobId": job["inferenceJobId"],
+                        "aimlInferenceReportId": resolved.get("aIMLInferenceReportId"), "lowForMinutes": result.low_for_minutes},
+            safety={**result.safety, "criticalAlarmIds": inputs["alarmIds"], "neighbourPrb": neighbours,
+                    "sectorPeersAwake": peers_awake})
+        db.add(d)
+        if result.decision == engine.NO_CHANGE:
+            row.state = result.next_state
+            d.final_state = {"state": row.state, "o1": row.o1_value}
+    db.flush()
+
+    act = ACTUATORS[inst.actuator]
+    locks = [c for c, r in results.items() if r.decision == engine.LOCK]
+    unlocks = [c for c, r in results.items() if r.decision == engine.UNLOCK]
+
+    # Idempotency (W10-18): a cell already in the wanted state needs no action
+    for cells, wanted, settled in ((locks, act["locked"], engine.SLEEP), (unlocks, act["unlocked"], engine.SERVING)):
+        for cell in list(cells):
+            if _read(inst, cell) == wanted:
+                cells.remove(cell)
+                decisions[cell].outcome = "NO_ACTION_ALREADY_IN_STATE"
+                rows[cell].state, rows[cell].o1_value = settled, wanted
+                decisions[cell].final_state = {"state": settled, "o1": wanted}
+
+    if locks:
+        dispatch = sdk.intent.request_autonomy_dispatch(
+            inst.instance_id, [_lock_expectation(inst, locks, execution_id)], inst.rmih_id, model_id=inst.model_id,
+            notification_destination=inst.operator_notification_uri, user_label=f"energy-saving {execution_id}")
+        _follow_dispatch(db, inst, rows, decisions, locks, dispatch, execution_id,
+                         max(results[c].observed_at for c in locks))
+
+    if unlocks:
+        now = max(results[c].observed_at for c in unlocks)
+        if inst.autonomy_mode == "SHADOW":
+            for cell in unlocks:
+                decisions[cell].outcome = "SHADOWED"
+        else:
+            restore = _restore(inst, unlocks, execution_id, "WAKE:" + ",".join(sorted({results[c].reason for c in unlocks})))
+            for cell in unlocks:
+                d, row = decisions[cell], rows[cell]
+                d.action = restore["attempts"][0]["action"] if restore["performed"] else None
+                d.verification = restore["attempts"][-1]["verification"] if restore["performed"] else restore["verification"]
+                d.rollback = {"trigger": "VERIFY_FAILED", **restore} if restore["performed"] and len(restore["attempts"]) > 1 else None
+                ok = restore["result"] in ("VERIFIED", "ALREADY_UNLOCKED")
+                d.outcome = "EXECUTED" if ok else "VERIFY_FAILED"
+                row.state = engine.SERVING if ok else engine.SLEEP
+                row.o1_value = act["unlocked"] if ok else row.o1_value
+                if ok:
+                    row.last_unlocked_at = now
+                d.final_state = {"state": row.state, "o1": row.o1_value}
+    for row in rows.values():
+        row.updated_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+    return {"executionId": execution_id, "instanceId": str(inst.instance_id), "autonomyMode": inst.autonomy_mode,
+            "inferenceJobId": job["inferenceJobId"], "reconciled": reconciled,
+            "decisions": [_decision_view(decisions[c]) for c in inst.cells if c in decisions]}
+
+
+@app.post("/instances/{instance_id}/reconcile")
+def reconcile(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Follows up ASSIST dispatches the operator has resolved or rejected."""
+    return {"settled": _reconcile(db, _instance(db, instance_id))}
+
+
+# ---------------------------------------------------------------- operator override (W10-15)
+
+class OverrideRequest(BaseModel):
+    operator: str
+    reason: str | None = None
+
+
+@app.post("/instances/{instance_id}/cells/{cell_id}/override")
+def override(instance_id: uuid.UUID, cell_id: str, body: OverrideRequest, db: Session = Depends(get_session)):
+    """Manual UNLOCK: the cell is woken now (if it isn't already UNLOCKED)
+    and AI recommendations for it are suppressed until the override is
+    cleared."""
+    inst = _instance(db, instance_id)
+    rows = _cells(db, inst)
+    if cell_id not in rows:
+        raise RappError(404, "CELL_NOT_MANAGED", f"cell {cell_id} is not managed by instance {instance_id}")
+    execution_id = get_correlation_id() or str(uuid.uuid4())
+    row = rows[cell_id]
+    series = by_cell(_dataset(inst, "INFERENCE")).get(cell_key(inst.managed_element_ref, cell_id), [])
+    now = series[-1][0] if series else datetime.datetime.now(datetime.UTC)
+    restore = _restore(inst, [cell_id], execution_id, "OPERATOR_OVERRIDE")
+    ok = restore["result"] in ("VERIFIED", "ALREADY_UNLOCKED")
+    row.override_by, row.override_at = body.operator, datetime.datetime.now(datetime.UTC)
+    if ok:
+        row.state, row.o1_value = engine.SERVING, ACTUATORS[inst.actuator]["unlocked"]
+        if restore["performed"]:
+            row.last_unlocked_at = now
+    d = EnergySavingDecision(
+        execution_id=execution_id, instance_id=inst.instance_id, cell_id=cell_id, observed_at=now,
+        prb=series[-1][1] if series else None, decision=engine.UNLOCK, reason=f"OPERATOR_OVERRIDE:{body.operator}",
+        outcome=("EXECUTED" if restore["performed"] else "NO_ACTION_ALREADY_IN_STATE") if ok else "VERIFY_FAILED",
+        safety={"passed": True, "blocks": [], "note": body.reason},
+        action=restore["attempts"][0]["action"] if restore["performed"] else None,
+        verification=restore["attempts"][-1]["verification"] if restore["performed"] else restore["verification"],
+        final_state={"state": row.state, "o1": row.o1_value})
+    db.add(d)
+    db.commit()
+    return _decision_view(d)
+
+
+@app.delete("/instances/{instance_id}/cells/{cell_id}/override", status_code=204)
+def clear_override(instance_id: uuid.UUID, cell_id: str, db: Session = Depends(get_session)):
+    row = _cells(db, _instance(db, instance_id)).get(cell_id)
+    if row is not None:
+        row.override_by = row.override_at = None
+        db.commit()
+
+
+# ---------------------------------------------------------------- audit + dashboard (W10-23, W10-24)
+
+def _decision_view(d: EnergySavingDecision) -> dict:
+    return {"decisionId": str(d.decision_id), "executionId": d.execution_id, "cellId": d.cell_id,
+            "observedAt": d.observed_at.isoformat() if d.observed_at else None, "prb": d.prb,
+            "prediction": d.prediction, "safety": d.safety, "decision": d.decision, "reason": d.reason,
+            "intent": d.intent, "action": d.action, "verification": d.verification, "rollback": d.rollback,
+            "outcome": d.outcome, "finalState": d.final_state, "createdAt": d.created_at.isoformat()}
+
+
+@app.get("/instances/{instance_id}/decisions")
+def list_decisions(instance_id: uuid.UUID, cell_id: str | None = None, execution_id: str | None = None,
+                   limit: int = 100, db: Session = Depends(get_session)):
+    stmt = select(EnergySavingDecision).where(EnergySavingDecision.instance_id == instance_id)
+    if cell_id:
+        stmt = stmt.where(EnergySavingDecision.cell_id == cell_id)
+    if execution_id:
+        stmt = stmt.where(EnergySavingDecision.execution_id == execution_id)
+    rows = db.scalars(stmt.order_by(EnergySavingDecision.created_at.desc()).limit(min(limit, 500))).all()
+    return {"items": [_decision_view(d) for d in rows]}
+
+
+@app.get("/instances/{instance_id}/cells")
+def list_cells(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    inst = _instance(db, instance_id)
+    rows = _cells(db, inst)
+    db.commit()
+    return {"items": [_cell_view(rows[c]) for c in inst.cells]}
+
+
+def _cell_view(r: EnergySavingCell) -> dict:
+    return {"cellId": r.cell_id, "state": r.state, "o1Value": r.o1_value,
+            "lastUnlockedAt": r.last_unlocked_at.isoformat() if r.last_unlocked_at else None,
+            "overrideBy": r.override_by, "pendingDispatchId": str(r.pending_dispatch_id) if r.pending_dispatch_id else None}
+
+
+@app.get("/instances/{instance_id}/dashboard")
+def dashboard(instance_id: uuid.UUID, points: int = 48, db: Session = Depends(get_session)):
+    """Everything the operator must see for every execution (§19): PRB
+    trend, prediction, safety, decision, intent, action, verification,
+    rollback and the final cell state."""
+    inst = _instance(db, instance_id)
+    rows = _cells(db, inst)
+    series = by_cell(_dataset(inst, "INFERENCE"))
+    cells = []
+    for cell in inst.cells:
+        latest = db.scalars(select(EnergySavingDecision).where(EnergySavingDecision.instance_id == instance_id,
+                                                               EnergySavingDecision.cell_id == cell)
+                            .order_by(EnergySavingDecision.created_at.desc()).limit(1)).first()
+        trend = series.get(cell_key(inst.managed_element_ref, cell), [])[-points:]
+        cells.append({**_cell_view(rows[cell]), "prbTrend": [{"t": t.isoformat(), "v": v} for t, v in trend],
+                      "latestDecision": _decision_view(latest) if latest else None})
+    db.commit()
+    return {"instance": _instance_view(inst), "cells": cells}
+
+
+# ---------------------------------------------------------------- Digital Twin producer (W10-05)
+
+@app.post("/sim-producer/register", status_code=201)
+def register_sim_producer():
+    return register_sim_type(sdk)
+
+
+@app.post("/sim-producer/publish")
+def publish_sim_data(body: SimPublishRequest):
+    return publish_sim(sdk, body)
+
+
+app.include_router(producer_router)
+
+# re-exported for tests/demo helpers
+__all__ = ["app", "parse_time"]

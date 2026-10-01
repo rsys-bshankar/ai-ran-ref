@@ -13,6 +13,8 @@ rejected with PROTOCOL_NOT_SUPPORTED rather than silently applied.
 """
 
 import datetime
+import os
+import time
 import uuid
 
 from fastapi import Depends, FastAPI, Query
@@ -29,7 +31,7 @@ from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import Alarm, CMSchemaCache, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
-from .netconf_client import send_edit_config
+from .netconf_client import send_edit_config, send_get_config
 from .vendors import MnsService, check_vendor_mode, require_service, router as vendors_router, schema_problems
 from .statemachine import (
     ENDPOINT_HEALTH_FSM,
@@ -51,6 +53,40 @@ apply_r1_gateway_security(app)
 apply_correlation_id(app)
 
 MISSED_HEARTBEAT_THRESHOLD = datetime.timedelta(seconds=90)
+
+# Wave 10.1 (W10-19): a transient NETCONF failure (timeout / unreachable
+# agent) is retried — attempt 1 immediately, then after +5, +10 and +20 s
+# (the delays before each attempt; "max 3 retries"). An <rpc-error> is a
+# definite answer and never retried. Exhausting the retries raises an
+# alarm on the ME. Overridable for demos and tests.
+NETCONF_RETRY_DELAYS = [float(d) for d in os.environ.get("RAN_NF_OAM_NETCONF_RETRY_DELAYS", "0,5,10,20").split(",")]
+_sleep = time.sleep
+
+
+def _dispatch_with_retries(adaptor_uri: str, change: dict, attribute_changes: dict, message_id: str,
+                           operation: str) -> tuple[bool, str | None, int]:
+    """(applied, rejection reason, attempts) for one sub-change."""
+    reason, attempts = None, 0
+    for delay in NETCONF_RETRY_DELAYS:
+        if delay:
+            _sleep(delay)
+        attempts += 1
+        result = send_edit_config(adaptor_uri, change["managedElementRef"], attribute_changes, message_id=message_id,
+                                  operation=operation, managed_function_ref=change.get("managedFunctionRef"))
+        if result:
+            return True, None, attempts
+        reason = getattr(result, "reason", None) or "NETCONF_RPC_FAILED"
+        if not getattr(result, "retryable", False):
+            break
+    return False, reason, attempts
+
+
+def _raise_dispatch_alarm(db: Session, job_id: uuid.UUID, change: dict, reason: str, attempts: int) -> None:
+    target = change.get("managedFunctionRef") or change["managedElementRef"]
+    db.add(Alarm(source_alarm_id=f"o1-config:{job_id}:{target}", managed_element_ref=change["managedElementRef"],
+                 managed_function_ref=change.get("managedFunctionRef"), severity="major",
+                 alarm_type="COMMUNICATIONS_ALARM", probable_cause=reason,
+                 specific_problem=f"edit-config to {target} failed after {attempts} attempts"))
 
 
 class WriteConfigRequest(BaseModel):
@@ -183,13 +219,15 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
                                          attribute_changes=attribute_changes, operation=operation, status="REJECTED",
                                          rejection_reason="PROTOCOL_NOT_SUPPORTED"))
             continue
-        applied = send_edit_config(endpoint.adaptor_uri, change["managedElementRef"], attribute_changes,
-                                    message_id=str(job.job_id), operation=operation)
+        applied, reason, attempts = _dispatch_with_retries(endpoint.adaptor_uri, change, attribute_changes,
+                                                           str(job.job_id), operation)
+        if not applied and attempts > 1:
+            _raise_dispatch_alarm(db, job.job_id, change, reason, attempts)
         db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
                                      managed_function_ref=change.get("managedFunctionRef"),
                                      attribute_changes=attribute_changes, operation=operation,
                                      status="APPLIED" if applied else "REJECTED",
-                                     rejection_reason=None if applied else "NETCONF_RPC_FAILED"))
+                                     rejection_reason=reason, attempts=attempts))
 
     db.flush()
     statuses = [sc.status for sc in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)).all()]
@@ -198,12 +236,32 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
     return {"jobId": str(job.job_id), "status": job.status}
 
 
+@app.get("/managed-entities/{managed_element_ref}/config")
+def read_configuration(managed_element_ref: str, managed_function_ref: str | None = None, db: Session = Depends(get_session)):
+    """Wave 10.1 (W10-20): read-after-write. Reads the managed object's
+    running configuration from its O1 adaptor (NETCONF <get-config>) — the
+    live value on the NF, not what this module last asked for — so a
+    caller can verify that a write actually took effect."""
+    require_service(db, managed_element_ref, "PROV")
+    me = db.get(ManagedEntity, managed_element_ref)
+    endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id) if me and me.o1_adaptor_endpoint_id else None
+    if endpoint is None:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"{managed_element_ref} has no registered O1 adaptor")
+    attributes = send_get_config(endpoint.adaptor_uri, managed_element_ref, message_id=str(uuid.uuid4()),
+                                 managed_function_ref=managed_function_ref)
+    if attributes is None:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"get-config on {managed_element_ref} failed")
+    return {"managedElementRef": managed_element_ref, "managedFunctionRef": managed_function_ref, "attributes": attributes}
+
+
 @app.get("/config-jobs/{job_id}")
 def query_write_config_job_status(job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(WriteConfigJob, job_id)
     sub_changes = db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job_id)).all()
     return {"jobId": str(job.job_id), "status": job.status,
-            "subChanges": [{"managedElementRef": sc.managed_element_ref, "operation": sc.operation, "status": sc.status, "rejectionReason": sc.rejection_reason} for sc in sub_changes]}
+            "subChanges": [{"managedElementRef": sc.managed_element_ref, "managedFunctionRef": sc.managed_function_ref,
+                            "operation": sc.operation, "status": sc.status, "rejectionReason": sc.rejection_reason,
+                            "attempts": sc.attempts} for sc in sub_changes]}
 
 
 @app.get("/alarms")
@@ -308,6 +366,50 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
         "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs",
     })
     return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine, "granularityPeriod": sub.granularity_period}
+
+
+class PmMeasurement(BaseModel):
+    cellId: str
+    value: float
+    timestamp: datetime.datetime
+
+
+class PmReportRequest(BaseModel):
+    managedElementRef: str
+    counterType: str
+    measurements: list[PmMeasurement]
+
+
+@app.post("/pm-reports", status_code=201)
+def receive_pm_report(body: PmReportRequest, db: Session = Depends(get_session)):
+    """Wave 10.1 (W10-04): the PM data path O1 PM → RAN NF OAM → DME. An
+    NF's PM report (here a simplified JSON shape of a measurement file or
+    stream) for a counter RAN NF OAM has a PM subscription on is delivered
+    as DME records — one per cell and sample — to every data job open on
+    that counter's DME type (`RAN.PMCounters.<counterType>`, registered by
+    SubscribePM). Consumers (e.g. the EnergySaving rApp reading
+    PRB_UTILIZATION) only ever see DME, never this module."""
+    require_service(db, body.managedElementRef, "PM")
+    subscribed = db.scalars(select(PMSubscription).where(PMSubscription.managed_element_ref == body.managedElementRef,
+                                                         PMSubscription.counter_type == body.counterType)).first()
+    if subscribed is None:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                              detail=f"no PM subscription for {body.counterType} on {body.managedElementRef}")
+    db.commit()  # end the read transaction before fanning out to DME (nothing of ours is written)
+    r1 = R1Client()
+    type_name = f"RAN.PMCounters.{body.counterType}"
+    dme_type = next((t for t in r1.get("/dme/dme-types", params={"data_category": "RAN"}).json()
+                     if t["typeName"] == type_name), None)
+    jobs = r1.get("/dme/data-jobs", params={"dme_type_id": dme_type["dmeTypeId"], "limit": 500}).json()["items"] if dme_type else []
+    delivered = 0
+    for m in body.measurements:
+        payload = {"managedElementRef": body.managedElementRef, "cellId": m.cellId, "counter": body.counterType,
+                   "value": m.value, "timestamp": m.timestamp.isoformat()}
+        for job in jobs:
+            r1.post(f"/dme/data-jobs/{job['dataJobId']}/records", json={"payload": payload})
+            delivered += 1
+    return {"managedElementRef": body.managedElementRef, "counterType": body.counterType,
+            "measurements": len(body.measurements), "dataJobs": len(jobs), "recordsDelivered": delivered}
 
 
 @app.get("/health")

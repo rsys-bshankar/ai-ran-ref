@@ -1,0 +1,61 @@
+# EnergySaving_rApp capabilities (Wave 10.1, W10-01). `capabilities` is what
+# Onboarding records; the rest is the Wave 10 package description, with the
+# O1 target corrected to NRCellDU (TS 28.541 places administrativeState
+# there, decision D-2) and the alternative CESManagementFunction actuator.
+capabilities:
+  consumes:
+    - namespace: data
+      description: >-
+        PRB_UTILIZATION (O1 PM via RAN NF OAM → DME) for training, validation
+        and live inference; PRB_UTILIZATION_SIM (Digital Twin) for emulation;
+        cell guard attributes and O1 config read-back from RAN NF OAM.
+    - namespace: analytics
+      description: MDAF PRB predictions for the managed cells (PREDICTIONS_PM_DATA), via sdk.analytics.
+    - namespace: models
+      description: Registers EnergySavingPredictor in MLMR and stores its artifact, via sdk.models.
+    - namespace: lifecycle
+      description: >-
+        AIMgF training/validation/emulation jobs on MLTF/MLVF/MLEF, MLLF +
+        MLIF runtime deployment, inference jobs, via sdk.lifecycle.
+    - namespace: intent
+      description: AutonomyDispatch of LOCK recommendations (SHADOW / ASSIST / AUTONOMOUS), via sdk.intent.
+    - namespace: platform
+      description: Direct DME O1 actions for wake, rollback and operator override, via sdk.platform.
+  provides:
+    - namespace: data
+      description: The PRB_UTILIZATION_SIM Digital Twin dataset (sample producer).
+
+datasets:
+  - PRB_UTILIZATION
+  - PRB_UTILIZATION_SIM
+supportedStages:
+  - TRAINING
+  - VALIDATION
+  - EMULATION
+  - INFERENCE
+supportedAnalytics:
+  - TRAFFIC_FORECAST
+consumedServices:
+  - sdk.data
+  - sdk.analytics
+  - sdk.models
+  - sdk.lifecycle
+  - sdk.intent
+  - sdk.platform
+producedModel:
+  name: EnergySavingPredictor
+  type: REGRESSION
+outputs:
+  - administrativeState
+supportedActions:
+  - LOCK_CELL
+  - UNLOCK_CELL
+o1Targets:
+  - NRCellDU
+  - CESManagementFunction
+o1Attributes:
+  - administrativeState
+  - energySavingControl
+supportedVendorModes:
+  - O1_NETCONF
+  - O1_RESTCONF

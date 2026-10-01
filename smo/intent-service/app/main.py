@@ -755,11 +755,30 @@ def _scoped(expectation: dict, region_scope: dict | None) -> dict:
         return expectation
     scoped = json.loads(json.dumps(expectation))
     obj = scoped["expectationObject"]
-    if region_scope.get("objectInstance") and not obj.get("objectInstance"):
-        obj["objectInstance"] = region_scope["objectInstance"]
-    if region_scope.get("cells"):
-        obj.setdefault("objectContexts", []).append(
-            {"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF", "contextValueRange": region_scope["cells"]})
+    region_instance = region_scope.get("objectInstance")
+    if region_instance and not obj.get("objectInstance"):
+        obj["objectInstance"] = region_instance
+    elif region_instance and obj["objectInstance"] != region_instance:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                              detail=f"{obj['objectInstance']} is outside the dispatch's regionScope ({region_instance})")
+    region_cells = region_scope.get("cells")
+    if region_cells:
+        # Wave 10.1: an expectation that already names its cells (e.g. one
+        # cell an rApp decided to sleep) is *bounded* by the region scope,
+        # never widened to it — cells outside the region are dropped, and
+        # nothing left in scope is refused. Otherwise the region's cells
+        # become the expectation's Cell context.
+        cell_contexts = [c for c in obj.get("objectContexts") or [] if c.get("contextAttribute") == "Cell"]
+        allowed = {str(c) for c in region_cells}
+        for ctx in cell_contexts:
+            values = ctx["contextValueRange"] if isinstance(ctx["contextValueRange"], list) else [ctx["contextValueRange"]]
+            ctx["contextValueRange"] = [v for v in values if str(v) in allowed]
+            if not ctx["contextValueRange"]:
+                raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                                      detail=f"cells {values} are outside the dispatch's regionScope cells {region_cells}")
+        if not cell_contexts:
+            obj.setdefault("objectContexts", []).append(
+                {"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF", "contextValueRange": region_cells})
     return scoped
 
 

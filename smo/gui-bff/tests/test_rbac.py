@@ -83,6 +83,13 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("DELETE", "/ran-nf-oam/vendor-capabilities/acme", "admin"),
     ("PUT", "/ran-nf-oam/managed-entities/me-1/cells/1/guards", "admin"),
     ("GET", "/ran-nf-oam/cell-guards", "viewer"),
+    # Wave 10.1: the EnergySaving rApp's operator API
+    ("GET", "/energy-saving-rapp/instances/i/dashboard", "viewer"),
+    ("POST", "/energy-saving-rapp/instances/i/evaluate", "operator"),
+    ("POST", "/energy-saving-rapp/instances/i/lifecycle/train", "operator"),
+    ("POST", "/energy-saving-rapp/instances/i/cells/101/override", "operator"),
+    ("DELETE", "/energy-saving-rapp/instances/i/cells/101/override", "operator"),
+    ("POST", "/energy-saving-rapp/sim-producer/publish", "admin"),
 ])
 def test_minimum_role_per_route(method, path, minimum):
     order = ["viewer", "operator", "admin"]

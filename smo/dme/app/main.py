@@ -12,6 +12,7 @@ import uuid
 import httpx
 import jsonschema
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,7 +21,7 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
-from smo_shared.correlation import apply_correlation_id
+from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.webhook import delete_webhook, get_webhook, post_webhook
 
@@ -94,6 +95,10 @@ class ActionRequest(BaseModel):
     scope: str = "single-ME"
     msacRole: str | None = None
     sourceContext: dict | None = None
+    # Wave 10.1 (W10-18): a caller-chosen idempotency key. Re-sending an
+    # action with an actionId DME already recorded is IGNORED — never
+    # forwarded twice — so a retried or replayed decision can't double-write.
+    actionId: uuid.UUID | None = None
 
 
 class DataOfferRequest(BaseModel):
@@ -714,25 +719,41 @@ def _record_view(r: DataRecord) -> dict:
 # then forwards to ran-nf-oam's existing POST /config-jobs — a thin
 # mediation layer, not a second implementation of O1 dispatch.
 
+DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS = 10.0
+
+
 @app.post("/actions", status_code=202)
 def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
     if not body.changes:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="changes must not be empty")
+    if body.actionId is not None:
+        existing = db.get(DmeActionRecord, body.actionId)
+        if existing is not None:
+            # Wave 10.1 (W10-18, TC29): a replay of an action already
+            # mediated — ignored, the original outcome reported back.
+            return JSONResponse(status_code=200, content={
+                "actionId": str(existing.action_id), "status": "IGNORED", "originalStatus": existing.status,
+                "forwardedJobId": str(existing.forwarded_job_id) if existing.forwarded_job_id else None})
     first = body.changes[0]
     record = DmeActionRecord(
+        action_id=body.actionId or uuid.uuid4(),
         requested_by=body.requestedBy,
         managed_element_ref=first.get("managedElementRef", ""),
         class_name=first.get("className"),
         changes=body.changes,
         source_context=body.sourceContext,
+        # Wave 10.1 (W10-23): the inbound request's X-Correlation-ID, so an
+        # action joins the audit trail of the decision that caused it.
+        correlation_id=get_correlation_id(),
     )
     db.add(record)
     db.commit()
     # Wave 9 (W9-02): className is forwarded too — RAN NF OAM's write
     # pre-check validates each change against its vendor's data model.
+    # Wave 10.1 (W10-19): DME → RAN NF OAM is bounded at 10 s.
     resp = _r1.post("/ran-nf-oam/config-jobs", json={
         "requestedBy": body.requestedBy, "scope": body.scope, "msacRole": body.msacRole, "changes": body.changes,
-    })
+    }, timeout=DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS)
     forwarded = resp.json()
     if resp.status_code >= 400:
         # Refused at the pre-check (unsupported MnS service, schema
@@ -771,4 +792,4 @@ def _action_view(a: DmeActionRecord) -> dict:
     return {"actionId": str(a.action_id), "requestedBy": a.requested_by, "managedElementRef": a.managed_element_ref,
             "className": a.class_name, "changes": a.changes, "sourceContext": a.source_context,
             "forwardedJobId": str(a.forwarded_job_id) if a.forwarded_job_id else None, "status": a.status,
-            "createdAt": a.created_at.isoformat()}
+            "correlationId": a.correlation_id, "createdAt": a.created_at.isoformat()}

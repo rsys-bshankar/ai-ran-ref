@@ -20,6 +20,7 @@ R1_PREFIX_TO_SERVICE = {
     "/a1-related": "a1-related", "/nfo": "nfo", "/focom": "focom",
     "/aimgf": "aimgf", "/mlmr": "mlmr", "/mllf": "mllf", "/ran-analytics": "ran-analytics", "/mdaf": "mdaf",
     "/intent-service": "intent-service", "/so-smos": "so-smos", "/sa-smos": "sa-smos",
+    "/energy-saving-rapp": "energy-saving-rapp",
 }
 
 
@@ -70,6 +71,11 @@ class ServiceMesh:
         # looked like a genuine REJECTED outcome, not a harness bug.
         if content is not None:
             return method(rest_path, content=content, params=params, headers=headers)
+        # Multipart uploads (MLMR's model artifact, `files=`) — dropped the
+        # same way until the EnergySaving rApp (Wave 10.1) stored a model
+        # through the mesh for the first time.
+        if kwargs.get("files") is not None:
+            return method(rest_path, files=kwargs["files"], params=params, headers=headers)
         return method(rest_path, json=json, params=params, headers=headers)
 
 

@@ -7,7 +7,7 @@ itself already validates (schema checks, delivery-method commitments).
 
 import uuid
 
-from ._common import BaseClient, ensure_ok
+from ._common import BaseClient, SdkError, ensure_ok
 
 
 class DataClient(BaseClient):
@@ -167,10 +167,11 @@ class DataClient(BaseClient):
     def query_cell_guards(self, managed_element_ref: str | None = None, cell_id: str | None = None,
                           cell_class: str | None = None, sector_group: str | None = None,
                           incident_zone: str | None = None) -> list[dict]:
-        return ensure_ok(self._r1.get("/ran-nf-oam/cell-guards", params={
-            "managed_element_ref": managed_element_ref, "cell_id": cell_id, "cell_class": cell_class,
-            "sector_group": sector_group, "incident_zone": incident_zone,
-        }))
+        # unset filters are left out: httpx would send None as an empty
+        # string, which the enum-typed cell_class filter rejects
+        params = {"managed_element_ref": managed_element_ref, "cell_id": cell_id, "cell_class": cell_class,
+                  "sector_group": sector_group, "incident_zone": incident_zone}
+        return ensure_ok(self._r1.get("/ran-nf-oam/cell-guards", params={k: v for k, v in params.items() if v is not None}))
 
     def get_managed_entity(self, managed_element_ref: str) -> dict:
         return ensure_ok(self._r1.get(f"/ran-nf-oam/managed-entities/{managed_element_ref}"))
@@ -180,3 +181,41 @@ class DataClient(BaseClient):
 
     def get_o1_capabilities(self) -> dict:
         return ensure_ok(self._r1.get("/ran-nf-oam/capabilities"))
+
+    # ---------------------------------------------------------------- Wave 10.1: dataset access and O1 read-back
+    # W10-03 (decision D-4): convenience calls named as in the Wave 10
+    # documents, over the existing DME / RAN NF OAM routes.
+
+    def get_dataset(self, name: str, consumer_id: str, namespace: str | None = None, lifecycle_stage: str | None = None,
+                    max_records: int = 2000) -> dict:
+        """A dataset is a DME type, found by its name, type name or leaf name
+        (RAN NF OAM's PM counter types are `PMCounters.<counter>`, so
+        "PRB_UTILIZATION" finds `PMCounters.PRB_UTILIZATION`). Reuse (or create)
+        this consumer's data job on it, and return its records, oldest
+        first: {dmeTypeId, dataJobId, sourceDomain, records}. Raises
+        SdkError(404) if no such type is registered."""
+        dme_type = next((t for t in self.discover_types(namespace)
+                         if name in (t["dmeTypeIdStruct"]["name"], t["typeName"])
+                         or t["dmeTypeIdStruct"]["name"].rsplit(".", 1)[-1] == name), None)
+        if dme_type is None:
+            raise SdkError(404, {"title": "DME_TYPE_NOT_FOUND", "detail": f"no dataset {name!r}"})
+        type_id = dme_type["dmeTypeId"]
+        job = next((j for j in self.list_data_jobs(dme_type_id=type_id, consumer_id=consumer_id)
+                    if j.get("lifecycleStage") == lifecycle_stage), None)
+        job_id = job["dataJobId"] if job else self.create_data_job(
+            type_id, "CONTINUOUS", "PULL_HTTP", consumer_id, lifecycle_stage=lifecycle_stage)["dataJobId"]
+        records, offset = [], 0
+        while len(records) < max_records:
+            page = ensure_ok(self._r1.get(f"/dme/data-jobs/{job_id}/records", params={"limit": 500, "offset": offset}))
+            records.extend(page)
+            offset += len(page)
+            if len(page) < 500:
+                break
+        return {"dmeTypeId": type_id, "dataJobId": job_id, "sourceDomain": dme_type.get("sourceDomain"),
+                "records": list(reversed(records[:max_records]))}
+
+    def read_config(self, managed_element_ref: str, managed_function_ref: str | None = None) -> dict:
+        """The managed object's live running configuration (NETCONF
+        get-config through RAN NF OAM) — read-after-write verification."""
+        return ensure_ok(self._r1.get(f"/ran-nf-oam/managed-entities/{managed_element_ref}/config",
+                                      params={"managed_function_ref": managed_function_ref}))

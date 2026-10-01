@@ -4,6 +4,18 @@
       "ActionRequest": {
         "description": "DME's O1 action-mediation request \u2014 mirrors ran-nf-oam's own\nWriteConfigRequest.changes shape ({managedElementRef,\nmanagedFunctionRef?, attributeChanges?, operation?}), plus an\noptional real ProvMnS IOC class name per change (className, e.g.\n'GNBDUFunction'/'NRCellDU' \u2014 specs/O1_Adaptor/\nO1_Adaptor_MnS_Hierarchy_Mapping_v4.xlsx) for audit/documentation\npurposes; ran-nf-oam itself still resolves purely on\nmanagedElementRef, unchanged this wave.",
         "properties": {
+          "actionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actionid"
+          },
           "changes": {
             "items": {
               "additionalProperties": true,
