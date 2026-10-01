@@ -288,6 +288,7 @@ def start_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     inst.dmro_bounds = {**DEFAULT_DMRO_BOUNDS, **(config.get("dmroBounds") or {})}
     inst.autonomy_mode, inst.rmih_id = info.get("autonomyMode", "SHADOW"), config.get("rmihId", "sa-smos")
     inst.energy_saving_instance_id = config.get("energySavingInstanceId")
+    inst.traffic_steering_instance_id = config.get("trafficSteeringInstanceId")
     inst.operator_notification_uri = config.get("operatorNotificationUri")
     datasets = {}
     for stage, name in (("TRAINING", DATASET), ("INFERENCE", DATASET), ("EMULATION", SIM_DATASET)):
@@ -315,7 +316,8 @@ def _instance_view(i: MobilityInstance) -> dict:
     return {"instanceId": str(i.instance_id), "packageId": str(i.package_id) if i.package_id else None,
             "managedElementRef": i.managed_element_ref, "relations": i.relations, "baselineCio": i.baseline_cio,
             "dmroBounds": i.dmro_bounds, "autonomyMode": i.autonomy_mode, "rmihId": i.rmih_id,
-            "energySavingInstanceId": i.energy_saving_instance_id, "datasets": i.data_jobs,
+            "energySavingInstanceId": i.energy_saving_instance_id,
+            "trafficSteeringInstanceId": i.traffic_steering_instance_id, "datasets": i.data_jobs,
             "modelId": str(i.model_id) if i.model_id else None, "modelVersion": i.model_version,
             "artifactVersion": i.artifact_version, "model": i.model_params, "lifecycleJobs": i.lifecycle_jobs}
 
@@ -424,6 +426,16 @@ def _es_cells(inst: MobilityInstance) -> dict[str, dict]:
     return {c["cellId"]: c for c in resp.json().get("items", [])} if resp.status_code == 200 else {}
 
 
+def _mlb_observing(inst: MobilityInstance) -> set[str]:
+    """Relations the Traffic Steering rApp has a CIO change on under
+    observation (the shared-CIO arbitration, Wave 10.4 D10.4-1)."""
+    if not inst.traffic_steering_instance_id:
+        return set()
+    resp = _r1.get(f"/traffic-steering-rapp/instances/{inst.traffic_steering_instance_id}/relations")
+    return {r["relation"] for r in resp.json().get("items", []) if r.get("state") == "OBSERVING"} \
+        if resp.status_code == 200 else set()
+
+
 @app.post("/instances/{instance_id}/evaluate")
 def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """One pass of the closed loop over the instance's relations. Its
@@ -437,6 +449,7 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     series = by_relation(_dataset(inst, "INFERENCE"))
     guards = {g["cellId"]: g for g in sdk.data.query_cell_guards(managed_element_ref=inst.managed_element_ref)}
     es_cells = _es_cells(inst)
+    mlb = _mlb_observing(inst)
     model = MobilityModel.from_dict(inst.model_params)
 
     job = sdk.lifecycle.request_inference(inst.model_id)
@@ -461,7 +474,8 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
             last_changed_at=as_utc(row.last_changed_at) if row.last_changed_at else None, prediction=outputs[rid],
             ho_allowed=ho_allowed, source_guard=guards.get(rel["source"], {}), target_guard=guards.get(rel["target"], {}),
             target_o1_asleep=_target_o1_asleep(inst, rel["target"]), target_es_state=es.get("state"),
-            target_last_woken=parse_time(es["lastUnlockedAt"]) if es.get("lastUnlockedAt") else None))
+            target_last_woken=parse_time(es["lastUnlockedAt"]) if es.get("lastUnlockedAt") else None,
+            mlb_observing=rid in mlb))
         results[rid] = result
         row.current_cio = current
         decisions[rid] = d = MobilityDecision(

@@ -21,6 +21,7 @@ import { Policy } from "./pages/Policy";
 import { EnergySaving } from "./pages/EnergySaving";
 import { Mobility } from "./pages/Mobility";
 import { Coverage } from "./pages/Coverage";
+import { TrafficSteering } from "./pages/TrafficSteering";
 import { Rapps } from "./pages/Rapps";
 import "./styles.css";
 
@@ -63,6 +64,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="energy-saving" element={<EnergySaving />} />
                 <Route path="mobility" element={<Mobility />} />
                 <Route path="coverage" element={<Coverage />} />
+                <Route path="traffic-steering" element={<TrafficSteering />} />
                 <Route path="infrastructure" element={<Infrastructure />} />
                 <Route path="data" element={<Data />} />
                 <Route path="admin" element={<RequireAuth minRole="admin"><Admin /></RequireAuth>} />

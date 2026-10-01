@@ -1,0 +1,59 @@
+# TrafficSteering_rApp capabilities (Wave 10.4, W10.4-01).
+capabilities:
+  consumes:
+    - namespace: data
+      description: >-
+        LOAD_PERFORMANCE (per-cell PRB utilisation, connected UEs, UE
+        throughput and per-relation handover counters with the CM snapshot,
+        O1 PM via RAN NF OAM → DME) for training, validation and live
+        inference; LOAD_PERFORMANCE_SIM (Digital Twin, injected hotspots) for
+        emulation; cell guards, alarms and O1 config read-back from RAN NF OAM.
+    - namespace: models
+      description: Registers CongestionSteeringModel in MLMR and stores its artifact, via sdk.models.
+    - namespace: lifecycle
+      description: AIMgF training/validation/emulation jobs, MLLF + MLIF runtime deployment, inference jobs.
+    - namespace: intent
+      description: AutonomyDispatch of steering and release steps (SHADOW / ASSIST / AUTONOMOUS), via sdk.intent.
+    - namespace: platform
+      description: Direct DME O1 actions for KPI reverts and rollbacks, via sdk.platform.
+  provides:
+    - namespace: data
+      description: The LOAD_PERFORMANCE_SIM Digital Twin dataset (sample producer).
+
+datasets:
+  - LOAD_PERFORMANCE
+  - LOAD_PERFORMANCE_SIM
+supportedStages:
+  - TRAINING
+  - VALIDATION
+  - EMULATION
+  - INFERENCE
+producedModel:
+  name: CongestionSteeringModel
+  type: REGRESSION
+inputs:
+  - RRU.PrbTotDl
+  - RRC.ConnMean
+  - DRB.UEThpDl
+  - HO.Att
+  - HO.Fail
+  - CM.Cio
+  - CM.Prio
+outputs:
+  - cellReselectionPriority
+  - cellIndividualOffset
+supportedActions:
+  - STEER_IDLE
+  - STEER_CONNECTED
+  - RELEASE_IDLE
+  - RELEASE_CONNECTED
+  - REVERT
+o1Targets:
+  - NRFreqRelation
+  - NRCellRelation
+o1Attributes:
+  - cellReselectionPriority
+  - cellIndividualOffset
+supportedVendorModes:
+  - O1_NETCONF
+  - O1_RESTCONF

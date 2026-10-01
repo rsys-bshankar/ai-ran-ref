@@ -20,7 +20,8 @@ import zipfile
 from pathlib import Path
 
 SAMPLES_DIR = Path(__file__).resolve().parent
-SAMPLES = ["hello-world-rapp", "energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp"]
+SAMPLES = ["hello-world-rapp", "energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp",
+           "traffic-steering-rapp"]
 EXCLUDED_PARTS = {"__pycache__", "tests", ".pytest_cache"}
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 

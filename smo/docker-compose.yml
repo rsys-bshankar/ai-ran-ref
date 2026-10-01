@@ -43,6 +43,7 @@ services:
       ENERGY_SAVING_RAPP_URL: http://energy-saving-rapp:8000
       MOBILITY_OPTIMIZATION_RAPP_URL: http://mobility-optimization-rapp:8000
       COVERAGE_OPTIMIZATION_RAPP_URL: http://coverage-optimization-rapp:8000
+      TRAFFIC_STEERING_RAPP_URL: http://traffic-steering-rapp:8000
 
   sme:
     build: { context: ., args: { MODULE: sme } }
@@ -109,6 +110,15 @@ services:
   # (samples/coverage-optimization-rapp) — R1-only, like energy-saving-rapp.
   coverage-optimization-rapp:
     build: { context: ., args: { MODULE: samples/coverage-optimization-rapp } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+
+  # Wave 10.4: the Traffic Steering reference rApp
+  # (samples/traffic-steering-rapp) — R1-only, like energy-saving-rapp.
+  traffic-steering-rapp:
+    build: { context: ., args: { MODULE: samples/traffic-steering-rapp } }
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env

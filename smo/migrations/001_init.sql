@@ -1348,6 +1348,7 @@ CREATE TABLE mobility_instance (
   autonomy_mode             TEXT NOT NULL CHECK (autonomy_mode IN ('AUTONOMOUS','ASSIST','SHADOW')),
   rmih_id                   TEXT NOT NULL DEFAULT 'sa-smos',
   energy_saving_instance_id TEXT,                    -- coordination with the EnergySaving rApp (D10.2-4c)
+  traffic_steering_instance_id TEXT,                 -- shared-CIO arbitration with the Traffic Steering rApp (D10.4-1)
   operator_notification_uri TEXT,
   data_jobs                 JSONB NOT NULL DEFAULT '{}',
   model_id                  UUID,
@@ -1460,3 +1461,71 @@ CREATE TABLE coverage_decision (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX coverage_decision_instance_cell ON coverage_decision (instance_id, cell_id, created_at DESC);
+
+-- ============================================================
+-- Wave 10.4: the Traffic Steering reference rApp's own state
+-- (samples/traffic-steering-rapp/app/models.py)
+-- ============================================================
+CREATE TABLE traffic_instance (
+  instance_id               UUID PRIMARY KEY,
+  package_id                UUID,
+  managed_element_ref       TEXT NOT NULL,
+  cells                     JSONB NOT NULL,          -- [{cellId, layer}]
+  baseline_cio              INTEGER NOT NULL DEFAULT 0,
+  baseline_priority         INTEGER NOT NULL DEFAULT 5,
+  autonomy_mode             TEXT NOT NULL CHECK (autonomy_mode IN ('AUTONOMOUS','ASSIST','SHADOW')),
+  rmih_id                   TEXT NOT NULL DEFAULT 'sa-smos',
+  energy_saving_instance_id TEXT,                    -- coordination (D10.4-4c)
+  mobility_instance_id      TEXT,                    -- shared-CIO arbitration (D10.4-1)
+  coverage_instance_id      TEXT,
+  operator_notification_uri TEXT,
+  steering_log              JSONB NOT NULL DEFAULT '[]',   -- recent steering, for anti-oscillation
+  pending_dispatch          JSONB,                   -- ASSIST steps awaiting the operator
+  data_jobs                 JSONB NOT NULL DEFAULT '{}',
+  model_id                  UUID,
+  model_version             TEXT,
+  artifact_version          INTEGER,
+  model_params              JSONB,
+  lifecycle_jobs            JSONB NOT NULL DEFAULT '{}',
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE traffic_cell (
+  instance_id      UUID NOT NULL,
+  cell_id          TEXT NOT NULL,
+  state            TEXT NOT NULL DEFAULT 'STEADY' CHECK (state IN ('STEADY','OBSERVING')),
+  steering         JSONB NOT NULL DEFAULT '{}',      -- {"cio": {target: dB}, "prio": {layer: steps}} in force
+  last_change      JSONB,                            -- until confirmed or reverted
+  last_changed_at  TIMESTAMPTZ,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (instance_id, cell_id)
+);
+
+CREATE TABLE traffic_decision (
+  decision_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  execution_id   TEXT NOT NULL,
+  instance_id    UUID NOT NULL,
+  cell_id        TEXT NOT NULL,
+  observed_at    TIMESTAMPTZ,
+  score          DOUBLE PRECISION,
+  forecast       DOUBLE PRECISION,
+  prediction     JSONB,
+  safety         JSONB,
+  decision       TEXT NOT NULL CHECK (decision IN ('STEER_IDLE','STEER_CONNECTED','RELEASE_IDLE','RELEASE_CONNECTED','REVERT','NO_CHANGE')),
+  reason         TEXT NOT NULL,
+  knob           TEXT CHECK (knob IN ('IDLE','CONNECTED')),
+  managed_ref    TEXT,
+  targets        JSONB,
+  from_value     INTEGER,
+  to_value       INTEGER,
+  outcome        TEXT NOT NULL,
+  kpi            JSONB,
+  intent         JSONB,
+  action         JSONB,
+  verification   JSONB,
+  rollback       JSONB,
+  final_state    JSONB,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX traffic_decision_instance_cell ON traffic_decision (instance_id, cell_id, created_at DESC);

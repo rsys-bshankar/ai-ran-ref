@@ -65,6 +65,9 @@ DEFAULT_CM_TARGETS = {
     # by RAN NF OAM like the CIO)
     "CommonBeamformingFunction.digitalTilt": [],
     "NRSectorCarrier.configuredMaxTxPower": [],
+    # Wave 10.4 (W10.4-06): a cell's idle-mode reselection priority towards a
+    # frequency layer (Cell-context values name NRFreqRelation=<cell>-<layer>)
+    "NRFreqRelation.cellReselectionPriority": [],
 }
 SUCCESS_STATUSES = {"COMPLETED"}
 ACTION_ID_NAMESPACE = uuid.UUID("6f2b8c1e-3d4a-5b6c-8d9e-0a1b2c3d4e5f")

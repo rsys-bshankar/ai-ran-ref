@@ -81,6 +81,9 @@ const TONES: Record<string, string> = {
   ACTION_FAILED_ROLLED_BACK: "bad", VERIFY_FAILED_ROLLED_BACK: "bad",
   // Wave 10.3 Coverage Optimization rApp
   DOWNTILT: "info", UPTILT: "info", POWER_UP: "info", POWER_DOWN: "info", REVERT: "warn",
+  // Wave 10.4 Traffic Steering rApp
+  STEER_IDLE: "info", STEER_CONNECTED: "info", RELEASE_IDLE: "ok", RELEASE_CONNECTED: "ok",
+  CONGESTED: "bad", NORMAL: "ok",
 };
 
 export function StateBadge({ state }: { state: string | null | undefined }) {

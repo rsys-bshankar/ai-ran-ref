@@ -30,6 +30,7 @@ class MobilityInstance(Base):
     autonomy_mode: Mapped[str] = mapped_column(String, nullable=False)
     rmih_id: Mapped[str] = mapped_column(String, nullable=False, default="sa-smos")
     energy_saving_instance_id: Mapped[str | None] = mapped_column(String)  # coordination (D10.2-4c)
+    traffic_steering_instance_id: Mapped[str | None] = mapped_column(String)  # CIO arbitration (D10.4-1)
     operator_notification_uri: Mapped[str | None] = mapped_column(String)
     data_jobs: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     model_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)

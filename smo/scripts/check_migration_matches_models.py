@@ -50,6 +50,7 @@ ALL_MODULES = [
     "samples/energy-saving-rapp",  # Wave 10.1: the reference rApp's own tables
     "samples/mobility-optimization-rapp",  # Wave 10.2
     "samples/coverage-optimization-rapp",  # Wave 10.3
+    "samples/traffic-steering-rapp",  # Wave 10.4
 ]
 
 

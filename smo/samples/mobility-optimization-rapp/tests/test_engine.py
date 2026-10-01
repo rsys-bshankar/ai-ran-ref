@@ -47,6 +47,7 @@ def test_bounds_hold_and_healthy():
     ({"target_last_woken": T0 + datetime.timedelta(minutes=45)}, "TARGET_RECENTLY_WOKEN"),
     ({"series": _series(LATE, {**LATE, ATTEMPTS: 40})}, "INSUFFICIENT_SAMPLES"),
     ({"last_changed_at": T0 + datetime.timedelta(minutes=30)}, "PACING"),
+    ({"mlb_observing": True}, "MLB_OBSERVING"),
 ])
 def test_guards_block_whatever_the_confidence(kw, guard):
     d = decide(_rel(**kw))

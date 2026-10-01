@@ -109,6 +109,10 @@ sequenceDiagram
   - one whose source or target is in an incident zone.
 
   Every guard that blocks is recorded in the decision's reason.
+- **The CIO is shared with the Traffic Steering rApp** (Wave 10.4,
+  D10.4-1). When the instance is given `trafficSteeringInstanceId`, a
+  relation that rApp is observing a CIO step on is held (`MLB_OBSERVING`).
+  The two rApps keep the CIO inside the same baseline ± 6 dB envelope.
 - **The audit trail** (`GET /instances/{id}/decisions`) has one row per
   relation per pass:
   Prediction → Safety → Decision → Intent → Action → Verification → KPI →

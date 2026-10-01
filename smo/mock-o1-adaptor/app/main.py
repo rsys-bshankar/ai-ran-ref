@@ -43,7 +43,7 @@ IOC_DEFAULTS = {
     "CESManagementFunction": {"energySavingControl": "TO_BE_NOT_ENERGY_SAVING", "energySavingState": "IS_NOT_ENERGY_SAVING"},
     # Wave 10.2 (W10.2-04): a neighbour relation's CIO — TS 28.541's six
     # QOffsetRange entries (dB) — and whether handover over it is allowed
-    "NRCellRelation": {"cellIndividualOffset": "[0, 0, 0, 0, 0, 0]", "isHOAllowed": "true"},
+    "NRCellRelation": {"cellIndividualOffset": "[0, 0, 0, 0, 0, 0]", "isHOAllowed": "true", "isMLBAllowed": "true"},
     # the gNB's own distributed MRO (TS 28.541 DMROFunction) and its bounds
     "DMROFunction": {"dmroControl": "true", "maximumDeviationHoTriggerLow": "-12", "maximumDeviationHoTriggerHigh": "12",
                      "minimumTimeBetweenHoTriggerChange": "10", "tstoreUEcntxt": "100"},
@@ -52,6 +52,9 @@ IOC_DEFAULTS = {
     # carrier's maximum transmit power (dBm in this build)
     "CommonBeamformingFunction": {"digitalTilt": "60", "digitalAzimuth": "0", "coverageShape": "0"},
     "NRSectorCarrier": {"configuredMaxTxPower": "43", "txDirection": "DL_AND_UL"},
+    # Wave 10.4 (W10.4-04): a cell's idle-mode relation to a frequency layer
+    # (NRFreqRelation=<cell>-<layer>) — the reselection priority it broadcasts
+    "NRFreqRelation": {"cellReselectionPriority": "5", "qOffsetFreq": "0"},
 }
 # TS 28.541 CESManagementFunction: energySavingState follows energySavingControl
 ENERGY_SAVING_STATE = {"TO_BE_ENERGY_SAVING": "IS_ENERGY_SAVING", "TO_BE_NOT_ENERGY_SAVING": "IS_NOT_ENERGY_SAVING"}
