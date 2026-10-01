@@ -131,15 +131,23 @@ jobs:
           GUI_COOKIE_SECURE: "false"
         run: docker compose up -d --build
 
-      - name: Serve the sample CSAR on the compose network (DEMO_RUNBOOK §1)
-        working-directory: smo
-        run: |
-          docker compose cp samples/hello-world-rapp.csar r1-termination:/tmp/hello-world-rapp.csar
-          docker compose exec -d r1-termination python3 -m http.server 8899 --directory /tmp
-
-      - name: Every service healthy + onboard, deploy, bootstrap (DEMO_RUNBOOK §2-§4)
+      - name: Every service up, R1 gate answers (fast gate)
         working-directory: smo
         run: docker compose exec -T r1-termination python3 - < scripts/compose_e2e.py
+
+      - name: Replay DEMO_RUNBOOK §2-§27 against the live stack
+        working-directory: smo
+        # The same test file the in-process suite runs, with SMO_E2E_LIVE=1: a
+        # container on the compose network drives every module by hostname, and
+        # stands in as `demo-consumer` (the runbook's callback receiver) and as
+        # the package server (tests_integration/live.py).
+        run: |
+          docker run --rm --network smo_default --network-alias demo-consumer \
+            -e SMO_E2E_LIVE=1 -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
+            -v "$PWD/..:/work" -w /work/smo python:3.11-slim sh -c '
+              pip install -q -e shared fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic \
+                python-multipart jsonschema pyyaml pytest defusedxml "pyjwt[crypto]" &&
+              python -m pytest tests_integration/test_demo_runbook.py -v -p no:cacheprovider'
 
       - name: a1_mock_net isolation (RT-7)
         working-directory: smo

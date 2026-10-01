@@ -25,6 +25,7 @@ from smo_shared.testing import make_test_engine  # noqa: E402
 
 from loader import load_app_module  # noqa: E402
 from mesh import ServiceMesh, install as install_mesh  # noqa: E402
+import live  # noqa: E402
 
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
@@ -147,3 +148,60 @@ def mesh(loaded_apps, db_connection, monkeypatch):
 
     for main_module in loaded_apps.values():
         main_module.app.dependency_overrides.clear()
+
+
+class Callbacks:
+    """How a test observes the notifications a module sends to a
+    caller-registered destination (the runbook's `http://demo-consumer:9000/...`).
+
+    In-process, `httpx.post` inside the module is intercepted and the
+    delivery refused, like the runbook's own "no listener" note. Live
+    (`SMO_E2E_LIVE=1`), the destination is a real listener (`live.Receiver`)
+    and the module's own delivery lands on it. Either way `capture()` returns
+    a list of the payloads delivered since the call (`with_location=True`:
+    `(url, payload)` pairs)."""
+
+    live = live.LIVE
+
+    def __init__(self, loaded_apps, monkeypatch, receiver):
+        self._apps, self._monkeypatch, self._receiver = loaded_apps, monkeypatch, receiver
+
+    def csar_url(self, in_process_url: str) -> str:
+        return f"{live.CALLBACK_BASE}/csar/{in_process_url.rsplit('/', 1)[-1]}" if live.LIVE else in_process_url
+
+    def capture(self, module: str, url_prefix: str, with_location: bool = False):
+        if live.LIVE:
+            return live.LiveCapture(self._receiver, url_prefix, with_location)
+        import httpx
+        captured: list = []
+        real_post = httpx.post
+
+        def fake_post(location, json=None, timeout=None, **kwargs):
+            if location.startswith(url_prefix):
+                captured.append((location, json) if with_location else json)
+                raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
+            return real_post(location, json=json, timeout=timeout, **kwargs)
+
+        self._monkeypatch.setattr(self._apps[module].httpx, "post", fake_post)
+        return captured
+
+
+@pytest.fixture(scope="session")
+def receiver():
+    return live.Receiver() if live.LIVE else None
+
+
+@pytest.fixture
+def callbacks(loaded_apps, monkeypatch, receiver):
+    return Callbacks(loaded_apps, monkeypatch, receiver)
+
+
+if live.LIVE:
+    # SMO_E2E_LIVE=1: no in-process apps, no test DB — the stack is running.
+    @pytest.fixture(scope="session")
+    def loaded_apps():  # noqa: F811
+        return live.stub_apps()
+
+    @pytest.fixture
+    def mesh(loaded_apps):  # noqa: F811
+        return live.live_mesh()
