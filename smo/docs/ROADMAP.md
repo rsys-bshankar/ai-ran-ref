@@ -303,6 +303,29 @@ are flat REST collections, not a DN containment tree. Each resource is
 returned as `{"id", "attributes"}`, mirroring the spec's `-Single` shape.
 Containment is a `…Ref` attribute on the child ("containment as reference").
 
+### Compliance limits (what stops "100%")
+
+"Compliant" above means the spec YAML is realised as REST resources with spec
+names and enums. It does not mean full conformance to the whole TS. Each
+limit below is tracked in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) §3.
+
+| Standard | Module(s) | REST-level status | Limits to 100% |
+|---|---|---|---|
+| TS 28.104 | MDAF | 48/48 rows | `STREAMING` is recorded, not streamed (SA-MDA-5, no TS 28.532 streaming transport); `recommendationFilter`, `performanceThresholdInfo`, `analysisRequirements`, `thresholdMonitorRefList` stored not enforced; `areaScope` stored not matched; backing-model refs set by the caller; flat addressing |
+| TS 28.312 | Intent Service | 83/91 rows, 8 partial | SA-INTENT-partial: 8 value datatypes without inner structure; flat addressing |
+| TS 28.105 | AIMgF, MLMR, MLLF, runtime | 125/126 attributes | `ThresholdMonitors` (TS 28.623 containment, MLMF equivalent); FL/RL stored, no training engine; runtime scale has no target size; flat addressing |
+| TS 29.482 | MLMR | Partial | SA-MLMR-1, 6, 7, 8, 9 |
+| TS 28.532 / 28.111 / 28.319 | RAN NF OAM | Partial | SA-RANOAM-1, 2, 4, 6-severity, 8 |
+| O2IMS | FOCOM | Partial | SA-FOCOM-2, 6, 7, 9 |
+| TS 28.541 + WG10/WG5 | RAN NF OAM | Partial | SA-O1-4: WG10 O1NRM and WG5 classes not modelled |
+
+RAN Analytics is not in this table: it realises no standard (it is a producer
+registry, separate from MDAF).
+
+Spec conformance is closed module by module (16 items): RAN NF OAM (5),
+FOCOM (4), MLMR (5), Intent Service (1), O1 vendor models (1). Each closes in
+its own PR with the matching `OPEN_ITEMS.md` and matrix rows updated.
+
 ### TS 28.105
 
 AI/ML NRM, AIMgF and MLMR (`specs/5G_APIs/TS28105_AiMlNrm.yaml`).
