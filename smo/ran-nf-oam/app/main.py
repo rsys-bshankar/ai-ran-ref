@@ -28,8 +28,9 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
-from .models import Alarm, CMSchemaCache, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, CMSchemaCache, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from .netconf_client import send_edit_config
+from .vendors import MnsService, check_vendor_mode, require_service, router as vendors_router, schema_problems
 from .statemachine import (
     ENDPOINT_HEALTH_FSM,
     SOFTWARE_MANAGEMENT_FSM,
@@ -67,6 +68,9 @@ class RegisterO1AdaptorEndpointRequest(BaseModel):
     entityType: str
     managedFunctionRef: str | None = None
     vendorName: str | None = None
+    # Wave 9 (W9-01): the MnS services this adaptor implements; omitted =
+    # its vendor's declared capability (vendors.py)
+    supportedServices: list[MnsService] | None = None
 
 
 @app.post("/o1-adaptor-endpoints", status_code=201)
@@ -95,8 +99,16 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
     column default `ACTIVE` (chosen for other callers' test
     convenience) — since a fresh registration hasn't heartbeated yet.
     """
+    # Wave 9 (W9-04): a registered vendor's endpoint must use a transport
+    # (vendor mode) the vendor declared, and can't claim services it lacks.
+    check_vendor_mode(db, body.vendorName, body.o1Protocol)
+    cap = db.get(VendorCapability, body.vendorName) if body.vendorName else None
+    if cap is not None and body.supportedServices is not None and not set(body.supportedServices) <= set(cap.supported_services):
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                              detail=f"supportedServices {body.supportedServices} exceed vendor {body.vendorName!r}'s {cap.supported_services}")
     endpoint = O1AdaptorEndpoint(managed_element_ref=body.managedElementRef, adaptor_uri=body.adaptorUri,
-                                  protocol_support=body.protocolSupport, health_status=EndpointHealth.DISCOVERED.value)
+                                  protocol_support=body.protocolSupport, health_status=EndpointHealth.DISCOVERED.value,
+                                  supported_services=body.supportedServices)
     db.add(endpoint)
     db.flush()
     me = ManagedEntity(managed_element_ref=body.managedElementRef, managed_function_ref=body.managedFunctionRef,
@@ -115,6 +127,16 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
     """
     if body.scope == "entire-RAN" and not body.msacRole:
         raise framework_error(FrameworkError.MSAC_ACCESS_DENIED, detail="entire-RAN scope requires an MSAC access tier")
+    # Wave 9 (W9-02): the pre-check is real now — every change's ME must
+    # implement Provisioning, and its class/attributes/values must exist in
+    # the data model its vendor's conformance mode selects. Nothing is
+    # dispatched (or recorded) if any change fails.
+    problems = []
+    for change in body.changes:
+        require_service(db, change["managedElementRef"], "PROV")
+        problems.extend(schema_problems(db, change))
+    if problems:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="; ".join(problems))
 
     job = WriteConfigJob(requested_by=body.requestedBy, scope=body.scope, msac_role=body.msacRole)
     db.add(job)
@@ -215,6 +237,7 @@ def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, 
     TS28111_FaultNrm.yaml's AlarmRecord) was the one of these fields
     still missing after that pass.
     """
+    require_service(db, managed_element_ref, "FM")  # Wave 9 (W9-01)
     alarm = Alarm(source_alarm_id=source_alarm_id, managed_element_ref=managed_element_ref, severity=severity, correlation_group=correlation_group,
                   probable_cause=probable_cause, specific_problem=specific_problem, root_cause_indicator=root_cause_indicator,
                   correlated_notifications=correlated_notifications or [], proposed_repair_actions=proposed_repair_actions,
@@ -270,6 +293,7 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
     carrying despite the wrapper scope cut; everything else on that
     schema (schedule/priority/multi-instance/reportingPeriod) stays out.
     """
+    require_service(db, managed_element_ref, "PM")  # Wave 9 (W9-01)
     engine = {"pull": "ProvMnS", "push": "PMJobControl", "stream": "StreamingDataReporting"}.get(delivery_method, "FileDataReporting")
     sub = PMSubscription(managed_element_ref=managed_element_ref, counter_type=counter_type, delivery_method=delivery_method,
                           southbound_engine=engine, granularity_period=granularity_period)
@@ -317,6 +341,7 @@ def stop_dme_job(data_job_id: str):
 
 @app.post("/software-management-jobs", status_code=202)
 def software_update(managed_element_ref: str, ru_instance_id: str | None = None, db: Session = Depends(get_session)):
+    require_service(db, managed_element_ref, "SWM")  # Wave 9 (W9-01)
     job = SoftwareManagementJob(managed_element_ref=managed_element_ref, ru_instance_id=ru_instance_id, status="PENDING", phase="DOWNLOAD")
     db.add(job)
     db.flush()
@@ -447,6 +472,7 @@ def subscribe_fm(managed_element_ref: str, delivery_method: str, db: Session = D
     PATCH /alarms/{alarm_id}/clear, called by the source NF or an
     operator, unaffected by whether FM is DME-registered.
     """
+    require_service(db, managed_element_ref, "FM")  # Wave 9 (W9-01)
     engine = {"pull": "FaultMnS", "push": "FaultMnS", "stream": "StreamingDataReporting"}.get(delivery_method, "FaultMnS")
     sub = FMSubscription(managed_element_ref=managed_element_ref, delivery_method=delivery_method, southbound_engine=engine)
     db.add(sub)
@@ -494,7 +520,8 @@ def list_o1_adaptor_endpoints(health_status: str | None = None, limit: int = Pag
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"endpointId": str(ep.endpoint_id), "managedElementRef": ep.managed_element_ref, "adaptorUri": ep.adaptor_uri,
              "protocolSupport": ep.protocol_support, "registeredVia": ep.registered_via, "healthStatus": ep.health_status,
-             "lastHeartbeatAt": ep.last_heartbeat_at.isoformat() if ep.last_heartbeat_at else None}
+             "lastHeartbeatAt": ep.last_heartbeat_at.isoformat() if ep.last_heartbeat_at else None,
+             "supportedServices": ep.supported_services}
             for ep in page["items"]]}
 
 
@@ -518,3 +545,7 @@ def list_software_management_jobs(managed_element_ref: str | None = None, limit:
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"jobId": str(j.job_id), "managedElementRef": j.managed_element_ref, "ruInstanceId": j.ru_instance_id,
              "phase": j.phase, "status": j.status} for j in page["items"]]}
+
+
+# Wave 9 — multi-vendor capability registry, CM schemas, cell guards (vendors.py)
+app.include_router(vendors_router)

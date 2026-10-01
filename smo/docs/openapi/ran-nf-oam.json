@@ -1,6 +1,94 @@
 {
   "components": {
     "schemas": {
+      "CMSchemaBody": {
+        "additionalProperties": false,
+        "properties": {
+          "descriptor": {
+            "additionalProperties": true,
+            "description": "{\"classes\": {\"<IOC>\": {\"<attribute>\": {\"type\": ..., \"enum\"?: [...]}}}}",
+            "title": "Descriptor",
+            "type": "object"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "revision": {
+            "default": "",
+            "title": "Revision",
+            "type": "string"
+          },
+          "schemaName": {
+            "title": "Schemaname",
+            "type": "string"
+          },
+          "type": {
+            "default": "DESCRIPTOR",
+            "enum": [
+              "YANG",
+              "OPENAPI_NRM",
+              "DESCRIPTOR"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaName",
+          "location",
+          "descriptor"
+        ],
+        "title": "CMSchemaBody",
+        "type": "object"
+      },
+      "CellGuardBody": {
+        "additionalProperties": false,
+        "properties": {
+          "cellClass": {
+            "default": "NORMAL",
+            "enum": [
+              "EMERGENCY",
+              "COVERAGE_CRITICAL",
+              "NORMAL"
+            ],
+            "title": "Cellclass",
+            "type": "string"
+          },
+          "incidentZone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incidentzone"
+          },
+          "neighbourRefs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Neighbourrefs",
+            "type": "array"
+          },
+          "sectorGroup": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectorgroup"
+          }
+        },
+        "title": "CellGuardBody",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -50,6 +138,30 @@
             "title": "Protocolsupport",
             "type": "array"
           },
+          "supportedServices": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "PROV",
+                    "FM",
+                    "PM",
+                    "FILE",
+                    "STREAM",
+                    "SWM",
+                    "SUBSCRIPTION",
+                    "HEARTBEAT"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedservices"
+          },
           "vendorName": {
             "anyOf": [
               {
@@ -70,6 +182,25 @@
           "entityType"
         ],
         "title": "RegisterO1AdaptorEndpointRequest",
+        "type": "object"
+      },
+      "SchemaRef": {
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "default": "",
+            "title": "Revision",
+            "type": "string"
+          },
+          "schemaName": {
+            "title": "Schemaname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaName"
+        ],
+        "title": "SchemaRef",
         "type": "object"
       },
       "ValidationError": {
@@ -110,6 +241,184 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VendorCapabilityBody": {
+        "additionalProperties": false,
+        "properties": {
+          "conformanceMode": {
+            "default": "SPEC",
+            "enum": [
+              "OWN",
+              "SPEC",
+              "COMBINED"
+            ],
+            "title": "Conformancemode",
+            "type": "string"
+          },
+          "schemaRef": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SchemaRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "specSchemaRef": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SchemaRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supportedServices": {
+            "items": {
+              "enum": [
+                "PROV",
+                "FM",
+                "PM",
+                "FILE",
+                "STREAM",
+                "SWM",
+                "SUBSCRIPTION",
+                "HEARTBEAT"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Supportedservices",
+            "type": "array"
+          },
+          "supportedVendorModes": {
+            "default": [
+              "O1_NETCONF"
+            ],
+            "items": {
+              "enum": [
+                "O1_NETCONF",
+                "O1_RESTCONF"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Supportedvendormodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "supportedServices"
+        ],
+        "title": "VendorCapabilityBody",
+        "type": "object"
+      },
+      "VendorOnboardingBody": {
+        "additionalProperties": false,
+        "properties": {
+          "conformanceMode": {
+            "default": "SPEC",
+            "enum": [
+              "OWN",
+              "SPEC",
+              "COMBINED"
+            ],
+            "title": "Conformancemode",
+            "type": "string"
+          },
+          "discoverFrom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discoverfrom"
+          },
+          "schemaRef": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SchemaRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schemas": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CMSchemaBody"
+            },
+            "title": "Schemas",
+            "type": "array"
+          },
+          "specSchemaRef": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SchemaRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supportedServices": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "PROV",
+                    "FM",
+                    "PM",
+                    "FILE",
+                    "STREAM",
+                    "SWM",
+                    "SUBSCRIPTION",
+                    "HEARTBEAT"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedservices"
+          },
+          "supportedVendorModes": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "O1_NETCONF",
+                    "O1_RESTCONF"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedvendormodes"
+          },
+          "vendorName": {
+            "title": "Vendorname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendorName"
+        ],
+        "title": "VendorOnboardingBody",
         "type": "object"
       },
       "WriteConfigRequest": {
@@ -532,6 +841,300 @@
         "summary": "Clear Alarm"
       }
     },
+    "/capabilities": {
+      "get": {
+        "description": "What this RAN NF OAM can drive across every registered vendor \u2014\n`supportedVendorModes` is the union of the vendors' declared modes.",
+        "operationId": "o1_capabilities_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "O1 Capabilities"
+      }
+    },
+    "/cell-guards": {
+      "get": {
+        "description": "The guard query any rApp uses (e.g. the EnergySaving rApp never\nsleeps an EMERGENCY cell, nor two cells of one sectorGroup at once).",
+        "operationId": "query_cell_guards_cell_guards_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cell_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cell Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cell_class",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "EMERGENCY",
+                    "COVERAGE_CRITICAL",
+                    "NORMAL"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cell Class"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sector_group",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sector Group"
+            }
+          },
+          {
+            "in": "query",
+            "name": "incident_zone",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Incident Zone"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Query Cell Guards"
+      }
+    },
+    "/cm-schemas": {
+      "get": {
+        "operationId": "list_cm_schemas_cm_schemas_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Cm Schemas"
+      },
+      "post": {
+        "operationId": "load_cm_schema_cm_schemas_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CMSchemaBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Load Cm Schema"
+      }
+    },
+    "/cm-schemas/{schema_name}": {
+      "get": {
+        "operationId": "get_cm_schema_cm_schemas__schema_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schema_name",
+            "required": true,
+            "schema": {
+              "title": "Schema Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "revision",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Revision",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Cm Schema"
+      }
+    },
     "/config-jobs": {
       "get": {
         "operationId": "list_write_config_jobs_config_jobs_get",
@@ -912,6 +1515,209 @@
           }
         },
         "summary": "Health Check"
+      }
+    },
+    "/managed-entities": {
+      "get": {
+        "operationId": "list_managed_entities_managed_entities_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "vendor_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vendor Name"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Managed Entities"
+      }
+    },
+    "/managed-entities/{managed_element_ref}": {
+      "get": {
+        "operationId": "get_managed_entity_managed_entities__managed_element_ref__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Managed Entity"
+      }
+    },
+    "/managed-entities/{managed_element_ref}/cells/{cell_id}/guards": {
+      "delete": {
+        "operationId": "delete_cell_guards_managed_entities__managed_element_ref__cells__cell_id__guards_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cell_id",
+            "required": true,
+            "schema": {
+              "title": "Cell Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Cell Guards"
+      },
+      "put": {
+        "operationId": "set_cell_guards_managed_entities__managed_element_ref__cells__cell_id__guards_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cell_id",
+            "required": true,
+            "schema": {
+              "title": "Cell Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CellGuardBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Cell Guards"
       }
     },
     "/o1-adaptor-endpoints": {
@@ -1417,6 +2223,210 @@
           }
         },
         "summary": "Advance Software Job"
+      }
+    },
+    "/vendor-capabilities": {
+      "get": {
+        "operationId": "list_vendor_capabilities_vendor_capabilities_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Vendor Capabilities"
+      }
+    },
+    "/vendor-capabilities/{vendor_name}": {
+      "delete": {
+        "operationId": "delete_vendor_capability_vendor_capabilities__vendor_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vendor_name",
+            "required": true,
+            "schema": {
+              "title": "Vendor Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Vendor Capability"
+      },
+      "get": {
+        "operationId": "get_vendor_capability_vendor_capabilities__vendor_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vendor_name",
+            "required": true,
+            "schema": {
+              "title": "Vendor Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Vendor Capability"
+      },
+      "put": {
+        "operationId": "declare_vendor_capability_vendor_capabilities__vendor_name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vendor_name",
+            "required": true,
+            "schema": {
+              "title": "Vendor Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorCapabilityBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Declare Vendor Capability"
+      }
+    },
+    "/vendor-onboarding": {
+      "post": {
+        "description": "Endpoint discovery \u2192 capability declaration \u2192 schema load, as one\ncall (call flow 21). Values given in the body win over discovered ones.\n\nDiscovery only ever contacts an adaptor already in this module's own\nendpoint registry \u2014 the one CM writes are sent to anyway \u2014 never a URL\ntaken from the request: its declaration is read at the fixed path\n`/capabilities` on that adaptor's registered origin.",
+        "operationId": "onboard_vendor_vendor_onboarding_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorOnboardingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Onboard Vendor"
       }
     }
   },

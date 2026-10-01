@@ -195,3 +195,14 @@ def test_get_and_list_actions(client, r1):
     client.list_actions(requested_by="energy-optimizer")
     assert r1.calls[0] == {"verb": "get", "path": f"/dme/actions/{action_id}", "params": None}
     assert r1.calls[1] == {"verb": "get", "path": "/dme/actions", "params": {"managed_element_ref": None, "requested_by": "energy-optimizer"}}
+
+
+def test_ran_inventory_reads(client, r1):
+    client.query_cell_guards(managed_element_ref="me-1", cell_class="EMERGENCY")
+    client.get_managed_entity("me-1")
+    client.get_vendor_capability("acme")
+    client.get_o1_capabilities()
+    assert r1.calls[0] == {"verb": "get", "path": "/ran-nf-oam/cell-guards", "params": {
+        "managed_element_ref": "me-1", "cell_id": None, "cell_class": "EMERGENCY", "sector_group": None, "incident_zone": None}}
+    assert [c["path"] for c in r1.calls[1:]] == [
+        "/ran-nf-oam/managed-entities/me-1", "/ran-nf-oam/vendor-capabilities/acme", "/ran-nf-oam/capabilities"]

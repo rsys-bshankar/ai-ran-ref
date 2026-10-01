@@ -1,6 +1,33 @@
 # O1 Termination — Per-Vendor Onboarding Guide
 
-**Status: design sketch, not implemented.** No code in this build enforces
+**Status: implemented in Wave 9** (`docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md`
+W9-01..06; `ran-nf-oam/app/vendors.py`, call flow 21). The registry is
+built close to the sketch below. Differences:
+
+- **The capability lives in a per-vendor registry.** `vendor_capability`
+  holds the vendor's services, conformance mode and vendor modes.
+  `O1AdaptorEndpoint.supported_services` can narrow those services for one
+  endpoint, but never widen them.
+- **Descriptors are generated from NRM OpenAPI definitions.**
+  `scripts/ingest_cm_schema.py` reads definitions such as
+  `specs/5G_APIs/TS28541_NrNrm.yaml`, not YANG. The TS 28.541 descriptor is
+  bundled as the default `SPEC` model, and a YANG front end is still future
+  work.
+- **Discovery reads only an adaptor that is already registered.**
+  `POST /vendor-onboarding` names a registered managed element
+  (`discoverFrom`). It reads that adaptor's `/capabilities`, never a URL
+  supplied in the request.
+- **DME passes refusals back unchanged.** It forwards RAN NF OAM's 4xx
+  rather than duplicating the checks.
+- **It is built before a second real vendor exists.** The Wave 9 work
+  items call for it now; the mock O1 adaptor's configurable
+  `GET /capabilities` stands in for a second vendor's declaration.
+
+The rest of this document is the original sketch, kept as the design
+rationale. Its "already works" / "missing" sections describe the code as
+it was before Wave 9.
+
+**Original status: design sketch, not implemented.** No code in this build enforces
 any of the capability-registry mechanics below — every "already works"
 claim here is checked against the real current code (file/line cited);
 every "sketch" claim is explicitly marked as unbuilt. Written per explicit

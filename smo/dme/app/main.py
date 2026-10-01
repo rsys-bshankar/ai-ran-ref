@@ -728,11 +728,19 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
     )
     db.add(record)
     db.commit()
+    # Wave 9 (W9-02): className is forwarded too — RAN NF OAM's write
+    # pre-check validates each change against its vendor's data model.
     resp = _r1.post("/ran-nf-oam/config-jobs", json={
-        "requestedBy": body.requestedBy, "scope": body.scope, "msacRole": body.msacRole,
-        "changes": [{k: v for k, v in change.items() if k != "className"} for change in body.changes],
+        "requestedBy": body.requestedBy, "scope": body.scope, "msacRole": body.msacRole, "changes": body.changes,
     })
     forwarded = resp.json()
+    if resp.status_code >= 400:
+        # Refused at the pre-check (unsupported MnS service, schema
+        # violation, MSAC): the rApp gets RAN NF OAM's own 4xx directly,
+        # and the action is recorded as REJECTED rather than forwarded.
+        record.status = "REJECTED"
+        db.commit()
+        raise HTTPException(status_code=resp.status_code, detail=forwarded.get("detail"))
     record.forwarded_job_id = uuid.UUID(forwarded["jobId"])
     record.status = forwarded["status"]
     db.commit()

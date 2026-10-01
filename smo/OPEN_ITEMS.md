@@ -1124,7 +1124,11 @@ own §1/§2 items stand as-is.
     dispatch implementation yet and is rejected with the (previously
     dormant) `PROTOCOL_NOT_SUPPORTED` rather than silently applied.
     Scoped to the CM-write path only — the separate `cm_schema_cache`
-    fetch path is untouched.
+    fetch path is untouched. *(Wave 9: `cm_schema_cache` now holds real
+    data-model descriptors. Every CM write is checked against the one its
+    vendor's conformance mode selects, and FM/PM/SWM/PROV operations are
+    gated on the vendor's declared MnS services — see
+    `docs/architecture/O1_VENDOR_ONBOARDING_GUIDE.md` and call flow 21.)*
   - **SA SMOS `RECONNECT`/`ROLLBACK`** (`sa-smos/`) — split into two
     different problems. `RECONNECT` is now resolved: it reads the
     `AssuranceMonitor`'s `target_order_id` back from SO SMOS's own order

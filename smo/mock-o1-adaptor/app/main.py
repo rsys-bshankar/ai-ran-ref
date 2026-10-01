@@ -19,6 +19,8 @@ mock-near-rt-ric's own "give the real caller something real to call, not
 a full protocol implementation" scope.
 """
 
+import os
+
 import defusedxml.ElementTree as ET
 from defusedxml.common import DefusedXmlException
 from fastapi import FastAPI, Request, Response
@@ -78,6 +80,23 @@ async def edit_config(request: Request) -> Response:
     else:
         _applied_changes[ref] = attribute_changes
     return _reply(message_id, ok=True)
+
+
+@app.get("/capabilities")
+def declare_capabilities():
+    """The vendor capability declaration RAN NF OAM's vendor onboarding
+    flow discovers (Wave 9 W9-03, `POST /ran-nf-oam/vendor-onboarding`
+    with `discoverFrom`, read at this fixed path on the adaptor's registered
+    origin): which vendor this adaptor fronts, which MnS
+    services it implements and which O1 transports it speaks. Configurable
+    per deployment so one image can stand in for several vendors.
+    """
+    return {
+        "vendorName": os.environ.get("MOCK_O1_VENDOR_NAME", "mock-vendor"),
+        "supportedServices": os.environ.get("MOCK_O1_SUPPORTED_SERVICES",
+                                            "PROV,FM,PM,FILE,STREAM,SWM,SUBSCRIPTION,HEARTBEAT").split(","),
+        "supportedVendorModes": os.environ.get("MOCK_O1_VENDOR_MODES", "O1_NETCONF").split(","),
+    }
 
 
 @app.get("/edit-config/{managed_object_ref}")

@@ -15,7 +15,7 @@ from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import Alarm, CMSchemaCache, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from app.models import Alarm, CMSchemaCache, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, VendorCapability, WriteConfigJob, WriteConfigSubChange
 
 
 @pytest.fixture
@@ -24,6 +24,7 @@ def db_session_factory():
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__,
         WriteConfigJob.__table__, WriteConfigSubChange.__table__, PMSubscription.__table__, FMSubscription.__table__, SoftwareManagementJob.__table__,
+        VendorCapability.__table__,
     ])
     return sessionmaker(bind=engine)
 

@@ -158,3 +158,25 @@ class DataClient(BaseClient):
 
     def list_actions(self, managed_element_ref: str | None = None, requested_by: str | None = None) -> list[dict]:
         return ensure_ok(self._r1.get("/dme/actions", params={"managed_element_ref": managed_element_ref, "requested_by": requested_by}))
+
+    # ---------------------------------------------------------------- Wave 9: RAN inventory reads (RAN NF OAM)
+    # WAVES_4_TO_10_WORK_ITEMS.md W9-01..06 — what an rApp needs to know
+    # before deciding an O1 action: a cell's guard attributes (D-5), and the
+    # managed element's vendor capabilities.
+
+    def query_cell_guards(self, managed_element_ref: str | None = None, cell_id: str | None = None,
+                          cell_class: str | None = None, sector_group: str | None = None,
+                          incident_zone: str | None = None) -> list[dict]:
+        return ensure_ok(self._r1.get("/ran-nf-oam/cell-guards", params={
+            "managed_element_ref": managed_element_ref, "cell_id": cell_id, "cell_class": cell_class,
+            "sector_group": sector_group, "incident_zone": incident_zone,
+        }))
+
+    def get_managed_entity(self, managed_element_ref: str) -> dict:
+        return ensure_ok(self._r1.get(f"/ran-nf-oam/managed-entities/{managed_element_ref}"))
+
+    def get_vendor_capability(self, vendor_name: str) -> dict:
+        return ensure_ok(self._r1.get(f"/ran-nf-oam/vendor-capabilities/{vendor_name}"))
+
+    def get_o1_capabilities(self) -> dict:
+        return ensure_ok(self._r1.get("/ran-nf-oam/capabilities"))
