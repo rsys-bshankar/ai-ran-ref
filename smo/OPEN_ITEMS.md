@@ -50,6 +50,24 @@ Each item: what is missing, why it matters, suggested approach.
   rather than "not allowed from PRIMED". `TERMINATE` is only legal from `RUNNING`, so a `FAULTED`
   instance must recover before it can be retired. Approach: map `IllegalTransition` to a 409 naming
   the state and event, 404 on unknown ids, and allow `TERMINATE` from `FAULTED`.
+- **OI-2-model-eol-serving** — Model state does not gate serving: `request_inference` checks only
+  that the runtime is `ACTIVE`, so a `DEPRECATED` or `RETIRED` model keeps serving, and its runtime
+  can still be activated or scaled. Retirement never terminates the runtime. Call flow 26.
+  Approach: refuse inference/activate/scale for `DEPRECATED`/`RETIRED`, and terminate the runtime on
+  `RETIRE`.
+- **OI-2-governance-bypass** — `POST /models/{id}/advance` fires any event, including
+  `CREATE_VALIDATION`/`CREATE_EMULATION`/`CREATE_TRAINING` with no job and no approval-flag check,
+  so the OI-6.1 operator gate can be skipped (the BFF lets operators call it). An unknown event is a
+  500. Approach: restrict `advance` to `GOVERNANCE_EVENTS` plus `DEPRECATE`/`RETIRE`, 422 on unknown
+  events.
+- **OI-2-training-lifecycle-edges** — Cancelling a training run (`DELETE /training-jobs/{id}`) fires no
+  model event, so the model stays `TRAINING`; that DELETE also rewrites FINISHED/FAILED jobs to
+  CANCELLED. A rolled-back (`CERTIFIED`) model cannot be retrained, and `DEPRECATED`/`RETIRED`/
+  `CERTIFIED` all report `MODEL_NOT_CERTIFIED`. PATCH-resume of a training or testing request does
+  not restart the timeout clock, the NRM GET routes skip the lazy timeout sweep, and NRM-created
+  runs take no runtime profile or timeout. Call flow 27. Approach: fire `TRAINING_FAILED` on cancel and
+  refuse it for finished jobs, allow `CREATE_TRAINING` from `CERTIFIED`, reset `started_at` on every
+  resume path.
 - **OI-2-package-redeploy** — A deleted package stays in terminal `DELETING`, and onboarding's
   duplicate-hash check ignores state, so the same CSAR can never be onboarded again. Approach:
   exclude `DELETING`/`FAILED` rows from the duplicate check.

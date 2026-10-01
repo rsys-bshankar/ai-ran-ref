@@ -601,7 +601,7 @@ Design decisions, work items and evidence for each are in
 |---|---|
 | [ROADMAP.md](ROADMAP.md) | Waves 4–10.4, frozen decisions, standards compliance matrices, runtime realization, backlog |
 | [HISTORY.md](../HISTORY.md) | How the platform got here: Wave 0–3 decomposition, audits, exit reviews |
-| [call-flows/](call-flows/) | Sequence diagrams 01–25 (02 and 17: AI/ML lifecycle; 09: intents; 12: DME eligibility; 14: correlation id; 21: vendor onboarding; 22–25: reference rApps) |
+| [call-flows/](call-flows/) | Sequence diagrams 01–27 (02 and 17: AI/ML lifecycle; 09: intents; 12: DME eligibility; 14: correlation id; 21: vendor onboarding; 22–25: reference rApps; 26: model governance and end of life; 27: TS 28.105 provisioning resources) |
 | [openapi/](openapi/) | Generated OpenAPI specs per service |
 | `../HISTORY.md §7` | Formal-spec audit per module |
 | `../DEMO_RUNBOOK.md` | Runnable demo, including §24–§27 for the reference rApps |

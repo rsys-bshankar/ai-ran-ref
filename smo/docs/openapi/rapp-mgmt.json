@@ -213,7 +213,7 @@
         "summary": "List Instances"
       },
       "post": {
-        "description": "CreateInstance \u2014 requires packageId.state == AVAILABLE (D-SEC-RAPP-1,\nunchanged). NFO handoff per Onboarding/rApp Mgmt LLD section 5: reads\nthe package's TOSCA service template and issues NFO.Instantiate.",
+        "description": "CreateInstance \u2014 requires a validated package: AVAILABLE, or PRIMED\n(AVAILABLE plus pre-provisioned resources; D-SEC-RAPP-1). NFO handoff per Onboarding/rApp Mgmt LLD section 5: reads\nthe package's TOSCA service template and issues NFO.Instantiate.",
         "operationId": "create_instance_instances_post",
         "requestBody": {
           "content": {

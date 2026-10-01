@@ -63,9 +63,10 @@ class LifecycleClient(BaseClient):
     def advance_model_lifecycle(self, model_id: uuid.UUID | str, event: str,
                                  decided_by: str | None = None, rationale: str | None = None) -> dict:
         """Fires any ModelLifecycle transition (Wave 2, `aimgf/app/statemachine.py`)
-        — `decided_by` is required by AIMgF itself for the six governance
-        decisions (SUBMIT_FOR_APPROVAL/APPROVE/REJECT/CERTIFY/PROMOTE/
-        ROLLBACK); omitted here it 422s the same way a direct call would.
+        — `decided_by` is required by AIMgF itself for the eight governance
+        decisions (`GOVERNANCE_EVENTS`: SUBMIT_FOR_APPROVAL/APPROVE/REJECT/
+        CERTIFY/PROMOTE/ROLLBACK/APPROVE_TRAINING/APPROVE_VALIDATION); omitted
+        here it 422s the same way a direct call would. Call flow 26.
         """
         return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/advance",
                                         params={"event": event, "decided_by": decided_by, "rationale": rationale}))
