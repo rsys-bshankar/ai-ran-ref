@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Standards basis | Internal logic (multi-step service orders) |
+| Standards basis | O-RAN SMO-ARCH §4.2.7 SMOS (role and capabilities); interfaces unspecified, so internal logic |
 | R1 route / port | `/so-smos` via R1 Termination (container :8000) |
 | Depends on (over R1) | RAN NF OAM, NFO, FOCOM, AIMgF, A1 Related (one per dispatch-table entry) |
 | Called by | GUI BFF (operators submit and cancel orders); SA SMOS reads orders (`GET /so-smos/orders/{id}`) to resolve a monitor's deployment; any R1 consumer with the route |
@@ -22,8 +22,8 @@ orchestrates; it does not perform any step itself and holds no domain state beyo
 
 ### 1.2 Standards basis
 
-Internal logic; no 3GPP or O-RAN IOC is realised. The `rmihRegistration` field on an order records the
-identity under which SO SMOS would act as an intent handling function (default `so-smos`), but this module does
+SO SMOS is the "Service and Slice Subnet Orchestration SMOS" of O-RAN WG1 SMO-ARCH §4.2.7. That clause states capabilities only (NOTE 2: SMOS interfaces and modelling are not specified), so the dispatch table and `service_order` model are internal design; no 3GPP or O-RAN IOC is realised. The `rmihRegistration` field on an order records the
+identity under which SO SMOS would act as an intent handling function (an RMIH, which SMO-ARCH §4.7 lists SO SMOS as able to be) (default `so-smos`), but this module does
 not register as an RMIH with Intent Service and does not use it (see 2.8).
 
 ### 1.3 Position in the platform
