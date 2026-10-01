@@ -469,7 +469,7 @@
     },
     "/packages/{package_id}/prime": {
       "post": {
-        "description": "OPEN_ITEMS.md section 5: the reference's real\nCOMMISSIONED->PRIMING->PRIMED lifecycle, missing entirely \u2014 this\nbuild went ONBOARDING->AVAILABLE directly. Real ACM/DME/SME\nresource pre-provisioning behind priming is out of scope (same\nelision as this build's other southbound calls), so both\ntransitions fire within this one request.",
+        "description": "HISTORY.md \u00a75: the reference's real\nCOMMISSIONED->PRIMING->PRIMED lifecycle, missing entirely \u2014 this\nbuild went ONBOARDING->AVAILABLE directly. Real ACM/DME/SME\nresource pre-provisioning behind priming is out of scope (same\nelision as this build's other southbound calls), so both\ntransitions fire within this one request.",
         "operationId": "prime_package_packages__package_id__prime_post",
         "parameters": [
           {

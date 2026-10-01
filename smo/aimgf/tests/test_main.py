@@ -99,7 +99,7 @@ class FakeNfo:
 
 
 def _patch_nfo(monkeypatch) -> FakeNfo:
-    """OPEN_ITEMS.md section 6.2: request_training/request_validation/
+    """HISTORY.md OI-6.2: request_training/request_validation/
     request_emulation now always call NFO, so any test that reaches one
     of those routes without the full `mlmr` fixture (e.g. the
     coordination-group-targeted DME tests below, which only care about
@@ -167,7 +167,7 @@ def _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=None, run
     the same role mlmr/tests' own `_make_model(..., state)` played before
     Wave 2 — most tests care about "a model already at CERTIFIED", not
     about walking every intermediate FSM transition to get there.
-    training_approved/validation_approved (OPEN_ITEMS.md section 6.1):
+    training_approved/validation_approved (HISTORY.md OI-6.1):
     same shortcut role for the operator-gate flags a test doesn't care
     about exercising via the real advance(APPROVE_TRAINING/
     APPROVE_VALIDATION) route.
@@ -198,7 +198,7 @@ def test_request_training_on_registered_model_fires_create_training(client, mlmr
 
 
 def test_request_training_ml_training_type_initial_then_retrain(client, mlmr, db_session_factory):
-    """TS28.105 AI/ML NRM's own real mLTrainingType (SPEC_AUDIT.md) —
+    """TS28.105 AI/ML NRM's own real mLTrainingType (HISTORY.md §7) —
     INITIAL_TRAINING the very first cycle (model still REGISTERED),
     RE_TRAINING every subsequent one.
     """
@@ -213,7 +213,7 @@ def test_request_training_ml_training_type_initial_then_retrain(client, mlmr, db
 
 
 def test_request_training_stores_and_exposes_extended_fields(client, mlmr):
-    """OPEN_ITEMS.md section 5: TrainingJob was far thinner than the
+    """HISTORY.md §5: TrainingJob was far thinner than the
     reference's own TrainingJob (trainingmgr/models/trainingjob.py).
     """
     model_id = mlmr.add_model()
@@ -233,7 +233,7 @@ def test_request_training_stores_and_exposes_extended_fields(client, mlmr):
 
 
 def test_request_training_rejects_unknown_dme_data_job_id(client, monkeypatch):
-    """OPEN_ITEMS.md section 6.4, closed: mirrors MDAF's own
+    """HISTORY.md OI-6.4, closed: mirrors MDAF's own
     `_validate_input_sources_are_real_dme_artifacts` test coverage exactly
     (`mdaf/tests/test_main.py`'s `test_publish_report_rejects_unknown_dme_input_source`).
     Uses a coordination-group-targeted request so no MLMR model lookup is
@@ -293,7 +293,7 @@ def test_training_job_status_exposes_dme_data_job_ids(client, monkeypatch):
 
 
 def test_complete_training_succeeds_records_outcome_artifact_and_advances_lifecycle(client, mlmr):
-    """OPEN_ITEMS.md section 6.5, closed: unlike Validation/Emulation,
+    """HISTORY.md OI-6.5, closed: unlike Validation/Emulation,
     Training's own completion previously had no dedicated route at all —
     only the generic /models/{id}/advance(TRAINING_COMPLETE), which has
     no way to record what the run produced.
@@ -524,7 +524,7 @@ def test_request_training_on_promoted_model_fires_create_training_not_a_shortcut
 
 
 def test_retraining_a_promoted_model_resets_the_operator_gate_flags(client, mlmr, db_session_factory):
-    """OPEN_ITEMS.md section 6.1: a stale approval from a prior pipeline
+    """HISTORY.md OI-6.1: a stale approval from a prior pipeline
     cycle must never silently carry forward into a new one — retraining
     a PROMOTED model (which necessarily passed both gates once already)
     resets training_approved/validation_approved back to False.
@@ -588,7 +588,7 @@ def _make_group_with_subscription(mlmr, db_session_factory, member_states, retra
 
 
 def test_group_retrain_trigger_fires_create_training_on_promoted_members(client, mlmr, db_session_factory):
-    """The actual fix (OPEN_ITEMS.md section 1's MLModelCoordinationGroup
+    """The actual fix (HISTORY.md §1's MLModelCoordinationGroup
     x SA SMOS convergence item): report_performance used to compute
     groupRetrainTriggered and stop — nothing ever fired a retrain on a
     member model.
@@ -657,7 +657,7 @@ def test_request_validation_requires_trained_model(client, mlmr, db_session_fact
 
 
 def test_request_validation_requires_operator_approval_of_training(client, mlmr, db_session_factory):
-    """OPEN_ITEMS.md section 6.1: the state check alone isn't the gate —
+    """HISTORY.md OI-6.1: the state check alone isn't the gate —
     an operator must also fire APPROVE_TRAINING first.
     """
     model_id = mlmr.add_model()
@@ -712,7 +712,7 @@ def test_list_validation_jobs_filters_by_model(client, mlmr, db_session_factory)
 
 
 def test_request_emulation_requires_operator_approval_of_validation(client, mlmr, db_session_factory):
-    """OPEN_ITEMS.md section 6.1: same gate shape as request_validation's own."""
+    """HISTORY.md OI-6.1: same gate shape as request_validation's own."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED)
 
@@ -944,7 +944,7 @@ def test_request_inference_on_active_runtime_creates_a_running_job(client, mlmr,
     assert client.get(f"/inference-jobs/{job_id}/status").json()["status"] == "RUNNING"
 
 
-# ---------------------------------------------------------------- OPEN_ITEMS.md section 6.2: NFO-backed execution runtimes
+# ---------------------------------------------------------------- HISTORY.md OI-6.2: NFO-backed execution runtimes
 
 def test_request_training_creates_a_real_nfo_execution_runtime(client, mlmr):
     model_id = mlmr.add_model()
@@ -967,7 +967,7 @@ def test_complete_training_tears_down_the_execution_runtime(client, mlmr):
 
 
 def test_request_training_while_already_training_terminates_the_orphaned_jobs_runtime(client, mlmr):
-    """OPEN_ITEMS.md section 6.2: a superseded orphaned job (already
+    """HISTORY.md OI-6.2: a superseded orphaned job (already
     covered by request_training's own CANCELLED handling) doesn't just
     stop being tracked — its own real execution runtime is abandoned
     right alongside it, not left running indefinitely.
@@ -1027,7 +1027,7 @@ def test_request_emulation_creates_and_complete_tears_down_a_real_execution_runt
 
 
 def test_request_inference_references_the_models_already_live_serving_deployment(client, mlmr, db_session_factory):
-    """OPEN_ITEMS.md section 6.2: MLIF doesn't create a new NFO deployment
+    """HISTORY.md OI-6.2: MLIF doesn't create a new NFO deployment
     per inference call — it references the model's own already-live
     serving deployment (ModelLifecycle.nf_deployment_id, real since
     deploy_model_runtime's own NFO call), closing the gap without
@@ -1109,7 +1109,7 @@ def test_list_mlmf_reports_404_on_an_unknown_subscription(client):
 
 
 def test_subscribe_performance_monitoring_round_trips_notification_destination(client, mlmr):
-    """SPEC_AUDIT.md's `MLMFSubscription` finding, closed: every other
+    """HISTORY.md §7's `MLMFSubscription` finding, closed: every other
     subscription-shaped resource in this build notifies a real
     notification_destination — this one previously had no such field.
     """
@@ -1184,7 +1184,7 @@ def test_report_performance_succeeds_even_if_the_subscriber_is_unreachable(clien
 
 
 def test_unsubscribe_performance_monitoring(client, mlmr):
-    """SPEC_AUDIT.md's `MLMFSubscription` finding, closed: previously
+    """HISTORY.md §7's `MLMFSubscription` finding, closed: previously
     this subscription could only be created and read, never torn down.
     """
     model_id = mlmr.add_model()
@@ -1233,7 +1233,7 @@ def _feature_group_body(feature_group_name="cellCounters", **extra):
 
 
 def test_create_feature_group_returns_its_fields(client):
-    """OPEN_ITEMS.md section 5: no feature-group/feature-store concept
+    """HISTORY.md §5: no feature-group/feature-store concept
     existed at all — the reference's own FeatureGroup
     (aiml-fw-awmf-tm's featuregroup.py/featuregroup_controller.py).
     """

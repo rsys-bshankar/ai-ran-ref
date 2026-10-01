@@ -1582,7 +1582,7 @@
     },
     "/subscriptions": {
       "get": {
-        "description": "OPEN_ITEMS.md section 5: no list/query endpoint for active\nsubscriptions existed at all \u2014 the reference defines this route\n(even though its own implementation of it is a no-op stub; ours\nactually reads real, persisted subscriptions).",
+        "description": "HISTORY.md \u00a75: no list/query endpoint for active\nsubscriptions existed at all \u2014 the reference defines this route\n(even though its own implementation of it is a no-op stub; ours\nactually reads real, persisted subscriptions).",
         "operationId": "list_analytics_subscriptions_subscriptions_get",
         "parameters": [
           {

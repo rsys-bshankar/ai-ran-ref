@@ -86,7 +86,7 @@ def test_query_policy_types_returns_known_catalog(client):
 
 
 def test_get_policy_type_returns_a_policy_schema(client):
-    """OPEN_ITEMS.md section 5: no policy-type detail retrieval existed
+    """HISTORY.md §5: no policy-type detail retrieval existed
     at all — the reference's own GetPolicyTypeDefinition
     (GET /policy-types/{policyTypeId}, pms-api-v3.json).
     """
@@ -294,7 +294,7 @@ def test_register_ei_type_wraps_dme_registration(client, monkeypatch):
 
 
 def test_health_endpoint_answers_the_callback_url_register_ei_type_registers(client):
-    """OPEN_ITEMS.md section 5: register_ei_type registers
+    """HISTORY.md §5: register_ei_type registers
     http://a1-related:8000/health as this producer's health-supervision
     callback with DME, but no route ever answered it — a poller hitting
     that URL would 404. Confirms the route now exists and returns 200.
@@ -305,7 +305,7 @@ def test_health_endpoint_answers_the_callback_url_register_ei_type_registers(cli
 
 
 def test_dme_jobs_endpoint_answers_the_callback_url_register_ei_type_registers(client):
-    """OPEN_ITEMS.md section 5: register_ei_type now also registers
+    """HISTORY.md §5: register_ei_type now also registers
     http://a1-related:8000/dme-jobs as this producer's jobCallbackUrl —
     DME's own create_data_job/terminate_data_job actually push to it
     now, so this closes the same class of dangling-callback bug the
@@ -320,7 +320,7 @@ def test_dme_jobs_endpoint_answers_the_callback_url_register_ei_type_registers(c
 
 
 def test_update_policy_notifies_matching_subscriber_on_status_change(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: SubscribePolicyStatus/UnsubscribePolicyStatus
+    """HISTORY.md §5: SubscribePolicyStatus/UnsubscribePolicyStatus
     were pure no-ops with zero delivery anywhere. This is the headline
     fix — a real status change now actually reaches a matching
     subscriber's notificationDestination.
@@ -413,7 +413,7 @@ def test_notification_delivery_survives_unreachable_subscriber(client, monkeypat
 
 
 def test_query_policies_returns_every_policy_unfiltered(client):
-    """OPEN_ITEMS.md section 5: no policy list/query-by-filter endpoint
+    """HISTORY.md §5: no policy list/query-by-filter endpoint
     existed at all — only GET /policies/{id}.
     """
     client.post("/policies", json={"policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})

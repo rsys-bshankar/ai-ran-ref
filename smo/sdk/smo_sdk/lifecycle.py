@@ -3,7 +3,7 @@
 deployment. One namespace for both services since an rApp author thinks
 of "advance a model through its lifecycle to deployment" as one journey,
 even though AIMgF and MLLF are separate backend services (see
-docs/architecture/SERVICE_OWNERSHIP_MATRIX.md).
+docs/ARCHITECTURE.md).
 
 Every method verified against aimgf/app/main.py's and mllf/app/main.py's
 own live OpenAPI schemas (query params vs body shape) before being
@@ -39,7 +39,7 @@ class LifecycleClient(BaseClient):
         ensure_ok(self._r1.delete(f"/aimgf/training-jobs/{training_job_id}"))
 
     def suspend_training(self, training_job_id: uuid.UUID | str) -> dict:
-        """Wave 3, SPEC_AUDIT.md's AI/ML Workflow section item 6 — only
+        """Wave 3, HISTORY.md §7's AI/ML Workflow section item 6 — only
         legal against an IN_PROGRESS job; 409s otherwise.
         """
         return ensure_ok(self._r1.post(f"/aimgf/training-jobs/{training_job_id}/suspend"))
@@ -99,7 +99,7 @@ class LifecycleClient(BaseClient):
     def subscribe_performance_monitoring(self, model_id: uuid.UUID | str, metric_types: list[str],
                                           dme_type_id: uuid.UUID | str, guard_kpi_floor: dict | None = None,
                                           notification_destination: str | None = None) -> dict:
-        """`notification_destination` (SPEC_AUDIT.md's `MLMFSubscription`
+        """`notification_destination` (HISTORY.md §7's `MLMFSubscription`
         finding, closed): optional, matching every other subscription-
         shaped resource's own permissive shape.
         """
@@ -146,7 +146,7 @@ class LifecycleClient(BaseClient):
         return ensure_ok(self._r1.post(f"/mllf/models/{model_id}/deploy", json=node_groups))
 
     # ---------------------------------------------------------------- Wave 10.1: the full execution-mode lifecycle
-    # WAVES_4_TO_10_WORK_ITEMS.md W10-03 (decision D-4): convenience calls
+    # docs/ROADMAP.md W10-03 (decision D-4): convenience calls
     # named as in the Wave 10 documents, over the existing AIMgF routes.
 
     def start_training(self, model_id: uuid.UUID | str, producer_id: str, package_id: uuid.UUID | str | None = None,

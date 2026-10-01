@@ -2,14 +2,14 @@
 Wave 1 of the AI Platform Service Decomposition: this module's own
 surface was already entirely Intent-shaped, with no policy/rule/
 constraint code to leave behind under the old name. See
-docs/ownership/INTENT_SERVICE_OWNERSHIP.md.
+docs/ARCHITECTURE.md (Intent Service).
 
 SMO Design v1.3 section 3.12, extended by Policy Mgmt LLD sections 1-3:
 UpdateIntentAdminState and QueryIntent close operations v1.3 never had
 (intentAdminState existed with nothing to change it), and
 DeregisterIntentHandlingFunction restores register/deregister symmetry.
 
-Wave 3 (docs/ownership/INTENT_SERVICE_OWNERSHIP.md's "Open item carried
+Wave 3 (docs/ARCHITECTURE.md's Intent Service "Open item carried
 into Wave 3"): CreateIntent now uses consumer-side RMIH selection — the
 caller addresses a specific, already-registered IntentHandlingFunction
 by `rmihId` — matching TS28312_IntentNrm.yaml's own NRM containment
@@ -46,7 +46,7 @@ app = FastAPI(title="Intent Service")
 apply_r1_gateway_security(app)
 apply_correlation_id(app)
 
-# OPEN_ITEMS.md section 6.3: cross-module read of a RAppInstance's own
+# HISTORY.md OI-6.3: cross-module read of a RAppInstance's own
 # autonomyMode/regionScope (rApp Mgmt) — this module's first cross-module
 # call; every other route here is purely local.
 _r1 = R1Client()
@@ -70,7 +70,7 @@ class CreateIntentRequest(BaseModel):
     build's own: the consumer-side choice of handling function (TS 28.312
     containment: IntentHandlingFunction *contains* Intent), the creating
     consumer's identity, and the handling-scope check against that
-    function's declared coverage (SPEC_AUDIT.md items 1-3).
+    function's declared coverage (HISTORY.md §7 items 1-3).
     """
     model_config = ConfigDict(extra="forbid")
 
@@ -262,7 +262,7 @@ def _received_fulfilment(expectations: list[dict], state: str = "RECEIVED") -> d
 
 
 def _create_intent_row(db: Session, body: CreateIntentRequest) -> Intent:
-    """The real work CreateIntent does — shared with OPEN_ITEMS.md §6.3's
+    """The real work CreateIntent does — shared with HISTORY.md OI-6.3's
     AUTONOMOUS/resolve-ASSIST paths, so an autonomy-driven Intent is a real
     Intent in every respect.
 
@@ -340,7 +340,7 @@ def _requested_expectation_object_types(expectations: list[dict]) -> set[str]:
 
 def _validate_rmih_can_handle(fn: IntentHandlingFunction, expectation_object_types: set[str], scope: str | None) -> None:
     """Validates that the one addressed function covers what the Intent
-    asks for: its declared intentHandlingScope (SPEC_AUDIT.md item 1) and —
+    asks for: its declared intentHandlingScope (HISTORY.md §7 item 1) and —
     Wave 6, strict — a capability for *every* expectation object type the
     intent names (previously any one sufficed)."""
     if scope is not None and fn.intent_handling_scope and scope not in fn.intent_handling_scope:
@@ -427,7 +427,7 @@ def update_intent_admin_state(intent_id: uuid.UUID, body: AdminStateRequest, db:
 
 @app.delete("/intents/{intent_id}", status_code=204)
 def delete_intent(intent_id: uuid.UUID, db: Session = Depends(get_session)):
-    """SPEC_AUDIT.md item 5: an RMIO retracts an Intent it created.
+    """HISTORY.md §7 item 5: an RMIO retracts an Intent it created.
     Idempotent."""
     intent = db.get(Intent, intent_id)
     if intent is not None:
@@ -603,7 +603,7 @@ def delete_intent_utility_formula(formula_id: uuid.UUID, db: Session = Depends(g
         db.commit()
 
 
-# ---------------------------------------------------------------- OPEN_ITEMS.md section 6.3: rApp Autonomy Modes
+# ---------------------------------------------------------------- HISTORY.md OI-6.3: rApp Autonomy Modes
 
 def _notify_autonomy_operator(notification_destination: str | None, dispatch: AutonomyDispatch) -> None:
     """All three modes always notify the operator of the AI/ML inference

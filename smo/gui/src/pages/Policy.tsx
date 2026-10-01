@@ -280,7 +280,7 @@ function PublishIntentReport({ intentId }: { intentId: string }) {
   );
 }
 
-// ---------------------------------------------------------------- OPEN_ITEMS.md section 6.3: rApp Autonomy Modes
+// ---------------------------------------------------------------- HISTORY.md OI-6.3: rApp Autonomy Modes
 
 function AutonomyDispatches() {
   const [status, setStatus] = useState("");

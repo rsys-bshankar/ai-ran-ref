@@ -43,7 +43,7 @@ def health_check():
 class CreateInstanceRequest(BaseModel):
     packageId: uuid.UUID
     config: dict = {}
-    # OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes: fixed at onboarding
+    # HISTORY.md OI-6.3 — rApp Autonomy Modes: fixed at onboarding
     # (this call), not chosen per-inference-call. SHADOW (no enforcement)
     # is the safe default for every existing caller that doesn't declare
     # one. regionScope only matters for AUTONOMOUS — opaque JSON, the
@@ -81,7 +81,7 @@ def create_instance(body: CreateInstanceRequest, db: Session = Depends(get_sessi
 
     nfo_resp = r1.post("/nfo/deployments", json={
         "nfDeploymentDescriptorId": nf_deployment_descriptor_id,  # the real descriptor, per section 5
-        "name": f"rapp-instance-{inst.instance_id}",  # NFO's own duplication guard (OPEN_ITEMS.md section 5) needs a real name
+        "name": f"rapp-instance-{inst.instance_id}",  # NFO's own duplication guard (HISTORY.md §5) needs a real name
         "requiredResourceTypeId": body.config.get("requiredResourceTypeId"),
     })
     # NFO Instantiate answers 202 Accepted (nfo/app/main.py) — a 200-only check
@@ -157,7 +157,7 @@ def _sme_service_registration_body(service_api: dict, apf_id: str) -> dict:
 
 
 def _register_sme_declarations(inst: RAppInstance) -> None:
-    """SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3 (SME auto-
+    """HISTORY.md §7's Onboarding/rApp Mgmt finding 3 (SME auto-
     registration): real O-RAN SC rApp Manager behavior
     (SmeDeployer.deployRappInstance) registers a package's CSAR-bundled
     Files/Sme/providers/ + Files/Sme/serviceapis/ declarations with SME
@@ -256,7 +256,7 @@ def terminate_instance(instance_id: uuid.UUID, db: Session = Depends(get_session
     cascade-delete guard, previously unreachable from ordinary rApp
     deployment since nothing called usage/stop.
 
-    OPEN_ITEMS.md section 5: this used to delete the instance row
+    HISTORY.md §5: this used to delete the instance row
     outright, in the same call — undeploy and delete collapsed into one
     irreversible step, with no way to observe an instance post-teardown
     or to delete one that was already torn down some other way (e.g.
@@ -346,7 +346,7 @@ def list_instances(state: str | None = None, limit: int = PageLimit, offset: int
 
 @app.get("/instances/{instance_id}")
 def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: no single-instance detail read existed at
+    """HISTORY.md §5: no single-instance detail read existed at
     all — only the list route above and single-field sub-resources
     (config via get_config/set_config). The reference's own
     GET .../instance/{id} returns nested ACM/SME/DME resource records
@@ -359,7 +359,7 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     expose: workloadRef (the real NFO nfDeploymentId CreateInstance
     received back), smeServiceIds (the real SME serviceId(s)
     bootstrap-complete's own SME auto-registration received back —
-    SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3, closed), and the
+    HISTORY.md §7's Onboarding/rApp Mgmt finding 3, closed), and the
     caller-supplied configuration, alongside the identity/state fields
     list_instances already returns.
     """

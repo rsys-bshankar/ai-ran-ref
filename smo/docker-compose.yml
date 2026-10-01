@@ -84,11 +84,11 @@ services:
     # documents an equivalent O1-adaptor isolation requirement. A real
     # ManagedElement's own adaptor_uri (o1_adaptor_endpoint.adaptor_uri)
     # would point at http://mock-o1-adaptor:8000/edit-config once one is
-    # ever registered against this service — see OPEN_ITEMS.md section 2.
+    # ever registered against this service — see HISTORY.md section 2.
 
   # Wave 10.1: the EnergySaving reference rApp (samples/energy-saving-rapp)
   # — an R1 consumer of the platform, deployed beside it for the demo
-  # (DEMO_RUNBOOK.md, Demo 01–11). It reaches every SMO service only
+  # (DEMO_RUNBOOK.md §24, Demo 00–11). It reaches every SMO service only
   # through R1 Termination, and is reached by the GUI the same way.
   energy-saving-rapp:
     build: { context: ., args: { MODULE: samples/energy-saving-rapp } }

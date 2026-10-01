@@ -72,7 +72,7 @@ def test_edit_config_with_empty_changes_is_rejected():
 
 
 def test_edit_config_delete_with_empty_payload_is_accepted():
-    """SPEC_AUDIT.md item 3: RFC 6241 section 7.2's edit-config `operation`
+    """HISTORY.md §7 item 3: RFC 6241 section 7.2's edit-config `operation`
     attribute — a delete legitimately carries no attribute_changes at
     all, unlike a merge/replace/create, so it must not be rejected for
     emptiness the way test_edit_config_with_empty_changes_is_rejected

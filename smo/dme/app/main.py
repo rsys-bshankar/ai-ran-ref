@@ -57,7 +57,7 @@ class DMETypeRegistration(BaseModel):
     collectionSpec: dict | None = None
     producerHealthCallbackUrl: str
     jobCallbackUrl: str
-    # Wave 3 (docs/ownership/DME_OWNERSHIP.md): source provenance. Both
+    # Wave 3 (docs/ARCHITECTURE.md (DME)): source provenance. Both
     # optional — a producer that doesn't declare its domain skips the
     # Digital-Twin-inference eligibility check entirely (same permissive
     # shape as _validate_delivery_method's own offer check).
@@ -117,7 +117,7 @@ class TypeSubscriptionRequest(BaseModel):
 
 @app.post("/production-capabilities", status_code=201)
 def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_session)):
-    """SPEC_AUDIT.md — DME vs. the real ICS API, Producer/Type conflation
+    """HISTORY.md §7 — DME vs. the real ICS API, Producer/Type conflation
     finding, closed: ICS's own `PUT .../info-producers/{id}` and
     `PUT .../info-types/{id}` are two separate, idempotent create-or-update
     calls against two separate entities, many-to-many. This build keeps
@@ -167,7 +167,7 @@ def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_sessi
 
 @app.get("/dme-types")
 def discover_dme_types(data_category: str | None = None, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: data_category was declared but silently
+    """HISTORY.md §5: data_category was declared but silently
     never applied to the query. DMEType has no dedicated category
     column — namespace (the grouping half of R1AP's typeName convention,
     e.g. "RAN" in "RAN.CoverageIssue") is the closest concept it does
@@ -200,12 +200,12 @@ def get_producer(producer_id: str, db: Session = Depends(get_session)):
 @app.delete("/production-capabilities", status_code=204)
 def deregister_producer(producer_id: str, db: Session = Depends(get_session)):
     """The DME half of rApp Management's producer-reconsideration trigger
-    (OPEN_ITEMS.md section 1): when a RAppInstance crashes or terminates,
+    (HISTORY.md §1): when a RAppInstance crashes or terminates,
     its own DME registration is no longer trustworthy and is torn down
     here. Idempotent — a producer_id with nothing registered is a no-op,
     not an error.
 
-    SPEC_AUDIT.md — DME vs. the real ICS API: this used to also delete
+    HISTORY.md §7 — DME vs. the real ICS API: this used to also delete
     every DmeType (and dependent DataJob/DataOffer rows) this producer_id
     happened to have registered, because the old schema conflated a type
     with its one-and-only producer. Now that Producer and Type are two
@@ -266,7 +266,7 @@ def query_producer_status(producer_id: str, db: Session = Depends(get_session)):
 
 @app.post("/type-subscriptions", status_code=201)
 def subscribe_type_changes(body: TypeSubscriptionRequest, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: ICS's own `/info-type-subscription`
+    """HISTORY.md §5: ICS's own `/info-type-subscription`
     (InfoTypeSubscriptions/ConsumerCallbacks) — a consumer notified
     whenever any DmeType is registered or removed. Entirely absent from
     this build until now. ICS's own PUT is create-or-update against a
@@ -339,7 +339,7 @@ def _validate_delivery_method(db: Session, dme_type_id: uuid.UUID, method: str) 
 
 
 def _validate_job_definition_schema(db: Session, dme_type_id: uuid.UUID, definition: dict) -> None:
-    """OPEN_ITEMS.md section 5: ICS's own InfoJobs.validateJsonObjectAgainstSchema
+    """HISTORY.md §5: ICS's own InfoJobs.validateJsonObjectAgainstSchema
     (org.everit.json.schema, called from validatePutInfoJob) — productionJobDefinition
     was accepted as an arbitrary dict, never checked against the DmeType's own
     dataProductionSchema (R1AP's actual contract for what a valid job
@@ -362,7 +362,7 @@ def _validate_job_definition_schema(db: Session, dme_type_id: uuid.UUID, definit
 
 
 def _validate_lifecycle_eligibility(db: Session, dme_type_id: uuid.UUID, lifecycle_stage: str | None) -> None:
-    """Wave 3 (docs/ownership/DME_OWNERSHIP.md): the one data-source
+    """Wave 3 (docs/ARCHITECTURE.md (DME)): the one data-source
     eligibility rule Phase-1 actually needs — a Digital Twin may feed
     Training/Emulation, never Inference. A dmeTypeId with no registered
     DMEType, or a type/job that never declared sourceDomain/
@@ -472,7 +472,7 @@ def terminate_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session
 
 @app.delete("/data-jobs", status_code=204)
 def terminate_data_jobs_for_consumer(consumer_id: str, db: Session = Depends(get_session)):
-    """SPEC_AUDIT.md's DME vs. real ICS finding: the real
+    """HISTORY.md §7's DME vs. real ICS finding: the real
     `DELETE /data-consumer/v1/info-jobs?owner=X` (ics-api.yaml's own
     `deleteJobsForOwner`) — every job one consumer owns, torn down in
     one call, not one `terminate_data_job` at a time. Same per-job
@@ -553,7 +553,7 @@ def _producers_for_type(db: Session, dme_type_id: uuid.UUID) -> list[DMEProducer
 
 
 def _push_job_to_producers(db: Session, dme_type: DMEType, job: DataJob) -> None:
-    """OPEN_ITEMS.md section 5: no job push to producers existed at
+    """HISTORY.md §5: no job push to producers existed at
     all — create_data_job/terminate_data_job only ever touched our own
     DB. ICS's own ProducerCallbacks.startInfoJob POSTs the job to every
     producer supporting the type (jobCallbackUrl, ProducerJobInfo's wire
@@ -630,7 +630,7 @@ def _producer_view(db: Session, p: DMEProducer) -> dict:
 
 
 def _computed_type_status(db: Session, t: DMEType) -> str:
-    """OPEN_ITEMS.md section 5: this used to check only whether a DataJob
+    """HISTORY.md §5: this used to check only whether a DataJob
     row was ACTIVE — a dead producer with an active job still reported
     ENABLED, and producerHealthCallbackUrl was stored but never actually
     called. ICS's own typeStatus (ConsumerController.typeStatus) is
@@ -678,10 +678,10 @@ def list_data_offers(dme_type_id: uuid.UUID | None = None, limit: int = PageLimi
 
 
 # ---------------------------------------------------------------- Wave 3: real data-plane store
-# docs/ownership/DME_OWNERSHIP.md — previously DME only ever brokered
+# docs/ARCHITECTURE.md (DME) — previously DME only ever brokered
 # job/offer metadata; a producer's actual payload never had anywhere to
 # land inside DME itself. Serves both rApp and MDAF consumers, no
-# distinction at this layer (docs/ownership/DME_OWNERSHIP.md's "two
+# distinction at this layer (docs/ARCHITECTURE.md's DME "two
 # paths, not one" — this is the data path, reachable by either).
 
 @app.post("/data-jobs/{data_job_id}/records", status_code=201)
@@ -712,7 +712,7 @@ def _record_view(r: DataRecord) -> dict:
 
 
 # ---------------------------------------------------------------- Wave 3: O1 action mediation
-# docs/ownership/DME_OWNERSHIP.md — DME does not speak NETCONF/RESTCONF
+# docs/ARCHITECTURE.md (DME) — DME does not speak NETCONF/RESTCONF
 # itself; ran-nf-oam already does (netconf_client.py's edit-config RPCs
 # against its own real ManagedEntity/O1AdaptorEndpoint registry). This
 # route records an rApp's AI/ML decision with its source provenance,

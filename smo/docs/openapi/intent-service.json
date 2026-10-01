@@ -161,7 +161,7 @@
       },
       "CreateIntentRequest": {
         "additionalProperties": false,
-        "description": "Wave 6 \u2014 TS 28.312 Intent, validated strictly (agreed: every caller\nmigrated): the spec's own attribute names, required fields and enums,\nand every expectation checked against its expectation family\n(`app/ts28312.py`). `rmihId`/`rmioId`/`intentHandlingScope` are this\nbuild's own: the consumer-side choice of handling function (TS 28.312\ncontainment: IntentHandlingFunction *contains* Intent), the creating\nconsumer's identity, and the handling-scope check against that\nfunction's declared coverage (SPEC_AUDIT.md items 1-3).",
+        "description": "Wave 6 \u2014 TS 28.312 Intent, validated strictly (agreed: every caller\nmigrated): the spec's own attribute names, required fields and enums,\nand every expectation checked against its expectation family\n(`app/ts28312.py`). `rmihId`/`rmioId`/`intentHandlingScope` are this\nbuild's own: the consumer-side choice of handling function (TS 28.312\ncontainment: IntentHandlingFunction *contains* Intent), the creating\nconsumer's identity, and the handling-scope check against that\nfunction's declared coverage (HISTORY.md \u00a77 items 1-3).",
         "properties": {
           "consumerSatisfactionIndexThreshold": {
             "anyOf": [
@@ -3000,7 +3000,7 @@
     },
     "/intents/{intent_id}": {
       "delete": {
-        "description": "SPEC_AUDIT.md item 5: an RMIO retracts an Intent it created.\nIdempotent.",
+        "description": "HISTORY.md \u00a77 item 5: an RMIO retracts an Intent it created.\nIdempotent.",
         "operationId": "delete_intent_intents__intent_id__delete",
         "parameters": [
           {

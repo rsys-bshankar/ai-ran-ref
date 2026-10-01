@@ -68,7 +68,7 @@ def _no_active_instances(db: Session, package: ApplicationPackage) -> bool:
     are active rapp instances.') — reuses the same active-usage-
     registration signal the cascade-delete guard already tracks
     (CreateInstance calls usage/start; TerminateInstance calls
-    usage/stop — OPEN_ITEMS.md section 2's cascade-delete-guard fix).
+    usage/stop — HISTORY.md §2's cascade-delete-guard fix).
     """
     active_usage = db.scalar(
         select(PackageUsageRegistration).where(
@@ -83,7 +83,7 @@ def build_onboarding_fsm() -> StateMachine[PackageState, PackageEvent]:
     fsm: StateMachine[PackageState, PackageEvent] = StateMachine()
     fsm.add(PackageState.ONBOARDING, PackageEvent.VALIDATE_OK, PackageState.AVAILABLE)
     fsm.add(PackageState.ONBOARDING, PackageEvent.VALIDATE_FAILED, PackageState.FAILED)
-    # OPEN_ITEMS.md section 5: the missing package-level priming stage
+    # HISTORY.md §5: the missing package-level priming stage
     # (COMMISSIONED->PRIMING->PRIMED->DEPRIMING in the reference; our
     # AVAILABLE plays the COMMISSIONED role). Real ACM/DME/SME resource
     # pre-provisioning behind PRIME stays out of scope — same elision as

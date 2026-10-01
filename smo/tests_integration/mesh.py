@@ -69,7 +69,7 @@ class ServiceMesh:
         # not `json=` — every other caller until now was JSON-only, so this
         # branch never existed and `content` was silently dropped, always
         # forwarding an EMPTY body regardless of what the real caller sent.
-        # Caught adding mock-o1-adaptor's own integration test (OPEN_ITEMS.md
+        # Caught adding mock-o1-adaptor's own integration test (HISTORY.md
         # section 2): the request "succeeded" against an empty body and
         # looked like a genuine REJECTED outcome, not a harness bug.
         if content is not None:

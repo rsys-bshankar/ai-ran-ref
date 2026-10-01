@@ -64,7 +64,7 @@
   "paths": {
     "/a1-p/policies": {
       "post": {
-        "description": "A1UCR clause 6.3's create \u2014 the call A1 Related LLD section 1.1\ndraws as a ref block, out of this project's scope, realized here only\nas a test double. REJECTED on an empty policyObject, purely so the\nreject path has something to actually exercise in tests.\n\nOPEN_ITEMS.md section 5: also REJECTED on duplicate policy content\nfor the same policy type \u2014 the real near-rt-ric-simulator's own\nfingerprint check (a1_mediator_controller.py's is_duplicate_check()\npath), previously entirely unenforced here (only the empty-object\ncheck existed).",
+        "description": "A1UCR clause 6.3's create \u2014 the call A1 Related LLD section 1.1\ndraws as a ref block, out of this project's scope, realized here only\nas a test double. REJECTED on an empty policyObject, purely so the\nreject path has something to actually exercise in tests.\n\nHISTORY.md \u00a75: also REJECTED on duplicate policy content\nfor the same policy type \u2014 the real near-rt-ric-simulator's own\nfingerprint check (a1_mediator_controller.py's is_duplicate_check()\npath), previously entirely unenforced here (only the empty-object\ncheck existed).",
         "operationId": "create_policy_a1_p_policies_post",
         "parameters": [
           {
@@ -153,7 +153,7 @@
         "summary": "Delete Policy"
       },
       "put": {
-        "description": "OPEN_ITEMS.md section 5: same duplicate-content check as create,\nmatching the reference's own PUT-is-create-or-update semantics \u2014 a\nnew fingerprint colliding with a DIFFERENT policy's is rejected\n(updating a policy back to its own current content is not a\ncollision with itself).",
+        "description": "HISTORY.md \u00a75: same duplicate-content check as create,\nmatching the reference's own PUT-is-create-or-update semantics \u2014 a\nnew fingerprint colliding with a DIFFERENT policy's is rejected\n(updating a policy back to its own current content is not a\ncollision with itself).",
         "operationId": "update_policy_a1_p_policies__policy_id__put",
         "parameters": [
           {

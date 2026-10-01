@@ -15,7 +15,7 @@ class DataClient(BaseClient):
                        data_production_schema: dict, producer_health_callback_url: str, job_callback_url: str,
                        collection_spec: dict | None = None, source_domain: str | None = None,
                        source_context: dict | None = None) -> dict:
-        """`source_domain`/`source_context` (Wave 3, docs/ownership/DME_OWNERSHIP.md):
+        """`source_domain`/`source_context` (Wave 3, docs/ARCHITECTURE.md (DME)):
         LIVE_RAN | DIGITAL_TWIN provenance driving the Digital-Twin-
         excluded-from-inference eligibility rule; both optional.
         """
@@ -132,7 +132,7 @@ class DataClient(BaseClient):
         ensure_ok(self._r1.delete(f"/dme/type-subscriptions/{subscription_id}"))
 
     # ---------------------------------------------------------------- Wave 3: real data-plane store
-    # docs/ownership/DME_OWNERSHIP.md — a producer ingests, a consumer
+    # docs/ARCHITECTURE.md (DME) — a producer ingests, a consumer
     # (rApp or MDAF, no distinction here) fetches. Not restricted to
     # either caller.
 
@@ -143,7 +143,7 @@ class DataClient(BaseClient):
         return ensure_ok(self._r1.get(f"/dme/data-jobs/{data_job_id}/records", params={"limit": limit}))
 
     # ---------------------------------------------------------------- Wave 3: O1 action mediation
-    # docs/ownership/DME_OWNERSHIP.md — DME mediates and forwards to
+    # docs/ARCHITECTURE.md (DME) — DME mediates and forwards to
     # ran-nf-oam's real NETCONF dispatch; it doesn't speak O1 itself.
 
     def mediate_action(self, requested_by: str, changes: list[dict], scope: str = "single-ME",
@@ -160,7 +160,7 @@ class DataClient(BaseClient):
         return ensure_ok(self._r1.get("/dme/actions", params={"managed_element_ref": managed_element_ref, "requested_by": requested_by}))
 
     # ---------------------------------------------------------------- Wave 9: RAN inventory reads (RAN NF OAM)
-    # WAVES_4_TO_10_WORK_ITEMS.md W9-01..06 — what an rApp needs to know
+    # docs/ROADMAP.md W9-01..06 — what an rApp needs to know
     # before deciding an O1 action: a cell's guard attributes (D-5), and the
     # managed element's vendor capabilities.
 

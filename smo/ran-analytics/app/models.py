@@ -5,7 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
 
-# SPEC_AUDIT.md — RAN Analytics vs. TS28104 MDA NRM, `analytics_type` enum
+# HISTORY.md §7 — RAN Analytics vs. TS28104 MDA NRM, `analytics_type` enum
 # finding, closed: TS28104_MdaNrm.yaml's own real, closed 24-value
 # `MDAType` enum, read directly (not summarized).
 MDA_TYPES = frozenset({
@@ -50,7 +50,7 @@ class MDAFProducer(Base):
     analytics_type: Mapped[str] = mapped_column(String, primary_key=True)
     dme_input_types: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False)
     output_schema: Mapped[dict] = mapped_column(JSON, nullable=False)
-    # SPEC_AUDIT.md: TS28104's own real, closed MDAType enum — optional,
+    # HISTORY.md §7: TS28104's own real, closed MDAType enum — optional,
     # since this build's own `analytics_type` free-string values are
     # informal shorthand that mostly don't correspond to any real spec
     # value at all (constraining `analytics_type` itself would be a real

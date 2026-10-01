@@ -68,7 +68,7 @@ def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None, s
     nfDeploymentDescriptorId — CreateInstance now requires it (the
     NFDeploymentDescriptor fix), so a fake response without it would
     incorrectly 409 before ever reaching the usage-registration wiring
-    this suite actually tests. `sme_declarations` (SPEC_AUDIT.md's
+    this suite actually tests. `sme_declarations` (HISTORY.md §7's
     Onboarding/rApp Mgmt finding 3) is None by default — bootstrap-
     complete's own SME auto-registration then finds nothing to do,
     covering every existing call site of this helper unchanged.
@@ -120,7 +120,7 @@ def test_create_instance_registers_package_usage(client, db_session_factory, mon
 
 
 def test_create_instance_defaults_autonomy_mode_to_shadow(client, monkeypatch):
-    """OPEN_ITEMS.md section 6.3: SHADOW — the safest, no-enforcement
+    """HISTORY.md OI-6.3: SHADOW — the safest, no-enforcement
     mode — is the default for every existing caller that doesn't declare
     autonomyMode, the same permissive-by-default shape optional fields
     already use throughout this build.
@@ -210,10 +210,10 @@ def test_terminate_instance_skips_usage_stop_when_never_registered(client, monke
 
 
 def test_terminate_instance_deregisters_dme_producer(client, monkeypatch):
-    """rApp-as-producer reconsideration trigger (OPEN_ITEMS.md section 1):
+    """rApp-as-producer reconsideration trigger (HISTORY.md §1):
     TERMINATE must reach DME too, deregistering every DMEType this
     instance's own oauth_client_id (== its DME producerId) registered —
-    not just revoke the local credential. Also reaches SME (SPEC_AUDIT.md's
+    not just revoke the local credential. Also reaches SME (HISTORY.md §7's
     Onboarding/rApp Mgmt finding 3): an unconditional, idempotent
     provider-registrations delete attempt using the same identity as its
     SME apfId — the package here declared no real SME data (fake_get's
@@ -243,7 +243,7 @@ def test_terminate_instance_deregisters_dme_producer(client, monkeypatch):
 
 
 def test_crash_via_critical_fault_deregisters_dme_producer(client, monkeypatch):
-    """Also reaches SME (SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3) —
+    """Also reaches SME (HISTORY.md §7's Onboarding/rApp Mgmt finding 3) —
     see test_terminate_instance_deregisters_dme_producer's own docstring
     for why the second call is an unconditional provider-registrations
     delete with no matching service-api deletes.
@@ -290,7 +290,7 @@ def test_terminate_instance_survives_unreachable_dme(client, monkeypatch):
 
 
 def test_bootstrap_complete_registers_package_sme_declarations(client, db_session_factory, monkeypatch):
-    """SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3, closed: a package
+    """HISTORY.md §7's Onboarding/rApp Mgmt finding 3, closed: a package
     whose CSAR declared real Files/Sme/providers + Files/Sme/serviceapis
     content gets that content registered with SME at bootstrap-complete,
     using this instance's own oauth_client_id as its apfId — the real
@@ -435,7 +435,7 @@ def test_recover_route_fires_recover_transition(client, db_session_factory):
 
 
 def test_terminate_lands_in_undeployed_and_keeps_the_row(client, db_session_factory, monkeypatch):
-    """OPEN_ITEMS.md section 5: TERMINATE used to delete the instance row
+    """HISTORY.md §5: TERMINATE used to delete the instance row
     outright, in the same call as the workload teardown. The reference's
     own split (RappService.undeployRappInstance/deleteRappInstance) keeps
     the row around, in a terminal UNDEPLOYED state, until a separate
@@ -523,7 +523,7 @@ def test_delete_unknown_instance_is_404(client):
 
 
 def test_get_instance_returns_real_workload_ref_and_configuration(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: no single-instance detail read existed at
+    """HISTORY.md §5: no single-instance detail read existed at
     all. Exposes what this build genuinely computes — the real NFO
     workloadRef and the caller-supplied configuration — not the
     reference's own nested ACM/SME/DME resource records, which stay out

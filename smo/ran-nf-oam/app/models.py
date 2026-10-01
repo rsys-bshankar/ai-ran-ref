@@ -17,7 +17,7 @@ class O1AdaptorEndpoint(Base):
     registered_via: Mapped[str] = mapped_column(String, nullable=False, default="MNS_REGISTRY_NRM")
     health_status: Mapped[str] = mapped_column(String, nullable=False, default="ACTIVE")
     last_heartbeat_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
-    # Wave 9 (W9-01, O1_VENDOR_ONBOARDING_GUIDE.md axis 2): the MnS services
+    # Wave 9 (W9-01, docs/ARCHITECTURE.md axis 2): the MnS services
     # this adaptor declares (PROV/FM/PM/FILE/STREAM/SWM/SUBSCRIPTION/HEARTBEAT).
     # NULL means "whatever its vendor's capability declares".
     supported_services: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
@@ -48,7 +48,7 @@ class Alarm(Base):
     ack_state: Mapped[str] = mapped_column(String, nullable=False, default="UNACKNOWLEDGED")
     correlation_group: Mapped[str | None] = mapped_column(String)
     raised_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
-    # OPEN_ITEMS.md section 5: standard 3GPP TS 28.532 FaultMnS NotifyNewAlarm
+    # HISTORY.md §5: standard 3GPP TS 28.532 FaultMnS NotifyNewAlarm
     # fields (per oam's own stndDefined-r16-notify-new-alarm.json VES template)
     # this alarm model was missing entirely.
     probable_cause: Mapped[str | None] = mapped_column(String)
@@ -56,12 +56,12 @@ class Alarm(Base):
     root_cause_indicator: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     correlated_notifications: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False, default=list)
     proposed_repair_actions: Mapped[str | None] = mapped_column(String)
-    # SPEC_AUDIT.md: TS28111_FaultNrm.yaml's AlarmRecord requires alarmType
+    # HISTORY.md §7: TS28111_FaultNrm.yaml's AlarmRecord requires alarmType
     # (a closed 11-value enum), which this model never had at all — nullable
     # here since not every real caller of /alarms/ingest necessarily knows
     # it, unlike the spec's own readOnly/required framing.
     alarm_type: Mapped[str | None] = mapped_column(String)
-    # OPEN_ITEMS.md section 5: no alarm-cleared lifecycle existed at all.
+    # HISTORY.md §5: no alarm-cleared lifecycle existed at all.
     # The reference's own NotifyClearedAlarm reuses perceivedSeverity=CLEARED
     # rather than a separate state field — this build's `severity` CHECK
     # constraint already allows 'cleared' for exactly this reason, so
@@ -69,7 +69,7 @@ class Alarm(Base):
     # parallel, redundant lifecycle field.
     cleared_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     clear_user_id: Mapped[str | None] = mapped_column(String)
-    # SPEC_AUDIT.md: the spec's AlarmRecord also carries ackUserId (who
+    # HISTORY.md §7: the spec's AlarmRecord also carries ackUserId (who
     # acknowledged it — PATCH /alarms/{id}/ack never recorded this) and
     # alarmChangedTime (distinct from raised_at/cleared_at — the spec's own
     # "last mutated" timestamp, set whenever ack_state or severity changes).
@@ -130,7 +130,7 @@ class WriteConfigSubChange(Base):
     managed_element_ref: Mapped[str] = mapped_column(String, nullable=False)
     managed_function_ref: Mapped[str | None] = mapped_column(String)
     attribute_changes: Mapped[dict] = mapped_column(JSON, nullable=False)
-    # SPEC_AUDIT.md item 3: TS28532_ProvMnS.yaml defines four distinct MOI
+    # HISTORY.md §7 item 3: TS28532_ProvMnS.yaml defines four distinct MOI
     # lifecycle operations (create/replace/merge/delete) but this sub-change
     # had no operation-type field at all — every write was implicitly a
     # merge. Grounded in RFC 6241 section 7.2's real edit-config `operation`
@@ -151,7 +151,7 @@ class PMSubscription(Base):
     counter_type: Mapped[str] = mapped_column(String, nullable=False)
     delivery_method: Mapped[str] = mapped_column(String, nullable=False)
     southbound_engine: Mapped[str] = mapped_column(String, nullable=False)
-    # SPEC_AUDIT.md item 4 (formerly 7): TS28550_PerfMeasJobCtrlMnS.yaml's
+    # HISTORY.md §7 item 4 (formerly 7): TS28550_PerfMeasJobCtrlMnS.yaml's
     # measJobCreation-RequestType carries a granularityPeriod (the sampling
     # interval, in seconds) alongside reportingPeriod/schedule/priority —
     # subscribe_pm's own docstring already confirms most of that job-control
@@ -165,7 +165,7 @@ class PMSubscription(Base):
 class FMSubscription(Base):
     __tablename__ = "fm_subscription"
 
-    # OPEN_ITEMS.md section 6.7: unlike PM (subscribe_pm registers RAN NF
+    # HISTORY.md OI-6.7: unlike PM (subscribe_pm registers RAN NF
     # OAM as a DME producer for PMCounters.{counter_type}), FM/alarms had
     # no DME producer registration at all — an rApp/AI-ML model wanting
     # outstanding-active-alarm/alarm-history context had no DME-mediated

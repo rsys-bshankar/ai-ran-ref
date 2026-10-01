@@ -8,8 +8,7 @@ request, fail-closed. No individual backend service (aimgf, dme, mlmr, ...)
 has ever had its own auth check — they all trust the gateway that's the only
 way a real R1 consumer ever reaches them. That's still true after this
 module exists: it only makes the OpenAPI contract honest about an interface
-that was already real, not a new runtime behavior. See OPEN_ITEMS.md
-section 2 and docs/architecture/AI_PLATFORM_BASELINE.md's Wave 3
+that was already real, not a new runtime behavior. See HISTORY.md §2 and docs/ARCHITECTURE.md's Wave 3
 cross-cutting standardization item.
 
 R1_CONTRACT_VERSION is this build's own semantic version for "the current,

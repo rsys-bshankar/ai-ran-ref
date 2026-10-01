@@ -112,7 +112,7 @@ class ProviderRegistrationRequest(BaseModel):
 
 @app.post("/provider-registrations", status_code=201)
 def register_provider(body: ProviderRegistrationRequest, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: Provider (APF) enrolment
+    """HISTORY.md §5: Provider (APF) enrolment
     (`PostRegistrations`, `providermanagement.go`) — the real registry
     `register_service`'s own `apf_id` check needs, entirely absent
     before this pass. Idempotent update-in-place on a re-registration of
@@ -147,12 +147,12 @@ class InvokerRegistrationRequest(BaseModel):
 
 @app.post("/invoker-registrations", status_code=201)
 def register_invoker(body: InvokerRegistrationRequest, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 2: API Invoker onboarding
+    """HISTORY.md §2: API Invoker onboarding
     (`invokermanagement.go`'s `InvokerManager`) — the real registry the
     Security/token API's own `IsInvokerRegistered`/`VerifyInvokerSecret`
     gate needs, entirely absent before this pass.
 
-    SPEC_AUDIT.md SME item 1: the real CAPIF onboarding flow is
+    HISTORY.md §7 SME item 1: the real CAPIF onboarding flow is
     public-key-based — the client supplies `apiInvokerPublicKey`; the
     server *generates* both `apiInvokerId` and `onboardingSecret` and
     returns them (`apiInvokerId` "shall not be present" in the real
@@ -183,7 +183,7 @@ class AccessTokenRequest(BaseModel):
 
 @app.post("/oauth2/token")
 def issue_access_token(body: AccessTokenRequest, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 2: "no actual validation code path" for
+    """HISTORY.md §2: "no actual validation code path" for
     R1 Termination's advertised tokenEndPoint — this is that endpoint,
     finally real. Mirrors `PostSecuritiesSecurityIdToken`
     (`securityservice.go`)'s real request/response shape (`client_id`/
@@ -392,7 +392,7 @@ def register_service(apf_id: str, body: ServiceRegistration, db: Session = Depen
     place (idempotent); a DIFFERENT producer registering that name is
     SERVICE_NAME_CONFLICT.
 
-    OPEN_ITEMS.md section 5: previously accepted any apf_id with no check
+    HISTORY.md §5: previously accepted any apf_id with no check
     that it's an actual registered publisher. The reference's own gate
     (`PostApfIdServiceApis`, `publishservice.go`:
     `serviceRegister.IsPublishingFunctionRegistered(apfId)`, 403
@@ -465,7 +465,7 @@ def discover_services(api_invoker_id: str, api_name: str | None = None, api_vers
     consumer's query simply never returns the service, it is never told
     the service exists.
 
-    OPEN_ITEMS.md section 5: discover_services only filtered on
+    HISTORY.md §5: discover_services only filtered on
     api_name/api_version — the reference (discoverservice.go's
     matchesFilter/checkAefId/checkProtocol/checkDataFormat/
     checkVersionAndCommType) also filters against each service's
@@ -516,7 +516,7 @@ def _matches_aef_filters(r: ServiceProfile, aef_id: str | None, protocol: str | 
 
 @app.post("/capif-events/v1/{subscriber_id}/subscriptions", status_code=201)
 def subscribe_events(subscriber_id: str, body: EventSubscriptionRequest, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: event subscription filtering was type-only
+    """HISTORY.md §5: event subscription filtering was type-only
     — the reference's own CAPIFEventFilter also filters by apiId/
     apiInvokerId/aefId (eventservice.go's getMatchingSubs). Of those,
     only apiId is meaningfully implementable here: apiInvokerId filters
@@ -545,7 +545,7 @@ def unsubscribe_events(subscriber_id: str, subscription_id: uuid.UUID, db: Sessi
 
 
 def notify_service_change(db: Session, service: ServiceProfile, event_type: str) -> None:
-    """Producer-initiated push (OPEN_ITEMS.md section 5): now wired in from
+    """Producer-initiated push (HISTORY.md §5): now wired in from
     register_service (SERVICE_API_AVAILABLE on create, SERVICE_API_UPDATE
     on the idempotent re-registration path) and deregister_service
     (SERVICE_API_UNAVAILABLE). Delivered to every subscriber whose

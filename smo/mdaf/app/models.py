@@ -38,7 +38,7 @@ class MDASubscription(Base):
     requested_by: Mapped[str] = mapped_column(String, nullable=False)
     notification_destination: Mapped[str | None] = mapped_column(String)  # NEW section 5: publish_report's actual delivery target — see main.py
     # Wave 3 (AI Platform Service Decomposition) — TS28.104 ThresholdInfo
-    # (SPEC_AUDIT.md's MDAF section, cribbed from AIMgF's own
+    # (HISTORY.md §7's MDAF section, cribbed from AIMgF's own
     # MLMFSubscription.guard_kpi_floor). threshold_info is the wire-shaped
     # list of {monitoredMDAOutputIE, thresholdDirection, thresholdValue,
     # hysteresis} the subscriber declared; threshold_state is this

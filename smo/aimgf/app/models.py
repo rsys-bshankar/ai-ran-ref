@@ -8,8 +8,8 @@ from smo_shared.db import Base
 
 
 class ModelLifecycle(Base):
-    """Wave 2's own lifecycle-state truth (docs/ownership/AIMGF_OWNERSHIP.md,
-    docs/architecture/SERVICE_OWNERSHIP_MATRIX.md: "Lifecycle state: AIMgF
+    """Wave 2's own lifecycle-state truth (docs/ARCHITECTURE.md (AIMgF),
+    docs/ARCHITECTURE.md: "Lifecycle state: AIMgF
     ✅, MLMR ❌"). Replaces Wave 1's `PATCH /mlmr/models/{id}/lifecycle`
     (which left state/trainingJobId/clearedNodeGroups on MLMR's own row as
     a structural shortcut) — AIMgF now owns this row outright, one per
@@ -33,7 +33,7 @@ class ModelLifecycle(Base):
     cleared_node_groups: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
     nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> nf_deployment_descriptor (NFO)
     nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> nf_deployment (NFO)
-    # OPEN_ITEMS.md section 6.1: operator gate on Training->Validation->
+    # HISTORY.md OI-6.1: operator gate on Training->Validation->
     # Emulation. Reset to False whenever CREATE_TRAINING fires (a fresh
     # training run re-requires approval) — a stale approval from a prior
     # cycle should never silently carry forward into a new one.
@@ -46,7 +46,7 @@ class ModelLifecycle(Base):
 
 class ValidationJob(Base):
     """New this wave — AIMgF's own "Create Validation" request/tracking
-    aggregate (docs/ownership/AIMGF_OWNERSHIP.md's "Owns" list), split out
+    aggregate (docs/ARCHITECTURE.md's AIMgF "Owns" list), split out
     from being folded silently into TrainingJob's own TRAINING_COMPLETE ->
     TESTED transition in Wave 1's flat FSM.
     """
@@ -72,7 +72,7 @@ class ValidationJob(Base):
     validation_criteria: Mapped[dict | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
     metrics: Mapped[dict | None] = mapped_column(JSON)
-    # OPEN_ITEMS.md section 6.5: same additive pair TrainingJob gained —
+    # HISTORY.md OI-6.5: same additive pair TrainingJob gained —
     # who to best-effort notify on completion (set at request time, the
     # requester's own callback), and where the validated artifact lives
     # (a DME DmeTypeId, set on completion).
@@ -91,7 +91,7 @@ class ValidationJob(Base):
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                            default=lambda: datetime.datetime.now(datetime.UTC))
     timeout_seconds: Mapped[int | None] = mapped_column(Integer)
-    # OPEN_ITEMS.md section 6.2: a real NFO-backed execution runtime for
+    # HISTORY.md OI-6.2: a real NFO-backed execution runtime for
     # this validation run — same bare-UUID cross-module-reference shape as
     # ModelLifecycle's own nf_deployment_descriptor_id/nf_deployment_id
     # (NFO runs in its own process; referential integrity enforced at the
@@ -115,7 +115,7 @@ class EmulationJob(Base):
     emulation_criteria: Mapped[dict | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
     metrics: Mapped[dict | None] = mapped_column(JSON)
-    # OPEN_ITEMS.md section 6.5: same pair as ValidationJob's own.
+    # HISTORY.md OI-6.5: same pair as ValidationJob's own.
     notification_uri: Mapped[str | None] = mapped_column(String)
     outcome_artifact_dme_type_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     # Wave 4 — TS 28.105 AIMLInferenceEmulationFunction that hosts this run
@@ -130,14 +130,14 @@ class EmulationJob(Base):
     started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                            default=lambda: datetime.datetime.now(datetime.UTC))
     timeout_seconds: Mapped[int | None] = mapped_column(Integer)
-    # OPEN_ITEMS.md section 6.2: same pair as ValidationJob's own.
+    # HISTORY.md OI-6.2: same pair as ValidationJob's own.
     nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
 
 
 class CertificationRecord(Base):
     """New this wave — a real, queryable record for every governance
-    decision (AIMGF_OWNERSHIP.md's Governance list: Approval,
+    decision (docs/ARCHITECTURE.md's AIMgF Governance list: Approval,
     Certification, Promotion, Rollback — plus the submit/reject pair
     framing approval), written by `advance_model_lifecycle` whenever the
     fired event is one of `statemachine.GOVERNANCE_EVENTS`.
@@ -198,7 +198,7 @@ class TrainingJob(Base):
     producer_type: Mapped[str] = mapped_column(String, nullable=False, default="rApp")
     producer_id: Mapped[str] = mapped_column(String, nullable=False)
     required_data: Mapped[dict | None] = mapped_column(JSON)
-    # OPEN_ITEMS.md section 6.4: `requiredData` itself stays the opaque
+    # HISTORY.md OI-6.4: `requiredData` itself stays the opaque
     # blob it always was — this is a separate, optional, explicitly-typed
     # reference to the real DME DataJob(s) training actually consumed,
     # the same "additive, not replacing the existing field" shape DME's
@@ -208,7 +208,7 @@ class TrainingJob(Base):
     # check, matching every other optional cross-reference in this build.
     dme_data_job_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False, default=list)
     validation_criteria: Mapped[dict | None] = mapped_column(JSON)
-    # SPEC_AUDIT.md's `requestStatus` vocabulary finding, closed: renamed
+    # HISTORY.md §7's `requestStatus` vocabulary finding, closed: renamed
     # to TS28.105's own real 6-value enum (NOT_STARTED/IN_PROGRESS/
     # SUSPENDED/FINISHED/CANCELLED/CANCELLING) — SUSPENDED/CANCELLED
     # already matched (SUSPENDED adopted in an earlier pass). FAILED is
@@ -235,14 +235,14 @@ class TrainingJob(Base):
     consumer_rapp_id: Mapped[str | None] = mapped_column(String)
     producer_rapp_id: Mapped[str | None] = mapped_column(String)
     model_metrics: Mapped[dict | None] = mapped_column(JSON)
-    # OPEN_ITEMS.md section 6.5: where the training run's real output
+    # HISTORY.md OI-6.5: where the training run's real output
     # artifact lives — a DME DmeTypeId reference, the same "route it
     # through DME" shape MLModel's own outputDataType already uses for an
     # inference result, rather than inventing a second data-plane path.
     # Set on completion (POST .../complete), not at request time — the
     # artifact doesn't exist until training actually produces one.
     outcome_artifact_dme_type_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
-    # NEW SPEC_AUDIT.md: TS28.105 AI/ML NRM's own real, closed 4-value
+    # HISTORY.md §7: TS28.105 AI/ML NRM's own real, closed 4-value
     # mLTrainingType enum on both MLModel and MLTrainingRequest —
     # request_training already computes this exact INITIAL_TRAINING-vs-
     # RE_TRAINING distinction internally (as a ModelEvent.TRAIN/RETRAIN
@@ -251,7 +251,7 @@ class TrainingJob(Base):
     # this build, so only two of the spec's four values are ever
     # produced here — an honest partial mapping, not a fabricated one.
     ml_training_type: Mapped[str | None] = mapped_column(String)
-    # OPEN_ITEMS.md section 6.2: a real NFO-backed execution runtime for
+    # HISTORY.md OI-6.2: a real NFO-backed execution runtime for
     # this training run — same pair as ValidationJob/EmulationJob's own.
     nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
@@ -295,7 +295,7 @@ class InferenceJob(Base):
     inference_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     model_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)  # bare UUID — see TrainingJob's docstring
     status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
-    # OPEN_ITEMS.md section 6.2: unlike TrainingJob/ValidationJob/
+    # HISTORY.md OI-6.2: unlike TrainingJob/ValidationJob/
     # EmulationJob (each a transient batch run that gets its own fresh
     # NFO descriptor+deployment, torn down on completion), an
     # InferenceJob doesn't create a new NFO deployment of its own —
@@ -328,7 +328,7 @@ class MLMFSubscription(Base):
     metric_types: Mapped[list[str]] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False)
     dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     guard_kpi_floor: Mapped[dict | None] = mapped_column(JSON)
-    # SPEC_AUDIT.md's `MLMFSubscription` finding, closed: every other
+    # HISTORY.md §7's `MLMFSubscription` finding, closed: every other
     # subscription-shaped resource in this build (DME/MDAF/A1-Related/
     # Intent Service) notifies a real notification_destination and can
     # be torn down with a real DELETE — this one could previously only
@@ -350,7 +350,7 @@ class FeatureGroup(Base):
     """Classified under AIMgF, not MLMR/MLLF: not mentioned by either
     service's own docs/ownership/*.md (a genuine Wave 0 gap — neither
     document anticipated it), and DME (which owns "datasets, feature
-    sets" per docs/architecture/SERVICE_OWNERSHIP_MATRIX.md) is
+    sets" per docs/ARCHITECTURE.md) is
     explicitly frozen unchanged this wave, so moving it there is out of
     scope. The reference registers FeatureGroup through its own Training
     Manager sub-service, co-located with TrainingJob in the same real
@@ -360,7 +360,7 @@ class FeatureGroup(Base):
     AIMgF rather than MLMR/MLLF. Flagged here for the record in case a
     later wave wants to revisit it.
 
-    OPEN_ITEMS.md section 5: no feature-group/feature-store concept
+    HISTORY.md §5: no feature-group/feature-store concept
     existed at all — the reference's own FeatureGroup
     (aiml-fw-awmf-tm's trainingmgr/models/featuregroup.py). Real
     Cassandra-backed feature storage (the ADOPT target,
@@ -393,7 +393,7 @@ class FeatureGroup(Base):
 
 # ---------------------------------------------------------------- Wave 4: TS 28.105 AI/ML NRM IOCs
 #
-# Every IOC of TS28105_AiMlNrm.yaml at REST level (WAVES_4_TO_10_WORK_ITEMS.md
+# Every IOC of TS28105_AiMlNrm.yaml at REST level (docs/ROADMAP.md
 # decision D-9): flat REST resources with the spec's own attribute names and
 # enums, no DN containment tree (the one recorded deviation — addressing).
 # Requests are backed by the real job aggregates (MLTrainingRequest =

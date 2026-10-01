@@ -4,7 +4,7 @@ SMO Design v1.3 section 3.7, extended by NFO+FOCOM LLD sections 2, 4:
 NFDeploymentDescriptor closes the gap where nfDeploymentDescriptorId
 referenced nothing concrete, and Instantiate now calls FOCOM's inventory
 first to resolve clusterId, rather than assuming the Phase 1 degenerate
-single-cluster value implicitly. OPEN_ITEMS.md section 5 extends this
+single-cluster value implicitly. HISTORY.md §5 extends this
 further: a real 7-state deployment lifecycle (statemachine.py), real
 duplication/dependency guards on Instantiate (dms_lcm_nfdeployment.py's
 _check_duplication/_check_dependencies), a resource-linkage object
@@ -65,7 +65,7 @@ def create_descriptor(body: CreateDescriptorRequest, db: Session = Depends(get_s
     Onboarding's OnboardPackage flow once validation succeeds, closing the
     gap where nfDeploymentDescriptorId previously referenced nothing
     concrete. `packageId` is optional since Wave 2 (AI Platform Service
-    Decomposition, docs/ownership/AIMGF_OWNERSHIP.md): AIMgF's own Runtime
+    Decomposition, docs/ARCHITECTURE.md (AIMgF)): AIMgF's own Runtime
     Lifecycle now also creates a descriptor per model runtime, and a
     model runtime has no onboarded ApplicationPackage behind it — every
     package-derived descriptor (Onboarding's own flow, unchanged) still
@@ -85,8 +85,7 @@ def create_descriptor(body: CreateDescriptorRequest, db: Session = Depends(get_s
 def instantiate(body: InstantiateRequest, db: Session = Depends(get_session)):
     """Instantiate — NFO+FOCOM LLD section 4: FOCOM's inventory is queried
     to resolve clusterId before the workload is placed, rather than the
-    Phase 1 degenerate cluster being assumed implicitly. OPEN_ITEMS.md
-    section 5: now also enforces the reference's own real guards before
+    Phase 1 degenerate cluster being assumed implicitly. HISTORY.md §5: now also enforces the reference's own real guards before
     creating anything — _check_dependencies (the descriptor must exist)
     and _check_duplication (no two deployments may share a name, and a
     descriptor may only be deployed once).
@@ -103,7 +102,7 @@ def instantiate(body: InstantiateRequest, db: Session = Depends(get_session)):
 
     r1 = R1Client()
     inv_resp = r1.get("/focom/inventory", params={"resource_type": body.requiredResourceTypeId or ""})
-    # SPEC_AUDIT.md item 8: FOCOM's /inventory reshaped toward the real
+    # HISTORY.md §7 item 8: FOCOM's /inventory reshaped toward the real
     # O2IMS OCloud schema — oCloudId, not the previously invented
     # clusterId. Same graceful fallback on any non-2xx response.
     cluster_id = inv_resp.json().get("oCloudId", "phase1-degenerate-cluster") if inv_resp.status_code == 200 else "phase1-degenerate-cluster"
@@ -180,7 +179,7 @@ def terminate(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.post("/deployments/{nf_deployment_id}/heal")
 def heal(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: previously a pure stub with no state
+    """HISTORY.md §5: previously a pure stub with no state
     transition of any kind. Self-healing recovery isn't modeled by the
     reference at all (no Heal command exists there); this closes the
     state-transition gap directly: legal from ABNORMAL (genuine
@@ -203,7 +202,7 @@ def heal(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.post("/deployments/{nf_deployment_id}/scale")
 def scale(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: previously a pure stub with no state
+    """HISTORY.md §5: previously a pure stub with no state
     transition of any kind. Scale is a replica-count change, the same
     conceptual operation as the reference's Update (RUNNING->UPDATING),
     so it drives that same edge — legal only from RUNNING.

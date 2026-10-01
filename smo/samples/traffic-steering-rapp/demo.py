@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Wave 10.4 demo script (DEMO_RUNBOOK.md §27, WAVES_4_TO_10_WORK_ITEMS.md
+"""The Wave 10.4 demo script (DEMO_RUNBOOK.md §27, docs/ROADMAP.md
 W10.4-10): Demo 00–11 for the Traffic Steering rApp against a running stack.
 
     python3 demo.py 00        # one step

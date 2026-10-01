@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Wave 10.1 demo script (DEMO_RUNBOOK.md §24, WAVES_4_TO_10_WORK_ITEMS.md
+"""The Wave 10.1 demo script (DEMO_RUNBOOK.md §24, docs/ROADMAP.md
 W10-27): Demo 00–11 for the EnergySaving rApp against a running stack.
 
     python3 demo.py 00        # one step

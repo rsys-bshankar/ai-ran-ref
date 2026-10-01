@@ -1,47 +1,42 @@
 # Demo runbook — a sample rApp's full lifecycle
 
-A step-by-step walkthrough of `smo/docs/call-flows/01-rapp-onboarding-to-deployment.md`
-against a real, running `docker compose up` stack — onboard a real
-package, deploy it, simulate its bootstrap (SME/DME registration,
-OAuth2), watch it go RUNNING, then retire it. Every request body below
-is real — copy-pasteable, not illustrative — and every response shape
-matches this build's actual routes.
+A live walk-through of `smo/docs/call-flows/01-rapp-onboarding-to-deployment.md`
+and the rest of the platform against a running `docker compose up` stack:
+onboard a real package, deploy it, simulate its bootstrap (SME/DME
+registration, OAuth2), watch it go `RUNNING`, exercise every other module,
+then retire it. §24–§27 run the four reference rApps. Every request body
+is copy-pasteable and matches this build's routes.
 
-**This must be run in your own environment with a real Docker daemon.**
-Nothing in this repo's own sandbox can run `docker compose up` (no
-Docker daemon there — `OPEN_ITEMS.md` section 2's own documented
-elision); this runbook is what you run instead of a live demo I can
-run for you.
+Run it in your own environment with a Docker daemon.
+`tests_integration/test_demo_runbook.py` replays the same requests (§2–§23)
+and the four `demo.py` scripts (§24–§27) through the in-process mesh on
+every CI run.
+
+Sections §6–§22 are optional and independent of the sample rApp instance,
+except where a step says it reuses an id from an earlier step. There is no
+§9.
 
 ## What you'll onboard
 
-`smo/samples/hello-world-rapp.csar` — a real, valid CSAR package
+`smo/samples/hello-world-rapp.csar` — a valid CSAR package
 (`TOSCA-Metadata/TOSCA.meta`, `Definitions/asd.yaml`,
-`Files/Acm/definition/compositions.json`, a real Helm chart artifact,
-plus reference SME/DME registration bodies under `Files/Sme/`/`Files/Dme/`),
-adapted from the real O-RAN-SC reference's own sample package
-(`nonrtric-plt-rappmanager/sample-rapp-generator/rapp-all`) to satisfy
-this build's own `Onboarding` validator. Since the Wave 1 rApp packaging
-extension (`docs/architecture/AI_PLATFORM_BASELINE.md`) it also carries
-root-level `manifest.yaml`/`capabilities.yaml` declaring its AI Platform
-capabilities — both optional, so onboarding a package without them (any
-CSAR built before this extension) is unaffected. See
-`smo/samples/build_csar.py` if you need to rebuild it after editing
-`smo/samples/hello-world-rapp/`.
-Proven to onboard and deploy for real (not just described) by
-`tests_integration/test_cross_service.py::test_real_demo_csar_onboards_and_deploys`.
+`Files/Acm/definition/compositions.json`, a Helm chart artifact, and
+reference SME/DME registration bodies under `Files/Sme/`/`Files/Dme/`),
+adapted from the O-RAN-SC reference's sample package
+(`nonrtric-plt-rappmanager/sample-rapp-generator/rapp-all`). It also
+carries the optional root-level `manifest.yaml`/`capabilities.yaml`
+declaring its AI Platform capabilities. Rebuild it with
+`smo/samples/build_csar.py` after editing `smo/samples/hello-world-rapp/`.
+`tests_integration/test_cross_service.py::test_real_demo_csar_onboards_and_deploys`
+onboards and deploys it.
 
-## Why every step below runs via `docker compose exec`
+## Why every step runs via `docker compose exec`
 
-Only `r1-termination` publishes a host port (`8080:8000`, per
-`docker-compose.yml`) — every other service (`onboarding`, `sme`, `dme`,
-`nfo`, `rapp-mgmt`, ...) is reachable only from *inside* the compose
-network, by container hostname. Rather than editing `docker-compose.yml`
-to publish more ports, every command below runs Python (already
-installed in every container, `httpx` included) via
-`docker compose exec r1-termination python3 -c "..."` — that container is
-always up once `docker compose up` succeeds, and can already reach every
-other service by hostname the same way real inter-service calls do.
+Only `r1-termination` publishes a host port (`8080:8000`). Every other
+service (`onboarding`, `sme`, `dme`, `nfo`, `rapp-mgmt`, ...) is reachable
+only inside the compose network, by hostname. So every command below runs
+Python (with `httpx`) inside the `r1-termination` container:
+`docker compose exec r1-termination python3 -c "..."`.
 
 ## 0. Start the stack
 
@@ -53,9 +48,8 @@ docker compose ps   # confirm all services are healthy/running
 
 ## 1. Serve the sample package on the compose network
 
-`Onboarding`'s real validator fetches the package over HTTP (it never
-reads local files) — so it needs a real URL reachable from inside the
-network:
+Onboarding fetches the package over HTTP, so it needs a URL reachable
+inside the network:
 
 ```bash
 docker compose cp samples/hello-world-rapp.csar r1-termination:/tmp/hello-world-rapp.csar
@@ -63,7 +57,7 @@ docker compose exec -d r1-termination python3 -m http.server 8899 --directory /t
 ```
 
 `http://r1-termination:8899/hello-world-rapp.csar` is now reachable from
-every other container by hostname.
+every container.
 
 ## 2. Onboard the package
 
@@ -77,9 +71,7 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the `packageId` in the response. Poll until it reaches `AVAILABLE`
-(should be immediate — there's no async worker, `OnboardPackage` resolves
-synchronously):
+Note the `packageId`. Check its status (onboarding resolves synchronously):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -89,18 +81,15 @@ print(r.json())
 "
 ```
 
-`state` should be `AVAILABLE` and `nfDeploymentDescriptorId` should be a
-real UUID (NFO's real `CreateDescriptor`, called automatically once
-validation passes). If `state` is `FAILED` instead, something about the
-CSAR itself is malformed — re-run `python3 smo/samples/build_csar.py`
-and re-copy it (step 1), and check `Files/Acm/definition/compositions.json`
-and `TOSCA-Metadata/TOSCA.meta`/`Entry-Definitions` are both present.
+`state` is `AVAILABLE` and `nfDeploymentDescriptorId` is a UUID (NFO's
+`CreateDescriptor`, called once validation passes). If `state` is `FAILED`,
+the CSAR is malformed: re-run `python3 smo/samples/build_csar.py`, re-copy
+it (step 1), and check that `Files/Acm/definition/compositions.json` and
+`TOSCA-Metadata/TOSCA.meta`/`Entry-Definitions` are present.
 
-**A real validation failure** — `_validate_package`'s own duplicate-
-content check (adapted from the reference's `AsdDescriptorValidator`
-descriptor-id uniqueness rule to this build's own package identity, a
-content hash) rejects a byte-identical package that's already
-onboarded. Onboard the exact same CSAR a second time:
+**A validation failure.** `_validate_package` rejects a byte-identical
+package that is already onboarded (same content hash). Onboard the same
+CSAR again:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -112,10 +101,8 @@ print(r.status_code, r.json())
 "
 ```
 
-This still returns `202` — `OnboardPackage`'s own async contract never
-rejects synchronously, success or failure is only ever observable via
-`onboarding-status`, matching every other outcome in this endpoint.
-Poll the new `packageId`:
+This still returns `202`: `OnboardPackage` never rejects synchronously; the
+outcome is only visible via `onboarding-status`. Poll the new `packageId`:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -125,14 +112,10 @@ print(r.json())
 "
 ```
 
-`state` is `FAILED` — a real, deliberate rejection (the same
-`integrity_hash` already exists on the first package), not a bug.
-Nothing about this second package (name, version, artifacts,
-`nfDeploymentDescriptorId`) was ever populated — the FSM's own
-`VALIDATE_FAILED` transition fires before any of that work happens.
-The first package (from the step above) is untouched and still
-`AVAILABLE` — this failure path is fully independent of the one this
-runbook actually deploys.
+`state` is `FAILED` (the same `integrity_hash` already exists). None of the
+second package's name, version, artifacts or `nfDeploymentDescriptorId` is
+populated — `VALIDATE_FAILED` fires first. The first package is untouched
+and still `AVAILABLE`.
 
 ## 3. Deploy it (CreateInstance)
 
@@ -146,11 +129,9 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the `instanceId` and `oauthClientId` (this build's rAppId, per
-Foundational Platform LLD section 1 — every subsequent SME/DME call
-below uses it). Internally this already called NFO's real
-`Instantiate`, which queried FOCOM's real `/inventory` for a cluster —
-check it:
+Note the `instanceId` and `oauthClientId` (the rAppId). Creating the
+instance called NFO's `Instantiate`, which queried FOCOM's `/inventory` for
+a cluster:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -160,40 +141,28 @@ print(r.json())
 "
 ```
 
-The instance is now `DEPLOYING` — waiting for the (simulated) container
-to bootstrap and call back.
+The instance is now `DEPLOYING`, waiting for the (simulated) container to
+bootstrap and call back.
 
 ## 4. Simulate the deployed container's bootstrap
 
-This is the one step reachable from your own host, since it's the one
-R1 Termination call a real rApp container makes before it has a token:
+This is the one call reachable from your host — the one R1 Termination
+call an rApp container makes before it has a token:
 
 ```bash
 curl -s http://localhost:8080/bootstrap | python3 -m json.tool
 ```
 
-Real response shape: `apiEndpoints` naming `service-apis` and
-`published-apis`, each with a `tokenEndPoint`/`apiEndPoint` pointing
-directly at SME (bypassing R1's own auth gate entirely — necessary,
-since R1 requires a bearer token on every other proxied route, and the
-container doesn't have one yet).
+The response's `apiEndpoints` name `service-apis` and `published-apis`,
+each with a `tokenEndPoint`/`apiEndPoint` pointing directly at SME (R1
+requires a bearer token on every other route). From here on, continue with
+`docker compose exec r1-termination` — those URIs are container-internal.
 
-From here on, continue with `docker compose exec r1-termination` again
-— those URIs are container-internal hostnames.
-
-Since this pass (SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3),
-step 5's `bootstrap-complete` below also does its own real SME
-registration automatically, straight from the package's own CSAR-bundled
-`Files/Sme/providers/`+`Files/Sme/serviceapis/` declarations — using
-this deployed instance's own real, random `oauthClientId` as its apfId,
-not the human-readable `hello-world-rapp` string this walkthrough uses
-below. The manual steps below are still worth running by hand: every
-later section of this runbook (RAN NF OAM, FOCOM, Intent Service, etc.)
-references `hello-world-rapp` as a human-readable producer/requester
-identity throughout, and that identity only exists once these manual
-calls register it — the automatic one at bootstrap-complete is a real,
-separate registration under a different, instance-scoped identity, not
-a substitute for it.
+Step 5's `bootstrap-complete` also registers the package's own
+`Files/Sme/providers/` + `Files/Sme/serviceapis/` declarations with SME,
+under the instance's own `oauthClientId`. The manual registrations below
+are still needed: later sections use `hello-world-rapp` as the
+producer/requester identity, and only these calls create it.
 
 **Register as a provider (APF)** — `Files/Sme/providers/provider.json`'s body:
 
@@ -207,14 +176,9 @@ print(r.status_code, r.json())
 "
 ```
 
-**Register as an invoker** — `Files/Sme/invokers/invoker.json`'s body.
-`SPEC_AUDIT.md`'s SME item 1: the real CAPIF core's onboarding is
-public-key-based — the client submits `apiInvokerPublicKey`, and CAPIF
-*generates* `apiInvokerId`/`onboardingSecret` server-side and hands
-them back (`apiInvokerId` "shall not be present" in the real request
-at all). This build now matches that: the client supplies only its
-own public key, not a self-asserted identity or a client-chosen
-secret:
+**Register as an invoker** — `Files/Sme/invokers/invoker.json`'s body. As
+in CAPIF, the client submits only its `apiInvokerPublicKey`; SME generates
+`apiInvokerId` and `onboardingSecret`:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -224,11 +188,8 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the returned `apiInvokerId` and `onboardingSecret` — every
-subsequent SME call below uses them. (Real CAPIF core's separate
-"Trusted Invokers" security-context registry still has no equivalent
-here — `SPEC_AUDIT.md`'s SME item 2, a genuine additional subsystem,
-not just this onboarding-flow gap.)
+Note the returned `apiInvokerId` and `onboardingSecret` — later SME calls
+(and §12) use them.
 
 **Obtain an OAuth2 token:**
 
@@ -257,6 +218,8 @@ print(r.status_code, r.json())
 "
 ```
 
+Note the returned `serviceId` (§21 uses it as `<helloworldServiceId>`).
+
 **Register as a DME producer (optional)** — `Files/Dme/infoproducers/producer.json`'s body:
 
 ```bash
@@ -283,10 +246,9 @@ print(r.status_code, r.json())
 "
 ```
 
-`state` should now be `RUNNING`. Confirm — `smeServiceIds` shows the
-real serviceId(s) bootstrap-complete's own automatic SME registration
-(above) just received back, under this instance's own `oauthClientId`,
-separate from the manual `hello-world-rapp` registration:
+`state` is now `RUNNING`. Confirm it; `smeServiceIds` holds the serviceId(s)
+from bootstrap-complete's automatic SME registration under the instance's
+`oauthClientId`, separate from the manual `hello-world-rapp` one:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -308,14 +270,9 @@ print(r.status_code, r.json())
 
 ## 7. RAN NF OAM closed-loop (optional) — a real CM write and fault lifecycle
 
-Independent of the sample rApp instance above — this shows the
-platform's own RAN-facing capability: a managed RAN function actually
-being reconfigured and reporting a fault, the core "AI-RAN" story.
-Register a managed element behind the mock O1 Adaptor (this build's own
-NETCONF-shaped test double for a real O1 network element,
-`mock-o1-adaptor:8000/edit-config` — `docker-compose.yml`'s own comment
-on that service names this exact gap: no ME had ever been registered
-against it until now):
+A managed RAN function being reconfigured and reporting a fault. Register a
+managed element behind the mock O1 Adaptor (`mock-o1-adaptor:8000/edit-config`,
+this build's NETCONF-shaped test double for an O1 network element):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -328,8 +285,8 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the returned `endpointId` — health starts `DISCOVERED`. Heartbeat
-it to `ACTIVE` (a real O1 Adaptor would do this on its own timer):
+Note the `endpointId`; health starts `DISCOVERED`. Heartbeat it to `ACTIVE`
+(a real O1 Adaptor would do this on its own timer):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -339,9 +296,8 @@ print(r.status_code, r.json())
 "
 ```
 
-**Dispatch a real CM write** — `WriteConfigurationChanges` decomposes
-this into a real NETCONF `<edit-config>` RPC sent to the mock O1
-Adaptor (`netconf_client.py`), not a stub:
+**Dispatch a CM write.** `WriteConfigurationChanges` sends a NETCONF
+`<edit-config>` RPC to the mock O1 Adaptor (`netconf_client.py`):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -354,8 +310,7 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the `jobId`. Confirm the sub-change actually reached the mock O1
-Adaptor and applied:
+Note the `jobId`. Confirm the sub-change reached the adaptor and applied:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -367,14 +322,12 @@ print(r2.status_code, r2.json())
 "
 ```
 
-`status` should be `COMPLETED`, the sub-change `APPLIED`, and the mock
-adaptor's own record shows the real applied attribute change.
+`status` is `COMPLETED`, the sub-change `APPLIED`, and the mock adaptor's
+record shows the applied attribute change.
 
-**A real partial failure** — `WriteConfigurationChanges` decomposes a
-multi-ME request into independent per-ME sub-changes and aggregates
-their outcomes (RAN NF OAM LLD section 5.1); a batch touching one
-healthy, registered ME and one ME that was never registered genuinely
-settles as `PARTIAL_SUCCESS`, not an all-or-nothing failure:
+**A partial failure.** A multi-ME request is decomposed into per-ME
+sub-changes whose outcomes are aggregated (RAN NF OAM LLD section 5.1). A
+batch touching one registered ME and one never-registered ME:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -392,15 +345,11 @@ print(r2.status_code, r2.json())
 "
 ```
 
-The job's own `status` is `PARTIAL_SUCCESS`; `subChanges` shows
-`demo-o-du-1` genuinely `APPLIED` (the real NETCONF RPC fired again,
-setting `adminState` back to `LOCKED`) alongside
-`demo-o-du-2-never-registered` `REJECTED` with `rejectionReason:
-ENDPOINT_UNREACHABLE` — no `O1AdaptorEndpoint` was ever registered for
-it, the same real per-ME dispatch gate the closed-loop steps above
-already went through successfully. This is the honest operational case
-a bulk RAN configuration push actually hits (one node in a batch is
-down or never onboarded), not a scripted failure.
+The job's `status` is `PARTIAL_SUCCESS`. `subChanges` shows `demo-o-du-1`
+`APPLIED` (the RPC fired again, setting `adminState` back to `LOCKED`) and
+`demo-o-du-2-never-registered` `REJECTED` with
+`rejectionReason: ENDPOINT_UNREACHABLE` — no `O1AdaptorEndpoint` exists for
+it.
 
 **Raise, acknowledge, and clear a fault alarm** on the same ME:
 
@@ -427,19 +376,13 @@ print(r2.status_code, r2.json())
 "
 ```
 
-`severity` on the cleared alarm should read `cleared`, with
-`ackUserId`/`clearUserId`/`changedAt` all populated — a full fault
-lifecycle against real, persisted rows, not a mock.
+The cleared alarm's `severity` is `cleared`, with
+`ackUserId`/`clearUserId`/`changedAt` populated.
 
 ## 8. FOCOM resource management (optional) — provision, subscribe, observe a real notification
 
-Independent of the sample rApp instance above — this shows FOCOM's O2IMS
-inventory-subscription mechanism firing for real: subscribe to inventory
-changes for a resource type, then provision and deprovision a resource
-of that type and see each one actually attempted against the
-subscriber's callback.
-
-Subscribe first, filtered to a resource type this walkthrough will use:
+FOCOM's O2IMS inventory subscription: subscribe to changes for a resource
+type, then provision and deprovision a resource of that type. Subscribe:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -462,8 +405,7 @@ print(r.status_code, r.json())
 "
 ```
 
-`resourceId` in the response is a real, persisted `Resource` row —
-confirm it with the pool drill-down:
+`resourceId` is a persisted `Resource` row; confirm with the pool drill-down:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -473,19 +415,17 @@ print(r.status_code, r.json())
 "
 ```
 
-Provisioning fired a real `CREATE` notification at `_notify_inventory_
-subscribers` — `focom`'s own logs show the delivery attempt to
-`http://demo-consumer:9000/inventory-events` (there's no real listener
-container in this compose stack at that address, so the attempt fails
-DNS resolution and is silently dropped — delivery is deliberately
-best-effort, the same behavior `test_inventory_notification_delivery_
-survives_unreachable_subscriber` proves won't ever surface as a 500 to
-the caller). `tests_integration/test_demo_runbook.py` proves the outbound
-call itself — method, URL, and body — really fires, by intercepting it at
-the same `httpx.post` call FOCOM's own code makes, rather than
-re-implementing the notification logic.
+Provisioning fired a `CREATE` notification (`_notify_inventory_subscribers`).
+`focom`'s logs show the delivery attempt to
+`http://demo-consumer:9000/inventory-events`. No listener exists at that
+address in this stack, so the attempt fails DNS resolution and is dropped;
+delivery is best-effort and never surfaces as a 500 to the caller.
+`tests_integration/test_demo_runbook.py` intercepts the outbound
+`httpx.post` and asserts its URL and body. The same pattern applies to
+every `demo-consumer:9000` callback in this runbook: watch the named
+service's logs for the attempt.
 
-Deprovision it — this fires a matching `DELETE` notification the same way:
+Deprovision it — this fires a matching `DELETE` notification:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -495,10 +435,9 @@ print(r.status_code, r.json())
 "
 ```
 
-**FOCOM FCAPS** — a distinct domain from RAN NF OAM's RAN-function
-alarms (NFO+FOCOM LLD section 1): infrastructure/O-Cloud host alarms
-and performance. Ingest a real infrastructure alarm against the Phase 1
-degenerate cluster:
+**FOCOM FCAPS** — infrastructure/O-Cloud alarms and performance, distinct
+from RAN NF OAM's RAN-function alarms (NFO+FOCOM LLD section 1). Ingest an
+infrastructure alarm against the Phase 1 cluster:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -518,8 +457,7 @@ print(r.status_code, r.json())
 "
 ```
 
-Performance metrics are also genuinely queryable, filterable by
-`resource_ref`:
+Performance metrics are queryable too, filterable by `resource_ref`:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -529,30 +467,20 @@ print(r.status_code, r.json())
 "
 ```
 
-This returns `[]` in a fresh stack — honestly, not a bug: there is no
-`POST /performance` route in this build at all, matching the same
-"no real southbound collection pipeline" elision already documented for
-RAN NF OAM's PM subscriptions — real O-Cloud performance metrics would
-arrive via O2ims's own collection mechanism, not an rApp-facing write.
-The route itself, and its filter, are real and already unit-tested
-(`test_performance_metrics_filterable_by_resource`); nothing here is
-stubbed, there is simply nothing to collect from in a docker-run-based
-Phase 1.
+This returns `[]` in a fresh stack. There is no `POST /performance` route:
+O-Cloud performance metrics would arrive via O2ims collection, which this
+build does not include.
 
 ## 10. Intent Service automation (optional) — register, address, dispatch, retract
 
-Independent of the sample rApp instance above — this shows Intent
-Service's real Intent-to-RMIH dispatch mechanism firing, Wave 3's
-consumer-side-selection shape (`docs/ownership/INTENT_SERVICE_OWNERSHIP.md`):
-an SMO-internal RAN Management Intent Handler (RMIH) declares what it can
-fulfil, and an rApp addresses its Intent directly at one already-registered
-RMIH by `rmihId` — matching `TS28312_IntentNrm.yaml`'s own NRM containment
-(`IntentHandlingFunction` *contains* `Intent`) — rather than the platform
-broadcasting to every capability-matching RMIH after the fact.
+Intent Service's Intent-to-RMIH dispatch with consumer-side selection
+(`docs/ARCHITECTURE.md (Intent Service)`): an SMO-internal RAN
+Management Intent Handler (RMIH) declares what it can fulfil, and an rApp
+addresses its Intent at one registered RMIH by `rmihId`
+(`TS28312_IntentNrm.yaml`: `IntentHandlingFunction` contains `Intent`).
 
-Register an RMIH. Per D-SEC-POLICY-1, only an SMO-internal module may
-hold an `rmihId` — an rApp UUID is rejected — so this uses `so-smos`,
-the same identity SO SMOS registers under in the real deployment:
+Register an RMIH. Per D-SEC-POLICY-1 only an SMO-internal module may hold
+an `rmihId` (an rApp UUID is rejected), so this uses `so-smos`:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -567,10 +495,8 @@ print(r.status_code, r.json())
 "
 ```
 
-Create an Intent addressed directly at `so-smos` (`rmihId`), whose
-`expectationObject.objectType` matches that RMIH's declared capability
-(`TS28312_IntentNrm.yaml`'s own field — not an invented top-level type
-string):
+Create an Intent addressed at `so-smos`, whose
+`expectationObject.objectType` matches that RMIH's declared capability:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -583,17 +509,12 @@ print(r.status_code, r.json())
 "
 ```
 
-`CreateIntent` validated that the named `so-smos` actually declares a
-matching capability and covers the requested `intentHandlingScope`
-(422 `RMIH_CAPABILITY_MISMATCH` otherwise — see the negative case
-below), then dispatched a real notification to its own callback —
-`so-smos:8000/intents/notify` has no route that accepts it yet
-(dispatch is deliberately best-effort, same pattern as FOCOM's
-inventory notifications above), so watch `intent-service`'s own logs
-for the attempted delivery. `tests_integration/test_demo_runbook.py`
-proves the real dispatch fires with the correct `intentId`/
-`expectationObjectTypes` payload, by intercepting the exact `httpx.post`
-call `create_intent` makes.
+`CreateIntent` checks that `so-smos` declares a matching capability and
+covers the requested `intentHandlingScope` (otherwise 422
+`RMIH_CAPABILITY_MISMATCH`), then dispatches a notification to
+`so-smos:8000/intents/notify`. Nothing accepts it there yet (best-effort),
+so watch `intent-service`'s logs. The integration test asserts the
+dispatch's `intentId`/`expectationObjectTypes` payload.
 
 Note the `intentId`, then confirm the persisted Intent:
 
@@ -605,10 +526,8 @@ print(r.status_code, r.json())
 "
 ```
 
-**A real negative case** — `intentHandlingScope` is validated against
-the one named target at creation time, not decoration: register a
-second RMIH with the *same* declared capability (`RAN_SUBNETWORK`) but
-a *different* declared scope (`CN`-only):
+**A negative case.** Register a second RMIH with the same capability
+(`RAN_SUBNETWORK`) but a `CN`-only scope:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -623,9 +542,7 @@ print(r.status_code, r.json())
 "
 ```
 
-Address a `RAN`-scoped Intent directly at `sa-smos` — the identical
-`RAN_SUBNETWORK` expectation object type it declares support for, but
-the wrong scope:
+Address a `RAN`-scoped Intent at `sa-smos`:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -638,12 +555,10 @@ print(r.status_code, r.json())
 "
 ```
 
-This is rejected outright — `422 RMIH_CAPABILITY_MISMATCH` — before any
-Intent row is even created and before any dispatch is ever attempted:
-`sa-smos`'s matching *capability* is correctly never enough on its own,
-because its declared `CN`-only scope fails the check. Create a second,
-real Intent addressed at `so-smos` instead to see the successful path
-again:
+Rejected with `422 RMIH_CAPABILITY_MISMATCH` before any Intent row is
+created or any dispatch attempted: the matching capability is not enough
+when the scope does not match. Create a second Intent addressed at
+`so-smos`:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -656,14 +571,10 @@ print(r.status_code, r.json())
 "
 ```
 
-Watch `intent-service`'s own logs: exactly one further delivery
-attempt, to `so-smos:8000/intents/notify`, never to
-`sa-smos:8000/intents/notify` (it was rejected before dispatch, not
-silently un-notified). `tests_integration/test_demo_runbook.py` asserts
-this precisely.
+`intent-service`'s logs show exactly one further delivery attempt, to
+`so-smos:8000/intents/notify`, and none to `sa-smos:8000/intents/notify`.
 
-Retract both Intents, then deregister both RMIHs — symmetric teardown,
-same pattern as FOCOM's provision/deprovision above:
+Retract both Intents, then deregister both RMIHs:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -681,15 +592,12 @@ print(r4.status_code)
 
 ## 11. A1 Policy Management (optional) — register, enforce, a real duplicate rejection, retract
 
-Independent of the sample rApp instance above — this exercises a whole
-module the runbook has never touched: A1 Related's real mapping-store
-role, a genuine round trip to the mock Near-RT RIC, and its real
-duplicate-policy-content rejection.
+A1 Related's mapping store, a round trip to the mock Near-RT RIC, and its
+duplicate-content rejection.
 
-Register as a supervised service (per `pms-api-v3.json`'s
-`putService`; `keepAliveIntervalSeconds: 0` disables supervision for
-this walkthrough — a positive value would need repeated keepalive
-calls or the service gets swept and its policies torn down):
+Register as a supervised service (`pms-api-v3.json`'s `putService`).
+`keepAliveIntervalSeconds: 0` disables supervision for this walk-through;
+§22 shows a non-zero interval:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -699,7 +607,7 @@ print(r.status_code, r.json())
 "
 ```
 
-Real policy types (this build's own hardcoded A1TD catalog sample):
+Policy types (this build's built-in A1TD catalog sample):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -709,8 +617,8 @@ print(r.status_code, r.json())
 "
 ```
 
-Create an A1 Policy — a real round trip to the mock Near-RT RIC
-(`A1TerminationClient.create_policy`), not a local stub:
+Create an A1 Policy — a round trip to the mock Near-RT RIC
+(`A1TerminationClient.create_policy`):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -724,8 +632,7 @@ print(r.status_code, r.json())
 "
 ```
 
-`enforcementStatus` is `ENFORCED` — the mock Near-RT RIC genuinely
-accepted it. Subscribe to status changes on it:
+`enforcementStatus` is `ENFORCED`. Subscribe to status changes on it:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -738,10 +645,9 @@ print(r.status_code, r.json())
 "
 ```
 
-**A real duplicate-policy rejection** — create a second policy with the
-exact same type and content as the first; the mock Near-RT RIC's own
-content-fingerprint check (adopted from the real near-rt-ric-simulator's
-`calcFingerprint`) rejects it, not a scripted failure:
+**A duplicate-policy rejection.** Create a second policy with the same type
+and content; the mock RIC's content-fingerprint check (from the
+near-rt-ric-simulator's `calcFingerprint`) rejects it:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -755,14 +661,11 @@ print(r.status_code, r.json())
 "
 ```
 
-`enforcementStatus` is `REJECTED` — A1 Related still stores the mapping
-(so it's queryable), but the RIC-side content collision is real, not
-simulated locally by A1 Related itself.
+`enforcementStatus` is `REJECTED`. A1 Related still stores the mapping, so
+it's queryable.
 
-Now update the first policy to an empty object — the mock's own
-`REJECTED`-on-empty rule fires a genuine `ENFORCED -> REJECTED`
-transition, which is exactly what the subscription above exists to
-observe:
+Update the first policy to an empty object; the mock's
+`REJECTED`-on-empty rule produces an `ENFORCED -> REJECTED` transition:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -772,17 +675,12 @@ print(r.status_code, r.json())
 "
 ```
 
-`enforcementStatus` is now `REJECTED`, and because it genuinely changed
-from `ENFORCED`, `_notify_policy_status_subscribers` fired a real POST
-to `http://demo-consumer:9000/policy-status` — no real listener exists
-at that address in this compose stack (same honesty pattern as FOCOM's
-and Intent Service's placeholder callbacks above), so watch `a1-related`'s
-own logs for the delivery attempt;
-`tests_integration/test_demo_runbook.py` proves the real dispatch fires
-by intercepting the exact `httpx.post` call.
+`enforcementStatus` is now `REJECTED`, and `_notify_policy_status_subscribers`
+POSTs to `http://demo-consumer:9000/policy-status` — watch `a1-related`'s
+logs.
 
-Retract everything — delete both policies, then deregister the service
-(which would itself cascade-delete any policies still attached to it):
+Retract: delete both policies, then deregister the service (which would
+also cascade-delete any policies still attached):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -798,16 +696,11 @@ print(r3.status_code)
 
 ## 12. SME Trusted Invokers (optional) — register, query, revoke a real security context
 
-Independent of the sample rApp instance above — this exercises the real
-CAPIF core's second, separate security mechanism beyond OAuth2 token
-issuance (`capifcore/internal/securityservice/security.go`): a per-AEF
-security context a real AEF (resource server) would consult directly,
-not something the token endpoint itself ever reads. Previously entirely
-absent from this build (SPEC_AUDIT.md SME item 2).
+CAPIF's per-AEF security context (`capifcore/internal/securityservice/security.go`),
+separate from OAuth2 token issuance: an AEF consults it directly.
 
-Reuse the `apiInvokerId` from step 4's invoker registration. Register a
-security context for it — this genuinely requires the invoker already
-be onboarded:
+Reuse the `apiInvokerId` from step 4 (the invoker must already be
+onboarded). Register a security context:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -821,11 +714,9 @@ print(r.status_code, r.json())
 "
 ```
 
-`201` — `selSecurityMethod` is the invoker's own first preferred method
-(this build has no real per-AEF security-method catalog to cross-check
-against, honestly, the same "unknown real content, permissive
-placeholder" pattern used elsewhere). Query it back — by default,
-`authenticationInfo`/`authorizationInfo` are redacted:
+`201`; `selSecurityMethod` is the invoker's first preferred method (no
+per-AEF security-method catalog exists to cross-check). Query it back —
+`authenticationInfo`/`authorizationInfo` are redacted by default:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -835,7 +726,7 @@ print(r.status_code, r.json())
 "
 ```
 
-Both fields come back as empty strings. Ask for them explicitly:
+Both fields are empty strings. Ask for them explicitly:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -845,8 +736,8 @@ print(r.status_code, r.json())
 "
 ```
 
-Now the real values come back. **Revoke** the context for this one
-AEF — a real, partial removal, not a full delete:
+The real values come back. **Revoke** the context for this one AEF (a
+partial removal):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -858,8 +749,8 @@ print(r.status_code)
 "
 ```
 
-Since that was the only `securityInfo` entry, the whole trusted-invoker
-record is now gone — confirm with a 404:
+That was the only `securityInfo` entry, so the whole trusted-invoker
+record is gone — confirm with a 404:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -871,18 +762,12 @@ print(r.status_code, r.json())
 
 ## 13. AI Platform: MLMR + AIMgF + MLLF (optional) — register, train, upload/download a real artifact, advance to ACTIVE, deploy
 
-Independent of the sample rApp instance above — a whole area never
-touched by this runbook before. Wave 1 of the AI Platform Service
-Decomposition split the former single `ai-ml-workflow` module into
-three real services — MLMR (model repository), AIMgF (lifecycle
-orchestration), MLLF (loading/deployment) — communicating with each
-other through R1 Termination exactly like every other cross-module call
-in this build (see `docs/architecture/SERVICE_OWNERSHIP_MATRIX.md`).
-Real MLModel lifecycle FSM (SMO Design v1.3 section 3.8, now living in
-AIMgF), a real training-job round trip, and real artifact bytes that
-genuinely round-trip through Postgres, not a stub.
+Three services, calling each other through R1 Termination
+(`docs/ARCHITECTURE.md`): MLMR (model repository),
+AIMgF (lifecycle orchestration, owns the MLModel FSM), MLLF
+(loading/deployment). Artifact bytes round-trip through Postgres.
 
-Register a model with real metadata (MLMR):
+Register a model (MLMR):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -897,10 +782,9 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the `modelId` — `state` is `REGISTERED`. Request training against
-it (AIMgF) — a real FSM transition (`REGISTERED -> TRAINING`, `TRAIN`),
-with AIMgF reading and writing the model's state on MLMR's own row over
-R1 rather than a shared in-process ORM:
+Note the `modelId`; `state` is `REGISTERED`. Request training (AIMgF) — an
+FSM transition (`REGISTERED -> TRAINING`, `TRAIN`), written to MLMR's row
+over R1:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -914,8 +798,7 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the `trainingJobId`. Confirm the model really moved to `TRAINING`
-(MLMR, the row AIMgF's own request_training call just updated):
+Note the `trainingJobId`. Confirm the model moved to `TRAINING` (MLMR):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -925,9 +808,8 @@ print(r.status_code, r.json())
 "
 ```
 
-**Upload a real model artifact** (MLMR) — the bytes genuinely round-trip
-through a Postgres-backed `ModelArtifact` row, not a discarded stub
-(real S3 storage is the one deliberate elision here):
+**Upload a model artifact** (MLMR) — stored in a Postgres-backed
+`ModelArtifact` row (S3 storage is not included):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -938,8 +820,8 @@ print(r.status_code, r.json())
 "
 ```
 
-Note `artifactVersion` (1). Write real training metrics (AIMgF), matching
-the reference's own whole-body-replace semantics:
+Note `artifactVersion` (1). Write training metrics (AIMgF, whole-body
+replace):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -949,8 +831,8 @@ print(r.status_code, r.json())
 "
 ```
 
-**Advance the model through its real lifecycle FSM** (AIMgF) — each step
-is a genuine state transition, not a fast-forward:
+**Advance the model through its lifecycle FSM** (AIMgF), one transition
+per event:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -961,9 +843,8 @@ for event in ['TRAINING_COMPLETE', 'VALIDATION_COMPLETE', 'CERTIFY', 'LOAD', 'AC
 "
 ```
 
-Ending state is `ACTIVE`. **Deploy the model** (MLLF) — stamps
-`clearedNodeGroups` back onto MLMR's own row (LLD section 5, MultiNode
-Q2's targeting gap):
+The ending state is `ACTIVE`. **Deploy the model** (MLLF) — stamps
+`clearedNodeGroups` onto MLMR's row (LLD section 5):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -973,8 +854,7 @@ print(r.status_code, r.json())
 "
 ```
 
-Download the artifact back (MLMR) and confirm the bytes really match
-what was uploaded:
+Download the artifact (MLMR) and confirm the bytes match the upload:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -984,11 +864,8 @@ print(r.status_code, r.content == b'demo-model-weights-bytes')
 "
 ```
 
-Deregister (MLMR) — real Postgres `ON DELETE CASCADE` cleans up the
-artifact row (MLMR's own table) and, transitively, AIMgF's own
-training-job/inference-job/subscription rows, even though MLMR's own
-process never imports AIMgF's models — verified directly against this
-same live instance, not just asserted:
+Deregister (MLMR). Postgres `ON DELETE CASCADE` removes the artifact row
+and AIMgF's training-job/inference-job/subscription rows:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1000,14 +877,10 @@ print(r.status_code)
 
 ## 14. RAN Analytics + MDAF (optional) — register a producer, subscribe, publish a real report
 
-Independent of the sample rApp instance above — the last of the four
-modules never touched by any demo phase before this pass. Real
-producer registration (which itself does the same real two-step CAPIF
-dance as step 4: SME provider enrolment then service publish), a real
-subscription, and a real report-publish that genuinely notifies its
-subscriber. Wave 1 of the AI Platform Service Decomposition split
-report publishing/subscriptions into their own **MDAF** service —
-`ran-analytics` keeps producer registration only.
+Producer registration stays in `ran-analytics`; report publishing and
+subscriptions live in **MDAF**. Producer registration does the same
+two-step CAPIF sequence as step 4 (SME provider enrolment, then service
+publish).
 
 Register an analytics producer (RAN Analytics):
 
@@ -1021,11 +894,9 @@ print(r.status_code, r.json())
 "
 ```
 
-`hello-world-rapp` was already SME-enrolled in step 4 — this
-re-registers the same provider (idempotent) and publishes a second,
-distinct service (`mdaf.coverage-issue-analysis`) for it, the same
-real cross-module wiring `register_analytics_producer` always does.
-Confirm it's a real, queryable registration:
+`hello-world-rapp` was SME-enrolled in step 4; this re-registers the same
+provider (idempotent) and publishes a second service
+(`mdaf.coverage-issue-analysis`). Confirm the registration:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1035,7 +906,7 @@ print(r.status_code, r.json())
 "
 ```
 
-Subscribe, with a real notification destination (MDAF):
+Subscribe, with a notification destination (MDAF):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1058,15 +929,9 @@ print(r.status_code, r.json())
 "
 ```
 
-`publish_report` fired a real notification to
-`http://demo-consumer:9000/analytics-reports` — no real listener
-exists at that address in this compose stack (same honesty pattern as
-FOCOM's/Intent Service's/A1 Related's placeholder callbacks above), so
-watch `mdaf`'s own logs for the delivery attempt;
-`tests_integration/test_demo_runbook.py` proves the real dispatch
-fires with the correct `reportId`/`output` payload, by intercepting
-the exact `httpx.post` call `_notify_report_subscribers` makes.
-Confirm the report is queryable:
+`publish_report` notifies `http://demo-consumer:9000/analytics-reports` —
+watch `mdaf`'s logs. The integration test asserts the `reportId`/`output`
+payload. Confirm the report is queryable:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1088,20 +953,14 @@ print(r.status_code)
 
 ## 15. SA SMOS (optional) — a real assurance monitor, a genuine `RECONNECT` heal, and a genuine `ROLLBACK` refusal
 
-Independent of the sample rApp instance above — the last of the
-six-item follow-up sequence. SA SMOS's own real remedial-action
-dispatch (SO/SA SMOS LLD section 2.1) was already implemented and
-unit-tested, but no demo phase had ever exercised it. `RECONNECT`
-needs a genuine, `RUNNING` `NFDeployment` to reconnect — the sample
-rApp's own deployment (step 3) can't be reused, since NFO's real
-duplication guard means a `NFDeploymentDescriptor` may only be
-deployed once — so this creates a second, independent deployment of
-the same already-onboarded package first, via SO SMOS's own real
-dispatch table (the next section exercises it further).
+SA SMOS's remedial-action dispatch (SO/SA SMOS LLD section 2.1).
+`RECONNECT` needs a `RUNNING` `NFDeployment`. The sample rApp's deployment
+can't be reused (NFO deploys a descriptor only once), so this creates a
+second deployment of the same package through SO SMOS.
 
-Create a second `NFDeploymentDescriptor` against the package onboarded
-in step 2 (`CreateDescriptor` has no per-package uniqueness
-constraint — only *deploying* the same descriptor twice is rejected):
+Create a second `NFDeploymentDescriptor` for the package from step 2
+(descriptors are not unique per package; only deploying one twice is
+rejected):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1113,10 +972,8 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the new `nfDeploymentDescriptorId`, then submit a real SO SMOS
-order with a single `DEPLOY` step targeting it — the same dispatch
-table the next section exercises further, this time reaching NFO's
-real `Instantiate`:
+Note the new `nfDeploymentDescriptorId`, then submit an SO SMOS order with
+a single `DEPLOY` step targeting it (reaches NFO's `Instantiate`):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1131,10 +988,8 @@ print(r.status_code, r.json())
 "
 ```
 
-The single step is `COMPLETED`; its `result` carries a real
-`nfDeploymentId` in state `RUNNING` (NFO's own `INSTANTIATE_COMPLETE`
-transition, the same as the sample rApp's own deployment). Note the
-`orderId`.
+The step is `COMPLETED`; its `result` carries an `nfDeploymentId` in state
+`RUNNING`. Note the `orderId`.
 
 Register an `AssuranceMonitor` scoped to that order:
 
@@ -1146,8 +1001,8 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the `monitorId`. Evaluate it against a real metrics sample that
-breaches the threshold:
+Note the `monitorId`. Evaluate it against a metrics sample that breaches
+the threshold:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1157,14 +1012,12 @@ print(r.status_code, r.json())
 "
 ```
 
-`breaches` shows `{'latency': 100}` — a real threshold comparison, not
-a stub.
+`breaches` shows `{'latency': 100}`.
 
-**A genuine `RECONNECT`** — `ExecuteRemedialAction` resolves the
-monitor's `target_order_id` back into a concrete `nfDeploymentId` by
-reading SO SMOS's own order record (`_resolve_deployed_nf`, finding
-the `DEPLOY` step's `COMPLETED` result) and dispatches NFO's real
-`Heal`:
+**`RECONNECT`.** `ExecuteRemedialAction` resolves the monitor's
+`target_order_id` to an `nfDeploymentId` by reading the SO SMOS order
+(`_resolve_deployed_nf`, the `DEPLOY` step's `COMPLETED` result) and calls
+NFO's `Heal`:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1174,15 +1027,12 @@ print(r.status_code, r.json())
 "
 ```
 
-`outcome` is `RESOLVED` — NFO's `Heal` route genuinely fired (from
-`RUNNING`, idempotent, matching the reference's absence of a real
-"unhealthy" concept — see `nfo/app/main.py`'s own `heal()` docstring)
-and recorded a real `LCMOperation` row.
+`outcome` is `RESOLVED`; NFO's `Heal` fired (idempotent from `RUNNING` —
+see `heal()` in `nfo/app/main.py`) and recorded an `LCMOperation` row.
 
-**A genuine `ROLLBACK` refusal** — this is not a generic "ambiguous
-meaning" stub. rApp Management's own `UpgradeInstance` deletes the
-previous `RAppInstance` row on a successful commit, so no
-package-version history survives to roll back to at all:
+**`ROLLBACK` refusal.** rApp Management's `UpgradeInstance` deletes the
+previous `RAppInstance` row on commit, so no version history exists to roll
+back to:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1192,11 +1042,11 @@ print(r.status_code, r.json())
 "
 ```
 
-`501`, with `detail.title` = `ROLLBACK_HISTORY_UNAVAILABLE` and a
-concrete explanation, not a generic error.
+`501`, with `detail.title` = `ROLLBACK_HISTORY_UNAVAILABLE` and an
+explanation.
 
-Retire the second deployment — NFO's real `Terminate` (from `RUNNING`,
-this build's Phase 1 elision completes the delete synchronously):
+Retire the second deployment — NFO's `Terminate` (completes synchronously
+in Phase 1):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1208,20 +1058,14 @@ print(r.status_code)
 
 ## 16. SO SMOS (optional) — a real multi-step order, fail-fast, cancel
 
-Independent of the sample rApp instance above — this exercises SO
-SMOS's own real dispatch table (SO/SA SMOS LLD section 1): a single
-order's steps are dispatched in sequence to whichever downstream
-module each `stepType`/`targetModule` pair maps to, over the real R1
-client — not a placeholder. Section 1.1's own design decision is
-**fail-fast**: the first failed step halts the order; every step after
-it stays `PENDING`, never attempted; completed steps are not
-auto-rolled-back (no compensating-transaction mechanism exists in
-Phase 1).
+SO SMOS dispatches an order's steps in sequence to the module each
+`stepType`/`targetModule` pair maps to, over R1 (SO/SA SMOS LLD section 1).
+It is **fail-fast** (section 1.1): the first failed step halts the order,
+later steps stay `PENDING`, and completed steps are not rolled back.
 
-Submit a 3-step order — a real `FOCOM` provision, a `POLICY` step
-against a policy type A1 Related doesn't recognize (a genuine
-downstream rejection, not a scripted one), and a `TRAINING` step that
-should never actually be attempted:
+Submit a 3-step order: a `FOCOM` provision, a `POLICY` step with a policy
+type A1 Related doesn't recognise, and a `TRAINING` step that is never
+reached:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1239,15 +1083,11 @@ print(r.status_code, r.json())
 "
 ```
 
-The response shows all three steps' real outcomes in one call: step 1
-`COMPLETED` (a genuine new `Resource` row now exists in FOCOM), step 2
-`FAILED` (A1 Related's own real `POLICY_TYPE_NOT_SUPPORTED` rejection,
-surfaced as `DownstreamError` — SO SMOS's own dispatch layer
-distinguishes this from a transport failure, per its own docstring on
-a real bug this caught: a downstream error response was previously
-recorded as `COMPLETED` with the error body as the "result"), and step
-3 `PENDING` — the order halted before `AI_ML_WORKFLOW` was ever
-dispatched to. Note the `orderId`, then confirm the persisted state:
+The response shows all three outcomes: step 1 `COMPLETED` (a new FOCOM
+`Resource` row), step 2 `FAILED` (A1 Related's `POLICY_TYPE_NOT_SUPPORTED`,
+surfaced as a `DownstreamError`, distinct from a transport failure), and
+step 3 `PENDING` — `AI_ML_WORKFLOW` was never dispatched to. Note the
+`orderId`, then confirm the persisted state:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1257,11 +1097,8 @@ print(r.status_code, r.json())
 "
 ```
 
-**Cancel** the order — the real, genuinely-tested fix (this route used
-to silently never persist the cancellation at all, since mutating a
-plain JSON column's list in place is invisible to SQLAlchemy's change
-tracking) turns the still-`PENDING` step `CANCELLED`, leaving the
-already-`COMPLETED`/`FAILED` steps untouched:
+**Cancel** the order. The `PENDING` step becomes `CANCELLED`; the
+`COMPLETED`/`FAILED` steps are unchanged:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1273,14 +1110,11 @@ print(r.status_code, r.json())
 
 ## 17. DME type subscriptions (optional) — notify a consumer when a type is registered or removed
 
-Independent of the sample rApp instance above — DME's own real
-type-subscription mechanism (ICS's own `/info-type-subscription`,
-`InfoTypeSubscriptions`/`ConsumerCallbacks`), closed in an earlier
-pass but never demonstrated: a consumer notified whenever *any*
-`DmeType` is registered or removed, unfiltered (matching the
-reference's own lack of per-type scoping).
+DME's type subscriptions (ICS's `/info-type-subscription`): a consumer is
+notified whenever any `DmeType` is registered or removed, unfiltered (as
+in ICS).
 
-Subscribe first, with a real notification destination:
+Subscribe:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1292,8 +1126,8 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the `subscriptionId`. Register a new DME type — `register_dme_type`
-fires a real `REGISTERED` notification to every subscriber
+Note the `subscriptionId`. Register a new DME type; `register_dme_type`
+sends a `REGISTERED` notification to every subscriber
 (`_notify_type_subscribers`):
 
 ```bash
@@ -1310,21 +1144,13 @@ print(r.status_code, r.json())
 "
 ```
 
-No real listener exists at `http://demo-consumer:9000/dme-type-events`
-in this compose stack (same honesty pattern as every other placeholder
-callback in this runbook), so watch `dme`'s own logs for the attempted
-delivery — a real POST with `{infoTypeId, jobDataSchema, status:
-"REGISTERED"}`. `tests_integration/test_demo_runbook.py` proves the
-real dispatch fires with the correct payload by intercepting the exact
-`httpx.post` call.
+Watch `dme`'s logs for a POST to `http://demo-consumer:9000/dme-type-events`
+with `{infoTypeId, jobDataSchema, status: "REGISTERED"}`.
 
-Deregister the producer. SPEC_AUDIT.md's own Producer/Type conflation
-finding, closed: Producer and Type are two real, separately-owned
-entities now (matching ICS's own model), so `deregister_producer` only
-removes `hello-world-rapp` itself — the type it registered stays
-registered, just DISABLED (no producer left to serve it), and fires
-*no* notification (ICS's own `deleteInfoProducer` never touches
-info-types at all):
+Deregister the producer. Producer and Type are separate entities (as in
+ICS), so `deregister_producer` removes only `hello-world-rapp`; its types
+stay registered but `DISABLED`, and no notification fires (ICS's
+`deleteInfoProducer` never touches info-types):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1336,11 +1162,11 @@ print([(t['typeName'], t['producerIds'], t['typeStatus']) for t in r.json()])
 "
 ```
 
-The `dme-type-sub-demo` type is still there (`producerIds: []`,
-`typeStatus: DISABLED`) — `hello-world-metrics` from step 4 too. Only
-`delete_dme_type` (ICS's own `DELETE /info-types/{id}`) actually removes
-a type, and only once every producer has left it (409 otherwise) —
-this is what fires the real `DEREGISTERED` notification:
+`dme-type-sub-demo` is still listed (`producerIds: []`,
+`typeStatus: DISABLED`), as is `hello-world-metrics` from step 4. Only
+`delete_dme_type` (ICS's `DELETE /info-types/{id}`) removes a type, and
+only once no producer remains (409 otherwise); it fires the
+`DEREGISTERED` notification:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1350,10 +1176,8 @@ print(r.status_code)
 "
 ```
 
-Watch `dme`'s own logs for the attempted delivery — a real POST with
-`{infoTypeId, jobDataSchema, status: "DEREGISTERED"}`.
-`tests_integration/test_demo_runbook.py` proves this real dispatch too.
-Unsubscribe:
+Watch `dme`'s logs for a POST with
+`{infoTypeId, jobDataSchema, status: "DEREGISTERED"}`. Unsubscribe:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1365,21 +1189,15 @@ print(r.status_code)
 
 ## 18. FOCOM topology export (optional) — TEIV entities and relationships from real inventory rows
 
-Independent of the sample rApp instance above — closed in an earlier
-§5 pass (the Blueprint names "FOCOM's placement as a TEIV data source"
-as a confirmed integration point) but never demonstrated. A real
-kubeconfig-driven `focom-to-teiv-adapter` pushing CloudEvents over
-Kafka is structurally out of scope for this docker-run Phase 1 (no
-message broker anywhere in this build); `GET /topology` is the honest
-pull-based substitute — the same real `ResourceType`/`ResourcePool`/
-`DeploymentManager`/`Resource` rows every other FOCOM drill-down route
-already reads, exported in the reference's own wire shape
-(`o-ran-smo-teiv-cloud:<EntityType>` keys, `{id, attributes}` for
-entities, `{id, aSide, bSide, sourceIds}` for relationships).
+`GET /topology` exports FOCOM's `ResourceType`/`ResourcePool`/
+`DeploymentManager`/`Resource` rows in the TEIV wire shape
+(`o-ran-smo-teiv-cloud:<EntityType>` keys, `{id, attributes}` for entities,
+`{id, aSide, bSide, sourceIds}` for relationships). It is a pull-based
+substitute for a Kafka-fed `focom-to-teiv-adapter`; this build has no
+message broker.
 
-By this point in the runbook, FOCOM already has real inventory beyond
-the seeded Phase 1 topology — step 15's `gpu-l40` `Resource` from SO
-SMOS's own `INFRA` step (never deprovisioned there):
+By now FOCOM holds the `gpu-l40` `Resource` from §16's `INFRA` step (never
+deprovisioned):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1389,27 +1207,19 @@ print(r.status_code, r.json())
 "
 ```
 
-`entities` includes a real `ResourceType` for both `generic` (Phase 1's
-own seeded type) and `gpu-l40` (auto-registered the moment step 15
-provisioned against it — `provision_resource`'s own real behavior, not
-this endpoint's), a `ResourcePool`, a `DeploymentManager`, and at least
-one real `Resource`. `relationships` are built only from this schema's
-real foreign keys — `RESOURCE_IS_OF_TYPE_RESOURCETYPE` and
-`RESOURCE_CONTAINED_IN_RESOURCEPOOL` for every `Resource` row, plus a
-`RESOURCE_CHILD_OF_RESOURCE` entry for any with a real `parentId` (none
-in this Phase 1 topology, so that key is genuinely absent rather than
-an empty placeholder) — never invented ones.
+`entities` include a `ResourceType` for `generic` (the seeded type) and
+`gpu-l40` (auto-registered when §16 provisioned against it), a
+`ResourcePool`, a `DeploymentManager`, and at least one `Resource`.
+`relationships` come only from real foreign keys:
+`RESOURCE_IS_OF_TYPE_RESOURCETYPE` and `RESOURCE_CONTAINED_IN_RESOURCEPOOL`
+for every `Resource`, plus `RESOURCE_CHILD_OF_RESOURCE` for any with a
+`parentId` (none in this topology, so that key is absent).
 
 ## 19. AIMgF feature groups (optional) — register, list, a real duplicate-name rejection
 
-Independent of the sample rApp instance above — a whole entity added
-in an earlier §5 pass (the reference's own `CreateFeatureGroup`,
-`featuregroup_controller.py`) but never touched by any demo phase.
-Real Cassandra-backed feature-store queries and `enableDme`'s real DME
-job creation are deliberate elisions (the same no-real-southbound-
-compute pattern as the rest of this service) — this exercises the real
-part: registration, listing, and the reference's own name-validation
-and duplicate-name rejection.
+The reference's `CreateFeatureGroup` (`featuregroup_controller.py`):
+registration, listing, name validation and duplicate-name rejection.
+Feature-store queries and `enableDme`'s DME job creation are not included.
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1423,7 +1233,7 @@ print(r.status_code, r.json())
 "
 ```
 
-Note the `featureGroupId`. Confirm it's a real, queryable registration:
+Note the `featureGroupId`. Confirm it's listed:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1433,10 +1243,9 @@ print(r.status_code, r.json())
 "
 ```
 
-**A real duplicate-name rejection** — register the exact same
-`featureGroupName` again; the reference's own `DBException` ("already
-exist") fires for real, via a genuine `UniqueConstraint`, not a
-scripted check:
+**A duplicate-name rejection.** Register the same `featureGroupName` again
+(a `UniqueConstraint`, matching the reference's "already exist"
+`DBException`):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1450,9 +1259,9 @@ print(r.status_code, r.json())
 "
 ```
 
-`409`, `detail.title` = `FEATURE_GROUP_ALREADY_REGISTERED`. Also a real
-rejection for an invalid name (the reference's own `\w+`, 3-63
-character rule, shared with `TrainingJob` names):
+`409`, `detail.title` = `FEATURE_GROUP_ALREADY_REGISTERED`. An invalid name
+is rejected too (the reference's `\w+`, 3–63 character rule, shared with
+`TrainingJob` names):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1470,20 +1279,14 @@ print(r.status_code, r.json())
 
 ## 20. SA SMOS coordination-group remedial action (optional) — a real group retrain, `actionType`-independent
 
-Independent of the sample rApp instance above — SA SMOS's own
-`MLModelCoordinationGroup` convergence (OPEN_ITEMS.md section 1): a
-coordination-group-scoped `AssuranceMonitor` bypasses
-`CONFIG_CHANGE`/`SCALE`/`RECONNECT`/`ROLLBACK`'s NF-deployment meanings
-entirely — those don't map onto a model group at all — and always
-dispatches a real group retrain via AIMgF's `RequestTraining`
-instead, whatever `actionType` was requested. Already real and
-unit-tested, but never demonstrated: step 15's own `AssuranceMonitor`
-was `targetOrderId`-scoped throughout.
+A coordination-group-scoped `AssuranceMonitor` ignores the NF-deployment
+meanings of `CONFIG_CHANGE`/`SCALE`/`RECONNECT`/`ROLLBACK` and always
+dispatches a group retrain via AIMgF's `RequestTraining`, whatever
+`actionType` is requested. (§15's monitor was `targetOrderId`-scoped.)
 
-Register two models to be the group's members (MLMR) — a coordination
-group of fewer than two members isn't a coordination of anything, and
-the migration's own `member_model_ids` CHECK constraint
-(`array_length >= 2`) enforces this at the DB layer:
+Register two models as the group's members (MLMR). A group needs at least
+two members; the migration's `member_model_ids` CHECK constraint
+(`array_length >= 2`) enforces this:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1497,8 +1300,7 @@ for i in range(2):
 "
 ```
 
-Note both `modelId`s, then create a real coordination group with them
-(MLMR):
+Note both `modelId`s, then create a coordination group (MLMR):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1508,13 +1310,10 @@ print(r.status_code, r.json())
 "
 ```
 
-A single-member `memberModelIds` 422s with `COORDINATION_GROUP_TOO_SMALL`
-— pre-validated here after this pass found the route 500ing against real
-Postgres instead (the DB's own CHECK constraint, never mirrored onto the
-ORM model, so no unit test running against SQLite had ever caught it).
+A single-member `memberModelIds` returns 422 `COORDINATION_GROUP_TOO_SMALL`.
 
-Note the `groupId`, then register an `AssuranceMonitor` scoped to it —
-`targetCoordinationGroupId`, not `targetOrderId`:
+Note the `groupId`, then register an `AssuranceMonitor` scoped to it
+(`targetCoordinationGroupId`, not `targetOrderId`):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1524,10 +1323,9 @@ print(r.status_code, r.json())
 "
 ```
 
-**Execute a remedial action** — `SCALE` on its own would always
-`ESCALATED` for an order-scoped monitor (NFO's own Phase 1 stub), but
-this monitor is group-scoped, so `execute_remedial_action` never even
-reaches that branch:
+**Execute a remedial action.** For an order-scoped monitor, `SCALE` always
+ends `ESCALATED` (NFO's Phase 1 stub); this monitor is group-scoped, so
+that branch is never reached:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1537,11 +1335,9 @@ print(r.status_code, r.json())
 "
 ```
 
-`outcome` is `RESOLVED` — SA SMOS dispatched a real
-`POST /aimgf/training-jobs` with the group's own
-`modelCoordinationGroupId`, converging with AIMgF's own
-`groupRetrainTriggered` mechanism. Confirm the real `TrainingJob` row
-this created:
+`outcome` is `RESOLVED`: SA SMOS sent `POST /aimgf/training-jobs` with the
+group's `modelCoordinationGroupId` (AIMgF's `groupRetrainTriggered`
+mechanism). Confirm the `TrainingJob` row:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1551,24 +1347,19 @@ print(r.status_code, [j for j in r.json() if j['modelCoordinationGroupId'] == '<
 "
 ```
 
-A real `TrainingJob` with `producerId: sa-smos` and this exact
-`modelCoordinationGroupId` — not a fabricated confirmation.
+A `TrainingJob` with `producerId: sa-smos` and this
+`modelCoordinationGroupId`.
 
 ## 21. SME event-subscription `apiId` filtering (optional) — a subscriber scoped to one service, not every service
 
-Independent of the sample rApp instance above — SME's own
-`SubscribeEvents` mechanism (the reference's `CAPIFEventFilter`,
-`eventservice.go`'s `getMatchingSubs`) has always filtered by
-`eventTypes`, real and unit-tested since an earlier pass, but never
-demonstrated at all: no `capif-events` subscription has appeared
-anywhere in this runbook until now. Of the reference's other filter
-dimensions (`apiId`/`apiInvokerId`/`aefId`), only `apiId` is
-meaningfully implementable here — it maps directly onto this build's
-own `serviceId`.
+SME's `SubscribeEvents` (the reference's `CAPIFEventFilter`,
+`eventservice.go`'s `getMatchingSubs`) filters by `eventTypes` and by
+`apiIds`, which map onto this build's `serviceId`. The reference's
+`apiInvokerId`/`aefId` filter dimensions are not implemented.
 
 Subscribe two consumers: `consumer-unscoped` gets every
-`SERVICE_API_UPDATE`, `consumer-scoped` only wants `helloworld-api`'s
-own (its `serviceId`, from step 4's own registration response):
+`SERVICE_API_UPDATE`; `consumer-scoped` only `helloworld-api`'s (its
+`serviceId` from step 4):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1586,9 +1377,9 @@ print(r.status_code, r.json())
 "
 ```
 
-Register an unrelated second service, then re-register it (`UPDATE`) —
-this fires, but only reaches `consumer-unscoped`; `consumer-scoped`'s
-own `apiIds` filter excludes it (`notify_service_change`'s
+Register an unrelated second service, then re-register it (`UPDATE`). The
+update reaches only `consumer-unscoped`; `consumer-scoped`'s `apiIds`
+filter excludes it (`notify_service_change`'s
 `sub.api_ids and str(service.service_id) not in sub.api_ids` check):
 
 ```bash
@@ -1607,16 +1398,11 @@ print(r.status_code, r.json())
 "
 ```
 
-No real listener exists at `http://demo-consumer:9000/...` in this
-compose stack (same honesty pattern as every other placeholder callback
-in this runbook), so watch `sme`'s own logs — exactly one attempted
-delivery, to `consumer-unscoped`'s callback only.
-`tests_integration/test_demo_runbook.py` proves this precisely by
-intercepting the exact `httpx.post` calls.
+`sme`'s logs show exactly one delivery attempt, to `consumer-unscoped`'s
+callback.
 
-Now re-register `helloworld-api` itself (`UPDATE`) — this one matches
-`consumer-scoped`'s own `apiIds` filter too, so **both** subscribers
-are notified:
+Re-register `helloworld-api` itself (`UPDATE`). This matches
+`consumer-scoped`'s filter too, so **both** subscribers are notified:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1630,8 +1416,8 @@ print(r.status_code, r.json())
 "
 ```
 
-Watch `sme`'s own logs again — two attempted deliveries this time, one
-to each callback. Unsubscribe both:
+`sme`'s logs show two delivery attempts, one per callback. Unsubscribe
+both:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1645,18 +1431,13 @@ print(r.status_code)
 
 ## 22. A1 Related's service supervision sweep (optional) — a real, non-zero `keepAliveIntervalSeconds`
 
-Independent of the sample rApp instance above — step 11's own
-`putService` call used `keepAliveIntervalSeconds: 0` (supervision
-disabled) throughout, so the reference's own supervision contract
-("When a service fails to invoke keepalive within the configured time,
-the service is considered unavailable... automatically deregistered and
-its policies will be deleted") has been real and unit-tested since an
-earlier §5 pass, but has never actually fired in this runbook. No
-scheduler exists anywhere in this build — the sweep happens lazily, on
-the next `GET /services` read (`_sweep_stale_service`), not on a timer.
+The supervision contract: a service that misses its keepalive within the
+configured interval is deregistered and its policies deleted. There is no
+scheduler; the sweep runs lazily on the next `GET /services` read
+(`_sweep_stale_service`).
 
-Register a new supervised service with a real, short interval, and
-create a policy under it:
+Register a supervised service with a short interval and create a policy
+under it:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1672,16 +1453,15 @@ print(r.status_code, r.json())
 "
 ```
 
-Now let the 2-second interval elapse **without** calling
-`PUT /services/demo-supervised-rapp/keepalive` — a real service that
-stopped heartbeating:
+Let the 2-second interval elapse **without** calling
+`PUT /services/demo-supervised-rapp/keepalive`:
 
 ```bash
 sleep 3
 ```
 
-`GET /services` is the read path that actually enforces supervision — a
-stale match is swept on its way out, not just reported as stale:
+`GET /services` enforces supervision — a stale match is swept on the way
+out:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1691,10 +1471,9 @@ print(r.status_code, r.json() if r.status_code == 200 else None)
 "
 ```
 
-`404` — genuinely deregistered, not just still-listed-as-stale. Confirm
-its policy was torn down the same way an explicit retract does it (a
-real southbound `a1t.delete_policy` call per policy, not just a local
-row delete):
+`404` — deregistered. Confirm its policy was torn down the same way an
+explicit retract does it (a southbound `a1t.delete_policy` call per
+policy):
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1704,16 +1483,14 @@ print(r.status_code, r.json())
 "
 ```
 
-`[]` — the policy created above is gone, swept alongside its own
-service, exactly as `keepAliveIntervalSeconds`'s own contract promises.
+`[]` — the policy is gone with its service.
 
 ## 23. Retire it — package priming lifecycle, Terminate, then Delete
 
-**Prime the package** — the reference's real
-`COMMISSIONED -> PRIMING -> PRIMED` lifecycle (our `AVAILABLE` plays
-the `COMMISSIONED` role), previously entirely absent from this
-runbook. Real ACM/DME/SME resource pre-provisioning behind it is out
-of scope, so both transitions fire within this one request:
+**Prime the package** — the reference's `COMMISSIONED -> PRIMING -> PRIMED`
+lifecycle (`AVAILABLE` plays the `COMMISSIONED` role). ACM/DME/SME
+pre-provisioning is not included, so both transitions happen within this
+one request:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1725,11 +1502,10 @@ print(r.status_code, r.json())
 
 `state` is now `PRIMED`.
 
-**A real deprime refusal** — attempt to deprime it while the sample
-rApp's own instance (from step 3) is still deployed against it. This
-is the reference's own `deprimeRapp` guard ("Unable to deprime as
-there are active rapp instances"), backed by a real query against
-`PackageUsageRegistration`, not a scripted failure:
+**A deprime refusal.** Try to deprime while the sample rApp's instance
+(step 3) is still deployed. This is the reference's `deprimeRapp` guard
+("Unable to deprime as there are active rapp instances"), backed by a
+query against `PackageUsageRegistration`:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1739,10 +1515,10 @@ print(r.status_code, r.json())
 "
 ```
 
-`409`, with `detail.title` = `SERVICE_NAME_CONFLICT` — the package
-stays `PRIMED`.
+`409`, with `detail.title` = `SERVICE_NAME_CONFLICT`; the package stays
+`PRIMED`.
 
-Now terminate the instance:
+Terminate the instance:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1752,12 +1528,10 @@ print(r.status_code, r.json())
 "
 ```
 
-`state` should be `UNDEPLOYED`. `TerminateInstance` also calls
-Onboarding's real `usage/stop` internally (rApp Mgmt LLD), closing the
-active usage registration the deprime guard above was reading.
+`state` is `UNDEPLOYED`. `TerminateInstance` also calls Onboarding's
+`usage/stop`, closing the usage registration the deprime guard was reading.
 
-**Deprime again** — now genuinely succeeds, the same guard this time
-passing for real, not just a state flag flipped by hand:
+**Deprime again** — the guard now passes:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1767,8 +1541,7 @@ print(r.status_code, r.json())
 "
 ```
 
-`state` is back to `AVAILABLE`. Then the real, separate delete of the
-instance:
+`state` is back to `AVAILABLE`. Then delete the instance:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -1778,19 +1551,14 @@ print(r.status_code)
 "
 ```
 
-204 with an empty body — the instance row is gone. The full lifecycle
-— onboard, deploy, bootstrap, register, operate, RAN NF OAM closed
-loop, FOCOM resource management, FOCOM FCAPS, Intent Service
-automation, A1 Policy Management, SME Trusted Invokers, AI/ML Workflow,
-RAN Analytics, SO SMOS, SA SMOS, package priming, retire — is now
-complete against a real running stack.
+`204` with an empty body — the instance row is gone. This completes the
+hello-world lifecycle.
 
 ## 24. Wave 10.1 — the EnergySaving rApp (Demo 00–11)
 
-This section is independent of the hello-world package above. The
-EnergySaving reference rApp (`samples/energy-saving-rapp/`) is deployed
-beside the platform as the `energy-saving-rapp` service. Using only O1 PM
-data, it:
+Independent of the hello-world package above. The EnergySaving reference
+rApp (`samples/energy-saving-rapp/`) runs beside the platform as the
+`energy-saving-rapp` service. Using only O1 PM data, it:
 
 * predicts sustained low PRB utilisation;
 * runs its model through the governed TS 28.105 lifecycle;
@@ -1800,14 +1568,12 @@ data, it:
 
 There is no A1, Near-RT RIC, xApp or E2. Design:
 `docs/call-flows/22-energy-saving-closed-loop.md`; scope and tests:
-`docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md` §9.
+`docs/ROADMAP.md` §9.
 
 The demo is a script, `samples/energy-saving-rapp/demo.py`, one step per
-Demo number, and it keeps the ids it needs between steps.
-`tests_integration/test_demo_runbook.py` runs the same script through the
-in-process mesh, so these steps are exercised on every CI run. Timestamps
-are simulation time (history 2026-09-01..03, live PM from midnight on the
-4th), so "midnight behaviour" reproduces on any day.
+Demo number; it keeps the ids it needs between steps. Timestamps are
+simulation time (history 2026-09-01..03, live PM from midnight on the 4th),
+so "midnight behaviour" reproduces on any day.
 
 ```bash
 python3 samples/build_csar.py energy-saving-rapp      # only after editing the sample
@@ -1866,12 +1632,11 @@ It never tunes towards a cell that is asleep, about to sleep or just woken
 and it leaves alone relations with `isHOAllowed=false` and EMERGENCY or
 incident-zone cells. There is no A1, Near-RT RIC, xApp or E2. Design:
 `docs/call-flows/23-mobility-optimization-closed-loop.md`; scope and tests:
-`docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md` §10.
+`docs/ROADMAP.md` §10.
 
 The demo is a script, `samples/mobility-optimization-rapp/demo.py`, one step
-per Demo number. `tests_integration/test_demo_runbook.py` runs it through the
-in-process mesh on every CI run. Timestamps are simulation time (handover
-history 2026-09-01..03, live PM from midnight on the 4th).
+per Demo number. Timestamps are simulation time (handover history
+2026-09-01..03, live PM from midnight on the 4th).
 
 ```bash
 python3 samples/build_csar.py mobility-optimization-rapp      # only after editing the sample
@@ -1933,14 +1698,13 @@ just woken (EnergySaving), and while the Mobility rApp is observing one of
 its relations. It also leaves EMERGENCY and incident-zone cells alone, and
 holds everything under a critical alarm. There is no A1, Near-RT RIC, xApp
 or E2. Design: `docs/call-flows/24-coverage-optimization-closed-loop.md`;
-scope and tests: `docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md` §10a.
+scope and tests: `docs/ROADMAP.md` §10a.
 
 The demo is a script, `samples/coverage-optimization-rapp/demo.py`, one step
-per Demo number. `tests_integration/test_demo_runbook.py` runs it through the
-in-process mesh on every CI run. Live PM is produced from each cell's tilt
-and power as read back over O1, so the rApp's own changes show up in the
-next hour's PM. Timestamps are simulation time (history 2026-09-01..03,
-live PM from midnight on the 4th).
+per Demo number. Live PM is produced from each cell's tilt and power as read
+back over O1, so the rApp's own changes show up in the next hour's PM.
+Timestamps are simulation time (history 2026-09-01..03, live PM from
+midnight on the 4th).
 
 ```bash
 python3 samples/build_csar.py coverage-optimization-rapp      # only after editing the sample
@@ -2004,14 +1768,13 @@ cells that are asleep or just woken (EnergySaving) and around cells in a
 Coverage change set. It also leaves protected cells alone and never reverses
 a steering direction within 6 hours. There is no A1, Near-RT RIC, xApp or E2.
 Design: `docs/call-flows/25-traffic-steering-closed-loop.md`; scope and tests:
-`docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md` §10b.
+`docs/ROADMAP.md` §10b.
 
 The demo is a script, `samples/traffic-steering-rapp/demo.py`, one step per
-Demo number. `tests_integration/test_demo_runbook.py` runs it through the
-in-process mesh on every CI run. Live PM is produced from each cell's CIO and
-reselection priority as read back over O1, so the rApp's own steps show up in
-the next hour's PM. Timestamps are simulation time (history 2026-09-01..03,
-live PM from noon on the 4th).
+Demo number. Live PM is produced from each cell's CIO and reselection
+priority as read back over O1, so the rApp's own steps show up in the next
+hour's PM. Timestamps are simulation time (history 2026-09-01..03, live PM
+from noon on the 4th).
 
 ```bash
 python3 samples/build_csar.py traffic-steering-rapp      # only after editing the sample
@@ -2053,18 +1816,11 @@ The integration suite covers TS-01..TS-20 the same way:
 
 ## Known rough edges for a live walkthrough
 
-- `smo/docs/call-flows/01-rapp-onboarding-to-deployment.md`'s own
-  diagram doesn't show the invoker/provider registration steps above
-  (steps predate the OAuth2 work that added them) — this runbook is the
-  more current, accurate version; worth updating that diagram to match.
-- `smo_shared.r1_client.R1Client`, used internally by `Onboarding`,
-  `rApp Mgmt`, and `NFO`, calls other services directly by container
-  hostname (not through R1 Termination's own proxy) — matching
-  `tests_integration/mesh.py`'s own documented scope choice that
-  cross-module calls bypass the gateway. Nothing above depends on this,
-  but it's why steps 2-3 above don't need a bearer token even though
-  they're server-to-server calls.
-- `smo/SPEC_AUDIT.md` lists several small, real spec-conformance gaps
-  (e.g. RAN NF OAM's alarm model, FOCOM's `ResourceType` fields) — none
-  are on this lifecycle's critical path, so none should visibly break
-  this walkthrough, but flag it here if one does.
+- `smo/docs/call-flows/01-rapp-onboarding-to-deployment.md`'s diagram
+  doesn't show the provider/invoker registration steps in §4; this runbook
+  is the more current sequence.
+- Callbacks to `http://demo-consumer:9000/...` have no listener in the
+  compose stack; each delivery attempt shows up only in the sending
+  service's logs.
+- If a live run hits one of the spec-conformance gaps listed in
+  `OPEN_ITEMS.md`, record it there.

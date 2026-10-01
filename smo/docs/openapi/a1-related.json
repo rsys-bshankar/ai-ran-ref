@@ -195,7 +195,7 @@
   "paths": {
     "/dme-jobs": {
       "post": {
-        "description": "DME's own job-push callback (OPEN_ITEMS.md section 5): DME's\ncreate_data_job now actually POSTs the job to jobCallbackUrl on\ncreate \u2014 register_ei_type registers this exact URL, so this closes\nthe same class of dangling-callback bug the /health route closed\nfor the health-supervision URL. Phase 1: acks only, no real per-job\nstate tracked producer-side.",
+        "description": "DME's own job-push callback (HISTORY.md \u00a75): DME's\ncreate_data_job now actually POSTs the job to jobCallbackUrl on\ncreate \u2014 register_ei_type registers this exact URL, so this closes\nthe same class of dangling-callback bug the /health route closed\nfor the health-supervision URL. Phase 1: acks only, no real per-job\nstate tracked producer-side.",
         "operationId": "receive_dme_job_dme_jobs_post",
         "requestBody": {
           "content": {
@@ -428,7 +428,7 @@
     },
     "/health": {
       "get": {
-        "description": "Producer health-supervision callback (OPEN_ITEMS.md section 5):\nregister_ei_type registers this exact URL with DME as its\nproducerHealthCallbackUrl, but no route ever answered it \u2014 a health\npoller hitting the registered callback would 404 against a producer\nthis module itself just told DME was healthy. A plain liveness\ncheck: reachable and 200 means this A1 Related instance is up.",
+        "description": "Producer health-supervision callback (HISTORY.md \u00a75):\nregister_ei_type registers this exact URL with DME as its\nproducerHealthCallbackUrl, but no route ever answered it \u2014 a health\npoller hitting the registered callback would 404 against a producer\nthis module itself just told DME was healthy. A plain liveness\ncheck: reachable and 200 means this A1 Related instance is up.",
         "operationId": "health_check_health_get",
         "responses": {
           "200": {
@@ -445,7 +445,7 @@
     },
     "/policies": {
       "get": {
-        "description": "OPEN_ITEMS.md section 5: no policy list/query-by-filter endpoint\nexisted at all \u2014 only GET /policies/{id}, despite the mapping-store's\nwhole job (section 1.1) being to track these mappings. Filterable by\npolicyTypeId/nearRtRicId/creatorId (the \"type/RIC/service\" filters\nthe gap named \u2014 creatorId is the closest concept this model has to\n\"service\", since it's the rApp/service that created the policy).",
+        "description": "HISTORY.md \u00a75: no policy list/query-by-filter endpoint\nexisted at all \u2014 only GET /policies/{id}, despite the mapping-store's\nwhole job (section 1.1) being to track these mappings. Filterable by\npolicyTypeId/nearRtRicId/creatorId (the \"type/RIC/service\" filters\nthe gap named \u2014 creatorId is the closest concept this model has to\n\"service\", since it's the rApp/service that created the policy).",
         "operationId": "query_policies_policies_get",
         "parameters": [
           {
@@ -908,7 +908,7 @@
     },
     "/policy-types/{policy_type_id}": {
       "get": {
-        "description": "OPEN_ITEMS.md section 5: the reference's own GetPolicyTypeDefinition\n(`GET /policy-types/{policyTypeId}`, pms-api-v3.json) \u2014 404 on an\nunknown type, else a real `PolicyTypeObject` (`policySchema` \u2014 the\nJSON Schema every A1 Policy Instance of this type must satisfy \u2014\nplus an optional `statusSchema`). `KNOWN_POLICY_TYPES` is this\nbuild's own hardcoded type-id catalog (never sourced from or synced\nwith an actual RIC \u2014 that stays out of scope, along with the\nreference's separate RIC repository, `GET /rics`, which has no\nconcept to attach to here at all: this build models no near-RT-RIC\nentity or inventory beyond the single A1 mock). `policySchema` is\nan honest empty placeholder (`{\"type\": \"object\"}`), not a\nfabricated A1TD schema this build was never given \u2014 the same\n\"unknown real content, permissive placeholder instead of invented\ndetail\" pattern already used for `ran-nf-oam`'s/`a1-related`'s own\nDME type registrations (`dataProductionSchema: {}`).",
+        "description": "HISTORY.md \u00a75: the reference's own GetPolicyTypeDefinition\n(`GET /policy-types/{policyTypeId}`, pms-api-v3.json) \u2014 404 on an\nunknown type, else a real `PolicyTypeObject` (`policySchema` \u2014 the\nJSON Schema every A1 Policy Instance of this type must satisfy \u2014\nplus an optional `statusSchema`). `KNOWN_POLICY_TYPES` is this\nbuild's own hardcoded type-id catalog (never sourced from or synced\nwith an actual RIC \u2014 that stays out of scope, along with the\nreference's separate RIC repository, `GET /rics`, which has no\nconcept to attach to here at all: this build models no near-RT-RIC\nentity or inventory beyond the single A1 mock). `policySchema` is\nan honest empty placeholder (`{\"type\": \"object\"}`), not a\nfabricated A1TD schema this build was never given \u2014 the same\n\"unknown real content, permissive placeholder instead of invented\ndetail\" pattern already used for `ran-nf-oam`'s/`a1-related`'s own\nDME type registrations (`dataProductionSchema: {}`).",
         "operationId": "get_policy_type_policy_types__policy_type_id__get",
         "parameters": [
           {
@@ -989,7 +989,7 @@
         "summary": "Query Services"
       },
       "put": {
-        "description": "OPEN_ITEMS.md section 5: Service Registry and Supervision\n(putService, pms-api-v3.json) \u2014 entirely absent before this pass, not\njust thin. Register-or-update in place: re-registering an\nalready-known serviceId updates its callbackUrl/\nkeepAliveIntervalSeconds and resets its activity clock, the same\nidempotent shape SME's own register_service already uses, rather\nthan conflicting. \"A1 Policy instances can also be created for\nunregistered services\" per the reference's own description \u2014 this\nbuild already allows that (create_policy has never required a\nregistered creatorId), so nothing there needed to change.",
+        "description": "HISTORY.md \u00a75: Service Registry and Supervision\n(putService, pms-api-v3.json) \u2014 entirely absent before this pass, not\njust thin. Register-or-update in place: re-registering an\nalready-known serviceId updates its callbackUrl/\nkeepAliveIntervalSeconds and resets its activity clock, the same\nidempotent shape SME's own register_service already uses, rather\nthan conflicting. \"A1 Policy instances can also be created for\nunregistered services\" per the reference's own description \u2014 this\nbuild already allows that (create_policy has never required a\nregistered creatorId), so nothing there needed to change.",
         "operationId": "register_service_services_put",
         "requestBody": {
           "content": {

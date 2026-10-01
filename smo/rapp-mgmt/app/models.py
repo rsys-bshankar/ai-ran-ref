@@ -21,17 +21,17 @@ class RAppInstance(Base):
     workload_ref: Mapped[str | None] = mapped_column(String)
     oauth_client_id: Mapped[str | None] = mapped_column(String)  # == rAppId (identity.py); None once revoked
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
-    upgrade_timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=300)  # confirmed default, LLD section 6 (OPEN_ITEMS.md section 1)
+    upgrade_timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=300)  # confirmed default, LLD section 6 (HISTORY.md §1)
     pending_upgrade_instance_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # links old row to its in-flight replacement
     package_usage_registration_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> package_usage_registration (Onboarding), cross-module like package_id
-    # SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3 (SME auto-registration):
+    # HISTORY.md §7's Onboarding/rApp Mgmt finding 3 (SME auto-registration):
     # SME serviceId(s) this instance registered at bootstrap-complete from
     # the package's own CSAR-bundled Files/Sme/serviceapis/ declarations —
     # None if the package declared none, or before bootstrap-complete ran.
     # Deregistered (best-effort) on TERMINATE/CRASH, same as oauth_client_id
     # is used as this instance's own SME apfId throughout.
     sme_service_ids: Mapped[list[str] | None] = mapped_column(JSON)
-    # OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes: a per-instance
+    # HISTORY.md OI-6.3 — rApp Autonomy Modes: a per-instance
     # property fixed at onboarding (CreateInstance), not something chosen
     # per-inference-call. Defaults to SHADOW — the safest, no-enforcement
     # mode — for every existing caller that doesn't declare one, the same

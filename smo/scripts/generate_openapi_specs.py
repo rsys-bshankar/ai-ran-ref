@@ -2,7 +2,7 @@
 """Regenerates smo/docs/openapi/<module>.json for every module from its own
 live FastAPI app.openapi() output.
 
-OPEN_ITEMS.md section 2: "No persisted OpenAPI spec files anywhere — relying
+HISTORY.md §2: "No persisted OpenAPI spec files anywhere — relying
 entirely on FastAPI's live /docs generation rather than committed contracts."
 These files ARE that live generation, just frozen to disk so a contract
 change shows up as a diff in review rather than only at runtime.

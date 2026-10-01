@@ -21,7 +21,7 @@ class DescriptorCreationFailed(Exception):
 
 
 class PackageValidationFailed(Exception):
-    """OPEN_ITEMS.md section 5: the reference's own ordered validator
+    """HISTORY.md §5: the reference's own ordered validator
     chain (rapp-manager-models' csar/validator/*) catches a package
     whose filename doesn't follow convention (NamingValidator) or that
     duplicates one already onboarded (AsdDescriptorValidator's own
@@ -193,7 +193,7 @@ def _asd_identity(definitions: str) -> dict[str, str]:
 
 def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
     """Wave 1's rApp packaging extension (docs/architecture/
-    AI_PLATFORM_BASELINE.md): an optional AI Platform capability
+    docs/ARCHITECTURE.md): an optional AI Platform capability
     declaration, read from two new CSAR-root files alongside the existing
     TOSCA-Metadata/Definitions/Artifacts layout —
 
@@ -219,7 +219,7 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
         rapp_manifest = manifest.get("rappManifest") or {}
         result["manifestVersion"] = rapp_manifest.get("manifestVersion")
         result["aiRuntimeSdkVersion"] = rapp_manifest.get("aiRuntimeSdkVersion")
-        # Wave 7 (WAVES_4_TO_10_WORK_ITEMS.md W7-03): the AI-runtime part of
+        # Wave 7 (docs/ROADMAP.md W7-03): the AI-runtime part of
         # the manifest — which execution modes the package supports and the
         # compute each one needs. Accepted either under `rappManifest` or at
         # the manifest's top level (the SMO_Wave_10 package layout).
@@ -301,7 +301,7 @@ def _parse_sme_declarations(z: zipfile.ZipFile) -> dict | None:
 def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, dict]:
     """Open TOSCA-Metadata/Definitions/Artifacts, per Onboarding LLD section 1.
 
-    OPEN_ITEMS.md section 5: NamingValidator's filename convention (a
+    HISTORY.md §5: NamingValidator's filename convention (a
     package location not ending in `.csar` is rejected up front, before
     ever fetching it), adopted from the reference's own validator chain.
 
@@ -347,7 +347,7 @@ def query_onboarding_status(package_id: uuid.UUID, db: Session = Depends(get_ses
         # rapp-mgmt's CreateInstance already calls this exact route to read
         # state/nfDeploymentDescriptorId — smeDeclarations rides along here
         # rather than a new dedicated route, for bootstrap-complete's own
-        # per-instance SME registration (SPEC_AUDIT.md's Onboarding/rApp
+        # per-instance SME registration (HISTORY.md §7's Onboarding/rApp
         # Mgmt finding 3).
         "smeDeclarations": pkg.sme_declarations,
         # Wave 7 (W7-03): AIMgF reads the package's runtimeProfiles from here
@@ -376,7 +376,7 @@ def deprecate_package(package_id: uuid.UUID, db: Session = Depends(get_session))
 
 @app.post("/packages/{package_id}/prime")
 def prime_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: the reference's real
+    """HISTORY.md §5: the reference's real
     COMMISSIONED->PRIMING->PRIMED lifecycle, missing entirely — this
     build went ONBOARDING->AVAILABLE directly. Real ACM/DME/SME
     resource pre-provisioning behind priming is out of scope (same

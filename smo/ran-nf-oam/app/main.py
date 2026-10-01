@@ -7,7 +7,7 @@ explicit clarification that SubscribePM is a DME-producer registration,
 never a clause-8 call (no such API exists).
 
 CM writes dispatch as NETCONF-shaped <edit-config> RPCs (netconf_client.py)
-— the confirmed protocol per OPEN_ITEMS.md's "CM cache sync method" item.
+— the confirmed protocol per HISTORY.md's "CM cache sync method" item.
 An ME provisioned for RESTCONF has no dispatch implementation yet and is
 rejected with PROTOCOL_NOT_SUPPORTED rather than silently applied.
 """
@@ -125,7 +125,7 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
     ever was.
 
     Real MnS Registry NRM polling stays out of scope (no such registry
-    exists in this build, OPEN_ITEMS.md's confirmed elision) — this is
+    exists in this build, HISTORY.md's confirmed elision) — this is
     the same honest, lighter self-registration-POST substitute already
     used everywhere else in this build (DME's producer registration,
     SME's provider/invoker registration): the O1 Adaptor itself POSTs
@@ -184,7 +184,7 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
     db.flush()
 
     for change in body.changes:
-        # SPEC_AUDIT.md item 3: `operation` is RFC 6241 section 7.2's real
+        # HISTORY.md §7 item 3: `operation` is RFC 6241 section 7.2's real
         # edit-config attribute — a delete/remove legitimately carries no
         # attributeChanges at all, so this no longer assumes the key is
         # always present the way a merge-only model could.
@@ -211,7 +211,7 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
                                          rejection_reason="ENDPOINT_UNREACHABLE"))
             continue
         if me.o1_protocol != "NETCONF":
-            # Confirmed protocol choice (OPEN_ITEMS.md) is NETCONF — an ME
+            # Confirmed protocol choice (HISTORY.md) is NETCONF — an ME
             # provisioned for RESTCONF has no dispatch implementation yet,
             # rejected honestly rather than silently treated as applied.
             db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
@@ -289,9 +289,9 @@ def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, 
     unresolved collision risk under a fleet of N MEs.
 
     probableCause/specificProblem/rootCauseIndicator/correlatedNotifications/
-    proposedRepairActions (OPEN_ITEMS.md section 5): the standard fault
+    proposedRepairActions (HISTORY.md §5): the standard fault
     fields 3GPP TS 28.532 FaultMnS's NotifyNewAlarm carries, previously
-    entirely absent from this alarm model. alarmType (SPEC_AUDIT.md,
+    entirely absent from this alarm model. alarmType (HISTORY.md §7,
     TS28111_FaultNrm.yaml's AlarmRecord) was the one of these fields
     still missing after that pass.
     """
@@ -307,7 +307,7 @@ def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, 
 
 @app.patch("/alarms/{alarm_id}/ack")
 def change_alarm_ack_state(alarm_id: uuid.UUID, new_state: str, ack_user_id: str | None = None, db: Session = Depends(get_session)):
-    """ackUserId (SPEC_AUDIT.md, TS28111_FaultNrm.yaml's AlarmRecord) —
+    """ackUserId (HISTORY.md §7, TS28111_FaultNrm.yaml's AlarmRecord) —
     who acknowledged it, never recorded before. alarmChangedTime (the
     spec's own "last mutated" timestamp, distinct from raised_at/
     cleared_at) updates here and in clear_alarm below, the two places
@@ -323,7 +323,7 @@ def change_alarm_ack_state(alarm_id: uuid.UUID, new_state: str, ack_user_id: str
 
 @app.patch("/alarms/{alarm_id}/clear")
 def clear_alarm(alarm_id: uuid.UUID, clear_user_id: str | None = None, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: no alarm-cleared lifecycle existed at
+    """HISTORY.md §5: no alarm-cleared lifecycle existed at
     all — `/alarms/{id}/ack` only ever toggled ack_state, so an alarm
     that stopped recurring on the NF had no way to ever be marked
     resolved. Matches the reference's own NotifyClearedAlarm shape:
@@ -346,7 +346,7 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
     registration wrapper, NOT a clause-8 API call. No R1AP endpoint exists
     for PM at all; that's the spec's own documented design intent.
 
-    granularityPeriod (SPEC_AUDIT.md item 4, TS28550_PerfMeasJobCtrlMnS.yaml's
+    granularityPeriod (HISTORY.md §7 item 4, TS28550_PerfMeasJobCtrlMnS.yaml's
     measJobCreation-RequestType) — the one real job-control field worth
     carrying despite the wrapper scope cut; everything else on that
     schema (schedule/priority/multi-instance/reportingPeriod) stays out.
@@ -430,7 +430,7 @@ def receive_pm_report(body: PmReportRequest, db: Session = Depends(get_session))
 
 @app.get("/health")
 def health_check():
-    """Producer health-supervision callback (OPEN_ITEMS.md section 5):
+    """Producer health-supervision callback (HISTORY.md §5):
     subscribe_pm registers this exact URL with DME as its
     producerHealthCallbackUrl, but no route ever answered it — a health
     poller hitting the registered callback would 404 against a producer
@@ -442,7 +442,7 @@ def health_check():
 
 @app.post("/dme-jobs")
 def receive_dme_job(body: dict):
-    """DME's own job-push callback (OPEN_ITEMS.md section 5): DME's
+    """DME's own job-push callback (HISTORY.md §5): DME's
     create_data_job now actually POSTs the job to jobCallbackUrl on
     create — subscribe_pm registers this exact URL, so this closes the
     same class of dangling-callback bug the /health route closed for
@@ -576,7 +576,7 @@ def unsubscribe_pm(subscription_id: uuid.UUID, db: Session = Depends(get_session
 
 @app.post("/fm-subscriptions")
 def subscribe_fm(managed_element_ref: str, delivery_method: str, db: Session = Depends(get_session)):
-    """SubscribeFM — OPEN_ITEMS.md section 6.7, closed: mirrors
+    """SubscribeFM — HISTORY.md OI-6.7, closed: mirrors
     subscribe_pm's own DME-producer registration wrapper shape exactly
     (RAN NF OAM LLD section 3.5's SubscribePM pattern), for alarms
     instead of PM counters. Unlike PM, there is no per-counter-type

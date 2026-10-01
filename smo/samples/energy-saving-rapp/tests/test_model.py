@@ -1,5 +1,5 @@
 """Unit tests for the EnergySaving model and its execution-mode logics
-(WAVES_4_TO_10_WORK_ITEMS.md W10-02, decision D-6).
+(docs/ROADMAP.md W10-02, decision D-6).
 Run with: cd smo/samples/energy-saving-rapp && PYTHONPATH=.:../../shared:../../sdk pytest tests -q
 """
 

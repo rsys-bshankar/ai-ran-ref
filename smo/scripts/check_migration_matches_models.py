@@ -3,7 +3,7 @@
 against every module's own SQLAlchemy ORM model definitions, table by
 table and column by column.
 
-OPEN_ITEMS.md section 2: two real Postgres-only bugs (`rapp_instance`'s
+HISTORY.md §2: two real Postgres-only bugs (`rapp_instance`'s
 `pending_upgrade_instance_id` entirely missing from the migration;
 `oauth_client_id` wrongly `NOT NULL` there even though the ORM/app code
 sets it back to NULL) were only ever caught by luck — the

@@ -213,7 +213,7 @@
         "summary": "List Deployments"
       },
       "post": {
-        "description": "Instantiate \u2014 NFO+FOCOM LLD section 4: FOCOM's inventory is queried\nto resolve clusterId before the workload is placed, rather than the\nPhase 1 degenerate cluster being assumed implicitly. OPEN_ITEMS.md\nsection 5: now also enforces the reference's own real guards before\ncreating anything \u2014 _check_dependencies (the descriptor must exist)\nand _check_duplication (no two deployments may share a name, and a\ndescriptor may only be deployed once).",
+        "description": "Instantiate \u2014 NFO+FOCOM LLD section 4: FOCOM's inventory is queried\nto resolve clusterId before the workload is placed, rather than the\nPhase 1 degenerate cluster being assumed implicitly. HISTORY.md \u00a75: now also enforces the reference's own real guards before\ncreating anything \u2014 _check_dependencies (the descriptor must exist)\nand _check_duplication (no two deployments may share a name, and a\ndescriptor may only be deployed once).",
         "operationId": "instantiate_deployments_post",
         "requestBody": {
           "content": {
@@ -284,7 +284,7 @@
     },
     "/deployments/{nf_deployment_id}/heal": {
       "post": {
-        "description": "OPEN_ITEMS.md section 5: previously a pure stub with no state\ntransition of any kind. Self-healing recovery isn't modeled by the\nreference at all (no Heal command exists there); this closes the\nstate-transition gap directly: legal from ABNORMAL (genuine\nrecovery) or RUNNING (idempotent \u2014 already healthy). Real K8s\npod-health remediation behind it stays out of scope\n(D-DEPLOY-NFO-3, unchanged).",
+        "description": "HISTORY.md \u00a75: previously a pure stub with no state\ntransition of any kind. Self-healing recovery isn't modeled by the\nreference at all (no Heal command exists there); this closes the\nstate-transition gap directly: legal from ABNORMAL (genuine\nrecovery) or RUNNING (idempotent \u2014 already healthy). Real K8s\npod-health remediation behind it stays out of scope\n(D-DEPLOY-NFO-3, unchanged).",
         "operationId": "heal_deployments__nf_deployment_id__heal_post",
         "parameters": [
           {
@@ -466,7 +466,7 @@
     },
     "/deployments/{nf_deployment_id}/scale": {
       "post": {
-        "description": "OPEN_ITEMS.md section 5: previously a pure stub with no state\ntransition of any kind. Scale is a replica-count change, the same\nconceptual operation as the reference's Update (RUNNING->UPDATING),\nso it drives that same edge \u2014 legal only from RUNNING.",
+        "description": "HISTORY.md \u00a75: previously a pure stub with no state\ntransition of any kind. Scale is a replica-count change, the same\nconceptual operation as the reference's Update (RUNNING->UPDATING),\nso it drives that same edge \u2014 legal only from RUNNING.",
         "operationId": "scale_deployments__nf_deployment_id__scale_post",
         "parameters": [
           {
@@ -576,7 +576,7 @@
         "summary": "List Descriptors"
       },
       "post": {
-        "description": "CreateDescriptor \u2014 NFO+FOCOM LLD section 2: an NFDeploymentDescriptor\nderived from an onboarded package's TOSCA Definitions/, called from\nOnboarding's OnboardPackage flow once validation succeeds, closing the\ngap where nfDeploymentDescriptorId previously referenced nothing\nconcrete. `packageId` is optional since Wave 2 (AI Platform Service\nDecomposition, docs/ownership/AIMGF_OWNERSHIP.md): AIMgF's own Runtime\nLifecycle now also creates a descriptor per model runtime, and a\nmodel runtime has no onboarded ApplicationPackage behind it \u2014 every\npackage-derived descriptor (Onboarding's own flow, unchanged) still\nalways sets it.",
+        "description": "CreateDescriptor \u2014 NFO+FOCOM LLD section 2: an NFDeploymentDescriptor\nderived from an onboarded package's TOSCA Definitions/, called from\nOnboarding's OnboardPackage flow once validation succeeds, closing the\ngap where nfDeploymentDescriptorId previously referenced nothing\nconcrete. `packageId` is optional since Wave 2 (AI Platform Service\nDecomposition, docs/ARCHITECTURE.md (AIMgF)): AIMgF's own Runtime\nLifecycle now also creates a descriptor per model runtime, and a\nmodel runtime has no onboarded ApplicationPackage behind it \u2014 every\npackage-derived descriptor (Onboarding's own flow, unchanged) still\nalways sets it.",
         "operationId": "create_descriptor_descriptors_post",
         "requestBody": {
           "content": {

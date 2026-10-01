@@ -1,8 +1,8 @@
 """MLMR (ML Model Repository) — TS 28.105 AI/ML NRM realization.
 
 Wave 1 of the AI Platform Service Decomposition split this module out of
-the former flat `ai-ml-workflow/` (see docs/architecture/AI_PLATFORM_BASELINE.md
-and docs/ownership/MLMR_OWNERSHIP.md); Wave 2 finished the job — MLMR is
+the former flat `ai-ml-workflow/` (see docs/ARCHITECTURE.md
+and docs/ARCHITECTURE.md (MLMR)); Wave 2 finished the job — MLMR is
 model truth (identity, versions, artifacts, coordination groups) and has
 no lifecycle logic of its own, and as of this wave no longer stores any
 either: `state`/`training_job_id`/`cleared_node_groups` moved to AIMgF's
@@ -152,19 +152,19 @@ def _validate_domain(domain: str | None) -> None:
 
 @app.post("/models", status_code=201)
 def register_model(body: RegisterModelRequest, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: the reference's own RegisterModel
+    """HISTORY.md §5: the reference's own RegisterModel
     (mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint
     violation — this build accepted a duplicate (modelType, version)
     registration silently, creating a second, indistinguishable row.
 
-    Also OPEN_ITEMS.md section 5: registration metadata was thin — no
+    Also HISTORY.md §5: registration metadata was thin — no
     I/O data type schema, no author/owner, no TargetEnvironment
     declarations, all real fields on the reference's own
     ModelRelatedInformation/ModelInformation/Metadata (modelInfo.go).
     Required there; kept optional here, since this build's own
     RegisterModel was already permissive before this pass.
 
-    domain/customDomain/vendors (Wave 3, SPEC_AUDIT.md's MLMR section):
+    domain/customDomain/vendors (Wave 3, HISTORY.md §7's MLMR section):
     TS29482_MLR_MLModelManagement.yaml's own MLModel schema.
     """
     _validate_domain(body.domain)
@@ -196,7 +196,7 @@ def discover_models(model_type: str | None = None, limit: int = PageLimit, offse
 
 @app.get("/models/{model_id}")
 def get_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: model CRUD was incomplete — only create
+    """HISTORY.md §5: model CRUD was incomplete — only create
     and a type-filtered list existed, no GET-by-id at all. Also the read
     side AIMgF/MLLF call to learn a model's current state before deciding
     whether a transition/deploy is legal.
@@ -254,7 +254,7 @@ def deregister_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
     here. Those rows are still cleaned up: `migrations/001_init.sql`'s
     own `ON DELETE CASCADE` on every one of those FKs (added as
     defense-in-depth alongside the original application-level cleanup,
-    per OPEN_ITEMS.md section 5) already does this at the database level,
+    per HISTORY.md §5) already does this at the database level,
     which is authoritative here since every module shares one physical
     Postgres instance in this build's topology. That cascade is real
     against Postgres but NOT exercised by this module's own SQLite-backed

@@ -56,7 +56,7 @@ class ServiceAuthzPolicy(Base):
 
 
 class ProviderRegistration(Base):
-    """OPEN_ITEMS.md section 5: the reference's own Provider (APF) enrolment
+    """HISTORY.md §5: the reference's own Provider (APF) enrolment
     (`providermanagement.go`'s `ProviderManager`, `POST`/`DELETE
     /registrations`) — the real registry `register_service`'s own
     `IsPublishingFunctionRegistered` gate needs, which this build never
@@ -74,14 +74,14 @@ class ProviderRegistration(Base):
 
 
 class InvokerRegistration(Base):
-    """OPEN_ITEMS.md section 2: the reference's own API Invoker onboarding
+    """HISTORY.md §2: the reference's own API Invoker onboarding
     (`invokermanagement.go`'s `InvokerRegister`) — a real prerequisite for
     the Security/token API (`securityservice.go`'s
     `PostSecuritiesSecurityIdToken`, gated on
     `IsInvokerRegistered`/`VerifyInvokerSecret`), which this build never
     modeled at all.
 
-    SPEC_AUDIT.md SME item 1: the real CAPIF core's
+    HISTORY.md §7 SME item 1: the real CAPIF core's
     `APIInvokerEnrolmentDetails`/`OnboardingInformation` onboarding is
     public-key-based — the client supplies `apiInvokerPublicKey`
     (`public_key` here); the server *generates* both `api_invoker_id`
@@ -107,7 +107,7 @@ class InvokerRegistration(Base):
 
 
 class IssuedAccessToken(Base):
-    """OPEN_ITEMS.md section 2: "No real OAuth2/token enforcement at R1
+    """HISTORY.md §2: "No real OAuth2/token enforcement at R1
     Termination — only a comment and a tokenEndPoint URI in the bootstrap
     response; no actual validation code path." The reference's own
     AccessTokenRsp is a real signed JWT (`keycloak.GetToken`, an external
@@ -132,7 +132,7 @@ class IssuedAccessToken(Base):
 
 
 class TrustedInvoker(Base):
-    """SPEC_AUDIT.md SME item 2: the real CAPIF core's "Trusted Invokers"
+    """HISTORY.md §7 SME item 2: the real CAPIF core's "Trusted Invokers"
     security-context subsystem (`capifcore/internal/securityservice/
     security.go`'s `PUT`/`GET`/`DELETE /trusted-invokers/{apiInvokerId}`
     plus revocation, `POST .../delete`) — a second, separate real

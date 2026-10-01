@@ -4,8 +4,8 @@ Wave 1 of the AI Platform Service Decomposition: split out of the former
 `ran-analytics/` module, which kept its own use-case-specific role
 (traffic/energy/coverage analytics) and becomes an MDAF consumer rather
 than the service owning analytics reporting itself — see
-docs/architecture/AI_PLATFORM_BASELINE.md and
-docs/ownership/MDAF_OWNERSHIP.md. MDAF is analytics truth: it owns the
+docs/ARCHITECTURE.md and
+docs/ARCHITECTURE.md (MDAF). MDAF is analytics truth: it owns the
 *output* of analysis (reports, subscriptions), not any domain-specific
 production logic — `MDAFProducer` and its registration route stay in
 `ran-analytics/`, which is why this module never calls out to it: a
@@ -13,7 +13,7 @@ producer registering itself and a report being published are
 independent concerns here, exactly as they were before the split (the
 original code never validated a report's producer registration either).
 
-Wave 3 (docs/ownership/DME_OWNERSHIP.md): `publish_report` now does call
+Wave 3 (docs/ARCHITECTURE.md (DME)): `publish_report` now does call
 out cross-service, to DME — every `input_sources` id must be a real DME
 `DataJob`, closing the "MDAF sources from DME only" rule with an
 enforced check rather than a documented convention. MDAF never reaches
@@ -64,7 +64,7 @@ def health_check():
 
 def _validate_input_sources_are_real_dme_artifacts(input_sources: list[uuid.UUID]) -> None:
     """Wave 3 (AI Platform Service Decomposition) —
-    docs/ownership/DME_OWNERSHIP.md's "two paths, not one": MDAF is a
+    docs/ARCHITECTURE.md's DME "two paths, not one": MDAF is a
     consumer of DME's data plane like any rApp, never the O1 action
     path, and a report can no longer cite data that never actually came
     from DME. Same bare-UUID cross-service-reference convention used
@@ -125,7 +125,7 @@ def _threshold_crossed(sub: MDASubscription, output: dict) -> bool:
 
 
 def _notify_report_subscribers(db: Session, report: MDAFReport) -> None:
-    """OPEN_ITEMS.md section 5: PublishAnalyticsReport's subscriber loop
+    """HISTORY.md §5: PublishAnalyticsReport's subscriber loop
     was a deliberate no-op (`for sub in subs: pass`) — a matching
     MDASubscription was looked up but never actually notified, so every
     consumer had to poll QueryAnalyticsReport instead. Same shape fix as
@@ -197,7 +197,7 @@ def unsubscribe_analytics(subscription_id: uuid.UUID, db: Session = Depends(get_
 @app.get("/subscriptions")
 def list_analytics_subscriptions(analytics_type: str | None = None, requested_by: str | None = None,
                                   limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: no list/query endpoint for active
+    """HISTORY.md §5: no list/query endpoint for active
     subscriptions existed at all — the reference defines this route
     (even though its own implementation of it is a no-op stub; ours
     actually reads real, persisted subscriptions).

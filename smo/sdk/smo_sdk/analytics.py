@@ -1,7 +1,7 @@
 """sdk.analytics — a thin client over MDAF (`mdaf/`) and RAN Analytics'
 own producer-registration route (`ran-analytics/`), TS 28.104 MDA NRM.
 
-Wave 1's split (docs/ownership/MDAF_OWNERSHIP.md) moved report/
+Wave 1's split (docs/ARCHITECTURE.md (MDAF)) moved report/
 subscription ownership to `mdaf/`; `ran-analytics/` kept only producer
 registration and became an MDAF consumer. This client's namespace
 mirrors that: producer registration is still the analytics-production
@@ -18,7 +18,7 @@ from ._common import BaseClient, ensure_ok
 class AnalyticsClient(BaseClient):
     def register_producer(self, producer_id: str, analytics_type: str, dme_input_types: list[uuid.UUID | str],
                            output_schema: dict, mda_type: str | None = None) -> dict:
-        """`mda_type` (SPEC_AUDIT.md): TS28104's own real, closed MDAType
+        """`mda_type` (HISTORY.md §7): TS28104's own real, closed MDAType
         enum — optional; omit it to let the route derive one for this
         build's own known-unambiguous shorthand values, or pass one of
         the 24 real spec values directly for genuine conformance.
@@ -46,7 +46,7 @@ class AnalyticsClient(BaseClient):
                   scope: dict | None = None, threshold_info: list[dict] | None = None) -> dict:
         # Wave 3: `scope` used to be the route's only body-eligible
         # parameter (bare, unwrapped JSON body) until `thresholdInfo`
-        # (TS28.104 ThresholdInfo, SPEC_AUDIT.md's MDAF section) needed a
+        # (TS28.104 ThresholdInfo, HISTORY.md §7's MDAF section) needed a
         # body field alongside it — FastAPI can't leave a single field
         # unwrapped once a second body-eligible field exists, so the
         # route now takes an explicit {"scope": ..., "thresholdInfo": ...}

@@ -7,7 +7,7 @@ register against).
 
 Wave 1 of the AI Platform Service Decomposition narrowed this module:
 report publishing, subscriptions, and querying moved to `mdaf/` (see
-docs/ownership/MDAF_OWNERSHIP.md) — this module keeps its own
+docs/ARCHITECTURE.md (MDAF)) — this module keeps its own
 use-case-specific role (traffic/energy/coverage analytics production)
 and is now an MDAF consumer rather than the service owning analytics
 reporting itself. Producer registration never validated against a
@@ -56,7 +56,7 @@ def register_analytics_producer(producer_id: str, analytics_type: str, dme_input
     IntegrityError on the composite primary key instead. Same shape of
     fix as SME's RegisterService (Foundational Platform LLD section 5).
 
-    SPEC_AUDIT.md's `analytics_type` enum finding: `mda_type`, TS28104's
+    HISTORY.md §7's `analytics_type` enum finding: `mda_type`, TS28104's
     own real closed MDAType enum, is optional and additive — a caller may
     declare one directly (validated against the real 24 values), or, if
     omitted, `infer_mda_type` derives it for the two shorthand values
@@ -73,7 +73,7 @@ def register_analytics_producer(producer_id: str, analytics_type: str, dme_input
     prod.output_schema = output_schema
     prod.mda_type = mda_type if mda_type is not None else infer_mda_type(analytics_type)
     db.commit()
-    # OPEN_ITEMS.md section 5: SME's register_service now requires the
+    # HISTORY.md §5: SME's register_service now requires the
     # apf_id to be a registered publishing function (Provider (APF)
     # enrolment) — this producer must enrol before it can publish itself
     # as an SME service, the same real two-step CAPIF dance the reference
@@ -89,7 +89,7 @@ def register_analytics_producer(producer_id: str, analytics_type: str, dme_input
 @app.get("/producers")
 def list_analytics_producers(analytics_type: str | None = None, producer_id: str | None = None, limit: int = PageLimit,
                               offset: int = PageOffset, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: no list/query endpoint for registered
+    """HISTORY.md §5: no list/query endpoint for registered
     producers existed at all — same gap as MDAF's own subscriptions list.
     """
     stmt = select(MDAFProducer)

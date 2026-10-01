@@ -20,7 +20,7 @@ class Intent(Base):
     intent_priority: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     intent_preemption_capability: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     rmio_id: Mapped[str] = mapped_column(String, nullable=False)
-    # Wave 3 (docs/ownership/INTENT_SERVICE_OWNERSHIP.md's "Open item
+    # Wave 3 (docs/ARCHITECTURE.md's Intent Service "Open item
     # carried into Wave 3"): consumer-side RMIH selection — TS28.312's
     # own NRM containment (IntentHandlingFunction *contains* Intent).
     # ON DELETE CASCADE matches that containment literally.
@@ -86,7 +86,7 @@ class IntentHandlingFunction(Base):
 
 
 class AutonomyDispatch(Base):
-    """OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes: closes call flow
+    """HISTORY.md OI-6.3 — rApp Autonomy Modes: closes call flow
     02/03's own "no automated hand-off from inference outcome to Intent"
     gap and call flow 09's own "who creates an Intent and why" gap. A
     real, queryable record of each inference-driven dispatch decision —

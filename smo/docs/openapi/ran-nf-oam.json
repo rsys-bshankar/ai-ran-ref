@@ -645,7 +645,7 @@
     },
     "/alarms/ingest": {
       "post": {
-        "description": "alarmId is ALWAYS a fresh UUID minted here, never the raising ME's\nnative ID \u2014 RAN NF OAM LLD section 3.3, closing R1UCR's own flagged,\nunresolved collision risk under a fleet of N MEs.\n\nprobableCause/specificProblem/rootCauseIndicator/correlatedNotifications/\nproposedRepairActions (OPEN_ITEMS.md section 5): the standard fault\nfields 3GPP TS 28.532 FaultMnS's NotifyNewAlarm carries, previously\nentirely absent from this alarm model. alarmType (SPEC_AUDIT.md,\nTS28111_FaultNrm.yaml's AlarmRecord) was the one of these fields\nstill missing after that pass.",
+        "description": "alarmId is ALWAYS a fresh UUID minted here, never the raising ME's\nnative ID \u2014 RAN NF OAM LLD section 3.3, closing R1UCR's own flagged,\nunresolved collision risk under a fleet of N MEs.\n\nprobableCause/specificProblem/rootCauseIndicator/correlatedNotifications/\nproposedRepairActions (HISTORY.md \u00a75): the standard fault\nfields 3GPP TS 28.532 FaultMnS's NotifyNewAlarm carries, previously\nentirely absent from this alarm model. alarmType (HISTORY.md \u00a77,\nTS28111_FaultNrm.yaml's AlarmRecord) was the one of these fields\nstill missing after that pass.",
         "operationId": "ingest_alarm_alarms_ingest_post",
         "parameters": [
           {
@@ -805,7 +805,7 @@
     },
     "/alarms/{alarm_id}/ack": {
       "patch": {
-        "description": "ackUserId (SPEC_AUDIT.md, TS28111_FaultNrm.yaml's AlarmRecord) \u2014\nwho acknowledged it, never recorded before. alarmChangedTime (the\nspec's own \"last mutated\" timestamp, distinct from raised_at/\ncleared_at) updates here and in clear_alarm below, the two places\nthis build actually mutates an existing alarm.",
+        "description": "ackUserId (HISTORY.md \u00a77, TS28111_FaultNrm.yaml's AlarmRecord) \u2014\nwho acknowledged it, never recorded before. alarmChangedTime (the\nspec's own \"last mutated\" timestamp, distinct from raised_at/\ncleared_at) updates here and in clear_alarm below, the two places\nthis build actually mutates an existing alarm.",
         "operationId": "change_alarm_ack_state_alarms__alarm_id__ack_patch",
         "parameters": [
           {
@@ -869,7 +869,7 @@
     },
     "/alarms/{alarm_id}/clear": {
       "patch": {
-        "description": "OPEN_ITEMS.md section 5: no alarm-cleared lifecycle existed at\nall \u2014 `/alarms/{id}/ack` only ever toggled ack_state, so an alarm\nthat stopped recurring on the NF had no way to ever be marked\nresolved. Matches the reference's own NotifyClearedAlarm shape:\nsetting severity to 'cleared' (already a valid value in this\nbuild's own CHECK constraint) rather than a separate state field.",
+        "description": "HISTORY.md \u00a75: no alarm-cleared lifecycle existed at\nall \u2014 `/alarms/{id}/ack` only ever toggled ack_state, so an alarm\nthat stopped recurring on the NF had no way to ever be marked\nresolved. Matches the reference's own NotifyClearedAlarm shape:\nsetting severity to 'cleared' (already a valid value in this\nbuild's own CHECK constraint) rather than a separate state field.",
         "operationId": "clear_alarm_alarms__alarm_id__clear_patch",
         "parameters": [
           {
@@ -1362,7 +1362,7 @@
     },
     "/dme-jobs": {
       "post": {
-        "description": "DME's own job-push callback (OPEN_ITEMS.md section 5): DME's\ncreate_data_job now actually POSTs the job to jobCallbackUrl on\ncreate \u2014 subscribe_pm registers this exact URL, so this closes the\nsame class of dangling-callback bug the /health route closed for\nthe health-supervision URL. Phase 1: acks only, no real per-job\nstate tracked producer-side.",
+        "description": "DME's own job-push callback (HISTORY.md \u00a75): DME's\ncreate_data_job now actually POSTs the job to jobCallbackUrl on\ncreate \u2014 subscribe_pm registers this exact URL, so this closes the\nsame class of dangling-callback bug the /health route closed for\nthe health-supervision URL. Phase 1: acks only, no real per-job\nstate tracked producer-side.",
         "operationId": "receive_dme_job_dme_jobs_post",
         "requestBody": {
           "content": {
@@ -1502,7 +1502,7 @@
         "summary": "List Fm Subscriptions"
       },
       "post": {
-        "description": "SubscribeFM \u2014 OPEN_ITEMS.md section 6.7, closed: mirrors\nsubscribe_pm's own DME-producer registration wrapper shape exactly\n(RAN NF OAM LLD section 3.5's SubscribePM pattern), for alarms\ninstead of PM counters. Unlike PM, there is no per-counter-type\nidentity \u2014 every ME's fault records register under one shared\n`RAN.FaultRecords` DME type, joined many-to-many across every\nmanaged element that subscribes (the same DMEType join behavior\ncall flow 11 walks for any other multi-producer type). Gives an\nrApp/AI-ML model DME-mediated visibility into outstanding-active/\nhistorical alarms \u2014 it does NOT give DME or a consuming rApp any way\nto clear an alarm; that stays RAN NF OAM's own\nPATCH /alarms/{alarm_id}/clear, called by the source NF or an\noperator, unaffected by whether FM is DME-registered.",
+        "description": "SubscribeFM \u2014 HISTORY.md OI-6.7, closed: mirrors\nsubscribe_pm's own DME-producer registration wrapper shape exactly\n(RAN NF OAM LLD section 3.5's SubscribePM pattern), for alarms\ninstead of PM counters. Unlike PM, there is no per-counter-type\nidentity \u2014 every ME's fault records register under one shared\n`RAN.FaultRecords` DME type, joined many-to-many across every\nmanaged element that subscribes (the same DMEType join behavior\ncall flow 11 walks for any other multi-producer type). Gives an\nrApp/AI-ML model DME-mediated visibility into outstanding-active/\nhistorical alarms \u2014 it does NOT give DME or a consuming rApp any way\nto clear an alarm; that stays RAN NF OAM's own\nPATCH /alarms/{alarm_id}/clear, called by the source NF or an\noperator, unaffected by whether FM is DME-registered.",
         "operationId": "subscribe_fm_fm_subscriptions_post",
         "parameters": [
           {
@@ -1583,7 +1583,7 @@
     },
     "/health": {
       "get": {
-        "description": "Producer health-supervision callback (OPEN_ITEMS.md section 5):\nsubscribe_pm registers this exact URL with DME as its\nproducerHealthCallbackUrl, but no route ever answered it \u2014 a health\npoller hitting the registered callback would 404 against a producer\nthis module itself just told DME was healthy. A plain liveness\ncheck: reachable and 200 means this RAN NF OAM instance is up.",
+        "description": "Producer health-supervision callback (HISTORY.md \u00a75):\nsubscribe_pm registers this exact URL with DME as its\nproducerHealthCallbackUrl, but no route ever answered it \u2014 a health\npoller hitting the registered callback would 404 against a producer\nthis module itself just told DME was healthy. A plain liveness\ncheck: reachable and 200 means this RAN NF OAM instance is up.",
         "operationId": "health_check_health_get",
         "responses": {
           "200": {
@@ -1926,7 +1926,7 @@
         "summary": "List O1 Adaptor Endpoints"
       },
       "post": {
-        "description": "RAN NF OAM LLD section 1's own design intent (Option A,\n`docs/call-flows/03-config-write-with-schema-check.md`: \"per ME's O1\nAdaptor registers itself into the MnS Registry NRM\") had no concrete\nself-registration route anywhere in this build \u2014 the entire\n`O1AdaptorEndpoint`/`ManagedEntity` registry could previously only\never be populated by a test fixture reaching directly into the DB,\nnever by any real caller; even `endpoint_heartbeat` below implicitly\nassumed the row it pings already existed. `docker-compose.yml`'s own\ncomment on `mock-o1-adaptor` names this precisely: a real ME's\n`adaptor_uri` \"would point at http://mock-o1-adaptor:8000/edit-config\nonce one is ever registered against this service\" \u2014 until now, none\never was.\n\nReal MnS Registry NRM polling stays out of scope (no such registry\nexists in this build, OPEN_ITEMS.md's confirmed elision) \u2014 this is\nthe same honest, lighter self-registration-POST substitute already\nused everywhere else in this build (DME's producer registration,\nSME's provider/invoker registration): the O1 Adaptor itself POSTs\nits own existence here instead of a registry polling it.\n`health_status` starts at `DISCOVERED`, the FSM's own real starting\nstate (`statemachine.py`'s `ENDPOINT_HEALTH_FSM`) \u2014 not the model's\ncolumn default `ACTIVE` (chosen for other callers' test\nconvenience) \u2014 since a fresh registration hasn't heartbeated yet.",
+        "description": "RAN NF OAM LLD section 1's own design intent (Option A,\n`docs/call-flows/03-config-write-with-schema-check.md`: \"per ME's O1\nAdaptor registers itself into the MnS Registry NRM\") had no concrete\nself-registration route anywhere in this build \u2014 the entire\n`O1AdaptorEndpoint`/`ManagedEntity` registry could previously only\never be populated by a test fixture reaching directly into the DB,\nnever by any real caller; even `endpoint_heartbeat` below implicitly\nassumed the row it pings already existed. `docker-compose.yml`'s own\ncomment on `mock-o1-adaptor` names this precisely: a real ME's\n`adaptor_uri` \"would point at http://mock-o1-adaptor:8000/edit-config\nonce one is ever registered against this service\" \u2014 until now, none\never was.\n\nReal MnS Registry NRM polling stays out of scope (no such registry\nexists in this build, HISTORY.md's confirmed elision) \u2014 this is\nthe same honest, lighter self-registration-POST substitute already\nused everywhere else in this build (DME's producer registration,\nSME's provider/invoker registration): the O1 Adaptor itself POSTs\nits own existence here instead of a registry polling it.\n`health_status` starts at `DISCOVERED`, the FSM's own real starting\nstate (`statemachine.py`'s `ENDPOINT_HEALTH_FSM`) \u2014 not the model's\ncolumn default `ACTIVE` (chosen for other callers' test\nconvenience) \u2014 since a fresh registration hasn't heartbeated yet.",
         "operationId": "register_o1_adaptor_endpoint_o1_adaptor_endpoints_post",
         "requestBody": {
           "content": {
@@ -2124,7 +2124,7 @@
         "summary": "List Pm Subscriptions"
       },
       "post": {
-        "description": "SubscribePM \u2014 RAN NF OAM LLD section 3.5: this is a DME-producer\nregistration wrapper, NOT a clause-8 API call. No R1AP endpoint exists\nfor PM at all; that's the spec's own documented design intent.\n\ngranularityPeriod (SPEC_AUDIT.md item 4, TS28550_PerfMeasJobCtrlMnS.yaml's\nmeasJobCreation-RequestType) \u2014 the one real job-control field worth\ncarrying despite the wrapper scope cut; everything else on that\nschema (schedule/priority/multi-instance/reportingPeriod) stays out.",
+        "description": "SubscribePM \u2014 RAN NF OAM LLD section 3.5: this is a DME-producer\nregistration wrapper, NOT a clause-8 API call. No R1AP endpoint exists\nfor PM at all; that's the spec's own documented design intent.\n\ngranularityPeriod (HISTORY.md \u00a77 item 4, TS28550_PerfMeasJobCtrlMnS.yaml's\nmeasJobCreation-RequestType) \u2014 the one real job-control field worth\ncarrying despite the wrapper scope cut; everything else on that\nschema (schedule/priority/multi-instance/reportingPeriod) stays out.",
         "operationId": "subscribe_pm_pm_subscriptions_post",
         "parameters": [
           {

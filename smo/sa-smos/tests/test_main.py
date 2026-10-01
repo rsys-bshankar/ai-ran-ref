@@ -157,8 +157,7 @@ def test_reconnect_escalates_when_order_has_no_completed_deploy_step(client, mon
 
 
 def test_group_scoped_monitor_dispatches_retrain_regardless_of_action_type(client, monkeypatch):
-    """MLModelCoordinationGroup x SA SMOS convergence (OPEN_ITEMS.md
-    section 1): a coordination-group-scoped monitor bypasses
+    """MLModelCoordinationGroup x SA SMOS convergence (HISTORY.md §1): a coordination-group-scoped monitor bypasses
     CONFIG_CHANGE/SCALE/RECONNECT/ROLLBACK entirely — those are
     NF-deployment concepts that don't map onto a model group — and
     always dispatches a group retrain via AI/ML Workflow instead,

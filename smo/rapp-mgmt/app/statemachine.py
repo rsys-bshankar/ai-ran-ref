@@ -48,7 +48,7 @@ def _revoke_credential(instance: RAppInstance, **_) -> None:
 
 
 def _reconsider_dme_registration(instance: RAppInstance, **_) -> None:
-    """rApp-as-producer reconsideration trigger (OPEN_ITEMS.md section 1):
+    """rApp-as-producer reconsideration trigger (HISTORY.md §1):
     when this instance crashes or terminates it can no longer be trusted
     as a live DME producer, so its own DME registrations — keyed by
     producer_id, which is this instance's oauth_client_id (bootstrap
@@ -66,7 +66,7 @@ def _reconsider_dme_registration(instance: RAppInstance, **_) -> None:
 
 
 def _reconsider_sme_registration(instance: RAppInstance, **_) -> None:
-    """SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3 (SME auto-
+    """HISTORY.md §7's Onboarding/rApp Mgmt finding 3 (SME auto-
     registration): the mirror image of _reconsider_dme_registration
     above, for the SME provider/service-API registrations bootstrap-
     complete made using this same oauth_client_id as its SME apfId. Real

@@ -48,7 +48,7 @@ class A1EIType(Base):
 
 
 class A1ServiceRegistration(Base):
-    """OPEN_ITEMS.md section 5: the reference's own Service Registry and
+    """HISTORY.md §5: the reference's own Service Registry and
     Supervision (`pms-api-v3.json`'s `/services`/`ServiceRegistrationInfo`/
     `ServiceStatus`) — service_id is caller-supplied (the reference's own
     `serviceId` is required, never server-generated), matching creator_id's

@@ -103,7 +103,7 @@ def test_no_transition_from_failed(db):
 
 
 def test_prime_then_deprime_round_trip(db):
-    """OPEN_ITEMS.md section 5: the reference's real
+    """HISTORY.md §5: the reference's real
     COMMISSIONED->PRIMING->PRIMED->DEPRIMING lifecycle, missing
     entirely before this pass.
     """

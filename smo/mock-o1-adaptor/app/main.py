@@ -12,7 +12,7 @@ real O-RAN-SC reference (sim-o1-interface's ntsim-ng) is a full
 YANG-model-validated NETCONF/SSH network simulator, out of proportion
 with this build's single-Python/FastAPI-stack consolidation (the same
 "ADOPT repos stay pattern references only" boundary already documented
-elsewhere, OPEN_ITEMS.md section 2). This is the honest, minimal
+elsewhere, HISTORY.md §2). This is the honest, minimal
 substitute: just enough real NETCONF-shaped XML parsing to close the loop
 RAN NF OAM's own dispatch client was already built to reach, mirroring
 mock-near-rt-ric's own "give the real caller something real to call, not

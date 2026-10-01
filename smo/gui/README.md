@@ -1,7 +1,7 @@
 # SMO Operator GUI
 
-A React + TypeScript single-page console for operating the fourteen SMO
-modules, plus its backend-for-frontend (`../gui-bff`).
+A React + TypeScript single-page console for operating the SMO modules and
+the four reference rApps, plus its backend-for-frontend (`../gui-bff`).
 
 ```
 Browser ──► gui (nginx :3000) ──/api──► gui-bff ──Bearer (SME-issued)──► R1 Termination ──► modules
@@ -11,7 +11,7 @@ Browser ──► gui (nginx :3000) ──/api──► gui-bff ──Bearer (SM
   to the BFF; it never calls R1 Termination or a module port directly (no
   CORS anywhere, and no way around the role checks).
 - The **BFF** holds GUI users and roles, issues the session JWT, checks
-  every call against its permission table (`gui-bff/app/rbac.py`), and
+  every call against its permission table (`../gui-bff/app/rbac.py`), and
   forwards allowed calls to R1 Termination. It authenticates to R1 the way
   an rApp does: the token endpoint advertised by R1's `/bootstrap`, a CAPIF
   invoker identity onboarded once at SME, then `client_credentials`.
@@ -19,8 +19,7 @@ Browser ──► gui (nginx :3000) ──/api──► gui-bff ──Bearer (SM
   FastAPI endpoints (`../docs/openapi/<module>.json`) and doesn't
   reimplement any lifecycle logic.
 
-Screenshots of every page, tab and lifecycle flow, taken from a live
-walk-through: [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
+Screenshots of the pages, tabs and lifecycle flows: [Screenshots](#screenshots).
 
 ## Run it
 
@@ -123,7 +122,8 @@ the admin state of exactly the intents it created).
 | **AI/ML** (call-flow 02) | `/mlmr/models` (+ `{id}` `PUT`/`DELETE`, `artifact`, `artifact/{v}`) · `/mlmr/coordination-groups` · `/aimgf/models/{id}/(advance?event=\|inference-jobs)` · `/aimgf/training-jobs` (+ `model-metrics`) · `/aimgf/inference-jobs` (+ `resolve`) · `/aimgf/mlmf/subscriptions` (+ `reports`) · `/aimgf/feature-groups` · `/mllf/models/{id}/deploy` · `/dme/dme-types` |
 | **Alarms** | `/ran-nf-oam/alarms` (filters `managed_element_ref`, `severity`; `PATCH …/ack`, `…/clear`; admin `alarms/ingest`) · `/focom/alarms` |
 | **KPIs & Assurance** | `/rapp-mgmt/instances/{id}/performance` · `/ran-nf-oam/pm-subscriptions` · MLMF as above · `/mdaf/reports`, `subscriptions` · `/ran-analytics/producers` (and, as admin, registering producers and publishing reports via `/mdaf/reports`) · `/sa-smos/monitors` (+ `evaluate`, `remedial-actions`, `escalate`), `/sa-smos/remedial-actions` · `/focom/performance` |
-| **Policy & Intents** | `/a1-related/policy-types`, `/a1-related/policies` (+ `{id}`, `{id}/status`), `/a1-related/policies/subscriptions`, `/a1-related/services` (+ `keepalive`) · `/intent-service/intents` (+ `admin-state`), `/intent-reports`, `/intent-handling-functions` |
+| **Policy & Intents** | `/a1-related/policy-types`, `/a1-related/policies` (+ `{id}`, `{id}/status`), `/a1-related/policies/subscriptions`, `/a1-related/services` (+ `keepalive`) · `/intent-service/intents` (+ `admin-state`), `/intent-reports`, `/intent-handling-functions` · `/intent-service/autonomy-dispatches` (+ `resolve`, `reject`) |
+| **Energy Saving**, **Mobility**, **Coverage**, **Traffic Steering** | `/energy-saving-rapp/instances`, `/mobility-optimization-rapp/instances`, `/coverage-optimization-rapp/instances`, `/traffic-steering-rapp/instances` (+ `{id}/dashboard`, `evaluate`, `reconcile`, per-cell or per-relation views); see `../DEMO_RUNBOOK.md` §24–§27 |
 | **Infrastructure** | `/nfo/deployments` (+ `heal`, `scale`, `resources`, `operations`, `DELETE`), `/nfo/descriptors` · `/focom/resource-pools` (+ `resources`), `resource-types`, `deployment-managers`, `topology`, `resources/provision`, `inventory/subscriptions` · `/ran-nf-oam/o1-adaptor-endpoints` (+ `discover`, `heartbeat`), `config-jobs` (several MEs per job), `software-management-jobs` (+ `advance`) · `/so-smos/orders` (+ `cancel`) |
 | **Data & Exposure** (call flows 01, 05, 08) | `/dme/dme-types`, `production-capabilities`, `data-jobs`, `offers` (+ `notify`), `type-subscriptions` · `/a1-related/ei-types` (+ `register`) · `/sme/provider-registrations`, `published-apis/v1/{apf}/service-apis`, `invoker-registrations`, `trusted-invokers`, `service-apis/v1/allServiceAPIs`, `capif-events/v1/{subscriber}/subscriptions` |
 | **Admin** | BFF `/api/admin/users`, `/api/admin/audit` |
@@ -144,3 +144,83 @@ call often changes another module's state.
   of inference jobs (pulled through DME, not shown here).
 - R1 Termination's own OAuth is unchanged. The GUI's users and roles live in
   the BFF, not an external IdP.
+
+## Screenshots
+
+Captured by a Playwright walk-through against the local stack (modules, R1
+Termination, the BFF and the nginx config, on Postgres 16), starting from an
+empty database. Every screen is live state
+produced by the walk-through itself, signed in as `admin`, at 1440 px wide.
+
+The walk-through drives each call flow in `smo/docs/call-flows` from the GUI
+and then visits every page and tab. It finished with no console errors and no
+5xx responses. The four reference-rApp pages (Energy Saving, Mobility,
+Coverage, Traffic Steering) are not captured yet.
+
+### Lifecycle flows (`/flows`)
+
+| # | Flow | Result |
+|---|------|--------|
+| 01 | [rApp onboarding → running instance](docs/screenshots/flows/f01.png) | 6/6, complete |
+| 02 | [AI/ML model: register → train → certify → deploy → infer → monitor](docs/screenshots/flows/f02.png) | 11/11, complete |
+| 03 | [Configuration write, schema-checked, fleet-aware](docs/screenshots/flows/f03.png) | `PARTIAL_SUCCESS`: one of the two MEs is deliberately unreachable |
+| 04 | [Closed-loop assurance: monitor → decide → remediate → escalate](docs/screenshots/flows/f04.png) | 5/5, `CONFIG_CHANGE` `RESOLVED` |
+| 05 | [A1 EI registration → data consumption](docs/screenshots/flows/f05.png) | 6/6, complete |
+| 06 | [Package failure, deprecation and the cascade-delete guard](docs/screenshots/flows/f06.png): [guard blocking delete](docs/screenshots/flows/f06-blocked.png) | 5/5, complete |
+| 07 | [rApp fault and performance reporting](docs/screenshots/flows/f07.png) | 5/5, FAULTED → recovered → RUNNING |
+| 08 | [RAN Analytics: producer → report → subscriber query](docs/screenshots/flows/f08.png) | 5/5, complete |
+| 09 | [Intent registration → fulfilment reporting → admin state](docs/screenshots/flows/f09.png) | 5/5, complete |
+| 10 | [SO SMOS multi-step order: INFRA → TRAINING → DEPLOY](docs/screenshots/flows/f10.png) | 4/4, complete |
+
+### Feature close-ups
+
+| Screen | What it shows |
+|--------|---------------|
+| [Package priming, deprime blocked](docs/screenshots/features/rapps-priming-blocked.png) | PRIMED package with an active usage registration: Deprime is disabled, with the reason given |
+| [Package priming, deprimed](docs/screenshots/features/rapps-priming-done.png) | Usage stopped → deprime succeeds → back to AVAILABLE |
+| [Coordination groups](docs/screenshots/features/aiml-groups.png) | Create needs at least 2 members (AI/ML Workflow now returns 422 `COORDINATION_GROUP_TOO_SMALL`) |
+| [Group-scoped remedial action](docs/screenshots/features/kpis-assurance-group.png) | `SCALE` on a model-group monitor → `RESOLVED` via a group retrain; the new Scope column |
+| [SME event subscriptions](docs/screenshots/features/data-sme-events.png) | One unscoped subscription and one limited to a single service by `apiIds` |
+| [A1 service supervision](docs/screenshots/features/policy-services.png) | Keep-alive countdown for a supervised service |
+
+### Every page and tab
+
+| Page | Tabs |
+|------|------|
+| Login | [sign-in](docs/screenshots/pages/login.png) |
+| Dashboard | [overview](docs/screenshots/pages/dashboard.png) |
+| Lifecycle flows | [flow list](docs/screenshots/pages/flows.png) |
+| rApps | [packages](docs/screenshots/pages/rapps-packages.png) · [instances](docs/screenshots/pages/rapps-instances.png) |
+| AI/ML | [models](docs/screenshots/pages/aiml-models.png) · [training](docs/screenshots/pages/aiml-training.png) · [inference](docs/screenshots/pages/aiml-inference.png) · [coordination groups](docs/screenshots/pages/aiml-groups.png) · [MLMF](docs/screenshots/pages/aiml-mlmf.png) · [feature groups](docs/screenshots/pages/aiml-features.png) |
+| Alarms | [RAN](docs/screenshots/pages/alarms-ran.png) · [O-Cloud](docs/screenshots/pages/alarms-ocloud.png) |
+| KPIs & Assurance | [rApp](docs/screenshots/pages/kpis-rapp.png) · [PM](docs/screenshots/pages/kpis-pm.png) · [MLMF](docs/screenshots/pages/kpis-mlmf.png) · [RAN Analytics](docs/screenshots/pages/kpis-analytics.png) · [assurance](docs/screenshots/pages/kpis-assurance.png) · [O-Cloud](docs/screenshots/pages/kpis-ocloud.png) |
+| Policy & Intents | [A1 policies](docs/screenshots/pages/policy-a1.png) · [status subscriptions](docs/screenshots/pages/policy-status-subs.png) · [A1 services](docs/screenshots/pages/policy-services.png) · [intents](docs/screenshots/pages/policy-intents.png) · [handlers](docs/screenshots/pages/policy-handlers.png) |
+| Infrastructure | [NFO](docs/screenshots/pages/infra-nfo.png) · [O-Cloud](docs/screenshots/pages/infra-ocloud.png) · [topology (TEIV)](docs/screenshots/pages/infra-topology.png) · [O1](docs/screenshots/pages/infra-o1.png) · [service orders](docs/screenshots/pages/infra-orders.png) |
+| Data & Exposure | [DME](docs/screenshots/pages/data-dme.png) · [A1 EI](docs/screenshots/pages/data-a1-ei.png) · [SME](docs/screenshots/pages/data-sme.png) |
+| Admin | [users](docs/screenshots/pages/admin-users.png) · [audit log](docs/screenshots/pages/admin-audit.png) |
+
+### Drawers and dialogs
+
+| Screen | What it shows |
+|--------|---------------|
+| [Dashboard with open alarms](docs/screenshots/details/dashboard-with-alarms.png) | Severity tiles and fleet counts once alarms are raised |
+| [Alarm](docs/screenshots/details/alarm-drawer.png) | 3GPP TS 28.532 / 28.111 fault fields, lifecycle, Ack / Clear |
+| [rApp instance](docs/screenshots/details/instance-drawer.png) | Instance detail and resource provenance, with lifecycle actions |
+| [AI/ML model](docs/screenshots/details/model-drawer.png) | Pipeline stepper, metadata, artifact upload, training and inference jobs |
+| [NF deployment](docs/screenshots/details/nfo-deployment-drawer.png) | NFO deployment, resources and LCM operations |
+| [Resource pool](docs/screenshots/details/resource-pool-detail.png) | FOCOM pool with its resources |
+| [CM write job](docs/screenshots/details/config-job-detail.png) | Per-managed-element sub-changes of a `PARTIAL_SUCCESS` job |
+| [Config write](docs/screenshots/details/config-write-dialog.png) | Several MEs, scope selection, schema-checked changes |
+| [Intent](docs/screenshots/details/intent-drawer.png) | Intent detail, fulfilment reports, admin state |
+| [Service order](docs/screenshots/details/service-order-drawer.png) | SO SMOS order steps with their results |
+| [One-time invoker secret](docs/screenshots/details/invoker-secret-dialog.png) | SME invoker onboarding: the secret is shown once and never again |
+
+### Role views
+
+Each screen is the same live state seen through a lower role. Actions the
+role can't perform aren't rendered, and the BFF refuses them anyway.
+
+| Role | Screens |
+|------|---------|
+| Viewer | [dashboard](docs/screenshots/roles/viewer-dashboard.png) · [flow 06](docs/screenshots/roles/viewer-flows-06.png) · [rApp packages](docs/screenshots/roles/viewer-rapps-packages.png) · [SME](docs/screenshots/roles/viewer-data-sme.png) |
+| Operator | [dashboard](docs/screenshots/roles/operator-dashboard.png) · [rApp instances](docs/screenshots/roles/operator-rapps-instances.png) · [DME](docs/screenshots/roles/operator-data-dme.png) · [A1 policies](docs/screenshots/roles/operator-policy-a1.png) |

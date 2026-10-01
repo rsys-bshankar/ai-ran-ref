@@ -1,5 +1,5 @@
 """Wave 10.3 — the Coverage Optimization rApp's integration tests
-(WAVES_4_TO_10_WORK_ITEMS.md §10a, W10.3-10): CCO-01..CCO-20, run against
+(docs/ROADMAP.md Wave 10.3, W10.3-10): CCO-01..CCO-20, run against
 the in-process mesh with the real onboarding, AIMgF / MLMR / MLLF / NFO,
 DME, Intent Service, SA SMOS, RAN NF OAM and mock O1 adaptor.
 

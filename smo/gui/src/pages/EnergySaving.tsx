@@ -22,7 +22,7 @@ export function EnergySaving() {
         actions={<select value={instanceId} onChange={(e) => setSelected(e.target.value)} aria-label="rApp instance">
           {(instances.data ?? []).map((i) => <option key={i.instanceId} value={i.instanceId}>{i.managedElementRef} · {i.autonomyMode} · {i.instanceId.slice(0, 8)}</option>)}
         </select>} />
-      {instances.data && instances.data.length === 0 && <Card><p className="muted">No EnergySaving rApp instance is running. See DEMO_RUNBOOK.md, Demo 01–11.</p></Card>}
+      {instances.data && instances.data.length === 0 && <Card><p className="muted">No EnergySaving rApp instance is running. See DEMO_RUNBOOK.md §24, Demo 00–11.</p></Card>}
       {instanceId && <InstanceDashboard instanceId={instanceId} />}
     </>
   );

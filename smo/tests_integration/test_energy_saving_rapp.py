@@ -1,4 +1,4 @@
-"""Wave 10.1 — the EnergySaving rApp end to end (WAVES_4_TO_10_WORK_ITEMS.md
+"""Wave 10.1 — the EnergySaving rApp end to end (docs/ROADMAP.md
 §9, W10-26). These are the Wave 10 test matrix's TC01–TC33, run against
 the real services in the in-process mesh:
   * the rApp onboarded from samples/energy-saving-rapp.csar;

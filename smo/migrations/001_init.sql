@@ -62,7 +62,7 @@ CREATE TABLE provider_registration (
 -- credentials directly.
 CREATE TABLE invoker_registration (
   api_invoker_id            TEXT PRIMARY KEY,
-  -- SPEC_AUDIT.md SME item 1: the real CAPIF core's onboarding is
+  -- HISTORY.md §7 SME item 1: the real CAPIF core's onboarding is
   -- public-key-based -- the client's own apiInvokerPublicKey, stored
   -- but not yet cryptographically used anywhere in this build.
   public_key                 TEXT NOT NULL,
@@ -82,7 +82,7 @@ CREATE TABLE issued_access_token (
   expires_at                    TIMESTAMPTZ NOT NULL
 );
 
--- SPEC_AUDIT.md SME item 2: the real CAPIF core's "Trusted Invokers"
+-- HISTORY.md §7 SME item 2: the real CAPIF core's "Trusted Invokers"
 -- security-context subsystem (capifcore/internal/securityservice/
 -- security.go) -- a second, separate real mechanism beyond OAuth2
 -- token issuance, that a real AEF (resource server) would consult
@@ -99,7 +99,7 @@ CREATE TABLE trusted_invoker (
 -- Foundational Platform: DME  (Foundational Platform LLD section 3.8)
 -- ============================================================
 
--- SPEC_AUDIT.md — DME vs. the real ICS API, Producer/Type conflation
+-- HISTORY.md §7 — DME vs. the real ICS API, Producer/Type conflation
 -- finding, closed: ICS's own real Information Producer
 -- (producer_registration_info) is a separate first-class entity from
 -- Information Type, in a genuine many-to-many relationship
@@ -120,7 +120,7 @@ CREATE TABLE dme_type (
   type_name                        TEXT NOT NULL,
   data_production_schema               JSONB NOT NULL,
   collection_spec                        JSONB,               -- above-spec addition, kept deliberately (section 3.4)
-  source_domain                                 TEXT CHECK (source_domain IN ('LIVE_RAN','DIGITAL_TWIN')),  -- Wave 3: docs/ownership/DME_OWNERSHIP.md
+  source_domain                                 TEXT CHECK (source_domain IN ('LIVE_RAN','DIGITAL_TWIN')),  -- Wave 3: docs/ARCHITECTURE.md (DME)
   source_context                                  JSONB,
   UNIQUE (namespace, name, version)
 );
@@ -153,7 +153,7 @@ CREATE TABLE data_job (
   delivery_details       JSONB,
   consumer_id             TEXT NOT NULL,   -- rAppId, or 'DME_FRAMEWORK' (section 3.7)
   status                    TEXT NOT NULL DEFAULT 'PENDING',
-  lifecycle_stage             TEXT CHECK (lifecycle_stage IN ('TRAINING','TESTING','EMULATION','INFERENCE','CLOSED_LOOP_FEEDBACK'))  -- Wave 3: docs/ownership/DME_OWNERSHIP.md
+  lifecycle_stage             TEXT CHECK (lifecycle_stage IN ('TRAINING','TESTING','EMULATION','INFERENCE','CLOSED_LOOP_FEEDBACK'))  -- Wave 3: docs/ARCHITECTURE.md (DME)
 );
 
 CREATE TABLE data_offer (
@@ -165,7 +165,7 @@ CREATE TABLE data_offer (
   data_offer_termination_notification_uri TEXT NOT NULL
 );
 
--- Wave 3 (AI Platform Service Decomposition) — docs/ownership/DME_OWNERSHIP.md.
+-- Wave 3 (AI Platform Service Decomposition) — docs/ARCHITECTURE.md (DME).
 -- DME's real data-plane store: a producer's actual payload, ingested
 -- against its own DataJob and fetched back by either an rApp or MDAF.
 CREATE TABLE data_record (
@@ -251,7 +251,7 @@ CREATE TABLE rapp_instance (
   -- ORM-generated tables the unit tests use.
   oauth_client_id                     TEXT,            -- == rAppId, identity.py, until revoked
   created_at                            TIMESTAMPTZ NOT NULL DEFAULT now(),
-  upgrade_timeout_seconds                 INTEGER NOT NULL DEFAULT 300,  -- section 6: confirmed default (OPEN_ITEMS.md section 1)
+  upgrade_timeout_seconds                 INTEGER NOT NULL DEFAULT 300,  -- section 6: confirmed default (HISTORY.md §1)
   -- Also missing from this table until this pass, for the same reason:
   -- both are read/written by rapp-mgmt/app/upgrade.py and main.py but
   -- SQLite's unit tests build their schema from the ORM models
@@ -259,7 +259,7 @@ CREATE TABLE rapp_instance (
   pending_upgrade_instance_id             UUID REFERENCES rapp_instance(instance_id),
   package_usage_registration_id             UUID REFERENCES package_usage_registration(id),
   sme_service_ids                              JSONB,     -- SME serviceId(s) this instance registered at bootstrap-complete; deregistered on TERMINATE/CRASH
-  -- OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes: fixed at onboarding,
+  -- HISTORY.md OI-6.3 — rApp Autonomy Modes: fixed at onboarding,
   -- defaults to SHADOW (no enforcement) for every existing caller.
   autonomy_mode                                   TEXT NOT NULL DEFAULT 'SHADOW'
                                                      CHECK (autonomy_mode IN ('AUTONOMOUS','ASSIST','SHADOW')),
@@ -346,7 +346,7 @@ CREATE TABLE cm_schema_cache (
 );
 
 -- Wave 9 (W9-01/W9-04): the per-vendor Capability Registry
--- (docs/architecture/O1_VENDOR_ONBOARDING_GUIDE.md)
+-- (docs/ARCHITECTURE.md)
 CREATE TABLE vendor_capability (
   vendor_name            TEXT PRIMARY KEY,
   supported_services     TEXT[] NOT NULL,
@@ -376,7 +376,7 @@ CREATE TABLE write_config_sub_change (
   managed_element_ref TEXT NOT NULL,
   managed_function_ref TEXT,
   attribute_changes  JSONB NOT NULL,
-  -- SPEC_AUDIT.md item 3: RFC 6241 section 7.2's real edit-config
+  -- HISTORY.md §7 item 3: RFC 6241 section 7.2's real edit-config
   -- operation attribute, previously entirely absent from this model.
   operation          TEXT NOT NULL DEFAULT 'merge' CHECK (operation IN ('merge','replace','create','delete','remove')),
   status             TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','APPLIED','REJECTED')),
@@ -390,12 +390,12 @@ CREATE TABLE pm_subscription (
   counter_type          TEXT NOT NULL,
   delivery_method         TEXT NOT NULL CHECK (delivery_method IN ('pull','push','stream')),
   southbound_engine         TEXT NOT NULL CHECK (southbound_engine IN ('ProvMnS','PMJobControl','FileDataReporting','StreamingDataReporting')),
-  -- SPEC_AUDIT.md item 4: TS28550_PerfMeasJobCtrlMnS.yaml's granularityPeriod
+  -- HISTORY.md §7 item 4: TS28550_PerfMeasJobCtrlMnS.yaml's granularityPeriod
   -- (the sampling interval, in seconds), previously absent entirely.
   granularity_period      INTEGER
 );
 
--- OPEN_ITEMS.md section 6.7: FM's own analog of pm_subscription — RAN NF
+-- HISTORY.md OI-6.7: FM's own analog of pm_subscription — RAN NF
 -- OAM registering itself as a DME producer for alarm/fault visibility,
 -- mirroring subscribe_pm's own PMCounters.{counter_type} registration.
 CREATE TABLE fm_subscription (
@@ -465,7 +465,7 @@ CREATE TABLE nf_deployment_descriptor (
   nf_deployment_descriptor_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   -- Wave 2 (AI Platform Service Decomposition): nullable since this pass —
   -- AIMgF's own Runtime Lifecycle now creates a descriptor per model
-  -- runtime directly (docs/ownership/AIMGF_OWNERSHIP.md), and a model
+  -- runtime directly (docs/ARCHITECTURE.md (AIMgF)), and a model
   -- runtime has no onboarded ApplicationPackage behind it. Every
   -- package-derived descriptor (Onboarding's own flow, unchanged) still
   -- always sets it.
@@ -536,10 +536,10 @@ CREATE TABLE ocloud_performance_metric (
 
 CREATE TABLE inventory_subscription (
   subscription_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  -- SPEC_AUDIT.md item 8: ORAN.O2ims.Inventory.yaml names this field
+  -- HISTORY.md §7 item 8: ORAN.O2ims.Inventory.yaml names this field
   -- `callback`, not this build's own invented `callback_uri`.
   callback          TEXT NOT NULL,
-  -- SPEC_AUDIT.md item 8: consumer-provided tracking id, entirely absent.
+  -- HISTORY.md §7 item 8: consumer-provided tracking id, entirely absent.
   consumer_subscription_id  TEXT,
   resource_type_id   TEXT   -- optional filter; unset matches every resource type
 );
@@ -551,7 +551,7 @@ CREATE TABLE resource_type (
   vendor               TEXT,
   model                 TEXT,
   version               TEXT,
-  -- SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's ResourceType
+  -- HISTORY.md §7 item 7: ORAN.O2ims.Inventory.yaml's ResourceType
   -- requires these five fields, entirely absent before.
   alarm_dictionary_id       TEXT,
   performance_dictionary_id  TEXT,
@@ -573,7 +573,7 @@ CREATE TABLE resource (
   resource_pool_id   TEXT NOT NULL REFERENCES resource_pool(resource_pool_id),
   parent_id            UUID,
   description           TEXT,
-  -- SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's Resource requires
+  -- HISTORY.md §7 item 7: ORAN.O2ims.Inventory.yaml's Resource requires
   -- these three, entirely absent before.
   global_asset_id         TEXT,
   tags                      TEXT[],
@@ -586,7 +586,7 @@ CREATE TABLE deployment_manager (
   description                TEXT,
   o_cloud_id                  TEXT NOT NULL,
   service_uri                  TEXT,
-  -- SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's DeploymentManager
+  -- HISTORY.md §7 item 7: ORAN.O2ims.Inventory.yaml's DeploymentManager
   -- requires these three, entirely absent before.
   supported_locations             TEXT[],
   capabilities                     JSONB,
@@ -597,7 +597,7 @@ CREATE TABLE deployment_manager (
 -- AI/ML Content: AI/ML Workflow  (AI/ML Workflow LLD sections 4, 6)
 -- ============================================================
 
--- Wave 4 — TS 28.105 MLModelRepository IOC (WAVES_4_TO_10_WORK_ITEMS.md D-9).
+-- Wave 4 — TS 28.105 MLModelRepository IOC (docs/ROADMAP.md D-9).
 CREATE TABLE ml_model_repository (
   ml_model_repository_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_label               TEXT,
@@ -622,7 +622,7 @@ CREATE TABLE aiml_model (
   version                   TEXT NOT NULL,
   -- Wave 2 (AI Platform Service Decomposition): state/training_job_id/
   -- cleared_node_groups moved to AIMgF's own model_lifecycle table below
-  -- (docs/ownership/AIMGF_OWNERSHIP.md) — MLMR is model truth, not
+  -- (docs/ARCHITECTURE.md (AIMgF)) — MLMR is model truth, not
   -- lifecycle truth, and Wave 1 only left them here as a structural
   -- shortcut pending this exact move.
   training_data_lineage             JSONB,
@@ -741,13 +741,13 @@ CREATE TABLE training_job (
   producer_type                  TEXT NOT NULL DEFAULT 'rApp' CHECK (producer_type = 'rApp'),
   producer_id                      TEXT NOT NULL,
   required_data                       JSONB,
-  -- OPEN_ITEMS.md section 6.4: a separate, explicitly-typed reference to
+  -- HISTORY.md OI-6.4: a separate, explicitly-typed reference to
   -- the real DME DataJob(s) training actually consumed, additive to
   -- required_data's own opaque blob — validated against DME on request.
   dme_data_job_ids                    UUID[] NOT NULL DEFAULT '{}',
   validation_criteria                   JSONB,
   status                                   TEXT NOT NULL DEFAULT 'NOT_STARTED'
-                                             CHECK (status IN ('NOT_STARTED','IN_PROGRESS','SUSPENDED','FINISHED','FAILED','CANCELLED')),  -- SPEC_AUDIT.md's requestStatus vocabulary finding, closed (FAILED is this build's own honest addition beyond the real spec; CANCELLING is never produced)
+                                             CHECK (status IN ('NOT_STARTED','IN_PROGRESS','SUSPENDED','FINISHED','FAILED','CANCELLED')),  -- HISTORY.md §7's requestStatus vocabulary finding, closed (FAILED is this build's own honest addition beyond the real spec; CANCELLING is never produced)
   notification_uri                          TEXT,
   run_id                                       TEXT,  -- NEW section 5: trainingmgr's own TrainingJob.run_id
   training_dataset                                TEXT, -- NEW section 5
@@ -756,11 +756,11 @@ CREATE TABLE training_job (
   producer_rapp_id                                         TEXT, -- NEW section 5
   model_metrics                                               JSONB, -- NEW section 5: writeback target, POST .../model-metrics
   ml_training_type                                               TEXT CHECK (ml_training_type IN
-    ('INITIAL_TRAINING','PRE_SPECIALISED_TRAINING','RE_TRAINING','FINE_TUNING')), -- NEW SPEC_AUDIT.md: TS28.105's own real enum
-  -- OPEN_ITEMS.md section 6.5: where the training run's real output
+    ('INITIAL_TRAINING','PRE_SPECIALISED_TRAINING','RE_TRAINING','FINE_TUNING')), -- HISTORY.md §7: TS28.105's own real enum
+  -- HISTORY.md OI-6.5: where the training run's real output
   -- artifact lives — a DME DmeTypeId reference, set on completion.
   outcome_artifact_dme_type_id                                     UUID,
-  -- OPEN_ITEMS.md section 6.2: a real NFO-backed execution runtime for
+  -- HISTORY.md OI-6.2: a real NFO-backed execution runtime for
   -- this training run — same bare-UUID cross-module-reference shape as
   -- model_lifecycle's own pair. Set on request, cleared on completion.
   nf_deployment_descriptor_id                                         UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
@@ -806,7 +806,7 @@ CREATE TABLE mlmf_subscription (
   metric_types      TEXT[] NOT NULL,
   dme_type_id       UUID NOT NULL REFERENCES dme_type(dme_type_id),
   guard_kpi_floor   JSONB,
-  notification_destination TEXT  -- SPEC_AUDIT.md's MLMFSubscription finding, closed
+  notification_destination TEXT  -- HISTORY.md §7's MLMFSubscription finding, closed
 );
 
 CREATE TABLE performance_report (
@@ -823,7 +823,7 @@ CREATE TABLE inference_job (
   model_id         UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
   status           TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','COMPLETED','FAILED')),
   notification_destination TEXT,
-  -- OPEN_ITEMS.md section 6.2: a read-only reference to the model's own
+  -- HISTORY.md OI-6.2: a read-only reference to the model's own
   -- already-live serving deployment (model_lifecycle.nf_deployment_id,
   -- real since Wave 2) — not a new NFO deployment of this job's own; see
   -- app/models.py's InferenceJob docstring for why.
@@ -837,7 +837,7 @@ CREATE TABLE inference_job (
 );
 
 -- Wave 2 (AI Platform Service Decomposition): the full eight-aggregate
--- domain model docs/ownership/AIMGF_OWNERSHIP.md's Wave 1 note promised —
+-- domain model docs/ARCHITECTURE.md's AIMgF Wave 1 note promised —
 -- AIMgF's own lifecycle-state truth (model_lifecycle) plus the
 -- validation/emulation/governance/audit aggregates Wave 1 didn't need yet.
 
@@ -854,7 +854,7 @@ CREATE TABLE model_lifecycle (
   cleared_node_groups                  TEXT[],
   nf_deployment_descriptor_id             UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
   nf_deployment_id                          UUID, -- -> nf_deployment (NFO) — bare UUID, cross-module reference
-  -- OPEN_ITEMS.md section 6.1: operator gate on Training->Validation->
+  -- HISTORY.md OI-6.1: operator gate on Training->Validation->
   -- Emulation. Reset to false whenever CREATE_TRAINING fires.
   training_approved                           BOOLEAN NOT NULL DEFAULT false,
   validation_approved                           BOOLEAN NOT NULL DEFAULT false,
@@ -873,10 +873,10 @@ CREATE TABLE validation_job (
   validation_criteria       JSONB,
   status                      TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','SUSPENDED','COMPLETED','FAILED','CANCELLED')),
   metrics                       JSONB,
-  -- OPEN_ITEMS.md section 6.5: same additive pair training_job gained.
+  -- HISTORY.md OI-6.5: same additive pair training_job gained.
   notification_uri                TEXT,
   outcome_artifact_dme_type_id       UUID,
-  -- OPEN_ITEMS.md section 6.2: same pair as training_job's own.
+  -- HISTORY.md OI-6.2: same pair as training_job's own.
   nf_deployment_descriptor_id          UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
   nf_deployment_id                        UUID,
   ml_testing_function_id                     UUID REFERENCES ml_testing_function(ml_testing_function_id) ON DELETE SET NULL,
@@ -900,10 +900,10 @@ CREATE TABLE emulation_job (
   emulation_criteria     JSONB,
   status                   TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','COMPLETED','FAILED','CANCELLED')),
   metrics                    JSONB,
-  -- OPEN_ITEMS.md section 6.5: same pair as validation_job's own.
+  -- HISTORY.md OI-6.5: same pair as validation_job's own.
   notification_uri             TEXT,
   outcome_artifact_dme_type_id    UUID,
-  -- OPEN_ITEMS.md section 6.2: same pair as training_job's own.
+  -- HISTORY.md OI-6.2: same pair as training_job's own.
   nf_deployment_descriptor_id        UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
   nf_deployment_id                      UUID,
   aiml_inference_emulation_function_id     UUID REFERENCES aiml_inference_emulation_function(aiml_inference_emulation_function_id) ON DELETE SET NULL,
@@ -1013,7 +1013,7 @@ CREATE TABLE certification_record (
   model_id                  UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
   decision                    TEXT NOT NULL CHECK (decision IN (
     'SUBMIT_FOR_APPROVAL','APPROVE','REJECT','CERTIFY','PROMOTE','ROLLBACK',
-    'APPROVE_TRAINING','APPROVE_VALIDATION'  -- OPEN_ITEMS.md 6.1's own operator-gate decisions
+    'APPROVE_TRAINING','APPROVE_VALIDATION'  -- HISTORY.md OI-6.1's own operator-gate decisions
   )),
   decided_by                     TEXT NOT NULL,
   rationale                        TEXT,
@@ -1058,7 +1058,7 @@ CREATE TABLE mdaf_producer (
   analytics_type    TEXT NOT NULL,
   dme_input_types    UUID[] NOT NULL,
   output_schema       JSONB NOT NULL,
-  mda_type               TEXT,  -- SPEC_AUDIT.md: TS28104's own real, closed MDAType enum — optional, additive
+  mda_type               TEXT,  -- HISTORY.md §7: TS28104's own real, closed MDAType enum — optional, additive
   PRIMARY KEY (producer_id, analytics_type)
 );
 
@@ -1122,7 +1122,7 @@ CREATE TABLE mda_subscription (
   scope                JSONB,
   requested_by          TEXT NOT NULL,
   notification_destination  TEXT,  -- NEW section 5: publish_report's actual delivery target
-  threshold_info               JSONB,  -- Wave 3: TS28.104 ThresholdInfo list, SPEC_AUDIT.md's MDAF section
+  threshold_info               JSONB,  -- Wave 3: TS28.104 ThresholdInfo list, HISTORY.md §7's MDAF section
   threshold_state                 JSONB
 );
 
@@ -1131,7 +1131,7 @@ CREATE TABLE mda_subscription (
 -- ============================================================
 
 -- Declared before `intent` (below) — Wave 3's consumer-side-selection
--- redesign (SPEC_AUDIT.md / docs/ownership/INTENT_SERVICE_OWNERSHIP.md's
+-- redesign (HISTORY.md §7 / docs/ARCHITECTURE.md's Intent Service
 -- own "Open item carried into Wave 3") gives `intent` a real FK onto
 -- this table, so it must exist first.
 CREATE TABLE intent_handling_function (
@@ -1158,7 +1158,7 @@ CREATE TABLE intent (
   intent_id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_label                   TEXT,
   intent_expectations            JSONB NOT NULL,   -- Wave 6: strict TS 28.312 IntentExpectation list (family-validated)
-  -- SPEC_AUDIT.md item 3: this column previously stored the invented
+  -- HISTORY.md §7 item 3: this column previously stored the invented
   -- top-level `intentType` matching field; now stores the spec's real
   -- IntentMgmtPurpose (a workflow-procedure enum, unrelated to matching).
   intent_mgmt_purpose               TEXT CHECK (intent_mgmt_purpose IN ('FEASIBILITYCHECK','FEASIBILITYCHECK_WITH_RECOMMENDATIONS','FULFILMENT_WITHOUT_NEGOTIATION','EXPLORATION','FULFILMENT_WITH_NEGOTIATION')),
@@ -1189,7 +1189,7 @@ CREATE TABLE intent (
 
 CREATE TABLE intent_report (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  -- ON DELETE CASCADE: SPEC_AUDIT.md item 5's new DELETE /intents/{id} —
+  -- ON DELETE CASCADE: HISTORY.md §7 item 5's new DELETE /intents/{id} —
   -- matches this build's established cascade-delete-child pattern
   -- (rapp_instance, aiml_model, write_config_job, ...) rather than leaving
   -- an FK violation on the first real delete of an intent with reports.
@@ -1205,7 +1205,7 @@ CREATE TABLE intent_report (
   last_updated_time            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes: a real, queryable
+-- HISTORY.md OI-6.3 — rApp Autonomy Modes: a real, queryable
 -- record of each inference-driven dispatch decision, distinct from
 -- intent itself since not every mode actually produces one.
 CREATE TABLE autonomy_dispatch (

@@ -1,4 +1,4 @@
-"""Tests for Wave 7 (WAVES_4_TO_10_WORK_ITEMS.md W7-03/W7-04): per-mode
+"""Tests for Wave 7 (docs/ROADMAP.md W7-03/W7-04): per-mode
 runtime profiles carried into NFO descriptors, and execution timeouts.
 Run with: pytest smo/aimgf/tests -q
 """
