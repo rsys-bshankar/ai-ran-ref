@@ -49,6 +49,7 @@ ALL_MODULES = [
     "intent-service", "so-smos", "sa-smos",
     "samples/energy-saving-rapp",  # Wave 10.1: the reference rApp's own tables
     "samples/mobility-optimization-rapp",  # Wave 10.2
+    "samples/coverage-optimization-rapp",  # Wave 10.3
 ]
 
 

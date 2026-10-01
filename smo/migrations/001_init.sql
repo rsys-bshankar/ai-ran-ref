@@ -1396,3 +1396,67 @@ CREATE TABLE mobility_decision (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX mobility_decision_instance_relation ON mobility_decision (instance_id, relation_id, created_at DESC);
+
+-- ============================================================
+-- Wave 10.3: the Coverage Optimization reference rApp's own state
+-- (samples/coverage-optimization-rapp/app/models.py)
+-- ============================================================
+CREATE TABLE coverage_instance (
+  instance_id               UUID PRIMARY KEY,
+  package_id                UUID,
+  managed_element_ref       TEXT NOT NULL,
+  cells                     JSONB NOT NULL,          -- [cellId]
+  baseline_tilt             INTEGER NOT NULL DEFAULT 60,
+  baseline_power            INTEGER NOT NULL DEFAULT 43,
+  autonomy_mode             TEXT NOT NULL CHECK (autonomy_mode IN ('AUTONOMOUS','ASSIST','SHADOW')),
+  rmih_id                   TEXT NOT NULL DEFAULT 'sa-smos',
+  energy_saving_instance_id TEXT,                    -- coordination (D10.3-4c)
+  mobility_instance_id      TEXT,
+  operator_notification_uri TEXT,
+  observing                 JSONB,                   -- the change set under KPI verification
+  pending_dispatch          JSONB,                   -- an ASSIST change set awaiting the operator
+  data_jobs                 JSONB NOT NULL DEFAULT '{}',
+  model_id                  UUID,
+  model_version             TEXT,
+  artifact_version          INTEGER,
+  model_params              JSONB,
+  lifecycle_jobs            JSONB NOT NULL DEFAULT '{}',
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE coverage_cell (
+  instance_id      UUID NOT NULL,
+  cell_id          TEXT NOT NULL,
+  state            TEXT NOT NULL DEFAULT 'STEADY' CHECK (state IN ('STEADY','OBSERVING')),
+  tilt             INTEGER,
+  power            INTEGER,
+  last_changed_at  TIMESTAMPTZ,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (instance_id, cell_id)
+);
+
+CREATE TABLE coverage_decision (
+  decision_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  execution_id   TEXT NOT NULL,
+  instance_id    UUID NOT NULL,
+  cell_id        TEXT NOT NULL,
+  observed_at    TIMESTAMPTZ,
+  reports        DOUBLE PRECISION,
+  shares         JSONB,
+  prediction     JSONB,
+  safety         JSONB,
+  decision       TEXT NOT NULL CHECK (decision IN ('DOWNTILT','UPTILT','POWER_UP','POWER_DOWN','REVERT','NO_CHANGE')),
+  reason         TEXT NOT NULL,
+  from_setting   JSONB,
+  to_setting     JSONB,
+  outcome        TEXT NOT NULL,
+  kpi            JSONB,
+  intent         JSONB,
+  action         JSONB,
+  verification   JSONB,
+  rollback       JSONB,
+  final_state    JSONB,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX coverage_decision_instance_cell ON coverage_decision (instance_id, cell_id, created_at DESC);

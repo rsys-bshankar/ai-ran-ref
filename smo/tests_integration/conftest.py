@@ -34,6 +34,7 @@ ALL_MODULES = [
     "samples/energy-saving-rapp",
     # Wave 10.2: the Mobility Optimization reference rApp
     "samples/mobility-optimization-rapp",
+    "samples/coverage-optimization-rapp",  # Wave 10.3
 ]
 
 

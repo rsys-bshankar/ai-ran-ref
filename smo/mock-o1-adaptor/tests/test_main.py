@@ -192,3 +192,14 @@ def test_neighbour_relation_and_dmro_defaults_and_writes():
     _edit("gnb-1", "NRCellRelation=201-202", {"cellIndividualOffset": "[2, 2, 2, 2, 2, 2]"})
     assert _get("gnb-1", "NRCellRelation=201-202")["cellIndividualOffset"] == "[2, 2, 2, 2, 2, 2]"
     assert _get("gnb-1", "DMROFunction=gnb-1")["dmroControl"] == "true"
+
+
+def test_coverage_knob_defaults_and_writes():
+    """Wave 10.3 (W10.3-04): digital tilt and sector-carrier power."""
+    assert _get("gnb-1", "CommonBeamformingFunction=301")["digitalTilt"] == "60"
+    assert _get("gnb-1", "NRSectorCarrier=301")["configuredMaxTxPower"] == "43"
+    _edit("gnb-1", "CommonBeamformingFunction=301", {"digitalTilt": "70"})
+    _edit("gnb-1", "NRSectorCarrier=302", {"configuredMaxTxPower": "44"})
+    assert _get("gnb-1", "CommonBeamformingFunction=301")["digitalTilt"] == "70"
+    assert _get("gnb-1", "CommonBeamformingFunction=302")["digitalTilt"] == "60"
+    assert _get("gnb-1", "NRSectorCarrier=302")["configuredMaxTxPower"] == "44"

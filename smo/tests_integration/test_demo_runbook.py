@@ -948,3 +948,36 @@ def test_mobility_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, 
     rels = {r["relation"]: r for r in state["dashboard"]["relations"]}            # Demo 11
     assert rels["201-203"]["state"] == "STEADY" and rels["201-203"]["cio"] == 2 and rels["201-203"]["rateTrend"]
     assert rels["203-204"]["latestDecision"]["reason"].startswith("SAFETY_BLOCKED")
+
+
+def test_coverage_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, monkeypatch, capsys):
+    """DEMO_RUNBOOK.md §26 — the Wave 10.3 Coverage Optimization rApp demo
+    (Demo 00–11). It runs the runbook's own script,
+    samples/coverage-optimization-rapp/demo.py, step by step through the mesh."""
+    import importlib.util
+
+    from coverage_env import CSAR_URL, serve_csar
+
+    spec = importlib.util.spec_from_file_location("coverage_demo", Path(__file__).resolve().parent.parent
+                                                  / "samples" / "coverage-optimization-rapp" / "demo.py")
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    monkeypatch.setattr(demo, "CSAR_URL", CSAR_URL)
+    serve_csar(loaded_apps, monkeypatch)
+    mesh["mock-o1-adaptor"].delete("/state")
+
+    state = {}
+    for step in demo.STEPS:
+        demo.run(step, state)
+    out = capsys.readouterr().out
+    assert "Demo 11" in out
+    assert state["historyRecords"] == 72 * len(demo.CELLS)                         # Demo 02
+    assert state["emulation"]["moveAccuracy"] >= 0.9                                # Demo 05
+    assert state["promoted"] == "PROMOTED" and state["runtime"] == "ACTIVE"       # Demo 06/07
+    assert state["plan"]["moves"]["301"] == "DOWNTILT"                              # Demo 08
+    assert state["decision"]["toSetting"]["digitalTilt"] == 70
+    assert state["action"]["status"] == "COMPLETED" and state["o1"]["digitalTilt"] == "70"   # Demo 09
+    assert state["kpi"]["verdict"] == "IMPROVED_OR_EQUAL"                           # Demo 10
+    assert state["kpi"]["postObjective"] < state["kpi"]["preObjective"]
+    cells = {c["cellId"]: c for c in state["dashboard"]["cells"]}                 # Demo 11
+    assert cells["301"]["digitalTilt"] == 70 and cells["301"]["state"] == "STEADY" and cells["301"]["shareTrend"]

@@ -1,0 +1,24 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: >
+  CoverageOptimization_rApp — the Wave 10.3 reference rApp
+  (smo/docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md §10a). A Non-RT RIC rApp that
+  learns how weak coverage, overshoot and pilot pollution respond to tilt and
+  transmit power, and tunes a cluster of cells jointly
+  (CommonBeamformingFunction.digitalTilt, NRSectorCarrier.configuredMaxTxPower)
+  through O1. No A1, Near-RT RIC, xApps or E2.
+
+topology_template:
+  node_templates:
+    applicationServiceDescriptor:
+      type: tosca.nodes.asd
+      description: "coverage-optimization-rapp"
+      properties:
+        descriptor_id: 9f2e3d4c-5b6a-4f7e-8d9c-2b3c4d5e6f03
+        descriptor_invariant_id: 9f2e3d4c-5b6a-4f7e-8d9c-2b3c4d5e0003
+        descriptor_version: "1.0.0"
+        schema_version: "2.0"
+        function_description: "CoverageOptimization_rApp — joint tilt and power optimisation over O1"
+        provider: "Radisys"
+        application_name: CoverageOptimization_rApp
+        application_version: "1.0.0"

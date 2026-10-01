@@ -1911,6 +1911,74 @@ Things to try afterwards:
 The integration suite covers MRO-01..MRO-20 the same way:
 `tests_integration/test_mobility_optimization_rapp.py`.
 
+## 26. Wave 10.3 — the Coverage Optimization rApp (Demo 00–11)
+
+This section is independent of §24 and §25. The Coverage Optimization
+reference rApp (`samples/coverage-optimization-rapp/`) is deployed beside
+the platform as the `coverage-optimization-rapp` service. Using only O1 PM
+data, it:
+
+* measures each cell's weak-coverage, overshoot and pilot-pollution shares
+  and its overlap with each neighbour;
+* learns how those shares respond to a cell's own tilt and power steps, and
+  to its neighbours' steps;
+* picks, jointly for the cluster, the tilt or power steps (at most two
+  cells per pass) that most reduce the problems. So an overshooting cell
+  is downtilted, rather than the neighbours it pollutes;
+* verifies every write, and reverts a change set that left the cluster
+  worse.
+
+It holds a cell while the cell or a neighbour is asleep, about to sleep or
+just woken (EnergySaving), and while the Mobility rApp is observing one of
+its relations. It also leaves EMERGENCY and incident-zone cells alone, and
+holds everything under a critical alarm. There is no A1, Near-RT RIC, xApp
+or E2. Design: `docs/call-flows/24-coverage-optimization-closed-loop.md`;
+scope and tests: `docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md` §10a.
+
+The demo is a script, `samples/coverage-optimization-rapp/demo.py`, one step
+per Demo number. `tests_integration/test_demo_runbook.py` runs it through the
+in-process mesh on every CI run. Live PM is produced from each cell's tilt
+and power as read back over O1, so the rApp's own changes show up in the
+next hour's PM. Timestamps are simulation time (history 2026-09-01..03,
+live PM from midnight on the 4th).
+
+```bash
+python3 samples/build_csar.py coverage-optimization-rapp      # only after editing the sample
+docker compose cp samples/coverage-optimization-rapp.csar r1-termination:/tmp/coverage-optimization-rapp.csar
+docker compose cp samples/coverage-optimization-rapp r1-termination:/tmp/coverage-optimization-rapp
+docker compose exec -d r1-termination python3 -m http.server 8899 --directory /tmp   # if not already serving
+```
+
+Then run one step at a time:
+
+| Step | Command (`docker compose exec r1-termination …`) | What to observe |
+|------|------|------|
+| Demo 00 — prepare the RAN | `python3 /tmp/coverage-optimization-rapp/demo.py 00` | `gnb-cco-demo-01` registered behind `mock-o1-adaptor`, COVERAGE_PERFORMANCE PM subscribed, the four-cell cluster at 6.0° / 43 dBm |
+| Demo 01 — onboard | `… demo.py 01` | package `AVAILABLE`; an AUTONOMOUS instance over cells 301–304 started |
+| Demo 02 — dataset | `… demo.py 02` | 288 hourly per-cell windows → DME, with each cell's tilt or power stepped in turn; datasets TRAINING/INFERENCE = `COVERAGE_PERFORMANCE`, EMULATION = `COVERAGE_PERFORMANCE_SIM` |
+| Demo 03 — train | `… demo.py 03` | `TRAINING → TRAINED`; the 12 learned sensitivities (uptilt raises overshoot, power cuts weak coverage, neighbours reaching in raise pollution) |
+| Demo 04 — validate | `… demo.py 04` | `VALIDATING → VALIDATED`, held-out RMSE and direction accuracy |
+| Demo 05 — emulate | `… demo.py 05` | the Digital Twin injects one fault per cluster; move accuracy 1.0, no false actions |
+| Demo 06 — promote | `… demo.py 06` | `CERTIFIED → PROMOTED` (operator governance decisions) |
+| Demo 07 — deploy | `… demo.py 07` | RuntimeLifecycle `ACTIVE` |
+| Demo 08 — live inference | `… demo.py 08` | 301 overshoots; the joint plan includes `301 DOWNTILT`, and 302 is `HELPED_BY` it; the predicted cluster objective drops |
+| Demo 09 — DME action and O1 | `… demo.py 09` | the action record and the execution → dispatch → intent → action chain; `CommonBeamformingFunction=301` read back as `digitalTilt: 70` |
+| Demo 10 — KPI check | `… demo.py 10` | an hour later the measured objective has dropped: `CONFIRMED` |
+| Demo 11 — dashboard | `… demo.py 11` | per cell: tilt, power, shares, decision, outcome. In the GUI: **Coverage** |
+
+Things to try afterwards:
+
+* **Weak coverage.** Report a `WEAK_COVERAGE` fault on 302 for an hour and
+  evaluate: the rApp raises 302's power by 1 dB.
+* **A change set that backfires.** Open coverage holes in 302 and 303 the
+  hour after a change: the whole change set is reverted straight through
+  DME (`REVERTED`).
+* **ASSIST mode.** A change set waits in **Policy & Intents → Autonomy
+  dispatches**; Resolve or Reject it, then press **Reconcile approvals**.
+
+The integration suite covers CCO-01..CCO-20 the same way:
+`tests_integration/test_coverage_optimization_rapp.py`.
+
 ## Known rough edges for a live walkthrough
 
 - `smo/docs/call-flows/01-rapp-onboarding-to-deployment.md`'s own

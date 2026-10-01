@@ -59,7 +59,8 @@ def test_registration_declares_the_cm_targets(client, platform):
     assert path == "/intent-service/intent-handling-functions" and body["rmihId"] == "sa-smos"
     names = [t["supportedTargetName"] for t in body["intentHandlingCapabilityList"][0]["supportedExpectationTargetInfoList"]]
     assert names == ["NRCellDU.administrativeState", "CESManagementFunction.energySavingControl",
-                     "NRCellRelation.cellIndividualOffset"]
+                     "NRCellRelation.cellIndividualOffset", "CommonBeamformingFunction.digitalTilt",
+                     "NRSectorCarrier.configuredMaxTxPower"]
     assert platform["deletes"] == ["/intent-service/intent-handling-functions/sa-smos"]  # idempotent re-register
     assert client.post("/o1-cm-handler/registration", json={"cmTargets": {"noDot": []}}).status_code == 422
 
@@ -148,3 +149,14 @@ def test_a_cio_target_writes_the_offset_on_each_named_relation(client, platform)
     action = next(body for path, body in platform["posts"] if path == "/dme/actions")
     assert action["changes"][0]["managedFunctionRef"] == "NRCellRelation=201-202"
     assert action["changes"][0]["attributeChanges"] == {"cellIndividualOffset": [2, 2, 2, 2, 2, 2]}
+
+
+def test_tilt_and_power_targets_write_each_named_cell(client, platform):
+    """Wave 10.3: one integer value per expectation, on the IOC named by the target."""
+    intent_id = uuid.uuid4()
+    tilt = {"targetName": "CommonBeamformingFunction.digitalTilt", "targetCondition": "IS_EQUAL_TO", "targetValueRange": 70}
+    platform["intents"][str(intent_id)] = _intent(intent_id, [tilt], cells=("301",))
+    assert client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)}).json()["status"] == "FULFILLED"
+    action = next(body for path, body in platform["posts"] if path == "/dme/actions")
+    assert action["changes"][0]["managedFunctionRef"] == "CommonBeamformingFunction=301"
+    assert action["changes"][0]["attributeChanges"] == {"digitalTilt": 70}

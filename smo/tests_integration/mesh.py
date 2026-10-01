@@ -22,6 +22,7 @@ R1_PREFIX_TO_SERVICE = {
     "/intent-service": "intent-service", "/so-smos": "so-smos", "/sa-smos": "sa-smos",
     "/energy-saving-rapp": "energy-saving-rapp",
     "/mobility-optimization-rapp": "mobility-optimization-rapp",
+    "/coverage-optimization-rapp": "coverage-optimization-rapp",
 }
 
 

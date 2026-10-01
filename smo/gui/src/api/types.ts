@@ -205,3 +205,37 @@ export interface MroRelation extends MroRelationRef {
   rateTrend: { t: string; v: number }[]; latestDecision: MroDecision | null;
 }
 export interface MroDashboard { instance: MroInstance; relations: MroRelation[] }
+
+// ---- Wave 10.3: Coverage Optimization reference rApp (samples/coverage-optimization-rapp)
+export type CcoShares = { WEAK_COVERAGE: number; OVERSHOOT: number; PILOT_POLLUTION: number };
+export interface CcoSetting { digitalTilt: number | null; configuredMaxTxPower: number | null }
+export interface CcoInstance {
+  instanceId: string; packageId: string | null; managedElementRef: string; cells: string[]; baselineTilt: number; baselinePower: number;
+  autonomyMode: string; rmihId: string; energySavingInstanceId: string | null; mobilityInstanceId: string | null;
+  observing: { changeSetId: string; at: string; cells: Record<string, { move: string }>; preObjective: number; predictedObjective: number } | null;
+  pendingDispatchId: string | null;
+  datasets: Record<string, { dataset: string; dmeTypeId: string; dataJobId: string; sourceDomain: string | null }>;
+  modelId: string | null; modelVersion: string | null; artifactVersion: number | null; model: Record<string, unknown> | null;
+  lifecycleJobs: Record<string, string>;
+}
+export interface CcoPlan {
+  moves: Record<string, string>; drivers: Record<string, string>; objectiveBefore: number; objectiveAfter: number; gain: number;
+  inferenceJobId: string; aimlInferenceReportId: string | null;
+}
+export interface CcoDecision {
+  decisionId: string; executionId: string; cellId: string; observedAt: string | null; reports: number | null; shares: CcoShares | null;
+  prediction: { plan: CcoPlan; predictedShares: CcoShares | null; problem: string | null; confidence: number } | null;
+  safety: { passed: boolean; blocks: { guard: string; level: string; detail?: unknown }[]; allowedMoves?: string[] } | null;
+  decision: string; reason: string; fromSetting: CcoSetting | null; toSetting: CcoSetting | null;
+  kpi: { preObjective: number; postObjective: number; verdict: string } | null;
+  intent: { dispatchId: string; autonomyMode: string; status: string; intentId: string | null } | null;
+  action: { path: string; actionId: string; status: string } | null;
+  verification: { result: string } | null;
+  rollback: { trigger: string; performed: boolean; result: string } | null;
+  outcome: string; finalState: ({ state: string } & CcoSetting) | null; createdAt: string;
+}
+export interface CcoCell extends CcoSetting {
+  cellId: string; state: string; lastChangedAt: string | null;
+  shareTrend: ({ t: string } & CcoShares)[]; excessTrend: { t: string; v: number }[]; latestDecision: CcoDecision | null;
+}
+export interface CcoDashboard { instance: CcoInstance; cells: CcoCell[] }

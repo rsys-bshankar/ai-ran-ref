@@ -38,6 +38,7 @@ MODULES = [
     "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf", "intent-service", "so-smos", "sa-smos",
     "energy-saving-rapp",  # Wave 10.1: the reference rApp's operator API (its dashboard and loop controls)
     "mobility-optimization-rapp",  # Wave 10.2
+    "coverage-optimization-rapp",  # Wave 10.3
 ]
 
 # The RMIO identity every GUI-created intent carries. Intent Service only lets
@@ -271,6 +272,10 @@ RULES: list[Rule] = [
     _rule("POST", "/mobility-optimization-rapp/instances/{id}/(start|evaluate|reconcile)", O),
     _rule("POST", "/mobility-optimization-rapp/instances/{id}/lifecycle/(train|validate|emulate|deploy)", O),
     _rule("POST", "/mobility-optimization-rapp/sim-producer/(register|publish)", A),
+    # --- Wave 10.3: the Coverage Optimization reference rApp — same split
+    _rule("POST", "/coverage-optimization-rapp/instances/{id}/(start|evaluate|reconcile)", O),
+    _rule("POST", "/coverage-optimization-rapp/instances/{id}/lifecycle/(train|validate|emulate|deploy)", O),
+    _rule("POST", "/coverage-optimization-rapp/sim-producer/(register|publish)", A),
 
     # --- every other read under a known module prefix
     _rule("GET", "/(" + "|".join(re.escape(m) for m in MODULES) + ")(/.*)?", V),

@@ -17,6 +17,7 @@ export const NAV: { to: string; label: string; icon: string; minRole?: Role }[] 
   { to: "/policy", label: "Policy & Intents", icon: "⚖" },
   { to: "/energy-saving", label: "Energy Saving", icon: "☾" },
   { to: "/mobility", label: "Mobility", icon: "⇆" },
+  { to: "/coverage", label: "Coverage", icon: "◎" },
   { to: "/infrastructure", label: "Infrastructure", icon: "▤" },
   { to: "/data", label: "Data & Exposure", icon: "⇄" },
   { to: "/admin", label: "Admin", icon: "⚙", minRole: "admin" },
