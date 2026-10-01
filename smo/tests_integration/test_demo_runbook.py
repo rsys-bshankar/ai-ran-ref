@@ -12,7 +12,7 @@ Run with: pytest smo/tests_integration -q
 from pathlib import Path
 
 
-def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkeypatch):
+def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callbacks):
     csar_bytes = (Path(__file__).resolve().parent.parent / "samples" / "hello-world-rapp.csar").read_bytes()
 
     class FakeResp:
@@ -29,9 +29,10 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
         return real_get(location, timeout=timeout, **kwargs)
 
     monkeypatch.setattr(loaded_apps["onboarding"].httpx, "get", fake_get)
+    csar_location = callbacks.csar_url("http://example/hello-world-rapp.csar")  # live: served by the test container
 
     # DEMO_RUNBOOK.md step 2: onboard
-    onboard = mesh["onboarding"].post("/packages", json={"location": "http://example/hello-world-rapp.csar"})
+    onboard = mesh["onboarding"].post("/packages", json={"location": csar_location})
     package_id = onboard.json()["packageId"]
     status = mesh["onboarding"].get(f"/packages/{package_id}/onboarding-status")
     assert status.json()["state"] == "AVAILABLE"
@@ -41,7 +42,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # (matching integrity_hash) — a genuine FAILED outcome via the async
     # onboarding-status contract (still 202 synchronously), not a bug,
     # and it must not disturb the first, already-AVAILABLE package.
-    duplicate_onboard = mesh["onboarding"].post("/packages", json={"location": "http://example/hello-world-rapp.csar"})
+    duplicate_onboard = mesh["onboarding"].post("/packages", json={"location": csar_location})
     assert duplicate_onboard.status_code == 202
     duplicate_package_id = duplicate_onboard.json()["packageId"]
     duplicate_status = mesh["onboarding"].get(f"/packages/{duplicate_package_id}/onboarding-status")
@@ -186,16 +187,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # (_notify_inventory_subscribers), same technique as fake_get above —
     # proves the real, unmodified notification code path fires, not a
     # reimplementation of it.
-    notifications = []
-    real_post = httpx.post
-
-    def fake_post(location, json=None, timeout=None, **kwargs):
-        if location == "http://demo-consumer:9000/inventory-events":
-            notifications.append(json)
-            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
-        return real_post(location, json=json, timeout=timeout, **kwargs)
-
-    monkeypatch.setattr(loaded_apps["focom"].httpx, "post", fake_post)
+    notifications = callbacks.capture("focom", "http://demo-consumer:9000/inventory-events")
 
     sub = mesh["focom"].post("/inventory/subscriptions", json={
         "callback": "http://demo-consumer:9000/inventory-events",
@@ -243,20 +235,11 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # observe the real dispatch notification, retract.
     # Intercepted at the same httpx.post call create_intent makes,
     # same technique as FOCOM's step above.
-    intent_notifications = []
-    sa_smos_notifications = []
-    real_post_2 = httpx.post
-
-    def fake_post_2(location, json=None, timeout=None, **kwargs):
-        if location == "http://so-smos:8000/intents/notify":
-            intent_notifications.append(json)
-            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
-        if location == "http://sa-smos:8000/intents/notify":
-            sa_smos_notifications.append(json)
-            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
-        return real_post_2(location, json=json, timeout=timeout, **kwargs)
-
-    monkeypatch.setattr(loaded_apps["intent-service"].httpx, "post", fake_post_2)
+    # In-process the two dispatch destinations are intercepted; live they are
+    # the real so-smos / sa-smos services, whose own receipt is not observable
+    # from here, so the delivery assertions below run in-process only.
+    intent_notifications = callbacks.capture("intent-service", "http://so-smos:8000/intents/notify")
+    sa_smos_notifications = callbacks.capture("intent-service", "http://sa-smos:8000/intents/notify")
 
     rmih = mesh["intent-service"].post("/intent-handling-functions", json={
         "rmihId": "so-smos", "smeServiceId": "so-smos-svc",
@@ -273,9 +256,10 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert intent.status_code == 201
     intent_id = intent.json()["intentId"]
 
-    assert len(intent_notifications) == 1
-    assert intent_notifications[0]["intentId"] == intent_id
-    assert intent_notifications[0]["expectationObjectTypes"] == ["RAN_SUBNETWORK"]
+    if not callbacks.live:
+        assert len(intent_notifications) == 1
+        assert intent_notifications[0]["intentId"] == intent_id
+        assert intent_notifications[0]["expectationObjectTypes"] == ["RAN_SUBNETWORK"]
 
     get_intent = mesh["intent-service"].get(f"/intents/{intent_id}")
     assert get_intent.status_code == 200
@@ -301,7 +285,8 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     })
     assert rejected.status_code == 422
     assert rejected.json()["detail"]["title"] == "RMIH_CAPABILITY_MISMATCH"
-    assert sa_smos_notifications == []  # rejected before any dispatch was ever attempted
+    if not callbacks.live:
+        assert sa_smos_notifications == []  # rejected before any dispatch was ever attempted
 
     intent2 = mesh["intent-service"].post("/intents", json={
         "userLabel": "demo energy intent", "intentReportControl": [{"observationPeriod": 60}], "intentExpectations": [{"expectationId": "e1", "expectationVerb": "DELIVER", "expectationObject": {"objectType": "RAN_SUBNETWORK"}, "expectationTargets": [{"targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValueRange": 500}]}],
@@ -310,8 +295,9 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert intent2.status_code == 201
     intent2_id = intent2.json()["intentId"]
 
-    assert len(intent_notifications) == 2  # so-smos notified again, for this second intent
-    assert intent_notifications[1]["intentId"] == intent2_id
+    if not callbacks.live:
+        assert len(intent_notifications) == 2  # so-smos notified again, for this second intent
+        assert intent_notifications[1]["intentId"] == intent2_id
 
     del_intent = mesh["intent-service"].delete(f"/intents/{intent_id}")
     assert del_intent.status_code == 204
@@ -329,16 +315,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # retract. Intercepted at the same httpx.post call
     # _notify_policy_status_subscribers makes, same technique as steps
     # 8-9 above.
-    policy_notifications = []
-    real_post_3 = httpx.post
-
-    def fake_post_3(location, json=None, timeout=None, **kwargs):
-        if location == "http://demo-consumer:9000/policy-status":
-            policy_notifications.append(json)
-            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
-        return real_post_3(location, json=json, timeout=timeout, **kwargs)
-
-    monkeypatch.setattr(loaded_apps["a1-related"].httpx, "post", fake_post_3)
+    policy_notifications = callbacks.capture("a1-related", "http://demo-consumer:9000/policy-status")
 
     service = mesh["a1-related"].put("/services", json={"serviceId": "hello-world-rapp", "keepAliveIntervalSeconds": 0})
     assert service.status_code == 200
@@ -509,16 +486,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # destination, publish a report, observe the real notification fire
     # (same intercept technique as FOCOM/Intent Service/A1 Related above),
     # unsubscribe.
-    analytics_notifications = []
-    real_post_4 = httpx.post
-
-    def fake_post_4(location, json=None, timeout=None, **kwargs):
-        if location == "http://demo-consumer:9000/analytics-reports":
-            analytics_notifications.append(json)
-            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
-        return real_post_4(location, json=json, timeout=timeout, **kwargs)
-
-    monkeypatch.setattr(loaded_apps["mdaf"].httpx, "post", fake_post_4)
+    analytics_notifications = callbacks.capture("mdaf", "http://demo-consumer:9000/analytics-reports")
 
     producer = mesh["ran-analytics"].post("/producers",
         params={"producer_id": "hello-world-rapp", "analytics_type": "coverage-issue-analysis"},
@@ -631,16 +599,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # DmeType is registered or removed, closed in an earlier §5 pass but
     # never demonstrated. Intercepted the same way as FOCOM's/Policy
     # Mgmt's/A1 Related's/RAN Analytics' own notification steps above.
-    dme_type_notifications = []
-    real_post_dme = httpx.post
-
-    def fake_post_dme(location, json=None, timeout=None, **kwargs):
-        if location == "http://demo-consumer:9000/dme-type-events":
-            dme_type_notifications.append(json)
-            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
-        return real_post_dme(location, json=json, timeout=timeout, **kwargs)
-
-    monkeypatch.setattr(loaded_apps["dme"].httpx, "post", fake_post_dme)
+    dme_type_notifications = callbacks.capture("dme", "http://demo-consumer:9000/dme-type-events")
 
     dme_sub = mesh["dme"].post("/type-subscriptions", json={
         "notificationDestination": "http://demo-consumer:9000/dme-type-events", "owner": "hello-world-rapp",
@@ -783,16 +742,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # unrelated service's events, but must be notified about
     # helloworld-api's own. Intercepted the same way as DME's own
     # type-subscription step above.
-    sme_notifications = []
-    real_post_sme = httpx.post
-
-    def fake_post_sme(location, json=None, timeout=None, **kwargs):
-        if location.startswith("http://demo-consumer:9000/sme-events-"):
-            sme_notifications.append((location, json))
-            raise httpx.ConnectError("no real listener in this test, matching the runbook's own note")
-        return real_post_sme(location, json=json, timeout=timeout, **kwargs)
-
-    monkeypatch.setattr(loaded_apps["sme"].httpx, "post", fake_post_sme)
+    sme_notifications = callbacks.capture("sme", "http://demo-consumer:9000/sme-events-", with_location=True)
 
     unscoped_sub = mesh["sme"].post("/capif-events/v1/consumer-unscoped/subscriptions", json={
         "subscriberId": "consumer-unscoped", "eventTypes": ["SERVICE_API_UPDATE"],
@@ -892,7 +842,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert delete.status_code == 204
 
 
-def test_energy_saving_demo_01_to_11_runs_end_to_end(mesh, loaded_apps, monkeypatch, capsys):
+def test_energy_saving_demo_01_to_11_runs_end_to_end(mesh, loaded_apps, monkeypatch, capsys, callbacks):
     """DEMO_RUNBOOK.md §24 — the Wave 10.1 EnergySaving rApp demo (Demo
     00–11). Not a mirror of the runbook: it runs the runbook's own script,
     samples/energy-saving-rapp/demo.py, step by step through the mesh."""
@@ -904,7 +854,7 @@ def test_energy_saving_demo_01_to_11_runs_end_to_end(mesh, loaded_apps, monkeypa
                                                   / "samples" / "energy-saving-rapp" / "demo.py")
     demo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(demo)
-    monkeypatch.setattr(demo, "CSAR_URL", CSAR_URL)
+    monkeypatch.setattr(demo, "CSAR_URL", callbacks.csar_url(CSAR_URL))
     serve_csar(loaded_apps, monkeypatch)
     mesh["mock-o1-adaptor"].delete("/state")
 
@@ -924,7 +874,7 @@ def test_energy_saving_demo_01_to_11_runs_end_to_end(mesh, loaded_apps, monkeypa
     assert cells["103"]["latestDecision"]["reason"] == "SAFETY_BLOCKED:EMERGENCY_CELL"
 
 
-def test_mobility_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, monkeypatch, capsys):
+def test_mobility_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, monkeypatch, capsys, callbacks):
     """DEMO_RUNBOOK.md §25 — the Wave 10.2 Mobility Optimization rApp demo
     (Demo 00–11). It runs the runbook's own script,
     samples/mobility-optimization-rapp/demo.py, step by step through the mesh."""
@@ -936,7 +886,7 @@ def test_mobility_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, 
                                                   / "samples" / "mobility-optimization-rapp" / "demo.py")
     demo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(demo)
-    monkeypatch.setattr(demo, "CSAR_URL", CSAR_URL)
+    monkeypatch.setattr(demo, "CSAR_URL", callbacks.csar_url(CSAR_URL))
     serve_csar(loaded_apps, monkeypatch)
     mesh["mock-o1-adaptor"].delete("/state")
 
@@ -959,7 +909,7 @@ def test_mobility_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, 
     assert rels["203-204"]["latestDecision"]["reason"].startswith("SAFETY_BLOCKED")
 
 
-def test_coverage_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, monkeypatch, capsys):
+def test_coverage_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, monkeypatch, capsys, callbacks):
     """DEMO_RUNBOOK.md §26 — the Wave 10.3 Coverage Optimization rApp demo
     (Demo 00–11). It runs the runbook's own script,
     samples/coverage-optimization-rapp/demo.py, step by step through the mesh."""
@@ -971,7 +921,7 @@ def test_coverage_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, 
                                                   / "samples" / "coverage-optimization-rapp" / "demo.py")
     demo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(demo)
-    monkeypatch.setattr(demo, "CSAR_URL", CSAR_URL)
+    monkeypatch.setattr(demo, "CSAR_URL", callbacks.csar_url(CSAR_URL))
     serve_csar(loaded_apps, monkeypatch)
     mesh["mock-o1-adaptor"].delete("/state")
 
@@ -992,7 +942,7 @@ def test_coverage_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, 
     assert cells["301"]["digitalTilt"] == 70 and cells["301"]["state"] == "STEADY" and cells["301"]["shareTrend"]
 
 
-def test_traffic_steering_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, monkeypatch, capsys):
+def test_traffic_steering_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, monkeypatch, capsys, callbacks):
     """DEMO_RUNBOOK.md §27 — the Wave 10.4 Traffic Steering rApp demo (Demo
     00–11). It runs the runbook's own script,
     samples/traffic-steering-rapp/demo.py, step by step through the mesh."""
@@ -1004,7 +954,7 @@ def test_traffic_steering_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, monke
                                                   / "samples" / "traffic-steering-rapp" / "demo.py")
     demo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(demo)
-    monkeypatch.setattr(demo, "CSAR_URL", CSAR_URL)
+    monkeypatch.setattr(demo, "CSAR_URL", callbacks.csar_url(CSAR_URL))
     serve_csar(loaded_apps, monkeypatch)
     mesh["mock-o1-adaptor"].delete("/state")
 

@@ -6,11 +6,13 @@ stdin by the CI job:
 
     docker compose exec -T r1-termination python3 - < scripts/compose_e2e.py
 
-It replays the DEMO_RUNBOOK.md §1-§4 spine against the real containers:
-every service answers, the sample CSAR onboards, an rApp instance deploys,
-`/bootstrap` answers, and a token-gated call routes through R1 Termination.
-The CSAR must already be served on r1-termination:8899 (the CI job does
-this, as DEMO_RUNBOOK.md §1 does).
+It is the fast gate before the full replay: every service answers, R1
+Termination's `/bootstrap` answers, and a token-gated call is rejected
+without a token. The runbook itself (§2-§27: onboarding, deployment, every
+module, the four reference rApps) is replayed against the same stack by
+`tests_integration/test_demo_runbook.py` with `SMO_E2E_LIVE=1`
+(see `tests_integration/live.py`), which needs the stack otherwise untouched,
+so this script leaves no state behind.
 
 Exit status 0 only if every check passes; every failure is listed.
 """
@@ -62,28 +64,7 @@ for host in ANSWERS:
     check(f"{host} answers HTTP", wait_for(f"http://{host}:8000/", False) is not None)
 check("r1-termination /health", wait_for("http://localhost:8000/health", True) is not None)
 
-# --- 2. DEMO_RUNBOOK §2: onboard the sample CSAR ----------------------------
-r = httpx.post("http://onboarding:8000/packages", json={"location": CSAR_URL}, timeout=30)
-check("onboard POST /packages -> 202", r.status_code == 202, (r.status_code, r.text))
-package_id = r.json().get("packageId") if r.status_code == 202 else None
-state = None
-for _ in range(30):
-    if not package_id:
-        break
-    state = httpx.get(f"http://onboarding:8000/packages/{package_id}/onboarding-status", timeout=10).json().get("state")
-    if state in ("AVAILABLE", "FAILED"):
-        break
-    time.sleep(1)
-check("package reaches AVAILABLE", state == "AVAILABLE", state)
-
-# --- 3. DEMO_RUNBOOK §3: deploy it -----------------------------------------
-if package_id and state == "AVAILABLE":
-    r = httpx.post("http://rapp-mgmt:8000/instances", json={"packageId": package_id, "config": {}}, timeout=30)
-    check("rapp-mgmt POST /instances -> 2xx", r.is_success, (r.status_code, r.text))
-    if r.is_success:
-        check("instance has an oauthClientId", bool(r.json().get("oauthClientId")), r.json())
-
-# --- 4. DEMO_RUNBOOK §4: bootstrap + an R1-routed, token-gated call ---------
+# --- 2. DEMO_RUNBOOK §4: bootstrap + an R1-routed, token-gated call ---------
 r = httpx.get("http://r1-termination:8000/bootstrap", timeout=10)
 check("R1 /bootstrap -> 200", r.status_code == 200, r.status_code)
 if r.status_code == 200:
