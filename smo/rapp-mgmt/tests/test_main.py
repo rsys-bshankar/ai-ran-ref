@@ -119,6 +119,47 @@ def test_create_instance_registers_package_usage(client, db_session_factory, mon
         assert inst.package_usage_registration_id == reg_id
 
 
+def test_create_instance_defaults_autonomy_mode_to_shadow(client, monkeypatch):
+    """OPEN_ITEMS.md section 6.3: SHADOW — the safest, no-enforcement
+    mode — is the default for every existing caller that doesn't declare
+    autonomyMode, the same permissive-by-default shape optional fields
+    already use throughout this build.
+    """
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    resp = client.post("/instances", json={"packageId": str(uuid.uuid4())})
+    instance_id = resp.json()["instanceId"]
+
+    fetched = client.get(f"/instances/{instance_id}").json()
+    assert fetched["autonomyMode"] == "SHADOW"
+    assert fetched["regionScope"] is None
+
+
+def test_create_instance_stores_autonomous_mode_and_region_scope(client, monkeypatch):
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+
+    resp = client.post("/instances", json={
+        "packageId": str(uuid.uuid4()), "autonomyMode": "AUTONOMOUS", "regionScope": {"nodeIds": ["ne-1", "ne-2"]},
+    })
+    instance_id = resp.json()["instanceId"]
+
+    fetched = client.get(f"/instances/{instance_id}").json()
+    assert fetched["autonomyMode"] == "AUTONOMOUS"
+    assert fetched["regionScope"] == {"nodeIds": ["ne-1", "ne-2"]}
+
+    listed = client.get("/instances").json()["items"]
+    assert [i["autonomyMode"] for i in listed] == ["AUTONOMOUS"]
+
+
+def test_create_instance_rejects_an_invalid_autonomy_mode(client):
+    resp = client.post("/instances", json={"packageId": str(uuid.uuid4()), "autonomyMode": "NOT_A_REAL_MODE"})
+    assert resp.status_code == 422
+
+
 def test_terminate_instance_calls_usage_stop(client, monkeypatch):
     """The other half of the fix: TerminateInstance must stop the usage
     registration CreateInstance started, or the guard sees permanently

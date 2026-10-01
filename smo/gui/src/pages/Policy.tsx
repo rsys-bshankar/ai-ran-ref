@@ -1,12 +1,12 @@
 import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
-import type { A1Policy, A1Service, Intent, IntentReport, PolicyStatusSubscription, Rmih } from "../api/types";
+import type { A1Policy, A1Service, AutonomyDispatch, InstanceSummary, Intent, IntentReport, PolicyStatusSubscription, Rmih } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ActionButton, Can, Card, DataTable, Drawer, Field, Id, Json, KeyValue, PageHeader, StateBadge, Tabs, useHashTab } from "../components/ui";
 import { formatTime, keepAliveRemaining, parseJsonObject, splitList } from "../lib/domain";
 
-const TABS = ["a1", "status-subs", "services", "intents", "handlers"] as const;
+const TABS = ["a1", "status-subs", "services", "intents", "handlers", "autonomy"] as const;
 
 export function Policy() {
   const [tab, setTab] = useHashTab(TABS, "a1");
@@ -15,13 +15,14 @@ export function Policy() {
       <PageHeader title="Policy & Intents" subtitle="A1 policies enforced at the Near-RT RIC, and TS 28.312 intents dispatched to intent handlers" />
       <Tabs value={tab} onChange={setTab} tabs={[
         { id: "a1", label: "A1 policies" }, { id: "status-subs", label: "Policy status subscriptions" }, { id: "services", label: "A1 services" },
-        { id: "intents", label: "Intents" }, { id: "handlers", label: "Intent handlers (RMIH)" },
+        { id: "intents", label: "Intents" }, { id: "handlers", label: "Intent handlers (RMIH)" }, { id: "autonomy", label: "Autonomy dispatches" },
       ]} />
       {tab === "a1" && <A1Policies />}
       {tab === "status-subs" && <StatusSubscriptions />}
       {tab === "services" && <A1Services />}
       {tab === "intents" && <Intents />}
       {tab === "handlers" && <Handlers />}
+      {tab === "autonomy" && <AutonomyDispatches />}
     </>
   );
 }
@@ -245,6 +246,88 @@ function PublishIntentReport({ intentId }: { intentId: string }) {
           conflictReports: splitList(conflicts).length ? splitList(conflicts).map((c) => ({ conflictingIntent: c })) : null },
       }} />
     </details>
+  );
+}
+
+// ---------------------------------------------------------------- OPEN_ITEMS.md section 6.3: rApp Autonomy Modes
+
+function AutonomyDispatches() {
+  const [status, setStatus] = useState("");
+  const dispatches = useSmo<AutonomyDispatch[]>("/intent-service/autonomy-dispatches", { status });
+  return (
+    <>
+      <Can method="POST" path="/intent-service/autonomy-dispatches"><CreateAutonomyDispatch /></Can>
+      <Card title="Autonomy dispatches" actions={
+        <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status">
+          <option value="">All</option><option>AWAITING_SCOPE</option><option>DISPATCHED</option><option>SHADOWED</option>
+        </select>}>
+        <p className="muted small">What an rApp instance's own onboarding-time autonomy mode did with an inference outcome — AUTONOMOUS dispatches immediately at a pre-configured scope, ASSIST waits for an operator to scope it, SHADOW never dispatches at all.</p>
+        <DataTable rows={dispatches.data} loading={dispatches.isLoading} error={dispatches.error} rowKey={(d) => d.dispatchId} empty="No autonomy dispatches." columns={[
+          { header: "Dispatch", render: (d) => <Id value={d.dispatchId} /> },
+          { header: "Instance", render: (d) => <Id value={d.instanceId} /> },
+          { header: "Mode", render: (d) => <StateBadge state={d.autonomyMode} /> },
+          { header: "Status", render: (d) => <StateBadge state={d.status} /> },
+          { header: "Intent", render: (d) => d.intentId ? <Id value={d.intentId} /> : <span className="muted">—</span> },
+          { header: "", className: "actions", render: (d) => d.status === "AWAITING_SCOPE" && <ResolveAutonomyDispatch dispatch={d} /> },
+        ]} />
+      </Card>
+    </>
+  );
+}
+
+function CreateAutonomyDispatch() {
+  const instances = useSmo<InstanceSummary[]>("/rapp-mgmt/instances");
+  const handlers = useSmo<Rmih[]>("/intent-service/intent-handling-functions");
+  const [instanceId, setInstanceId] = useState("");
+  const [rmihId, setRmihId] = useState("");
+  const [objectType, setObjectType] = useState("RAN_SUBNETWORK");
+  const [targets, setTargets] = useState('[{"targetName": "DLThptPerUE", "targetCondition": "IS_GREATER_THAN", "targetValueRange": 50}]');
+  const [notificationDestination, setNotificationDestination] = useState("");
+  let parsedTargets: unknown[] | null = null;
+  try { const v = JSON.parse(targets); parsedTargets = Array.isArray(v) ? v : null; } catch { parsedTargets = null; }
+  const selected = instances.data?.find((i) => i.instanceId === instanceId);
+  return (
+    <Card title="Request autonomy dispatch">
+      <p className="muted small">Simulates an rApp instance that just pulled an AI/ML inference outcome and wants it enacted — the selected instance's own <code>autonomyMode</code> decides what happens next.</p>
+      <div className="form grid cols-3 tight">
+        <Field label="rApp instance">
+          <select value={instanceId} onChange={(e) => setInstanceId(e.target.value)}>
+            <option value="">select…</option>
+            {(instances.data ?? []).map((i) => <option key={i.instanceId} value={i.instanceId}>{i.instanceId} ({i.autonomyMode})</option>)}
+          </select>
+        </Field>
+        <Field label="Handler (RMIH)"><select value={rmihId} onChange={(e) => setRmihId(e.target.value)}><option value="">select…</option>{(handlers.data ?? []).map((h) => <option key={h.rmihId} value={h.rmihId}>{h.rmihId}</option>)}</select></Field>
+        <Field label="Expectation object type"><select value={objectType} onChange={(e) => setObjectType(e.target.value)}>{OBJECT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></Field>
+        <Field label="Operator notification destination" hint="All three modes always notify — optional, same as every other subscription-shaped callback."><input value={notificationDestination} onChange={(e) => setNotificationDestination(e.target.value)} placeholder="http://operator:8000/autonomy-notify" /></Field>
+        <Field label="Expectation targets (JSON array)" hint={parsedTargets ? undefined : <span className="text-bad">must be a JSON array</span>}><textarea rows={2} value={targets} onChange={(e) => setTargets(e.target.value)} spellCheck={false} /></Field>
+      </div>
+      {selected && <p className="muted small">This instance is <strong>{selected.autonomyMode}</strong> — {
+        selected.autonomyMode === "AUTONOMOUS" ? "a real Intent is created immediately, scoped to its pre-configured region."
+        : selected.autonomyMode === "ASSIST" ? "this will wait for an operator to supply a region scope before anything is dispatched."
+        : "this is observe-only — nothing is ever dispatched."
+      }</p>}
+      <ActionButton label="Request dispatch" tone="primary" disabled={!parsedTargets || !instanceId || !rmihId} action={{
+        method: "POST", path: "/intent-service/autonomy-dispatches", success: "Autonomy dispatch requested",
+        json: {
+          instanceId, rmihId, notificationDestination: notificationDestination || null,
+          expectations: [{ expectationVerb: "DELIVER", expectationObject: { objectType }, expectationTargets: parsedTargets ?? [] }],
+        },
+      }} />
+    </Card>
+  );
+}
+
+function ResolveAutonomyDispatch({ dispatch }: { dispatch: AutonomyDispatch }) {
+  const [scope, setScope] = useState("{}");
+  const parsed = parseJsonObject(scope);
+  return (
+    <div className="row gap end">
+      <input className="small" style={{ width: "10rem" }} value={scope} onChange={(e) => setScope(e.target.value)} spellCheck={false} aria-label="Region scope (JSON)" />
+      <ActionButton label="Resolve" disabled={!parsed.ok} action={{
+        method: "POST", path: `/intent-service/autonomy-dispatches/${dispatch.dispatchId}/resolve`, success: "Dispatch resolved — Intent created",
+        json: { regionScope: parsed.ok ? parsed.value : {} },
+      }} />
+    </div>
   );
 }
 

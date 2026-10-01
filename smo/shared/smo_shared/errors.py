@@ -118,6 +118,9 @@ class FrameworkError:
     # CERTIFY/PROMOTE governance shape.
     TRAINING_NOT_APPROVED = ("TRAINING_NOT_APPROVED", 409)
     VALIDATION_NOT_APPROVED = ("VALIDATION_NOT_APPROVED", 409)
+    # OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes.
+    AUTONOMY_DISPATCH_NOT_FOUND = ("AUTONOMY_DISPATCH_NOT_FOUND", 404)
+    AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE = ("AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE", 409)
 
 
 def framework_error(code: tuple[str, int], detail: str | None = None) -> HTTPException:

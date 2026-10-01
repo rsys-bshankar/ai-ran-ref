@@ -31,6 +31,18 @@ class RAppInstance(Base):
     # Deregistered (best-effort) on TERMINATE/CRASH, same as oauth_client_id
     # is used as this instance's own SME apfId throughout.
     sme_service_ids: Mapped[list[str] | None] = mapped_column(JSON)
+    # OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes: a per-instance
+    # property fixed at onboarding (CreateInstance), not something chosen
+    # per-inference-call. Defaults to SHADOW — the safest, no-enforcement
+    # mode — for every existing caller that doesn't declare one, the same
+    # permissive-by-default shape optional fields already use throughout
+    # this build (e.g. TrainingJob.dmeDataJobIds). region_scope is
+    # AUTONOMOUS's own pre-configured RAN node/cell/slice scope — opaque
+    # JSON, same shape as configuration above; meaningless for
+    # ASSIST (operator decides scope per-dispatch) and SHADOW (nothing is
+    # ever enforced).
+    autonomy_mode: Mapped[str] = mapped_column(String, nullable=False, default="SHADOW")
+    region_scope: Mapped[dict | None] = mapped_column(JSON)
 
 
 class RAppFaultReport(Base):

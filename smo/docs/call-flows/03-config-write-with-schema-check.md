@@ -23,13 +23,17 @@ gets a configuration change onto a real ME, regardless of who or what decided th
 was needed. Call flow 02 (AI/ML inference) is one possible *decision source* that can call
 into Path B here — an rApp that just pulled a prediction via DME may, entirely on its own
 and out-of-band, decide to call DME's `/actions` (Path B) or `ran-nf-oam` directly
-(Path A) to act on it. Nothing in this build's code links the two automatically today:
-AIMgF's `RequestInference` response is the end of call flow 02's own chain, and this
-flow's `rApp->>DME`/`rApp->>NFOAM` entry points have no caller-identity check that ties
-them back to a specific inference job. The rApp itself is the (currently manual) bridge
-between "got a prediction" (flow 02) and "wrote a config change" (this flow) — see
-`OPEN_ITEMS.md`'s rApp Autonomy Modes section for the design that would eventually make
-that bridge automatic and operator-visible rather than an rApp's own private decision.
+(Path A) to act on it. This flow's `rApp->>DME`/`rApp->>NFOAM` entry points still have no
+caller-identity check tying them back to a specific inference job — that stays true, by
+design, for every rApp that isn't going through autonomy-mode dispatch at all. **Closed
+since this flow was first written** (`OPEN_ITEMS.md` section 6.3): an rApp instance whose
+onboarding-time `autonomyMode` is `AUTONOMOUS`/`ASSIST` now has a real, automatic,
+operator-visible bridge instead — `RequestAutonomyDispatch` (call flow 09) — which
+deliberately does *not* call into Path A/B here at all: an autonomy-driven outcome is
+enacted as a real `Intent` (Intent Service / SO-SMOS / SA-SMOS), never a raw CM write.
+Path A/B stay exactly what they always were — the manual, non-autonomous route, still the
+only path for a `SHADOW` instance (nothing is ever enforced) or any rApp that simply
+chooses to act on its own, out-of-band decision instead.
 
 ```mermaid
 sequenceDiagram

@@ -3,6 +3,16 @@
     "schemas": {
       "CreateInstanceRequest": {
         "properties": {
+          "autonomyMode": {
+            "default": "SHADOW",
+            "enum": [
+              "AUTONOMOUS",
+              "ASSIST",
+              "SHADOW"
+            ],
+            "title": "Autonomymode",
+            "type": "string"
+          },
           "config": {
             "additionalProperties": true,
             "default": {},
@@ -13,6 +23,18 @@
             "format": "uuid",
             "title": "Packageid",
             "type": "string"
+          },
+          "regionScope": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regionscope"
           }
         },
         "required": [

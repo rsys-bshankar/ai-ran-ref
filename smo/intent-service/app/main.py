@@ -35,12 +35,19 @@ from smo_shared.identity import is_framework_internal_identity
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
+from smo_shared.r1_client import R1Client
+from smo_shared.webhook import post_webhook
 
-from .models import Intent, IntentHandlingFunction, IntentReport
+from .models import AutonomyDispatch, Intent, IntentHandlingFunction, IntentReport
 
 app = FastAPI(title="Intent Service")
 apply_r1_gateway_security(app)
 apply_correlation_id(app)
+
+# OPEN_ITEMS.md section 6.3: cross-module read of a RAppInstance's own
+# autonomyMode/regionScope (rApp Mgmt) — this module's first cross-module
+# call; every other route here is purely local.
+_r1 = R1Client()
 
 
 @app.get("/health")
@@ -125,6 +132,28 @@ class RegisterRmihRequest(BaseModel):
     intentHandlingScope: list[Literal["RAN", "CN"]] | None = None
 
 
+class CreateAutonomyDispatchRequest(BaseModel):
+    instanceId: uuid.UUID
+    modelId: uuid.UUID | None = None
+    expectations: list[dict]
+    priority: int = 1
+    rmihId: str
+    intentMgmtPurpose: Literal[
+        "FEASIBILITYCHECK", "FEASIBILITYCHECK_WITH_RECOMMENDATIONS", "FULFILMENT_WITHOUT_NEGOTIATION",
+        "EXPLORATION", "FULFILMENT_WITH_NEGOTIATION",
+    ] = "FULFILMENT_WITHOUT_NEGOTIATION"
+    intentHandlingScope: Literal["RAN", "CN"] | None = None
+    # All three modes always notify the operator — optional only in the
+    # same sense every other subscription-shaped resource's own
+    # notification_destination already is (a purely poll-based consumer
+    # may still omit it).
+    notificationDestination: str | None = None
+
+
+class ResolveAutonomyDispatchRequest(BaseModel):
+    regionScope: dict
+
+
 @app.post("/intents", status_code=201)
 def create_intent(body: CreateIntentRequest, db: Session = Depends(get_session)):
     """CreateIntent — Wave 3 (docs/ownership/INTENT_SERVICE_OWNERSHIP.md's
@@ -141,26 +170,39 @@ def create_intent(body: CreateIntentRequest, db: Session = Depends(get_session))
     creation, not silently accepted. Dispatch to that one RMIH is
     best-effort: a callback failure never blocks CreateIntent succeeding.
     """
-    fn = db.get(IntentHandlingFunction, body.rmihId)
+    intent = _create_intent_row(db, rmih_id=body.rmihId, expectations=body.expectations, priority=body.priority,
+                                 rmio_id=body.rmioId, intent_mgmt_purpose=body.intentMgmtPurpose,
+                                 intent_handling_scope=body.intentHandlingScope)
+    return {"intentId": str(intent.intent_id)}
+
+
+def _create_intent_row(db: Session, rmih_id: str, expectations: list[dict], priority: int, rmio_id: str,
+                        intent_mgmt_purpose: str | None, intent_handling_scope: str | None) -> Intent:
+    """The real work CreateIntent does — factored out so OPEN_ITEMS.md
+    section 6.3's own AUTONOMOUS/resolve-ASSIST paths (request_autonomy_dispatch/
+    resolve_autonomy_dispatch, below) can create a real Intent the exact
+    same validated way, rather than duplicating this logic. 404/422 and
+    the best-effort RMIH notification are all identical to CreateIntent's
+    own direct-caller path — an autonomy-driven Intent is a real Intent
+    in every respect, not a second, lesser kind.
+    """
+    fn = db.get(IntentHandlingFunction, rmih_id)
     if fn is None:
         raise framework_error(FrameworkError.INTENT_HANDLING_FUNCTION_NOT_FOUND, detail="no such intent handling function")
 
-    expectation_object_types = _requested_expectation_object_types(body.expectations)
-    _validate_rmih_can_handle(fn, expectation_object_types, body.intentHandlingScope)
+    expectation_object_types = _requested_expectation_object_types(expectations)
+    _validate_rmih_can_handle(fn, expectation_object_types, intent_handling_scope)
 
-    intent = Intent(intent_expectations=body.expectations, intent_priority=body.priority, rmio_id=body.rmioId,
-                     intent_mgmt_purpose=body.intentMgmtPurpose, rmih_id=body.rmihId)
+    intent = Intent(intent_expectations=expectations, intent_priority=priority, rmio_id=rmio_id,
+                     intent_mgmt_purpose=intent_mgmt_purpose, rmih_id=rmih_id)
     db.add(intent)
     db.commit()
 
-    try:
-        httpx.post(fn.notification_destination, json={
-            "intentId": str(intent.intent_id), "expectationObjectTypes": sorted(expectation_object_types),
-            "priority": intent.intent_priority, "rmioId": intent.rmio_id,
-        }, timeout=5.0)
-    except httpx.HTTPError:
-        pass
-    return {"intentId": str(intent.intent_id)}
+    post_webhook(fn.notification_destination, json={
+        "intentId": str(intent.intent_id), "expectationObjectTypes": sorted(expectation_object_types),
+        "priority": intent.intent_priority, "rmioId": intent.rmio_id,
+    }, timeout=5.0)
+    return intent
 
 
 def _requested_expectation_object_types(expectations: list[dict]) -> set[str]:
@@ -317,3 +359,129 @@ def list_intent_reports(intent_id: uuid.UUID | None = None, limit: int = PageLim
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"reportId": str(r.id), "intentId": str(r.intent_id), "fulfilmentReport": r.intent_fulfilment_report,
              "conflictReports": r.intent_conflict_reports, "lastUpdatedTime": r.last_updated_time.isoformat()} for r in page["items"]]}
+
+
+# ---------------------------------------------------------------- OPEN_ITEMS.md section 6.3: rApp Autonomy Modes
+
+def _notify_autonomy_operator(notification_destination: str | None, dispatch: AutonomyDispatch) -> None:
+    """All three modes always notify the operator of the AI/ML inference
+    outcome — not mode-gated; only enforcement (AUTONOMOUS/ASSIST apply
+    it, SHADOW doesn't) and scoping vary by mode. Same best-effort push
+    pattern as every other notification in this build, routed through
+    smo_shared.webhook's SSRF guard like every other caller-chosen
+    callback destination (see that module's docstring for why).
+    """
+    post_webhook(notification_destination, json={
+        "dispatchId": str(dispatch.dispatch_id), "instanceId": str(dispatch.instance_id),
+        "modelId": str(dispatch.model_id) if dispatch.model_id else None,
+        "autonomyMode": dispatch.autonomy_mode, "status": dispatch.status,
+        "expectations": dispatch.expectations, "priority": dispatch.priority,
+        "intentId": str(dispatch.intent_id) if dispatch.intent_id else None,
+    }, timeout=5.0)
+
+
+@app.post("/autonomy-dispatches", status_code=201)
+def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, db: Session = Depends(get_session)):
+    """RequestAutonomyDispatch — the real, spec-shaped hand-off call flow
+    02/03 lacked: an rApp that just pulled an inference result via DME
+    calls this instead of a raw CM write (call flow 03 Path A/B) or an
+    unaddressed CreateIntent, and its own onboarding-time `autonomyMode`
+    (rApp Mgmt's own RAppInstance) decides what happens next —
+    AUTONOMOUS enacts the outcome immediately, as part of a real Intent,
+    scoped to the instance's own pre-configured regionScope; ASSIST holds
+    it for an operator to scope before anything is dispatched; SHADOW
+    computes nothing beyond this record — observe-only, never dispatched.
+    All three always notify the operator.
+    """
+    inst_resp = _r1.get(f"/rapp-mgmt/instances/{body.instanceId}")
+    if inst_resp.status_code != 200:
+        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
+    instance = inst_resp.json()
+    autonomy_mode = instance["autonomyMode"]
+
+    # Validated the same way for all three modes, up front — even SHADOW
+    # "computes" the Intent it would have produced (design: "the Intent
+    # (or its equivalent) is computed and surfaced"), so a SHADOW dispatch
+    # addressed to a non-existent or incapable RMIH is rejected here too,
+    # not silently accepted because nothing real ends up dispatched.
+    fn = db.get(IntentHandlingFunction, body.rmihId)
+    if fn is None:
+        raise framework_error(FrameworkError.INTENT_HANDLING_FUNCTION_NOT_FOUND, detail="no such intent handling function")
+    _validate_rmih_can_handle(fn, _requested_expectation_object_types(body.expectations), body.intentHandlingScope)
+
+    dispatch = AutonomyDispatch(instance_id=body.instanceId, model_id=body.modelId, autonomy_mode=autonomy_mode,
+                                 expectations=body.expectations, priority=body.priority, rmih_id=body.rmihId,
+                                 intent_mgmt_purpose=body.intentMgmtPurpose, intent_handling_scope=body.intentHandlingScope,
+                                 notification_destination=body.notificationDestination, status="SHADOWED")
+    if autonomy_mode == "AUTONOMOUS":
+        intent = _create_intent_row(db, rmih_id=body.rmihId, expectations=body.expectations, priority=body.priority,
+                                     rmio_id=str(body.instanceId), intent_mgmt_purpose=body.intentMgmtPurpose,
+                                     intent_handling_scope=body.intentHandlingScope)
+        dispatch.status = "DISPATCHED"
+        dispatch.intent_id = intent.intent_id
+        dispatch.region_scope = instance.get("regionScope")
+    elif autonomy_mode == "ASSIST":
+        dispatch.status = "AWAITING_SCOPE"
+    # SHADOW: dispatch.status stays "SHADOWED" — no Intent, ever, for this record.
+
+    db.add(dispatch)
+    db.commit()
+    _notify_autonomy_operator(body.notificationDestination, dispatch)
+    return _autonomy_dispatch_view(dispatch)
+
+
+@app.post("/autonomy-dispatches/{dispatch_id}/resolve")
+def resolve_autonomy_dispatch(dispatch_id: uuid.UUID, body: ResolveAutonomyDispatchRequest, db: Session = Depends(get_session)):
+    """ASSIST's own human-in-the-loop scoping step: the operator supplies
+    (or narrows) which RAN nodes/cells/slices the dispatch applies to,
+    only now creating the real Intent — distinct from AUTONOMOUS, whose
+    scope was already fixed at onboarding.
+    """
+    dispatch = db.get(AutonomyDispatch, dispatch_id)
+    if dispatch is None:
+        raise framework_error(FrameworkError.AUTONOMY_DISPATCH_NOT_FOUND, detail="no such autonomy dispatch")
+    if dispatch.status != "AWAITING_SCOPE":
+        raise framework_error(FrameworkError.AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE,
+                               detail=f"cannot resolve a dispatch in status {dispatch.status}")
+
+    intent = _create_intent_row(db, rmih_id=dispatch.rmih_id, expectations=dispatch.expectations, priority=dispatch.priority,
+                                 rmio_id=str(dispatch.instance_id), intent_mgmt_purpose=dispatch.intent_mgmt_purpose,
+                                 intent_handling_scope=dispatch.intent_handling_scope)
+    dispatch.status = "DISPATCHED"
+    dispatch.intent_id = intent.intent_id
+    dispatch.region_scope = body.regionScope
+    db.commit()
+    _notify_autonomy_operator(dispatch.notification_destination, dispatch)
+    return _autonomy_dispatch_view(dispatch)
+
+
+@app.get("/autonomy-dispatches/{dispatch_id}")
+def query_autonomy_dispatch(dispatch_id: uuid.UUID, db: Session = Depends(get_session)):
+    dispatch = db.get(AutonomyDispatch, dispatch_id)
+    if dispatch is None:
+        raise framework_error(FrameworkError.AUTONOMY_DISPATCH_NOT_FOUND, detail="no such autonomy dispatch")
+    return _autonomy_dispatch_view(dispatch)
+
+
+@app.get("/autonomy-dispatches")
+def list_autonomy_dispatches(instance_id: uuid.UUID | None = None, status: str | None = None, limit: int = PageLimit,
+                              offset: int = PageOffset, db: Session = Depends(get_session)):
+    stmt = select(AutonomyDispatch)
+    if instance_id:
+        stmt = stmt.where(AutonomyDispatch.instance_id == instance_id)
+    if status:
+        stmt = stmt.where(AutonomyDispatch.status == status)
+    page = paginate(db, stmt.order_by(AutonomyDispatch.created_at.desc()), limit, offset)
+    return {**page, "items": [_autonomy_dispatch_view(d) for d in page["items"]]}
+
+
+def _autonomy_dispatch_view(d: AutonomyDispatch) -> dict:
+    return {
+        "dispatchId": str(d.dispatch_id), "instanceId": str(d.instance_id),
+        "modelId": str(d.model_id) if d.model_id else None, "autonomyMode": d.autonomy_mode,
+        "expectations": d.expectations, "priority": d.priority, "rmihId": d.rmih_id,
+        "intentMgmtPurpose": d.intent_mgmt_purpose, "intentHandlingScope": d.intent_handling_scope,
+        "regionScope": d.region_scope, "status": d.status,
+        "intentId": str(d.intent_id) if d.intent_id else None,
+        "createdAt": d.created_at.isoformat(),
+    }

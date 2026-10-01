@@ -27,6 +27,7 @@ from smo_shared.timeutil import as_utc
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
+from smo_shared.webhook import post_webhook
 
 from .models import EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile, TrustedInvoker
 
@@ -562,10 +563,8 @@ def notify_service_change(db: Session, service: ServiceProfile, event_type: str)
             continue
         if policy is not None and policy.gates_discovery_visibility and policy.allowed_consumers and sub.subscriber_id not in policy.allowed_consumers:
             continue
-        try:
-            httpx.post(sub.callback_uri, json={"serviceId": str(service.service_id), "eventType": event_type}, timeout=5.0)
-        except httpx.HTTPError:
-            pass  # Phase 1: best-effort; no retry/backoff queue yet
+        post_webhook(sub.callback_uri, json={"serviceId": str(service.service_id), "eventType": event_type}, timeout=5.0)
+        # Phase 1: best-effort; no retry/backoff queue yet
 
 
 def _service_view(r: ServiceProfile) -> dict:

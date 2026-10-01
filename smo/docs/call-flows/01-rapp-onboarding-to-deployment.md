@@ -19,11 +19,12 @@ sequenceDiagram
     Onb->>Onb: state: ONBOARDING -> AVAILABLE (or FAILED)
     Onb-->>Operator: packageId, state=AVAILABLE
 
-    Operator->>Rapp: CreateInstance(packageId, config)
+    Operator->>Rapp: CreateInstance(packageId, config, autonomyMode?, regionScope?)
     Rapp->>Onb: GET packages/{id}/onboarding-status
     Onb-->>Rapp: state=AVAILABLE
     Rapp->>Rapp: read Definitions/<name>.yaml via toscaEntryDefinitions
     Rapp->>Rapp: create RAppInstance, state=DEPLOYING, issue oauthClientId (== rAppId)
+    Note over Rapp: OPEN_ITEMS.md 6.3, closed — autonomyMode (AUTONOMOUS/ASSIST/SHADOW,<br/>default SHADOW) and regionScope are fixed here, for this instance's whole<br/>lifetime — see call flow 09 for what they drive at inference time
 
     Rapp->>NFO: Instantiate(nfDeploymentDescriptorId, requiredResourceTypeId)
     NFO->>Focom: QueryInventory(resourceType)
