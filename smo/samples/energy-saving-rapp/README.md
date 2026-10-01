@@ -118,7 +118,7 @@ Ids are kept between steps in `$DEMO_STATE` (default `/tmp/energy-saving-demo.js
 
 ## Limits
 
-- RAN NF OAM alarms carry no cell reference, so any critical alarm on the managed element blocks LOCKs for all its cells (OPEN_ITEMS `W10-alarm-cellref`).
+- A critical alarm blocks a cell's LOCK when it is raised on the cell, on a neighbour the cell hands its traffic to (`neighbourRefs`), or on the managed element as a whole (an alarm that names no cell). A coverage alarm wakes a cell on the same terms.
 - The shipped model is threshold plus regression; an LSTM variant is backlog (OPEN_ITEMS `W10-B1`).
 - State tables live in the shared Postgres (`migrations/001_init.sql`), not a private rApp store.
 - Training fails with 422 on fewer than 3 hourly history rows.

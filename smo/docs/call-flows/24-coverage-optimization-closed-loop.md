@@ -103,9 +103,10 @@ sequenceDiagram
 
   Both rApps are read over R1, never written.
 - **Protected cells** (D10.3-4d). EMERGENCY and incident-zone cells never
-  move. An active critical alarm on the managed element holds every cell,
-  because alarms carry no cell reference in this build. Every blocking
-  guard is named in the decision's reason.
+  move. An active critical alarm raised on a cell (its `managedFunctionRef`)
+  holds that cell and its neighbours; one that names no cell holds every
+  cell of the element. Every blocking guard is named in the decision's
+  reason.
 - **The audit trail** (`GET /instances/{id}/decisions`) has one row per
   cell per pass:
   Shares → Joint plan → Safety → Decision → Intent → Action → Verification

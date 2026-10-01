@@ -16,7 +16,7 @@ cell individual offset.
 | R1 route | `/traffic-steering-rapp` (r1-termination, `TRAFFIC_STEERING_RAPP_URL`) |
 | Call flow | [25 Traffic Steering closed loop](../../docs/call-flows/25-traffic-steering-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 27](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 25 passed (`tests/test_engine.py`, `tests/test_model.py`) |
+| Unit tests | 26 passed (`tests/test_engine.py`, `tests/test_model.py`) |
 
 ## What it does
 
@@ -121,7 +121,7 @@ This package declares:
 ## Run and test
 ```bash
 cd traffic-steering-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 25 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 26 passed
 ```
 Demo, run inside the compose network (e.g. from `r1-termination`):
 ```bash
@@ -135,7 +135,6 @@ Ids are kept between steps in `$DEMO_STATE` (default
 
 ## Limits
 
-- RAN NF OAM alarms carry no cell reference, so any critical alarm holds the
-  whole managed element (OPEN_ITEMS `W10-alarm-cellref`).
-- `O1_RESTCONF` is listed as a vendor mode, but RAN NF OAM dispatches only
-  RFC 6241-shaped `edit-config`.
+- A critical alarm that names no cell (no `managedFunctionRef`) still holds
+  the whole managed element; one raised on a cell holds that cell as a source
+  and excludes it as a target (`TARGET_CRITICAL_ALARM`).

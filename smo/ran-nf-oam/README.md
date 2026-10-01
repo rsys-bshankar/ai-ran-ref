@@ -9,8 +9,8 @@
 | Depends on (over R1) | DME (`/dme/production-capabilities`, `/dme/dme-types`, `/dme/data-jobs`, `/dme/data-jobs/{id}/records`); southbound (not R1): each ME's O1 adaptor over HTTP |
 | Called by | DME (`POST /config-jobs`, O1 action mediation), SO SMOS (`POST /config-jobs`), SA SMOS (`POST /config-jobs`), SDK `sdk.data` (`cell-guards`, `managed-entities`, `vendor-capabilities`, `capabilities`, `…/config`), reference rApps (`GET /alarms`, `POST /pm-reports`), GUI / GUI BFF |
 | Database tables | `o1_adaptor_endpoint`, `managed_entity`, `alarm`, `cm_schema_cache`, `vendor_capability`, `write_config_job`, `write_config_sub_change`, `pm_subscription`, `fm_subscription`, `software_management_job` |
-| Unit tests | 101 passed (`tests/`, SQLite, standalone) |
-| Status | Done for NETCONF-shaped and RESTCONF O1 CM dispatch. Open: alarm-storm correlation (`OI-1-alarm-storm`), alarm cell reference (`W10-alarm-cellref`), TS 28.319 MSAC (`SA-RANOAM-1`), TS 28.532 file/streaming reporting (`SA-RANOAM-8`); see [section 2.8](#28-limits-and-open-items) |
+| Unit tests | 102 passed (`tests/`, SQLite, standalone) |
+| Status | Done for NETCONF-shaped and RESTCONF O1 CM dispatch. Open: alarm-storm correlation (`OI-1-alarm-storm`), TS 28.319 MSAC (`SA-RANOAM-1`), TS 28.532 file/streaming reporting (`SA-RANOAM-8`); see [section 2.8](#28-limits-and-open-items) |
 
 ## 1. High-level design (HLD)
 
@@ -139,7 +139,7 @@ Cross-module references are bare strings or UUIDs; none exist here.
 
 **`write_config_sub_change`** (PK `id`, FK `job_id`): `managed_element_ref`, `managed_function_ref`, `attribute_changes` JSON, `operation` (default `merge`), `status` (`PENDING` / `APPLIED` / `REJECTED`), `rejection_reason`, `attempts`.
 
-**`alarm`** (PK `alarm_id`, always a fresh UUID; FK `managed_element_ref` to `managed_entity`): `source_alarm_id`, `managed_function_ref`, `severity`, `ack_state` (`UNACKNOWLEDGED` / `ACKNOWLEDGED`), `correlation_group`, `raised_at`, `probable_cause`, `specific_problem`, `root_cause_indicator`, `correlated_notifications` (UUID list), `proposed_repair_actions`, `alarm_type`, `cleared_at`, `clear_user_id`, `ack_user_id`, `changed_at`. There is no cell reference column (`W10-alarm-cellref`).
+**`alarm`** (PK `alarm_id`, always a fresh UUID; FK `managed_element_ref` to `managed_entity`): `source_alarm_id`, `managed_function_ref`, `severity`, `ack_state` (`UNACKNOWLEDGED` / `ACKNOWLEDGED`), `correlation_group`, `raised_at`, `probable_cause`, `specific_problem`, `root_cause_indicator`, `correlated_notifications` (UUID list), `proposed_repair_actions`, `alarm_type`, `cleared_at`, `clear_user_id`, `ack_user_id`, `changed_at`. `managed_function_ref` is the managed function the alarm is about (e.g. a cell's `NRCellDU=101`); null means the element as a whole.
 
 **`pm_subscription`** (PK `subscription_id`, FK ME): `counter_type`, `delivery_method`, `southbound_engine`, `granularity_period`.
 
@@ -230,8 +230,8 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 
 | Method | Path | Purpose / notable errors |
 |---|---|---|
-| POST | `/alarms/ingest` | Query parameters: `source_alarm_id`, `managed_element_ref`, `severity`, optional fault fields. Returns `{alarmId}`. 409 `O1_SERVICE_NOT_SUPPORTED` (FM) |
-| GET | `/alarms` | List; filters `managed_element_ref`, `severity` (`cleared` isolates history) |
+| POST | `/alarms/ingest` | Query parameters: `source_alarm_id`, `managed_element_ref`, `severity`, optional `managed_function_ref` (the cell or other function it is about) and fault fields. Returns `{alarmId}`. 409 `O1_SERVICE_NOT_SUPPORTED` (FM) |
+| GET | `/alarms` | List; filters `managed_element_ref`, `managed_function_ref`, `severity` (`cleared` isolates history) |
 | PATCH | `/alarms/{id}/ack` | `new_state`, `ack_user_id?` |
 | PATCH | `/alarms/{id}/clear` | Sets `severity=cleared`, `cleared_at`, `clear_user_id?`; alarm stays listed |
 | POST | `/pm-subscriptions` | Query: `managed_element_ref`, `counter_type`, `delivery_method`, `granularity_period?`. Registers a DME producer. 409 `O1_SERVICE_NOT_SUPPORTED` (PM) |
@@ -311,7 +311,7 @@ ProblemDetails are returned as `{"detail": {"type": "about:blank", "title": <cod
 - **Transport.** RFC 6241-shaped `edit-config` and RFC 8040 RESTCONF requests, both over plain HTTP (no TLS, auth, notifications or YANG-patch), are dispatched; an ME provisioned for any other protocol is rejected at dispatch with `PROTOCOL_NOT_SUPPORTED`. A new transport needs one client module per transport family, selected by `ManagedEntity.o1_protocol`.
 - **YANG.** The ingestion script reads NRM OpenAPI only; a YANG bundle needs a YANG front end (`pyang`) emitting the same descriptor shape. Only the TS 28.541 descriptor ships (`SA-O1-4`).
 - **Semantics.** A descriptor documents shape, not runtime behaviour; a vendor that silently ignores an accepted attribute is found only by integration testing against that vendor (`GET .../config` read-back exists for this).
-- **Alarms.** `correlation_group` is a coarse string; no storm correlation (`OI-1-alarm-storm`). Alarms carry no cell reference (`W10-alarm-cellref`). `severity` / `alarm_type` / `ack_state` are not validated in code; out-of-vocabulary values fail the Postgres CHECK as a 500 (`SA-RANOAM-6-severity`).
+- **Alarms.** `correlation_group` is a coarse string; no storm correlation (`OI-1-alarm-storm`). `severity` / `alarm_type` / `ack_state` are not validated in code; out-of-vocabulary values fail the Postgres CHECK as a 500 (`SA-RANOAM-6-severity`).
 - **Access control.** MSAC is a presence check (`SA-RANOAM-1`); `scope` collides with ProvMnS `ScopeType` (`SA-RANOAM-2`).
 - **Addressing.** Flat reference strings, not DNs (`SA-RANOAM-4`, `SA-O1-1`).
 - **File / streaming reporting** is absent (`SA-RANOAM-8`).
@@ -426,7 +426,7 @@ cd smo/ran-nf-oam && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 | Test file | Covers | Count |
 |---|---|---|
-| `tests/test_main.py` | Config dispatch (apply, reject, `operation` threading, RESTCONF dispatch, refusal of a protocol with no client, unreachable / stale / fresh endpoint), `discover` aging, endpoint registration and heartbeat, PM / FM subscription create / list / delete and DME producer registration, `/health` and `/dme-jobs` callbacks, alarm ingest / filter / ack / clear, list reads | 37 |
+| `tests/test_main.py` | Config dispatch (apply, reject, `operation` threading, RESTCONF dispatch, refusal of a protocol with no client, unreachable / stale / fresh endpoint), `discover` aging, endpoint registration and heartbeat, PM / FM subscription create / list / delete and DME producer registration, `/health` and `/dme-jobs` callbacks, alarm ingest / filter / ack / clear, an alarm naming its cell, list reads | 38 |
 | `tests/test_vendors.py` | Bundled spec descriptor and custom schema load, capability CRUD and defaults, vendor-mode gating, `SPEC` / `OWN` / `COMBINED` schema checks, unregistered vendor unchecked, service-presence guards, onboarding with discovery and its failures, cell guards | 10 |
 | `tests/test_dispatch_reliability.py` | `function-ref` dispatch, retry with backoff, retry exhaustion -> failed change + alarm, no retry on `<rpc-error>`, read-after-write, PM report fan-out to every data job, multi-counter per-relation measurements; RESTCONF retry and alarm, no retry on an `ietf-restconf:errors` reply, RESTCONF read-after-write | 10 |
 | `tests/test_netconf_client.py` | RPC builders (`operation`, `function-ref`), `<ok/>` handling, failure reasons, `get-config` parsing | 12 |

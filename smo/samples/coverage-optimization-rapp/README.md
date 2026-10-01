@@ -39,7 +39,7 @@ Logic is in `app/engine.py` (guards, bounds, KPI check; no I/O) and `app/model/C
 - **KPI revert.** Degraded means the post-change objective exceeds the pre-change objective by more than 0.5.
 - **Guards** (per cell; a guarded cell cannot move but still counts in the objective):
   - `PROTECTED_CELL`: EMERGENCY or incident-zone cell.
-  - `CRITICAL_ALARM`: a critical alarm is active on the managed element. RAN NF OAM alarms carry no cell reference, so this blocks every cell of the instance.
+  - `CRITICAL_ALARM`: a critical alarm is active on the cell or one of its neighbours (an alarm's `managedFunctionRef`, e.g. `NRSectorCarrier=304`), or on the managed element as a whole (an alarm that names no cell). The decision lists the alarms that hold the cell.
   - `CELL_ASLEEP` and `NEIGHBOUR_ASLEEP`: O1 locked or energy saving, or EnergySaving reports SLEEP or PRE_SLEEP.
   - `RECENTLY_WOKEN`: the cell or a neighbour woke less than 30 minutes ago.
   - `MRO_OBSERVING`: the Mobility rApp has one of the cell's relations under observation.
@@ -114,7 +114,6 @@ Ids persist between steps in `$DEMO_STATE` (default `/tmp/coverage-optimization-
 
 - One knob per cell per change, and at most 2 cells per pass.
 - The 5 % objective threshold is the same for every problem class and cell. Per-cell, per-class thresholds are listed in [OPEN_ITEMS.md](../../OPEN_ITEMS.md) (W10.3-thresholds).
-- A critical alarm on the managed element blocks every cell, because alarms carry no cell reference (OPEN_ITEMS W10-alarm-cellref).
 - The model is linear in the reach steps and needs training history in which tilt and power varied.
 - Peer states are read by polling R1; an unreachable peer is treated as "no information", not as a block.
-- `supportedVendorModes` lists `O1_RESTCONF`, but RAN NF OAM dispatches only NETCONF-shaped `edit-config` (see RAPP_PACKAGING.md).
+- `supportedVendorModes` lists `O1_NETCONF` and `O1_RESTCONF`; RAN NF OAM dispatches over whichever the managed element is provisioned for.

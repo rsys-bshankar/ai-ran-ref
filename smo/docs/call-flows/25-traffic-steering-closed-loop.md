@@ -116,8 +116,9 @@ sequenceDiagram
 - **Protected cells and anti-oscillation** (D10.4-4d).
   - **Protected:** EMERGENCY and incident-zone cells are neither sources
     nor targets.
-  - **Critical alarm:** an active critical alarm holds the whole managed
-    element.
+  - **Critical alarm:** an active critical alarm raised on a cell holds it
+    as a source and excludes it as a target (`TARGET_CRITICAL_ALARM`); one
+    that names no cell holds the whole managed element.
   - **Anti-oscillation:** a cell that steered load to this one in the last
     6 hours is not a target, so load does not ping-pong.
 - **The audit trail** (`GET /instances/{id}/decisions`) has one row per

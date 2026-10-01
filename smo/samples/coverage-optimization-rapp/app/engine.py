@@ -10,7 +10,8 @@ One pass over the cluster, in order:
      the set is REVERTED. Otherwise the set is CONFIRMED.
   2. Guards, per cell. Any one of these keeps a cell from moving, whatever
      the model's confidence:
-       - an EMERGENCY or incident-zone cell, or an active critical alarm;
+       - an EMERGENCY or incident-zone cell, or an active critical alarm on
+         the cell, on one of its neighbours, or on the managed element as a whole;
        - the cell is asleep (O1 locked / energy saving, or the EnergySaving
          rApp has it in SLEEP or PRE_SLEEP);
        - a neighbour is asleep;

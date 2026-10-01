@@ -34,9 +34,6 @@ Each item: what is missing, why it matters, suggested approach.
 - **OI-5-a1-ric-inventory** — Policy types are the hardcoded `KNOWN_POLICY_TYPES`; `policySchema` is
   a placeholder; no `GET /rics`. Approach: fetch types and schemas from the Near-RT RIC (A1-P
   `GET /policytypes`) and model a RIC inventory if more than one RIC is introduced.
-- **W10-alarm-cellref** — RAN NF OAM alarms carry no cell reference, so the EnergySaving, Coverage
-  and Traffic Steering rApps hold a whole managed element on any critical alarm. Approach: add an
-  optional `cellRef` (or `managedObjectInstance` DN) to `Alarm` and filter guards by it.
 
 ## 3. Spec conformance still open
 

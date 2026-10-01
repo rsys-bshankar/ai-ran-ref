@@ -49,6 +49,7 @@ def test_idle_at_bound_falls_back_to_connected_and_the_cio_envelope_holds():
 
 @pytest.mark.parametrize("nbr,reason", [
     ({"protected": True}, "TARGET_PROTECTED"),
+    ({"critical_alarm": True}, "TARGET_CRITICAL_ALARM"),   # W10-alarm-cellref
     ({"asleep": True}, "TARGET_ASLEEP"),
     ({"last_woken": T0 - datetime.timedelta(minutes=10)}, "TARGET_RECENTLY_WOKEN"),
     ({"coverage_observing": True}, "TARGET_COVERAGE_OBSERVING"),

@@ -47,6 +47,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_sdk import AiRuntimeSdk, SdkError
+from smo_sdk.data import AlarmScope
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.db import get_session
 from smo_shared.r1_client import R1Client
@@ -444,13 +445,21 @@ def _inputs(inst: EnergySavingInstance, rows: dict) -> dict:
     """Everything the engine needs, read from the platform."""
     series = by_cell(_dataset(inst, "INFERENCE"))
     guards = {cell_key(g["managedElementRef"], g["cellId"]): g for g in sdk.data.query_cell_guards()}
-    alarms = [a for a in _r1.get("/ran-nf-oam/alarms", params={"managed_element_ref": inst.managed_element_ref,
-                                                                "limit": 500}).json().get("items", [])
-              if a["severity"] == "critical"]
-    coverage = [a for a in alarms if "coverage" in f"{a.get('probableCause')} {a.get('specificProblem')}".lower()]
+    # W10-alarm-cellref: an alarm raised on a cell holds that cell (and the
+    # cells whose neighbour it is); one that names no cell holds them all
+    alarms = sdk.data.query_critical_alarms(inst.managed_element_ref)
+    coverage = AlarmScope([a for a in alarms.alarms
+                           if "coverage" in f"{a.get('probableCause')} {a.get('specificProblem')}".lower()])
     asleep = {cell_key(inst.managed_element_ref, c) for c, r in rows.items() if r.state == engine.SLEEP}
-    return {"series": series, "guards": guards, "critical": bool(alarms), "coverage": bool(coverage), "asleep": asleep,
-            "alarmIds": [a["alarmId"] for a in alarms]}
+    return {"series": series, "guards": guards, "alarms": alarms, "coverage": coverage, "asleep": asleep}
+
+
+def _cell_and_neighbours(inst: EnergySavingInstance, cell: str, guard: dict) -> list[str]:
+    """A cell plus the cells of the same element it hands its traffic to
+    when asleep (neighbourRefs are cell keys `<element>/<cell>`): an alarm on
+    any of them keeps this cell awake."""
+    prefix = f"{inst.managed_element_ref}/"
+    return [cell, *(n[len(prefix):] for n in guard.get("neighbourRefs") or [] if n.startswith(prefix))]
 
 
 def _sector_peers_awake(key: str, guards: dict, asleep: set) -> int | None:
@@ -498,10 +507,12 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
         g = inputs["guards"].get(key, {})
         neighbours = {n: inputs["series"][n][-1][1] for n in g.get("neighbourRefs") or [] if inputs["series"].get(n)}
         peers_awake = _sector_peers_awake(key, inputs["guards"], inputs["asleep"])
+        watched = _cell_and_neighbours(inst, cell, g)
         result = engine.decide(engine.CellInput(
             cell=key, series=inputs["series"].get(key, []), state=row.state, prediction=outputs[cell],
             mdaf_future_prb=mdaf, guards=g, sector_peers_awake=peers_awake,
-            neighbour_prb=neighbours, critical_alarm=inputs["critical"], coverage_alarm=inputs["coverage"],
+            neighbour_prb=neighbours, critical_alarm=bool(inputs["alarms"].holding(watched)),
+            coverage_alarm=bool(inputs["coverage"].holding(watched)),
             last_unlocked_at=as_utc(row.last_unlocked_at) if row.last_unlocked_at else None,
             override=bool(row.override_by)))
         results[cell] = result
@@ -514,7 +525,7 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
             prb=result.prb, decision=result.decision, reason=result.reason, outcome="NONE",
             prediction={"model": outputs[cell], "mdafFuturePrb": mdaf, "inferenceJobId": job["inferenceJobId"],
                         "aimlInferenceReportId": resolved.get("aIMLInferenceReportId"), "lowForMinutes": result.low_for_minutes},
-            safety={**result.safety, "criticalAlarmIds": inputs["alarmIds"], "neighbourPrb": neighbours,
+            safety={**result.safety, "criticalAlarmIds": inputs["alarms"].ids_holding(watched), "neighbourPrb": neighbours,
                     "sectorPeersAwake": peers_awake})
         db.add(d)
         if result.decision == engine.NO_CHANGE:

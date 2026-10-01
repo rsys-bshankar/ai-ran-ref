@@ -330,6 +330,25 @@ def test_tc20_coverage_alarm_wakes_and_tc24_critical_alarm_blocks(mesh, loaded_a
     assert decision(evaluate(mesh, iid), "104")["decision"] == "LOCK"
 
 
+def test_a_cell_alarm_holds_that_cell_and_the_cells_relying_on_it(mesh, loaded_apps, monkeypatch):
+    """W10-alarm-cellref: a critical alarm raised on cell 103 blocks sleeping
+    104 (which hands its traffic to 103) but not 101, which doesn't rely on
+    103 — the whole element is no longer held."""
+    iid = ready(mesh, loaded_apps, monkeypatch, guards={"104": {"neighbourRefs": [f"{ME}/103"]}})
+    clock = Clock(mesh)
+    alarm = ok(mesh["ran-nf-oam"].post("/alarms/ingest", params={
+        "source_alarm_id": "rru-103", "managed_element_ref": ME, "severity": "critical",
+        "probable_cause": "equipmentMalfunction", "managed_function_ref": "NRCellDU=103"}))
+
+    clock.feed(65, c101=2, c102=40, c103=40, c104=2)
+    result = evaluate(mesh, iid)
+
+    d101, d104 = decision(result, "101"), decision(result, "104")
+    assert d101["decision"] == "LOCK" and d101["safety"]["criticalAlarmIds"] == []
+    assert d104["reason"] == "SAFETY_BLOCKED:ACTIVE_CRITICAL_ALARM"
+    assert d104["safety"]["criticalAlarmIds"] == [alarm["alarmId"]]
+
+
 # ---------------------------------------------------------------- TC22, TC23, TC31, W10-06 (MDAF)
 
 def test_tc22_wake_threshold_tc23_hysteresis_tc31_false_wake_up_and_mdaf(mesh, loaded_apps, monkeypatch):

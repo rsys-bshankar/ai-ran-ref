@@ -41,6 +41,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_sdk import AiRuntimeSdk, SdkError
+from smo_sdk.data import AlarmScope
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.db import get_session
 from smo_shared.r1_client import R1Client
@@ -469,9 +470,13 @@ def _coordination(inst: TrafficInstance) -> dict:
     return {"es": es, "mroObserving": mro, "ccoObserving": cco}
 
 
-def _critical_alarms(inst: TrafficInstance) -> list[str]:
-    resp = _r1.get("/ran-nf-oam/alarms", params={"managed_element_ref": inst.managed_element_ref, "limit": 500})
-    return [a["alarmId"] for a in resp.json().get("items", []) if a["severity"] == "critical"] if resp.status_code == 200 else []
+def _critical_alarms(inst: TrafficInstance) -> AlarmScope:
+    """W10-alarm-cellref: the element's critical alarms by the cells they hold.
+    An unreadable alarm list holds nothing, as before."""
+    try:
+        return sdk.data.query_critical_alarms(inst.managed_element_ref)
+    except SdkError:
+        return AlarmScope([])
 
 
 def _record(db, inst, execution_id, cell, state, **kw) -> TrafficDecision:
@@ -584,7 +589,7 @@ def _plan(db, inst, rows, model, state, latest, planning, now, execution_id) -> 
             rel = _read(inst, f"NRCellRelation={cell}-{t}") or {}
             nbrs.append(engine.Neighbour(
                 cell=t, layer=layers.get(t, "?"), protected=protected(t), asleep=t in asleep, last_woken=woken.get(t),
-                coverage_observing=t in coord["ccoObserving"],
+                coverage_observing=t in coord["ccoObserving"], critical_alarm=bool(alarms.holding([t])),
                 cio=next((v for v in (_parse_cio(rel.get("cellIndividualOffset")),) if v is not None), inst.baseline_cio),
                 ho_allowed=_flag(rel, "isHOAllowed"), mlb_allowed=_flag(rel, "isMLBAllowed"),
                 mro_observing=f"{cell}-{t}" in coord["mroObserving"]))
@@ -597,11 +602,12 @@ def _plan(db, inst, rows, model, state, latest, planning, now, execution_id) -> 
             cell=cell, layer=layers[cell], samples=float(latest[cell].get(SAMPLES, 0)), baseline_cio=inst.baseline_cio,
             baseline_priority=inst.baseline_priority, neighbours=nbrs,
             priorities={L: v for L in other_layers if (v := _value(inst, f"NRFreqRelation={cell}-{L}")) is not None},
-            steering=row.steering or {"cio": {}, "prio": {}}, guard=guards.get(cell, {}), critical_alarm=bool(alarms),
+            steering=row.steering or {"cio": {}, "prio": {}}, guard=guards.get(cell, {}),
+            critical_alarm=bool(alarms.holding([cell])),
             asleep=cell in asleep, coverage_observing=cell in coord["ccoObserving"],
             last_changed_at=as_utc(row.last_changed_at) if row.last_changed_at else None, steered_to_me=steered_to_me)
         sources[cell] = s
-        safety[cell] = {**engine.source_guards(s, now), "criticalAlarmIds": alarms,
+        safety[cell] = {**engine.source_guards(s, now), "criticalAlarmIds": alarms.ids_holding([cell]),
                         "esState": (coord["es"].get(cell) or {}).get("state")}
         opts[cell] = engine.options(s, now)
 

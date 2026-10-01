@@ -32,7 +32,8 @@ Guards (W10-14) block a LOCK whatever the model's confidence:
     - a cell in an active incident zone.
   * MEDIUM:
     - neighbour congestion;
-    - an active critical alarm on the managed element.
+    - an active critical alarm on the cell, on a neighbour it hands its
+      traffic to, or on the managed element as a whole.
   * SOFT: a cell unlocked less than 30 minutes ago.
 """
 

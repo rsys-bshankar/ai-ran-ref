@@ -49,7 +49,7 @@ function RanAlarms() {
         <DataTable rows={rows} loading={alarms.isLoading} error={alarms.error} rowKey={(a) => a.alarmId} empty="No alarms match."
           onRowClick={(a) => setSelected(a.alarmId)} selectedKey={selected} columns={[
             { header: "Severity", render: (a) => <SeverityChip severity={a.severity} /> },
-            { header: "Managed element", render: (a) => <><strong>{a.managedElementRef}</strong><div className="muted small">{a.sourceAlarmId}</div></> },
+            { header: "Managed element", render: (a) => <><strong>{a.managedElementRef}</strong>{a.managedFunctionRef && <> · <code className="small">{a.managedFunctionRef}</code></>}<div className="muted small">{a.sourceAlarmId}</div></> },
             { header: "Probable cause", render: (a) => a.probableCause ?? <span className="muted">—</span> },
             { header: "Specific problem", render: (a) => a.specificProblem ?? <span className="muted">—</span> },
             { header: "Type", render: (a) => a.alarmType ?? <span className="muted">—</span> },
@@ -117,7 +117,7 @@ function AlarmDrawer({ alarm, onClose }: { alarm: Alarm; onClose: () => void }) 
       <h3>3GPP TS 28.532 / 28.111 fault fields</h3>
       <KeyValue items={[
         ["alarmId", <code>{alarm.alarmId}</code>], ["Source alarm ID (ME-native)", alarm.sourceAlarmId],
-        ["Managed element", alarm.managedElementRef], ["perceivedSeverity", alarm.severity], ["alarmType", alarm.alarmType],
+        ["Managed element", alarm.managedElementRef], ["Managed function", alarm.managedFunctionRef ?? "the whole element"], ["perceivedSeverity", alarm.severity], ["alarmType", alarm.alarmType],
         ["probableCause", alarm.probableCause], ["specificProblem", alarm.specificProblem],
         ["rootCauseIndicator", alarm.rootCauseIndicator ? "yes" : "no"], ["proposedRepairActions", alarm.proposedRepairActions],
         ["correlationGroup", alarm.correlationGroup],
@@ -133,7 +133,7 @@ function AlarmDrawer({ alarm, onClose }: { alarm: Alarm; onClose: () => void }) 
 }
 
 function InjectAlarm() {
-  const [f, setF] = useState({ source_alarm_id: "", managed_element_ref: "", severity: "major", probable_cause: "", specific_problem: "", alarm_type: "COMMUNICATIONS_ALARM" });
+  const [f, setF] = useState({ source_alarm_id: "", managed_element_ref: "", managed_function_ref: "", severity: "major", probable_cause: "", specific_problem: "", alarm_type: "COMMUNICATIONS_ALARM" });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   return (
     <details className="admin-tools card">
@@ -142,12 +142,13 @@ function InjectAlarm() {
       <div className="form grid cols-3 tight">
         <Field label="Managed element"><input value={f.managed_element_ref} onChange={set("managed_element_ref")} placeholder="ME-1" /></Field>
         <Field label="Source alarm ID"><input value={f.source_alarm_id} onChange={set("source_alarm_id")} placeholder="odu-17" /></Field>
+        <Field label="Managed function" hint="the cell it is about, e.g. NRCellDU=101; empty = the whole element"><input value={f.managed_function_ref} onChange={set("managed_function_ref")} placeholder="NRCellDU=101" /></Field>
         <Field label="Severity"><select value={f.severity} onChange={set("severity")}>{SEVERITIES.map((s) => <option key={s}>{s}</option>)}</select></Field>
         <Field label="Probable cause"><input value={f.probable_cause} onChange={set("probable_cause")} placeholder="LOSS_OF_SIGNAL" /></Field>
         <Field label="Specific problem"><input value={f.specific_problem} onChange={set("specific_problem")} /></Field>
         <Field label="Alarm type"><select value={f.alarm_type} onChange={set("alarm_type")}>{["COMMUNICATIONS_ALARM", "QUALITY_OF_SERVICE_ALARM", "PROCESSING_ERROR_ALARM", "EQUIPMENT_ALARM", "ENVIRONMENTAL_ALARM"].map((t) => <option key={t}>{t}</option>)}</select></Field>
       </div>
-      <ActionButton label="Inject alarm" disabled={!f.managed_element_ref || !f.source_alarm_id} action={{ method: "POST", path: "/ran-nf-oam/alarms/ingest", query: f, success: "Alarm ingested" }} />
+      <ActionButton label="Inject alarm" disabled={!f.managed_element_ref || !f.source_alarm_id} action={{ method: "POST", path: "/ran-nf-oam/alarms/ingest", query: { ...f, managed_function_ref: f.managed_function_ref || undefined }, success: "Alarm ingested" }} />
     </details>
   );
 }

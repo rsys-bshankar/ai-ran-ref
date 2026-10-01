@@ -161,6 +161,24 @@ def test_cco17_protected_cells_thin_samples_and_critical_alarms_block(mesh, load
     assert all("CRITICAL_ALARM" in decision(result, c)["reason"] for c in CELLS)
 
 
+def test_a_cell_alarm_holds_that_cell_and_its_neighbours_only(mesh, loaded_apps, monkeypatch):
+    """W10-alarm-cellref: a critical alarm raised on 304's sector carrier
+    holds 304 and its neighbours 302 and 303, but not 301, which doesn't
+    neighbour 304."""
+    iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]["instanceId"]
+    alarm = ok(mesh["ran-nf-oam"].post("/alarms/ingest", params={
+        "source_alarm_id": "pa-304", "managed_element_ref": ME, "severity": "critical",
+        "probable_cause": "powerProblem", "managed_function_ref": "NRSectorCarrier=304"}))
+    Clock(mesh, loaded_apps).hour(OVERSHOOT_301)
+    result = evaluate(mesh, iid)
+
+    d301 = decision(result, "301")
+    assert "CRITICAL_ALARM" not in d301["reason"] and d301["safety"]["criticalAlarmIds"] == []
+    for cell in ("302", "303", "304"):
+        d = decision(result, cell)
+        assert "CRITICAL_ALARM" in d["reason"] and d["safety"]["criticalAlarmIds"] == [alarm["alarmId"]]
+
+
 # ---------------------------------------------------------------- CCO-18
 
 def test_cco18_coordination_with_the_energy_saving_rapp(mesh, loaded_apps, monkeypatch):

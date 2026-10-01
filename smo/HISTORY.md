@@ -224,6 +224,25 @@ Audited route by route against the 18 Repo Blueprint repos. R1 Termination, Poli
 Service, SO SMOS and SA SMOS have no upstream repo to audit against. Every §5 gap is closed or
 closed partially; residuals are in OPEN_ITEMS.
 
+- **W10-alarm-cellref** — A RAN NF OAM alarm can name the cell it is about, so the reference rApps
+  hold that cell instead of the whole managed element.
+  - **RAN NF OAM:** `POST /alarms/ingest` takes `managed_function_ref` (stored in the existing
+    `alarm.managed_function_ref` column, until now set only by RAN NF OAM's own dispatch alarms).
+    `GET /alarms` returns it as `managedFunctionRef` and filters by it.
+  - **SDK:** `sdk.data.query_critical_alarms(me)` returns an `AlarmScope`. `alarm_cell` reads the
+    cell from the reference: `NRCellDU`, `NRCellCU`, `NRSectorCarrier`, `CommonBeamformingFunction`
+    and `CESManagementFunction` name it directly, `NRCellRelation` and `NRFreqRelation` before the `-`.
+    Any other reference, or none, is about the element as a whole and holds every cell, as before.
+  - **EnergySaving:** a cell's LOCK is blocked (and a coverage alarm wakes it) when the alarm is
+    on the cell or on a neighbour it hands its traffic to (`neighbourRefs`).
+  - **Coverage:** a cell is held when the alarm is on it or on a neighbour, since a tilt or power
+    move changes the neighbours' coverage too.
+  - **Traffic Steering:** an alarmed cell is held as a source and excluded as a target
+    (`TARGET_CRITICAL_ALARM`).
+  - Each decision's `criticalAlarmIds` lists only the alarms that hold that cell.
+  - **Not taken:** DN-based object addressing (SA-RANOAM-4 stays open); the flat
+    `<IOC>=<id>` reference the rApps already write with is enough to name a cell.
+
 ### SME (`sme/`) vs `nonrtric-plt-sme`
 - **OI-5-sme-events** — `register_service` fires `SERVICE_API_AVAILABLE`/`SERVICE_API_UPDATE`,
   `deregister_service` fires `SERVICE_API_UNAVAILABLE`; `notify_service_change` enforces the same
