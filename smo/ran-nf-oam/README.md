@@ -4,13 +4,13 @@
 
 | | |
 |---|---|
-| Standards basis | O-RAN O1 + 3GPP MnS (TS 28.532/28.541 CM, FM, PM, SWM) + internal per-vendor capability registry |
+| Standards basis | O-RAN O1 + 3GPP MnS (TS 28.532/28.541 CM, FM, PM, file reporting, SWM; TS 28.319 MSAC) + internal per-vendor capability registry |
 | R1 route / port | `/ran-nf-oam` via R1 Termination (container :8000) |
 | Depends on (over R1) | DME (`/dme/production-capabilities`, `/dme/dme-types`, `/dme/data-jobs`, `/dme/data-jobs/{id}/records`); southbound (not R1): each ME's O1 adaptor over HTTP |
 | Called by | DME (`POST /config-jobs`, O1 action mediation), SO SMOS (`POST /config-jobs`), SA SMOS (`POST /config-jobs`), SDK `sdk.data` (`cell-guards`, `managed-entities`, `vendor-capabilities`, `capabilities`, `…/config`), reference rApps (`GET /alarms`, `POST /pm-reports`), GUI / GUI BFF |
-| Database tables | `o1_adaptor_endpoint`, `managed_entity`, `alarm`, `cm_schema_cache`, `vendor_capability`, `write_config_job`, `write_config_sub_change`, `pm_subscription`, `fm_subscription`, `software_management_job` |
-| Unit tests | 102 passed (`tests/`, SQLite, standalone) |
-| Status | Done for NETCONF-shaped and RESTCONF O1 CM dispatch. Open: alarm-storm correlation (`OI-1-alarm-storm`), TS 28.319 MSAC (`SA-RANOAM-1`), TS 28.532 file/streaming reporting (`SA-RANOAM-8`); see [section 2.8](#28-limits-and-open-items) |
+| Database tables | `o1_adaptor_endpoint`, `managed_entity`, `alarm`, `cm_schema_cache`, `vendor_capability`, `write_config_job`, `write_config_sub_change`, `pm_subscription`, `fm_subscription`, `software_management_job`, `msac_identity`, `msac_role`, `msac_access_rule`, `pm_file`, `file_subscription` |
+| Unit tests | 126 passed (`tests/`, SQLite, standalone) |
+| Status | Done for NETCONF-shaped and RESTCONF O1 CM dispatch. Open: alarm-storm correlation (`OI-1-alarm-storm`), TS 28.532 streaming reporting (`SA-RANOAM-8`, file reporting is built); MSAC, `accessScope`, DN refs and PerceivedSeverity are closed (`SA-RANOAM-1`, `-2`, `-4`, `-6-severity`); see [section 2.8](#28-limits-and-open-items) |
 
 ## 1. High-level design (HLD)
 
@@ -36,11 +36,12 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 |---|---|---|
 | O-RAN O1 / 3GPP TS 28.532 ProvMnS ([`TS28532_ProvMnS.yaml`](../../specs/5G_APIs/TS28532_ProvMnS.yaml)) | Write path as RFC 6241 `<edit-config>` with a per-`<managed-object>` `operation` (`merge` / `replace` / `create` / `delete` / `remove`); `<get-config>` read-back. For an ME provisioned `RESTCONF`, the same operations as RFC 8040 requests on the `managed-element={ref}[/managed-function={fref}]` data resource (`merge` PATCH, `replace` PUT, `create` POST on the parent, `delete` / `remove` DELETE; `application/yang-data+json`, RFC 7951); read-back is a GET | No SSH/NETCONF session (XML over plain HTTP to the adaptor); no TLS or auth on RESTCONF; no HTTP-verb ProvMnS; no RESTCONF notifications, YANG-patch or query parameters |
 | TS 28.541 NR NRM ([`TS28541_NrNrm.yaml`](../../specs/5G_APIs/TS28541_NrNrm.yaml)) | Bundled CM descriptor `3gpp-ts28541-nrnrm@19.6.0` (54 IOC classes) as the default spec data model | WG10 O1NRM / WG5 IOCs are not bundled (`SA-O1-4`) |
-| TS 28.532 FaultMnS / TS 28.111 ([`TS28111_FaultNrm.yaml`](../../specs/5G_APIs/TS28111_FaultNrm.yaml)) | `AlarmRecord` fields: `alarmType`, `probableCause`, `specificProblem`, `rootCauseIndicator`, `correlatedNotifications`, `proposedRepairActions`, `ackUserId`, `alarmChangedTime`; clear = `severity` `cleared` (as NotifyClearedAlarm reuses `perceivedSeverity`) | `severity` is this build's lowercase vocabulary, not the six TS 28.111 values (`SA-RANOAM-6-severity`); flat ME/MF reference strings, not DNs (`SA-RANOAM-4`) |
+| TS 28.532 FaultMnS / TS 28.111 ([`TS28111_FaultNrm.yaml`](../../specs/5G_APIs/TS28111_FaultNrm.yaml)) | `AlarmRecord` fields: `alarmType`, `probableCause`, `specificProblem`, `rootCauseIndicator`, `correlatedNotifications`, `proposedRepairActions`, `ackUserId`, `alarmChangedTime`; clear = `severity` `cleared` (as NotifyClearedAlarm reuses `perceivedSeverity`) | Stored `severity` stays lowercase; the API accepts any case of the six `PerceivedSeverity` values (including `INDETERMINATE`, 422 otherwise) and every alarm view adds upper-case `perceivedSeverity`. `managedFunctionRef` / `managedElementRef` accept a TS 32.300 DN (a ref containing `=` must parse; the IOC class is the last RDN) or a flat id; ME ids stay flat registry keys |
 | TS 28.550 PerfMeasJobCtrlMnS ([`TS28550_PerfMeasJobCtrlMnS.yaml`](../../specs/5G_APIs/TS28550_PerfMeasJobCtrlMnS.yaml)) | `granularityPeriod` on a PM subscription | The clause-8 job-control surface (schedule, priority, reportingPeriod) is out; SubscribePM is a DME-producer registration, not a clause-8 call |
-| TS 28.532 file / streaming / heartbeat ([`FileDataReporting`](../../specs/5G_APIs/TS28532_FileDataReportingMnS.yaml), [`StreamingData`](../../specs/5G_APIs/TS28532_StreamingDataMnS.yaml), [`HeartbeatNtf`](../../specs/5G_APIs/TS28532_HeartbeatNtf.yaml)) | The service names exist in the registry's `MnsService` vocabulary (`FILE`, `STREAM`, `HEARTBEAT`) and can be declared | No file or streaming reporting is implemented (`SA-RANOAM-8`); the heartbeat is the adaptor's own `POST /o1-adaptor-endpoints/{id}/heartbeat` |
+| TS 28.532 file / streaming / heartbeat ([`FileDataReporting`](../../specs/5G_APIs/TS28532_FileDataReportingMnS.yaml), [`StreamingData`](../../specs/5G_APIs/TS28532_StreamingDataMnS.yaml), [`HeartbeatNtf`](../../specs/5G_APIs/TS28532_HeartbeatNtf.yaml)) | The service names exist in the registry's `MnsService` vocabulary (`FILE`, `STREAM`, `HEARTBEAT`) and can be declared | File reporting is built (above); streaming is not: there is no TS 28.532 streaming transport, and `delivery_method=stream` stays a registration only (`SA-RANOAM-8`); the heartbeat is the adaptor's own `POST /o1-adaptor-endpoints/{id}/heartbeat` |
 | O1 adaptor MnS hierarchy mapping ([`O1_Adaptor_MnS_Hierarchy_Mapping_v4.xlsx`](../../specs/O1_Adaptor/O1_Adaptor_MnS_Hierarchy_Mapping_v4.xlsx)) | Basis of the eight MnS service categories in the capability registry | MnS Registry NRM polling does not exist; adaptors self-register |
-| TS 28.319 MSAC | A presence check of `msacRole` for `scope == "entire-RAN"` | No Identity / Role / AccessRule evaluation (`SA-RANOAM-1`) |
+| TS 28.319 MSAC ([`TS28319_MsacNrm.yaml`](../../specs/5G_APIs/TS28319_MsacNrm.yaml)) | `Identity`, `Role`, `AccessRule` as REST resources with the spec attribute names (`/msac/identities`, `/roles`, `/access-rules`); credentials stored hashed, never returned. `POST /config-jobs` evaluates the requester's roles against every sub-change before dispatch (DENY beats ALLOW, no matching rule is a refusal; see 2.4) | `dataNodeSelector` is a Jex expression (TS 32.161); only absolute `/Class=id/...` paths with `*` wildcards are supported, anything else is refused at creation. `componentCData` is stored, not evaluated. Requesters with neither an Identity nor a defined Role keep the legacy gate |
+| TS 28.532 File Data Reporting MnS ([`FileDataReporting`](../../specs/5G_APIs/TS28532_FileDataReportingMnS.yaml)) | `POST /pm-files` (an O1 adaptor reports a finished performance file), `GET /files` (`FileInfo`, selected by `fileDataType`, `beginTime`, `endTime`), file download, `POST /file-subscriptions` with `notifyFileReady` | `filter` (a Jex condition) on a subscription is refused; `notifyFilePreparationError` is not sent; the list is paginated like every list here, not a bare array |
 | O-RAN WG4 O-RU M-plane | The Software Management RPC lifecycle (download / install / activate) as a job state machine | No M-plane YANG; `ru_instance_id` is stored, not used |
 
 ### 1.3 Position in the platform
@@ -86,7 +87,7 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 - **Alarm ids are always minted here** (fresh UUID), never the raising ME's native id, so ids cannot collide across a fleet.
 - **Safe parsing.** Adaptor replies are parsed with `defusedxml`; entity-expansion or external-entity XML is treated like an unparseable reply.
 - **Failure behaviour toward callers.** Per-change failures (unreachable endpoint, protocol not supported, RPC failure) are recorded as sub-change `REJECTED` with a `rejectionReason`, and the job ends `FAILED` or `PARTIAL_SUCCESS`; the HTTP response is still `202`. Registry or pre-check refusals are 4xx `ProblemDetails`.
-- **Security / RBAC.** No in-module authorization; R1 Termination introspects every token. The GUI BFF restricts `vendor-onboarding`, `cm-schemas`, `vendor-capabilities` writes, cell-guard writes, `alarms/ingest` and endpoint `heartbeat` to admin, and `config-jobs`, subscriptions, SWM and endpoint registration to operator. `scope == "entire-RAN"` additionally needs a non-empty `msacRole`.
+- **Security / RBAC.** No in-module authorization; R1 Termination introspects every token. The GUI BFF restricts `vendor-onboarding`, `cm-schemas`, `vendor-capabilities` writes, cell-guard writes, `alarms/ingest` and endpoint `heartbeat` to admin, and `config-jobs`, subscriptions, SWM and endpoint registration to operator. Inside the module, TS 28.319 MSAC (`/msac/...`) decides who may write which managed objects; a requester with no Identity or defined Role keeps the old rule that `accessScope == "entire-RAN"` needs a non-empty `msacRole`.
 
 ## 2. Low-level design (LLD)
 
@@ -135,11 +136,11 @@ Cross-module references are bare strings or UUIDs; none exist here.
 
 **`cm_schema_cache`** (PK `schema_name` + `revision`): `location`, `type` (`YANG` / `OPENAPI_NRM` / `DESCRIPTOR`), `descriptor` JSON, `cached_at`. Bundled descriptors live in files, not in this table.
 
-**`write_config_job`** (PK `job_id`): `requested_by`, `scope`, `schema_validated_at`, `status`, `conflict_resolution` (unused), `msac_role`.
+**`write_config_job`** (PK `job_id`): `requested_by`, `scope` (the `accessScope` value), `schema_validated_at`, `status`, `conflict_resolution` (unused), `msac_role`.
 
 **`write_config_sub_change`** (PK `id`, FK `job_id`): `managed_element_ref`, `managed_function_ref`, `attribute_changes` JSON, `operation` (default `merge`), `status` (`PENDING` / `APPLIED` / `REJECTED`), `rejection_reason`, `attempts`.
 
-**`alarm`** (PK `alarm_id`, always a fresh UUID; FK `managed_element_ref` to `managed_entity`): `source_alarm_id`, `managed_function_ref`, `severity`, `ack_state` (`UNACKNOWLEDGED` / `ACKNOWLEDGED`), `correlation_group`, `raised_at`, `probable_cause`, `specific_problem`, `root_cause_indicator`, `correlated_notifications` (UUID list), `proposed_repair_actions`, `alarm_type`, `cleared_at`, `clear_user_id`, `ack_user_id`, `changed_at`. `managed_function_ref` is the managed function the alarm is about (e.g. a cell's `NRCellDU=101`); null means the element as a whole.
+**`alarm`** (PK `alarm_id`, always a fresh UUID; FK `managed_element_ref` to `managed_entity`): `source_alarm_id`, `managed_function_ref`, `severity` (lowercase `PerceivedSeverity`), `ack_state` (`UNACKNOWLEDGED` / `ACKNOWLEDGED`), `correlation_group`, `raised_at`, `probable_cause`, `specific_problem`, `root_cause_indicator`, `correlated_notifications` (UUID list), `proposed_repair_actions`, `alarm_type`, `cleared_at`, `clear_user_id`, `ack_user_id`, `changed_at`. `managed_function_ref` is the managed function the alarm is about (e.g. a cell's `NRCellDU=101`); null means the element as a whole.
 
 **`pm_subscription`** (PK `subscription_id`, FK ME): `counter_type`, `delivery_method`, `southbound_engine`, `granularity_period`.
 
@@ -147,7 +148,7 @@ Cross-module references are bare strings or UUIDs; none exist here.
 
 **`software_management_job`** (PK `job_id`, FK ME): `ru_instance_id` (reserved), `phase` (`DOWNLOAD` / `INSTALL` / `ACTIVATE`), `status`.
 
-The Postgres schema (`migrations/001_init.sql`) adds CHECK constraints that the code does not pre-validate: `alarm.severity` in {`critical`, `major`, `minor`, `warning`, `cleared`}, `alarm.ack_state`, `alarm.alarm_type` (the 11 TS 28.111 values), PM / FM `delivery_method` in {`pull`, `push`, `stream`}. SQLite unit tests do not enforce them.
+The Postgres schema (`migrations/001_init.sql`) adds CHECK constraints that the code does not pre-validate: `alarm.severity` in {`critical`, `major`, `minor`, `warning`, `indeterminate`, `cleared`}, `alarm.ack_state`, `alarm.alarm_type` (the 11 TS 28.111 values), PM / FM `delivery_method` in {`pull`, `push`, `stream`}. SQLite unit tests do not enforce them.
 
 ### 2.3 State machines
 
@@ -222,7 +223,7 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 
 | Method | Path | Purpose / notable errors |
 |---|---|---|
-| POST | `/config-jobs` | `WriteConfigurationChanges` (202 `{jobId, status}`). Body: `requestedBy`, `scope`, `changes[]` (`managedElementRef`, `managedFunctionRef?`, `className?`, `attributeChanges?`, `operation?`), `msacRole?`. 403 `MSAC_ACCESS_DENIED`, 409 `O1_SERVICE_NOT_SUPPORTED`, 422 `SCHEMA_VALIDATION_FAILED` |
+| POST | `/config-jobs` | `WriteConfigurationChanges` (202 `{jobId, status}`). Body: `requestedBy`, `accessScope` (`scope` is a deprecated alias; both, if sent, must agree), `changes[]` (`managedElementRef`, `managedFunctionRef?`, `className?`, `attributeChanges?`, `operation?`), `msacRole?`. 403 `MSAC_ACCESS_DENIED`, 409 `O1_SERVICE_NOT_SUPPORTED`, 422 `SCHEMA_VALIDATION_FAILED` |
 | GET | `/config-jobs/{job_id}` | Job with `subChanges` (`operation`, `status`, `rejectionReason`, `attempts`) |
 | GET | `/config-jobs` | List; filter `status` |
 
@@ -231,11 +232,16 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 | Method | Path | Purpose / notable errors |
 |---|---|---|
 | POST | `/alarms/ingest` | Query parameters: `source_alarm_id`, `managed_element_ref`, `severity`, optional `managed_function_ref` (the cell or other function it is about) and fault fields. Returns `{alarmId}`. 409 `O1_SERVICE_NOT_SUPPORTED` (FM) |
-| GET | `/alarms` | List; filters `managed_element_ref`, `managed_function_ref`, `severity` (`cleared` isolates history) |
+| GET | `/alarms` | List; filters `managed_element_ref`, `managed_function_ref` (flat, full DN, or an RDN ending a stored DN), `severity` (any case; `cleared` isolates history; 422 outside `PerceivedSeverity`) |
 | PATCH | `/alarms/{id}/ack` | `new_state`, `ack_user_id?` |
-| PATCH | `/alarms/{id}/clear` | Sets `severity=cleared`, `cleared_at`, `clear_user_id?`; alarm stays listed |
+| PATCH | `/alarms/{id}/clear` | Sets `severity=cleared` (`perceivedSeverity` `CLEARED`), `cleared_at`, `clear_user_id?`; alarm stays listed |
 | POST | `/pm-subscriptions` | Query: `managed_element_ref`, `counter_type`, `delivery_method`, `granularity_period?`. Registers a DME producer. 409 `O1_SERVICE_NOT_SUPPORTED` (PM) |
 | GET / DELETE | `/pm-subscriptions`, `/pm-subscriptions/{id}` | List (filter ME) / delete (idempotent) |
+| POST | `/msac/access-rules`, `/msac/roles`, `/msac/identities` | TS 28.319 `AccessRule` / `Role` / `Identity` (201, `{id, attributes}`); each also has `GET` list, `GET /{id}` (404 `NRM_OBJECT_NOT_FOUND`), `DELETE` (204, idempotent; unlists the id from roles / identities) and, for roles and identities, `PUT`. 422 on a dangling ref, a duplicate role / identity name or an unsupported selector |
+| POST | `/pm-files` | An O1 adaptor reports a finished performance file (201 `FileInfo` + `fileId`, `notified`, `dataJobs`, `recordsDelivered`). Same subscription precondition as `/pm-reports` (422), 409 if the ME lacks the `FILE` service. Its measurements go to DME as `/pm-reports` does |
+| GET | `/files` | TS 28.532 `FileInfo` list: required `fileDataType`, optional `beginTime` / `endTime` (paginated) |
+| GET | `/pm-files/{id}/file` | The file content (404 unknown or expired) |
+| POST / DELETE | `/file-subscriptions`, `/file-subscriptions/{id}` | `consumerReference`, optional `timeTick`, `fileDataType`; `filter` is refused (422). `notifyFileReady` goes to the consumer on each matching file; `sequenceNo` counts per subscription |
 | POST | `/pm-reports` | NF PM report -> DME records (201). 409 (PM), 422 `SCHEMA_VALIDATION_FAILED` when no PM subscription exists for ME + counter |
 | POST | `/fm-subscriptions` | Registers the `RAN.FaultRecords` DME producer. 409 `O1_SERVICE_NOT_SUPPORTED` (FM) |
 | GET / DELETE | `/fm-subscriptions`, `/fm-subscriptions/{id}` | List (filter ME) / delete (idempotent) |
@@ -262,7 +268,7 @@ PM report body: `managedElementRef`, `counterType`, `measurements[]` each with `
 
 **CM write dispatch (`POST /config-jobs`)**
 
-1. `scope == "entire-RAN"` without `msacRole` -> 403 `MSAC_ACCESS_DENIED`.
+1. Access control (`msac.py`). The requester's roles are those of the Identity named by `requestedBy` plus the Role named by `msacRole`. If either exists, each sub-change must be allowed: its target (`/SubNetwork=../ManagedElement=<me>/<function DN>`) against the selectors of the roles' AccessRules, with the operation (`merge` / `replace` -> `update`, `create`, `delete` / `remove` -> `delete`). DENY beats ALLOW; no matching rule refuses. Any refused sub-change fails the whole request with 403 `MSAC_ACCESS_DENIED` before anything is dispatched or recorded. Otherwise (no Identity, no defined Role) the legacy gate applies: `accessScope == "entire-RAN"` without `msacRole` -> 403.
 2. For every change: `require_service(PROV)`, then `schema_problems`. Any problem -> 422, nothing is created.
 3. A `WriteConfigJob` is created; `schema_validated_at` set; `PENDING` -> `PROCESSING`.
 4. Per change, in order: ME missing or without endpoint -> sub-change `REJECTED` `ENDPOINT_UNREACHABLE`; endpoint aged, then `DEGRADED` / `UNREACHABLE` -> `REJECTED` `ENDPOINT_UNREACHABLE`; `o1_protocol` neither `NETCONF` nor `RESTCONF` (`_o1_client` finds no client) -> `REJECTED` `PROTOCOL_NOT_SUPPORTED`; otherwise dispatch.
@@ -295,7 +301,7 @@ ProblemDetails are returned as `{"detail": {"type": "about:blank", "title": <cod
 
 | Code | HTTP | When |
 |---|---|---|
-| `MSAC_ACCESS_DENIED` | 403 | `scope` `entire-RAN` without `msacRole` |
+| `MSAC_ACCESS_DENIED` | 403 | A sub-change is not permitted by the requester's MSAC roles; or, for a requester with no Identity / defined Role, `accessScope` `entire-RAN` without `msacRole` |
 | `O1_SERVICE_NOT_SUPPORTED` | 409 | The ME's effective services lack the required MnS service (see [checks](#checks-at-request-time)) |
 | `PROTOCOL_NOT_SUPPORTED` | 409 | Endpoint registration or capability declaration with an `o1Protocol` the vendor has not declared; also the sub-change `rejectionReason` for an ME whose provisioned protocol is neither NETCONF nor RESTCONF at dispatch, and the error of `GET .../config` for such an ME |
 | `CM_SCHEMA_CONFLICT` | 409 | A different descriptor at an existing `schemaName` + `revision`, or `POST /cm-schemas` of one already loaded |
@@ -311,10 +317,10 @@ ProblemDetails are returned as `{"detail": {"type": "about:blank", "title": <cod
 - **Transport.** RFC 6241-shaped `edit-config` and RFC 8040 RESTCONF requests, both over plain HTTP (no TLS, auth, notifications or YANG-patch), are dispatched; an ME provisioned for any other protocol is rejected at dispatch with `PROTOCOL_NOT_SUPPORTED`. A new transport needs one client module per transport family, selected by `ManagedEntity.o1_protocol`.
 - **YANG.** The ingestion script reads NRM OpenAPI only; a YANG bundle needs a YANG front end (`pyang`) emitting the same descriptor shape. Only the TS 28.541 descriptor ships (`SA-O1-4`).
 - **Semantics.** A descriptor documents shape, not runtime behaviour; a vendor that silently ignores an accepted attribute is found only by integration testing against that vendor (`GET .../config` read-back exists for this).
-- **Alarms.** `correlation_group` is a coarse string; no storm correlation (`OI-1-alarm-storm`). `severity` / `alarm_type` / `ack_state` are not validated in code; out-of-vocabulary values fail the Postgres CHECK as a 500 (`SA-RANOAM-6-severity`).
-- **Access control.** MSAC is a presence check (`SA-RANOAM-1`); `scope` collides with ProvMnS `ScopeType` (`SA-RANOAM-2`).
-- **Addressing.** Flat reference strings, not DNs (`SA-RANOAM-4`, `SA-O1-1`).
-- **File / streaming reporting** is absent (`SA-RANOAM-8`).
+- **Alarms.** `correlation_group` is a coarse string; no storm correlation (`OI-1-alarm-storm`). `severity` is validated against `PerceivedSeverity`; `alarm_type` / `ack_state` are not validated in code, and an out-of-vocabulary value fails the Postgres CHECK as a 500.
+- **Access control.** TS 28.319 MSAC is evaluated for every CM write (`SA-RANOAM-1`, closed) with the Jex subset in 1.2; MSAC does not yet guard reads or the other write routes. Callers still send `scope` (DME, SO SMOS, GUI BFF); it is a deprecated alias of `accessScope` (`SA-RANOAM-2`, closed).
+- **Addressing.** A DN is accepted and validated for `managedFunctionRef`; `managedElementRef` remains a flat registry key, so an ME addressed by DN is not resolved (`SA-RANOAM-4`, `SA-O1-1`: DN parsing and class-by-leaf done, a DN containment tree is not).
+- **Streaming reporting** is absent (`SA-RANOAM-8`); file reporting is built.
 - **No scheduler.** Endpoint health is aged on use; there is no registry polling and no periodic discovery. `DEREGISTERED` and `RE_REGISTERED` are not fired by any route.
 - **Unguarded reads.** `GET /config-jobs/{id}`, alarm ack / clear and SWM advance on an unknown id fail with an unhandled 500, not a 404. `POST /software-management-jobs/{id}/advance` on a terminal job is also a 500.
 - **Phase 1 stubs.** `/dme-jobs` acks only; `ru_instance_id` and `conflict_resolution` are stored/unused; `PM`/`FM` `delivery_method` outside `pull`/`push`/`stream` is accepted by the code but rejected by the Postgres CHECK.
@@ -426,6 +432,7 @@ cd smo/ran-nf-oam && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 | Test file | Covers | Count |
 |---|---|---|
+| `tests/test_spec_conformance.py` | `accessScope` and the `scope` alias, DN parsing and refusal, DN alarm filters, `PerceivedSeverity` (either case, `INDETERMINATE`, 422), MSAC resources (spec names, credential hashing, dangling refs, selector checks), per-sub-change evaluation (allow, deny, DENY beats ALLOW, DN selectors, legacy gate, `msacRole` alone), PM files (store, list, download, expiry, DME fan-out, `notifyFileReady`) | 24 |
 | `tests/test_main.py` | Config dispatch (apply, reject, `operation` threading, RESTCONF dispatch, refusal of a protocol with no client, unreachable / stale / fresh endpoint), `discover` aging, endpoint registration and heartbeat, PM / FM subscription create / list / delete and DME producer registration, `/health` and `/dme-jobs` callbacks, alarm ingest / filter / ack / clear, an alarm naming its cell, list reads | 38 |
 | `tests/test_vendors.py` | Bundled spec descriptor and custom schema load, capability CRUD and defaults, vendor-mode gating, `SPEC` / `OWN` / `COMBINED` schema checks, unregistered vendor unchecked, service-presence guards, onboarding with discovery and its failures, cell guards | 10 |
 | `tests/test_dispatch_reliability.py` | `function-ref` dispatch, retry with backoff, retry exhaustion -> failed change + alarm, no retry on `<rpc-error>`, read-after-write, PM report fan-out to every data job, multi-counter per-relation measurements; RESTCONF retry and alarm, no retry on an `ietf-restconf:errors` reply, RESTCONF read-after-write | 10 |
@@ -438,7 +445,8 @@ cd smo/ran-nf-oam && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 - The real DME and mock adaptor round trip (config write end to end, PM -> DME -> rApp, vendor onboarding against `mock-o1-adaptor`): `tests_integration/`.
 - Postgres CHECK constraints and FK behaviour (SQLite does not enforce them): `scripts/check_migration_matches_models.py`.
-- MSAC role evaluation (not implemented).
+- MSAC reads and non-CM write routes (not guarded).
+- Streaming reporting (not implemented).
 - Unknown-id 500 paths on job / alarm lookups are not asserted.
 
 ## 4. References

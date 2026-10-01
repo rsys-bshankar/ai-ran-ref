@@ -412,17 +412,22 @@ Findings were sized small / moderate / large-structural. Every small and moderat
 Large-structural items are confirmed Phase 1 scope cuts unless noted; open ones are in OPEN_ITEMS.
 
 ### RAN NF OAM vs TS 28.319/28.111/28.532/28.550 + O1NRM YANGs (`SA-RANOAM-n`)
-- **SA-RANOAM-1** MSAC gate is a presence check on `msacRole` — open (structural).
-- **SA-RANOAM-2** `scope` name collides with ProvMnS `ScopeType` — open (cosmetic).
+- **SA-RANOAM-1** TS 28.319 Identity / Role / AccessRule as REST resources; `POST /config-jobs` evaluates
+  the requester's roles per sub-change before dispatch (DENY beats ALLOW; Jex subset: absolute
+  `/Class=id/...` with `*`). Requesters with no Identity or defined Role keep the old gate. Closed (reads and
+  other write routes unguarded).
+- **SA-RANOAM-2** `accessScope` replaces `scope`; `scope` stays as a deprecated alias. Closed.
 - **SA-RANOAM-3** `WriteConfigSubChange.operation` (merge/replace/create/delete/remove, RFC 6241 §7.2,
   default merge, CHECK constraint); emitted on `<managed-object>`; mock adaptor accepts empty
   delete/remove payloads. (Closeable-list item 3.)
-- **SA-RANOAM-4** Flat ref strings instead of DN addressing — accepted deviation.
+- **SA-RANOAM-4** DN refs accepted and validated on `managedFunctionRef` (class = last RDN); ME ids stay flat
+  keys, no containment tree — accepted deviation.
 - **SA-RANOAM-5** `alarmType` (11-value enum, CHECK). (Closeable item 1.)
 - **SA-RANOAM-6** `ackUserId` and `alarmChangedTime` (`changed_at` updated on ack/clear). Severity
-  enum residual in OPEN_ITEMS. (Closeable item 2.)
+  now `PerceivedSeverity` (either case in, `INDETERMINATE` added, `perceivedSeverity` upper-case out): closed.
+  (Closeable item 2.)
 - **SA-RANOAM-7** `PMSubscription.granularityPeriod` (nullable). (Closeable item 4.)
-- **SA-RANOAM-8** File/streaming transport — elided.
+- **SA-RANOAM-8** File Data Reporting built (`/pm-files`, `/files`, `notifyFileReady`); streaming still elided.
 - **SA-RANOAM-9/10** `HeartbeatNtf` direction and `WriteConfigJob`/`PARTIAL_SUCCESS` — not gaps.
 
 ### FOCOM vs O2IMS (`SA-FOCOM-n`)
