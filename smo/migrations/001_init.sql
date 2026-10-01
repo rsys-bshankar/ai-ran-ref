@@ -747,7 +747,10 @@ CREATE TABLE emulation_job (
 CREATE TABLE certification_record (
   certification_record_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   model_id                  UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
-  decision                    TEXT NOT NULL CHECK (decision IN ('SUBMIT_FOR_APPROVAL','APPROVE','REJECT','CERTIFY','PROMOTE','ROLLBACK')),
+  decision                    TEXT NOT NULL CHECK (decision IN (
+    'SUBMIT_FOR_APPROVAL','APPROVE','REJECT','CERTIFY','PROMOTE','ROLLBACK',
+    'APPROVE_TRAINING','APPROVE_VALIDATION'  -- OPEN_ITEMS.md 6.1's own operator-gate decisions
+  )),
   decided_by                     TEXT NOT NULL,
   rationale                        TEXT,
   decided_at                         TIMESTAMPTZ NOT NULL DEFAULT now()
