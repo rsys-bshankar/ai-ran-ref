@@ -59,8 +59,9 @@ from .models import (
 )
 from . import ts28105
 from .statemachine import (
-    GOVERNANCE_EVENTS, INFERENCE_JOB_FSM, MODEL_LIFECYCLE_FSM, RUNTIME_LIFECYCLE_FSM, InferenceEvent, InferenceState,
-    ModelLifecycleEvent, ModelLifecycleState, RuntimeLifecycleEvent, RuntimeLifecycleState, should_trigger_group_retrain,
+    ADVANCEABLE_EVENTS, END_OF_LIFE_STATES, GOVERNANCE_EVENTS, INFERENCE_JOB_FSM, MODEL_LIFECYCLE_FSM, RUNTIME_LIFECYCLE_FSM,
+    TRAINABLE_STATES, InferenceEvent, InferenceState, ModelLifecycleEvent, ModelLifecycleState, RuntimeLifecycleEvent,
+    RuntimeLifecycleState, should_trigger_group_retrain,
 )
 
 app = FastAPI(title="AIMgF")
@@ -491,21 +492,21 @@ def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.U
     lifecycle gate, NFO runtime and (Wave 4) MLTrainingProcess.
 
     modelId-targeted requests also drive the model's own ModelLifecycle
-    FSM: REGISTERED -> TRAINING (the very first cycle) or
-    PROMOTED -> TRAINING (an ordinary retrain) or FAILED -> TRAINING (a
-    retry). A model already TRAINING (an unresolved prior job) is treated
-    as the operator's explicit decision to supersede it: the orphaned job
-    is marked CANCELLED rather than left silently RUNNING and unreachable.
+    FSM: REGISTERED -> TRAINING (the very first cycle), PROMOTED or
+    CERTIFIED -> TRAINING (an ordinary retrain, CERTIFIED covering a
+    rolled-back model) or FAILED -> TRAINING (a retry). A model already
+    TRAINING (an unresolved prior job) is treated as the operator's
+    explicit decision to supersede it: the orphaned job is marked
+    CANCELLED rather than left silently RUNNING and unreachable. Any other
+    state (mid-pipeline, DEPRECATED, RETIRED) is a 409
+    LIFECYCLE_ILLEGAL_TRANSITION naming the state.
     """
     lifecycle = None
     if model_id is not None:
         _get_model(model_id)
         lifecycle = _get_or_create_lifecycle(db, model_id)
-        if lifecycle.model_lifecycle_state not in (
-            ModelLifecycleState.REGISTERED, ModelLifecycleState.PROMOTED,
-            ModelLifecycleState.FAILED, ModelLifecycleState.TRAINING,
-        ):
-            raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
+        if lifecycle.model_lifecycle_state not in TRAINABLE_STATES:
+            raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
                                    detail=f"cannot (re)train a model in state {lifecycle.model_lifecycle_state}")
 
     # TS28.105 AI/ML NRM's own real mLTrainingType — INITIAL_TRAINING the
@@ -603,22 +604,15 @@ def query_training_job_status(training_job_id: uuid.UUID, db: Session = Depends(
 
 @app.post("/training-jobs/{training_job_id}/complete")
 def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: Session = Depends(get_session)):
-    """HISTORY.md OI-6.5, closed: unlike Validation/Emulation
-    (which already had their own dedicated `.../complete` routes),
-    Training's own completion only ever went through the generic
-    `POST /models/{id}/advance(TRAINING_COMPLETE)` route — real for the
-    model's own lifecycle state, but with no way to record what the run
-    actually produced or notify anyone. This is additive, not a
-    replacement: that generic route still fires
-    TRAINING_COMPLETE/TRAINING_FAILED directly for any caller that
-    doesn't need job-level bookkeeping. This route brings Training up to
-    the same real request/tracking-aggregate parity Validation/Emulation
-    already had — job status (TrainingJob's own FINISHED/FAILED
-    vocabulary, not COMPLETED), the outcome artifact, and a best-effort
-    completion notification, plus the same model-lifecycle transition
-    the generic route fires (skipped for a coordination-group-targeted
+    """HISTORY.md OI-6.5: Training's own completion route, at parity with
+    Validation/Emulation's — job status (TrainingJob's own FINISHED/FAILED
+    vocabulary, not COMPLETED), the outcome artifact, a best-effort
+    completion notification, and the model's TRAINING_COMPLETE/
+    TRAINING_FAILED transition (skipped for a coordination-group-targeted
     job, which has no single model to advance — the same asymmetry
-    `request_training` itself already has).
+    `request_training` itself already has). This is the only way a
+    training run completes: `POST /models/{id}/advance` refuses the
+    job-driven events (OI-2-governance-bypass).
     """
     _expire_overdue_jobs(db)
     job = db.get(TrainingJob, training_job_id)
@@ -649,22 +643,67 @@ def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: 
     return _training_job_view(job)
 
 
+# A training run that can still be cancelled/completed — everything else is terminal.
+ACTIVE_TRAINING_STATUSES = ("IN_PROGRESS", "SUSPENDED")
+
+
 @app.delete("/training-jobs/{training_job_id}", status_code=204)
 def cancel_training(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Cancels an in-flight (IN_PROGRESS/SUSPENDED) run: its execution
+    runtime is torn down and its model released from TRAINING
+    (`_cancel_training_job`). Idempotent for an unknown or already
+    CANCELLED job; a FINISHED/FAILED run is history and is refused (409)
+    rather than rewritten to CANCELLED.
+    """
+    _expire_overdue_jobs(db)
     job = db.get(TrainingJob, training_job_id)
-    if job is not None:
-        _cancel_training_job(db, job)
-        db.commit()
+    if job is None or job.status == "CANCELLED":
+        return
+    if job.status not in ACTIVE_TRAINING_STATUSES:
+        raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
+                               detail=f"cannot cancel a training job in status {job.status}")
+    _cancel_training_job(db, job)
+    db.commit()
 
 
-def _cancel_training_job(db: Session, job: TrainingJob) -> None:
+def _release_training_model(db: Session, job: TrainingJob) -> None:
+    """A cancelled run fails its model's TRAINING stage (TRAINING_FAILED ->
+    FAILED, the lifecycle's own retry/retire point — TRAINING has no other
+    exit) the same way a timed-out run does — but only when this job is
+    the model's current run: a run superseded by a newer request must not
+    fail the newer one."""
+    if job.model_id is None:
+        return
+    lifecycle = db.get(ModelLifecycle, job.model_id)
+    if lifecycle is None or lifecycle.training_job_id != job.training_job_id:
+        return
+    _fire_if_legal(db, job.model_id, ModelLifecycleEvent.TRAINING_FAILED)
+
+
+def _cancel_training_job(db: Session, job: TrainingJob, *, advance_update: bool = True) -> None:
+    """The one cancel path (DELETE /training-jobs/{id}, the NRM cancelRequest/
+    cancelProcess flags, an MLUpdateRequest cancel): status CANCELLED, the
+    execution runtime torn down, the model released from TRAINING, and the
+    MLTrainingProcess (and, unless the caller closes it itself, the
+    MLUpdateProcess) kept in step."""
     job.status = "CANCELLED"
     job.cancel_request = True
     _nfo_terminate_execution(job.nf_deployment_id)
     job.nf_deployment_id = None
+    _release_training_model(db, job)
     _sync_training_process(db, job)
-    if job.ml_update_process_id is not None:
+    if advance_update and job.ml_update_process_id is not None:
         _advance_ml_update_process(db, job.ml_update_process_id)
+
+
+def _resume_training_job(db: Session, job: TrainingJob) -> None:
+    """The one resume path (POST .../resume, the NRM suspendRequest/
+    suspendProcess=false flags, an MLUpdateRequest resume). A suspended
+    run's clock is paused (W7-04) — it restarts on resume."""
+    job.status = "IN_PROGRESS"
+    job.suspend_request = False
+    job.started_at = datetime.datetime.now(datetime.UTC)
+    _sync_training_process(db, job)
 
 
 @app.post("/training-jobs/{training_job_id}/suspend")
@@ -675,8 +714,8 @@ def suspend_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessi
     Wave 2 built (ModelLifecycleState/RuntimeLifecycleState) operate one
     level up and are untouched by a job-level suspend/resume, the same
     way job.status's other transitions (IN_PROGRESS -> FINISHED/FAILED/
-    CANCELLED) already don't reach into ModelLifecycleState either —
-    only an explicit `POST /models/{id}/advance` call does that. Only
+    CANCELLED) reach into ModelLifecycleState only through the job's own
+    completion/cancel/timeout paths, never on suspend/resume. Only
     legal from IN_PROGRESS, matching the reference's own request-flag
     semantics (a suspend request only makes sense against an in-flight job).
     """
@@ -701,11 +740,7 @@ def resume_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessio
     if job.status != "SUSPENDED":
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot resume a training job in status {job.status}")
-    job.status = "IN_PROGRESS"
-    job.suspend_request = False
-    # Wave 7: a suspended run's clock is paused — it restarts on resume.
-    job.started_at = datetime.datetime.now(datetime.UTC)
-    _sync_training_process(db, job)
+    _resume_training_job(db, job)
     db.commit()
     return {"trainingJobId": str(job.training_job_id), "status": job.status}
 
@@ -767,7 +802,7 @@ def _start_validation(db: Session, *, model_id: uuid.UUID | None, group_id: uuid
         _get_model(model_id)
         lifecycle = _get_or_create_lifecycle(db, model_id)
         if lifecycle.model_lifecycle_state != ModelLifecycleState.TRAINED:
-            raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
+            raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
                                    detail=f"cannot request validation for a model in state {lifecycle.model_lifecycle_state}")
         if not lifecycle.training_approved:
             raise framework_error(FrameworkError.TRAINING_NOT_APPROVED,
@@ -862,7 +897,7 @@ def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_s
     _get_model(body.modelId)
     lifecycle = _get_or_create_lifecycle(db, body.modelId)
     if lifecycle.model_lifecycle_state != ModelLifecycleState.VALIDATED:
-        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
+        raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
                                detail=f"cannot request emulation for a model in state {lifecycle.model_lifecycle_state}")
     if not lifecycle.validation_approved:
         raise framework_error(FrameworkError.VALIDATION_NOT_APPROVED,
@@ -941,20 +976,53 @@ def list_emulation_jobs(model_id: uuid.UUID | None = None, status: str | None = 
 
 # ---------------------------------------------------------------- ModelLifecycle: generic advance + governance
 
+# Where each job-driven event is fired instead of `advance` (the 422's hint).
+_JOB_ROUTE_FOR_EVENT = {
+    ModelLifecycleEvent.CREATE_TRAINING: "POST /training-jobs",
+    ModelLifecycleEvent.TRAINING_COMPLETE: "POST /training-jobs/{id}/complete",
+    ModelLifecycleEvent.TRAINING_FAILED: "POST /training-jobs/{id}/complete or DELETE /training-jobs/{id}",
+    ModelLifecycleEvent.CREATE_VALIDATION: "POST /validation-jobs",
+    ModelLifecycleEvent.VALIDATION_COMPLETE: "POST /validation-jobs/{id}/complete",
+    ModelLifecycleEvent.VALIDATION_FAILED: "POST /validation-jobs/{id}/complete",
+    ModelLifecycleEvent.CREATE_EMULATION: "POST /emulation-jobs",
+    ModelLifecycleEvent.EMULATION_COMPLETE: "POST /emulation-jobs/{id}/complete",
+    ModelLifecycleEvent.EMULATION_FAILED: "POST /emulation-jobs/{id}/complete",
+}
+
+
 @app.post("/models/{model_id}/advance")
 def advance_model_lifecycle(model_id: uuid.UUID, event: str, decided_by: str | None = None, rationale: str | None = None,
                              db: Session = Depends(get_session)):
-    """Single endpoint driving every ModelLifecycle transition that isn't
-    already its own request route above — SUBMIT_FOR_APPROVAL, APPROVE,
-    REJECT, CERTIFY, PROMOTE, ROLLBACK, DEPRECATE, RETIRE — each a real
-    FSM transition (statemachine.py). `decidedBy` is required for the six
-    governance decisions (`GOVERNANCE_EVENTS`) and written onto a real
-    CertificationRecord; omitted for DEPRECATE/RETIRE, which aren't
-    governance decisions in docs/ARCHITECTURE.md's AIMgF sense.
+    """Fires the ModelLifecycle events that have no job behind them
+    (`ADVANCEABLE_EVENTS`): the eight governance decisions
+    (`GOVERNANCE_EVENTS` — SUBMIT_FOR_APPROVAL, APPROVE, REJECT, CERTIFY,
+    PROMOTE, ROLLBACK and HISTORY.md OI-6.1's APPROVE_TRAINING/
+    APPROVE_VALIDATION), which require `decidedBy` and write a
+    CertificationRecord, plus DEPRECATE/RETIRE, which aren't governance
+    decisions in docs/ARCHITECTURE.md's AIMgF sense and need no decider.
+
+    Job-driven events (CREATE_*/..._COMPLETE/..._FAILED) are refused with
+    422 SCHEMA_VALIDATION_FAILED naming the job route that fires them, as
+    is an unknown event — so the OI-6.1 approval gates can't be bypassed
+    and no stage moves without its job row (OI-2-governance-bypass).
+
+    RETIRE also terminates the model's serving runtime, through the same
+    path as `POST /models/{id}/runtime/terminate` (NFO teardown,
+    RuntimeLifecycle REQUEST_TERMINATION/TERMINATION_COMPLETE), when one
+    is deployed. DEPRECATE leaves a live runtime serving (call flow 26).
     """
+    try:
+        ev = ModelLifecycleEvent(event)
+    except ValueError:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                               detail=f"unknown model lifecycle event {event!r}; advance accepts {sorted(ADVANCEABLE_EVENTS)}")
+    if ev not in ADVANCEABLE_EVENTS:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                               detail=f"{ev} is job-driven and cannot be advanced directly; use {_JOB_ROUTE_FOR_EVENT[ev]}")
     _get_model(model_id)
-    ev = ModelLifecycleEvent(event)
     lifecycle = _fire_model_event(db, model_id, ev, decided_by=decided_by, rationale=rationale)
+    if ev == ModelLifecycleEvent.RETIRE and lifecycle.runtime_lifecycle_state in _TERMINABLE_RUNTIME_STATES:
+        _terminate_runtime(db, model_id)
     db.commit()
     return _lifecycle_view(lifecycle)
 
@@ -1060,7 +1128,17 @@ def _deploy_runtime(db: Session, model_id: uuid.UUID, runtime_profile: dict | No
     return lifecycle
 
 
+def _refuse_end_of_life(lifecycle: ModelLifecycle, action: str) -> None:
+    """OI-2-model-eol-serving: a DEPRECATED or RETIRED model's runtime is
+    never (re)activated or scaled — no new serving capacity for a model on
+    its way out."""
+    if lifecycle.model_lifecycle_state in END_OF_LIFE_STATES:
+        raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
+                               detail=f"cannot {action} the runtime of a {lifecycle.model_lifecycle_state} model")
+
+
 def _activate_runtime(db: Session, model_id: uuid.UUID) -> ModelLifecycle:
+    _refuse_end_of_life(_get_or_create_lifecycle(db, model_id), "activate")
     _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.ACTIVATE)
     return _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.ACTIVATION_COMPLETE)
 
@@ -1072,7 +1150,7 @@ def activate_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_sessio
     `deploy` returns (Phase 1: instantiate completes synchronously, same
     elision as elsewhere in this build) — ACTIVATE is AIMgF's own
     decision about whether traffic should be sent yet, not a further NFO
-    call.
+    call. Refused (409) for a DEPRECATED/RETIRED model.
     """
     lifecycle = _activate_runtime(db, model_id)
     db.commit()
@@ -1081,7 +1159,9 @@ def activate_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_sessio
 
 @app.post("/models/{model_id}/runtime/scale")
 def scale_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Refused (409) for a DEPRECATED/RETIRED model."""
     lifecycle = _get_or_create_lifecycle(db, model_id)
+    _refuse_end_of_life(lifecycle, "scale")
     _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.REQUEST_SCALE)
     if lifecycle.nf_deployment_id is not None:
         _r1.post(f"/nfo/deployments/{lifecycle.nf_deployment_id}/scale")
@@ -1090,13 +1170,24 @@ def scale_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session))
     return _lifecycle_view(lifecycle)
 
 
-@app.post("/models/{model_id}/runtime/terminate")
-def terminate_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)):
+# RuntimeLifecycle states with a REQUEST_TERMINATION edge (statemachine.py).
+_TERMINABLE_RUNTIME_STATES = (RuntimeLifecycleState.DEPLOYMENT_REQUESTED, RuntimeLifecycleState.DEPLOYED,
+                              RuntimeLifecycleState.ACTIVE)
+
+
+def _terminate_runtime(db: Session, model_id: uuid.UUID) -> ModelLifecycle:
+    """The one runtime teardown path — `POST .../runtime/terminate` and
+    RETIRE (`advance_model_lifecycle`) both use it."""
     lifecycle = _get_or_create_lifecycle(db, model_id)
     _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.REQUEST_TERMINATION)
     if lifecycle.nf_deployment_id is not None:
         _r1.delete(f"/nfo/deployments/{lifecycle.nf_deployment_id}")
-    _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.TERMINATION_COMPLETE)
+    return _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.TERMINATION_COMPLETE)
+
+
+@app.post("/models/{model_id}/runtime/terminate")
+def terminate_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)):
+    lifecycle = _terminate_runtime(db, model_id)
     db.commit()
     return _lifecycle_view(lifecycle)
 
@@ -1122,12 +1213,18 @@ def request_inference(model_id: uuid.UUID, notification_destination: str | None 
                       aiml_inference_function_id: uuid.UUID | None = None, consumer_ref: str | None = None,
                       timeout_seconds: int | None = None, db: Session = Depends(get_session)):
     """RequestInference — MLEF-hosted (AI/ML Workflow LLD section 3).
-    Gated on RuntimeLifecycleState.ACTIVE (a serving question), not
-    ModelLifecycleState — a PROMOTED-but-not-yet-deployed model, or one
-    whose runtime is mid-SCALING, can't serve inference either way.
+    Gated on RuntimeLifecycleState.ACTIVE (a serving question) — a
+    PROMOTED-but-not-yet-deployed model, or one whose runtime is
+    mid-SCALING, can't serve inference — and on the model not being
+    RETIRED (OI-2-model-eol-serving; RETIRE also terminates the runtime).
+    A DEPRECATED model's already-ACTIVE runtime keeps serving: deprecation
+    stops new deploys/activation/scaling, not existing consumers (call
+    flow 26).
     """
     _get_model(model_id)
     lifecycle = _get_or_create_lifecycle(db, model_id)
+    if lifecycle.model_lifecycle_state == ModelLifecycleState.RETIRED:
+        raise framework_error(FrameworkError.INFERENCE_MODEL_NOT_ACTIVE, detail="model is RETIRED")
     if lifecycle.runtime_lifecycle_state != RuntimeLifecycleState.ACTIVE:
         raise framework_error(FrameworkError.INFERENCE_MODEL_NOT_ACTIVE)
     # Wave 4 — TS 28.105 AIMLInferenceFunction: when named, it must be
@@ -1325,8 +1422,8 @@ def _trigger_group_retrain(db: Session, group: dict) -> list[uuid.UUID]:
     RequestTraining's own modelId-targeted path uses) and creates a
     per-model TrainingJob for every currently PROMOTED member. A member
     not PROMOTED (already TRAINING from an earlier trigger, or never
-    certified) is skipped rather than forced — CREATE_TRAINING is only a
-    legal transition from PROMOTED (or REGISTERED/FAILED).
+    certified) is skipped rather than forced — a group retrain is a
+    PROMOTED model's retrain, never a first cycle or a recovery.
     """
     retrained_model_ids: list[uuid.UUID] = []
     for raw_member_id in group["memberModelIds"]:

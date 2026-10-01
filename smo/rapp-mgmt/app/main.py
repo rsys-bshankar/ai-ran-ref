@@ -8,22 +8,24 @@ and UpgradeInstance's auto-rollback made precise (upgrade.py).
 import uuid
 from typing import Literal
 
-import httpx
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
-from smo_shared.errors import FrameworkError, framework_error
-from smo_shared.r1_client import R1Client
+from smo_shared.errors import FrameworkError, framework_error, illegal_transition_error
+from smo_shared.r1_client import R1Client  # noqa: F401 — the class every R1 call here uses (tests patch it as app.main.R1Client)
+from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
+from .provisioning import (DEPLOYABLE_PACKAGE_STATES, provision_instance, register_sme_declarations,  # noqa: F401
+                           release_instance_resources)
 from .statemachine import RAPP_INSTANCE_FSM, InstanceEvent, InstanceState
-from .upgrade import resolve_upgrade, start_upgrade
+from .upgrade import expire_overdue_upgrade, resolve_upgrade, start_upgrade
 
 app = FastAPI(title="rApp Management SMOS")
 apply_r1_gateway_security(app)
@@ -56,152 +58,72 @@ class UpgradeRequest(BaseModel):
     newPackageId: uuid.UUID
 
 
+def _get_or_404(db: Session, instance_id: uuid.UUID) -> RAppInstance:
+    inst = db.get(RAppInstance, instance_id)
+    if inst is None:
+        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail=f"no such RAppInstance {instance_id}")
+    return inst
+
+
+def _upgrade_owner(db: Session, inst: RAppInstance) -> RAppInstance | None:
+    """The old row of the upgrade `inst` takes part in: itself if it has a
+    pending replacement, or the row whose pending replacement it is."""
+    if inst.pending_upgrade_instance_id is not None:
+        return inst
+    return db.scalar(select(RAppInstance).where(RAppInstance.pending_upgrade_instance_id == inst.instance_id))
+
+
+def _load_instance(db: Session, instance_id: uuid.UUID) -> RAppInstance:
+    """404 for an unknown id; otherwise first enforces upgradeTimeoutSeconds
+    on the upgrade this instance takes part in (upgrade.py's lazy timeout),
+    committing the rollback on its own so a later refusal in the same
+    request can't undo it. A replacement rolled back here is gone: 404."""
+    inst = _get_or_404(db, instance_id)
+    owner = _upgrade_owner(db, inst)
+    if owner is not None and expire_overdue_upgrade(db, owner):
+        db.commit()
+        if owner.instance_id != instance_id:
+            raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND,
+                                  detail=f"RAppInstance {instance_id} was an upgrade replacement, rolled back after "
+                                         f"upgradeTimeoutSeconds={owner.upgrade_timeout_seconds}")
+    return inst
+
+
+def _fire(inst: RAppInstance, event: InstanceEvent) -> InstanceState:
+    try:
+        return RAPP_INSTANCE_FSM.fire(InstanceState(inst.state), event, instance=inst)
+    except IllegalTransition as exc:
+        raise illegal_transition_error(exc, f"RAppInstance {inst.instance_id}")
+
+
 @app.post("/instances", status_code=202)
 def create_instance(body: CreateInstanceRequest, db: Session = Depends(get_session)):
-    """CreateInstance — requires packageId.state == AVAILABLE (D-SEC-RAPP-1,
-    unchanged). NFO handoff per Onboarding/rApp Mgmt LLD section 5: reads
-    the package's TOSCA service template and issues NFO.Instantiate.
+    """CreateInstance — requires a validated package: AVAILABLE, or PRIMED
+    (AVAILABLE plus pre-provisioned resources; D-SEC-RAPP-1); 404 for an
+    unknown package, 409 for any other state. NFO handoff per Onboarding/rApp
+    Mgmt LLD section 5: reads the package's TOSCA service template and issues
+    NFO.Instantiate; the returned nfDeploymentId is kept as workloadRef, and
+    TERMINATE hands it back to NFO. The same path provisions an upgrade's
+    replacement instance (provisioning.py).
     """
-    r1 = R1Client()
-    pkg_resp = r1.get(f"/onboarding/packages/{body.packageId}/onboarding-status")
-    if pkg_resp.status_code != 200 or pkg_resp.json().get("state") != "AVAILABLE":
-        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail="package is not AVAILABLE")
-    nf_deployment_descriptor_id = pkg_resp.json().get("nfDeploymentDescriptorId")
-    if not nf_deployment_descriptor_id:
-        # Every package that reaches AVAILABLE has one — OnboardPackage's own
-        # validation pipeline creates it via NFO's CreateDescriptor (NFO+FOCOM
-        # LLD section 2). Missing here means an inconsistent record, not a
-        # normal refusal.
-        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail="package has no nfDeploymentDescriptorId")
-
-    inst = RAppInstance(package_id=body.packageId, configuration=body.config, state=InstanceState.DEPLOYING, oauth_client_id=str(uuid.uuid4()),
-                         autonomy_mode=body.autonomyMode, region_scope=body.regionScope)
-    db.add(inst)
-    db.flush()
-
-    nfo_resp = r1.post("/nfo/deployments", json={
-        "nfDeploymentDescriptorId": nf_deployment_descriptor_id,  # the real descriptor, per section 5
-        "name": f"rapp-instance-{inst.instance_id}",  # NFO's own duplication guard (HISTORY.md §5) needs a real name
-        "requiredResourceTypeId": body.config.get("requiredResourceTypeId"),
-    })
-    # NFO Instantiate answers 202 Accepted (nfo/app/main.py) — a 200-only check
-    # dropped every real workloadRef.
-    inst.workload_ref = nfo_resp.json().get("nfDeploymentId") if nfo_resp.status_code in (200, 202) else None
-
-    usage_resp = r1.post(f"/onboarding/packages/{body.packageId}/usage/start", params={"consumer_id": str(inst.instance_id)})
-    if usage_resp.status_code == 200:
-        inst.package_usage_registration_id = uuid.UUID(usage_resp.json()["registrationId"])
+    inst = provision_instance(db, body.packageId, configuration=body.config, autonomy_mode=body.autonomyMode,
+                              region_scope=body.regionScope)
     db.commit()
     return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id}
-
-
-def _sme_provider_registration_body(provider: dict, apf_id: str) -> dict:
-    """A CSAR's own `Files/Sme/providers/*.json` may already be this
-    build's own real `ProviderRegistrationRequest` body
-    (`samples/hello-world-rapp/`'s own established convention —
-    `apfId`/`providerDomainInfo`) or the real external CAPIF
-    `APIProviderEnrolmentDetails` shape (`apiProvDomInfo`/`apiProvFuncs`,
-    grounded against `nonrtric-plt-rappmanager`'s own real sample
-    packages) — `providerDomainInfo` reads whichever key is actually
-    present. `apfId` is always this instance's own `oauth_client_id`
-    (the "one instance, one identity" convention already used for its
-    DME producer_id), never whatever a CSAR's own JSON declares — two
-    instances of the same package must never collide on one shared,
-    hardcoded apfId.
-    """
-    return {"apfId": apf_id, "providerDomainInfo": provider.get("providerDomainInfo") or provider.get("apiProvDomInfo")}
-
-
-def _sme_service_registration_body(service_api: dict, apf_id: str) -> dict:
-    """A CSAR's own `Files/Sme/serviceapis/*.json` may already be this
-    build's own real `ServiceRegistration` body
-    (`samples/hello-world-rapp/`'s own established convention —
-    `serviceName`/`endpoint`/`version`/`moduleScope`/... directly) or
-    the real external CAPIF `ServiceAPIDescription` shape
-    (`apiName`/`aefProfiles` with nested `versions`/
-    `interfaceDescriptions`, grounded against
-    `nonrtric-plt-rappmanager`'s own real sample packages) needing a
-    real field-by-field mapping — `serviceName`'s presence distinguishes
-    the two. `producerId` is always this instance's own `oauth_client_id`
-    either way, never whatever the CSAR's own JSON declares, same
-    reasoning as `_sme_provider_registration_body` above. For the real
-    CAPIF shape, serviceName/endpoint/version/moduleScope are this
-    build's own required fields with no CAPIF equivalent, so a fixed,
-    documented default fills each one where the real sample has nothing
-    to say (its own `apiVersion` is even an empty string).
-    `aefProfiles` passes through byte-for-byte in both cases: this
-    build's own field is an untyped `list[dict]`, so neither shape needs
-    lossy reshaping there.
-
-    `serviceName` is always suffixed with this instance's own apfId —
-    caught by running this against this repo's own real, already-shipped
-    demo CSAR (`samples/hello-world-rapp/`), not assumed: SME's own
-    `register_service` treats `serviceName` as globally unique across
-    every producer (`sme/app/main.py`'s own documented Section 2.3
-    rule), so a CSAR's fixed, package-level `serviceName` would
-    otherwise collide the moment a second instance of the same package
-    tries to register the identical name under its own, different
-    apfId — a real `SERVICE_NAME_CONFLICT`, not a hypothetical one.
-    """
-    if "serviceName" in service_api:
-        return {**service_api, "producerId": apf_id, "serviceName": f"{service_api['serviceName']}-{apf_id}"}
-    first_profile = (service_api.get("aefProfiles") or [{}])[0]
-    first_version = (first_profile.get("versions") or [{}])[0]
-    first_iface = (first_profile.get("interfaceDescriptions") or [{}])[0]
-    endpoint = f"http://{first_iface['ipv4Addr']}:{first_iface['port']}" if first_iface.get("ipv4Addr") else "http://unknown"
-    return {
-        "serviceName": f"{service_api.get('apiName', 'unnamed-service')}-{apf_id}", "producerId": apf_id,
-        "endpoint": endpoint, "version": first_version.get("apiVersion") or "1.0",
-        "moduleScope": "rapp", "aefProfiles": service_api.get("aefProfiles", []),
-    }
-
-
-def _register_sme_declarations(inst: RAppInstance) -> None:
-    """HISTORY.md §7's Onboarding/rApp Mgmt finding 3 (SME auto-
-    registration): real O-RAN SC rApp Manager behavior
-    (SmeDeployer.deployRappInstance) registers a package's CSAR-bundled
-    Files/Sme/providers/ + Files/Sme/serviceapis/ declarations with SME
-    per *instance*, at deploy time — not at onboarding or priming (the
-    reference's own primeRapp is a documented no-op for SME). This
-    build's own bootstrap-complete is already the established stand-in
-    for "the rApp container has bootstrapped ... and registered with
-    SME/DME" (this route's own docstring predates this actually doing
-    so) — the natural, already-grounded hook, not a new subsystem.
-
-    Uses this instance's own oauth_client_id as its SME apfId, the same
-    "one instance, one identity" convention already used for its DME
-    producer_id (statemachine.py's _reconsider_dme_registration).
-    Best-effort: an unreachable SME must never block bootstrap from
-    completing, the same "unreachable callback never fails the primary
-    operation" precedent used throughout this build.
-    """
-    r1 = R1Client()
-    pkg_resp = r1.get(f"/onboarding/packages/{inst.package_id}/onboarding-status")
-    declarations = pkg_resp.json().get("smeDeclarations") if pkg_resp.status_code == 200 else None
-    if not declarations:
-        return
-    apf_id = inst.oauth_client_id
-    try:
-        for provider in declarations.get("providers", []):
-            r1.post("/sme/provider-registrations", json=_sme_provider_registration_body(provider, apf_id))
-        service_ids = []
-        for service_api in declarations.get("serviceApis", []):
-            resp = r1.post(f"/sme/published-apis/v1/{apf_id}/service-apis", json=_sme_service_registration_body(service_api, apf_id))
-            if resp.status_code == 201:
-                service_ids.append(resp.json()["serviceId"])
-        inst.sme_service_ids = service_ids or None
-    except httpx.HTTPError:
-        pass
 
 
 @app.post("/instances/{instance_id}/bootstrap-complete")
 def bootstrap_complete(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """Called once the rApp container has bootstrapped via R1 Termination
-    and registered with SME/DME — closes DEPLOYING -> RUNNING.
+    and registered with SME/DME — closes DEPLOYING -> RUNNING. 409 if the
+    instance is not DEPLOYING.
     """
-    inst = db.get(RAppInstance, instance_id)
-    _register_sme_declarations(inst)
-    inst.state = RAPP_INSTANCE_FSM.fire(InstanceState(inst.state), InstanceEvent.BOOTSTRAP_OK, instance=inst)
+    inst = _load_instance(db, instance_id)
+    if InstanceState(inst.state) != InstanceState.DEPLOYING:
+        raise illegal_transition_error(IllegalTransition(InstanceState(inst.state), InstanceEvent.BOOTSTRAP_OK),
+                                       f"RAppInstance {instance_id}")
+    register_sme_declarations(inst)
+    inst.state = _fire(inst, InstanceEvent.BOOTSTRAP_OK)
     db.commit()
     return {"instanceId": str(inst.instance_id), "state": inst.state}
 
@@ -214,10 +136,11 @@ def recover_instance(instance_id: uuid.UUID, db: Session = Depends(get_session))
     Re-enters at the same point CreateInstance does — the container must
     re-bootstrap and call bootstrap-complete again, matching the "no
     lightweight update path" principle this build applies everywhere
-    else (e.g. AI/ML Workflow's retraining re-entry).
+    else (e.g. AI/ML Workflow's retraining re-entry). 409 from any state
+    but FAULTED.
     """
-    inst = db.get(RAppInstance, instance_id)
-    inst.state = RAPP_INSTANCE_FSM.fire(InstanceState(inst.state), InstanceEvent.RECOVER, instance=inst)
+    inst = _load_instance(db, instance_id)
+    inst.state = _fire(inst, InstanceEvent.RECOVER)
     db.commit()
     return {"instanceId": str(inst.instance_id), "state": inst.state}
 
@@ -225,23 +148,58 @@ def recover_instance(instance_id: uuid.UUID, db: Session = Depends(get_session))
 @app.post("/instances/{instance_id}/upgrade")
 def upgrade_instance(instance_id: uuid.UUID, body: UpgradeRequest, db: Session = Depends(get_session)):
     """UpgradeInstance — Annex A.1.2.2.1. Kicks off the two-row choreography
-    in upgrade.py; the actual success/failure resolution happens when the
-    new instance's own bootstrap-complete (or a timeout/fault) fires
-    resolve_upgrade — modeled here as immediate resolution for the Phase 1
-    reference (a real deployment would poll/await bootstrap-complete
-    asynchronously within upgrade_timeout_seconds).
+    in upgrade.py: the old instance (must be RUNNING, else 409) goes
+    UPGRADING and a replacement is provisioned exactly like CreateInstance
+    does (newPackageId must be AVAILABLE or PRIMED — 404 unknown, 409
+    otherwise; its own oauthClientId, NFO deployment and usage
+    registration), inheriting the old instance's configuration,
+    autonomyMode and regionScope. The outcome is reported through
+    upgrade/resolve, or the upgrade rolls back on its own once
+    upgradeTimeoutSeconds have passed unresolved.
     """
-    old = db.get(RAppInstance, instance_id)
-    new = start_upgrade(db, old, body.newPackageId)
+    old = _load_instance(db, instance_id)
+    try:
+        new = start_upgrade(db, old, body.newPackageId)
+    except IllegalTransition as exc:
+        raise illegal_transition_error(exc, f"RAppInstance {instance_id}")
     db.commit()
-    return {"newInstanceId": str(new.instance_id), "oldInstanceState": old.state}
+    return {"newInstanceId": str(new.instance_id), "oldInstanceState": old.state,
+            "oauthClientId": new.oauth_client_id}
 
 
 @app.post("/instances/{instance_id}/upgrade/resolve")
 def resolve_upgrade_outcome(instance_id: uuid.UUID, succeeded: bool, db: Session = Depends(get_session)):
-    old = db.get(RAppInstance, instance_id)
-    new = db.get(RAppInstance, old.pending_upgrade_instance_id)
-    resolve_upgrade(db, old, new, new_bootstrap_succeeded=succeeded)
+    """Resolves the upgrade pending on the OLD instance. succeeded=true
+    commits it: the replacement becomes RUNNING (registering its SME
+    declarations if it never called bootstrap-complete itself) and the old
+    instance is retired like a TERMINATE — DME/SME deregistration,
+    credential revocation, NFO Terminate, usage/stop — then deleted.
+    succeeded=false rolls back: the replacement is torn down the same way
+    and deleted, the old instance returns to RUNNING. Answers with the
+    surviving instance.
+
+    404 for an unknown instance or one with no pending upgrade; 409
+    LIFECYCLE_ILLEGAL_TRANSITION if the replacement can no longer be
+    committed (e.g. it crashed); 409 RAPP_UPGRADE_TIMED_OUT for
+    succeeded=true after upgradeTimeoutSeconds — the upgrade has already
+    been rolled back (succeeded=false after the deadline just returns the
+    rolled-back survivor).
+    """
+    old = _get_or_404(db, instance_id)
+    if old.pending_upgrade_instance_id is None:
+        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail=f"RAppInstance {instance_id} has no pending upgrade")
+    if expire_overdue_upgrade(db, old):
+        db.commit()
+        if succeeded:
+            raise framework_error(FrameworkError.RAPP_UPGRADE_TIMED_OUT,
+                                  detail=f"upgrade of RAppInstance {instance_id} exceeded upgradeTimeoutSeconds="
+                                         f"{old.upgrade_timeout_seconds} and was rolled back")
+        return {"instanceId": str(old.instance_id), "state": old.state, "packageId": str(old.package_id)}
+    new = _get_or_404(db, old.pending_upgrade_instance_id)
+    try:
+        resolve_upgrade(db, old, new, new_bootstrap_succeeded=succeeded, register_identity=register_sme_declarations)
+    except IllegalTransition as exc:
+        raise illegal_transition_error(exc, f"upgrade of RAppInstance {instance_id}")
     db.commit()
     survivor = new if succeeded else old
     return {"instanceId": str(survivor.instance_id), "state": survivor.state, "packageId": str(survivor.package_id)}
@@ -249,12 +207,20 @@ def resolve_upgrade_outcome(instance_id: uuid.UUID, succeeded: bool, db: Session
 
 @app.post("/instances/{instance_id}/terminate")
 def terminate_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    """TerminateInstance — Annex A.1.2.3. Credential revocation is part of
-    this transition itself (statemachine.py's _revoke_credential action),
-    not a separate step (closes RT-3). Also stops this instance's
-    PackageUsageRegistration — the actual fix for Onboarding's
-    cascade-delete guard, previously unreachable from ordinary rApp
-    deployment since nothing called usage/stop.
+    """TerminateInstance — Annex A.1.2.3. Legal from RUNNING, FAULTED (a
+    crashed instance is retired without recovering it first) and DEPLOYING
+    (one whose container never bootstrapped); 409 otherwise, and 409 for an
+    upgrade's pending replacement (resolve the upgrade instead).
+
+    Credential revocation is part of this transition itself
+    (statemachine.py's _revoke_credential action), not a separate step
+    (closes RT-3), after the DME/SME deregistration keyed on that
+    credential. Then the workload itself: NFO Terminate for workloadRef
+    (the nfDeploymentId CreateInstance received) and usage/stop for the
+    PackageUsageRegistration that Onboarding's deprime and cascade-delete
+    guards read. Both are best-effort — an unreachable NFO or Onboarding
+    never blocks the teardown — but their outcome is recorded in
+    lastTeardown.
 
     HISTORY.md §5: this used to delete the instance row
     outright, in the same call — undeploy and delete collapsed into one
@@ -267,13 +233,16 @@ def terminate_instance(instance_id: uuid.UUID, db: Session = Depends(get_session
     state with the row still present; removing the row itself is the
     separate `delete_instance` below.
     """
-    inst = db.get(RAppInstance, instance_id)
-    registration_id = inst.package_usage_registration_id
-    inst.state = RAPP_INSTANCE_FSM.fire(InstanceState(inst.state), InstanceEvent.TERMINATE, instance=inst)
+    inst = _load_instance(db, instance_id)
+    owner = _upgrade_owner(db, inst)
+    if owner is not None and owner.instance_id != inst.instance_id:
+        raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
+                              detail=f"RAppInstance {instance_id} is the pending replacement of an upgrade of "
+                                     f"{owner.instance_id}; resolve that upgrade instead")
+    inst.state = _fire(inst, InstanceEvent.TERMINATE)
+    inst.last_teardown = release_instance_resources(inst, "TERMINATE")
     db.commit()
-    if registration_id is not None:
-        R1Client().post(f"/onboarding/packages/{inst.package_id}/usage/{registration_id}/stop")
-    return {"instanceId": str(inst.instance_id), "state": inst.state}
+    return {"instanceId": str(inst.instance_id), "state": inst.state, "lastTeardown": inst.last_teardown}
 
 
 @app.delete("/instances/{instance_id}", status_code=204)
@@ -290,9 +259,7 @@ def delete_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     `ON DELETE CASCADE` (fixed alongside this), so this cleans them up
     explicitly as a second, directly-testable line of defense.
     """
-    inst = db.get(RAppInstance, instance_id)
-    if inst is None:
-        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
+    inst = _load_instance(db, instance_id)
     if inst.state != InstanceState.UNDEPLOYED:
         raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_UNDEPLOYED,
                                detail=f"instance {instance_id} is not UNDEPLOYED (state={inst.state})")
@@ -304,13 +271,13 @@ def delete_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.get("/instances/{instance_id}/config")
 def get_config(instance_id: uuid.UUID, db: Session = Depends(get_session)):
-    inst = db.get(RAppInstance, instance_id)
+    inst = _get_or_404(db, instance_id)
     return inst.configuration or {}
 
 
 @app.put("/instances/{instance_id}/config")
 def set_config(instance_id: uuid.UUID, config: dict, db: Session = Depends(get_session)):
-    inst = db.get(RAppInstance, instance_id)
+    inst = _get_or_404(db, instance_id)
     inst.configuration = config
     db.commit()
     return {"status": "updated"}
@@ -318,6 +285,7 @@ def set_config(instance_id: uuid.UUID, config: dict, db: Session = Depends(get_s
 
 @app.post("/instances/{instance_id}/performance")
 def report_performance(instance_id: uuid.UUID, metrics: dict, db: Session = Depends(get_session)):
+    _get_or_404(db, instance_id)
     db.add(RAppPerformanceReport(instance_id=instance_id, metrics=metrics))
     db.commit()
     return {"status": "recorded"}
@@ -325,10 +293,14 @@ def report_performance(instance_id: uuid.UUID, metrics: dict, db: Session = Depe
 
 @app.post("/instances/{instance_id}/fault")
 def report_fault(instance_id: uuid.UUID, severity: str, description: str = "", db: Session = Depends(get_session)):
-    inst = db.get(RAppInstance, instance_id)
-    db.add(RAppFaultReport(instance_id=instance_id, severity=severity, description=description))
+    """Records every fault report; severity=critical additionally fires
+    CRASH (RUNNING -> FAULTED). A critical fault on an instance that is not
+    RUNNING is refused with 409 and not recorded.
+    """
+    inst = _load_instance(db, instance_id)
     if severity == "critical":
-        inst.state = RAPP_INSTANCE_FSM.fire(InstanceState(inst.state), InstanceEvent.CRASH, instance=inst)
+        inst.state = _fire(inst, InstanceEvent.CRASH)
+    db.add(RAppFaultReport(instance_id=instance_id, severity=severity, description=description))
     db.commit()
     return {"status": "recorded", "instanceState": inst.state}
 
@@ -336,6 +308,11 @@ def report_fault(instance_id: uuid.UUID, severity: str, description: str = "", d
 @app.get("/instances")
 def list_instances(state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                     db: Session = Depends(get_session)):
+    # lazy upgradeTimeoutSeconds enforcement (upgrade.py) for every upgrade in flight
+    overdue = [old for old in db.scalars(select(RAppInstance).where(RAppInstance.state == InstanceState.UPGRADING))
+               if expire_overdue_upgrade(db, old)]
+    if overdue:
+        db.commit()
     stmt = select(RAppInstance)
     if state:
         stmt = stmt.where(RAppInstance.state == state)
@@ -361,17 +338,19 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     bootstrap-complete's own SME auto-registration received back —
     HISTORY.md §7's Onboarding/rApp Mgmt finding 3, closed), and the
     caller-supplied configuration, alongside the identity/state fields
-    list_instances already returns.
+    list_instances already returns. lastTeardown is the recorded outcome of
+    the most recent NFO Terminate / usage/stop this row performed or
+    inherited through an upgrade. Reading an instance enforces its
+    upgrade's upgradeTimeoutSeconds (an overdue upgrade rolls back).
     """
-    inst = db.get(RAppInstance, instance_id)
-    if inst is None:
-        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
+    inst = _load_instance(db, instance_id)
     return {
         "instanceId": str(inst.instance_id), "packageId": str(inst.package_id), "state": inst.state,
         "workloadRef": inst.workload_ref, "configuration": inst.configuration,
         "pendingUpgradeInstanceId": str(inst.pending_upgrade_instance_id) if inst.pending_upgrade_instance_id else None,
         "smeServiceIds": inst.sme_service_ids,
         "autonomyMode": inst.autonomy_mode, "regionScope": inst.region_scope,
+        "lastTeardown": inst.last_teardown,
     }
 
 
@@ -382,8 +361,7 @@ def list_performance_reports(instance_id: uuid.UUID, limit: int = PageLimit, off
     an operator had no way to see what an rApp had reported at all.
     Newest first (the GUI's KPI sparkline only ever wants the recent tail).
     """
-    if db.get(RAppInstance, instance_id) is None:
-        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
+    _get_or_404(db, instance_id)
     stmt = select(RAppPerformanceReport).where(RAppPerformanceReport.instance_id == instance_id).order_by(RAppPerformanceReport.reported_at.desc())
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"reportId": str(r.id), "metrics": r.metrics, "reportedAt": r.reported_at.isoformat()} for r in page["items"]]}
@@ -393,8 +371,7 @@ def list_performance_reports(instance_id: uuid.UUID, limit: int = PageLimit, off
 def list_fault_reports(instance_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
                         db: Session = Depends(get_session)):
     """Read side of report_fault above, same shape as list_performance_reports."""
-    if db.get(RAppInstance, instance_id) is None:
-        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
+    _get_or_404(db, instance_id)
     stmt = select(RAppFaultReport).where(RAppFaultReport.instance_id == instance_id).order_by(RAppFaultReport.reported_at.desc())
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"faultId": str(r.id), "severity": r.severity, "description": r.description,

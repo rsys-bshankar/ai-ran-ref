@@ -563,15 +563,32 @@ def test_request_training_while_already_training_cancels_the_orphaned_job(client
     assert lifecycle["modelLifecycleState"] == ModelLifecycleState.TRAINING  # unchanged — no FSM transition needed, it was already TRAINING
 
 
-def test_request_training_rejected_mid_certification_pipeline(client, mlmr, db_session_factory):
-    """A model mid certification (never yet PROMOTED) has no legal
-    CREATE_TRAINING transition — this must be a clean 409, not an
-    unhandled IllegalTransition crash.
+@pytest.mark.parametrize("state", [ModelLifecycleState.TRAINED, ModelLifecycleState.APPROVED, ModelLifecycleState.PENDING_APPROVAL,
+                                   ModelLifecycleState.DEPRECATED, ModelLifecycleState.RETIRED])
+def test_request_training_rejected_mid_pipeline_or_end_of_life_names_the_state(client, mlmr, db_session_factory, state):
+    """A model mid certification, or at end of life, has no legal
+    CREATE_TRAINING transition — a clean 409 naming the state
+    (OI-2-training-lifecycle-edges: not MODEL_NOT_CERTIFIED for all of them).
     """
     model_id = mlmr.add_model()
-    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=state)
     resp = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
     assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "LIFECYCLE_ILLEGAL_TRANSITION"
+    assert str(state) in resp.json()["detail"]["detail"]
+
+
+def test_a_rolled_back_certified_model_can_be_retrained(client, mlmr, db_session_factory):
+    """OI-2-training-lifecycle-edges: PROMOTED -ROLLBACK-> CERTIFIED must not
+    be a dead end — CREATE_TRAINING is legal from CERTIFIED."""
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
+    assert client.post(f"/models/{model_id}/advance", params={"event": "ROLLBACK", "decided_by": "op"}).status_code == 200
+    resp = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
+    assert resp.status_code == 201
+    lifecycle = client.get(f"/models/{model_id}/lifecycle").json()
+    assert lifecycle["modelLifecycleState"] == ModelLifecycleState.TRAINING
+    assert client.get(f"/training-jobs/{resp.json()['trainingJobId']}/status").json()["mlTrainingType"] == "RE_TRAINING"
 
 
 def _make_group_with_subscription(mlmr, db_session_factory, member_states, retrain_propagation="ANY_MEMBER_TRIGGERS"):
@@ -653,7 +670,8 @@ def test_request_validation_requires_trained_model(client, mlmr, db_session_fact
     model_id = mlmr.add_model()
     resp = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
     assert resp.status_code == 409
-    assert resp.json()["detail"]["title"] == "MODEL_NOT_CERTIFIED"
+    assert resp.json()["detail"]["title"] == "LIFECYCLE_ILLEGAL_TRANSITION"
+    assert "REGISTERED" in resp.json()["detail"]["detail"]
 
 
 def test_request_validation_requires_operator_approval_of_training(client, mlmr, db_session_factory):
@@ -757,10 +775,43 @@ def test_list_emulation_jobs_filters_by_model(client, mlmr, db_session_factory):
 
 def test_advance_model_lifecycle_fires_the_requested_event(client, mlmr, db_session_factory):
     model_id = mlmr.add_model()
-    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINING)
-    resp = client.post(f"/models/{model_id}/advance", params={"event": "TRAINING_COMPLETE"})
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
+    resp = client.post(f"/models/{model_id}/advance", params={"event": "APPROVE_TRAINING", "decided_by": "op"})
     assert resp.status_code == 200
-    assert resp.json()["modelLifecycleState"] == ModelLifecycleState.TRAINED
+    assert resp.json()["trainingApproved"] is True
+
+
+@pytest.mark.parametrize("event", ["CREATE_TRAINING", "TRAINING_COMPLETE", "TRAINING_FAILED", "CREATE_VALIDATION",
+                                   "VALIDATION_COMPLETE", "VALIDATION_FAILED", "CREATE_EMULATION", "EMULATION_COMPLETE",
+                                   "EMULATION_FAILED"])
+def test_advance_refuses_job_driven_events(client, mlmr, db_session_factory, event):
+    """OI-2-governance-bypass: a job-driven event can't be fired bare —
+    422 naming the job route, and the lifecycle is untouched."""
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
+    resp = client.post(f"/models/{model_id}/advance", params={"event": event, "decided_by": "op"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
+    assert "job-driven" in resp.json()["detail"]["detail"]
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.TRAINED
+    assert client.get(f"/models/{model_id}/lifecycle-history").json()["items"] == []
+
+
+def test_advance_cannot_skip_the_operator_approval_gate(client, mlmr, db_session_factory):
+    """The HISTORY.md OI-6.1 gate: CREATE_VALIDATION from an unapproved
+    TRAINED model used to succeed through advance."""
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
+    assert client.post(f"/models/{model_id}/advance", params={"event": "CREATE_VALIDATION"}).status_code == 422
+    resp = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
+    assert resp.json()["detail"]["title"] == "TRAINING_NOT_APPROVED"
+
+
+def test_advance_unknown_event_is_a_clean_422_not_a_500(client, mlmr):
+    model_id = mlmr.add_model()
+    resp = client.post(f"/models/{model_id}/advance", params={"event": "NOT_AN_EVENT"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
 
 
 def test_advance_model_lifecycle_for_unknown_model_is_404(client, mlmr):
@@ -770,7 +821,7 @@ def test_advance_model_lifecycle_for_unknown_model_is_404(client, mlmr):
 
 def test_advance_model_lifecycle_illegal_transition_is_a_clean_409(client, mlmr):
     model_id = mlmr.add_model()
-    resp = client.post(f"/models/{model_id}/advance", params={"event": "TRAINING_COMPLETE"})
+    resp = client.post(f"/models/{model_id}/advance", params={"event": "CERTIFY", "decided_by": "op"})
     assert resp.status_code == 409
     assert resp.json()["detail"]["title"] == "LIFECYCLE_ILLEGAL_TRANSITION"
 
@@ -828,11 +879,12 @@ def test_deprecate_and_retire_do_not_require_decided_by(client, mlmr, db_session
 
 def test_lifecycle_history_records_every_transition(client, mlmr, db_session_factory):
     model_id = mlmr.add_model()
-    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINING)
-    client.post(f"/models/{model_id}/advance", params={"event": "TRAINING_COMPLETE"})
+    job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    client.post(f"/training-jobs/{job_id}/complete", json={"succeeded": True})
 
     history = client.get(f"/models/{model_id}/lifecycle-history").json()["items"]
-    assert history == [{"fsm": "MODEL", "fromState": "TRAINING", "toState": "TRAINED", "event": "TRAINING_COMPLETE", "occurredAt": history[0]["occurredAt"]}]
+    assert [(h["fsm"], h["fromState"], h["toState"], h["event"]) for h in history] == [
+        ("MODEL", "REGISTERED", "TRAINING", "CREATE_TRAINING"), ("MODEL", "TRAINING", "TRAINED", "TRAINING_COMPLETE")]
 
 
 def test_list_model_lifecycles_returns_every_touched_model(client, mlmr, db_session_factory):
@@ -1298,3 +1350,148 @@ def test_create_feature_group_stores_enable_dme_and_dme_fields(client):
     assert body["sourceName"] == "ran-nf-oam"
     assert body["dmePort"] == "8000"
     assert body["measuredObjClass"] == "NRCellDU"
+
+
+# ---------------------------------------------------------------- OI-2-training-lifecycle-edges: cancel
+
+def test_cancel_training_releases_the_model_and_tears_down_its_runtime(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    assert len(mlmr.nfo.deployments) == 1
+
+    assert client.delete(f"/training-jobs/{job_id}").status_code == 204
+    assert client.get(f"/training-jobs/{job_id}/status").json()["status"] == "CANCELLED"
+    assert mlmr.nfo.deployments == {}
+    lifecycle = client.get(f"/models/{model_id}/lifecycle").json()
+    assert lifecycle["modelLifecycleState"] == ModelLifecycleState.FAILED  # TRAINING_FAILED — no longer stuck TRAINING
+    history = client.get(f"/models/{model_id}/lifecycle-history").json()["items"]
+    assert history[-1]["event"] == "TRAINING_FAILED"
+    # FAILED is the retry point
+    assert client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).status_code == 201
+
+
+def test_cancel_a_suspended_training_job_also_releases_the_model(client, mlmr):
+    model_id = mlmr.add_model()
+    job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    client.post(f"/training-jobs/{job_id}/suspend")
+    assert client.delete(f"/training-jobs/{job_id}").status_code == 204
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.FAILED
+
+
+@pytest.mark.parametrize("succeeded,status", [(True, "FINISHED"), (False, "FAILED")])
+def test_cancel_refuses_a_finished_job_and_leaves_it_untouched(client, mlmr, succeeded, status):
+    model_id = mlmr.add_model()
+    job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    client.post(f"/training-jobs/{job_id}/complete", json={"succeeded": succeeded})
+    state_before = client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"]
+
+    resp = client.delete(f"/training-jobs/{job_id}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "TRAINING_JOB_ILLEGAL_TRANSITION"
+    assert client.get(f"/training-jobs/{job_id}/status").json()["status"] == status
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == state_before
+
+
+def test_cancel_is_idempotent_for_unknown_or_already_cancelled_jobs(client, mlmr):
+    assert client.delete(f"/training-jobs/{uuid.uuid4()}").status_code == 204
+    model_id = mlmr.add_model()
+    job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    assert client.delete(f"/training-jobs/{job_id}").status_code == 204
+    assert client.delete(f"/training-jobs/{job_id}").status_code == 204
+    history = client.get(f"/models/{model_id}/lifecycle-history").json()["items"]
+    assert [h["event"] for h in history] == ["CREATE_TRAINING", "TRAINING_FAILED"]  # fired once
+
+
+def test_cancelling_a_superseded_job_never_fails_the_newer_run(client, mlmr, db_session_factory):
+    """Only the model's current run releases it — a run a newer request
+    already superseded (and so is CANCELLED) is a no-op either way, and a
+    coordination-group job never touches a model."""
+    model_id = mlmr.add_model()
+    first = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
+    assert client.delete(f"/training-jobs/{first}").status_code == 204
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.TRAINING
+
+
+# ---------------------------------------------------------------- OI-2-model-eol-serving
+
+def _serving_model(client, mlmr, db_session_factory, state=ModelLifecycleState.PROMOTED):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
+    client.post(f"/models/{model_id}/runtime/deploy")
+    client.post(f"/models/{model_id}/runtime/activate")
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=state)
+    return model_id
+
+
+def test_deprecated_model_keeps_serving_but_its_runtime_cannot_be_activated_or_scaled(client, mlmr, db_session_factory):
+    model_id = _serving_model(client, mlmr, db_session_factory)
+    assert client.post(f"/models/{model_id}/advance", params={"event": "DEPRECATE"}).status_code == 200
+    # still serving existing consumers
+    assert client.post(f"/models/{model_id}/inference-jobs").status_code == 201
+    assert client.get(f"/models/{model_id}/lifecycle").json()["runtimeLifecycleState"] == RuntimeLifecycleState.ACTIVE
+
+    resp = client.post(f"/models/{model_id}/runtime/scale")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "LIFECYCLE_ILLEGAL_TRANSITION"
+    assert "DEPRECATED" in resp.json()["detail"]["detail"]
+    deployment_id = client.get(f"/models/{model_id}/lifecycle").json()["nfDeploymentId"]
+    assert mlmr.nfo.deployments[deployment_id]["scaled"] == 0
+    # no new deploy for a deprecated model either
+    assert client.post(f"/models/{model_id}/runtime/deploy").status_code == 409
+
+
+def test_deprecated_model_runtime_cannot_be_activated(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
+    client.post(f"/models/{model_id}/runtime/deploy")
+    client.post(f"/models/{model_id}/advance", params={"event": "DEPRECATE"})
+    resp = client.post(f"/models/{model_id}/runtime/activate")
+    assert resp.status_code == 409
+    assert "DEPRECATED" in resp.json()["detail"]["detail"]
+    assert client.get(f"/models/{model_id}/lifecycle").json()["runtimeLifecycleState"] == RuntimeLifecycleState.DEPLOYED
+
+
+def test_retire_terminates_the_runtime_through_nfo_and_records_it(client, mlmr, db_session_factory):
+    model_id = _serving_model(client, mlmr, db_session_factory)
+    deployment_id = client.get(f"/models/{model_id}/lifecycle").json()["nfDeploymentId"]
+    client.post(f"/models/{model_id}/advance", params={"event": "DEPRECATE"})
+
+    retired = client.post(f"/models/{model_id}/advance", params={"event": "RETIRE"})
+    assert retired.status_code == 200
+    assert retired.json()["modelLifecycleState"] == ModelLifecycleState.RETIRED
+    assert retired.json()["runtimeLifecycleState"] == RuntimeLifecycleState.TERMINATED
+    assert deployment_id not in mlmr.nfo.deployments
+    runtime_history = client.get(f"/models/{model_id}/lifecycle-history", params={"fsm": "RUNTIME"}).json()["items"]
+    assert [h["event"] for h in runtime_history][-2:] == ["REQUEST_TERMINATION", "TERMINATION_COMPLETE"]
+
+    resp = client.post(f"/models/{model_id}/inference-jobs")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "INFERENCE_MODEL_NOT_ACTIVE"
+    assert client.post(f"/models/{model_id}/runtime/activate").status_code == 409
+    assert client.post(f"/models/{model_id}/runtime/scale").status_code == 409
+
+
+def test_retire_without_a_runtime_touches_no_runtime(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.FAILED)
+    retired = client.post(f"/models/{model_id}/advance", params={"event": "RETIRE"}).json()
+    assert (retired["modelLifecycleState"], retired["runtimeLifecycleState"]) == ("RETIRED", "NOT_DEPLOYED")
+
+
+def test_retire_of_a_failed_model_still_serving_from_before_its_retrain_terminates_it(client, mlmr, db_session_factory):
+    """PROMOTED -> retrain -> TRAINING_FAILED keeps the old runtime (the two
+    FSMs are decoupled); RETIRE from FAILED must still tear it down."""
+    model_id = _serving_model(client, mlmr, db_session_factory, state=ModelLifecycleState.FAILED)
+    retired = client.post(f"/models/{model_id}/advance", params={"event": "RETIRE"}).json()
+    assert retired["runtimeLifecycleState"] == RuntimeLifecycleState.TERMINATED
+    assert mlmr.nfo.deployments == {}
+
+
+def test_retired_model_with_a_stale_active_runtime_refuses_inference(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.RETIRED,
+                   runtime_lifecycle_state=RuntimeLifecycleState.ACTIVE)
+    resp = client.post(f"/models/{model_id}/inference-jobs")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["detail"] == "model is RETIRED"

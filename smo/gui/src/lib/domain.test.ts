@@ -1,14 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import { countBySeverity, keepAliveRemaining, metricSeries, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
+import { completionRoute, countBySeverity, keepAliveRemaining, metricSeries, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
 
 describe("model lifecycle", () => {
   it("maps each state to the FSM's next legal action", () => {
     expect(modelActions("REGISTERED")).toEqual([{ kind: "train", label: "Request training" }]);
-    expect(modelActions("TRAINING").map((a) => a.kind === "advance" && a.event)).toEqual(["TRAINING_COMPLETE"]);
+    // job-driven completions go through the job's own /complete route, never advance
+    expect(modelActions("TRAINING")).toEqual([{ kind: "complete", stage: "training", label: "Training complete" }]);
+    expect(modelActions("VALIDATING").map((a) => a.kind === "complete" && a.stage)).toEqual(["validation"]);
+    expect(modelActions("EMULATING").map((a) => a.kind === "complete" && a.stage)).toEqual(["emulation"]);
+    expect(modelActions("CERTIFIED").map((a) => (a.kind === "advance" ? a.event : a.kind))).toEqual(["PROMOTE", "train", "DEPRECATE"]);
     expect(modelActions("EMULATED").map((a) => a.kind === "advance" && a.event)).toEqual(["SUBMIT_FOR_APPROVAL"]);
     expect(modelActions("PROMOTED").map((a) => (a.kind === "advance" ? a.event : a.kind))).toEqual(["train", "ROLLBACK", "DEPRECATE"]);
     expect(modelActions("DEPRECATED").map((a) => (a.kind === "advance" ? a.event : a.kind))).toEqual(["RETIRE"]);
+  });
+
+  it("routes each completion to its job's /complete route", () => {
+    expect(completionRoute("training")).toEqual({ jobsPath: "/aimgf/training-jobs", runningStatus: "IN_PROGRESS", idKey: "trainingJobId" });
+    expect(completionRoute("validation").jobsPath).toBe("/aimgf/validation-jobs");
+    expect(completionRoute("emulation").idKey).toBe("emulationJobId");
   });
 
   it("marks stepper progress", () => {

@@ -138,6 +138,9 @@ RULES: list[Rule] = [
     _rule("DELETE", "/aimgf/training-jobs/{id}", O),        # cancel, not a hard delete
     _rule("POST", "/aimgf/training-jobs/{id}/model-metrics", O),
     _rule("POST", "/aimgf/training-jobs/{id}/(suspend|resume)", O),  # Wave 3: same tier as cancel
+    # Training completes only through its job route — AIMgF's advance refuses
+    # TRAINING_COMPLETE (OI-2-governance-bypass); same tier as the validation/emulation completes.
+    _rule("POST", "/aimgf/training-jobs/{id}/complete", O),
     _rule("POST", "/aimgf/validation-jobs", O),
     _rule("POST", "/aimgf/validation-jobs/{id}/complete", O),
     _rule("POST", "/aimgf/emulation-jobs", O),

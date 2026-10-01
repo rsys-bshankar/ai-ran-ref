@@ -831,19 +831,31 @@ print(r.status_code, r.json())
 "
 ```
 
-**Advance the model through its lifecycle FSM** (AIMgF), one transition
-per event:
+**Drive the model through its governed lifecycle** (AIMgF). Each stage
+completes through its job route, and the operator gates and governance
+decisions name who decided (call flow 26):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-for event in ['TRAINING_COMPLETE', 'VALIDATION_COMPLETE', 'CERTIFY', 'LOAD', 'ACTIVATE']:
-    r = httpx.post('http://aimgf:8000/models/<modelId>/advance', params={'event': event})
-    print(event, '->', r.status_code, r.json()['state'])
+A, M, who = 'http://aimgf:8000', '<modelId>', {'decided_by': 'noc-operator'}
+def ok(r): assert r.status_code < 300, (r.status_code, r.text); return r.json()
+ok(httpx.post(f'{A}/training-jobs/<trainingJobId>/complete', json={'succeeded': True, 'metrics': {'accuracy': 0.94}}))
+ok(httpx.post(f'{A}/models/{M}/advance', params={'event': 'APPROVE_TRAINING', **who}))
+v = ok(httpx.post(f'{A}/validation-jobs', json={'modelId': M, 'producerId': 'hello-world-rapp'}))
+ok(httpx.post(f'{A}/validation-jobs/{v[\"validationJobId\"]}/complete', json={'succeeded': True, 'metrics': {}}))
+ok(httpx.post(f'{A}/models/{M}/advance', params={'event': 'APPROVE_VALIDATION', **who}))
+e = ok(httpx.post(f'{A}/emulation-jobs', json={'modelId': M, 'producerId': 'hello-world-rapp'}))
+ok(httpx.post(f'{A}/emulation-jobs/{e[\"emulationJobId\"]}/complete', json={'succeeded': True, 'metrics': {}}))
+for event in ['SUBMIT_FOR_APPROVAL', 'APPROVE', 'CERTIFY', 'PROMOTE']:
+    ok(httpx.post(f'{A}/models/{M}/advance', params={'event': event, **who}))
+print(ok(httpx.get(f'{A}/models/{M}/lifecycle'))['modelLifecycleState'])
 "
 ```
 
-The ending state is `ACTIVE`. **Deploy the model** (MLLF) — stamps
+The ending state is `PROMOTED`. A job-driven event posted to `advance`
+(for example `TRAINING_COMPLETE`) is refused with 422 and names the job
+route to use. **Deploy the model** (MLLF) — stamps
 `clearedNodeGroups` onto MLMR's row (LLD section 5):
 
 ```bash

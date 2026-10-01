@@ -137,8 +137,23 @@ class FrameworkError:
     CM_SCHEMA_CONFLICT = ("CM_SCHEMA_CONFLICT", 409)
     MANAGED_ENTITY_NOT_FOUND = ("MANAGED_ENTITY_NOT_FOUND", 404)
     INFERENCE_JOB_NOT_FOUND = ("INFERENCE_JOB_NOT_FOUND", 404)
+    # OI-2-lcm-error-mapping — Onboarding's usage/stop on an unknown (or
+    # another package's) registration id, and an rApp upgrade resolved
+    # after its upgradeTimeoutSeconds deadline (already rolled back).
+    PACKAGE_USAGE_REGISTRATION_NOT_FOUND = ("PACKAGE_USAGE_REGISTRATION_NOT_FOUND", 404)
+    RAPP_UPGRADE_TIMED_OUT = ("RAPP_UPGRADE_TIMED_OUT", 409)
 
 
 def framework_error(code: tuple[str, int], detail: str | None = None) -> HTTPException:
     title, status = code
     return problem(status, title, detail)
+
+
+def illegal_transition_error(exc, subject: str) -> HTTPException:
+    """409 LIFECYCLE_ILLEGAL_TRANSITION for a `smo_shared.statemachine.
+    IllegalTransition` raised by a lifecycle route — naming the entity,
+    its current state and the refused event, instead of the unhandled
+    500 the exception otherwise becomes.
+    """
+    return framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
+                           detail=f"{subject}: event {exc.event} is not allowed in state {exc.state}")

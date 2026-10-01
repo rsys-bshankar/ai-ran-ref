@@ -321,9 +321,12 @@ def test_update_request_fine_tunes_every_model_and_reports_when_all_done(client,
 
 
 def test_update_request_rejects_untrainable_model_and_cancel_stops_runs(client, mlmr, db_session_factory):
-    certified = mlmr.add_model()
-    _set_lifecycle(db_session_factory, certified, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
-    assert client.post("/ml-update-requests", json={"mLModelRefList": [str(certified)]}).status_code == 409
+    deprecated = mlmr.add_model()
+    _set_lifecycle(db_session_factory, deprecated, model_lifecycle_state=ModelLifecycleState.DEPRECATED)
+    resp = client.post("/ml-update-requests", json={"mLModelRefList": [str(deprecated)]})
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "LIFECYCLE_ILLEGAL_TRANSITION"
+    assert "DEPRECATED" in resp.json()["detail"]["detail"]
 
     models = _promoted_models(mlmr, db_session_factory, n=1)
     request = client.post("/ml-update-requests", json={"mLModelRefList": [str(models[0])]}).json()
@@ -331,6 +334,15 @@ def test_update_request_rejects_untrainable_model_and_cancel_stops_runs(client, 
     assert cancelled["requestStatus"] == "CANCELLED"
     job_id = _attrs(client.get(f"/ml-update-processes/{cancelled['mLUpdateProcessRef']}"))["trainingRequestRefList"][0]
     assert _attrs(client.get(f"/ml-training-requests/{job_id}"))["requestStatus"] == "CANCELLED"
+    # the cancelled run releases its model from TRAINING (OI-2-training-lifecycle-edges)
+    assert client.get(f"/models/{models[0]}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.FAILED
+
+
+def test_update_request_accepts_a_certified_model(client, mlmr, db_session_factory):
+    certified = mlmr.add_model()
+    _set_lifecycle(db_session_factory, certified, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
+    assert client.post("/ml-update-requests", json={"mLModelRefList": [str(certified)]}).status_code == 201
+    assert client.get(f"/models/{certified}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.TRAINING
 
 
 def test_unknown_nrm_object_is_a_clean_404(client):
@@ -342,3 +354,21 @@ def test_unknown_nrm_object_is_a_clean_404(client):
         resp = client.get(f"/{path}/{uuid.uuid4()}")
         assert resp.status_code == 404, path
         assert resp.json()["detail"]["title"] == "NRM_OBJECT_NOT_FOUND"
+
+
+def test_nrm_cancel_of_a_training_request_releases_the_model(client, mlmr):
+    """OI-2-training-lifecycle-edges: the NRM cancel flags share DELETE
+    /training-jobs/{id}'s cancel path."""
+    model_id = mlmr.add_model()
+    request_id = client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x"}).json()["id"]
+    assert _attrs(client.patch(f"/ml-training-requests/{request_id}", json={"cancelRequest": True}))["requestStatus"] == "CANCELLED"
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.FAILED
+
+    other = mlmr.add_model()
+    request_id = client.post("/ml-training-requests", json={"mLModelRef": str(other), "trainingRequestSource": "x"}).json()["id"]
+    process_id = [p for p in client.get("/ml-training-processes").json()["items"]
+                  if p["attributes"]["trainingRequestRef"] == [request_id]][0]["id"]
+    client.patch(f"/ml-training-processes/{process_id}", json={"cancelProcess": True})
+    assert client.get(f"/models/{other}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.FAILED
+    # DELETE of a finished/cancelled request stays a no-op
+    assert client.delete(f"/ml-training-requests/{request_id}").status_code == 204

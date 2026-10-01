@@ -133,7 +133,7 @@ smo/
   docs/
     ARCHITECTURE.md         platform baseline, service ownership, O1 vendor onboarding
     ROADMAP.md              waves, compliance matrices, runtime realisation
-    call-flows/             25 Mermaid sequence diagrams of end-to-end journeys
+    call-flows/             27 Mermaid sequence diagrams of end-to-end journeys
     openapi/                committed OpenAPI spec per service, checked against the live schema
 ```
 
@@ -160,6 +160,6 @@ smo/
 | [`HISTORY.md`](HISTORY.md) | Condensed closed history, spec audit, wave exit reviews |
 | [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md) | Command-by-command live demo against `docker compose up` |
 | [`CLAUDE.md`](CLAUDE.md) | Working practice, conventions, full test battery |
-| [`docs/call-flows/`](docs/call-flows/) | One Mermaid sequence diagram per end-to-end journey (01–25) |
+| [`docs/call-flows/`](docs/call-flows/) | One Mermaid sequence diagram per end-to-end journey (01–27) |
 | [`docs/openapi/`](docs/openapi/) | Generated OpenAPI spec per service |
 | [`gui/README.md`](gui/README.md) | Operator GUI: running it, roles, security, pages, screenshots |

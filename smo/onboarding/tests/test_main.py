@@ -409,15 +409,11 @@ def test_onboard_routes_to_failed_for_a_byte_identical_duplicate_package(client,
     assert second_status.json()["state"] == "FAILED"
 
 
-def test_onboarding_status_for_unknown_package_reuses_dme_type_version_conflict(client):
-    """query_onboarding_status's own comment calls this a "404-shaped
-    reuse", but DME_TYPE_VERSION_CONFLICT is actually a 409
-    (smo_shared/errors.py) — asserting the real status code, not the
-    comment's description of it.
-    """
+def test_onboarding_status_for_unknown_package_is_404(client):
+    """OI-2-lcm-error-mapping: was a 409 DME_TYPE_VERSION_CONFLICT reuse."""
     resp = client.get(f"/packages/{uuid.uuid4()}/onboarding-status")
-    assert resp.status_code == 409
-    assert resp.json()["detail"]["title"] == "DME_TYPE_VERSION_CONFLICT"
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["title"] == "PACKAGE_NOT_FOUND"
 
 
 def _make_available_package(client, monkeypatch, integrity_hash="deadbeef") -> str:
@@ -684,3 +680,126 @@ def test_onboard_parses_execution_modes_and_runtime_profiles(client, monkeypatch
 def test_onboard_fails_on_an_invalid_runtime_profile(client, monkeypatch, profiles):
     pkg = _onboard_with_manifest(client, monkeypatch, profiles)
     assert pkg["state"] == "FAILED"
+
+
+# ---------------------------------------------------------------- OI-2-package-redeploy
+
+@pytest.mark.parametrize("earlier_state", ["DELETING", "FAILED"])
+def test_a_csar_can_be_onboarded_again_once_its_package_is_deleted_or_failed(client, db_session_factory, monkeypatch, earlier_state):
+    """The duplicate-hash check ignores DELETING (terminal) and FAILED
+    packages, so the same CSAR is not locked out forever."""
+    package_bytes = _real_package_bytes()
+    _mock_fetch(monkeypatch, package_bytes)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+    first_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+    with db_session_factory() as session:
+        session.get(ApplicationPackage, uuid.UUID(first_id)).state = earlier_state
+        session.commit()
+
+    second_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+
+    assert client.get(f"/packages/{second_id}/onboarding-status").json()["state"] == "AVAILABLE"
+
+
+def test_a_deleted_package_can_be_onboarded_again_end_to_end(client, monkeypatch):
+    _mock_fetch(monkeypatch, _real_package_bytes())
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+    first_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+    assert client.delete(f"/packages/{first_id}").json()["state"] == "DELETING"
+
+    second_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+    assert client.get(f"/packages/{second_id}/onboarding-status").json()["state"] == "AVAILABLE"
+
+
+@pytest.mark.parametrize("earlier_state", ["AVAILABLE", "PRIMED", "DEPRECATED"])
+def test_a_live_package_still_blocks_a_duplicate(client, db_session_factory, monkeypatch, earlier_state):
+    _mock_fetch(monkeypatch, _real_package_bytes())
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+    first_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+    with db_session_factory() as session:
+        session.get(ApplicationPackage, uuid.UUID(first_id)).state = earlier_state
+        session.commit()
+
+    second_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
+    assert client.get(f"/packages/{second_id}/onboarding-status").json()["state"] == "FAILED"
+
+
+# ---------------------------------------------------------------- OI-2-lcm-error-mapping
+
+def _set_state(db_session_factory, package_id, state):
+    with db_session_factory() as session:
+        session.get(ApplicationPackage, uuid.UUID(package_id)).state = state
+        session.commit()
+
+
+@pytest.mark.parametrize("route,state,event", [
+    ("deprecate", "PRIMED", "DEPRECATE"),
+    ("deprecate", "DEPRECATED", "DEPRECATE"),
+    ("prime", "DEPRECATED", "PRIME"),
+    ("prime", "PRIMED", "PRIME"),
+    ("deprime", "AVAILABLE", "DEPRIME"),
+    ("cancel-delete", "AVAILABLE", "CANCEL_DELETE"),
+])
+def test_illegal_lifecycle_events_are_409_naming_state_and_event(client, db_session_factory, monkeypatch, route, state, event):
+    package_id = _make_available_package(client, monkeypatch)
+    _set_state(db_session_factory, package_id, state)
+
+    resp = client.post(f"/packages/{package_id}/{route}")
+
+    assert resp.status_code == 409
+    problem = resp.json()["detail"]
+    assert problem["title"] == "LIFECYCLE_ILLEGAL_TRANSITION"
+    assert f"event {event}" in problem["detail"] and f"state {state}" in problem["detail"]
+
+
+@pytest.mark.parametrize("state", ["PRIMED", "DELETING", "ONBOARDING"])
+def test_delete_from_a_state_with_no_delete_edge_is_an_illegal_transition_not_a_dependent(client, db_session_factory, monkeypatch, state):
+    """DELETE on a PRIMED package used to report "blocked by a dependent";
+    it is simply not allowed from PRIMED."""
+    package_id = _make_available_package(client, monkeypatch)
+    _set_state(db_session_factory, package_id, state)
+
+    resp = client.delete(f"/packages/{package_id}")
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "LIFECYCLE_ILLEGAL_TRANSITION"
+    assert f"state {state}" in resp.json()["detail"]["detail"]
+
+
+@pytest.mark.parametrize("method,path", [
+    ("post", "/packages/{id}/deprecate"), ("post", "/packages/{id}/prime"), ("post", "/packages/{id}/deprime"),
+    ("post", "/packages/{id}/cancel-delete"), ("delete", "/packages/{id}"),
+    ("get", "/packages/{id}/artifacts"), ("get", "/packages/{id}/usage"),
+])
+def test_unknown_package_is_404_on_every_lifecycle_route(client, method, path):
+    resp = getattr(client, method)(path.format(id=uuid.uuid4()))
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["title"] == "PACKAGE_NOT_FOUND"
+
+
+def test_usage_start_on_an_unknown_package_is_404(client):
+    resp = client.post(f"/packages/{uuid.uuid4()}/usage/start", params={"consumer_id": "i-1"})
+    assert resp.status_code == 404
+
+
+def test_usage_stop_on_an_unknown_or_foreign_registration_is_404(client, monkeypatch):
+    package_id = _make_available_package(client, monkeypatch, integrity_hash="a")
+    other_id = _make_available_package(client, monkeypatch, integrity_hash="b")
+    reg = client.post(f"/packages/{other_id}/usage/start", params={"consumer_id": "i-1"}).json()["registrationId"]
+
+    unknown = client.post(f"/packages/{package_id}/usage/{uuid.uuid4()}/stop")
+    foreign = client.post(f"/packages/{package_id}/usage/{reg}/stop")
+
+    assert unknown.status_code == 404 and foreign.status_code == 404
+    assert unknown.json()["detail"]["title"] == "PACKAGE_USAGE_REGISTRATION_NOT_FOUND"
+    assert client.get(f"/packages/{other_id}/usage").json()["items"][0]["active"] is True  # untouched
+
+
+def test_usage_stop_is_idempotent(client, monkeypatch):
+    package_id = _make_available_package(client, monkeypatch)
+    reg = client.post(f"/packages/{package_id}/usage/start", params={"consumer_id": "i-1"}).json()["registrationId"]
+    client.post(f"/packages/{package_id}/usage/{reg}/stop")
+    first = client.get(f"/packages/{package_id}/usage").json()["items"][0]["stoppedAt"]
+
+    assert client.post(f"/packages/{package_id}/usage/{reg}/stop").status_code == 200
+    assert client.get(f"/packages/{package_id}/usage").json()["items"][0]["stoppedAt"] == first

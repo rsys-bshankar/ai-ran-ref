@@ -240,7 +240,7 @@ function InstanceActions({ inst, withUpgrade }: { inst: InstanceSummary; withUpg
         <ActionButton label="Upgrade failed" action={{ method: "POST", path: `${base}/upgrade/resolve`, query: { succeeded: false }, success: "Upgrade rolled back" }} />
       </>}
       {inst.state === "FAULTED" && <ActionButton label="Recover" action={{ method: "POST", path: `${base}/recover`, success: "Recovering — instance re-enters DEPLOYING" }} />}
-      {inst.state === "RUNNING" && <ActionButton label="Terminate" tone="danger" confirm="Terminate this rApp instance? Its workload is torn down and credentials revoked." action={{ method: "POST", path: `${base}/terminate`, success: "Instance UNDEPLOYED" }} />}
+      {["RUNNING", "FAULTED", "DEPLOYING"].includes(inst.state) && <ActionButton label="Terminate" tone="danger" confirm="Terminate this rApp instance? Its NFO workload is torn down, its usage registration stopped and its credentials revoked." action={{ method: "POST", path: `${base}/terminate`, success: "Instance UNDEPLOYED" }} />}
       {inst.state === "UNDEPLOYED" && <ActionButton label="Delete" tone="danger" confirm="Delete this instance record permanently?" action={{ method: "DELETE", path: base, success: "Instance deleted" }} />}
     </div>
   );
@@ -267,6 +267,9 @@ function InstanceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
             : <span className="muted">none registered</span>],
           ["Autonomy mode", <StateBadge state={inst.data.autonomyMode} />],
           ["Region scope", inst.data.regionScope ? <Json value={inst.data.regionScope} /> : <span className="muted">—</span>],
+          ["Last teardown", inst.data.lastTeardown
+            ? <span className="small">{inst.data.lastTeardown.reason} of <code>{inst.data.lastTeardown.instanceId.slice(0, 8)}</code>: NFO terminate {inst.data.lastTeardown.nfoTerminate}, usage/stop {inst.data.lastTeardown.usageStop}</span>
+            : <span className="muted">—</span>],
         ]} />
         <ConfigEditor id={id} config={inst.data.configuration ?? {}} />
       </>}

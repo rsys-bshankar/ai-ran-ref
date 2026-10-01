@@ -446,9 +446,15 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert metrics.status_code == 200
     assert metrics.json()["modelMetrics"] == {"accuracy": 0.94, "f1Score": 0.91}
 
-    advanced = mesh["aimgf"].post(f"/models/{model_id}/advance", params={"event": "TRAINING_COMPLETE"})
-    assert advanced.status_code == 200
-    assert advanced.json()["modelLifecycleState"] == "TRAINED"
+    # Training completes through its own job route (advance refuses
+    # job-driven events such as TRAINING_COMPLETE, OI-2-governance-bypass).
+    refused = mesh["aimgf"].post(f"/models/{model_id}/advance", params={"event": "TRAINING_COMPLETE"})
+    assert refused.status_code == 422
+    completed = mesh["aimgf"].post(f"/training-jobs/{training_job_id}/complete",
+                                   json={"succeeded": True, "metrics": {"accuracy": 0.94, "f1Score": 0.91}})
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "FINISHED"
+    assert mesh["aimgf"].get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == "TRAINED"
 
     # HISTORY.md OI-6.1 — an operator must approve training before validation can start.
     approve_training = mesh["aimgf"].post(f"/models/{model_id}/advance",

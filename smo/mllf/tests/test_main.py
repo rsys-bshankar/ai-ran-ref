@@ -52,6 +52,16 @@ def test_request_model_deployment_requires_certified_or_promoted(client, monkeyp
     resp = client.post(f"/models/{model_id}/deploy", json=["ng1"])
     assert resp.status_code == 409
     assert resp.json()["detail"]["title"] == "MODEL_NOT_CERTIFIED"
+    assert "TRAINING" in resp.json()["detail"]["detail"]
+
+
+def test_request_model_deployment_refuses_a_deprecated_model(client, monkeypatch):
+    """OI-2-model-eol-serving: no new placement for a model at end of life."""
+    model_id = uuid.uuid4()
+    _mock_lifecycle(monkeypatch, model_id, "DEPRECATED")
+    resp = client.post(f"/models/{model_id}/deploy", json=["ng1"])
+    assert resp.status_code == 409
+    assert "DEPRECATED" in resp.json()["detail"]["detail"]
 
 
 def test_request_model_deployment_stamps_cleared_node_groups(client, monkeypatch):

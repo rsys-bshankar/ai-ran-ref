@@ -263,7 +263,11 @@ CREATE TABLE rapp_instance (
   -- defaults to SHADOW (no enforcement) for every existing caller.
   autonomy_mode                                   TEXT NOT NULL DEFAULT 'SHADOW'
                                                      CHECK (autonomy_mode IN ('AUTONOMOUS','ASSIST','SHADOW')),
-  region_scope                                        JSONB      -- AUTONOMOUS's own pre-configured RAN node/cell/slice scope
+  region_scope                                        JSONB,     -- AUTONOMOUS's own pre-configured RAN node/cell/slice scope
+  -- OI-2-terminate-workload: outcome of the most recent best-effort
+  -- teardown (NFO terminate, usage/stop) this row performed or inherited
+  -- through an upgrade commit/rollback — {instanceId, reason, nfoTerminate, usageStop, at}.
+  last_teardown                                         JSONB
 );
 
 CREATE TABLE rapp_fault_report (

@@ -212,6 +212,7 @@
     },
     "/packages/{package_id}": {
       "delete": {
+        "description": "AVAILABLE/DEPRECATED -> DELETING behind the cascade-delete guard (409\nSERVICE_NAME_CONFLICT when a dependent child package or an active usage\nregistration blocks it); a FAILED package's row is deleted directly.\nAny other state (PRIMED, DELETING, ...): 409 LIFECYCLE_ILLEGAL_TRANSITION.",
         "operationId": "delete_package_packages__package_id__delete",
         "parameters": [
           {
@@ -316,6 +317,7 @@
     },
     "/packages/{package_id}/cancel-delete": {
       "post": {
+        "description": "DEPRECATED -> AVAILABLE; 409 LIFECYCLE_ILLEGAL_TRANSITION from any other state.",
         "operationId": "cancel_delete_packages__package_id__cancel_delete_post",
         "parameters": [
           {
@@ -354,6 +356,7 @@
     },
     "/packages/{package_id}/deprecate": {
       "post": {
+        "description": "AVAILABLE -> DEPRECATED; 409 LIFECYCLE_ILLEGAL_TRANSITION from any other state.",
         "operationId": "deprecate_package_packages__package_id__deprecate_post",
         "parameters": [
           {
@@ -392,7 +395,7 @@
     },
     "/packages/{package_id}/deprime": {
       "post": {
-        "description": "The reference's own deprimeRapp guard: blocked while any rApp\ninstance still references this package (mirrors the cascade-delete\nguard's active-usage-registration check).",
+        "description": "The reference's own deprimeRapp guard: blocked while any rApp\ninstance still references this package (mirrors the cascade-delete\nguard's active-usage-registration check): 409 SERVICE_NAME_CONFLICT.\nAny state but PRIMED: 409 LIFECYCLE_ILLEGAL_TRANSITION.",
         "operationId": "deprime_package_packages__package_id__deprime_post",
         "parameters": [
           {
@@ -431,6 +434,7 @@
     },
     "/packages/{package_id}/onboarding-status": {
       "get": {
+        "description": "404 PACKAGE_NOT_FOUND for an unknown package.",
         "operationId": "query_onboarding_status_packages__package_id__onboarding_status_get",
         "parameters": [
           {
@@ -469,7 +473,7 @@
     },
     "/packages/{package_id}/prime": {
       "post": {
-        "description": "HISTORY.md \u00a75: the reference's real\nCOMMISSIONED->PRIMING->PRIMED lifecycle, missing entirely \u2014 this\nbuild went ONBOARDING->AVAILABLE directly. Real ACM/DME/SME\nresource pre-provisioning behind priming is out of scope (same\nelision as this build's other southbound calls), so both\ntransitions fire within this one request.",
+        "description": "HISTORY.md \u00a75: the reference's real\nCOMMISSIONED->PRIMING->PRIMED lifecycle, missing entirely \u2014 this\nbuild went ONBOARDING->AVAILABLE directly. Real ACM/DME/SME\nresource pre-provisioning behind priming is out of scope (same\nelision as this build's other southbound calls), so both\ntransitions fire within this one request. 409\nLIFECYCLE_ILLEGAL_TRANSITION from any state but AVAILABLE.",
         "operationId": "prime_package_packages__package_id__prime_post",
         "parameters": [
           {
@@ -574,6 +578,7 @@
     },
     "/packages/{package_id}/usage/start": {
       "post": {
+        "description": "404 PACKAGE_NOT_FOUND for an unknown package.",
         "operationId": "register_usage_start_packages__package_id__usage_start_post",
         "parameters": [
           {
@@ -621,6 +626,7 @@
     },
     "/packages/{package_id}/usage/{registration_id}/stop": {
       "post": {
+        "description": "404 PACKAGE_NOT_FOUND for an unknown package, 404\nPACKAGE_USAGE_REGISTRATION_NOT_FOUND for a registration id that is\nunknown or belongs to another package. Idempotent: stopping an already\nstopped registration keeps its original stoppedAt.",
         "operationId": "register_usage_stop_packages__package_id__usage__registration_id__stop_post",
         "parameters": [
           {

@@ -49,7 +49,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
-from smo_shared.errors import framework_error, FrameworkError
+from smo_shared.errors import framework_error, FrameworkError, illegal_transition_error
 from smo_shared.r1_client import R1Client
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
@@ -113,10 +113,14 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
         # adapted to this build's own package identity (a content hash,
         # since real ASD descriptor data doesn't exist here) — a
         # byte-identical package already onboarded is rejected the same
-        # way, not silently onboarded a second time.
+        # way, not silently onboarded a second time. A package that is
+        # DELETING (terminal: deleted, its row kept) or FAILED no longer
+        # counts (OI-2-package-redeploy) — the same CSAR can be onboarded
+        # again once its earlier package was deleted or failed.
         existing = db.scalar(select(ApplicationPackage).where(
             ApplicationPackage.integrity_hash == integrity_hash, ApplicationPackage.package_id != pkg.package_id,
-        ))
+            ApplicationPackage.state.not_in([PackageState.DELETING, PackageState.FAILED]),
+        ).limit(1))
         if existing is not None:
             raise PackageValidationFailed(f"package with integrity hash {integrity_hash} already onboarded as {existing.package_id}")
         pkg.tosca_entry_definitions = entry_definitions
@@ -336,11 +340,34 @@ def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, d
     return entry_definitions, artifacts, integrity_hash, identity
 
 
-@app.get("/packages/{package_id}/onboarding-status")
-def query_onboarding_status(package_id: uuid.UUID, db: Session = Depends(get_session)):
+def _get_package_or_404(db: Session, package_id: uuid.UUID) -> ApplicationPackage:
     pkg = db.get(ApplicationPackage, package_id)
     if pkg is None:
-        raise framework_error(FrameworkError.DME_TYPE_VERSION_CONFLICT, detail="no such package")  # 404-shaped reuse; Phase 1
+        raise framework_error(FrameworkError.PACKAGE_NOT_FOUND, detail=f"no such package {package_id}")
+    return pkg
+
+
+def _fire(db: Session, pkg: ApplicationPackage, event: PackageEvent, guard_refusal: str | None = None) -> PackageState:
+    """Fires `event` on `pkg`, mapping IllegalTransition to a 409. When the
+    event has an edge from the current state, the refusal came from that
+    edge's guard (active usage / blocking dependents) and is reported as
+    409 SERVICE_NAME_CONFLICT with `guard_refusal`; otherwise the event is
+    not allowed from this state at all: 409 LIFECYCLE_ILLEGAL_TRANSITION
+    naming the state and the event (OI-2-lcm-error-mapping).
+    """
+    state = PackageState(pkg.state)
+    try:
+        return ONBOARDING_FSM.fire(state, event, db=db, package=pkg)
+    except IllegalTransition as exc:
+        if guard_refusal is not None and event in ONBOARDING_FSM.legal_events(state):
+            raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail=guard_refusal)
+        raise illegal_transition_error(exc, f"package {pkg.package_id}")
+
+
+@app.get("/packages/{package_id}/onboarding-status")
+def query_onboarding_status(package_id: uuid.UUID, db: Session = Depends(get_session)):
+    """404 PACKAGE_NOT_FOUND for an unknown package."""
+    pkg = _get_package_or_404(db, package_id)
     return {
         "packageId": str(pkg.package_id), "state": pkg.state,
         "nfDeploymentDescriptorId": str(pkg.nf_deployment_descriptor_id) if pkg.nf_deployment_descriptor_id else None,
@@ -368,8 +395,9 @@ def query_packages(state: str | None = None, limit: int = PageLimit, offset: int
 
 @app.post("/packages/{package_id}/deprecate")
 def deprecate_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
-    pkg = db.get(ApplicationPackage, package_id)
-    pkg.state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.DEPRECATE, db=db, package=pkg)
+    """AVAILABLE -> DEPRECATED; 409 LIFECYCLE_ILLEGAL_TRANSITION from any other state."""
+    pkg = _get_package_or_404(db, package_id)
+    pkg.state = _fire(db, pkg, PackageEvent.DEPRECATE)
     db.commit()
     return _package_view(pkg)
 
@@ -381,11 +409,12 @@ def prime_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
     build went ONBOARDING->AVAILABLE directly. Real ACM/DME/SME
     resource pre-provisioning behind priming is out of scope (same
     elision as this build's other southbound calls), so both
-    transitions fire within this one request.
+    transitions fire within this one request. 409
+    LIFECYCLE_ILLEGAL_TRANSITION from any state but AVAILABLE.
     """
-    pkg = db.get(ApplicationPackage, package_id)
-    pkg.state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.PRIME, db=db, package=pkg)
-    pkg.state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.PRIME_COMPLETE, db=db, package=pkg)
+    pkg = _get_package_or_404(db, package_id)
+    pkg.state = _fire(db, pkg, PackageEvent.PRIME)
+    pkg.state = _fire(db, pkg, PackageEvent.PRIME_COMPLETE)
     db.commit()
     return _package_view(pkg)
 
@@ -394,46 +423,49 @@ def prime_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
 def deprime_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
     """The reference's own deprimeRapp guard: blocked while any rApp
     instance still references this package (mirrors the cascade-delete
-    guard's active-usage-registration check).
+    guard's active-usage-registration check): 409 SERVICE_NAME_CONFLICT.
+    Any state but PRIMED: 409 LIFECYCLE_ILLEGAL_TRANSITION.
     """
-    pkg = db.get(ApplicationPackage, package_id)
-    try:
-        pkg.state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.DEPRIME, db=db, package=pkg)
-    except IllegalTransition:
-        raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail="blocked by an active usage registration")
-    pkg.state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.DEPRIME_COMPLETE, db=db, package=pkg)
+    pkg = _get_package_or_404(db, package_id)
+    pkg.state = _fire(db, pkg, PackageEvent.DEPRIME, guard_refusal="blocked by an active usage registration")
+    pkg.state = _fire(db, pkg, PackageEvent.DEPRIME_COMPLETE)
     db.commit()
     return _package_view(pkg)
 
 
 @app.post("/packages/{package_id}/cancel-delete")
 def cancel_delete(package_id: uuid.UUID, db: Session = Depends(get_session)):
-    pkg = db.get(ApplicationPackage, package_id)
-    pkg.state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.CANCEL_DELETE, db=db, package=pkg)
+    """DEPRECATED -> AVAILABLE; 409 LIFECYCLE_ILLEGAL_TRANSITION from any other state."""
+    pkg = _get_package_or_404(db, package_id)
+    pkg.state = _fire(db, pkg, PackageEvent.CANCEL_DELETE)
     db.commit()
     return _package_view(pkg)
 
 
 @app.delete("/packages/{package_id}")
 def delete_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
-    pkg = db.get(ApplicationPackage, package_id)
+    """AVAILABLE/DEPRECATED -> DELETING behind the cascade-delete guard (409
+    SERVICE_NAME_CONFLICT when a dependent child package or an active usage
+    registration blocks it); a FAILED package's row is deleted directly.
+    Any other state (PRIMED, DELETING, ...): 409 LIFECYCLE_ILLEGAL_TRANSITION.
+    """
+    pkg = _get_package_or_404(db, package_id)
     if pkg.state == PackageState.FAILED:
         # FAILED never reached AVAILABLE, so nothing can depend on it — cascade
         # check skipped entirely, per Onboarding LLD section 3.
         db.delete(pkg)
         db.commit()
         return {"status": "deleted"}
-    try:
-        new_state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.DELETE, db=db, package=pkg)
-    except IllegalTransition:
-        raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail="blocked by a dependent child package or active usage registration")
-    pkg.state = new_state
+    pkg.state = _fire(db, pkg, PackageEvent.DELETE,
+                      guard_refusal="blocked by a dependent child package or active usage registration")
     db.commit()
     return _package_view(pkg)
 
 
 @app.post("/packages/{package_id}/usage/start")
 def register_usage_start(package_id: uuid.UUID, consumer_id: str, db: Session = Depends(get_session)):
+    """404 PACKAGE_NOT_FOUND for an unknown package."""
+    _get_package_or_404(db, package_id)
     reg = PackageUsageRegistration(package_id=package_id, consumer_id=consumer_id)
     db.add(reg)
     db.commit()
@@ -442,10 +474,20 @@ def register_usage_start(package_id: uuid.UUID, consumer_id: str, db: Session = 
 
 @app.post("/packages/{package_id}/usage/{registration_id}/stop")
 def register_usage_stop(package_id: uuid.UUID, registration_id: uuid.UUID, db: Session = Depends(get_session)):
+    """404 PACKAGE_NOT_FOUND for an unknown package, 404
+    PACKAGE_USAGE_REGISTRATION_NOT_FOUND for a registration id that is
+    unknown or belongs to another package. Idempotent: stopping an already
+    stopped registration keeps its original stoppedAt.
+    """
     import datetime
 
+    _get_package_or_404(db, package_id)
     reg = db.get(PackageUsageRegistration, registration_id)
-    reg.stopped_at = datetime.datetime.now(datetime.UTC)
+    if reg is None or reg.package_id != package_id:
+        raise framework_error(FrameworkError.PACKAGE_USAGE_REGISTRATION_NOT_FOUND,
+                              detail=f"no usage registration {registration_id} for package {package_id}")
+    if reg.stopped_at is None:
+        reg.stopped_at = datetime.datetime.now(datetime.UTC)
     db.commit()
     return {"status": "stopped"}
 
@@ -474,6 +516,7 @@ def _package_view(pkg: ApplicationPackage) -> dict:
 def list_package_artifacts(package_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
                             db: Session = Depends(get_session)):
     """(GUI pass 2) The artifacts registered during validation (Onboarding LLD section 1)."""
+    _get_package_or_404(db, package_id)
     stmt = select(Artifact).where(Artifact.package_id == package_id)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"artifactId": str(a.artifact_id), "path": a.path, "accessUrl": a.access_url}
@@ -487,6 +530,7 @@ def list_package_usage(package_id: uuid.UUID, limit: int = PageLimit, offset: in
     any row still missing stoppedAt blocks deprime and delete, so the operator
     can now see why a delete was refused.
     """
+    _get_package_or_404(db, package_id)
     stmt = select(PackageUsageRegistration).where(PackageUsageRegistration.package_id == package_id)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"registrationId": str(r.id), "consumerId": r.consumer_id,

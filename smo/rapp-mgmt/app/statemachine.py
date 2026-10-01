@@ -4,8 +4,8 @@ SMO Design v1.3 section 3.5 state diagram, made precise by Onboarding/rApp
 Mgmt LLD section 6: UpgradeInstance is TWO rows in choreography (old kept
 running, new deployed alongside it), not one row transitioning through an
 'upgrading' state in place. The FSM below governs each row's own
-transitions; perform_upgrade() in main.py is the orchestrator that
-coordinates both rows and applies the timeout/auto-rollback policy.
+transitions; upgrade.py is the orchestrator that coordinates both rows
+and applies the timeout/auto-rollback policy.
 """
 
 from __future__ import annotations
@@ -105,9 +105,22 @@ def build_rapp_instance_fsm() -> StateMachine[InstanceState, InstanceEvent]:
     fsm.add(InstanceState.DEPLOYING, InstanceEvent.BOOTSTRAP_OK, InstanceState.RUNNING)
     fsm.add(InstanceState.DEPLOYING, InstanceEvent.BOOTSTRAP_FAILED, InstanceState.FAULTED)
     fsm.add(InstanceState.RUNNING, InstanceEvent.START_UPGRADE, InstanceState.UPGRADING)
-    fsm.add(InstanceState.UPGRADING, InstanceEvent.UPGRADE_COMMIT, InstanceState.UNDEPLOYED, action=_revoke_credential)
+    # UPGRADE_COMMIT retires the old row exactly like TERMINATE does (DME/SME
+    # deregistration, then credential revocation); upgrade.py additionally
+    # releases its NFO workload and usage registration (OI-1-upgrade-identity).
+    fsm.add(InstanceState.UPGRADING, InstanceEvent.UPGRADE_COMMIT, InstanceState.UNDEPLOYED, action=_terminate_side_effects)
     fsm.add(InstanceState.UPGRADING, InstanceEvent.UPGRADE_ROLLBACK, InstanceState.RUNNING)
     fsm.add(InstanceState.RUNNING, InstanceEvent.TERMINATE, InstanceState.UNDEPLOYED, action=_terminate_side_effects)
+    # OI-2-lcm-error-mapping: a crashed instance can be retired without
+    # recovering it first, and so can one whose container never called
+    # bootstrap-complete — DEPLOYING has no other exit except RECOVER's
+    # re-entry into it, and its NFO workload and usage registration already
+    # exist (CreateInstance made them), so they need the same teardown.
+    # Deregistration is idempotent and best-effort, so repeating it after
+    # CRASH already did it is harmless. UPGRADING stays excluded: an upgrade
+    # in flight is resolved (commit/rollback) first.
+    fsm.add(InstanceState.FAULTED, InstanceEvent.TERMINATE, InstanceState.UNDEPLOYED, action=_terminate_side_effects)
+    fsm.add(InstanceState.DEPLOYING, InstanceEvent.TERMINATE, InstanceState.UNDEPLOYED, action=_terminate_side_effects)
     fsm.add(InstanceState.RUNNING, InstanceEvent.CRASH, InstanceState.FAULTED, action=_reconsider_registrations)
     fsm.add(InstanceState.FAULTED, InstanceEvent.RECOVER, InstanceState.DEPLOYING)
     return fsm

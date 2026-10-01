@@ -48,7 +48,7 @@ class ModelLifecycleState(StrEnum):
 
 
 class ModelLifecycleEvent(StrEnum):
-    CREATE_TRAINING = "CREATE_TRAINING"            # REGISTERED/PROMOTED/FAILED -> TRAINING (first cycle or retrain)
+    CREATE_TRAINING = "CREATE_TRAINING"            # REGISTERED/CERTIFIED/PROMOTED/FAILED -> TRAINING (first cycle or retrain)
     TRAINING_COMPLETE = "TRAINING_COMPLETE"          # -> TRAINED
     TRAINING_FAILED = "TRAINING_FAILED"                # -> FAILED
     # HISTORY.md OI-6.1: an explicit operator-approval gate,
@@ -88,6 +88,29 @@ GOVERNANCE_EVENTS = frozenset({
     ModelLifecycleEvent.APPROVE_TRAINING, ModelLifecycleEvent.APPROVE_VALIDATION,
 })
 
+# The events `POST /models/{id}/advance` accepts: the governance decisions
+# plus the two end-of-life events. Every other event is job-driven and is
+# fired only by its own job route (CREATE_TRAINING by POST /training-jobs,
+# TRAINING_COMPLETE/FAILED by .../complete or cancel/timeout, and so on), so
+# the OI-6.1 approval gates on CREATE_VALIDATION/CREATE_EMULATION can't be
+# skipped and no lifecycle stage moves without the job row that justifies it.
+ADVANCEABLE_EVENTS = GOVERNANCE_EVENTS | frozenset({ModelLifecycleEvent.DEPRECATE, ModelLifecycleEvent.RETIRE})
+
+# States a model can (re)enter TRAINING from — the CREATE_TRAINING edges
+# below, plus TRAINING itself (a new request supersedes the in-flight run,
+# main.py `_start_training`). CERTIFIED covers a rolled-back model
+# (PROMOTED -ROLLBACK-> CERTIFIED), which must be retrainable to recover.
+TRAINABLE_STATES = frozenset({
+    ModelLifecycleState.REGISTERED, ModelLifecycleState.CERTIFIED, ModelLifecycleState.PROMOTED,
+    ModelLifecycleState.FAILED, ModelLifecycleState.TRAINING,
+})
+
+# End of life: a DEPRECATED model's already-ACTIVE runtime keeps serving
+# inference (consumers get a grace period to move off it) but its runtime
+# can't be activated or scaled; a RETIRED model serves nothing and its
+# runtime is terminated on RETIRE (main.py).
+END_OF_LIFE_STATES = frozenset({ModelLifecycleState.DEPRECATED, ModelLifecycleState.RETIRED})
+
 
 def build_model_lifecycle_fsm() -> StateMachine[ModelLifecycleState, ModelLifecycleEvent]:
     fsm: StateMachine[ModelLifecycleState, ModelLifecycleEvent] = StateMachine()
@@ -109,6 +132,9 @@ def build_model_lifecycle_fsm() -> StateMachine[ModelLifecycleState, ModelLifecy
     fsm.add(S.APPROVED, E.CERTIFY, S.CERTIFIED)
     fsm.add(S.CERTIFIED, E.PROMOTE, S.PROMOTED)
     fsm.add(S.CERTIFIED, E.DEPRECATE, S.DEPRECATED)
+    # A rolled-back (or never-promoted) CERTIFIED model can be retrained;
+    # same re-entry point as a PROMOTED retrain.
+    fsm.add(S.CERTIFIED, E.CREATE_TRAINING, S.TRAINING)
     fsm.add(S.PROMOTED, E.ROLLBACK, S.CERTIFIED)
     fsm.add(S.PROMOTED, E.DEPRECATE, S.DEPRECATED)
     # No lightweight update path — existing project design principle

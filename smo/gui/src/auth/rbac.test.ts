@@ -38,10 +38,11 @@ describe("requiredRole against the BFF's table", () => {
   });
 
   it("applies query matches: DEPRECATE and governance decisions are admin-only, other advances are operator", () => {
-    expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: "TRAINING_COMPLETE" })).toBe("operator");
+    expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: "APPROVE_TRAINING" })).toBe("operator");
+    expect(requiredRole(RULES, "POST", "/aimgf/training-jobs/j/complete")).toBe("operator");
     expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: "DEPRECATE" })).toBe("admin");
     expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: "CERTIFY" })).toBe("admin");
-    expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: ["TRAINING_COMPLETE", "DEPRECATE"] })).toBe("admin");
+    expect(requiredRole(RULES, "POST", "/aimgf/models/m/advance", { event: ["APPROVE_TRAINING", "DEPRECATE"] })).toBe("admin");
   });
 });
 
