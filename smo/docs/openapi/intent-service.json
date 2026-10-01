@@ -4,6 +4,10 @@
       "AdminStateRequest": {
         "properties": {
           "newState": {
+            "enum": [
+              "ACTIVATED",
+              "DEACTIVATED"
+            ],
             "title": "Newstate",
             "type": "string"
           },
@@ -19,13 +23,53 @@
         "title": "AdminStateRequest",
         "type": "object"
       },
+      "Context": {
+        "additionalProperties": false,
+        "properties": {
+          "contextAttribute": {
+            "title": "Contextattribute",
+            "type": "string"
+          },
+          "contextCondition": {
+            "enum": [
+              "IS_EQUAL_TO",
+              "IS_LESS_THAN",
+              "IS_GREATER_THAN",
+              "IS_WITHIN_RANGE",
+              "IS_OUTSIDE_RANGE",
+              "IS_ONE_OF",
+              "IS_NOT_ONE_OF",
+              "IS_EQUAL_TO_OR_LESS_THAN",
+              "IS_EQUAL_TO_OR_GREATER_THAN",
+              "IS_ALL_OF"
+            ],
+            "title": "Contextcondition",
+            "type": "string"
+          },
+          "contextInvariant": {
+            "default": false,
+            "title": "Contextinvariant",
+            "type": "boolean"
+          },
+          "contextValueRange": {
+            "title": "Contextvaluerange"
+          }
+        },
+        "required": [
+          "contextAttribute",
+          "contextCondition",
+          "contextValueRange"
+        ],
+        "title": "Context",
+        "type": "object"
+      },
       "CreateAutonomyDispatchRequest": {
         "properties": {
           "expectations": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/IntentExpectation"
             },
+            "minItems": 1,
             "title": "Expectations",
             "type": "array"
           },
@@ -86,12 +130,25 @@
           },
           "priority": {
             "default": 1,
+            "maximum": 100.0,
+            "minimum": 1.0,
             "title": "Priority",
             "type": "integer"
           },
           "rmihId": {
             "title": "Rmihid",
             "type": "string"
+          },
+          "userLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Userlabel"
           }
         },
         "required": [
@@ -103,14 +160,111 @@
         "type": "object"
       },
       "CreateIntentRequest": {
+        "additionalProperties": false,
+        "description": "Wave 6 \u2014 TS 28.312 Intent, validated strictly (agreed: every caller\nmigrated): the spec's own attribute names, required fields and enums,\nand every expectation checked against its expectation family\n(`app/ts28312.py`). `rmihId`/`rmioId`/`intentHandlingScope` are this\nbuild's own: the consumer-side choice of handling function (TS 28.312\ncontainment: IntentHandlingFunction *contains* Intent), the creating\nconsumer's identity, and the handling-scope check against that\nfunction's declared coverage (SPEC_AUDIT.md items 1-3).",
         "properties": {
-          "expectations": {
+          "consumerSatisfactionIndexThreshold": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumersatisfactionindexthreshold"
+          },
+          "contextSelectivity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ALL_OF",
+                  "ONE_OF",
+                  "ANY_OF"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextselectivity"
+          },
+          "expectationSelectivity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ALL_OF",
+                  "ONE_OF",
+                  "ANY_OF"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectationselectivity"
+          },
+          "guaranteePeriods": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Context"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guaranteeperiods"
+          },
+          "implicitIntentIndex": {
+            "default": false,
+            "title": "Implicitintentindex",
+            "type": "boolean"
+          },
+          "intentAdminState": {
+            "default": "ACTIVATED",
+            "enum": [
+              "ACTIVATED",
+              "DEACTIVATED"
+            ],
+            "title": "Intentadminstate",
+            "type": "string"
+          },
+          "intentContexts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Context"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intentcontexts"
+          },
+          "intentExpectations": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/IntentExpectation"
             },
-            "title": "Expectations",
+            "minItems": 1,
+            "title": "Intentexpectations",
             "type": "array"
+          },
+          "intentHandlingInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntentHandlingInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "intentHandlingScope": {
             "anyOf": [
@@ -127,6 +281,16 @@
             ],
             "title": "Intenthandlingscope"
           },
+          "intentInterpretationAssistanceInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntentInterpretationAssistanceInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "intentMgmtPurpose": {
             "default": "FULFILMENT_WITHOUT_NEGOTIATION",
             "enum": [
@@ -139,10 +303,37 @@
             "title": "Intentmgmtpurpose",
             "type": "string"
           },
-          "priority": {
+          "intentPreemptionCapability": {
+            "default": false,
+            "title": "Intentpreemptioncapability",
+            "type": "boolean"
+          },
+          "intentPriority": {
             "default": 1,
-            "title": "Priority",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Intentpriority",
             "type": "integer"
+          },
+          "intentReportControl": {
+            "items": {
+              "$ref": "#/components/schemas/IntentReportControl"
+            },
+            "minItems": 1,
+            "title": "Intentreportcontrol",
+            "type": "array"
+          },
+          "intentUtilityFormulaRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intentutilityformularef"
           },
           "rmihId": {
             "title": "Rmihid",
@@ -152,13 +343,353 @@
             "default": "",
             "title": "Rmioid",
             "type": "string"
+          },
+          "userLabel": {
+            "title": "Userlabel",
+            "type": "string"
           }
         },
         "required": [
-          "expectations",
+          "userLabel",
+          "intentExpectations",
+          "intentReportControl",
           "rmihId"
         ],
         "title": "CreateIntentRequest",
+        "type": "object"
+      },
+      "Distribution": {
+        "additionalProperties": false,
+        "properties": {
+          "bin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bin"
+          },
+          "couter": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Couter"
+          }
+        },
+        "title": "Distribution",
+        "type": "object"
+      },
+      "ExpectationExplorationResult": {
+        "additionalProperties": false,
+        "properties": {
+          "contextExplorationResults": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Context"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextexplorationresults"
+          },
+          "expectationId": {
+            "title": "Expectationid",
+            "type": "string"
+          },
+          "targetExplorationResults": {
+            "items": {
+              "$ref": "#/components/schemas/TargetExplorationResult"
+            },
+            "minItems": 1,
+            "title": "Targetexplorationresults",
+            "type": "array"
+          }
+        },
+        "required": [
+          "expectationId",
+          "targetExplorationResults"
+        ],
+        "title": "ExpectationExplorationResult",
+        "type": "object"
+      },
+      "ExpectationFulfilmentResult": {
+        "additionalProperties": false,
+        "properties": {
+          "expectaitonId": {
+            "title": "Expectaitonid",
+            "type": "string"
+          },
+          "expectationFulfilmentInfo": {
+            "$ref": "#/components/schemas/FulfilmentInfo"
+          },
+          "expectationFulfilmentStatisticsInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FulfilmentStatisticsInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "guaranteeConfidenceLevel": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guaranteeconfidencelevel"
+          },
+          "targetFulfilmentResults": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TargetFulfilmentResult"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targetfulfilmentresults"
+          }
+        },
+        "required": [
+          "expectaitonId",
+          "expectationFulfilmentInfo"
+        ],
+        "title": "ExpectationFulfilmentResult",
+        "type": "object"
+      },
+      "ExpectationObject": {
+        "additionalProperties": false,
+        "properties": {
+          "objectContexts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Context"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objectcontexts"
+          },
+          "objectInstance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objectinstance"
+          },
+          "objectType": {
+            "anyOf": [
+              {
+                "enum": [
+                  "RAN_SUBNETWORK",
+                  "EDGE_SERVICE_SUPPORT",
+                  "5GC_SUBNETWORK",
+                  "RADIO_SERVICE",
+                  "SUBNETWORK"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objecttype"
+          }
+        },
+        "title": "ExpectationObject",
+        "type": "object"
+      },
+      "ExpectationTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "contextSelectivity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ALL_OF",
+                  "ONE_OF",
+                  "ANY_OF"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextselectivity"
+          },
+          "preferenceWeight": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferenceweight"
+          },
+          "targetCondition": {
+            "enum": [
+              "IS_EQUAL_TO",
+              "IS_LESS_THAN",
+              "IS_GREATER_THAN",
+              "IS_WITHIN_RANGE",
+              "IS_OUTSIDE_RANGE",
+              "IS_ONE_OF",
+              "IS_NOT_ONE_OF",
+              "IS_EQUAL_TO_OR_LESS_THAN",
+              "IS_EQUAL_TO_OR_GREATER_THAN",
+              "IS_ALL_OF"
+            ],
+            "title": "Targetcondition",
+            "type": "string"
+          },
+          "targetContexts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Context"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targetcontexts"
+          },
+          "targetName": {
+            "title": "Targetname",
+            "type": "string"
+          },
+          "targetValueRange": {
+            "title": "Targetvaluerange"
+          }
+        },
+        "required": [
+          "targetName",
+          "targetCondition",
+          "targetValueRange"
+        ],
+        "title": "ExpectationTarget",
+        "type": "object"
+      },
+      "FulfilmentInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "fulfilmentStatus": {
+            "enum": [
+              "FULFILLED",
+              "NOT_FULFILLED"
+            ],
+            "title": "Fulfilmentstatus",
+            "type": "string"
+          },
+          "notFulfilledReasons": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notfulfilledreasons"
+          },
+          "notFullfilledState": {
+            "anyOf": [
+              {
+                "enum": [
+                  "RECEIVED",
+                  "DEGRADED",
+                  "SUSPENDED",
+                  "TERMINATED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notfullfilledstate"
+          }
+        },
+        "required": [
+          "fulfilmentStatus"
+        ],
+        "title": "FulfilmentInfo",
+        "type": "object"
+      },
+      "FulfilmentStatisticsInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "expectationObjectFulfilmentInfo": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Distribution"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectationobjectfulfilmentinfo"
+          },
+          "expectationTemporalFulfilmentInfo": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Distribution"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectationtemporalfulfilmentinfo"
+          }
+        },
+        "title": "FulfilmentStatisticsInfo",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -174,46 +705,1031 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
-      "IntentReportRequest": {
+      "ImplicitIntent": {
+        "additionalProperties": false,
         "properties": {
-          "conflictReports": {
+          "implicitIntentContexts": {
             "anyOf": [
               {
-                "items": {},
+                "items": {
+                  "$ref": "#/components/schemas/Context"
+                },
                 "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Conflictreports"
+            "title": "Implicitintentcontexts"
           },
-          "fulfilmentReport": {
-            "additionalProperties": true,
-            "title": "Fulfilmentreport",
-            "type": "object"
-          },
-          "intentId": {
-            "format": "uuid",
-            "title": "Intentid",
+          "implicitIntentExpectations": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IntentExpectation"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implicitintentexpectations"
+          }
+        },
+        "title": "ImplicitIntent",
+        "type": "object"
+      },
+      "InFeasibleExpectationInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "expectationId": {
+            "title": "Expectationid",
             "type": "string"
+          },
+          "inFeasibleTargets": {
+            "items": {
+              "$ref": "#/components/schemas/InFeasibleTargetInfo"
+            },
+            "title": "Infeasibletargets",
+            "type": "array"
           }
         },
         "required": [
-          "intentId",
-          "fulfilmentReport"
+          "expectationId",
+          "inFeasibleTargets"
+        ],
+        "title": "InFeasibleExpectationInfo",
+        "type": "object"
+      },
+      "InFeasibleTargetInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "recommendedValue": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendedvalue"
+          },
+          "targetName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targetname"
+          }
+        },
+        "title": "InFeasibleTargetInfo",
+        "type": "object"
+      },
+      "IntentConflictReport": {
+        "additionalProperties": false,
+        "properties": {
+          "conflictId": {
+            "title": "Conflictid",
+            "type": "string"
+          },
+          "conflictType": {
+            "enum": [
+              "INTENT_CONFLICT",
+              "EXPECTATION_CONFLICT",
+              "TARGET_CONFLICT"
+            ],
+            "title": "Conflicttype",
+            "type": "string"
+          },
+          "conflictingExpectation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conflictingexpectation"
+          },
+          "conflictingIntent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conflictingintent"
+          },
+          "conflictingTarget": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conflictingtarget"
+          },
+          "recommendedSolutions": {
+            "anyOf": [
+              {
+                "enum": [
+                  "MODIFY",
+                  "DELETE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendedsolutions"
+          }
+        },
+        "required": [
+          "conflictId",
+          "conflictType"
+        ],
+        "title": "IntentConflictReport",
+        "type": "object"
+      },
+      "IntentDecompositionReport": {
+        "additionalProperties": false,
+        "properties": {
+          "intentDecompositionResults": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IntentTraceabilityInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intentdecompositionresults"
+          }
+        },
+        "title": "IntentDecompositionReport",
+        "type": "object"
+      },
+      "IntentExpectation": {
+        "additionalProperties": false,
+        "properties": {
+          "contextSelectivity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ALL_OF",
+                  "ONE_OF",
+                  "ANY_OF"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextselectivity"
+          },
+          "expectationContexts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Context"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectationcontexts"
+          },
+          "expectationId": {
+            "title": "Expectationid",
+            "type": "string"
+          },
+          "expectationObject": {
+            "$ref": "#/components/schemas/ExpectationObject"
+          },
+          "expectationTargets": {
+            "items": {
+              "$ref": "#/components/schemas/ExpectationTarget"
+            },
+            "minItems": 1,
+            "title": "Expectationtargets",
+            "type": "array"
+          },
+          "expectationVerb": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectationverb"
+          },
+          "guaranteePeriods": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Context"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guaranteeperiods"
+          },
+          "preferenceWeight": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferenceweight"
+          }
+        },
+        "required": [
+          "expectationId",
+          "expectationObject",
+          "expectationTargets"
+        ],
+        "title": "IntentExpectation",
+        "type": "object"
+      },
+      "IntentExplorationReport": {
+        "additionalProperties": false,
+        "properties": {
+          "additionalPreEvaluationInfo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Additionalpreevaluationinfo"
+          },
+          "expectationExplorationResults": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExpectationExplorationResult"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectationexplorationresults"
+          },
+          "expectationExplorationStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "NOT_STARTED",
+                  "RUNNING",
+                  "FINISHED",
+                  "FAILED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectationexplorationstatus"
+          }
+        },
+        "title": "IntentExplorationReport",
+        "type": "object"
+      },
+      "IntentFeasibilityCheckReport": {
+        "additionalProperties": false,
+        "properties": {
+          "additionalPreEvaluationInfo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Additionalpreevaluationinfo"
+          },
+          "feasibilityCheckResult": {
+            "enum": [
+              "FEASIBLE",
+              "INFEASIBLE"
+            ],
+            "title": "Feasibilitycheckresult",
+            "type": "string"
+          },
+          "inFeasibleExpectationInfos": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/InFeasibleExpectationInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Infeasibleexpectationinfos"
+          },
+          "infeasibilityReasons": {
+            "items": {
+              "enum": [
+                "INVALID_INTENT_EXPRESSION",
+                "INTENT_CONFLICT"
+              ],
+              "type": "string"
+            },
+            "title": "Infeasibilityreasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "feasibilityCheckResult",
+          "infeasibilityReasons"
+        ],
+        "title": "IntentFeasibilityCheckReport",
+        "type": "object"
+      },
+      "IntentFulfilmentNegotiationFeedback": {
+        "additionalProperties": false,
+        "properties": {
+          "consumerSatisfactionIndex": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumersatisfactionindex"
+          },
+          "referredIntentOutcomeId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referredintentoutcomeid"
+          }
+        },
+        "title": "IntentFulfilmentNegotiationFeedback",
+        "type": "object"
+      },
+      "IntentFulfilmentNegotiationReport": {
+        "additionalProperties": false,
+        "properties": {
+          "implicitIntent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImplicitIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "intentFulfilmentNegotiationConsumerFeedback": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntentFulfilmentNegotiationFeedback"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "possibleIntentOutcomeList": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PossibleIntentOutcome"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Possibleintentoutcomelist"
+          }
+        },
+        "title": "IntentFulfilmentNegotiationReport",
+        "type": "object"
+      },
+      "IntentFulfilmentReport": {
+        "additionalProperties": false,
+        "properties": {
+          "additionalFulfilmentInfo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Additionalfulfilmentinfo"
+          },
+          "expectationFulfilmentResult": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExpectationFulfilmentResult"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectationfulfilmentresult"
+          },
+          "guaranteeConfidenceLevel": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guaranteeconfidencelevel"
+          },
+          "intentFulfilmentInfo": {
+            "$ref": "#/components/schemas/FulfilmentInfo"
+          }
+        },
+        "required": [
+          "intentFulfilmentInfo"
+        ],
+        "title": "IntentFulfilmentReport",
+        "type": "object"
+      },
+      "IntentHandlingCapability": {
+        "additionalProperties": false,
+        "properties": {
+          "intentHandlingCapabilityId": {
+            "title": "Intenthandlingcapabilityid",
+            "type": "string"
+          },
+          "supportedExpectationContextInfoList": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SupportedContextInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedexpectationcontextinfolist"
+          },
+          "supportedExpectationObjectType": {
+            "enum": [
+              "RAN_SUBNETWORK",
+              "EDGE_SERVICE_SUPPORT",
+              "5GC_SUBNETWORK",
+              "RADIO_SERVICE"
+            ],
+            "title": "Supportedexpectationobjecttype",
+            "type": "string"
+          },
+          "supportedExpectationTargetInfoList": {
+            "items": {
+              "$ref": "#/components/schemas/SupportedExpectationTargetInfo"
+            },
+            "title": "Supportedexpectationtargetinfolist",
+            "type": "array"
+          },
+          "supportedObjectContextInfoList": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SupportedContextInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedobjectcontextinfolist"
+          }
+        },
+        "required": [
+          "intentHandlingCapabilityId",
+          "supportedExpectationObjectType",
+          "supportedExpectationTargetInfoList"
+        ],
+        "title": "IntentHandlingCapability",
+        "type": "object"
+      },
+      "IntentHandlingInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "includeTraceInfo": {
+            "default": true,
+            "title": "Includetraceinfo",
+            "type": "boolean"
+          },
+          "intentTraceabilityInfoList": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IntentTraceabilityInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intenttraceabilityinfolist"
+          }
+        },
+        "title": "IntentHandlingInfo",
+        "type": "object"
+      },
+      "IntentInterpretationAssistanceInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "conditions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conditions"
+          },
+          "dateTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datetime"
+          },
+          "prevConsumerMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prevconsumermessage"
+          },
+          "prevProducerMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prevproducermessage"
+          }
+        },
+        "title": "IntentInterpretationAssistanceInfo",
+        "type": "object"
+      },
+      "IntentReportControl": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedReportTypes": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "INTENT_FULFILMENT_REPORT",
+                    "INTENT_CONFLICT_REPORT",
+                    "INTENT_FEASIBILITY_CHECK_REPORT",
+                    "INTENT_EXPLORATION_REPORT",
+                    "INTENT_FULFILMENT_NEGOTIATION_REPORT",
+                    "INTENT_UTILITY_REPORT",
+                    "INTENT_DECOMPOSITION_REPORT"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedreporttypes"
+          },
+          "observationPeriod": {
+            "title": "Observationperiod",
+            "type": "integer"
+          },
+          "reportRecipientAddress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reportrecipientaddress"
+          },
+          "reportingConditions": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reportingconditions"
+          },
+          "reportingTargets": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reportingtargets"
+          }
+        },
+        "required": [
+          "observationPeriod"
+        ],
+        "title": "IntentReportControl",
+        "type": "object"
+      },
+      "IntentReportRequest": {
+        "additionalProperties": false,
+        "description": "Wave 6 \u2014 TS 28.312 IntentReport, published by the handling function\n(or SO/SA-SMOS on its behalf). Every report kind of the spec.",
+        "properties": {
+          "intentConflictReports": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IntentConflictReport"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intentconflictreports"
+          },
+          "intentDecompositionReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntentDecompositionReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "intentExplorationReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntentExplorationReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "intentFeasibilityCheckReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntentFeasibilityCheckReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "intentFulfilmentNegotiationReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntentFulfilmentNegotiationReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "intentFulfilmentReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntentFulfilmentReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "intentReference": {
+            "format": "uuid",
+            "title": "Intentreference",
+            "type": "string"
+          },
+          "intentUtilityReports": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IntentUtilityReport"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intentutilityreports"
+          }
+        },
+        "required": [
+          "intentReference"
         ],
         "title": "IntentReportRequest",
         "type": "object"
       },
-      "RegisterRmihRequest": {
+      "IntentTraceabilityInfo": {
+        "additionalProperties": false,
         "properties": {
-          "capabilities": {
+          "decomposedExpectationID": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decomposedexpectationid"
+          },
+          "intentHandlingFunctionID": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intenthandlingfunctionid"
+          },
+          "intentID": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intentid"
+          }
+        },
+        "title": "IntentTraceabilityInfo",
+        "type": "object"
+      },
+      "IntentUtilityFormulaRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "utilityFunctionId": {
+            "title": "Utilityfunctionid",
+            "type": "string"
+          },
+          "utilityOffset": {
+            "default": 0,
+            "title": "Utilityoffset",
+            "type": "number"
+          },
+          "utilityParameterList": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/UtilityParameter"
             },
-            "title": "Capabilities",
+            "title": "Utilityparameterlist",
+            "type": "array"
+          },
+          "utilityScale": {
+            "default": 1,
+            "title": "Utilityscale",
+            "type": "number"
+          }
+        },
+        "required": [
+          "utilityFunctionId",
+          "utilityParameterList"
+        ],
+        "title": "IntentUtilityFormulaRequest",
+        "type": "object"
+      },
+      "IntentUtilityReport": {
+        "additionalProperties": false,
+        "properties": {
+          "utilityResultList": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/UtilityResult"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utilityresultlist"
+          }
+        },
+        "title": "IntentUtilityReport",
+        "type": "object"
+      },
+      "NegotiationFeedbackRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "consumerSatisfactionIndex": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumersatisfactionindex"
+          },
+          "referredIntentOutcomeId": {
+            "title": "Referredintentoutcomeid",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "referredIntentOutcomeId"
+        ],
+        "title": "NegotiationFeedbackRequest",
+        "type": "object"
+      },
+      "PossibleImpact": {
+        "additionalProperties": false,
+        "properties": {
+          "impactedAttributes": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impactedattributes"
+          },
+          "impactedObjects": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impactedobjects"
+          }
+        },
+        "title": "PossibleImpact",
+        "type": "object"
+      },
+      "PossibleIntentOutcome": {
+        "additionalProperties": false,
+        "properties": {
+          "expectationFulfilmentResults": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExpectationFulfilmentResult"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectationfulfilmentresults"
+          },
+          "intentFulfilmentInfo": {
+            "$ref": "#/components/schemas/FulfilmentInfo"
+          },
+          "possibleImpacts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PossibleImpact"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Possibleimpacts"
+          },
+          "possibleIntentOutcomeId": {
+            "title": "Possibleintentoutcomeid",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "possibleIntentOutcomeId",
+          "intentFulfilmentInfo"
+        ],
+        "title": "PossibleIntentOutcome",
+        "type": "object"
+      },
+      "RegisterRmihRequest": {
+        "additionalProperties": false,
+        "description": "Wave 6 \u2014 TS 28.312 IntentHandlingFunction with its spec attributes\n(intentHandlingCapabilityList, supportedNegotiationFunctionalities,\nsupportedUtilityList). `smeServiceId`/`notificationDestination` are this\nbuild's own: the SME-published API it serves and where new Intents are\npushed (same callback convention as DME/A1-Related).",
+        "properties": {
+          "intentHandlingCapabilityList": {
+            "items": {
+              "$ref": "#/components/schemas/IntentHandlingCapability"
+            },
+            "minItems": 1,
+            "title": "Intenthandlingcapabilitylist",
             "type": "array"
           },
           "intentHandlingScope": {
@@ -245,12 +1761,46 @@
           "smeServiceId": {
             "title": "Smeserviceid",
             "type": "string"
+          },
+          "supportedNegotiationFunctionalities": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "FEASIBILITY_CHECK",
+                    "EXPLORATION",
+                    "FULFILMENT_WITH_NEGOTIATION"
+                  ],
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportednegotiationfunctionalities"
+          },
+          "supportedUtilityList": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/UtilityDefinition"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedutilitylist"
           }
         },
         "required": [
           "rmihId",
           "smeServiceId",
-          "capabilities",
+          "intentHandlingCapabilityList",
           "notificationDestination"
         ],
         "title": "RegisterRmihRequest",
@@ -268,6 +1818,294 @@
           "regionScope"
         ],
         "title": "ResolveAutonomyDispatchRequest",
+        "type": "object"
+      },
+      "SupportedContextInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "supportedContextAttribute": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedcontextattribute"
+          },
+          "supportedContextCondition": {
+            "anyOf": [
+              {
+                "enum": [
+                  "IS_EQUAL_TO",
+                  "IS_LESS_THAN",
+                  "IS_GREATER_THAN",
+                  "IS_WITHIN_RANGE",
+                  "IS_OUTSIDE_RANGE",
+                  "IS_ONE_OF",
+                  "IS_NOT_ONE_OF",
+                  "IS_EQUAL_TO_OR_LESS_THAN",
+                  "IS_EQUAL_TO_OR_GREATER_THAN",
+                  "IS_ALL_OF"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedcontextcondition"
+          },
+          "supportedContextValueRange": {
+            "title": "Supportedcontextvaluerange"
+          }
+        },
+        "title": "SupportedContextInfo",
+        "type": "object"
+      },
+      "SupportedExpectationTargetInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "supportedTargetCondition": {
+            "anyOf": [
+              {
+                "enum": [
+                  "IS_EQUAL_TO",
+                  "IS_LESS_THAN",
+                  "IS_GREATER_THAN",
+                  "IS_WITHIN_RANGE",
+                  "IS_OUTSIDE_RANGE",
+                  "IS_ONE_OF",
+                  "IS_NOT_ONE_OF",
+                  "IS_EQUAL_TO_OR_LESS_THAN",
+                  "IS_EQUAL_TO_OR_GREATER_THAN",
+                  "IS_ALL_OF"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedtargetcondition"
+          },
+          "supportedTargetName": {
+            "title": "Supportedtargetname",
+            "type": "string"
+          },
+          "supportedTargetValueRange": {
+            "title": "Supportedtargetvaluerange"
+          }
+        },
+        "required": [
+          "supportedTargetName"
+        ],
+        "title": "SupportedExpectationTargetInfo",
+        "type": "object"
+      },
+      "TargetExplorationResult": {
+        "additionalProperties": false,
+        "properties": {
+          "cellContext": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cellcontext"
+          },
+          "coverageAreaPolygonContext": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverageareapolygoncontext"
+          },
+          "targetCondition": {
+            "anyOf": [
+              {
+                "enum": [
+                  "IS_EQUAL_TO",
+                  "IS_LESS_THAN",
+                  "IS_GREATER_THAN",
+                  "IS_WITHIN_RANGE",
+                  "IS_OUTSIDE_RANGE",
+                  "IS_ONE_OF",
+                  "IS_NOT_ONE_OF",
+                  "IS_EQUAL_TO_OR_LESS_THAN",
+                  "IS_EQUAL_TO_OR_GREATER_THAN",
+                  "IS_ALL_OF"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targetcondition"
+          },
+          "targetName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targetname"
+          },
+          "targetValueRange": {
+            "title": "Targetvaluerange"
+          }
+        },
+        "title": "TargetExplorationResult",
+        "type": "object"
+      },
+      "TargetFulfilmentResult": {
+        "additionalProperties": false,
+        "properties": {
+          "targetAchievedValue": {
+            "title": "Targetachievedvalue"
+          },
+          "targetContexts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Context"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targetcontexts"
+          },
+          "targetFulfilmentInfo": {
+            "$ref": "#/components/schemas/FulfilmentInfo"
+          },
+          "targetName": {
+            "title": "Targetname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetName",
+          "targetFulfilmentInfo"
+        ],
+        "title": "TargetFulfilmentResult",
+        "type": "object"
+      },
+      "UtilityDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "utilityDefinitionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utilitydefinitionid"
+          },
+          "utilityDescription": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utilitydescription"
+          },
+          "utilityParameterList": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/UtilityParameter"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utilityparameterlist"
+          }
+        },
+        "title": "UtilityDefinition",
+        "type": "object"
+      },
+      "UtilityParameter": {
+        "additionalProperties": false,
+        "properties": {
+          "parameterName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parametername"
+          },
+          "parameterWeight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameterweight"
+          }
+        },
+        "title": "UtilityParameter",
+        "type": "object"
+      },
+      "UtilityResult": {
+        "additionalProperties": false,
+        "properties": {
+          "utilityFunctionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utilityfunctionid"
+          },
+          "utilityResult": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utilityresult"
+          }
+        },
+        "title": "UtilityResult",
         "type": "object"
       },
       "ValidationError": {
@@ -554,7 +2392,7 @@
     },
     "/intent-handling-functions": {
       "get": {
-        "description": "List read over registered RMIHs (GUI pass) \u2014 which handlers an\nIntent can actually be dispatched to was otherwise invisible.",
+        "description": "List read over registered RMIHs (GUI pass).",
         "operationId": "list_intent_handling_functions_intent_handling_functions_get",
         "parameters": [
           {
@@ -678,7 +2516,7 @@
     },
     "/intent-reports": {
       "get": {
-        "description": "Read side of publish_intent_report \u2014 fulfilment/conflict reports\nwere write-only.",
+        "description": "Read side of publish_intent_report, newest first.",
         "operationId": "list_intent_reports_intent_reports_get",
         "parameters": [
           {
@@ -749,6 +2587,7 @@
         "summary": "List Intent Reports"
       },
       "post": {
+        "description": "PublishIntentReport \u2014 any of the spec's report kinds, at least one.\nThe new report becomes the intent's intentReportReference and is\ndelivered per its intentReportControl.",
         "operationId": "publish_intent_report_intent_reports_post",
         "requestBody": {
           "content": {
@@ -781,6 +2620,202 @@
           }
         },
         "summary": "Publish Intent Report"
+      }
+    },
+    "/intent-reports/{report_id}": {
+      "get": {
+        "operationId": "get_intent_report_intent_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Intent Report"
+      }
+    },
+    "/intent-utility-formulas": {
+      "get": {
+        "operationId": "list_intent_utility_formulas_intent_utility_formulas_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Intent Utility Formulas"
+      },
+      "post": {
+        "operationId": "create_intent_utility_formula_intent_utility_formulas_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntentUtilityFormulaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Intent Utility Formula"
+      }
+    },
+    "/intent-utility-formulas/{formula_id}": {
+      "delete": {
+        "operationId": "delete_intent_utility_formula_intent_utility_formulas__formula_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "formula_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Formula Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Intent Utility Formula"
+      },
+      "get": {
+        "operationId": "get_intent_utility_formula_intent_utility_formulas__formula_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "formula_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Formula Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Intent Utility Formula"
       }
     },
     "/intents": {
@@ -854,7 +2889,7 @@
         "summary": "Query Intents"
       },
       "post": {
-        "description": "CreateIntent \u2014 Wave 3 (docs/ownership/INTENT_SERVICE_OWNERSHIP.md's\n\"Open item carried into Wave 3\"): the caller now addresses a specific,\nalready-registered RMIH by `rmihId` (consumer-side selection,\nTS28312_IntentNrm.yaml's own NRM containment \u2014 IntentHandlingFunction\n*contains* Intent), replacing the former producer-side push that\nmatched and notified every capability-matching RMIH after the fact.\n\n404 if `rmihId` names no registered function at all. If the Intent\ndeclares expectation object types and/or a handling scope, the named\nRMIH must actually cover them (`RMIH_CAPABILITY_MISMATCH`, 422) \u2014\naddressing an Intent to a handler that can't fulfil it is rejected at\ncreation, not silently accepted. Dispatch to that one RMIH is\nbest-effort: a callback failure never blocks CreateIntent succeeding.",
+        "description": "CreateIntent \u2014 the caller addresses a specific, already-registered\nRMIH by `rmihId` (consumer-side selection, TS 28.312 containment).\n404 if no such function; 422 RMIH_CAPABILITY_MISMATCH if the function\ncannot handle the intent's object types, scope or management purpose,\nor \u2014 for a fulfilment purpose \u2014 any of its targets (see\n`_create_intent_row`). Dispatch to the RMIH is best-effort.",
         "operationId": "create_intent_intents_post",
         "requestBody": {
           "content": {
@@ -891,7 +2926,7 @@
     },
     "/intents/{intent_id}": {
       "delete": {
-        "description": "SPEC_AUDIT.md item 5: no DELETE /intents/{id} existed at all \u2014\nan RMIO had no way to ever retract an Intent it created, only\ndeactivate it (UpdateIntentAdminState). Symmetric with\nderegister_intent_handling_function's own idempotent shape below.",
+        "description": "SPEC_AUDIT.md item 5: an RMIO retracts an Intent it created.\nIdempotent.",
         "operationId": "delete_intent_intents__intent_id__delete",
         "parameters": [
           {
@@ -923,7 +2958,7 @@
         "summary": "Delete Intent"
       },
       "get": {
-        "description": "NEW \u2014 v1.3 had CreateIntent and subscribe/publish, but no read\noperation at all (Policy Mgmt LLD section 1).\n\nWave 3: a real 404 here (rather than crashing) matters more now that\n`Intent.rmih_id`'s ON DELETE CASCADE means an Intent can legitimately\nvanish out from under a caller mid-flight, when its addressed RMIH is\nderegistered.",
+        "description": "QueryIntent \u2014 a real 404 matters since `Intent.rmih_id`'s ON DELETE\nCASCADE means an Intent can vanish when its RMIH is deregistered.",
         "operationId": "query_intent_intents__intent_id__get",
         "parameters": [
           {
@@ -962,7 +2997,7 @@
     },
     "/intents/{intent_id}/admin-state": {
       "patch": {
-        "description": "NEW \u2014 closes v1.3's gap: intentAdminState had two enum values and no\noperation ever transitioning it. RMIO-only, checked against rmioId.",
+        "description": "UpdateIntentAdminState \u2014 RMIO-only. Wave 6: a DEACTIVATED intent's\nreport moves to NOT_FULFILLED / SUSPENDED (TS 28.312 NotFulfilledState)\nand is delivered per intentReportControl; reactivating it reports\nRECEIVED again until the handler reports otherwise.",
         "operationId": "update_intent_admin_state_intents__intent_id__admin_state_patch",
         "parameters": [
           {
@@ -1007,6 +3042,55 @@
           }
         },
         "summary": "Update Intent Admin State"
+      }
+    },
+    "/intents/{intent_id}/negotiation-feedback": {
+      "post": {
+        "description": "TS 28.312 IntentFulfilmentNegotiationFeedback: the consumer picks one\nof the possibleIntentOutcomeList entries of the intent's latest\nnegotiation report.",
+        "operationId": "submit_negotiation_feedback_intents__intent_id__negotiation_feedback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Intent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NegotiationFeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Negotiation Feedback"
       }
     }
   },

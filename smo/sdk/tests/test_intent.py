@@ -12,14 +12,25 @@ def client(r1):
 
 
 def test_create_intent(client, r1):
-    client.create_intent([{"expectationType": "DELIVERY"}], "rmih-1", priority=2, rmio_id="rmio-1")
+    expectation = {"expectationId": "e1", "expectationObject": {"objectType": "RAN_SUBNETWORK"},
+                   "expectationTargets": [{"targetName": "x", "targetCondition": "IS_LESS_THAN", "targetValueRange": 1}]}
+    client.create_intent([expectation], "rmih-1", "my intent", intent_priority=2, rmio_id="rmio-1")
     call = r1.calls[0]
     assert call["verb"] == "post"
     assert call["path"] == "/intent-service/intents"
     assert call["json"] == {
-        "expectations": [{"expectationType": "DELIVERY"}], "priority": 2, "rmioId": "rmio-1", "rmihId": "rmih-1",
-        "intentMgmtPurpose": "FULFILMENT_WITHOUT_NEGOTIATION", "intentHandlingScope": None,
+        "userLabel": "my intent", "intentExpectations": [expectation], "intentPriority": 2,
+        "intentReportControl": [{"observationPeriod": 60}], "rmioId": "rmio-1", "rmihId": "rmih-1",
+        "intentMgmtPurpose": "FULFILMENT_WITHOUT_NEGOTIATION",
     }
+
+
+def test_energy_saving_expectation_template():
+    from smo_sdk.intent import energy_saving_expectation
+    exp = energy_saving_expectation("SubNetwork=1", cells=[{"nCI": 101}], max_energy_consumption=500)
+    assert exp["expectationObject"]["objectContexts"][0]["contextAttribute"] == "Cell"
+    assert exp["expectationTargets"] == [{"targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValueRange": 500}]
+    assert exp["guaranteePeriods"][0]["contextValueRange"]["timeWindow"] == {"startTime": "00:00", "endTime": "05:00"}
 
 
 def test_get_intent(client, r1):
@@ -49,12 +60,11 @@ def test_delete_intent(client, r1):
 
 def test_publish_intent_report(client, r1):
     intent_id = uuid.uuid4()
-    client.publish_intent_report(intent_id, {"status": "FULFILLED"}, conflict_reports=[{"a": 1}])
+    report = {"intentFulfilmentInfo": {"fulfilmentStatus": "FULFILLED"}}
+    client.publish_intent_report(intent_id, intentFulfilmentReport=report)
     call = r1.calls[0]
     assert call["path"] == "/intent-service/intent-reports"
-    assert call["json"] == {
-        "intentId": str(intent_id), "fulfilmentReport": {"status": "FULFILLED"}, "conflictReports": [{"a": 1}],
-    }
+    assert call["json"] == {"intentReference": str(intent_id), "intentFulfilmentReport": report}
 
 
 def test_list_intent_reports(client, r1):
@@ -64,12 +74,14 @@ def test_list_intent_reports(client, r1):
 
 
 def test_register_intent_handling_function(client, r1):
-    client.register_intent_handling_function("rmih-1", "sme-svc-1", [{"cap": "x"}], "http://x/notify")
+    caps = [{"intentHandlingCapabilityId": "c1", "supportedExpectationObjectType": "RAN_SUBNETWORK",
+             "supportedExpectationTargetInfoList": [{"supportedTargetName": "RANEnergyConsumption"}]}]
+    client.register_intent_handling_function("rmih-1", "sme-svc-1", caps, "http://x/notify")
     call = r1.calls[0]
     assert call["path"] == "/intent-service/intent-handling-functions"
     assert call["json"] == {
-        "rmihId": "rmih-1", "smeServiceId": "sme-svc-1", "capabilities": [{"cap": "x"}],
-        "notificationDestination": "http://x/notify", "intentHandlingScope": None,
+        "rmihId": "rmih-1", "smeServiceId": "sme-svc-1", "intentHandlingCapabilityList": caps,
+        "notificationDestination": "http://x/notify",
     }
 
 

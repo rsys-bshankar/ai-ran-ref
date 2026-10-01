@@ -142,33 +142,52 @@ function IntentActions({ intent }: { intent: Intent }) {
   );
 }
 
+/** A spec-valid default target per expectation family (TS 28.312: each family fixes its targets' conditions/value ranges). */
+const DEFAULT_TARGETS: Record<string, string> = {
+  RAN_SUBNETWORK: '[{"targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValueRange": 500}]',
+  RADIO_SERVICE: '[{"targetName": "DlThptPerUE", "targetCondition": "IS_GREATER_THAN", "targetValueRange": 50}]',
+  "5GC_SUBNETWORK": '[{"targetName": "Latency", "targetCondition": "IS_LESS_THAN", "targetValueRange": 20}]',
+  EDGE_SERVICE_SUPPORT: '[{"targetName": "DlLatency", "targetCondition": "IS_LESS_THAN", "targetValueRange": 20}]',
+  SUBNETWORK: '[{"targetName": "MaintenanceVersion", "targetCondition": "IS_EQUAL_TO", "targetValueRange": "1.0"}]',
+};
+
+/** One TS 28.312 IntentExpectation from the form's object type + targets. */
+function expectationOf(objectType: string, targets: unknown[]) {
+  return { expectationId: "e1", expectationVerb: "DELIVER", expectationObject: { objectType }, expectationTargets: targets };
+}
+
 function CreateIntent() {
   const handlers = useSmo<Rmih[]>("/intent-service/intent-handling-functions");
   const [rmihId, setRmihId] = useState("");
+  const [userLabel, setUserLabel] = useState("");
   const [objectType, setObjectType] = useState("RAN_SUBNETWORK");
-  const [targets, setTargets] = useState('[{"targetName": "DLThptPerUE", "targetCondition": "IS_GREATER_THAN", "targetValueRange": 50}]');
+  const [targets, setTargets] = useState(DEFAULT_TARGETS.RAN_SUBNETWORK);
   const [priority, setPriority] = useState("1");
+  const [reportTo, setReportTo] = useState("");
   const [purpose, setPurpose] = useState(PURPOSES[0]);
   const [scope, setScope] = useState("");
   let parsedTargets: unknown[] | null = null;
   try { const v = JSON.parse(targets); parsedTargets = Array.isArray(v) ? v : null; } catch { parsedTargets = null; }
   return (
     <Card title="Create intent">
-      <p className="muted small">Addressed to one handler you choose below (consumer-side selection, TS 28.312's own NRM containment) — rejected at creation if that handler's declared <code>supportedExpectationObjectType</code>/scope doesn't cover this Intent.</p>
+      <p className="muted small">A strict TS 28.312 Intent, addressed to one handler you choose below (consumer-side selection). Rejected at creation if that handler's declared capabilities, targets or scope don't cover it; a feasibility-check purpose is accepted and reports what isn't feasible.</p>
       <div className="form grid cols-3 tight">
         <Field label="Handler (RMIH)"><select value={rmihId} onChange={(e) => setRmihId(e.target.value)}><option value="">select…</option>{(handlers.data ?? []).map((h) => <option key={h.rmihId} value={h.rmihId}>{h.rmihId}</option>)}</select></Field>
-        <Field label="Expectation object type"><select value={objectType} onChange={(e) => setObjectType(e.target.value)}>{OBJECT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></Field>
+        <Field label="User label"><input value={userLabel} onChange={(e) => setUserLabel(e.target.value)} placeholder="e.g. night-time energy saving" /></Field>
+        <Field label="Expectation object type"><select value={objectType} onChange={(e) => { setObjectType(e.target.value); setTargets(DEFAULT_TARGETS[e.target.value] ?? "[]"); }}>{OBJECT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></Field>
+        <Field label="Report recipient" hint="Optional — receives this Intent's reports (intentReportControl)."><input value={reportTo} onChange={(e) => setReportTo(e.target.value)} placeholder="http://rapp:8000/intent-reports" /></Field>
         <Field label="Priority"><input type="number" min={1} value={priority} onChange={(e) => setPriority(e.target.value)} /></Field>
         <Field label="Handling scope"><select value={scope} onChange={(e) => setScope(e.target.value)}><option value="">any</option><option>RAN</option><option>CN</option></select></Field>
         <Field label="Purpose"><select value={purpose} onChange={(e) => setPurpose(e.target.value)}>{PURPOSES.map((p) => <option key={p}>{p}</option>)}</select></Field>
         <Field label="Expectation targets (JSON array)" hint={parsedTargets ? undefined : <span className="text-bad">must be a JSON array</span>}><textarea rows={2} value={targets} onChange={(e) => setTargets(e.target.value)} spellCheck={false} /></Field>
       </div>
-      <ActionButton label="Create intent" tone="primary" disabled={!parsedTargets || !rmihId} action={{
+      <ActionButton label="Create intent" tone="primary" disabled={!parsedTargets || parsedTargets.length === 0 || !rmihId || !userLabel} action={{
         method: "POST", path: "/intent-service/intents", success: "Intent created",
         json: {
-          rmihId,
-          expectations: [{ expectationVerb: "DELIVER", expectationObject: { objectType }, expectationTargets: parsedTargets ?? [] }],
-          priority: Number(priority) || 1, intentMgmtPurpose: purpose, intentHandlingScope: scope || null,
+          rmihId, userLabel,
+          intentExpectations: [expectationOf(objectType, parsedTargets ?? [])],
+          intentReportControl: [reportTo ? { observationPeriod: 60, reportRecipientAddress: reportTo } : { observationPeriod: 60 }],
+          intentPriority: Number(priority) || 1, intentMgmtPurpose: purpose, intentHandlingScope: scope || null,
         },
       }} />
     </Card>
@@ -180,13 +199,15 @@ function IntentDrawer({ intent, onClose }: { intent: Intent; onClose: () => void
   return (
     <Drawer title={<>Intent <Id value={intent.intentId} /></>} onClose={onClose}>
       <div className="row between"><StateBadge state={intent.intentAdminState} /><IntentActions intent={intent} /></div>
-      <KeyValue items={[["Intent ID", <code>{intent.intentId}</code>], ["RMIO", intent.rmioId], ["Priority", intent.intentPriority], ["Purpose", intent.intentMgmtPurpose]]} />
-      <h3>Fulfilment / conflict reports</h3>
+      <KeyValue items={[["Intent ID", <code>{intent.intentId}</code>], ["Label", intent.userLabel ?? "—"], ["RMIO", intent.rmioId], ["Priority", intent.intentPriority], ["Purpose", intent.intentMgmtPurpose]]} />
+      <h3>Expectations</h3>
+      <Json value={intent.attributes?.intentExpectations ?? []} />
+      <h3>Intent reports</h3>
       <Can method="POST" path="/intent-service/intent-reports"><PublishIntentReport intentId={intent.intentId} /></Can>
       {(reports.data ?? []).length === 0 ? <p className="muted">No reports published by a handler yet.</p> : reports.data!.map((r) => (
         <div key={r.reportId} className="report">
-          <div className="muted small">{formatTime(r.lastUpdatedTime)}</div>
-          <Json value={{ fulfilmentReport: r.fulfilmentReport, conflictReports: r.conflictReports }} />
+          <div className="muted small">{formatTime(r.attributes.lastUpdatedTime)}</div>
+          <Json value={r.attributes} />
         </div>
       ))}
     </Drawer>
@@ -195,14 +216,15 @@ function IntentDrawer({ intent, onClose }: { intent: Intent; onClose: () => void
 
 function Handlers() {
   const handlers = useSmo<Rmih[]>("/intent-service/intent-handling-functions");
-  const [f, setF] = useState({ rmihId: "so-smos", smeServiceId: "so-smos-intent-handler", callback: "http://so-smos:8000/intents", types: "RAN_SUBNETWORK", scope: "RAN" });
+  const [f, setF] = useState({ rmihId: "so-smos", smeServiceId: "so-smos-intent-handler", callback: "http://so-smos:8000/intents", types: "RAN_SUBNETWORK", targetNames: "RANEnergyConsumption", scope: "RAN" });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(f.rmihId);
   return (
     <Card title="Registered intent handlers" actions={<span className="muted small">Framework-internal only (SO SMOS / SA SMOS) — D-SEC-POLICY-1</span>}>
       <DataTable rows={handlers.data} loading={handlers.isLoading} error={handlers.error} rowKey={(h) => h.rmihId} empty="No intent handlers registered." columns={[
         { header: "RMIH", render: (h) => <strong>{h.rmihId}</strong> },
-        { header: "Supported object types", render: (h) => h.capabilities.map((c) => String(c.supportedExpectationObjectType ?? "?")).join(", ") },
+        { header: "Supported object types", render: (h) => (h.attributes?.intentHandlingCapabilityList ?? []).map((c) => c.supportedExpectationObjectType).join(", ") },
+        { header: "Supported targets", render: (h) => [...new Set((h.attributes?.intentHandlingCapabilityList ?? []).flatMap((c) => c.supportedExpectationTargetInfoList.map((t) => t.supportedTargetName)))].join(", ") || "—" },
         { header: "Scope", render: (h) => h.intentHandlingScope?.join(", ") ?? "any" },
         { header: "Callback", render: (h) => <code className="small">{h.notificationDestination}</code> },
         { header: "", className: "actions", render: (h) => <ActionButton label="Deregister" tone="danger" confirm={`Deregister ${h.rmihId}?`}
@@ -217,12 +239,17 @@ function Handlers() {
             <Field label="SME service ID"><input value={f.smeServiceId} onChange={set("smeServiceId")} /></Field>
             <Field label="Notification callback"><input value={f.callback} onChange={set("callback")} /></Field>
             <Field label="Supported expectation object types" hint="Comma-separated: RAN_SUBNETWORK, EDGE_SERVICE_SUPPORT, 5GC_SUBNETWORK, RADIO_SERVICE"><input value={f.types} onChange={set("types")} /></Field>
+            <Field label="Supported target names" hint="Comma-separated, e.g. RANEnergyConsumption, AveDLPrbLoad — an Intent's targets must be among them"><input value={f.targetNames} onChange={set("targetNames")} /></Field>
             <Field label="Handling scope"><select value={f.scope} onChange={set("scope")}><option value="">any</option><option>RAN</option><option>CN</option></select></Field>
           </div>
           <ActionButton label="Register handler" disabled={!f.rmihId || !f.types} action={{
             method: "POST", path: "/intent-service/intent-handling-functions", success: "Handler registered",
             json: { rmihId: f.rmihId, smeServiceId: f.smeServiceId, notificationDestination: f.callback,
-              capabilities: splitList(f.types).map((t) => ({ supportedExpectationObjectType: t })), intentHandlingScope: f.scope ? [f.scope] : null },
+              intentHandlingCapabilityList: splitList(f.types).map((t) => ({
+                intentHandlingCapabilityId: `cap-${t}`, supportedExpectationObjectType: t,
+                supportedExpectationTargetInfoList: splitList(f.targetNames).map((n) => ({ supportedTargetName: n })),
+              })),
+              intentHandlingScope: f.scope ? [f.scope] : null },
           }} />
         </details>
       </Can>
@@ -237,13 +264,17 @@ function PublishIntentReport({ intentId }: { intentId: string }) {
     <details className="admin-tools">
       <summary>Admin: publish a report as the handling RMIH</summary>
       <div className="form inline">
-        <Field label="Fulfilment status"><select value={status} onChange={(e) => setStatus(e.target.value)}>{["FULFILLED", "NOT_FULFILLED", "DEGRADED", "SUSPENDED"].map((s) => <option key={s}>{s}</option>)}</select></Field>
+        <Field label="Fulfilment" hint="FULFILLED, or NOT_FULFILLED with its TS 28.312 state"><select value={status} onChange={(e) => setStatus(e.target.value)}>{["FULFILLED", "RECEIVED", "DEGRADED", "SUSPENDED", "TERMINATED"].map((s) => <option key={s}>{s}</option>)}</select></Field>
         <Field label="Conflicting intents" hint="Comma-separated intent ids"><input value={conflicts} onChange={(e) => setConflicts(e.target.value)} /></Field>
       </div>
       <ActionButton label="Publish report" action={{
         method: "POST", path: "/intent-service/intent-reports", success: "Report published",
-        json: { intentId, fulfilmentReport: { fulfilmentStatus: status, reportedBy: "so-smos" },
-          conflictReports: splitList(conflicts).length ? splitList(conflicts).map((c) => ({ conflictingIntent: c })) : null },
+        json: {
+          intentReference: intentId,
+          intentFulfilmentReport: { intentFulfilmentInfo: status === "FULFILLED" ? { fulfilmentStatus: "FULFILLED" } : { fulfilmentStatus: "NOT_FULFILLED", notFullfilledState: status } },
+          intentConflictReports: splitList(conflicts).length
+            ? splitList(conflicts).map((c, i) => ({ conflictId: `c${i + 1}`, conflictType: "INTENT_CONFLICT", conflictingIntent: c })) : null,
+        },
       }} />
     </details>
   );
@@ -281,7 +312,7 @@ function CreateAutonomyDispatch() {
   const [instanceId, setInstanceId] = useState("");
   const [rmihId, setRmihId] = useState("");
   const [objectType, setObjectType] = useState("RAN_SUBNETWORK");
-  const [targets, setTargets] = useState('[{"targetName": "DLThptPerUE", "targetCondition": "IS_GREATER_THAN", "targetValueRange": 50}]');
+  const [targets, setTargets] = useState(DEFAULT_TARGETS.RAN_SUBNETWORK);
   const [notificationDestination, setNotificationDestination] = useState("");
   let parsedTargets: unknown[] | null = null;
   try { const v = JSON.parse(targets); parsedTargets = Array.isArray(v) ? v : null; } catch { parsedTargets = null; }
@@ -297,7 +328,7 @@ function CreateAutonomyDispatch() {
           </select>
         </Field>
         <Field label="Handler (RMIH)"><select value={rmihId} onChange={(e) => setRmihId(e.target.value)}><option value="">select…</option>{(handlers.data ?? []).map((h) => <option key={h.rmihId} value={h.rmihId}>{h.rmihId}</option>)}</select></Field>
-        <Field label="Expectation object type"><select value={objectType} onChange={(e) => setObjectType(e.target.value)}>{OBJECT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></Field>
+        <Field label="Expectation object type"><select value={objectType} onChange={(e) => { setObjectType(e.target.value); setTargets(DEFAULT_TARGETS[e.target.value] ?? "[]"); }}>{OBJECT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></Field>
         <Field label="Operator notification destination" hint="All three modes always notify — optional, same as every other subscription-shaped callback."><input value={notificationDestination} onChange={(e) => setNotificationDestination(e.target.value)} placeholder="http://operator:8000/autonomy-notify" /></Field>
         <Field label="Expectation targets (JSON array)" hint={parsedTargets ? undefined : <span className="text-bad">must be a JSON array</span>}><textarea rows={2} value={targets} onChange={(e) => setTargets(e.target.value)} spellCheck={false} /></Field>
       </div>
@@ -306,11 +337,11 @@ function CreateAutonomyDispatch() {
         : selected.autonomyMode === "ASSIST" ? "this will wait for an operator to supply a region scope before anything is dispatched."
         : "this is observe-only — nothing is ever dispatched."
       }</p>}
-      <ActionButton label="Request dispatch" tone="primary" disabled={!parsedTargets || !instanceId || !rmihId} action={{
+      <ActionButton label="Request dispatch" tone="primary" disabled={!parsedTargets || parsedTargets.length === 0 || !instanceId || !rmihId} action={{
         method: "POST", path: "/intent-service/autonomy-dispatches", success: "Autonomy dispatch requested",
         json: {
           instanceId, rmihId, notificationDestination: notificationDestination || null,
-          expectations: [{ expectationVerb: "DELIVER", expectationObject: { objectType }, expectationTargets: parsedTargets ?? [] }],
+          expectations: [expectationOf(objectType, parsedTargets ?? [])],
         },
       }} />
     </Card>

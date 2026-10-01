@@ -1097,13 +1097,25 @@ CREATE TABLE intent_handling_function (
   sme_service_id                  TEXT NOT NULL,
   intent_handling_scope             JSONB,
   intent_handling_capability_list     JSONB NOT NULL,
-  notification_destination            TEXT NOT NULL  -- Wave 3: renamed from notification_callback_uri, unified with every other subscription-shaped resource's own callback field
+  notification_destination            TEXT NOT NULL,  -- Wave 3: renamed from notification_callback_uri, unified with every other subscription-shaped resource's own callback field
+  -- Wave 6 — TS 28.312 IntentHandlingFunction attributes.
+  supported_negotiation_functionalities JSONB,
+  supported_utility_list                 JSONB
+);
+
+-- Wave 6 — TS 28.312 IntentUtilityFormula IOC.
+CREATE TABLE intent_utility_formula (
+  intent_utility_formula_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  utility_function_id         TEXT NOT NULL,
+  utility_parameter_list       JSONB NOT NULL,
+  utility_scale                 DOUBLE PRECISION NOT NULL DEFAULT 1,
+  utility_offset                 DOUBLE PRECISION NOT NULL DEFAULT 0
 );
 
 CREATE TABLE intent (
   intent_id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_label                   TEXT,
-  intent_expectations            JSONB NOT NULL,   -- opaque; TS 28.312 text not in this project's corpus
+  intent_expectations            JSONB NOT NULL,   -- Wave 6: strict TS 28.312 IntentExpectation list (family-validated)
   -- SPEC_AUDIT.md item 3: this column previously stored the invented
   -- top-level `intentType` matching field; now stores the spec's real
   -- IntentMgmtPurpose (a workflow-procedure enum, unrelated to matching).
@@ -1118,7 +1130,19 @@ CREATE TABLE intent (
   -- that containment literally (deregistering an RMIH really does end
   -- every Intent addressed to it, not just orphan a dangling reference),
   -- same house pattern as intent_report's own cascade below.
-  rmih_id                                     TEXT NOT NULL REFERENCES intent_handling_function(rmih_id) ON DELETE CASCADE
+  rmih_id                                     TEXT NOT NULL REFERENCES intent_handling_function(rmih_id) ON DELETE CASCADE,
+  -- Wave 6 — the remaining TS 28.312 Intent attributes.
+  context_selectivity                    TEXT CHECK (context_selectivity IN ('ALL_OF','ONE_OF','ANY_OF')),
+  consumer_satisfaction_index_threshold    INTEGER,
+  expectation_selectivity                    TEXT CHECK (expectation_selectivity IN ('ALL_OF','ONE_OF','ANY_OF')),
+  intent_contexts                              JSONB,
+  intent_report_control                          JSONB,
+  implicit_intent_index                            BOOLEAN NOT NULL DEFAULT false,
+  guarantee_periods                                  JSONB,
+  intent_handling_info                                 JSONB,
+  intent_interpretation_assistance_info                  JSONB,
+  intent_report_reference                                  UUID,  -- current intent_report (no FK: intent_report already points back here)
+  intent_utility_formula_id                                  UUID REFERENCES intent_utility_formula(intent_utility_formula_id) ON DELETE SET NULL
 );
 
 CREATE TABLE intent_report (
@@ -1130,6 +1154,12 @@ CREATE TABLE intent_report (
   intent_id            UUID NOT NULL REFERENCES intent(intent_id) ON DELETE CASCADE,   -- was intent_reference (bare string) pre-LLD
   intent_fulfilment_report JSONB,
   intent_conflict_reports    JSONB,
+  -- Wave 6 — the rest of TS 28.312's report kinds.
+  intent_feasibility_check_report      JSONB,
+  intent_exploration_report             JSONB,
+  intent_utility_reports                 JSONB,
+  intent_fulfilment_negotiation_report    JSONB,
+  intent_decomposition_report              JSONB,
   last_updated_time            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

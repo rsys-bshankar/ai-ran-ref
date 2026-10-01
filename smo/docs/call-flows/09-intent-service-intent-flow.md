@@ -39,28 +39,30 @@ sequenceDiagram
     actor RMIO as Intent-owning rApp (RMIO)
     actor Operator as Operator
 
-    SO->>R1: POST /intent-service/intent-handling-functions<br/>(rmihId, smeServiceId, capabilities, notificationDestination, intentHandlingScope?)
+    SO->>R1: POST /intent-service/intent-handling-functions<br/>(rmihId, smeServiceId, intentHandlingCapabilityList, notificationDestination, intentHandlingScope?, supportedNegotiationFunctionalities?)
     R1->>Policy: (proxied) RegisterIntentHandlingFunction
     Policy->>Policy: is_framework_internal_identity(rmihId)?
     alt caller is an ordinary rApp
         Policy-->>SO: 409 SERVICE_NAME_CONFLICT — external callers may never hold an rmihId (D-SEC-POLICY-1)
     else caller is a framework-internal SMO module
-        Policy->>Policy: create IntentHandlingFunction<br/>(capabilities: [{supportedExpectationObjectType: "RAN_SUBNETWORK"}, ...])
+        Policy->>Policy: create IntentHandlingFunction<br/>(intentHandlingCapabilityList: [{supportedExpectationObjectType, supportedExpectationTargetInfoList}, ...])
         Policy-->>SO: rmihId
     end
 
     rect rgb(240, 255, 240)
     Note over RMIO,Policy: Consumer-side selection (Wave 3) — the caller addresses<br/>one already-registered RMIH directly, per TS28312_IntentNrm.yaml's<br/>own NRM containment (IntentHandlingFunction *contains* Intent)
-    RMIO->>R1: POST /intent-service/intents (expectations, priority, rmioId, rmihId)
+    RMIO->>R1: POST /intent-service/intents (strict TS 28.312: userLabel, intentExpectations, intentReportControl, rmioId, rmihId)
     R1->>Policy: (proxied) CreateIntent
     Policy->>Policy: fn = get(IntentHandlingFunction, rmihId)
     alt no such rmihId registered
         Policy-->>RMIO: 404 INTENT_HANDLING_FUNCTION_NOT_FOUND
-    else fn doesn't cover the Intent's requested expectationObjectTypes or scope
+    else fn doesn't cover every expectation object type, the scope, the purpose's negotiation functionality, or (fulfilment purposes) a target
         Policy-->>RMIO: 422 RMIH_CAPABILITY_MISMATCH
-    else fn genuinely covers it
+    else fn genuinely covers it (Wave 6: feasibility-check purposes are accepted with an INFEASIBLE report)
         Policy->>Policy: create Intent, intentAdminState=ACTIVATED (default)
-        Policy->>SO: best-effort POST fn.notificationDestination<br/>(intentId, expectationObjectTypes, priority, rmioId)
+        Policy->>Policy: initial IntentReport (fulfilment RECEIVED, target conflicts, feasibility) = intentReportReference
+        Policy->>SO: best-effort POST fn.notificationDestination<br/>(intentId, expectationObjectTypes, intentPriority, rmioId)
+        Policy->>RMIO: best-effort notifyIntentReport to each intentReportControl.reportRecipientAddress
         Note over Policy,SO: unreachable RMIH never fails CreateIntent itself —<br/>same best-effort-push pattern as every other<br/>subscription-shaped notification in this build
         Policy-->>RMIO: intentId
     end
@@ -68,7 +70,7 @@ sequenceDiagram
 
     rect rgb(255, 250, 230)
     Note over RMIO,RappMgmt: OPEN_ITEMS.md 6.3, closed — rApp Autonomy Modes: the real,<br/>automated hand-off from an AI/ML inference outcome (call flow 02) to<br/>an Intent, instead of RMIO's own direct CreateIntent above
-    RMIO->>R1: POST /intent-service/autonomy-dispatches<br/>(instanceId, modelId?, expectations, rmihId, notificationDestination?)
+    RMIO->>R1: POST /intent-service/autonomy-dispatches<br/>(instanceId, modelId?, expectations as TS 28.312 IntentExpectations, rmihId, notificationDestination?)
     R1->>Policy: (proxied) RequestAutonomyDispatch
     Policy->>RappMgmt: GET /rapp-mgmt/instances/{instanceId}
     RappMgmt-->>Policy: autonomyMode, regionScope
@@ -95,7 +97,7 @@ sequenceDiagram
     end
 
     loop RMIH's own fulfilment cycle
-        SO->>R1: POST /intent-service/intent-reports (intentId, fulfilmentReport, conflictReports?)
+        SO->>R1: POST /intent-service/intent-reports (intentReference + any TS 28.312 report kind)
         R1->>Policy: (proxied) PublishIntentReport
         Policy->>Policy: persist IntentReport, last_updated_time=now()
         Policy-->>SO: reportId
@@ -103,7 +105,7 @@ sequenceDiagram
 
     RMIO->>R1: GET /intent-service/intents/{id}
     R1->>Policy: (proxied) QueryIntent
-    Policy-->>RMIO: intentAdminState, priority, ...
+    Policy-->>RMIO: intentAdminState, intentPriority, attributes{...}
 
     RMIO->>R1: PATCH /intent-service/intents/{id}/admin-state (newState=DEACTIVATED, requesterId=rmioId)
     R1->>Policy: (proxied) UpdateIntentAdminState

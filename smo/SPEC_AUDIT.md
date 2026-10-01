@@ -220,6 +220,13 @@ section for the full detail (including the real `ON DELETE CASCADE`
 consequence of adopting the containment model literally). The former
 `_matching_rmihs` multi-candidate scan no longer exists.
 
+*(**Wave 6 update:** Intent Service is now strict TS 28.312 at REST level. Intent,
+IntentReport (all 7 report kinds), IntentHandlingFunction and IntentUtilityFormula are
+implemented, and every expectation is checked against its expectation family. Items 4 and 6
+below are closed; items 1–3 and 5 were already closed. See
+`docs/roadmap/TS28312_COMPLIANCE_MATRIX.md`: 83 of 91 rows compliant, 8 partial value
+datatypes, addressing the recorded deviation.)*
+
 Concrete deltas, independent of the architecture question above:
 
 1. **`intentHandlingScope` should be a closed 2-value enum (RAN/CN),
@@ -237,14 +244,17 @@ Concrete deltas, independent of the architecture question above:
    (FEASIBILITYCHECK, FULFILMENT_WITHOUT_NEGOTIATION, ...), not a
    domain/object-type discriminator — the field driving matching is
    semantically the wrong one per the spec. Tied to fixing (2).
-4. **Missing required `Intent` fields**: `intentReportControl`,
+4. ~~**Missing required `Intent` fields**~~ — **closed in Wave 6** (userLabel,
+   intentReportControl with report delivery, intentReportReference, and every other Intent
+   attribute). Original finding: `intentReportControl`,
    `intentReportReference` (no report-subscription config exists at
    all — `observationPeriod`, `expectedReportTypes`,
    `reportRecipientAddress`); `userLabel` exists on the model but is
    never settable via the create request — moderate, a real feature
    gap, not just naming.
 5. **No `DELETE /intents/{id}`** — small, easy.
-6. **`IntentReport` only covers 2 of the spec's 6 report kinds**
+6. ~~**`IntentReport` only covers 2 of the spec's 6 report kinds**~~ — **closed in Wave 6**
+   (all 7 kinds, spec-validated, plus GET by id and negotiation feedback). Original finding:
    (fulfilment, conflict — missing feasibility-check, exploration,
    negotiation, decomposition), and there's no GET to read reports
    back — moderate; reasonable to leave descoped given

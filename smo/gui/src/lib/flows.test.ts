@@ -125,8 +125,14 @@ describe("flow 07 — fault reporting", () => {
 
 describe("flow 09 — intents", () => {
   it("marks the named-RMIH dispatch step done once an intent exists (consumer-side selection guarantees a valid target)", () => {
-    const intent = { intentId: "i", intentAdminState: "ACTIVATED", intentPriority: 1, rmioId: "smo-gui", intentMgmtPurpose: null, rmihId: "so-smos" };
+    const intent = { intentId: "i", intentAdminState: "ACTIVATED", intentPriority: 1, rmioId: "smo-gui", intentMgmtPurpose: null, rmihId: "so-smos", userLabel: "t", attributes: {} };
     expect(flow09([], intent, [])[2].status).toBe("done");
+  });
+  it("counts only handler reports, not Intent Service's own initial RECEIVED report", () => {
+    const intent = { intentId: "i", intentAdminState: "ACTIVATED", intentPriority: 1, rmioId: "smo-gui", intentMgmtPurpose: null, rmihId: "so-smos", userLabel: "t", attributes: {} };
+    const report = (n: number) => ({ reportId: `r${n}`, intentId: "i", attributes: { lastUpdatedTime: "2026-01-01T00:00:00Z" } });
+    expect(flow09([], intent, [report(1)])[3].status).not.toBe("done");
+    expect(flow09([], intent, [report(1), report(2)])[3].status).toBe("done");
   });
 });
 
