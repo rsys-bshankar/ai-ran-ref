@@ -184,3 +184,11 @@ def test_injected_faults_are_consumed_in_order():
     client.post("/faults", json={"mode": "RPC_ERROR"})
     assert "rpc-error" in _edit("gnb-1", "NRCellDU=103", {"administrativeState": "LOCKED"}).text
     assert client.post("/faults", json={"mode": "MELT"}).status_code == 422
+
+
+def test_neighbour_relation_and_dmro_defaults_and_writes():
+    """Wave 10.2 (W10.2-04)."""
+    assert _get("gnb-1", "NRCellRelation=201-202") == {"cellIndividualOffset": "[0, 0, 0, 0, 0, 0]", "isHOAllowed": "true"}
+    _edit("gnb-1", "NRCellRelation=201-202", {"cellIndividualOffset": "[2, 2, 2, 2, 2, 2]"})
+    assert _get("gnb-1", "NRCellRelation=201-202")["cellIndividualOffset"] == "[2, 2, 2, 2, 2, 2]"
+    assert _get("gnb-1", "DMROFunction=gnb-1")["dmroControl"] == "true"

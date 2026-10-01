@@ -1,0 +1,24 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: >
+  MobilityOptimization_rApp — the Wave 10.2 reference rApp
+  (smo/docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md §10). A Non-RT RIC rApp that
+  classifies handover failures per neighbour relation (too-late / too-early /
+  wrong-cell / ping-pong) from O1 PM data and tunes each relation's Cell
+  Individual Offset (NRCellRelation.cellIndividualOffset) through O1, within
+  DMRO bounds it imposes on the gNB. No A1, Near-RT RIC, xApps or E2.
+
+topology_template:
+  node_templates:
+    applicationServiceDescriptor:
+      type: tosca.nodes.asd
+      description: "mobility-optimization-rapp"
+      properties:
+        descriptor_id: 9f2e3d4c-5b6a-4f7e-8d9c-2b3c4d5e6f02
+        descriptor_invariant_id: 9f2e3d4c-5b6a-4f7e-8d9c-2b3c4d5e0002
+        descriptor_version: "1.0.0"
+        schema_version: "2.0"
+        function_description: "MobilityOptimization_rApp — MRO through per-relation CIO over O1"
+        provider: "Radisys"
+        application_name: MobilityOptimization_rApp
+        application_version: "1.0.0"

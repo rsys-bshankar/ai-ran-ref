@@ -41,6 +41,12 @@ _object_state: dict[tuple[str, str | None], dict] = {}
 IOC_DEFAULTS = {
     "NRCellDU": {"administrativeState": "UNLOCKED", "operationalState": "ENABLED"},
     "CESManagementFunction": {"energySavingControl": "TO_BE_NOT_ENERGY_SAVING", "energySavingState": "IS_NOT_ENERGY_SAVING"},
+    # Wave 10.2 (W10.2-04): a neighbour relation's CIO — TS 28.541's six
+    # QOffsetRange entries (dB) — and whether handover over it is allowed
+    "NRCellRelation": {"cellIndividualOffset": "[0, 0, 0, 0, 0, 0]", "isHOAllowed": "true"},
+    # the gNB's own distributed MRO (TS 28.541 DMROFunction) and its bounds
+    "DMROFunction": {"dmroControl": "true", "maximumDeviationHoTriggerLow": "-12", "maximumDeviationHoTriggerHigh": "12",
+                     "minimumTimeBetweenHoTriggerChange": "10", "tstoreUEcntxt": "100"},
 }
 # TS 28.541 CESManagementFunction: energySavingState follows energySavingControl
 ENERGY_SAVING_STATE = {"TO_BE_ENERGY_SAVING": "IS_ENERGY_SAVING", "TO_BE_NOT_ENERGY_SAVING": "IS_NOT_ENERGY_SAVING"}

@@ -32,6 +32,8 @@ ALL_MODULES = [
     "intent-service", "so-smos", "sa-smos", "mock-near-rt-ric", "mock-o1-adaptor",
     # Wave 10.1: the EnergySaving reference rApp, an R1 consumer of all of the above
     "samples/energy-saving-rapp",
+    # Wave 10.2: the Mobility Optimization reference rApp
+    "samples/mobility-optimization-rapp",
 ]
 
 

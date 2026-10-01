@@ -41,6 +41,7 @@ services:
       SO_SMOS_URL: http://so-smos:8000
       SA_SMOS_URL: http://sa-smos:8000
       ENERGY_SAVING_RAPP_URL: http://energy-saving-rapp:8000
+      MOBILITY_OPTIMIZATION_RAPP_URL: http://mobility-optimization-rapp:8000
 
   sme:
     build: { context: ., args: { MODULE: sme } }
@@ -89,6 +90,15 @@ services:
   # through R1 Termination, and is reached by the GUI the same way.
   energy-saving-rapp:
     build: { context: ., args: { MODULE: samples/energy-saving-rapp } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+
+  # Wave 10.2: the Mobility Optimization reference rApp
+  # (samples/mobility-optimization-rapp) — R1-only, like energy-saving-rapp.
+  mobility-optimization-rapp:
+    build: { context: ., args: { MODULE: samples/mobility-optimization-rapp } }
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env

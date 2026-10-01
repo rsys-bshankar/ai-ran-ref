@@ -48,6 +48,7 @@ ALL_MODULES = [
     "a1-related", "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
     "intent-service", "so-smos", "sa-smos",
     "samples/energy-saving-rapp",  # Wave 10.1: the reference rApp's own tables
+    "samples/mobility-optimization-rapp",  # Wave 10.2
 ]
 
 

@@ -1333,3 +1333,66 @@ CREATE TABLE energy_saving_decision (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX energy_saving_decision_instance_cell ON energy_saving_decision (instance_id, cell_id, created_at DESC);
+
+-- ============================================================
+-- Wave 10.2: the Mobility Optimization reference rApp's own state
+-- (samples/mobility-optimization-rapp/app/models.py)
+-- ============================================================
+CREATE TABLE mobility_instance (
+  instance_id               UUID PRIMARY KEY,
+  package_id                UUID,
+  managed_element_ref       TEXT NOT NULL,
+  relations                 JSONB NOT NULL,          -- [{relation, source, target}]
+  baseline_cio              INTEGER NOT NULL DEFAULT 0,
+  dmro_bounds               JSONB NOT NULL DEFAULT '{}',
+  autonomy_mode             TEXT NOT NULL CHECK (autonomy_mode IN ('AUTONOMOUS','ASSIST','SHADOW')),
+  rmih_id                   TEXT NOT NULL DEFAULT 'sa-smos',
+  energy_saving_instance_id TEXT,                    -- coordination with the EnergySaving rApp (D10.2-4c)
+  operator_notification_uri TEXT,
+  data_jobs                 JSONB NOT NULL DEFAULT '{}',
+  model_id                  UUID,
+  model_version             TEXT,
+  artifact_version          INTEGER,
+  model_params              JSONB,
+  lifecycle_jobs            JSONB NOT NULL DEFAULT '{}',
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE mobility_relation (
+  instance_id          UUID NOT NULL,
+  relation_id          TEXT NOT NULL,
+  state                TEXT NOT NULL DEFAULT 'STEADY' CHECK (state IN ('STEADY','OBSERVING')),
+  current_cio          INTEGER,
+  last_change          JSONB,                        -- {at, from, to, preRate} until confirmed or reverted
+  last_changed_at      TIMESTAMPTZ,
+  pending_dispatch_id  UUID,
+  pending_decision_id  UUID,
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (instance_id, relation_id)
+);
+
+CREATE TABLE mobility_decision (
+  decision_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  execution_id   TEXT NOT NULL,
+  instance_id    UUID NOT NULL,
+  relation_id    TEXT NOT NULL,
+  observed_at    TIMESTAMPTZ,
+  rate           DOUBLE PRECISION,
+  attempts       DOUBLE PRECISION,
+  prediction     JSONB,
+  safety         JSONB,
+  decision       TEXT NOT NULL CHECK (decision IN ('RAISE_CIO','LOWER_CIO','REVERT_CIO','NO_CHANGE')),
+  reason         TEXT NOT NULL,
+  from_cio       INTEGER,
+  to_cio         INTEGER,
+  outcome        TEXT NOT NULL,
+  kpi            JSONB,
+  intent         JSONB,
+  action         JSONB,
+  verification   JSONB,
+  rollback       JSONB,
+  final_state    JSONB,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX mobility_decision_instance_relation ON mobility_decision (instance_id, relation_id, created_at DESC);

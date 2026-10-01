@@ -50,6 +50,7 @@ def test_route_table_covers_every_module():
         "/ran-nf-oam", "/a1-related", "/nfo", "/focom", "/aimgf", "/mlmr", "/mllf",
         "/ran-analytics", "/mdaf", "/intent-service", "/so-smos", "/sa-smos",
         "/energy-saving-rapp",  # Wave 10.1: the reference rApp's own northbound API
+        "/mobility-optimization-rapp",  # Wave 10.2
     }
     assert set(ROUTES.keys()) == expected_prefixes
 

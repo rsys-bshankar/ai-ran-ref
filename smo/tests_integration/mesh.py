@@ -21,6 +21,7 @@ R1_PREFIX_TO_SERVICE = {
     "/aimgf": "aimgf", "/mlmr": "mlmr", "/mllf": "mllf", "/ran-analytics": "ran-analytics", "/mdaf": "mdaf",
     "/intent-service": "intent-service", "/so-smos": "so-smos", "/sa-smos": "sa-smos",
     "/energy-saving-rapp": "energy-saving-rapp",
+    "/mobility-optimization-rapp": "mobility-optimization-rapp",
 }
 
 

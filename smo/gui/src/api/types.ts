@@ -178,3 +178,30 @@ export interface EsCell {
   pendingDispatchId: string | null; prbTrend: { t: string; v: number }[]; latestDecision: EsDecision | null;
 }
 export interface EsDashboard { instance: EsInstance; cells: EsCell[] }
+
+// ---- Wave 10.2: Mobility Optimization reference rApp (samples/mobility-optimization-rapp)
+export interface MroRelationRef { relation: string; source: string; target: string }
+export interface MroInstance {
+  instanceId: string; packageId: string | null; managedElementRef: string; relations: MroRelationRef[]; baselineCio: number;
+  dmroBounds: Record<string, unknown> | null; autonomyMode: string; rmihId: string; energySavingInstanceId: string | null;
+  datasets: Record<string, { dataset: string; dmeTypeId: string; dataJobId: string; sourceDomain: string | null }>;
+  modelId: string | null; modelVersion: string | null; artifactVersion: number | null; model: Record<string, unknown> | null;
+  lifecycleJobs: Record<string, string>;
+}
+export interface MroDecision {
+  decisionId: string; executionId: string; relation: string; observedAt: string | null; rate: number | null; attempts: number | null;
+  prediction: { model?: { rate: number; futureRate: number; cause: string | null; recommendation: string; confidence: number } | null } | null;
+  safety: { passed: boolean; blocks: { guard: string; level: string; detail?: unknown }[] } | null;
+  decision: string; reason: string; fromCio: number | null; toCio: number | null;
+  kpi: { preRate: number; postRate: number; windows: number; verdict: string } | null;
+  intent: { dispatchId: string; autonomyMode: string; status: string; intentId: string | null } | null;
+  action: { path: string; actionId: string; status: string } | null;
+  verification: { result: string } | null;
+  rollback: { trigger: string; performed: boolean; result: string } | null;
+  outcome: string; finalState: { state: string; cio: number | null } | null; createdAt: string;
+}
+export interface MroRelation extends MroRelationRef {
+  state: string; cio: number | null; lastChange: Record<string, unknown> | null; pendingDispatchId: string | null;
+  rateTrend: { t: string; v: number }[]; latestDecision: MroDecision | null;
+}
+export interface MroDashboard { instance: MroInstance; relations: MroRelation[] }

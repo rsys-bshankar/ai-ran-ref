@@ -37,6 +37,7 @@ MODULES = [
     "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "a1-related", "nfo", "focom",
     "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf", "intent-service", "so-smos", "sa-smos",
     "energy-saving-rapp",  # Wave 10.1: the reference rApp's operator API (its dashboard and loop controls)
+    "mobility-optimization-rapp",  # Wave 10.2
 ]
 
 # The RMIO identity every GUI-created intent carries. Intent Service only lets
@@ -266,6 +267,10 @@ RULES: list[Rule] = [
           json_overrides=lambda u: {"operator": f"smo-gui:{u.username}"}),
     _rule("DELETE", "/energy-saving-rapp/instances/{id}/cells/{id}/override", O),
     _rule("POST", "/energy-saving-rapp/sim-producer/(register|publish)", A),
+    # --- Wave 10.2: the Mobility Optimization reference rApp — same split
+    _rule("POST", "/mobility-optimization-rapp/instances/{id}/(start|evaluate|reconcile)", O),
+    _rule("POST", "/mobility-optimization-rapp/instances/{id}/lifecycle/(train|validate|emulate|deploy)", O),
+    _rule("POST", "/mobility-optimization-rapp/sim-producer/(register|publish)", A),
 
     # --- every other read under a known module prefix
     _rule("GET", "/(" + "|".join(re.escape(m) for m in MODULES) + ")(/.*)?", V),

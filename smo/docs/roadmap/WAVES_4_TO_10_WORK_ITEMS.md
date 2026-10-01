@@ -49,7 +49,7 @@ Smaller inconsistencies resolved without a decision:
 Wave-4 (TS 28.105) ─┬───────────────► Wave-7 (Runtime) ──┐
 Wave-5 (TS 28.104) ─┤                                    ├─► Wave-8 (Autonomy) ──► Wave-10.1 (Energy Saving)
 Wave-6 (TS 28.312) ─┴────────────────────────────────────┘                          │
-Wave-9 (Multi-vendor O1) ── independent; the 10.1 O1 path must not regress it       └─► 10.2 / 10.3 / 10.4
+Wave-9 (Multi-vendor O1) ── independent; the 10.1 O1 path must not regress it       └─► 10.2 (Mobility) ✅ / 10.3 / 10.4
 ```
 Wave-10 depends on Waves 4, 5, 7 and 8 `[W10]`, on Wave 6 via the Intent-routed AUTONOMOUS/ASSIST path (D-1), and on Wave 9 for the D-5 guard data and vendor-mode registry.
 
@@ -212,11 +212,35 @@ Depends on: Waves 4, 5, 7, 8. Planes: R1 (control), O1 (management). Excludes A1
 | W10-28 | Call-flow doc `22-energy-saving-closed-loop.md` (mermaid; 21 went to W9's vendor onboarding) | §4, §12 | ✅ Renders on GitHub |
 | W10-29 | Wave-10.1 exit review against `[W10C]` §20 (15 checks) + success statement | §20 | ✅ All checked |
 
-## 10. Wave-10.2 / 10.3 / 10.4 — backlog placeholders (D-8)
+## 10. Wave-10.2 — Mobility Optimization rApp (handover failure → CIO) — ✅ DONE (PR-W10.2; exit review: `WAVE_10_2_EXIT_REVIEW.md`)
+
+Started after the 10.1 exit. It follows the 10.1 pattern: one PR, O1 PM in and O1 CM out, R1 only, no
+A1, Near-RT RIC, xApps or E2. Design pass decisions, agreed with the user and **frozen**:
+
+| # | Topic | Decision |
+|---|-------|----------|
+| D10.2-1 | O1 actuator | **CIO plus DMRO bounds.** The rApp writes the per-relation `NRCellRelation.cellIndividualOffset` (TS 28.541: six `QOffsetRange` entries in dB, all written with the same value). It also bounds the gNB's own distributed MRO through `DMROFunction` (`maximumDeviationHoTriggerLow/High`, `minimumTimeBetweenHoTriggerChange`, `dmroControl`), so the two optimisers can't fight. |
+| D10.2-2 | Algorithm | **Classified MRO plus regression.** Per relation and hourly window, PM counters split handover failures into too-late / too-early / wrong-cell plus ping-pongs (TS 38.300 §15.5.2 classes, TS 28.552-style `MM.*` counters). A persistence-anchored regression predicts the next-hour failure rate. A bounded step controller then acts: a too-late failure raises CIO; a too-early failure or a ping-pong lowers it; a wrong-cell failure lowers it by 1 dB. |
+| D10.2-3 | Code structure | **A standalone sample**, `samples/mobility-optimization-rapp/`, beside the EnergySaving rApp; 10.1 is left untouched. |
+| D10.2-4 | Safety | All four rule sets apply. (a) Bounds and pacing: within ±6 dB of baseline, steps of at most 2 dB, at least 60 min between changes on a relation, at least 50 handover attempts per window. (b) KPI-verified revert: after a 60-min observation window, a change that made the failure rate worse is reverted. (c) Coordination with EnergySaving: never tune towards a sleeping or PRE_SLEEP cell, and hold while a cell is in its 30-min after-wake window. (d) Skip `isHOAllowed=false` relations and emergency or incident-zone cells (W9-06 guards). |
+
+| ID | Work item | Done when |
+|----|-----------|-----------|
+| W10.2-01 | Package `samples/mobility-optimization-rapp/` → `mobility-optimization-rapp.csar` (manifest, capabilities, ASD; 4 execution modes, 3 autonomy modes, runtime profiles) | ✅ Onboards → AVAILABLE (MRO-01) |
+| W10.2-02 | Model `MobilityRobustnessPredictor`: failure classification plus a persistence-anchored next-hour failure-rate regression; logic files for training, validation, emulation and inference; JSON artifact in MLMR | ✅ Trained, validated and emulated through AIMgF (MRO-03..05); RMSE ≈ 0.5, emulation direction accuracy 1.0 with no false actions |
+| W10.2-03 | Multi-counter PM: RAN NF OAM `/pm-reports` accepts per-relation measurements with several counters (`values`, `relation`); the `HO_PERFORMANCE` dataset in DME; the Digital Twin `HO_PERFORMANCE_SIM` producer | ✅ rApp reads both via `sdk.data.get_dataset` (MRO-02); `PmMeasurement` requires `value` or `values` |
+| W10.2-04 | O1 model in the mock adaptor: `NRCellRelation` (`cellIndividualOffset`, `isHOAllowed`) and `DMROFunction`, with defaults, writes and read-back | ✅ Read-back reflects writes (mock-o1-adaptor unit test, MRO-08/10) |
+| W10.2-05 | MRO engine: classification, prediction thresholds (act at a predicted failure rate of at least 5 %; 2–5 % is a hold zone), bounded step controller, pacing, sample minimum, guards (D10.2-4) | ✅ Unit tests per rule (`samples/mobility-optimization-rapp/tests/test_engine.py`) |
+| W10.2-06 | Actuation: CIO changes go through AutonomyDispatch, then Intent, then the SA SMOS O1-CM handler (new `NRCellRelation.cellIndividualOffset` CM target), then DME and RAN NF OAM. Reverts and rollbacks go straight to DME with their own `actionId`. DMRO bounds are applied and verified at deploy. | ✅ CIO written per relation, read back (MRO-09/10); DMRO bounds VERIFIED at deploy (MRO-08) |
+| W10.2-07 | KPI-verified revert: each change is OBSERVING until 60 min of post-change samples exist; if the failure rate worsens, revert to the previous CIO, else CONFIRMED | ✅ Revert test (MRO-15: REVERT:KPI_DEGRADED direct through DME with the execution's correlation id); confirmation (MRO-12) |
+| W10.2-08 | Coordination with EnergySaving: the target cell's O1 state (LOCKED / IS_ENERGY_SAVING), plus the EnergySaving rApp's published cell states over R1 (SLEEP, PRE_SLEEP, after-wake window) | ✅ Coordination test (MRO-17: TARGET_ASLEEP for SLEEP and PRE_SLEEP targets, TARGET_RECENTLY_WOKEN after an EnergySaving wake) |
+| W10.2-09 | Audit trail per relation per pass, dashboard, GUI **Mobility** page, BFF rules, R1 route, compose service | ✅ Operator sees the failure trend, cause, prediction, decision, intent, action, verification and revert (MRO-20; GUI `pages/Mobility.tsx`) |
+| W10.2-10 | Integration tests MRO-01..MRO-20, the runbook demo (§25), call flow 23, exit review `WAVE_10_2_EXIT_REVIEW.md` | ✅ All green: `tests_integration/test_mobility_optimization_rapp.py`, `test_demo_runbook.py::test_mobility_optimization_demo_00_to_11_runs_end_to_end` |
+
+## 10b. Wave-10.3 / 10.4 — backlog placeholders (D-8)
 
 | ID | rApp | Input → Output | Next step |
 |----|------|----------------|-----------|
-| W10.2-00 | Mobility Optimization | Handover failure rate → Cell Individual Offset (CIO) | Design pass after 10.1 exit |
 | W10.3-00 | Coverage Optimization | RSRP → antenna tilt | Design pass after 10.1 exit |
 | W10.4-00 | Traffic Steering | Congestion score → cell reselection bias | Design pass after 10.1 exit |
 | W10-B1 | Energy model LSTM variant (D-6) | PRB → PRB for the next N windows | ✅ After 10.1 |

@@ -18,7 +18,7 @@ import time
 import uuid
 
 from fastapi import Depends, FastAPI, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -370,8 +370,20 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
 
 class PmMeasurement(BaseModel):
     cellId: str
-    value: float
     timestamp: datetime.datetime
+    value: float | None = None
+    # Wave 10.2 (W10.2-03): a measurement can carry several counters of one
+    # family at once (a PM file's measInfo with several measTypes, e.g. the
+    # handover counters MM.HoExeAtt / MM.HoFailTooLate / ...), and can be
+    # per neighbour relation rather than per cell.
+    values: dict[str, float] | None = None
+    relation: str | None = None  # the neighbour relation (e.g. "201-202") the counters are measured on
+
+    @model_validator(mode="after")
+    def _has_a_value(self):
+        if self.value is None and not self.values:
+            raise ValueError("a measurement needs value or values")
+        return self
 
 
 class PmReportRequest(BaseModel):
@@ -405,6 +417,10 @@ def receive_pm_report(body: PmReportRequest, db: Session = Depends(get_session))
     for m in body.measurements:
         payload = {"managedElementRef": body.managedElementRef, "cellId": m.cellId, "counter": body.counterType,
                    "value": m.value, "timestamp": m.timestamp.isoformat()}
+        if m.values is not None:
+            payload["values"] = m.values
+        if m.relation is not None:
+            payload["relation"] = m.relation
         for job in jobs:
             r1.post(f"/dme/data-jobs/{job['dataJobId']}/records", json={"payload": payload})
             delivered += 1

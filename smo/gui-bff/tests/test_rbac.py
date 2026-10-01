@@ -90,6 +90,11 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/energy-saving-rapp/instances/i/cells/101/override", "operator"),
     ("DELETE", "/energy-saving-rapp/instances/i/cells/101/override", "operator"),
     ("POST", "/energy-saving-rapp/sim-producer/publish", "admin"),
+    # Wave 10.2: the Mobility Optimization rApp
+    ("GET", "/mobility-optimization-rapp/instances/i/dashboard", "viewer"),
+    ("POST", "/mobility-optimization-rapp/instances/i/evaluate", "operator"),
+    ("POST", "/mobility-optimization-rapp/instances/i/lifecycle/deploy", "operator"),
+    ("POST", "/mobility-optimization-rapp/sim-producer/publish", "admin"),
 ])
 def test_minimum_role_per_route(method, path, minimum):
     order = ["viewer", "operator", "admin"]

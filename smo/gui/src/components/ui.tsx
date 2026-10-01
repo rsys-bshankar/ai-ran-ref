@@ -75,6 +75,10 @@ const TONES: Record<string, string> = {
   SERVING: "ok", PRE_SLEEP: "warn", SLEEP: "info", LOCK: "info", UNLOCK: "ok", NO_CHANGE: "muted", LOCKED: "info",
   EXECUTED: "ok", SHADOWED: "muted", AWAITING_APPROVAL: "warn", AWAITING_SCOPE: "warn", NO_ACTION_ALREADY_IN_STATE: "muted",
   VERIFY_FAILED: "bad", VERIFIED: "ok", AUTONOMOUS: "info", ASSIST: "warn", SHADOW: "muted",
+  // Wave 10.2 Mobility Optimization rApp
+  STEADY: "ok", OBSERVING: "warn", CONFIRMED: "ok", REVERTED: "warn", REVERT_FAILED: "bad",
+  RAISE_CIO: "info", LOWER_CIO: "info", REVERT_CIO: "warn", HEALTHY: "ok", HOLD: "muted", NONE: "muted",
+  ACTION_FAILED_ROLLED_BACK: "bad", VERIFY_FAILED_ROLLED_BACK: "bad",
 };
 
 export function StateBadge({ state }: { state: string | null | undefined }) {

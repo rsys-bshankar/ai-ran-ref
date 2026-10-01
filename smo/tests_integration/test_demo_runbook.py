@@ -913,3 +913,38 @@ def test_energy_saving_demo_01_to_11_runs_end_to_end(mesh, loaded_apps, monkeypa
     cells = {c["cellId"]: c for c in state["dashboard"]["cells"]}                 # Demo 11
     assert cells["101"]["state"] == "SLEEP" and cells["101"]["prbTrend"]
     assert cells["103"]["latestDecision"]["reason"] == "SAFETY_BLOCKED:EMERGENCY_CELL"
+
+
+def test_mobility_optimization_demo_00_to_11_runs_end_to_end(mesh, loaded_apps, monkeypatch, capsys):
+    """DEMO_RUNBOOK.md §25 — the Wave 10.2 Mobility Optimization rApp demo
+    (Demo 00–11). It runs the runbook's own script,
+    samples/mobility-optimization-rapp/demo.py, step by step through the mesh."""
+    import importlib.util
+
+    from mobility_env import CSAR_URL, serve_csar
+
+    spec = importlib.util.spec_from_file_location("mobility_demo", Path(__file__).resolve().parent.parent
+                                                  / "samples" / "mobility-optimization-rapp" / "demo.py")
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    monkeypatch.setattr(demo, "CSAR_URL", CSAR_URL)
+    serve_csar(loaded_apps, monkeypatch)
+    mesh["mock-o1-adaptor"].delete("/state")
+
+    state = {}
+    for step in demo.STEPS:
+        demo.run(step, state)
+    out = capsys.readouterr().out
+    assert "Demo 11" in out
+    assert state["historyRecords"] == 72 * len(demo.RELATIONS)                    # Demo 02
+    assert state["emulation"]["directionAccuracy"] >= 0.9                          # Demo 05
+    assert state["promoted"] == "PROMOTED" and state["runtime"] == "ACTIVE"       # Demo 06/07
+    assert state["dmro"] == "VERIFIED"                                              # Demo 07
+    assert (state["decision"]["decision"], state["decision"]["toCio"]) == ("RAISE_CIO", 2)   # Demo 08
+    assert (state["early"]["decision"], state["early"]["toCio"]) == ("LOWER_CIO", -2)
+    assert state["action"]["status"] == "COMPLETED"                               # Demo 09
+    assert state["o1"]["cellIndividualOffset"] == "[2, 2, 2, 2, 2, 2]"
+    assert state["kpi"]["outcome"] == "CONFIRMED"                                  # Demo 10
+    rels = {r["relation"]: r for r in state["dashboard"]["relations"]}            # Demo 11
+    assert rels["201-203"]["state"] == "STEADY" and rels["201-203"]["cio"] == 2 and rels["201-203"]["rateTrend"]
+    assert rels["203-204"]["latestDecision"]["reason"].startswith("SAFETY_BLOCKED")
