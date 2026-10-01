@@ -88,6 +88,13 @@ class IntentClient(BaseClient):
         return ensure_ok(self._r1.get(f"/intent-service/autonomy-dispatches/{dispatch_id}"))
 
 
+def _full_time(value: str) -> str:
+    """An RFC 3339 full-time for a clock time: "05:00" -> "05:00:00Z" (UTC), "05:00:00+02:00" kept."""
+    if len(value) == 5:
+        return f"{value}:00Z"
+    return f"{value}Z" if len(value) == 8 else value
+
+
 def energy_saving_expectation(object_instance: str, cells: list[dict] | None = None, max_energy_consumption: int | None = None,
                               daily_window: tuple[str, str] | None = ("00:00", "05:00"),
                               expectation_id: str = "energy-saving") -> dict:
@@ -95,7 +102,8 @@ def energy_saving_expectation(object_instance: str, cells: list[dict] | None = N
     00:00-05:00") as a TS 28.312 RadioNetworkExpectation: a RAN_SUBNETWORK
     object (optionally narrowed to `cells`, CellContext), the
     RANEnergyConsumption target (IS_LESS_THAN, the family's only allowed
-    condition) and, by default, a daily schedulingTime guarantee period."""
+    condition) and, by default, a daily schedulingTime guarantee period (a TS 28.623
+    SchedulingTime: `timeIntervals` of RFC 3339 full-times, so every day)."""
     obj = {"objectType": "RAN_SUBNETWORK", "objectInstance": object_instance}
     if cells:
         obj["objectContexts"] = [{"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF", "contextValueRange": cells}]
@@ -106,6 +114,6 @@ def energy_saving_expectation(object_instance: str, cells: list[dict] | None = N
     }
     if daily_window:
         expectation["guaranteePeriods"] = [{"contextAttribute": "schedulingTime", "contextCondition": "IS_ALL_OF",
-                                            "contextValueRange": {"timeWindow": {"startTime": daily_window[0], "endTime": daily_window[1]},
-                                                                  "recurrencePattern": "DAILY"}}]
+                                            "contextValueRange": {"timeIntervals": [
+                                                {"intervalStart": _full_time(daily_window[0]), "intervalEnd": _full_time(daily_window[1])}]}}]
     return expectation

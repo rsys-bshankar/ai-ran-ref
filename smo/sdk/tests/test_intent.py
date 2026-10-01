@@ -30,7 +30,7 @@ def test_energy_saving_expectation_template():
     exp = energy_saving_expectation("SubNetwork=1", cells=[{"nCI": 101}], max_energy_consumption=500)
     assert exp["expectationObject"]["objectContexts"][0]["contextAttribute"] == "Cell"
     assert exp["expectationTargets"] == [{"targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValueRange": 500}]
-    assert exp["guaranteePeriods"][0]["contextValueRange"]["timeWindow"] == {"startTime": "00:00", "endTime": "05:00"}
+    assert exp["guaranteePeriods"][0]["contextValueRange"] == {"timeIntervals": [{"intervalStart": "00:00:00Z", "intervalEnd": "05:00:00Z"}]}
 
 
 def test_get_intent(client, r1):

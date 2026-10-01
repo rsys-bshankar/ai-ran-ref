@@ -16,8 +16,9 @@ deviation is addressing.
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .ts28312_datatypes import named_datatype_problem, reporting_condition_problem, value_range_problem
 from .ts28312_families import FAMILIES, GENERIC_CONTEXTS
 
 Condition = Literal["IS_EQUAL_TO", "IS_LESS_THAN", "IS_GREATER_THAN", "IS_WITHIN_RANGE", "IS_OUTSIDE_RANGE",
@@ -40,7 +41,7 @@ IntentHandlingScope = Literal["RAN", "CN"]
 PURPOSE_NEEDS = {"FEASIBILITYCHECK": "FEASIBILITY_CHECK", "FEASIBILITYCHECK_WITH_RECOMMENDATIONS": "FEASIBILITY_CHECK",
                  "EXPLORATION": "EXPLORATION", "FULFILMENT_WITH_NEGOTIATION": "FULFILMENT_WITH_NEGOTIATION"}
 
-ValueRange = Any  # ValueRangeType is a oneOf over scalars and TS 28.623 structures; checked per family below
+ValueRange = Any  # ValueRangeType: scalars, lists, or the structured datatypes of ts28312_datatypes.py (checked in IntentExpectation._family)
 
 
 class _Spec(BaseModel):
@@ -110,10 +111,14 @@ class IntentExpectation(_Spec):
 def _check_specialised(kind: str, name: str, condition: str, value, specialised: dict) -> None:
     spec = specialised.get(name)
     if spec is None:
-        return  # the generic ExpectationTarget/Context — already validated structurally
+        # the generic ExpectationTarget/Context: its value is a ValueRangeType
+        problem = value_range_problem(value)
+        if problem:
+            raise ValueError(f"{kind} {name!r} value: {problem}")
+        return
     if spec["conditions"] and condition not in spec["conditions"]:
         raise ValueError(f"{kind} {name!r} allows condition {spec['conditions']}, not {condition!r}")
-    problem = _value_problem(value, spec["value"])
+    problem = _value_problem(value, spec["value"]) or named_datatype_problem(name, value)
     if problem:
         raise ValueError(f"{kind} {name!r} value: {problem}")
 
@@ -158,6 +163,15 @@ class IntentReportControl(_Spec):
     expectedReportTypes: list[ExpectedReportType] | None = None
     reportingConditions: list[dict] | None = None  # ReportingCondition (TimeCondition | TargetFulfilmentCondition)
     reportingTargets: list[str] | None = None
+
+    @field_validator("reportingConditions")
+    @classmethod
+    def _reporting_conditions(cls, conditions):
+        for condition in conditions or []:
+            problem = reporting_condition_problem(condition)
+            if problem:
+                raise ValueError(problem)
+        return conditions
 
 
 class IntentTraceabilityInfo(_Spec):

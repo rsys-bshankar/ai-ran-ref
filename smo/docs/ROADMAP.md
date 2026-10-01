@@ -92,9 +92,9 @@ TS 28.104 alignment (MDAF). Result: 48/48 rows compliant; see
 
 ### Wave 6
 
-TS 28.312 alignment (Intent Service). Result: 83/91 rows compliant, 8 partial
-value datatypes; strict validation, every caller migrated; see
-[TS 28.312](#ts-28312).
+TS 28.312 alignment (Intent Service). Result: 91/91 rows compliant (the 8
+value datatypes were partial at Wave 6 and are structure-checked since);
+strict validation, every caller migrated; see [TS 28.312](#ts-28312).
 
 | ID | Work item | Done when / evidence |
 |---|---|---|
@@ -312,7 +312,7 @@ limit below is tracked in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) §3.
 | Standard | Module(s) | REST-level status | Limits to 100% |
 |---|---|---|---|
 | TS 28.104 | MDAF | 48/48 rows | `STREAMING` is recorded, not streamed (SA-MDA-5, no TS 28.532 streaming transport); `recommendationFilter`, `performanceThresholdInfo`, `analysisRequirements`, `thresholdMonitorRefList` stored not enforced; `areaScope` stored not matched; backing-model refs set by the caller; flat addressing |
-| TS 28.312 | Intent Service | 83/91 rows, 8 partial | SA-INTENT-partial: 8 value datatypes without inner structure; flat addressing |
+| TS 28.312 | Intent Service | 91/91 rows | Flat addressing; `DateTime` / `FullTime` checked by shape; the Intent Service validates and routes, the RMIHs realise the expectations (SA SMOS: `IS_EQUAL_TO` target setting only) |
 | TS 28.105 | AIMgF, MLMR, MLLF, runtime | 125/126 attributes | `ThresholdMonitors` (TS 28.623 containment, MLMF equivalent); FL/RL stored, no training engine; runtime scale has no target size; flat addressing |
 | TS 29.482 | MLMR | `MLModel`, storages / profiles, `storeDiscReqs`, discovery at REST level | `accessReqs.location` not enforced; phase written at training start / success only; the `MLModel` `anyOf` and forward-compatible enums not honoured |
 | TS 28.532 / 28.111 / 28.319 | RAN NF OAM | MSAC, `accessScope`, `PerceivedSeverity`, DN refs and file reporting closed | Streaming reporting (SA-RANOAM-8); DN containment tree (SA-RANOAM-4); MSAC guards CM writes only; Jex subset for `dataNodeSelector` |
@@ -531,8 +531,8 @@ and the `STREAMING` reporting method's transport.
 ### TS 28.312
 
 Intent NRM, Intent Service (`specs/5G_APIs/TS28312_IntentNrm.yaml` and the
-five `TS28312_*Expectation.yaml` family files). 91 rows: 83 compliant,
-8 partial. Recorded deviation: addressing.
+five `TS28312_*Expectation.yaml` family files). 91 rows, all compliant.
+Recorded deviation: addressing.
 
 - **Strict.** `POST /intents` and `POST /autonomy-dispatches` accept only
   spec-valid intents: required `userLabel`, `intentExpectations` (≥ 1) and
@@ -593,10 +593,11 @@ five `TS28312_*Expectation.yaml` family files). 91 rows: 83 compliant,
 | Datatypes | Status |
 |---|---|
 | `IntentExpectation`, `ExpectationObject`, `Condition`, `Selectivity`, `IntentMgmtPurpose`, `FulfilmentStatus`, `NotFulfilledState`, `FulfilmentInfo`, `FulfilmentStatisticsInfo`, `Distribution`, `ExpectationVerb`, `ValueRangeType`, `IntentHandlingScope`, `NegotiationFunctionality`, `IntentHandlingInfo`, `ExpectationTarget`, `Context`, `IntentReportControl`, `ExpectedReportType`, `IntentFulfilmentReport`, `ExpectationFulfilmentResult`, `TargetFulfilmentResult`, `IntentConflictReport`, `IntentUtilityReport`, `IntentFeasibilityCheckReport`, `InFeasibleExpectationInfo`, `InFeasibleTargetInfo`, `IntentExplorationReport`, `ExpectationExplorationResult`, `TargetExplorationResult`, `IntentFulfilmentNegotiationReport`, `PossibleIntentOutcome`, `PossibleImpact`, `IntentFulfilmentNegotiationFeedback`, `ImplicitIntent`, `IntentHandlingCapability`, `SupportedExpectationTargetInfo`, `SupportedContextInfo`, `UtilityParameter`, `UtilityResult`, `UtilityDefinition`, `IntentDecompositionReport`, `IntentTraceabilityInfo`, `IntentInterpretationAssistanceInfo`, `DecompositionAssistingContext`, `SchedulingTimeContext` | Compliant |
-| `Frequency`, `UEGroup`, `QoSId`, `CivicArea`, `CivicAddress`, `ReportingCondition`, `TimeCondition`, `TargetFulfilmentCondition` | Partial ¹ |
+| `Frequency`, `UEGroup`, `QoSId`, `CivicArea`, `CivicAddress`, `ReportingCondition`, `TimeCondition`, `TargetFulfilmentCondition` | Compliant ¹ |
 
-¹ Partial: accepted as a value; inner structure not enforced (family
-constraints still apply where a family specialises it).
+¹ Structure-checked in `intent-service/app/ts28312_datatypes.py` (with `PlmnId`, `Snssai`,
+`SchedulingTime`, `TimeWindow`, `TimeInterval`, `GeoArea`, `GeoCoordinate`); `DateTime` /
+`FullTime` by RFC 3339 shape, not calendar validity.
 
 ## Runtime realization
 

@@ -76,10 +76,9 @@ discovery and download), SA-MLMR-7 (`phaseInfo.trainingInfo.baseModelId` lineage
 SA-MLMR-8 (`usageReqs`), SA-MLMR-9 (whole-object `filt-criteria` discovery).
 
 ### Intent Service (TS 28.312)
-- **SA-INTENT-partial** — 8 value datatypes are accepted without enforcing their inner structure
-  (UEGroup, QoSId, CivicArea, CivicAddress, Frequency, ReportingCondition, TimeCondition,
-  TargetFulfilmentCondition; `docs/ROADMAP.md`). Approach: add schemas
-  one datatype at a time where a family uses it.
+- None open. SA-INTENT-partial is closed: the 8 value datatypes are structure-checked, `ValueRangeType`
+  is enforced for generic targets and contexts, and `ReportingCondition` is validated in
+  `intentReportControl` (`intent-service/app/ts28312_datatypes.py`).
 
 ### SME / O1 vendor models
 - **SA-O1-4** — WG10-O1NRM and WG5 O-DU/O-CU IOCs (ORU, NearRTRICFunction, EP_*, NESPolicy,
