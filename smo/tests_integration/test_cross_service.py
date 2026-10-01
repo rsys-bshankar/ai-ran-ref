@@ -561,8 +561,9 @@ def test_o1_cm_intent_handler_enacts_an_intent_through_dme_to_the_o1_adaptor(mes
 
 
 def test_vendor_onboarding_gates_o1_writes_by_capability_and_schema(mesh):
-    """Wave 9 (W9-01..04): a vendor is onboarded as data — its capability
-    declaration is discovered from its own O1 adaptor, its data-model
+    """Wave 9 (W9-01..04): a vendor is onboarded as data — once its O1
+    adaptor has registered, its capability declaration is discovered from
+    that registered adaptor, its data-model
     descriptor loaded, its capability declared (COMBINED: the 3GPP
     TS 28.541 descriptor plus the vendor's named augments) — then its
     endpoint registers unchanged. A CM write through DME's action mediation
@@ -571,18 +572,18 @@ def test_vendor_onboarding_gates_o1_writes_by_capability_and_schema(mesh):
     before anything is dispatched."""
     vendor_model = {"schemaName": "mock-vendor-nr", "revision": "1.0", "type": "OPENAPI_NRM",
                     "location": "builtin-test:mock-vendor-nr", "descriptor": {"classes": {"NRCellDU": {"mockBoost": {"type": "boolean"}}}}}
-    onboarded = mesh["ran-nf-oam"].post("/vendor-onboarding", json={
-        "vendorName": "mock-vendor", "discoveryUri": "http://mock-o1-adaptor:8000/capabilities",
-        "conformanceMode": "COMBINED", "schemas": [vendor_model]})
-    assert onboarded.status_code == 201, onboarded.text
-    assert onboarded.json()["discovered"]["supportedVendorModes"] == ["O1_NETCONF"]
-    assert "O1_NETCONF" in mesh["ran-nf-oam"].get("/capabilities").json()["supportedVendorModes"]
-
     registered = mesh["ran-nf-oam"].post("/o1-adaptor-endpoints", json={
         "managedElementRef": "gnb-du-vendor", "adaptorUri": "http://mock-o1-adaptor:8000/edit-config",
         "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU", "vendorName": "mock-vendor"})
     assert registered.status_code == 201, registered.text
     mesh["ran-nf-oam"].post(f"/o1-adaptor-endpoints/{registered.json()['endpointId']}/heartbeat")
+
+    onboarded = mesh["ran-nf-oam"].post("/vendor-onboarding", json={
+        "vendorName": "mock-vendor", "discoverFrom": "gnb-du-vendor", "conformanceMode": "COMBINED", "schemas": [vendor_model]})
+    assert onboarded.status_code == 201, onboarded.text
+    assert onboarded.json()["discovered"]["supportedVendorModes"] == ["O1_NETCONF"]
+    assert onboarded.json()["capability"]["discoveryUri"] == "http://mock-o1-adaptor:8000/capabilities"
+    assert "O1_NETCONF" in mesh["ran-nf-oam"].get("/capabilities").json()["supportedVendorModes"]
 
     ok = mesh["dme"].post("/actions", json={"requestedBy": "es-rapp", "changes": [
         {"managedElementRef": "gnb-du-vendor", "className": "NRCellDU", "managedFunctionRef": "NRCellDU=1",

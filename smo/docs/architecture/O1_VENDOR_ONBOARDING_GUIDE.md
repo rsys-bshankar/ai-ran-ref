@@ -13,6 +13,10 @@ built close to the sketch below. Differences:
   `specs/5G_APIs/TS28541_NrNrm.yaml`, not YANG. The TS 28.541 descriptor is
   bundled as the default `SPEC` model, and a YANG front end is still future
   work.
+- **Discovery reads only an adaptor that is already registered.**
+  `POST /vendor-onboarding` names a registered managed element
+  (`discoverFrom`). It reads that adaptor's `/capabilities`, never a URL
+  supplied in the request.
 - **DME passes refusals back unchanged.** It forwards RAN NF OAM's 4xx
   rather than duplicating the checks.
 - **It is built before a second real vendor exists.** The Wave 9 work

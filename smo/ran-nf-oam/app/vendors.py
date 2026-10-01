@@ -35,6 +35,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
@@ -177,7 +178,6 @@ class VendorCapabilityBody(BaseModel):
     supportedVendorModes: list[VendorMode] = Field(default=["O1_NETCONF"], min_length=1)
     schemaRef: SchemaRef | None = None       # the vendor's own descriptor (OWN / COMBINED)
     specSchemaRef: SchemaRef | None = None   # the spec descriptor (SPEC / COMBINED); default: bundled TS 28.541
-    discoveryUri: str | None = None
 
 
 def _capability_view(c: VendorCapability) -> dict:
@@ -190,7 +190,8 @@ def _capability_view(c: VendorCapability) -> dict:
     }
 
 
-def _declare_capability(db: Session, vendor_name: str, body: VendorCapabilityBody) -> VendorCapability:
+def _declare_capability(db: Session, vendor_name: str, body: VendorCapabilityBody,
+                        discovery_uri: str | None = None) -> VendorCapability:
     if body.conformanceMode in ("OWN", "COMBINED") and body.schemaRef is None:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
                               detail=f"conformanceMode {body.conformanceMode} needs schemaRef (the vendor's own descriptor)")
@@ -207,10 +208,13 @@ def _declare_capability(db: Session, vendor_name: str, body: VendorCapabilityBod
     cap.schema_revision = body.schemaRef.revision if body.schemaRef else None
     cap.spec_schema_name = spec_ref.schemaName if spec_ref else None
     cap.spec_schema_revision = spec_ref.revision if spec_ref else None
-    cap.discovery_uri = body.discoveryUri
+    cap.discovery_uri = discovery_uri
     cap.updated_at = datetime.datetime.now(datetime.UTC)
     db.add(cap)
     db.flush()
+    # every endpoint already registered for this vendor must use a declared mode
+    for me in db.scalars(select(ManagedEntity).where(ManagedEntity.vendor_name == vendor_name)):
+        check_vendor_mode(db, vendor_name, me.o1_protocol)
     return cap
 
 
@@ -259,7 +263,9 @@ def o1_capabilities(db: Session = Depends(get_session)):
 class VendorOnboardingBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     vendorName: str
-    discoveryUri: str | None = None   # the vendor adaptor's capability declaration (GET)
+    # A managed element already registered for this vendor (POST
+    # /o1-adaptor-endpoints): its adaptor's capability declaration is read.
+    discoverFrom: str | None = None
     supportedServices: list[MnsService] | None = None
     supportedVendorModes: list[VendorMode] | None = None
     conformanceMode: ConformanceMode = "SPEC"
@@ -268,15 +274,34 @@ class VendorOnboardingBody(BaseModel):
     specSchemaRef: SchemaRef | None = None
 
 
+def _registered_discovery_uri(db: Session, managed_element_ref: str, vendor_name: str) -> str:
+    me = _get_me(db, managed_element_ref)
+    if me.vendor_name != vendor_name:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                              detail=f"{managed_element_ref} is registered for vendor {me.vendor_name!r}, not {vendor_name!r}")
+    endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id) if me.o1_adaptor_endpoint_id else None
+    if endpoint is None:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"{managed_element_ref} has no registered O1 adaptor")
+    origin = urlsplit(endpoint.adaptor_uri)
+    return urlunsplit((origin.scheme, origin.netloc, "/capabilities", "", ""))
+
+
 @router.post("/vendor-onboarding", status_code=201)
 def onboard_vendor(body: VendorOnboardingBody, db: Session = Depends(get_session)):
     """Endpoint discovery → capability declaration → schema load, as one
-    call (call flow 21). Values given in the body win over discovered ones."""
-    discovered = None
-    if body.discoveryUri:
-        resp = get_webhook(body.discoveryUri)
+    call (call flow 21). Values given in the body win over discovered ones.
+
+    Discovery only ever contacts an adaptor already in this module's own
+    endpoint registry — the one CM writes are sent to anyway — never a URL
+    taken from the request: its declaration is read at the fixed path
+    `/capabilities` on that adaptor's registered origin.
+    """
+    discovered = discovery_uri = None
+    if body.discoverFrom:
+        discovery_uri = _registered_discovery_uri(db, body.discoverFrom, body.vendorName)
+        resp = get_webhook(discovery_uri)
         if resp is None or resp.status_code != 200:
-            raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"capability discovery at {body.discoveryUri} failed")
+            raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"capability discovery at {discovery_uri} failed")
         discovered = resp.json()
         if discovered.get("vendorName") not in (None, body.vendorName):
             raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
@@ -285,7 +310,7 @@ def onboard_vendor(body: VendorOnboardingBody, db: Session = Depends(get_session
     modes = body.supportedVendorModes or (discovered or {}).get("supportedVendorModes") or ["O1_NETCONF"]
     if not services:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
-                              detail="supportedServices must be given or discoverable from discoveryUri")
+                              detail="supportedServices must be given or discoverable from the vendor's adaptor")
 
     loaded = [{**ref, "created": created} for ref, created in (_load_schema(db, s) for s in body.schemas)]
     schema_ref = body.schemaRef
@@ -293,7 +318,7 @@ def onboard_vendor(body: VendorOnboardingBody, db: Session = Depends(get_session
         schema_ref = SchemaRef(schemaName=body.schemas[0].schemaName, revision=body.schemas[0].revision)
     cap = _declare_capability(db, body.vendorName, VendorCapabilityBody(
         supportedServices=services, conformanceMode=body.conformanceMode, supportedVendorModes=modes,
-        schemaRef=schema_ref, specSchemaRef=body.specSchemaRef, discoveryUri=body.discoveryUri))
+        schemaRef=schema_ref, specSchemaRef=body.specSchemaRef), discovery_uri=discovery_uri)
     db.commit()
     return {"vendorName": body.vendorName, "discovered": discovered, "schemasLoaded": loaded,
             "capability": _capability_view(cap)}

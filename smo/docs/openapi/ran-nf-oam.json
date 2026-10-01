@@ -256,17 +256,6 @@
             "title": "Conformancemode",
             "type": "string"
           },
-          "discoveryUri": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Discoveryuri"
-          },
           "schemaRef": {
             "anyOf": [
               {
@@ -340,7 +329,7 @@
             "title": "Conformancemode",
             "type": "string"
           },
-          "discoveryUri": {
+          "discoverFrom": {
             "anyOf": [
               {
                 "type": "string"
@@ -349,7 +338,7 @@
                 "type": "null"
               }
             ],
-            "title": "Discoveryuri"
+            "title": "Discoverfrom"
           },
           "schemaRef": {
             "anyOf": [
@@ -2405,7 +2394,7 @@
     },
     "/vendor-onboarding": {
       "post": {
-        "description": "Endpoint discovery \u2192 capability declaration \u2192 schema load, as one\ncall (call flow 21). Values given in the body win over discovered ones.",
+        "description": "Endpoint discovery \u2192 capability declaration \u2192 schema load, as one\ncall (call flow 21). Values given in the body win over discovered ones.\n\nDiscovery only ever contacts an adaptor already in this module's own\nendpoint registry \u2014 the one CM writes are sent to anyway \u2014 never a URL\ntaken from the request: its declaration is read at the fixed path\n`/capabilities` on that adaptor's registered origin.",
         "operationId": "onboard_vendor_vendor_onboarding_post",
         "requestBody": {
           "content": {

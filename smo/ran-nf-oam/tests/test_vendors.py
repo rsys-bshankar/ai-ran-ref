@@ -167,37 +167,49 @@ class _Resp:
         return self._body
 
 
-def test_onboarding_discovers_loads_and_declares(client, monkeypatch, dispatched):
+def test_onboarding_discovers_from_the_registered_adaptor_loads_and_declares(client, monkeypatch, dispatched):
     declared = {"vendorName": "acme", "supportedServices": ["PROV", "FM"], "supportedVendorModes": ["O1_NETCONF"]}
-    monkeypatch.setattr("app.vendors.get_webhook", lambda uri: _Resp(200, declared) if uri == "http://acme-adaptor:8000/capabilities" else None)
-    resp = client.post("/vendor-onboarding", json={"vendorName": "acme", "discoveryUri": "http://acme-adaptor:8000/capabilities",
+    fetched = []
+    monkeypatch.setattr("app.vendors.get_webhook", lambda uri: fetched.append(uri) or _Resp(200, declared))
+    _endpoint(client)  # the adaptor self-registers first (endpoint discovery)
+    resp = client.post("/vendor-onboarding", json={"vendorName": "acme", "discoverFrom": "ME-A",
                                                    "conformanceMode": "COMBINED", "schemas": [ACME]})
     assert resp.status_code == 201, resp.json()
+    # only the registered adaptor's own origin is ever contacted, at a fixed path
+    assert fetched == ["http://adaptor:9000/capabilities"]
     out = resp.json()
     assert out["discovered"] == declared
     assert out["schemasLoaded"] == [{"schemaName": "acme-nr", "revision": "2.1", "created": True}]
     assert out["capability"]["supportedServices"] == ["PROV", "FM"]
     assert out["capability"]["schemaRef"] == {"schemaName": "acme-nr", "revision": "2.1"}
+    assert out["capability"]["discoveryUri"] == "http://adaptor:9000/capabilities"
     # re-onboarding with the same schema is idempotent; the body overrides discovery
-    again = client.post("/vendor-onboarding", json={"vendorName": "acme", "discoveryUri": "http://acme-adaptor:8000/capabilities",
+    again = client.post("/vendor-onboarding", json={"vendorName": "acme", "discoverFrom": "ME-A",
                                                     "supportedServices": ["PROV"], "conformanceMode": "COMBINED", "schemas": [ACME]})
     assert again.json()["schemasLoaded"][0]["created"] is False and again.json()["capability"]["supportedServices"] == ["PROV"]
-
-    _endpoint(client)
     assert _write(client, managedFunctionRef="NRCellDU=1", attributeChanges={"acmeBoost": True}).status_code == 202
 
 
 def test_onboarding_failures(client, monkeypatch):
-    monkeypatch.setattr("app.vendors.get_webhook", lambda uri: _Resp(200, {"vendorName": "other", "supportedServices": ["FM"]})
-                        if "other" in uri else None)
-    assert client.post("/vendor-onboarding", json={"vendorName": "acme", "discoveryUri": "http://down/caps"}).status_code == 503
-    assert client.post("/vendor-onboarding", json={"vendorName": "acme", "discoveryUri": "http://other/caps"}).status_code == 422
+    monkeypatch.setattr("app.vendors.get_webhook", lambda uri: None)
+    _endpoint(client, me="ME-A")
+    _endpoint(client, me="ME-R", vendor="restco", protocol="RESTCONF")
+    assert client.post("/vendor-onboarding", json={"vendorName": "acme", "discoverFrom": "ME-A"}).status_code == 503
+    assert client.post("/vendor-onboarding", json={"vendorName": "acme", "discoverFrom": "ghost"}).status_code == 404
+    assert client.post("/vendor-onboarding", json={"vendorName": "other", "discoverFrom": "ME-A"}).status_code == 422
+    assert client.post("/vendor-onboarding", json={"vendorName": "acme", "discoveryUri": "http://x/caps"}).status_code == 422
+    monkeypatch.setattr("app.vendors.get_webhook", lambda uri: _Resp(200, {"vendorName": "imposter", "supportedServices": ["FM"]}))
+    assert client.post("/vendor-onboarding", json={"vendorName": "acme", "discoverFrom": "ME-A"}).status_code == 422
     assert client.post("/vendor-onboarding", json={"vendorName": "acme"}).status_code == 422  # no services anywhere
+    # an already-registered endpoint must use a mode the declaration includes
+    resp = client.post("/vendor-onboarding", json={"vendorName": "restco", "supportedServices": ["PROV"]})
+    assert resp.status_code == 409 and resp.json()["detail"]["title"] == "PROTOCOL_NOT_SUPPORTED"
     conflicting = {**ACME, "descriptor": {"classes": {"X": {}}}}
     client.post("/cm-schemas", json=ACME)
     resp = client.post("/vendor-onboarding", json={"vendorName": "acme", "supportedServices": ["PROV"], "schemas": [conflicting]})
     assert resp.status_code == 409 and resp.json()["detail"]["title"] == "CM_SCHEMA_CONFLICT"
     assert client.get("/vendor-capabilities/acme").status_code == 404  # nothing half-declared
+    assert client.get("/vendor-capabilities/restco").status_code == 404
 
 
 # ---------------------------------------------------------------- W9-06 cell guards

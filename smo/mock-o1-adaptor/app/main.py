@@ -86,7 +86,8 @@ async def edit_config(request: Request) -> Response:
 def declare_capabilities():
     """The vendor capability declaration RAN NF OAM's vendor onboarding
     flow discovers (Wave 9 W9-03, `POST /ran-nf-oam/vendor-onboarding`
-    with `discoveryUri`): which vendor this adaptor fronts, which MnS
+    with `discoverFrom`, read at this fixed path on the adaptor's registered
+    origin): which vendor this adaptor fronts, which MnS
     services it implements and which O1 transports it speaks. Configurable
     per deployment so one image can stand in for several vendors.
     """

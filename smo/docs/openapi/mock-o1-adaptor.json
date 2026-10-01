@@ -64,7 +64,7 @@
   "paths": {
     "/capabilities": {
       "get": {
-        "description": "The vendor capability declaration RAN NF OAM's vendor onboarding\nflow discovers (Wave 9 W9-03, `POST /ran-nf-oam/vendor-onboarding`\nwith `discoveryUri`): which vendor this adaptor fronts, which MnS\nservices it implements and which O1 transports it speaks. Configurable\nper deployment so one image can stand in for several vendors.",
+        "description": "The vendor capability declaration RAN NF OAM's vendor onboarding\nflow discovers (Wave 9 W9-03, `POST /ran-nf-oam/vendor-onboarding`\nwith `discoverFrom`, read at this fixed path on the adaptor's registered\norigin): which vendor this adaptor fronts, which MnS\nservices it implements and which O1 transports it speaks. Configurable\nper deployment so one image can stand in for several vendors.",
         "operationId": "declare_capabilities_capabilities_get",
         "responses": {
           "200": {

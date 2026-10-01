@@ -4,7 +4,7 @@ Wave 9 (`docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md` W9-01..06) builds
 `docs/architecture/O1_VENDOR_ONBOARDING_GUIDE.md`'s sketch. Onboarding a RAN vendor (or a
 Digital Twin) is data fed to RAN NF OAM, not new code. The three steps are:
 
-1. **Discover** what the vendor's own O1 adaptor declares.
+1. **Discover** what the vendor's own O1 adaptor declares. The adaptor registers itself first, and discovery reads only that registered adaptor, never a URL supplied in a request.
 2. **Load** the vendor's data-model descriptor.
 3. **Declare** its capability.
 
@@ -24,8 +24,11 @@ sequenceDiagram
     participant DME as DME
 
     Note over Admin,OAM: one-time, offline: scripts/ingest_cm_schema.py turns the vendor's NRM definitions<br/>into a descriptor of IOC classes, their attributes, types and enums
-    Admin->>OAM: POST /ran-nf-oam/vendor-onboarding<br/>(vendorName, discoveryUri, conformanceMode, schemas)
-    OAM->>Adaptor: GET discoveryUri (the adaptor's capability declaration)
+    Adaptor->>OAM: POST /ran-nf-oam/o1-adaptor-endpoints (managedElementRef, adaptorUri, vendorName, o1Protocol)
+    OAM-->>Adaptor: endpointId (no capability yet, so nothing is gated)
+    Admin->>OAM: POST /ran-nf-oam/vendor-onboarding<br/>(vendorName, discoverFrom = a registered managedElementRef, conformanceMode, schemas)
+    OAM->>OAM: the ME must exist and belong to vendorName.<br/>Discovery URL = the registered adaptorUri's origin + /capabilities
+    OAM->>Adaptor: GET /capabilities
     Adaptor-->>OAM: vendorName, supportedServices, supportedVendorModes
     alt adaptor unreachable
         OAM-->>Admin: 503 ENDPOINT_UNREACHABLE
@@ -34,9 +37,10 @@ sequenceDiagram
     end
     OAM->>OAM: load each schema into cm_schema_cache (an identical one is reused, a different one at the same revision is 409 CM_SCHEMA_CONFLICT)
     OAM->>OAM: upsert vendor_capability (services, conformance mode, vendor modes,<br/>schemaRef = vendor descriptor, specSchemaRef defaults to the bundled TS 28.541 descriptor)
+    OAM->>OAM: every already-registered endpoint of the vendor must use a declared mode (else 409 PROTOCOL_NOT_SUPPORTED)
     OAM-->>Admin: discovered, schemasLoaded, capability
 
-    Admin->>OAM: POST /ran-nf-oam/o1-adaptor-endpoints (vendorName, o1Protocol, supportedServices?)
+    Admin->>OAM: POST /ran-nf-oam/o1-adaptor-endpoints for further MEs (vendorName, o1Protocol, supportedServices?)
     OAM->>OAM: o1Protocol must be one of the vendor's supportedVendorModes (else 409 PROTOCOL_NOT_SUPPORTED),<br/>endpoint services may narrow the vendor's, never widen them
     OAM-->>Admin: endpointId
 
@@ -74,6 +78,7 @@ sequenceDiagram
 - **How a change's class is found.** It comes from `className`. Failing that, it comes from the `managedFunctionRef` prefix (`NRCellDU=1` → `NRCellDU`). A change that names no class has to name attributes that some class in the model defines.
 - **The registry is per vendor; an endpoint may narrow it.** An endpoint can declare a smaller set of `supportedServices` than its vendor, for example an O-RU exposing only FM and HEARTBEAT. It can never claim a service its vendor lacks.
 - **No registry means no check.** A managed element whose vendor has no capability registered skips both checks. This is the permissive default the guide specifies, so existing single-vendor deployments behave as before.
+- **Discovery never fetches a caller-chosen URL.** The capability declaration is read only from an adaptor already in RAN NF OAM's endpoint registry — the same adaptor CM writes go to — at the fixed path `/capabilities` on its registered origin, through `smo_shared.webhook`'s guard. An earlier draft took a `discoveryUri` from the request body, and CodeQL flagged it as `py/full-ssrf`.
 - **A refused write never reaches the adaptor.** The pre-check runs before a `WriteConfigJob` is created. DME passes RAN NF OAM's 4xx straight back to the rApp and records the action as `REJECTED`, instead of failing with a 500.
 - **Out of scope (unchanged from the guide):**
   - a YANG front end for the ingestion script (`pyang`);
