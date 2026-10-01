@@ -127,3 +127,14 @@ def test_edit_config_rejects_entity_expansion_instead_of_parsing_it():
     root = ET.fromstring(resp.text)
     assert any(_local_tag(c) == "rpc-error" for c in root)
     assert _applied_changes == {}
+
+
+def test_capability_declaration_is_configurable(monkeypatch):
+    client = TestClient(app)
+    assert client.get("/capabilities").json() == {
+        "vendorName": "mock-vendor", "supportedVendorModes": ["O1_NETCONF"],
+        "supportedServices": ["PROV", "FM", "PM", "FILE", "STREAM", "SWM", "SUBSCRIPTION", "HEARTBEAT"]}
+    monkeypatch.setenv("MOCK_O1_VENDOR_NAME", "acme")
+    monkeypatch.setenv("MOCK_O1_SUPPORTED_SERVICES", "PROV,FM")
+    assert client.get("/capabilities").json()["supportedServices"] == ["PROV", "FM"]
+    assert client.get("/capabilities").json()["vendorName"] == "acme"

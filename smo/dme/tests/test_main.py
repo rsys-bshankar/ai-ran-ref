@@ -1098,16 +1098,20 @@ class FakeRanNfOam:
 
     def __init__(self):
         self.received: list[dict] = []
+        self.refuse_with: tuple[int, dict] | None = None
 
     def post(self, path, json=None, **kw):
         assert path == "/ran-nf-oam/config-jobs"
         self.received.append(json)
+        if self.refuse_with:
+            return FakeConfigJobResponse(self.refuse_with[1], self.refuse_with[0])
         return FakeConfigJobResponse({"jobId": "11111111-1111-1111-1111-111111111111", "status": "PROCESSING"})
 
 
 class FakeConfigJobResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, status_code=202):
         self._payload = payload
+        self.status_code = status_code
 
     def json(self):
         return self._payload
@@ -1133,13 +1137,27 @@ def test_mediate_action_forwards_to_ran_nf_oam_and_records_provenance(client, ra
 
     forwarded = ran_nf_oam.received[0]
     assert forwarded["scope"] == "single-ME"
-    assert forwarded["changes"] == [{"managedElementRef": "me-1", "attributeChanges": {"txPower": 10}}]  # className stripped before forwarding
+    # Wave 9: className is forwarded, for RAN NF OAM's schema pre-check
+    assert forwarded["changes"] == [{"managedElementRef": "me-1", "className": "GNBDUFunction", "attributeChanges": {"txPower": 10}}]
 
     action = client.get(f"/actions/{body['actionId']}").json()
     assert action["managedElementRef"] == "me-1"
     assert action["className"] == "GNBDUFunction"
     assert action["sourceContext"] == {"vendor": "acme"}
     assert action["forwardedJobId"] == "11111111-1111-1111-1111-111111111111"
+
+
+def test_mediate_action_surfaces_a_ran_nf_oam_precheck_refusal(client, ran_nf_oam):
+    """Wave 9 (W9-02): a write RAN NF OAM's pre-check refuses (here a
+    schema violation) reaches the rApp as that same 4xx; the action is
+    recorded REJECTED, never forwarded."""
+    problem = {"title": "SCHEMA_VALIDATION_FAILED", "status": 422, "detail": "attribute txPower is not defined"}
+    ran_nf_oam.refuse_with = (422, {"detail": problem})
+    resp = client.post("/actions", json={"requestedBy": "rapp", "changes": [
+        {"managedElementRef": "me-1", "className": "GNBDUFunction", "attributeChanges": {"txPower": 10}}]})
+    assert resp.status_code == 422 and resp.json()["detail"] == problem
+    action = client.get("/actions").json()["items"][0]
+    assert (action["status"], action["forwardedJobId"]) == ("REJECTED", None)
 
 
 def test_mediate_action_rejects_empty_changes(client, ran_nf_oam):

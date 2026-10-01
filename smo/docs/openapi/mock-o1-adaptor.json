@@ -62,6 +62,23 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/capabilities": {
+      "get": {
+        "description": "The vendor capability declaration RAN NF OAM's vendor onboarding\nflow discovers (Wave 9 W9-03, `POST /ran-nf-oam/vendor-onboarding`\nwith `discoveryUri`): which vendor this adaptor fronts, which MnS\nservices it implements and which O1 transports it speaks. Configurable\nper deployment so one image can stand in for several vendors.",
+        "operationId": "declare_capabilities_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Declare Capabilities"
+      }
+    },
     "/edit-config": {
       "post": {
         "description": "Mirrors netconf_client.py's own build_edit_config_rpc/send_edit_config\nexactly: parses the real <rpc><edit-config>...</edit-config></rpc>\nrequest, replies <rpc-reply><ok/></rpc-reply> (RFC 6241 section 4.2) on\nsuccess. REJECTED (a real <rpc-error>, same as a real NETCONF agent\nrefusing a request) when the managed-object ref is missing, or its\nconfig body is empty for any operation other than delete/remove \u2014 a\ndelete legitimately carries no attribute_changes at all (RFC 6241\nsection 7.2's `operation` attribute), so rejecting it for emptiness\nwould be wrong. Non-delete/remove emptiness rejection is the same\n\"empty payload is a real, testable rejection trigger\" pattern\nmock-near-rt-ric's own create_policy already established for an\nempty policyObject.",

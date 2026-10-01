@@ -295,6 +295,8 @@ CREATE TABLE o1_adaptor_endpoint (
   registered_via    TEXT NOT NULL DEFAULT 'MNS_REGISTRY_NRM',
   health_status     TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (health_status IN ('DISCOVERED','ACTIVE','DEGRADED','UNREACHABLE')),  -- DISCOVERED: the endpoint FSM's own starting state (register_o1_adaptor_endpoint); without it every registration failed this CHECK
   last_heartbeat_at TIMESTAMPTZ,
+  -- Wave 9 (W9-01): MnS services this adaptor declares; NULL = its vendor's capability
+  supported_services TEXT[],
   UNIQUE (managed_element_ref)
 );
 
@@ -304,7 +306,9 @@ CREATE TABLE managed_entity (
   entity_type               TEXT NOT NULL CHECK (entity_type IN ('O-CU-CP','O-CU-UP','O-DU','O-RU','Near-RT-RIC')),
   vendor_name                 TEXT,
   o1_protocol                   TEXT NOT NULL CHECK (o1_protocol IN ('RESTCONF','NETCONF')),
-  o1_adaptor_endpoint_id           UUID REFERENCES o1_adaptor_endpoint(endpoint_id)
+  o1_adaptor_endpoint_id           UUID REFERENCES o1_adaptor_endpoint(endpoint_id),
+  -- Wave 9 (W9-06, D-5): per-cell guard attributes {cellId: {cellClass, sectorGroup, incidentZone, neighbourRefs}}
+  cell_guards                        JSONB NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE alarm (
@@ -336,7 +340,23 @@ CREATE TABLE cm_schema_cache (
   location     TEXT NOT NULL,
   type         TEXT NOT NULL DEFAULT 'YANG',
   cached_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  descriptor   JSONB,  -- Wave 9 (W9-02): {"classes": {IOC: {attribute: {type, enum?}}}}
   PRIMARY KEY (schema_name, revision)
+);
+
+-- Wave 9 (W9-01/W9-04): the per-vendor Capability Registry
+-- (docs/architecture/O1_VENDOR_ONBOARDING_GUIDE.md)
+CREATE TABLE vendor_capability (
+  vendor_name            TEXT PRIMARY KEY,
+  supported_services     TEXT[] NOT NULL,
+  conformance_mode       TEXT NOT NULL DEFAULT 'SPEC' CHECK (conformance_mode IN ('OWN','SPEC','COMBINED')),
+  supported_vendor_modes TEXT[] NOT NULL,
+  schema_name            TEXT,
+  schema_revision        TEXT,
+  spec_schema_name       TEXT,
+  spec_schema_revision   TEXT,
+  discovery_uri          TEXT,
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE write_config_job (

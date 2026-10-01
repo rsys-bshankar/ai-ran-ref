@@ -76,6 +76,13 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/intent-service/autonomy-dispatches", "operator"),
     ("POST", "/intent-service/autonomy-dispatches/d/resolve", "operator"),
     ("POST", "/intent-service/autonomy-dispatches/d/reject", "operator"),
+    # Wave 9 (W9-01..06): vendor registry, CM schemas and cell guards are admin
+    ("POST", "/ran-nf-oam/cm-schemas", "admin"),
+    ("POST", "/ran-nf-oam/vendor-onboarding", "admin"),
+    ("PUT", "/ran-nf-oam/vendor-capabilities/acme", "admin"),
+    ("DELETE", "/ran-nf-oam/vendor-capabilities/acme", "admin"),
+    ("PUT", "/ran-nf-oam/managed-entities/me-1/cells/1/guards", "admin"),
+    ("GET", "/ran-nf-oam/cell-guards", "viewer"),
 ])
 def test_minimum_role_per_route(method, path, minimum):
     order = ["viewer", "operator", "admin"]

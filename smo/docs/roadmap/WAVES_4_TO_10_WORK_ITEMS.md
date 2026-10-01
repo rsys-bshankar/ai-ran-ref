@@ -138,17 +138,17 @@ Depends on: Wave-6, Wave-7. **Platform model closed by PR #138**; the remaining 
 | W8-08 | **ASSIST reject (D-1b)**: `POST /autonomy-dispatches/{id}/reject` → `REJECTED` (409 unless `AWAITING_SCOPE`), with notification + GUI button | ✅ `POST /intent-service/autonomy-dispatches/{id}/reject`; GUI Reject button; BFF pins `rejectedBy` |
 | W8-09 | Call flow 09 + OPEN_ITEMS updated for W8-07/W8-08 | ✅ call flow 09 + `OPEN_ITEMS.md` §6.3 Wave 8 follow-ons |
 
-## 8. Wave-9 — Multi-vendor O1 framework
+## 8. Wave-9 — Multi-vendor O1 framework — ✅ DONE (PR-W9)
 Depends on: `O1_VENDOR_ONBOARDING_GUIDE.md` (exists).
 
 | ID | Work item | Done when |
 |----|-----------|-----------|
-| W9-01 | **Capability Registry**: per-vendor `supported_services`, `conformance_mode` (own/spec/combined), `schema_ref` | Registry resource + API in RAN NF OAM |
-| W9-02 | Bind `CMSchemaCache` to the registry's `schema_ref`; config writes validated against the vendor schema | Write to an unsupported attribute rejected with the standard error schema |
-| W9-03 | Vendor onboarding flow (endpoint discover → capability declare → schema load) | Call flow + integration test |
-| W9-04 | Declare `O1_NETCONF` / `O1_RESTCONF` vendor modes (`[W10]` capabilities `supportedVendorModes`) | Registry reflects the transport per vendor |
-| W9-06 | **Cell guard attributes (D-5)** on RAN NF OAM `ManagedEntity`: `cellClass` (EMERGENCY / COVERAGE_CRITICAL / NORMAL), `sectorGroup`, `incidentZone`, `neighbourRefs`, with a query API usable by any rApp | Energy rApp reads the guards from RAN NF OAM |
-| W9-05 | Exit criteria | Guide's sketch implemented; tests green |
+| W9-01 | **Capability Registry**: per-vendor `supported_services`, `conformance_mode` (own/spec/combined), `schema_ref` | ✅ `ran-nf-oam/app/vendors.py`: `PUT/GET/DELETE /vendor-capabilities/{vendor}`; `supportedServices` gate FM/PM/SWM/PROV (409 `O1_SERVICE_NOT_SUPPORTED`) |
+| W9-02 | Bind `CMSchemaCache` to the registry's `schema_ref`; config writes validated against the vendor schema | ✅ `POST/GET /cm-schemas` (+ bundled TS 28.541 descriptor from `scripts/ingest_cm_schema.py`); write pre-check → 422 `SCHEMA_VALIDATION_FAILED`, surfaced through DME |
+| W9-03 | Vendor onboarding flow (endpoint discover → capability declare → schema load) | ✅ `POST /vendor-onboarding` (discover → load → declare); call flow 21; integration test `test_vendor_onboarding_gates_o1_writes_by_capability_and_schema` |
+| W9-04 | Declare `O1_NETCONF` / `O1_RESTCONF` vendor modes (`[W10]` capabilities `supportedVendorModes`) | ✅ `supportedVendorModes` per vendor, gates endpoint registration; `GET /ran-nf-oam/capabilities` |
+| W9-06 | **Cell guard attributes (D-5)** on RAN NF OAM `ManagedEntity`: `cellClass` (EMERGENCY / COVERAGE_CRITICAL / NORMAL), `sectorGroup`, `incidentZone`, `neighbourRefs`, with a query API usable by any rApp | ✅ `ManagedEntity.cell_guards`; `PUT/DELETE /managed-entities/{me}/cells/{cell}/guards`, `GET /cell-guards`; SDK `DataClient.query_cell_guards` |
+| W9-05 | Exit criteria | ✅ guide status updated (implemented); battery green |
 
 ---
 

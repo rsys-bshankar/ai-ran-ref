@@ -299,6 +299,36 @@
   },
   {
     "method": "POST",
+    "pattern": "^/ran-nf-oam/(cm-schemas|vendor-onboarding)$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/ran-nf-oam/vendor-capabilities/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/vendor-capabilities/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/ran-nf-oam/managed-entities/[^/]+/cells/[^/]+/guards$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/managed-entities/[^/]+/cells/[^/]+/guards$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/a1-related/policies$",
     "role": "operator",
     "queryMatch": {}

@@ -47,7 +47,11 @@ consumer's request shape doesn't change when a vendor's transport does.
 - **NETCONF only**, matching `ran-nf-oam`'s existing, confirmed protocol
   choice. RESTCONF/vendor-API adapters are a named extension point, not
   built this wave (no second protocol or second RAN vendor exists in
-  this build to make that real rather than speculative).
+  this build to make that real rather than speculative). *(Wave 9 added
+  RAN NF OAM's per-vendor capability registry, which declares vendor
+  modes, MnS services and a data-model conformance mode — call flow 21.
+  DME forwards `className` and passes a refused write's 4xx straight back
+  to the rApp. A RESTCONF transport is still not built.)*
 - **Digital Twin participates in Training and Emulation, never
   Inference.** Enforced as real, DB-level validation (see below), not a
   convention left to callers.

@@ -1,0 +1,1472 @@
+{
+ "classes": {
+  "AIOTReader": {
+   "administrativeState": {
+    "enum": [
+     "LOCKED",
+     "UNLOCKED"
+    ],
+    "type": "string"
+   },
+   "nRSectorCarrierRef": {
+    "type": "array"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "plmnId": {
+    "type": "object"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "readerId": {
+    "type": "integer"
+   },
+   "readerLocation": {
+    "type": "string"
+   },
+   "servedAIOTAreas": {
+    "type": "array"
+   },
+   "supportedAIOTServices": {
+    "type": "array"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "BWP": {
+   "bwpContext": {
+    "enum": [
+     "DL",
+     "UL",
+     "SUL"
+    ],
+    "type": "string"
+   },
+   "cyclicPrefix": {
+    "enum": [
+     "NORMAL",
+     "EXTENDED"
+    ],
+    "type": "string"
+   },
+   "isInitialBwp": {
+    "enum": [
+     "INITIAL",
+     "INITIAL_REDCAP",
+     "OTHER"
+    ],
+    "type": "string"
+   },
+   "numberOfRBs": {
+    "type": "integer"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "startRB": {
+    "type": "integer"
+   },
+   "subCarrierSpacing": {
+    "type": "integer"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "Beam": {
+   "beamAzimuth": {
+    "type": "integer"
+   },
+   "beamHorizWidth": {
+    "type": "integer"
+   },
+   "beamIndex": {
+    "type": "integer"
+   },
+   "beamTilt": {
+    "type": "integer"
+   },
+   "beamType": {
+    "enum": [
+     "SSB_BEAM"
+    ],
+    "type": "string"
+   },
+   "beamVertWidth": {
+    "type": "integer"
+   }
+  },
+  "CCOFunction": {
+   "CCOOvershootCoverageParameters-Single": {
+    "type": "object"
+   },
+   "CCOPilotPollutionParameters": {
+    "type": "object"
+   },
+   "CCOWeakCoverageParameters": {
+    "type": "object"
+   },
+   "cCOControl": {
+    "type": "boolean"
+   }
+  },
+  "CCOOvershootCoverageParameters": {
+   "antennaAzimuthRange": {
+    "type": "object"
+   },
+   "antennaTiltRange": {
+    "type": "object"
+   },
+   "coverageShapeList": {
+    "type": "array"
+   },
+   "digitalAzimuthRange": {
+    "type": "object"
+   },
+   "digitalTiltRange": {
+    "type": "object"
+   },
+   "downlinkTransmitPowerRange": {
+    "type": "object"
+   }
+  },
+  "CCOPilotPollutionParameters": {
+   "antennaAzimuthRange": {
+    "type": "object"
+   },
+   "antennaTiltRange": {
+    "type": "object"
+   },
+   "coverageShapeList": {
+    "type": "array"
+   },
+   "digitalAzimuthRange": {
+    "type": "object"
+   },
+   "digitalTiltRange": {
+    "type": "object"
+   },
+   "downlinkTransmitPowerRange": {
+    "type": "object"
+   }
+  },
+  "CCOWeakCoverageParameters": {
+   "antennaAzimuthRange": {
+    "type": "object"
+   },
+   "antennaTiltRange": {
+    "type": "object"
+   },
+   "coverageShapeList": {
+    "type": "array"
+   },
+   "digitalAzimuthRange": {
+    "type": "object"
+   },
+   "digitalTiltRange": {
+    "type": "object"
+   },
+   "downlinkTransmitPowerRange": {
+    "type": "object"
+   }
+  },
+  "CESManagementFunction": {
+   "cesSwitch": {
+    "type": "boolean"
+   },
+   "energySavingControl": {
+    "enum": [
+     "TO_BE_ENERGY_SAVING",
+     "TO_BE_NOT_ENERGY_SAVING"
+    ],
+    "type": "string"
+   },
+   "energySavingState": {
+    "enum": [
+     "IS_NOT_ENERGY_SAVING",
+     "IS_ENERGY_SAVING"
+    ],
+    "type": "string"
+   },
+   "esNotAllowedTimePeriod": {
+    "type": "object"
+   },
+   "interRatEsActivationCandidateCellParameters": {
+    "type": "object"
+   },
+   "interRatEsActivationOriginalCellParameters": {
+    "type": "object"
+   },
+   "interRatEsDeactivationCandidateCellParameters": {
+    "type": "object"
+   },
+   "intraRatEsActivationCandidateCellsLoadParameters": {
+    "type": "object"
+   },
+   "intraRatEsActivationOriginalCellLoadParameters": {
+    "type": "object"
+   },
+   "intraRatEsDeactivationCandidateCellsLoadParameters": {
+    "type": "object"
+   }
+  },
+  "CPCIConfigurationFunction": {
+   "cPciConfigurationControl": {
+    "type": "boolean"
+   },
+   "cSonPciList": {
+    "type": "array"
+   }
+  },
+  "CommonBeamformingFunction": {
+   "coverageShape": {
+    "type": "integer"
+   },
+   "digitalAzimuth": {
+    "type": "integer"
+   },
+   "digitalTilt": {
+    "type": "integer"
+   }
+  },
+  "DANRManagementFunction": {
+   "intersystemANRManagementSwitch": {
+    "type": "boolean"
+   },
+   "intrasystemANRManagementSwitch": {
+    "type": "boolean"
+   }
+  },
+  "DESManagementFunction": {
+   "aIMLInferenceFunctionRefList": {
+    "type": "array"
+   },
+   "desSwitch": {
+    "type": "boolean"
+   },
+   "energySavingState": {
+    "enum": [
+     "IS_NOT_ENERGY_SAVING",
+     "IS_ENERGY_SAVING"
+    ],
+    "type": "string"
+   },
+   "esNotAllowedTimePeriod": {
+    "type": "object"
+   },
+   "interRatEsActivationCandidateCellParameters": {
+    "type": "object"
+   },
+   "interRatEsActivationOriginalCellParameters": {
+    "type": "object"
+   },
+   "interRatEsDeactivationCandidateCellParameters": {
+    "type": "object"
+   },
+   "intraRatEsActivationCandidateCellsLoadParameters": {
+    "type": "object"
+   },
+   "intraRatEsActivationOriginalCellLoadParameters": {
+    "type": "object"
+   },
+   "intraRatEsDeactivationCandidateCellsLoadParameters": {
+    "type": "object"
+   },
+   "isProbingCapable": {
+    "enum": [
+     true,
+     false
+    ],
+    "type": "string"
+   },
+   "mLModelRefList": {
+    "type": "array"
+   }
+  },
+  "DLBOFunction": {
+   "aIMLInferenceFunctionRefList": {
+    "type": "array"
+   },
+   "dlboControl": {
+    "type": "boolean"
+   },
+   "mLModelRefList": {
+    "type": "array"
+   },
+   "maximumDeviationHoTrigger": {
+    "type": "integer"
+   },
+   "minimumTimeBetweenHoTriggerChange": {
+    "type": "integer"
+   }
+  },
+  "DMROFunction": {
+   "aIMLInferenceFunctionRefList": {
+    "type": "array"
+   },
+   "dmroControl": {
+    "type": "boolean"
+   },
+   "mLModelRefList": {
+    "type": "array"
+   },
+   "maximumDeviationHoTriggerHigh": {
+    "type": "integer"
+   },
+   "maximumDeviationHoTriggerLow": {
+    "type": "integer"
+   },
+   "minimumTimeBetweenHoTriggerChange": {
+    "type": "integer"
+   },
+   "tstoreUEcntxt": {
+    "type": "integer"
+   }
+  },
+  "DPCIConfigurationFunction": {
+   "dPciConfigurationControl": {
+    "type": "boolean"
+   },
+   "nRPciList": {
+    "type": "array"
+   }
+  },
+  "DRACHOptimizationFunction": {
+   "drachOptimizationControl": {
+    "type": "boolean"
+   },
+   "ueAccDelayProbabilityDist": {
+    "type": "array"
+   },
+   "ueAccProbabilityDist": {
+    "type": "array"
+   }
+  },
+  "EP_E1": {
+   "farEndEntity": {
+    "type": "string"
+   },
+   "localAddress": {
+    "type": "object"
+   },
+   "remoteAddress": {
+    "type": "any"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   }
+  },
+  "EP_F1C": {
+   "farEndEntity": {
+    "type": "string"
+   },
+   "localAddress": {
+    "type": "object"
+   },
+   "remoteAddress": {
+    "type": "any"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   }
+  },
+  "EP_F1U": {
+   "epTransportRefs": {
+    "type": "array"
+   },
+   "farEndEntity": {
+    "type": "string"
+   },
+   "localAddress": {
+    "type": "object"
+   },
+   "remoteAddress": {
+    "type": "any"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   }
+  },
+  "EP_NgC": {
+   "farEndEntity": {
+    "type": "string"
+   },
+   "localAddress": {
+    "type": "object"
+   },
+   "remoteAddress": {
+    "type": "any"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   }
+  },
+  "EP_NgU": {
+   "epTransportRefs": {
+    "type": "array"
+   },
+   "farEndEntity": {
+    "type": "string"
+   },
+   "localAddress": {
+    "type": "object"
+   },
+   "remoteAddress": {
+    "type": "any"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   }
+  },
+  "EP_S1U": {
+   "farEndEntity": {
+    "type": "string"
+   },
+   "localAddress": {
+    "type": "object"
+   },
+   "remoteAddress": {
+    "type": "any"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   }
+  },
+  "EP_X2C": {
+   "farEndEntity": {
+    "type": "string"
+   },
+   "localAddress": {
+    "type": "object"
+   },
+   "remoteAddress": {
+    "type": "any"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   }
+  },
+  "EP_X2U": {
+   "farEndEntity": {
+    "type": "string"
+   },
+   "localAddress": {
+    "type": "object"
+   },
+   "remoteAddress": {
+    "type": "any"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   }
+  },
+  "EP_XnC": {
+   "farEndEntity": {
+    "type": "string"
+   },
+   "localAddress": {
+    "type": "object"
+   },
+   "remoteAddress": {
+    "type": "any"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   }
+  },
+  "EP_XnU": {
+   "farEndEntity": {
+    "type": "string"
+   },
+   "localAddress": {
+    "type": "object"
+   },
+   "remoteAddress": {
+    "type": "any"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   }
+  },
+  "EUtranCellRelation": {
+   "adjacentEUtranCellRef": {
+    "type": "string"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "EUtranFreqRelation": {
+   "blockListEntry": {
+    "type": "array"
+   },
+   "blockListEntryIdleMode": {
+    "type": "array"
+   },
+   "cellIndividualOffset": {
+    "type": "array"
+   },
+   "cellReselectionPriority": {
+    "type": "integer"
+   },
+   "cellReselectionSubPriority": {
+    "type": "number"
+   },
+   "eUTranFrequencyRef": {
+    "type": "string"
+   },
+   "pMax": {
+    "type": "integer"
+   },
+   "qOffsetFreq": {
+    "type": "number"
+   },
+   "qQualMin": {
+    "type": "number"
+   },
+   "qRxLevMin": {
+    "type": "integer"
+   },
+   "tReselectionEutran": {
+    "type": "integer"
+   },
+   "tReselectionNRSfHigh": {
+    "enum": [
+     25,
+     50,
+     75,
+     100
+    ],
+    "type": "integer"
+   },
+   "tReselectionNRSfMedium": {
+    "enum": [
+     25,
+     50,
+     75,
+     100
+    ],
+    "type": "integer"
+   },
+   "threshXHighP": {
+    "type": "integer"
+   },
+   "threshXHighQ": {
+    "type": "integer"
+   },
+   "threshXLowP": {
+    "type": "integer"
+   },
+   "threshXLowQ": {
+    "type": "integer"
+   }
+  },
+  "EUtranFrequency": {
+   "earfcnDL": {
+    "type": "integer"
+   },
+   "multiBandInfoListEutra": {
+    "type": "integer"
+   }
+  },
+  "EphemerisInfoSet": {
+   "ephemerisInfos": {
+    "type": "array"
+   }
+  },
+  "ExternalENBFunction": {
+   "eNBId": {
+    "type": "integer"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "ExternalEUTranCell": {
+   "EUtranFrequencyRef": {
+    "type": "string"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "ExternalGNBCUCPFunction": {
+   "gnbId": {
+    "type": "integer"
+   },
+   "gnbIdLength": {
+    "type": "integer"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "plmnId": {
+    "type": "object"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "ExternalGNBCUUPFunction": {
+   "gnbId": {
+    "type": "integer"
+   },
+   "gnbIdLength": {
+    "type": "integer"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "ExternalGNBDUFunction": {
+   "gnbId": {
+    "type": "integer"
+   },
+   "gnbIdLength": {
+    "type": "integer"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "ExternalNRCellCU": {
+   "cellLocalId": {
+    "type": "integer"
+   },
+   "nRFrequencyRef": {
+    "type": "string"
+   },
+   "nrPci": {
+    "type": "integer"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "plMNIdList": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "GNBCUCPFunction": {
+   "configurable5QISetRef": {
+    "type": "string"
+   },
+   "dCHOControl": {
+    "type": "boolean"
+   },
+   "dDAPSHOControl": {
+    "type": "boolean"
+   },
+   "dynamic5QISetRef": {
+    "type": "string"
+   },
+   "ephemerisInfoSetRef": {
+    "type": "string"
+   },
+   "gnbCuName": {
+    "type": "string"
+   },
+   "gnbId": {
+    "type": "integer"
+   },
+   "gnbIdLength": {
+    "type": "integer"
+   },
+   "isOnboardSatellite": {
+    "type": "boolean"
+   },
+   "mWABRef": {
+    "type": "string"
+   },
+   "mappedCellIdInfoList": {
+    "type": "array"
+   },
+   "mappingSetIDBackhaulAddressList": {
+    "type": "array"
+   },
+   "mdtUserConsentReqList": {
+    "type": "array"
+   },
+   "nRECMappingRuleRef": {
+    "type": "string"
+   },
+   "onboardSatelliteId": {
+    "type": "string"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "plmnId": {
+    "type": "object"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "qceIdMappingInfoList": {
+    "type": "array"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "tceIDMappingInfoList": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   },
+   "x2AllowList": {
+    "type": "array"
+   },
+   "x2BlockList": {
+    "type": "array"
+   },
+   "x2HOBlockList": {
+    "type": "array"
+   },
+   "xnAllowList": {
+    "type": "array"
+   },
+   "xnBlockList": {
+    "type": "array"
+   },
+   "xnHOBlockList": {
+    "type": "array"
+   }
+  },
+  "GNBCUUPFunction": {
+   "PlmnInfoList": {
+    "type": "array"
+   },
+   "configurable5QISetRef": {
+    "type": "string"
+   },
+   "dynamic5QISetRef": {
+    "type": "string"
+   },
+   "gnbCuUpId": {
+    "type": "integer"
+   },
+   "gnbId": {
+    "type": "integer"
+   },
+   "gnbIdLength": {
+    "type": "integer"
+   },
+   "isOnboardSatellite": {
+    "type": "boolean"
+   },
+   "onboardSatelliteId": {
+    "type": "string"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "GNBDUFunction": {
+   "configurable5QISetRef": {
+    "type": "string"
+   },
+   "dynamic5QISetRef": {
+    "type": "string"
+   },
+   "gnbDuId": {
+    "type": "integer"
+   },
+   "gnbDuName": {
+    "type": "string"
+   },
+   "gnbId": {
+    "type": "integer"
+   },
+   "gnbIdLength": {
+    "type": "integer"
+   },
+   "iABRef": {
+    "type": "string"
+   },
+   "isOnboardSatellite": {
+    "type": "boolean"
+   },
+   "onboardSatelliteId": {
+    "type": "string"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "rimRSReportConf": {
+    "type": "object"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "IAB": {
+   "currentLocation": {
+    "type": "object"
+   },
+   "mrnOamIPConfig": {
+    "type": "object"
+   }
+  },
+  "MWAB": {
+   "administrativeState": {
+    "enum": [
+     "LOCKED",
+     "UNLOCKED"
+    ],
+    "type": "string"
+   },
+   "allowedArea": {
+    "type": "array"
+   },
+   "allowedTime": {
+    "type": "array"
+   },
+   "currentLocation": {
+    "type": "object"
+   },
+   "mnrOamIPConfig": {
+    "type": "object"
+   },
+   "operationalState": {
+    "enum": [
+     "ENABLED",
+     "DISABLED"
+    ],
+    "type": "string"
+   }
+  },
+  "NRCellCU": {
+   "cellLocalId": {
+    "type": "integer"
+   },
+   "nRFrequencyRef": {
+    "type": "string"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "plmnInfoList": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "NRCellDU": {
+   "administrativeState": {
+    "enum": [
+     "LOCKED",
+     "UNLOCKED"
+    ],
+    "type": "string"
+   },
+   "aggressorSetRef": {
+    "type": "string"
+   },
+   "arfcnDL": {
+    "type": "integer"
+   },
+   "arfcnSUL": {
+    "type": "integer"
+   },
+   "arfcnUL": {
+    "type": "integer"
+   },
+   "bSChannelBwDL": {
+    "type": "integer"
+   },
+   "bSChannelBwSUL": {
+    "type": "integer"
+   },
+   "bSChannelBwUL": {
+    "type": "integer"
+   },
+   "bWPRef": {
+    "type": "array"
+   },
+   "bWPSetRef": {
+    "type": "array"
+   },
+   "cellLocalId": {
+    "type": "integer"
+   },
+   "cellState": {
+    "enum": [
+     "IDLE",
+     "INACTIVE",
+     "ACTIVE"
+    ],
+    "type": "string"
+   },
+   "nPNIdentityList": {
+    "type": "array"
+   },
+   "nRFrequencyRef": {
+    "type": "string"
+   },
+   "nRSectorCarrierRef": {
+    "type": "array"
+   },
+   "nRTAC": {
+    "type": "string"
+   },
+   "nTNTAClist": {
+    "type": "array"
+   },
+   "nrPci": {
+    "type": "integer"
+   },
+   "operationalState": {
+    "enum": [
+     "ENABLED",
+     "DISABLED"
+    ],
+    "type": "string"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "plmnInfoInfoList": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "redCapAccessCriteriaRef": {
+    "type": "string"
+   },
+   "rimRSMonitoringOccasionInterval": {
+    "type": "integer"
+   },
+   "rimRSMonitoringOccasionStartingOffset": {
+    "type": "integer"
+   },
+   "rimRSMonitoringStartTime": {
+    "type": "string"
+   },
+   "rimRSMonitoringStopTime": {
+    "type": "string"
+   },
+   "rimRSMonitoringWindowDuration": {
+    "type": "integer"
+   },
+   "rimRSMonitoringWindowPeriodicity": {
+    "type": "integer"
+   },
+   "rimRSMonitoringWindowStartingOffset": {
+    "type": "integer"
+   },
+   "ssbDuration": {
+    "enum": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "type": "integer"
+   },
+   "ssbFrequency": {
+    "type": "integer"
+   },
+   "ssbOffset": {
+    "type": "integer"
+   },
+   "ssbPeriodicity": {
+    "enum": [
+     5,
+     10,
+     20,
+     40,
+     80,
+     160
+    ],
+    "type": "integer"
+   },
+   "ssbSubCarrierSpacing": {
+    "enum": [
+     15,
+     30,
+     120,
+     240
+    ],
+    "type": "integer"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "uECellBarredAccess": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "victimSetRef": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "NRCellRelation": {
+   "adjacentNRCellRef": {
+    "type": "string"
+   },
+   "cellIndividualOffset": {
+    "type": "array"
+   },
+   "isENDCAllowed": {
+    "type": "boolean"
+   },
+   "isESCoveredBy": {
+    "enum": [
+     false,
+     "PARTIAL",
+     "FULL"
+    ],
+    "type": "string"
+   },
+   "isHOAllowed": {
+    "type": "boolean"
+   },
+   "isMLBAllowed": {
+    "type": "boolean"
+   },
+   "isRemoveAllowed": {
+    "type": "boolean"
+   },
+   "nRFreqRelationRef": {
+    "type": "string"
+   },
+   "nRTCI": {
+    "type": "integer"
+   }
+  },
+  "NRECMappingRule": {
+   "ecMRInputMaximumValue": {
+    "type": "integer"
+   },
+   "ecMRInputMinimumValue": {
+    "type": "integer"
+   },
+   "ecTimeInterval": {
+    "type": "integer"
+   }
+  },
+  "NRFreqRelation": {
+   "CellReselectionRedcap": {
+    "type": "object"
+   },
+   "blockListEntry": {
+    "type": "array"
+   },
+   "blockListEntryIdleMode": {
+    "type": "array"
+   },
+   "cellReselectionPriority": {
+    "type": "integer"
+   },
+   "cellReselectionSubPriority": {
+    "type": "number"
+   },
+   "nRFrequencyRef": {
+    "type": "string"
+   },
+   "offsetMO": {
+    "type": "array"
+   },
+   "pMax": {
+    "type": "integer"
+   },
+   "qOffsetFreq": {
+    "type": "number"
+   },
+   "qQualMin": {
+    "type": "number"
+   },
+   "qRxLevMin": {
+    "type": "integer"
+   },
+   "tReselectionNRSfHigh": {
+    "enum": [
+     25,
+     50,
+     75,
+     100
+    ],
+    "type": "integer"
+   },
+   "tReselectionNRSfMedium": {
+    "enum": [
+     25,
+     50,
+     75,
+     100
+    ],
+    "type": "integer"
+   },
+   "tReselectionNr": {
+    "type": "integer"
+   },
+   "threshXHighP": {
+    "type": "integer"
+   },
+   "threshXHighQ": {
+    "type": "integer"
+   },
+   "threshXLowP": {
+    "type": "integer"
+   },
+   "threshXLowQ": {
+    "type": "integer"
+   }
+  },
+  "NRFrequency": {
+   "absoluteFrequencySSB": {
+    "type": "integer"
+   },
+   "multiFrequencyBandListNR": {
+    "type": "integer"
+   },
+   "ssbSubCarrierSpacing": {
+    "enum": [
+     15,
+     30,
+     120,
+     240
+    ],
+    "type": "integer"
+   }
+  },
+  "NRSectorCarrier": {
+   "arfcnDL": {
+    "type": "integer"
+   },
+   "arfcnUL": {
+    "type": "integer"
+   },
+   "bSChannelBwDL": {
+    "type": "integer"
+   },
+   "bSChannelBwUL": {
+    "type": "integer"
+   },
+   "configuredMaxTxPower": {
+    "type": "integer"
+   },
+   "peeParametersList": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "sectorEquipmentFunctionRef": {
+    "type": "string"
+   },
+   "supportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "txDirection": {
+    "enum": [
+     "DL",
+     "UL",
+     "DL_AND_UL"
+    ],
+    "type": "string"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
+   }
+  },
+  "NTNFunction": {
+   "nTNTAClist": {
+    "type": "array"
+   },
+   "nTNpLMNInfoList": {
+    "type": "array"
+   }
+  },
+  "NTNTimeBasedConfig": {
+   "nTNEntityConfigList": {
+    "type": "array"
+   },
+   "timeWindow": {
+    "type": "object"
+   }
+  },
+  "RRMPolicyRatio": {
+   "RRMPolicyMemberList": {
+    "type": "array"
+   },
+   "rRMPolicyDedicatedRatio": {
+    "type": "integer"
+   },
+   "rRMPolicyMaxRatio": {
+    "type": "integer"
+   },
+   "rRMPolicyMinRatio": {
+    "type": "integer"
+   },
+   "resourceType": {
+    "enum": [
+     "PRB",
+     "PRB_UL",
+     "PRB_DL",
+     "RRC_CONNECTED_USERS",
+     "DRB"
+    ],
+    "type": "string"
+   }
+  },
+  "RedCapAccessCriteria": {
+   "criteriaConditonRef": {
+    "type": "string"
+   },
+   "nRCellDURef": {
+    "type": "array"
+   }
+  },
+  "RimRSGlobal": {
+   "frequencyDomainPara": {
+    "type": "object"
+   },
+   "sequenceDomainPara": {
+    "type": "object"
+   },
+   "timeDomainPara": {
+    "type": "object"
+   }
+  },
+  "RimRSSet": {
+   "nRCellDURefs": {
+    "type": "array"
+   },
+   "setId": {
+    "type": "integer"
+   },
+   "setType": {
+    "enum": [
+     "RS1",
+     "RS2"
+    ],
+    "type": "string"
+   }
+  }
+ },
+ "revision": "19.6.0",
+ "schemaName": "3gpp-ts28541-nrnrm",
+ "source": [
+  "TS28541_NrNrm.yaml"
+ ],
+ "type": "OPENAPI_NRM"
+}

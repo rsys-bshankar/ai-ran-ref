@@ -558,3 +558,42 @@ def test_o1_cm_intent_handler_enacts_an_intent_through_dme_to_the_o1_adaptor(mes
                                 "expectationTargets": [{"targetName": "NRCellDU.operationalState", "targetCondition": "IS_EQUAL_TO",
                                                         "targetValueRange": "DISABLED"}]}]})
     assert rejected.status_code == 422
+
+
+def test_vendor_onboarding_gates_o1_writes_by_capability_and_schema(mesh):
+    """Wave 9 (W9-01..04): a vendor is onboarded as data — its capability
+    declaration is discovered from its own O1 adaptor, its data-model
+    descriptor loaded, its capability declared (COMBINED: the 3GPP
+    TS 28.541 descriptor plus the vendor's named augments) — then its
+    endpoint registers unchanged. A CM write through DME's action mediation
+    is checked against that model: a valid one reaches the adaptor, an
+    attribute the model lacks is refused with the standard error schema
+    before anything is dispatched."""
+    vendor_model = {"schemaName": "mock-vendor-nr", "revision": "1.0", "type": "OPENAPI_NRM",
+                    "location": "builtin-test:mock-vendor-nr", "descriptor": {"classes": {"NRCellDU": {"mockBoost": {"type": "boolean"}}}}}
+    onboarded = mesh["ran-nf-oam"].post("/vendor-onboarding", json={
+        "vendorName": "mock-vendor", "discoveryUri": "http://mock-o1-adaptor:8000/capabilities",
+        "conformanceMode": "COMBINED", "schemas": [vendor_model]})
+    assert onboarded.status_code == 201, onboarded.text
+    assert onboarded.json()["discovered"]["supportedVendorModes"] == ["O1_NETCONF"]
+    assert "O1_NETCONF" in mesh["ran-nf-oam"].get("/capabilities").json()["supportedVendorModes"]
+
+    registered = mesh["ran-nf-oam"].post("/o1-adaptor-endpoints", json={
+        "managedElementRef": "gnb-du-vendor", "adaptorUri": "http://mock-o1-adaptor:8000/edit-config",
+        "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU", "vendorName": "mock-vendor"})
+    assert registered.status_code == 201, registered.text
+    mesh["ran-nf-oam"].post(f"/o1-adaptor-endpoints/{registered.json()['endpointId']}/heartbeat")
+
+    ok = mesh["dme"].post("/actions", json={"requestedBy": "es-rapp", "changes": [
+        {"managedElementRef": "gnb-du-vendor", "className": "NRCellDU", "managedFunctionRef": "NRCellDU=1",
+         "attributeChanges": {"administrativeState": "LOCKED", "mockBoost": True}}]})
+    assert ok.status_code == 202 and ok.json()["status"] == "COMPLETED", ok.text
+    assert mesh["mock-o1-adaptor"].get("/edit-config/gnb-du-vendor").json()["attributeChanges"] == {
+        "administrativeState": "LOCKED", "mockBoost": "True"}
+
+    refused = mesh["dme"].post("/actions", json={"requestedBy": "es-rapp", "changes": [
+        {"managedElementRef": "gnb-du-vendor", "className": "NRCellDU", "attributeChanges": {"warpDrive": 9}}]})
+    assert refused.status_code == 422
+    assert refused.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED" and "warpDrive" in refused.json()["detail"]["detail"]
+    statuses = [a["status"] for a in mesh["dme"].get("/actions").json()["items"]]
+    assert sorted(statuses) == ["COMPLETED", "REJECTED"]

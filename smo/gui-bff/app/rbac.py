@@ -155,6 +155,13 @@ RULES: list[Rule] = [
     _rule("POST", "/ran-nf-oam/(pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)", O),
     _rule("POST", "/ran-nf-oam/software-management-jobs/{id}/advance", O),
     _rule("POST", "/ran-nf-oam/o1-adaptor-endpoints/{id}/heartbeat", A),   # what the ME's adaptor sends: simulation
+    # Wave 9 (W9-01..06): the vendor capability registry, CM schema
+    # descriptors and cell guards are inventory/onboarding data — admin.
+    _rule("POST", "/ran-nf-oam/(cm-schemas|vendor-onboarding)", A),
+    _rule("PUT", "/ran-nf-oam/vendor-capabilities/{id}", A),
+    _rule("DELETE", "/ran-nf-oam/vendor-capabilities/{id}", A),
+    _rule("PUT", "/ran-nf-oam/managed-entities/{id}/cells/{id}/guards", A),
+    _rule("DELETE", "/ran-nf-oam/managed-entities/{id}/cells/{id}/guards", A),
 
     # --- A1 Related
     _rule("POST", "/a1-related/policies", O),

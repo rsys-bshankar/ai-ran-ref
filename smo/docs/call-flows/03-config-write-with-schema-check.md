@@ -17,6 +17,18 @@ Dispatch is a real RFC 6241 `<edit-config>` XML RPC POSTed to the endpoint's `ad
 `docs/architecture/O1_VENDOR_ONBOARDING_GUIDE.md` for the fuller writeup of this gap and
 a sketch of what would actually close it.
 
+**Closed in Wave 9 (call flow 21):** the schema check is now real. Before any job is
+created, `POST /config-jobs` checks each change:
+
+- the ME's vendor must implement Provisioning, else 409 `O1_SERVICE_NOT_SUPPORTED`;
+- its class, attributes and enum values must exist in the data model the vendor's
+  conformance mode selects, else 422 `SCHEMA_VALIDATION_FAILED`, naming every offending attribute.
+
+`cm_schema_cache` now holds those data models.
+
+An ME with no vendor capability registered is still unchecked. That is the path the
+diagram below shows.
+
 **Why this flow exists, and how it relates to call flow 02**: this is the CM-write
 mechanism itself — the two paths (direct rApp, or DME-mediated) by which *any* caller
 gets a configuration change onto a real ME, regardless of who or what decided the change
