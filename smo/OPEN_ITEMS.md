@@ -34,19 +34,19 @@ Each item: what is missing, why it matters, suggested approach.
 ## 3. Spec conformance still open
 
 ### RAN NF OAM
-- **SA-RANOAM-1** — MSAC is a presence check of `msacRole` when `scope == "entire-RAN"`, not
-  TS 28.319 Identity/Role/AccessRule RBAC. Matters for multi-tenant CM writes. Approach: model
-  Role/AccessRule with `dataNodeSelector` and evaluate per sub-change before dispatch.
-- **SA-RANOAM-2** — `WriteConfigRequest.scope` collides with ProvMnS `ScopeType`. Approach: rename to
-  `accessScope` with a deprecation alias.
-- **SA-RANOAM-6-severity** — `severity` is CHECK-constrained to lowercase
-  critical/major/minor/warning/cleared; TS 28.111 `PerceivedSeverity` has six upper-case values
-  including INDETERMINATE. Approach: add INDETERMINATE and map case at the API boundary.
-- **SA-RANOAM-4 / SA-O1-1** — Flat ref strings instead of DN/typed addressing (accepted D-9-style
-  deviation). Approach if needed: LDN parsing on `managedFunctionRef`, keyed by IOC class.
-- **SA-RANOAM-8 / SA-MDA-5** — RAN NF OAM has no TS 28.532 file or streaming data reporting;
-  MDAF serves FILE reports (`GET /mda-reports/{id}/file` + file-ready notification) but records
-  `STREAMING` only. Approach: reuse MDAF's file-ready pattern for PM in RAN NF OAM; streaming later.
+- **SA-RANOAM-8 (streaming)** — File reporting is built (`POST /pm-files`, `GET /files`,
+  `notifyFileReady`). TS 28.532 streaming data reporting is not: there is no streaming transport,
+  and `delivery_method=stream` stays a registration (MDAF's `STREAMING` is likewise recorded only,
+  `SA-MDA-5`). Approach: a streaming transport shared by RAN NF OAM and MDAF, when a consumer needs one.
+- **SA-RANOAM-4 / SA-O1-1 (containment)** — DN refs are parsed and validated and the IOC class is
+  taken from the last RDN, but `managedElementRef` is still a flat registry key and there is no DN
+  containment tree (the accepted D-9 deviation).
+- **SA-RANOAM-1 (reach)** — MSAC guards CM writes only. Reads (`GET .../config`) and the other write
+  routes are not evaluated. Approach: reuse `msac.authorize` per route.
+
+Closed in this wave: SA-RANOAM-1 (TS 28.319 Identity / Role / AccessRule, per-sub-change evaluation),
+SA-RANOAM-2 (`accessScope`, `scope` kept as an alias), SA-RANOAM-6-severity (`PerceivedSeverity`,
+`INDETERMINATE`, upper-case `perceivedSeverity`).
 
 ### FOCOM (O2IMS)
 - **SA-FOCOM-2** — `ResourcePool` lacks `oCloudSiteId` and the inline `resources` array; no

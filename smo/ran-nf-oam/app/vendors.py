@@ -47,6 +47,7 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.webhook import get_webhook
 
+from .ldn import leaf_class
 from .models import CMSchemaCache, ManagedEntity, O1AdaptorEndpoint, VendorCapability
 
 router = APIRouter()
@@ -364,8 +365,7 @@ def _allowed_classes(db: Session, cap: VendorCapability) -> dict[str, dict] | No
 def change_class(change: dict) -> str | None:
     if change.get("className"):
         return change["className"]
-    ref = change.get("managedFunctionRef") or ""
-    return ref.split("=", 1)[0] if "=" in ref else None
+    return leaf_class(change.get("managedFunctionRef"))  # SA-RANOAM-4: the last RDN of a DN
 
 
 def schema_problems(db: Session, change: dict) -> list[str]:

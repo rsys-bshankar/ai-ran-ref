@@ -1,6 +1,56 @@
 {
   "components": {
     "schemas": {
+      "AccessRuleAttributes": {
+        "properties": {
+          "actions": {
+            "enum": [
+              "ALLOW",
+              "DENY"
+            ],
+            "title": "Actions",
+            "type": "string"
+          },
+          "componentCData": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Componentcdata",
+            "type": "array"
+          },
+          "dataNodeSelector": {
+            "title": "Datanodeselector",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "enum": [
+                "create",
+                "read",
+                "update",
+                "delete",
+                "exec"
+              ],
+              "type": "string"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "ruleName": {
+            "title": "Rulename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ruleName",
+          "dataNodeSelector",
+          "operations",
+          "actions"
+        ],
+        "title": "AccessRuleAttributes",
+        "type": "object"
+      },
       "CMSchemaBody": {
         "additionalProperties": false,
         "properties": {
@@ -89,6 +139,49 @@
         "title": "CellGuardBody",
         "type": "object"
       },
+      "FileSubscriptionRequest": {
+        "additionalProperties": false,
+        "description": "TS 28.623 Subscription. `filter` (a Jex condition) is not supported and\nis refused; `fileDataType` narrows the subscription to one data type.",
+        "properties": {
+          "consumerReference": {
+            "title": "Consumerreference",
+            "type": "string"
+          },
+          "fileDataType": {
+            "anyOf": [
+              {
+                "enum": [
+                  "Performance",
+                  "Trace",
+                  "Analytics",
+                  "Proprietary"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filedatatype"
+          },
+          "timeTick": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timetick"
+          }
+        },
+        "required": [
+          "consumerReference"
+        ],
+        "title": "FileSubscriptionRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -100,6 +193,127 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IdentityAttributes": {
+        "properties": {
+          "credential": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential"
+          },
+          "identityName": {
+            "title": "Identityname",
+            "type": "string"
+          },
+          "identityType": {
+            "enum": [
+              "USERNAME",
+              "EMAIL_ADDRESS",
+              "PHONE_NUMBER",
+              "IP_ADDRESS",
+              "MACHINEUSER"
+            ],
+            "title": "Identitytype",
+            "type": "string"
+          },
+          "roleList": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Rolelist",
+            "type": "array"
+          }
+        },
+        "required": [
+          "identityType",
+          "identityName"
+        ],
+        "title": "IdentityAttributes",
+        "type": "object"
+      },
+      "PmFileRequest": {
+        "properties": {
+          "counterType": {
+            "title": "Countertype",
+            "type": "string"
+          },
+          "fileCompression": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filecompression"
+          },
+          "fileDataType": {
+            "default": "Performance",
+            "enum": [
+              "Performance",
+              "Trace",
+              "Analytics",
+              "Proprietary"
+            ],
+            "title": "Filedatatype",
+            "type": "string"
+          },
+          "fileExpirationTime": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fileexpirationtime"
+          },
+          "fileFormat": {
+            "default": "json",
+            "title": "Fileformat",
+            "type": "string"
+          },
+          "jobId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jobid"
+          },
+          "managedElementRef": {
+            "title": "Managedelementref",
+            "type": "string"
+          },
+          "measurements": {
+            "items": {
+              "$ref": "#/components/schemas/PmMeasurement"
+            },
+            "title": "Measurements",
+            "type": "array"
+          }
+        },
+        "required": [
+          "managedElementRef",
+          "counterType",
+          "measurements"
+        ],
+        "title": "PmFileRequest",
         "type": "object"
       },
       "PmMeasurement": {
@@ -263,6 +477,28 @@
           "entityType"
         ],
         "title": "RegisterO1AdaptorEndpointRequest",
+        "type": "object"
+      },
+      "RoleAttributes": {
+        "properties": {
+          "accessRulesList": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Accessruleslist",
+            "type": "array"
+          },
+          "roleName": {
+            "title": "Rolename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "roleName"
+        ],
+        "title": "RoleAttributes",
         "type": "object"
       },
       "SchemaRef": {
@@ -504,6 +740,17 @@
       },
       "WriteConfigRequest": {
         "properties": {
+          "accessScope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessscope"
+          },
           "changes": {
             "items": {
               "additionalProperties": true,
@@ -528,13 +775,19 @@
             "type": "string"
           },
           "scope": {
-            "title": "Scope",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
           }
         },
         "required": [
           "requestedBy",
-          "scope",
           "changes"
         ],
         "title": "WriteConfigRequest",
@@ -1463,6 +1716,180 @@
         "summary": "Stop Dme Job"
       }
     },
+    "/file-subscriptions": {
+      "post": {
+        "operationId": "create_file_subscription_file_subscriptions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create File Subscription"
+      }
+    },
+    "/file-subscriptions/{subscription_id}": {
+      "delete": {
+        "operationId": "delete_file_subscription_file_subscriptions__subscription_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete File Subscription"
+      }
+    },
+    "/files": {
+      "get": {
+        "description": "TS 28.532 `GET /files`: FileInfo for the files of a data type, selected by\nthe time they became available. Paginated like every list here.",
+        "operationId": "read_file_info_files_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "fileDataType",
+            "required": true,
+            "schema": {
+              "enum": [
+                "Performance",
+                "Trace",
+                "Analytics",
+                "Proprietary"
+              ],
+              "title": "Filedatatype",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beginTime",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Begintime"
+            }
+          },
+          {
+            "in": "query",
+            "name": "endTime",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Endtime"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read File Info"
+      }
+    },
     "/fm-subscriptions": {
       "get": {
         "operationId": "list_fm_subscriptions_fm_subscriptions_get",
@@ -1887,6 +2314,572 @@
         "summary": "Read Configuration"
       }
     },
+    "/msac/access-rules": {
+      "get": {
+        "operationId": "list_access_rules_msac_access_rules_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Access Rules"
+      },
+      "post": {
+        "operationId": "create_access_rule_msac_access_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccessRuleAttributes"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Access Rule"
+      }
+    },
+    "/msac/access-rules/{rule_id}": {
+      "delete": {
+        "operationId": "delete_access_rule_msac_access_rules__rule_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Access Rule"
+      },
+      "get": {
+        "operationId": "get_access_rule_msac_access_rules__rule_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Access Rule"
+      }
+    },
+    "/msac/identities": {
+      "get": {
+        "operationId": "list_identities_msac_identities_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Identities"
+      },
+      "post": {
+        "operationId": "create_identity_msac_identities_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityAttributes"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Identity"
+      }
+    },
+    "/msac/identities/{identity_id}": {
+      "delete": {
+        "operationId": "delete_identity_msac_identities__identity_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Identity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Identity"
+      },
+      "get": {
+        "operationId": "get_identity_msac_identities__identity_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Identity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Identity"
+      },
+      "put": {
+        "operationId": "replace_identity_msac_identities__identity_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identity_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Identity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityAttributes"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Identity"
+      }
+    },
+    "/msac/roles": {
+      "get": {
+        "operationId": "list_roles_msac_roles_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Roles"
+      },
+      "post": {
+        "operationId": "create_role_msac_roles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleAttributes"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Role"
+      }
+    },
+    "/msac/roles/{role_id}": {
+      "delete": {
+        "operationId": "delete_role_msac_roles__role_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Role Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Role"
+      },
+      "get": {
+        "operationId": "get_role_msac_roles__role_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Role Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Role"
+      },
+      "put": {
+        "operationId": "replace_role_msac_roles__role_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Role Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleAttributes"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Role"
+      }
+    },
     "/o1-adaptor-endpoints": {
       "get": {
         "operationId": "list_o1_adaptor_endpoints_o1_adaptor_endpoints_get",
@@ -2046,6 +3039,80 @@
           }
         },
         "summary": "Endpoint Heartbeat"
+      }
+    },
+    "/pm-files": {
+      "post": {
+        "operationId": "report_pm_file_pm_files_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PmFileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Pm File"
+      }
+    },
+    "/pm-files/{file_id}/file": {
+      "get": {
+        "operationId": "download_pm_file_pm_files__file_id__file_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Pm File"
       }
     },
     "/pm-reports": {

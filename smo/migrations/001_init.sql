@@ -357,7 +357,7 @@ CREATE TABLE alarm (
   source_alarm_id    TEXT NOT NULL,
   managed_element_ref TEXT NOT NULL REFERENCES managed_entity(managed_element_ref),
   managed_function_ref TEXT,
-  severity           TEXT NOT NULL CHECK (severity IN ('critical','major','minor','warning','cleared')),
+  severity           TEXT NOT NULL CHECK (severity IN ('critical','major','minor','warning','indeterminate','cleared')),
   ack_state          TEXT NOT NULL DEFAULT 'UNACKNOWLEDGED' CHECK (ack_state IN ('ACKNOWLEDGED','UNACKNOWLEDGED')),
   correlation_group  TEXT,
   raised_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -422,6 +422,53 @@ CREATE TABLE write_config_sub_change (
   status             TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','APPLIED','REJECTED')),
   rejection_reason   TEXT,
   attempts           INTEGER NOT NULL DEFAULT 0  -- Wave 10.1 (W10-19): edit-config attempts, retries included
+);
+
+-- SA-RANOAM-1: TS 28.319 MSAC NRM (Identity / Role / AccessRule). Flat ids; the
+-- credential is a hash, never the secret.
+CREATE TABLE msac_identity (
+  identity_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  identity_type    TEXT NOT NULL CHECK (identity_type IN ('USERNAME','EMAIL_ADDRESS','PHONE_NUMBER','IP_ADDRESS','MACHINEUSER')),
+  identity_name    TEXT NOT NULL UNIQUE,
+  credential_hash  TEXT,
+  role_list        JSONB NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE msac_role (
+  role_id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  role_name          TEXT NOT NULL UNIQUE,
+  access_rules_list  JSONB NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE msac_access_rule (
+  rule_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  rule_name           TEXT NOT NULL,
+  data_node_selector  TEXT NOT NULL,
+  operations          JSONB NOT NULL DEFAULT '[]',
+  actions             TEXT NOT NULL CHECK (actions IN ('ALLOW','DENY')),
+  component_c_data    JSONB NOT NULL DEFAULT '[]'
+);
+
+-- SA-RANOAM-8: TS 28.532 File Data Reporting MnS (performance files + notifyFileReady).
+CREATE TABLE pm_file (
+  file_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  managed_element_ref  TEXT NOT NULL,
+  counter_type         TEXT NOT NULL,
+  file_data_type       TEXT NOT NULL DEFAULT 'Performance' CHECK (file_data_type IN ('Performance','Trace','Analytics','Proprietary')),
+  file_format          TEXT NOT NULL DEFAULT 'json',
+  file_compression     TEXT,
+  job_id               TEXT,
+  content              TEXT NOT NULL,
+  file_size            INTEGER NOT NULL,
+  file_ready_time      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  file_expiration_time TIMESTAMPTZ
+);
+
+CREATE TABLE file_subscription (
+  subscription_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  consumer_reference  TEXT NOT NULL,
+  file_data_type      TEXT CHECK (file_data_type IN ('Performance','Trace','Analytics','Proprietary')),
+  sequence_no         INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE pm_subscription (

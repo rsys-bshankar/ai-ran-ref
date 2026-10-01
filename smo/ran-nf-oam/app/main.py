@@ -14,12 +14,15 @@ rejected with PROTOCOL_NOT_SUPPORTED rather than silently applied.
 """
 
 import datetime
+import json
 import os
 import time
 import uuid
+from typing import Literal
 
 from fastapi import Depends, FastAPI, Query
-from pydantic import BaseModel, model_validator
+from fastapi.responses import Response
+from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -30,8 +33,11 @@ from smo_shared.timeutil import as_utc
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
+from smo_shared.webhook import post_webhook
 
-from .models import Alarm, CMSchemaCache, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, CMSchemaCache, FileSubscription, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from . import msac
+from .ldn import check_ref, leaf_class, leaf_id
 from . import restconf_client
 from .netconf_client import send_edit_config, send_get_config
 from .vendors import MnsService, check_vendor_mode, require_service, router as vendors_router, schema_problems
@@ -51,6 +57,7 @@ from .statemachine import (
 )
 
 app = FastAPI(title="RAN NF OAM SMOS")
+app.include_router(msac.router)
 apply_r1_gateway_security(app)
 apply_correlation_id(app)
 
@@ -104,11 +111,50 @@ def _raise_dispatch_alarm(db: Session, job_id: uuid.UUID, change: dict, reason: 
                  specific_problem=f"edit-config to {target} failed after {attempts} attempts"))
 
 
+# SA-RANOAM-6-severity: TS 28.111 PerceivedSeverity is six upper-case values.
+# The alarm table keeps its lowercase wire value (`severity`); the API accepts
+# either case, and every alarm view also carries `perceivedSeverity` upper-case.
+PERCEIVED_SEVERITIES = ("INDETERMINATE", "CRITICAL", "MAJOR", "MINOR", "WARNING", "CLEARED")
+
+
+def _perceived_severity(value: str) -> str:
+    """The lowercase stored form of `value`; 422 if it is not a PerceivedSeverity."""
+    if value.upper() not in PERCEIVED_SEVERITIES:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                              detail=f"severity {value!r} is not a PerceivedSeverity ({', '.join(PERCEIVED_SEVERITIES)})")
+    return value.lower()
+
+
+def _valid_refs(*refs: str | None) -> None:
+    """SA-RANOAM-4: a ref carrying '=' must be a well-formed DN."""
+    for ref in refs:
+        try:
+            check_ref(ref)
+        except ValueError as exc:
+            raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=str(exc)) from exc
+
+
 class WriteConfigRequest(BaseModel):
     requestedBy: str
-    scope: str
+    # SA-RANOAM-2: `scope` collides with the ProvMnS ScopeType, so the access
+    # scope is `accessScope`. `scope` stays as a deprecated alias (same value);
+    # at least one is required and both, if sent, must agree.
+    accessScope: str | None = None
+    scope: str | None = None
     changes: list[dict]  # each: {managedElementRef, managedFunctionRef?, attributeChanges?, operation?}
     msacRole: str | None = None
+
+    @model_validator(mode="after")
+    def _scope_and_refs(self):
+        if self.accessScope is None and self.scope is None:
+            raise ValueError("accessScope is required (scope is its deprecated alias)")
+        if self.accessScope is not None and self.scope is not None and self.accessScope != self.scope:
+            raise ValueError("accessScope and its deprecated alias scope disagree")
+        self.accessScope = self.accessScope if self.accessScope is not None else self.scope
+        for change in self.changes:
+            for key in ("managedElementRef", "managedFunctionRef"):
+                check_ref(change.get(key))  # a ref carrying '=' must be a well-formed DN
+        return self
 
 
 class RegisterO1AdaptorEndpointRequest(BaseModel):
@@ -153,6 +199,7 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
     # Wave 9 (W9-04): a registered vendor's endpoint must use a transport
     # (vendor mode) the vendor declared, and can't claim services it lacks.
     check_vendor_mode(db, body.vendorName, body.o1Protocol)
+    _valid_refs(body.managedElementRef, body.managedFunctionRef)
     cap = db.get(VendorCapability, body.vendorName) if body.vendorName else None
     if cap is not None and body.supportedServices is not None and not set(body.supportedServices) <= set(cap.supported_services):
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
@@ -176,7 +223,21 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
     sequence: MSAC gate, schema check (cache-or-fetch), decompose into
     sub_changes, PATCH each independently, aggregate.
     """
-    if body.scope == "entire-RAN" and not body.msacRole:
+    # SA-RANOAM-1: TS 28.319 role-based access control, per sub-change, before
+    # anything is dispatched. A requester with a registered Identity or a
+    # defined Role is evaluated against its AccessRules; any other requester
+    # keeps the legacy gate (entire-RAN needs a named msacRole).
+    managed, roles = msac.resolve_roles(db, body.requestedBy, body.msacRole)
+    if managed:
+        denied = []
+        for change in body.changes:
+            op = msac.CONFIG_OPERATION.get(change.get("operation", "merge"))
+            target = msac.target_path(change["managedElementRef"], change.get("managedFunctionRef"))
+            if op is None or not msac.authorize(db, roles, target, op):
+                denied.append(f"{change.get('operation', 'merge')} {target}")
+        if denied:
+            raise framework_error(FrameworkError.MSAC_ACCESS_DENIED, detail=f"{body.requestedBy} is not permitted: {'; '.join(denied)}")
+    elif body.accessScope == "entire-RAN" and not body.msacRole:
         raise framework_error(FrameworkError.MSAC_ACCESS_DENIED, detail="entire-RAN scope requires an MSAC access tier")
     # Wave 9 (W9-02): the pre-check is real now — every change's ME must
     # implement Provisioning, and its class/attributes/values must exist in
@@ -189,7 +250,7 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
     if problems:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="; ".join(problems))
 
-    job = WriteConfigJob(requested_by=body.requestedBy, scope=body.scope, msac_role=body.msacRole)
+    job = WriteConfigJob(requested_by=body.requestedBy, scope=body.accessScope, msac_role=body.msacRole)
     db.add(job)
     db.flush()
 
@@ -296,9 +357,11 @@ def query_alarms(managed_element_ref: str | None = None, severity: str | None = 
     if managed_element_ref:
         stmt = stmt.where(Alarm.managed_element_ref == managed_element_ref)
     if managed_function_ref:
-        stmt = stmt.where(Alarm.managed_function_ref == managed_function_ref)
+        # a flat ref, a full DN, or an RDN that ends a stored DN (`NRCellDU=101`)
+        stmt = stmt.where((Alarm.managed_function_ref == managed_function_ref)
+                          | Alarm.managed_function_ref.endswith("," + managed_function_ref, autoescape=True))
     if severity:
-        stmt = stmt.where(Alarm.severity == severity)
+        stmt = stmt.where(Alarm.severity == _perceived_severity(severity))
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [_alarm_view(a) for a in page["items"]]}
 
@@ -325,6 +388,8 @@ def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, 
     rather than the whole element. Omitted = the element as a whole.
     """
     require_service(db, managed_element_ref, "FM")  # Wave 9 (W9-01)
+    severity = _perceived_severity(severity)
+    _valid_refs(managed_element_ref, managed_function_ref)
     alarm = Alarm(source_alarm_id=source_alarm_id, managed_element_ref=managed_element_ref,
                   managed_function_ref=managed_function_ref, severity=severity, correlation_group=correlation_group,
                   probable_cause=probable_cause, specific_problem=specific_problem, root_cause_indicator=root_cause_indicator,
@@ -438,14 +503,22 @@ def receive_pm_report(body: PmReportRequest, db: Session = Depends(get_session))
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
                               detail=f"no PM subscription for {body.counterType} on {body.managedElementRef}")
     db.commit()  # end the read transaction before fanning out to DME (nothing of ours is written)
+    jobs, delivered = _fan_out_to_dme(body.managedElementRef, body.counterType, body.measurements)
+    return {"managedElementRef": body.managedElementRef, "counterType": body.counterType,
+            "measurements": len(body.measurements), "dataJobs": jobs, "recordsDelivered": delivered}
+
+
+def _fan_out_to_dme(managed_element_ref: str, counter_type: str, measurements: list[PmMeasurement]) -> tuple[int, int]:
+    """(open data jobs, records delivered): each measurement goes to every
+    data job open on `RAN.PMCounters.<counterType>`."""
     r1 = R1Client()
-    type_name = f"RAN.PMCounters.{body.counterType}"
+    type_name = f"RAN.PMCounters.{counter_type}"
     dme_type = next((t for t in r1.get("/dme/dme-types", params={"data_category": "RAN"}).json()
                      if t["typeName"] == type_name), None)
     jobs = r1.get("/dme/data-jobs", params={"dme_type_id": dme_type["dmeTypeId"], "limit": 500}).json()["items"] if dme_type else []
     delivered = 0
-    for m in body.measurements:
-        payload = {"managedElementRef": body.managedElementRef, "cellId": m.cellId, "counter": body.counterType,
+    for m in measurements:
+        payload = {"managedElementRef": managed_element_ref, "cellId": m.cellId, "counter": counter_type,
                    "value": m.value, "timestamp": m.timestamp.isoformat()}
         if m.values is not None:
             payload["values"] = m.values
@@ -454,8 +527,120 @@ def receive_pm_report(body: PmReportRequest, db: Session = Depends(get_session))
         for job in jobs:
             r1.post(f"/dme/data-jobs/{job['dataJobId']}/records", json={"payload": payload})
             delivered += 1
-    return {"managedElementRef": body.managedElementRef, "counterType": body.counterType,
-            "measurements": len(body.measurements), "dataJobs": len(jobs), "recordsDelivered": delivered}
+    return len(jobs), delivered
+
+
+# ---------------------------------------------------------------- file data reporting
+# SA-RANOAM-8: TS 28.532 File Data Reporting MnS (TS28532_FileDataReportingMnS.yaml).
+# The NF's O1 adaptor reports a finished performance file (`POST /pm-files`); its
+# measurements go to DME exactly as `POST /pm-reports` does, the file itself is
+# kept and served (`GET /pm-files/{id}/file`, listed by `GET /files`), and every
+# file subscription gets notifyFileReady. Streaming (TS28532_StreamingDataMnS) is
+# not built: there is no streaming transport, and `delivery_method=stream`
+# remains a registration only.
+
+FileDataType = Literal["Performance", "Trace", "Analytics", "Proprietary"]
+
+
+class PmFileRequest(BaseModel):
+    managedElementRef: str
+    counterType: str
+    measurements: list[PmMeasurement]
+    fileDataType: FileDataType = "Performance"
+    fileFormat: str = "json"
+    fileCompression: str | None = None
+    jobId: str | None = None
+    fileExpirationTime: datetime.datetime | None = None
+
+
+class FileSubscriptionRequest(BaseModel):
+    """TS 28.623 Subscription. `filter` (a Jex condition) is not supported and
+    is refused; `fileDataType` narrows the subscription to one data type."""
+    model_config = ConfigDict(extra="forbid")
+    consumerReference: str
+    timeTick: int | None = None
+    fileDataType: FileDataType | None = None
+
+
+def _file_info(f: PMFile) -> dict:
+    return {"fileLocation": f"/ran-nf-oam/pm-files/{f.file_id}/file", "fileSize": f.file_size,
+            "fileReadyTime": as_utc(f.file_ready_time).isoformat(),
+            "fileExpirationTime": as_utc(f.file_expiration_time).isoformat() if f.file_expiration_time else None,
+            "fileCompression": f.file_compression, "fileFormat": f.file_format, "fileDataType": f.file_data_type,
+            "jobId": f.job_id}
+
+
+@app.post("/pm-files", status_code=201)
+def report_pm_file(body: PmFileRequest, db: Session = Depends(get_session)):
+    require_service(db, body.managedElementRef, "FILE")
+    subscribed = db.scalars(select(PMSubscription).where(PMSubscription.managed_element_ref == body.managedElementRef,
+                                                         PMSubscription.counter_type == body.counterType)).first()
+    if subscribed is None:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                              detail=f"no PM subscription for {body.counterType} on {body.managedElementRef}")
+    content = json.dumps({"managedElementRef": body.managedElementRef, "counterType": body.counterType,
+                          "measurements": [m.model_dump(mode="json", exclude_none=True) for m in body.measurements]})
+    pm_file = PMFile(managed_element_ref=body.managedElementRef, counter_type=body.counterType, file_data_type=body.fileDataType,
+                     file_format=body.fileFormat, file_compression=body.fileCompression, job_id=body.jobId, content=content,
+                     file_size=len(content.encode()), file_expiration_time=body.fileExpirationTime)
+    db.add(pm_file)
+    db.flush()
+    info = _file_info(pm_file)
+    targets = [(sub.subscription_id, sub.consumer_reference, sub.sequence_no + 1) for sub in db.scalars(select(FileSubscription)).all()
+               if sub.file_data_type in (None, body.fileDataType)]
+    for sub in db.scalars(select(FileSubscription)).all():
+        if sub.file_data_type in (None, body.fileDataType):
+            sub.sequence_no += 1
+    file_id = str(pm_file.file_id)
+    db.commit()
+    for subscription_id, consumer, sequence_no in targets:
+        post_webhook(consumer, json={"href": "/ran-nf-oam/file-subscriptions", "notificationId": sequence_no,
+                                     "notificationType": "notifyFileReady", "eventTime": info["fileReadyTime"],
+                                     "sequenceNo": sequence_no, "subscriptionId": str(subscription_id),
+                                     "fileInfoList": [info]}, timeout=2.0)
+    jobs, delivered = _fan_out_to_dme(body.managedElementRef, body.counterType, body.measurements)
+    return {"fileId": file_id, **info, "notified": len(targets), "dataJobs": jobs, "recordsDelivered": delivered}
+
+
+@app.get("/files")
+def read_file_info(fileDataType: FileDataType, beginTime: datetime.datetime | None = None, endTime: datetime.datetime | None = None,
+                   limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """TS 28.532 `GET /files`: FileInfo for the files of a data type, selected by
+    the time they became available. Paginated like every list here."""
+    stmt = select(PMFile).where(PMFile.file_data_type == fileDataType)
+    if beginTime:
+        stmt = stmt.where(PMFile.file_ready_time >= beginTime)
+    if endTime:
+        stmt = stmt.where(PMFile.file_ready_time <= endTime)
+    page = paginate(db, stmt.order_by(PMFile.file_ready_time), limit, offset)
+    return {**page, "items": [_file_info(f) for f in page["items"]]}
+
+
+@app.get("/pm-files/{file_id}/file")
+def download_pm_file(file_id: uuid.UUID, db: Session = Depends(get_session)):
+    f = db.get(PMFile, file_id)
+    if f is None:
+        raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such file {file_id}")
+    if f.file_expiration_time and as_utc(f.file_expiration_time) < datetime.datetime.now(datetime.UTC):
+        raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"file {file_id} has expired")
+    return Response(content=f.content, media_type="application/json")
+
+
+@app.post("/file-subscriptions", status_code=201)
+def create_file_subscription(body: FileSubscriptionRequest, db: Session = Depends(get_session)):
+    sub = FileSubscription(consumer_reference=body.consumerReference, file_data_type=body.fileDataType)
+    db.add(sub)
+    db.commit()
+    return {"subscriptionId": str(sub.subscription_id), "consumerReference": sub.consumer_reference,
+            "timeTick": body.timeTick, "fileDataType": sub.file_data_type}
+
+
+@app.delete("/file-subscriptions/{subscription_id}", status_code=204)
+def delete_file_subscription(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    sub = db.get(FileSubscription, subscription_id)
+    if sub is not None:
+        db.delete(sub)
+        db.commit()
 
 
 @app.get("/health")
@@ -561,7 +746,8 @@ def endpoint_heartbeat(endpoint_id: uuid.UUID, db: Session = Depends(get_session
 def _alarm_view(a: Alarm) -> dict:
     return {"alarmId": str(a.alarm_id), "sourceAlarmId": a.source_alarm_id, "managedElementRef": a.managed_element_ref,
             "managedFunctionRef": a.managed_function_ref,
-            "severity": a.severity, "ackState": a.ack_state,
+            "managedFunctionClass": leaf_class(a.managed_function_ref), "managedFunctionId": leaf_id(a.managed_function_ref),
+            "severity": a.severity, "perceivedSeverity": a.severity.upper(), "ackState": a.ack_state,
             "raisedAt": a.raised_at.isoformat() if a.raised_at else None, "correlationGroup": a.correlation_group,
             "probableCause": a.probable_cause, "specificProblem": a.specific_problem,
             "rootCauseIndicator": a.root_cause_indicator,
@@ -681,8 +867,8 @@ def list_write_config_jobs(status: str | None = None, limit: int = PageLimit, of
     if status:
         stmt = stmt.where(WriteConfigJob.status == status)
     page = paginate(db, stmt, limit, offset)
-    return {**page, "items": [{"jobId": str(j.job_id), "requestedBy": j.requested_by, "scope": j.scope, "status": j.status,
-             "msacRole": j.msac_role} for j in page["items"]]}
+    return {**page, "items": [{"jobId": str(j.job_id), "requestedBy": j.requested_by, "accessScope": j.scope, "scope": j.scope,
+             "status": j.status, "msacRole": j.msac_role} for j in page["items"]]}
 
 
 @app.get("/software-management-jobs")

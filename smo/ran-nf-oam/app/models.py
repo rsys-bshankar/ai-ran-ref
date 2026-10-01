@@ -77,6 +77,63 @@ class Alarm(Base):
     changed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class MsacIdentity(Base):
+    """TS 28.319 Identity. `credential` is write-only: only its hash is kept."""
+    __tablename__ = "msac_identity"
+
+    identity_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    identity_type: Mapped[str] = mapped_column(String, nullable=False)
+    identity_name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    credential_hash: Mapped[str | None] = mapped_column(String)
+    role_list: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # Role ids
+
+
+class MsacRole(Base):
+    __tablename__ = "msac_role"
+
+    role_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    role_name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    access_rules_list: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # AccessRule ids
+
+
+class MsacAccessRule(Base):
+    __tablename__ = "msac_access_rule"
+
+    rule_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    rule_name: Mapped[str] = mapped_column(String, nullable=False)
+    data_node_selector: Mapped[str] = mapped_column(String, nullable=False)
+    operations: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    actions: Mapped[str] = mapped_column(String, nullable=False)  # ALLOW | DENY
+    component_c_data: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+
+class PMFile(Base):
+    """A performance data file (TS 28.532 File Data Reporting MnS FileInfo)."""
+    __tablename__ = "pm_file"
+
+    file_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    managed_element_ref: Mapped[str] = mapped_column(String, nullable=False)
+    counter_type: Mapped[str] = mapped_column(String, nullable=False)
+    file_data_type: Mapped[str] = mapped_column(String, nullable=False, default="Performance")
+    file_format: Mapped[str] = mapped_column(String, nullable=False, default="json")
+    file_compression: Mapped[str | None] = mapped_column(String)
+    job_id: Mapped[str | None] = mapped_column(String)
+    content: Mapped[str] = mapped_column(String, nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    file_ready_time: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+    file_expiration_time: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class FileSubscription(Base):
+    """A File Data Reporting MnS subscription: notifyFileReady goes to `consumer_reference`."""
+    __tablename__ = "file_subscription"
+
+    subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    consumer_reference: Mapped[str] = mapped_column(String, nullable=False)
+    file_data_type: Mapped[str | None] = mapped_column(String)  # None = every type
+    sequence_no: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class CMSchemaCache(Base):
     __tablename__ = "cm_schema_cache"
 
