@@ -11,7 +11,11 @@ does A1 Related's create_policy actually reach the mock Near-RT RIC —
 rather than re-proving the gateway's HTTP forwarding a second time.
 """
 
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from fastapi.testclient import TestClient
 
 # mirrors r1-termination/app/main.py's ROUTES table
 R1_PREFIX_TO_SERVICE = {

@@ -1,0 +1,12 @@
+# CI lint (.github/workflows/smo-tests.yml, job `lint`). Deliberately narrow:
+# only rules that catch real defects — syntax errors (E9), invalid
+# comparisons/asserts/print-chevrons (F63, F7) and undefined names (F82).
+#
+# F401 (unused import) is NOT enabled: each module's `main.py` keeps `import
+# httpx` so the integration tests can patch `loaded_apps[<module>].httpx`, and
+# "fixing" those would break them. B008 (call in default argument) is FastAPI's
+# `Depends(...)` idiom.
+extend-exclude = ["gui/node_modules", "gui/dist"]
+
+[lint]
+select = ["E9", "F63", "F7", "F82"]

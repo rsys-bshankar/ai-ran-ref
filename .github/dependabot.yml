@@ -1,0 +1,31 @@
+# Version updates (security updates are already enabled in the repo settings).
+# Weekly, one grouped PR per ecosystem so the review load stays small.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions: { patterns: ["*"] }
+
+  - package-ecosystem: npm
+    directory: /smo/gui
+    schedule: { interval: weekly }
+    groups:
+      gui-dev-tooling:
+        dependency-type: development
+      gui-runtime:
+        dependency-type: production
+
+  # Python: only the three packages that declare dependencies in a
+  # pyproject.toml. Module services install an unpinned list in smo/Dockerfile
+  # and the CI workflow, which Dependabot cannot read.
+  - package-ecosystem: pip
+    directories: [/smo/shared, /smo/sdk, /smo/gui-bff]
+    schedule: { interval: weekly }
+    groups:
+      python: { patterns: ["*"] }
+
+  - package-ecosystem: docker
+    directories: [/smo, /smo/gui]
+    schedule: { interval: weekly }
