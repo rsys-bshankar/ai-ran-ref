@@ -83,7 +83,8 @@ reached this shape see [HISTORY.md](../HISTORY.md).
 3. **MLTF/MLVF/MLEF/MLIF are runtime roles, not services.** They are
    execution modes of one runtime (TRAINING → MLTF, VALIDATION → MLVF,
    EMULATION → MLEF, INFERENCE → MLIF), scheduled by NFO. There is no
-   `mltf/` module. See [ROADMAP.md#runtime-realization](ROADMAP.md#runtime-realization).
+   `mltf/`, `mlvf/`, `mlef/` or `mlif/` module. See
+   [ROADMAP.md#runtime-realization](ROADMAP.md#runtime-realization).
 4. **NFO owns execution placement.** Where and how a runtime executes is
    NFO's decision, never AIMgF's.
 5. **AIMgF owns lifecycle.** AIMgF decides what state a model or runtime is
@@ -108,6 +109,8 @@ reached this shape see [HISTORY.md](../HISTORY.md).
 | NFO | `nfo/` | O-Cloud / O2 (deployment) |
 | FOCOM | `focom/` | O2IMS |
 | RAN NF OAM | `ran-nf-oam/` | O1 (CM/FM/PM/SWM, per-vendor capability registry) |
+| SO SMOS | `so-smos/` | O-RAN SMO-ARCH §4.2.7 SMOS (interfaces unspecified, internal design) |
+| SA SMOS | `sa-smos/` | O-RAN SMO-ARCH §4.2.8 SMOS (interfaces unspecified, internal design); O1-CM handler is a 3GPP TS 28.312 RMIH |
 | RAN Analytics | `ran-analytics/` | Use-case analytics producers; an MDAF consumer |
 
 A1 policy (`a1-related/`) is a separate concept from intents and is not part

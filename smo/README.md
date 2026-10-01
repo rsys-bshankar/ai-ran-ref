@@ -48,8 +48,8 @@ that realises a standard and adds its own behaviour on top says so.
 | [RAN Analytics](ran-analytics/README.md) | Internal | `ran-analytics/` | Analytics producer registration (an MDAF consumer) | `/ran-analytics` |
 | [MDAF](mdaf/README.md) | 3GPP (TS 28.104) | `mdaf/` | TS 28.104 analytics: reports, subscriptions, MDA requests | `/mdaf` |
 | [Intent Service](intent-service/README.md) | 3GPP (TS 28.312) | `intent-service/` | TS 28.312 intents, intent handlers (RMIH), reports, autonomy dispatches | `/intent-service` |
-| [SO SMOS](so-smos/README.md) | Internal | `so-smos/` | Multi-step service orders over a dispatch table, fail-fast | `/so-smos` |
-| [SA SMOS](sa-smos/README.md) | Internal; its O1-CM handler acts as a 3GPP TS 28.312 RMIH | `sa-smos/` | Assurance monitors, remedial actions, O1-CM intent handler | `/sa-smos` |
+| [SO SMOS](so-smos/README.md) | O-RAN SMOS (WG1 SMO-ARCH §4.2.7); SMOS interfaces are unspecified, so the design is internal; does not register as an RMIH | `so-smos/` | Multi-step service orders over a dispatch table, fail-fast | `/so-smos` |
+| [SA SMOS](sa-smos/README.md) | O-RAN SMOS (WG1 SMO-ARCH §4.2.8); SMOS interfaces are unspecified, so the design is internal; its O1-CM handler acts as a 3GPP TS 28.312 RMIH | `sa-smos/` | Assurance monitors, remedial actions, O1-CM intent handler | `/sa-smos` |
 | Postgres | n/a (infrastructure) | — | `postgres:16-alpine`, seeded from `migrations/001_init.sql` | host `5432` |
 
 ### Test doubles, SDK, GUI
