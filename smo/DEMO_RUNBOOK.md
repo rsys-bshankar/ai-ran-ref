@@ -559,7 +559,7 @@ docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://intent-service:8000/intent-handling-functions', json={
     'rmihId': 'so-smos', 'smeServiceId': 'so-smos-svc',
-    'capabilities': [{'supportedExpectationObjectType': 'RAN_SUBNETWORK'}],
+    'intentHandlingCapabilityList': [{'intentHandlingCapabilityId': 'ran-energy', 'supportedExpectationObjectType': 'RAN_SUBNETWORK', 'supportedExpectationTargetInfoList': [{'supportedTargetName': 'RANEnergyConsumption'}]}],
     'notificationDestination': 'http://so-smos:8000/intents/notify',
     'intentHandlingScope': ['RAN'],
 })
@@ -576,7 +576,7 @@ string):
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://intent-service:8000/intents', json={
-    'expectations': [{'expectationObject': {'objectType': 'RAN_SUBNETWORK'}}],
+    'userLabel': 'demo energy intent', 'intentReportControl': [{'observationPeriod': 60}], 'intentExpectations': [{'expectationId': 'e1', 'expectationVerb': 'DELIVER', 'expectationObject': {'objectType': 'RAN_SUBNETWORK'}, 'expectationTargets': [{'targetName': 'RANEnergyConsumption', 'targetCondition': 'IS_LESS_THAN', 'targetValueRange': 500}]}],
     'rmioId': 'hello-world-rapp', 'rmihId': 'so-smos', 'intentHandlingScope': 'RAN',
 })
 print(r.status_code, r.json())
@@ -615,7 +615,7 @@ docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://intent-service:8000/intent-handling-functions', json={
     'rmihId': 'sa-smos', 'smeServiceId': 'sa-smos-svc',
-    'capabilities': [{'supportedExpectationObjectType': 'RAN_SUBNETWORK'}],
+    'intentHandlingCapabilityList': [{'intentHandlingCapabilityId': 'ran-energy', 'supportedExpectationObjectType': 'RAN_SUBNETWORK', 'supportedExpectationTargetInfoList': [{'supportedTargetName': 'RANEnergyConsumption'}]}],
     'notificationDestination': 'http://sa-smos:8000/intents/notify',
     'intentHandlingScope': ['CN'],
 })
@@ -631,7 +631,7 @@ the wrong scope:
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://intent-service:8000/intents', json={
-    'expectations': [{'expectationObject': {'objectType': 'RAN_SUBNETWORK'}}],
+    'userLabel': 'demo energy intent', 'intentReportControl': [{'observationPeriod': 60}], 'intentExpectations': [{'expectationId': 'e1', 'expectationVerb': 'DELIVER', 'expectationObject': {'objectType': 'RAN_SUBNETWORK'}, 'expectationTargets': [{'targetName': 'RANEnergyConsumption', 'targetCondition': 'IS_LESS_THAN', 'targetValueRange': 500}]}],
     'rmioId': 'hello-world-rapp', 'rmihId': 'sa-smos', 'intentHandlingScope': 'RAN',
 })
 print(r.status_code, r.json())
@@ -649,7 +649,7 @@ again:
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://intent-service:8000/intents', json={
-    'expectations': [{'expectationObject': {'objectType': 'RAN_SUBNETWORK'}}],
+    'userLabel': 'demo energy intent', 'intentReportControl': [{'observationPeriod': 60}], 'intentExpectations': [{'expectationId': 'e1', 'expectationVerb': 'DELIVER', 'expectationObject': {'objectType': 'RAN_SUBNETWORK'}, 'expectationTargets': [{'targetName': 'RANEnergyConsumption', 'targetCondition': 'IS_LESS_THAN', 'targetValueRange': 500}]}],
     'rmioId': 'hello-world-rapp', 'rmihId': 'so-smos', 'intentHandlingScope': 'RAN',
 })
 print(r.status_code, r.json())

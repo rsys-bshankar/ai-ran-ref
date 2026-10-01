@@ -380,7 +380,7 @@ function Flow09() {
         create: go("/policy#intents", "Create an intent"),
         dispatch: go("/policy#handlers", "Register a handler"),
         report: intentId && <ActionButton label="Publish fulfilment report (as so-smos)" title="Simulates the RMIH's report"
-          action={{ method: "POST", path: "/intent-service/intent-reports", json: { intentId, fulfilmentReport: { fulfilmentStatus: "FULFILLED", reportedBy: "so-smos" } }, success: "Report published" }} />,
+          action={{ method: "POST", path: "/intent-service/intent-reports", json: { intentReference: intentId, intentFulfilmentReport: { intentFulfilmentInfo: { fulfilmentStatus: "FULFILLED" } } }, success: "Report published" }} />,
         admin: intent?.rmioId === "smo-gui"
           ? <ActionButton label="Deactivate" action={{ method: "PATCH", path: `/intent-service/intents/${intentId}/admin-state`, json: { newState: "DEACTIVATED" }, success: "Intent DEACTIVATED" }} />
           : <span className="muted small">Only the creating RMIO ({intent?.rmioId || "—"}) may change the admin state.</span>,

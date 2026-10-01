@@ -258,7 +258,9 @@ export function flow09(handlers: Rmih[], intent: Intent | undefined, reports: In
     step("create", "CreateIntent(expectations, rmihId)", "RMIO → Intent Service", !!intent, intent ? `priority ${intent.intentPriority}, RMIO ${intent.rmioId}, RMIH ${intent.rmihId}` : undefined),
     step("dispatch", "Named RMIH notified (consumer-side selection)", "Intent Service → RMIH", !!intent,
       intent ? `addressed to ${intent.rmihId}` : undefined),
-    step("report", "PublishIntentReport(fulfilment, conflicts)", "RMIH → Intent Service", reports.length > 0, reports.length ? `${reports.length} report(s)` : undefined),
+    // Wave 6: Intent Service itself writes an initial RECEIVED report at
+    // CreateIntent, so the handler has reported once there is more than one.
+    step("report", "PublishIntentReport(fulfilment, conflicts)", "RMIH → Intent Service", reports.length > 1, reports.length > 1 ? `${reports.length - 1} handler report(s)` : undefined),
     step("admin", "UpdateIntentAdminState (RMIO only)", "RMIO → Intent Service", intent?.intentAdminState === "DEACTIVATED", intent ? `state ${intent.intentAdminState}` : undefined),
   ]);
 }

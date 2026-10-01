@@ -260,14 +260,14 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
 
     rmih = mesh["intent-service"].post("/intent-handling-functions", json={
         "rmihId": "so-smos", "smeServiceId": "so-smos-svc",
-        "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
+        "intentHandlingCapabilityList": [{"intentHandlingCapabilityId": "ran-energy", "supportedExpectationObjectType": "RAN_SUBNETWORK", "supportedExpectationTargetInfoList": [{"supportedTargetName": "RANEnergyConsumption"}]}],
         "notificationDestination": "http://so-smos:8000/intents/notify",
         "intentHandlingScope": ["RAN"],
     })
     assert rmih.status_code == 201
 
     intent = mesh["intent-service"].post("/intents", json={
-        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}],
+        "userLabel": "demo energy intent", "intentReportControl": [{"observationPeriod": 60}], "intentExpectations": [{"expectationId": "e1", "expectationVerb": "DELIVER", "expectationObject": {"objectType": "RAN_SUBNETWORK"}, "expectationTargets": [{"targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValueRange": 500}]}],
         "rmioId": "hello-world-rapp", "rmihId": "so-smos", "intentHandlingScope": "RAN",
     })
     assert intent.status_code == 201
@@ -289,14 +289,14 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     # own addressing choice is validated, not just filtered around.
     rmih2 = mesh["intent-service"].post("/intent-handling-functions", json={
         "rmihId": "sa-smos", "smeServiceId": "sa-smos-svc",
-        "capabilities": [{"supportedExpectationObjectType": "RAN_SUBNETWORK"}],
+        "intentHandlingCapabilityList": [{"intentHandlingCapabilityId": "ran-energy", "supportedExpectationObjectType": "RAN_SUBNETWORK", "supportedExpectationTargetInfoList": [{"supportedTargetName": "RANEnergyConsumption"}]}],
         "notificationDestination": "http://sa-smos:8000/intents/notify",
         "intentHandlingScope": ["CN"],
     })
     assert rmih2.status_code == 201
 
     rejected = mesh["intent-service"].post("/intents", json={
-        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}],
+        "userLabel": "demo energy intent", "intentReportControl": [{"observationPeriod": 60}], "intentExpectations": [{"expectationId": "e1", "expectationVerb": "DELIVER", "expectationObject": {"objectType": "RAN_SUBNETWORK"}, "expectationTargets": [{"targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValueRange": 500}]}],
         "rmioId": "hello-world-rapp", "rmihId": "sa-smos", "intentHandlingScope": "RAN",
     })
     assert rejected.status_code == 422
@@ -304,7 +304,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert sa_smos_notifications == []  # rejected before any dispatch was ever attempted
 
     intent2 = mesh["intent-service"].post("/intents", json={
-        "expectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}],
+        "userLabel": "demo energy intent", "intentReportControl": [{"observationPeriod": 60}], "intentExpectations": [{"expectationId": "e1", "expectationVerb": "DELIVER", "expectationObject": {"objectType": "RAN_SUBNETWORK"}, "expectationTargets": [{"targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValueRange": 500}]}],
         "rmioId": "hello-world-rapp", "rmihId": "so-smos", "intentHandlingScope": "RAN",
     })
     assert intent2.status_code == 201

@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, Boolean, ForeignKey, Integer, JSON, String, Uuid
+from sqlalchemy import ARRAY, Boolean, Float, ForeignKey, Integer, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -12,7 +12,9 @@ class Intent(Base):
 
     intent_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_label: Mapped[str | None] = mapped_column(String)
-    intent_expectations: Mapped[list] = mapped_column(JSON, nullable=False)  # opaque, TS 28.312 text not in this corpus
+    # Wave 6: strict TS 28.312 IntentExpectation list (app/ts28312.py),
+    # validated per expectation family on the way in.
+    intent_expectations: Mapped[list] = mapped_column(JSON, nullable=False)
     intent_mgmt_purpose: Mapped[str | None] = mapped_column(String)
     intent_admin_state: Mapped[str] = mapped_column(String, nullable=False, default="ACTIVATED")
     intent_priority: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -23,6 +25,32 @@ class Intent(Base):
     # own NRM containment (IntentHandlingFunction *contains* Intent).
     # ON DELETE CASCADE matches that containment literally.
     rmih_id: Mapped[str] = mapped_column(String, ForeignKey("intent_handling_function.rmih_id", ondelete="CASCADE"), nullable=False)
+    # Wave 6 — the remaining TS 28.312 Intent attributes.
+    context_selectivity: Mapped[str | None] = mapped_column(String)
+    consumer_satisfaction_index_threshold: Mapped[int | None] = mapped_column(Integer)
+    expectation_selectivity: Mapped[str | None] = mapped_column(String)
+    intent_contexts: Mapped[list | None] = mapped_column(JSON)
+    intent_report_control: Mapped[list | None] = mapped_column(JSON)
+    implicit_intent_index: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    guarantee_periods: Mapped[list | None] = mapped_column(JSON)
+    intent_handling_info: Mapped[dict | None] = mapped_column(JSON)
+    intent_interpretation_assistance_info: Mapped[dict | None] = mapped_column(JSON)
+    # readOnly in the spec: the intent's current IntentReport. Bare UUID
+    # (intent_report also points back at intent — no FK cycle).
+    intent_report_reference: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    intent_utility_formula_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("intent_utility_formula.intent_utility_formula_id", ondelete="SET NULL"))
+
+
+class IntentUtilityFormula(Base):
+    """Wave 6 — TS 28.312 IntentUtilityFormula IOC."""
+    __tablename__ = "intent_utility_formula"
+
+    intent_utility_formula_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    utility_function_id: Mapped[str] = mapped_column(String, nullable=False)
+    utility_parameter_list: Mapped[list] = mapped_column(JSON, nullable=False)
+    utility_scale: Mapped[float] = mapped_column(Float, nullable=False, default=1)
+    utility_offset: Mapped[float] = mapped_column(Float, nullable=False, default=0)
 
 
 class IntentReport(Base):
@@ -32,6 +60,12 @@ class IntentReport(Base):
     intent_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("intent.intent_id", ondelete="CASCADE"))  # was intent_reference (bare string) pre-LLD; NEW: delete_intent's cascade
     intent_fulfilment_report: Mapped[dict | None] = mapped_column(JSON)
     intent_conflict_reports: Mapped[list | None] = mapped_column(JSON)
+    # Wave 6 — the rest of the spec's report kinds.
+    intent_feasibility_check_report: Mapped[dict | None] = mapped_column(JSON)
+    intent_exploration_report: Mapped[dict | None] = mapped_column(JSON)
+    intent_utility_reports: Mapped[list | None] = mapped_column(JSON)
+    intent_fulfilment_negotiation_report: Mapped[dict | None] = mapped_column(JSON)
+    intent_decomposition_report: Mapped[dict | None] = mapped_column(JSON)
     last_updated_time: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))
 
 
@@ -46,6 +80,9 @@ class IntentHandlingFunction(Base):
     # here on a capability match, same established pattern as DME's
     # producerHealthCallbackUrl.
     notification_destination: Mapped[str] = mapped_column(String, nullable=False)
+    # Wave 6 — TS 28.312 IntentHandlingFunction attributes.
+    supported_negotiation_functionalities: Mapped[list | None] = mapped_column(JSON)
+    supported_utility_list: Mapped[list | None] = mapped_column(JSON)
 
 
 class AutonomyDispatch(Base):

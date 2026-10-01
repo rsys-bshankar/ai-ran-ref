@@ -101,16 +101,16 @@ Depends on: M3. Result: `docs/roadmap/TS28104_COMPLIANCE_MATRIX.md` (48/48 compl
 | W5-04 | ✅ Drift report hook: MDAF DriftReport → AIMgF retrain signal (wire only; reuse the MLMFSubscription guard pattern) | A DriftReport above threshold produces a notification AIMgF can consume |
 | W5-05 | ✅ Exit criteria | Matrix reviewed; tests green |
 
-## 5. Wave-6 — TS 28.312 alignment (Intent Service)
-Depends on: M4.
+## 5. Wave-6 — TS 28.312 alignment (Intent Service) — ✅ DONE (PR-W6)
+Depends on: M4. Result: `docs/roadmap/TS28312_COMPLIANCE_MATRIX.md` (83/91 compliant, 8 partial value datatypes). Validation is strict and every caller was migrated. The energy-saving template is `sdk.intent.energy_saving_expectation`.
 
 | ID | Work item | Done when |
 |----|-----------|-----------|
-| W6-01 | **TS 28.312 mapping matrix** (Intent, IntentExpectation, ExpectationObject/Target/Context, IntentReport, IntentHandlingFunction, fulfilment info) | `TS28312_MAPPING_MATRIX.md` |
-| W6-02 | Implement **every** TS 28.312 IOC/datatype at REST level (D-9): Intent, IntentReport, IntentHandlingFunction, IntentUtilityFormula; structured **IntentExpectation** (expectationId, verb, object, targets, contexts) + the Radio Network / Radio Service / 5GC / Edge / Network Maintenance expectation families, fulfilment/conflict/feasibility reports | Schema-validated expectations; every matrix row Compliant or addressing-only deviation |
-| W6-03 | Energy-saving expectation template, e.g. "Reduce energy in scope X during 00:00–05:00" (`[W10]` "Where Intent fits") | Template creatable via `sdk.intent.create_intent` |
-| W6-04 | IntentReport fulfilment status linked to downstream actions (DME action IDs, correlation-id) | IntentReport shows FULFILLED / NOT_FULFILLED with action refs |
-| W6-05 | Exit criteria | Matrix reviewed; tests green |
+| W6-01 | ✅ **TS 28.312 mapping matrix** (Intent, IntentExpectation, ExpectationObject/Target/Context, IntentReport, IntentHandlingFunction, fulfilment info) | `docs/roadmap/TS28312_COMPLIANCE_MATRIX.md` |
+| W6-02 | ✅ Implement **every** TS 28.312 IOC/datatype at REST level (D-9): Intent, IntentReport, IntentHandlingFunction, IntentUtilityFormula; structured **IntentExpectation** (expectationId, verb, object, targets, contexts) + the Radio Network / Radio Service / 5GC / Edge / Network Maintenance expectation families, fulfilment/conflict/feasibility reports | Schema-validated expectations; every matrix row Compliant or addressing-only deviation |
+| W6-03 | ✅ Energy-saving expectation template, e.g. "Reduce energy in scope X during 00:00–05:00" (`[W10]` "Where Intent fits") | Template creatable via `sdk.intent.create_intent` |
+| W6-04 | ✅ IntentReport fulfilment status linked to downstream actions (DME action IDs, correlation-id) | IntentReport shows FULFILLED / NOT_FULFILLED with action refs |
+| W6-05 | ✅ Exit criteria | Matrix reviewed; tests green |
 
 ## 6. Wave-7 — Runtime realization (MLTF / MLVF / MLEF / MLIF)
 Depends on: M1, M5, M6. OPEN_ITEMS §6.2 (real NFO-backed runtimes) is **already closed**, so this wave is mostly gap analysis plus hardening.
