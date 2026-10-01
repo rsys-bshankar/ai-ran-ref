@@ -82,4 +82,4 @@ sequenceDiagram
 - **A refused write never reaches the adaptor.** The pre-check runs before a `WriteConfigJob` is created. DME passes RAN NF OAM's 4xx straight back to the rApp and records the action as `REJECTED`, instead of failing with a 500.
 - **Out of scope:**
   - a YANG front end for the ingestion script (`pyang`);
-  - transports other than RFC 6241-shaped `edit-config` over HTTP. `O1_RESTCONF` can be declared as a vendor mode, but an ME provisioned for RESTCONF is rejected at dispatch with `PROTOCOL_NOT_SUPPORTED` (OPEN_ITEMS.md OI-1-cm-sync-restconf).
+  - transports other than NETCONF (RFC 6241-shaped `edit-config` over HTTP) and RESTCONF (RFC 8040, HISTORY.md OI-1-cm-sync-restconf), and TLS or authentication on either.

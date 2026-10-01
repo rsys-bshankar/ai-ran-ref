@@ -116,13 +116,30 @@ def test_config_change_rejects_when_netconf_rpc_fails(client, db_session_factory
     assert job["subChanges"][0]["rejectionReason"] == "NETCONF_RPC_FAILED"
 
 
-def test_config_change_rejects_restconf_me_as_protocol_not_supported(client, db_session_factory, monkeypatch):
-    """RESTCONF has no dispatch implementation yet — the confirmed
-    protocol (HISTORY.md) is NETCONF only, so a RESTCONF-provisioned ME
-    is rejected honestly rather than silently treated as applied.
-    """
+def test_config_change_dispatches_restconf_for_a_restconf_me(client, db_session_factory, monkeypatch):
+    """OI-1-cm-sync-restconf: an ME provisioned for RESTCONF is dispatched
+    through restconf_client (RFC 8040), never through the NETCONF client."""
     _make_me(db_session_factory, protocol="RESTCONF")
-    monkeypatch.setattr("app.main.send_edit_config", lambda *a, **kw: pytest.fail("should not dispatch to a RESTCONF ME"))
+    sent = []
+    monkeypatch.setattr("app.main.send_edit_config", lambda *a, **kw: pytest.fail("should not use NETCONF for a RESTCONF ME"))
+    monkeypatch.setattr("app.main.restconf_client.send_edit",
+                        lambda root, ref, changes, message_id, operation="merge", managed_function_ref=None:
+                        sent.append((root, ref, changes, operation)) or True)
+
+    resp = client.post("/config-jobs", json={
+        "requestedBy": "operator", "scope": "cell",
+        "changes": [{"managedElementRef": "ME-1", "attributeChanges": {"adminState": "UNLOCKED"}, "operation": "replace"}],
+    })
+    assert resp.json()["status"] == "COMPLETED"
+    assert sent == [("http://adaptor:9000/netconf", "ME-1", {"adminState": "UNLOCKED"}, "replace")]
+
+
+def test_config_change_rejects_a_protocol_with_no_client(client, db_session_factory, monkeypatch):
+    """Anything but NETCONF or RESTCONF is still rejected rather than
+    silently treated as applied."""
+    _make_me(db_session_factory, protocol="SNMP")
+    monkeypatch.setattr("app.main.send_edit_config", lambda *a, **kw: pytest.fail("should not dispatch"))
+    monkeypatch.setattr("app.main.restconf_client.send_edit", lambda *a, **kw: pytest.fail("should not dispatch"))
 
     resp = client.post("/config-jobs", json={
         "requestedBy": "operator", "scope": "cell",
@@ -131,6 +148,7 @@ def test_config_change_rejects_restconf_me_as_protocol_not_supported(client, db_
     job = client.get(f"/config-jobs/{resp.json()['jobId']}").json()
     assert job["subChanges"][0]["status"] == "REJECTED"
     assert job["subChanges"][0]["rejectionReason"] == "PROTOCOL_NOT_SUPPORTED"
+    assert client.get("/managed-entities/ME-1/config").status_code == 409
 
 
 def test_config_change_rejects_unreachable_endpoint_without_dispatch(client, db_session_factory, monkeypatch):

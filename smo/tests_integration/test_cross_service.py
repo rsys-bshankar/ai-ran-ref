@@ -581,7 +581,7 @@ def test_vendor_onboarding_gates_o1_writes_by_capability_and_schema(mesh):
     onboarded = mesh["ran-nf-oam"].post("/vendor-onboarding", json={
         "vendorName": "mock-vendor", "discoverFrom": "gnb-du-vendor", "conformanceMode": "COMBINED", "schemas": [vendor_model]})
     assert onboarded.status_code == 201, onboarded.text
-    assert onboarded.json()["discovered"]["supportedVendorModes"] == ["O1_NETCONF"]
+    assert onboarded.json()["discovered"]["supportedVendorModes"] == ["O1_NETCONF", "O1_RESTCONF"]
     assert onboarded.json()["capability"]["discoveryUri"] == "http://mock-o1-adaptor:8000/capabilities"
     assert "O1_NETCONF" in mesh["ran-nf-oam"].get("/capabilities").json()["supportedVendorModes"]
 
@@ -598,6 +598,42 @@ def test_vendor_onboarding_gates_o1_writes_by_capability_and_schema(mesh):
     assert refused.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED" and "warpDrive" in refused.json()["detail"]["detail"]
     statuses = [a["status"] for a in mesh["dme"].get("/actions").json()["items"]]
     assert sorted(statuses) == ["COMPLETED", "REJECTED"]
+
+
+def test_restconf_me_is_written_and_read_back_over_rfc8040(mesh):
+    """OI-1-cm-sync-restconf, end to end: a vendor whose adaptor declares
+    O1_RESTCONF registers an ME for RESTCONF (adaptorUri = the RESTCONF
+    root); a CM write through DME's action mediation reaches the mock
+    adaptor as RFC 8040 requests on the data resource, and RAN NF OAM's
+    read-after-write reads it back with a GET. A delete of an object never
+    written is a definite RESTCONF error (data-missing), rejected without
+    retries."""
+    oam = mesh["ran-nf-oam"]
+    registered = oam.post("/o1-adaptor-endpoints", json={
+        "managedElementRef": "gnb-du-restconf", "adaptorUri": "http://mock-o1-adaptor:8000/restconf",
+        "protocolSupport": ["RESTCONF"], "o1Protocol": "RESTCONF", "entityType": "O-DU",
+        "vendorName": "mock-vendor"})
+    assert registered.status_code == 201, registered.text
+    oam.post(f"/o1-adaptor-endpoints/{registered.json()['endpointId']}/heartbeat")
+    onboarded = oam.post("/vendor-onboarding", json={"vendorName": "mock-vendor", "discoverFrom": "gnb-du-restconf"})
+    assert onboarded.status_code == 201, onboarded.text
+    assert "O1_RESTCONF" in onboarded.json()["capability"]["supportedVendorModes"]
+
+    action = mesh["dme"].post("/actions", json={"requestedBy": "es-rapp", "changes": [
+        {"managedElementRef": "gnb-du-restconf", "className": "NRCellDU", "managedFunctionRef": "NRCellDU=7",
+         "attributeChanges": {"administrativeState": "LOCKED"}}]})
+    assert action.status_code == 202 and action.json()["status"] == "COMPLETED", action.text
+
+    on_nf = mesh["mock-o1-adaptor"].get("/objects/gnb-du-restconf", params={"function_ref": "NRCellDU=7"}).json()
+    assert on_nf["attributes"]["administrativeState"] == "LOCKED"
+    read = oam.get("/managed-entities/gnb-du-restconf/config", params={"managed_function_ref": "NRCellDU=7"})
+    assert read.status_code == 200 and read.json()["attributes"] == {"administrativeState": "LOCKED", "operationalState": "ENABLED"}
+
+    job = oam.post("/config-jobs", json={"requestedBy": "test", "scope": "cell", "changes": [
+        {"managedElementRef": "gnb-du-restconf", "managedFunctionRef": "NRCellDU=8", "operation": "delete"}]}).json()
+    sub = oam.get(f"/config-jobs/{job['jobId']}").json()["subChanges"][0]
+    assert (job["status"], sub["status"], sub["rejectionReason"], sub["attempts"]) == \
+        ("FAILED", "REJECTED", "RESTCONF_REQUEST_FAILED", 1)
 
 
 def test_sa_smos_rollback_returns_a_rapp_to_its_previous_version(mesh, loaded_apps, db_connection, monkeypatch):
