@@ -109,7 +109,10 @@ Recurring conventions referred to below:
 - **OI-2-model-eol-serving** — `DEPRECATED`/`RETIRED` models refuse runtime activate and scale;
   `RETIRED` also refuses inference, and `RETIRE` terminates the runtime (NFO teardown and runtime
   events). A `DEPRECATED` model's active runtime keeps serving until retirement (a grace period for
-  consumers to move). Call flow 26.
+  consumers to move). TS 28.105 has no deprecated/retired state (its only serving control is
+  `AIMLInferenceFunction.activationStatus` plus loading), so this split is a design choice; the
+  alternative, deactivating the runtime on `DEPRECATE`, was not taken because it would make
+  deprecation and retirement the same thing for consumers. Call flow 26.
 - **OI-2-governance-bypass** — `POST /models/{id}/advance` fires only governance events plus
   `DEPRECATE`/`RETIRE`; job-driven events and unknown events return 422 naming the job route. The
   GUI completes stages through the job routes.

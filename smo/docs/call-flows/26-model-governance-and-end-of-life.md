@@ -233,9 +233,14 @@ sequenceDiagram
 inference so its consumers have a grace period to move to a replacement, but nothing adds
 serving capacity for it any more. No deploy, MLLF placement, NRM loading, runtime activate or
 runtime scale is allowed, and no retraining. `RETIRE` is the end of service: it terminates
-the runtime and refuses inference. TS 28.105 has no deprecation state of its own. This split
-follows the usual meaning of deprecation (still works, no new use) and keeps `RETIRE` the
-single point where serving stops.
+the runtime and refuses inference.
+
+TS 28.105 does not settle this. It has no deprecated or retired model state: the only serving
+control in its NRM (`TS28105_AiMlNrm.yaml`) is `AIMLInferenceFunction.activationStatus`
+(`ACTIVATED`/`DEACTIVATED`) together with loading, and stopping inference is an explicit
+deactivate or unload. This build models that explicit stop as `RETIRE`. The split follows the
+usual meaning of deprecation (still works, no new use) and keeps `RETIRE` the single point
+where serving stops.
 
 ```mermaid
 sequenceDiagram
