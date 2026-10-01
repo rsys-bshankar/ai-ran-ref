@@ -17,15 +17,20 @@ updates:
       gui-runtime:
         dependency-type: production
 
-  # Python: only the three packages that declare dependencies in a
-  # pyproject.toml. Module services install an unpinned list in smo/Dockerfile
-  # and the CI workflow, which Dependabot cannot read.
+  # Python: the hashed lock every container and CI job installs from
+  # (smo/requirements/*.in -> *.txt, compiled with pip-compile), plus the three
+  # packages that declare their own ranges in a pyproject.toml.
   - package-ecosystem: pip
-    directories: [/smo/shared, /smo/sdk, /smo/gui-bff]
+    directories: [/smo/requirements, /smo/shared, /smo/sdk, /smo/gui-bff]
     schedule: { interval: weekly }
     groups:
       python: { patterns: ["*"] }
 
   - package-ecosystem: docker
     directories: [/smo, /smo/gui]
+    schedule: { interval: weekly }
+
+  # image: lines in docker-compose.yml are a separate ecosystem
+  - package-ecosystem: docker-compose
+    directory: /smo
     schedule: { interval: weekly }

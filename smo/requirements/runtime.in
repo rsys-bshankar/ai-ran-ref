@@ -1,0 +1,14 @@
+# Everything a service container (smo/Dockerfile) and the CI jobs import.
+# Direct dependencies only; the pinned, hashed closure is runtime.txt.
+# Recompile: see README in this directory.
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg[binary]
+httpx
+pydantic
+python-multipart
+jsonschema
+pyyaml
+defusedxml
+pyjwt[crypto]

@@ -1,0 +1,2 @@
+# The lint job installs only this.
+ruff
