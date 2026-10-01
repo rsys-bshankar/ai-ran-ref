@@ -26,8 +26,11 @@ Each item: what is missing, why it matters, suggested approach.
 
 - **OI-2-compose-e2e** — The full `docker-compose` stack has never been run end to end (no Docker
   daemon in the sandbox or CI); only `docker compose config` is checked. The `a1_mock_net` isolation
-  (RT-7) is unverified. Approach: a CI job on a runner with Docker that brings the stack up and runs
-  `DEMO_RUNBOOK.md` against it.
+  (RT-7) is unverified. A `compose-e2e` CI job
+  (`smo-tests.yml`, `scripts/compose_e2e.py`) now brings the stack up on a GitHub runner, replays
+  DEMO_RUNBOOK §1-§4 and checks the `a1_mock_net` isolation; **close this item (move to HISTORY.md)
+  once that job has passed on a real runner** — it has not been run yet. Remaining approach: extend
+  it past §4 to the rest of the runbook.
 - **OI-5-a1-scope** — `subscriptionScope` OWN/OTHERS is treated as ALL; no subscriber identity is
   tracked. Approach: record the subscriber's rApp id (from the R1 token) and compare with
   `creator_id`.
