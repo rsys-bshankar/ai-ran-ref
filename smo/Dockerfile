@@ -2,7 +2,7 @@
 # (Python 3.11 + FastAPI + SQLAlchemy), so a per-service Dockerfile would
 # just be fourteen near-identical copies. MODULE picks which service's
 # app/ directory gets copied in and run.
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 ARG MODULE
 ENV MODULE=${MODULE}
