@@ -51,9 +51,11 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.webhook import post_webhook
 
 from .models import (
-    CertificationRecord, EmulationJob, FeatureGroup, InferenceJob, LifecycleTransition, MLMFSubscription,
+    AIMLInferenceFunction, AIMLInferenceReport, CertificationRecord, EmulationJob, FeatureGroup, InferenceJob,
+    LifecycleTransition, MLMFSubscription, MLTestingReport, MLTrainingFunction, MLTrainingProcess, MLTrainingReport,
     ModelLifecycle, PerformanceReport, TrainingJob, ValidationJob,
 )
+from . import ts28105
 from .statemachine import (
     GOVERNANCE_EVENTS, INFERENCE_JOB_FSM, MODEL_LIFECYCLE_FSM, RUNTIME_LIFECYCLE_FSM, InferenceEvent, InferenceState,
     ModelLifecycleEvent, ModelLifecycleState, RuntimeLifecycleEvent, RuntimeLifecycleState, should_trigger_group_retrain,
@@ -187,6 +189,8 @@ class RequestEmulationRequest(BaseModel):
     producerId: str
     emulationCriteria: dict = {}
     notificationUri: str | None = None
+    # Wave 4 — TS 28.105 AIMLInferenceEmulationFunction hosting this run.
+    aIMLInferenceEmulationFunctionRef: uuid.UUID | None = None
 
 
 class CompleteJobRequest(BaseModel):
@@ -198,6 +202,27 @@ class CompleteJobRequest(BaseModel):
     # producer doesn't attach an artifact to (e.g. a failed run) simply
     # leaves this null.
     outcomeArtifactDmeTypeId: uuid.UUID | None = None
+    # Wave 4 — TS 28.105 report attributes the executing runtime supplies
+    # on completion; all optional. Training -> MLTrainingReport, Validation
+    # -> MLTestingReport (modelPerformanceTesting), Emulation ->
+    # AIMLInferenceReport (inferenceOutputs/potentialImpactInfo).
+    modelPerformanceTraining: list[ts28105.ModelPerformance] | None = None
+    modelPerformanceValidation: list[ts28105.ModelPerformance] | None = None
+    modelPerformanceTesting: list[ts28105.ModelPerformance] | None = None
+    modelConfidenceIndication: int | None = None
+    usedConsumerTrainingData: list[str] | None = None
+    dataRatioTrainingAndValidation: int | None = None
+    areNewTrainingDataUsed: bool | None = None
+    fLReportPerClient: list[ts28105.FLReportPerClient] | None = None
+    inferenceOutputs: list[ts28105.InferenceOutput] | None = None
+    potentialImpactInfo: ts28105.PotentialImpactInfo | None = None
+
+
+class ResolveInferenceRequest(BaseModel):
+    """Wave 4 — optional body on resolve: the inference's own TS 28.105
+    AIMLInferenceReport content."""
+    inferenceOutputs: list[ts28105.InferenceOutput] = []
+    potentialImpactInfo: ts28105.PotentialImpactInfo | None = None
 
 
 class UpdateNodeGroupsRequest(BaseModel):
@@ -300,11 +325,35 @@ def _notify_job_completion(notification_uri: str | None, job_kind: str, job_id: 
     }, timeout=2.0)
 
 
-@app.post("/training-jobs", status_code=201)
-def request_training(body: RequestTrainingRequest, db: Session = Depends(get_session)):
-    """RequestTraining — exactly one of modelId/modelCoordinationGroupId,
-    enforced at the DB layer (exactly_one_target constraint) and checked
-    here for a clean error.
+# Training status -> TS 28.105 ProcessMonitor.status of its MLTrainingProcess.
+_PROCESS_STATUS_FOR_JOB = {"NOT_STARTED": "NOT_RUNNING", "IN_PROGRESS": "RUNNING", "SUSPENDED": "SUSPENDED",
+                           "FINISHED": "FINISHED", "FAILED": "FAILED", "CANCELLED": "CANCELLED"}
+
+
+def _sync_training_process(db: Session, job: TrainingJob) -> None:
+    """Keeps a job's MLTrainingProcess (Wave 4, TS 28.105) in step with
+    the job's own status, whichever route moved it."""
+    process = db.scalar(select(MLTrainingProcess).where(MLTrainingProcess.training_job_id == job.training_job_id))
+    if process is None:
+        return
+    process.status = _PROCESS_STATUS_FOR_JOB.get(job.status, job.status)
+    process.suspend_process = job.status == "SUSPENDED"
+    process.cancel_process = job.status == "CANCELLED"
+    if job.status == "FINISHED":
+        process.progress_percentage = 100
+        process.result_state_info = "SUCCEEDED"
+    elif job.status in ("FAILED", "CANCELLED"):
+        process.result_state_info = job.status
+
+
+def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.UUID | None, producer_id: str,
+                    ml_training_type: str | None = None, priority: int = 0, termination_conditions: str | None = None,
+                    **job_fields) -> TrainingJob:
+    """The one place a training run starts — RequestTraining
+    (`POST /training-jobs`), TS 28.105 MLTrainingRequest
+    (`POST /ml-training-requests`), group-retrain propagation and
+    MLUpdateProcess all go through here, so every run gets the same
+    lifecycle gate, NFO runtime and (Wave 4) MLTrainingProcess.
 
     modelId-targeted requests also drive the model's own ModelLifecycle
     FSM: REGISTERED -> TRAINING (the very first cycle) or
@@ -313,14 +362,10 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
     as the operator's explicit decision to supersede it: the orphaned job
     is marked CANCELLED rather than left silently RUNNING and unreachable.
     """
-    if (body.modelId is None) == (body.modelCoordinationGroupId is None):
-        raise framework_error(FrameworkError.COORDINATION_GROUP_MISMATCH)
-    _validate_dme_data_job_ids(body.dmeDataJobIds)
-
     lifecycle = None
-    if body.modelId is not None:
-        _get_model(body.modelId)
-        lifecycle = _get_or_create_lifecycle(db, body.modelId)
+    if model_id is not None:
+        _get_model(model_id)
+        lifecycle = _get_or_create_lifecycle(db, model_id)
         if lifecycle.model_lifecycle_state not in (
             ModelLifecycleState.REGISTERED, ModelLifecycleState.PROMOTED,
             ModelLifecycleState.FAILED, ModelLifecycleState.TRAINING,
@@ -330,18 +375,27 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
 
     # TS28.105 AI/ML NRM's own real mLTrainingType — INITIAL_TRAINING the
     # very first cycle (model still REGISTERED), RE_TRAINING every other
-    # case.
-    ml_training_type = "INITIAL_TRAINING" if lifecycle is not None and lifecycle.model_lifecycle_state == ModelLifecycleState.REGISTERED else "RE_TRAINING"
+    # case, unless the requester names one (Wave 4: MLTrainingRequest's
+    # mLTrainingType is writable — PRE_SPECIALISED_TRAINING/FINE_TUNING are
+    # the requester's to declare). INITIAL_TRAINING is only meaningful for
+    # a model that has never been trained.
+    is_first_cycle = lifecycle is not None and lifecycle.model_lifecycle_state == ModelLifecycleState.REGISTERED
+    if ml_training_type is None:
+        ml_training_type = "INITIAL_TRAINING" if is_first_cycle else "RE_TRAINING"
+    elif ml_training_type == "INITIAL_TRAINING" and lifecycle is not None and not is_first_cycle:
+        raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
+                               detail=f"INITIAL_TRAINING requires a REGISTERED model, not {lifecycle.model_lifecycle_state}")
 
-    job = TrainingJob(model_id=body.modelId, model_coordination_group_id=body.modelCoordinationGroupId,
-                       producer_id=body.producerId, required_data=body.requiredData,
-                       dme_data_job_ids=body.dmeDataJobIds,
-                       validation_criteria=body.validationCriteria, notification_uri=body.notificationUri,
-                       status="IN_PROGRESS", run_id=body.runId, training_dataset=body.trainingDataset,
-                       validation_dataset=body.validationDataset, consumer_rapp_id=body.consumerRappId,
-                       producer_rapp_id=body.producerRappId, ml_training_type=ml_training_type)
+    job = TrainingJob(model_id=model_id, model_coordination_group_id=group_id, producer_id=producer_id,
+                       status="IN_PROGRESS", ml_training_type=ml_training_type, **job_fields)
     db.add(job)
     db.flush()
+    db.add(MLTrainingProcess(training_job_id=job.training_job_id, priority=priority,
+                             termination_conditions=termination_conditions, status="RUNNING"))
+    if job.ml_training_function_id is not None:
+        function = db.get(MLTrainingFunction, job.ml_training_function_id)
+        if function is not None:
+            function.ml_training_type = ml_training_type
 
     # OPEN_ITEMS.md section 6.2: MLTF's own real execution runtime —
     # closes the "MLTF trains (Phase 1: elided)" gap. Every training job
@@ -364,10 +418,29 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
                     # right alongside it — left running otherwise.
                     _nfo_terminate_execution(orphaned.nf_deployment_id)
                     orphaned.nf_deployment_id = None
+                    _sync_training_process(db, orphaned)
         else:
-            _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_TRAINING)
+            _fire_model_event(db, model_id, ModelLifecycleEvent.CREATE_TRAINING)
         lifecycle.training_job_id = job.training_job_id
+    db.flush()
+    return job
 
+
+@app.post("/training-jobs", status_code=201)
+def request_training(body: RequestTrainingRequest, db: Session = Depends(get_session)):
+    """RequestTraining — exactly one of modelId/modelCoordinationGroupId,
+    enforced at the DB layer (exactly_one_target constraint) and checked
+    here for a clean error. See `_start_training` for the lifecycle rules.
+    """
+    if (body.modelId is None) == (body.modelCoordinationGroupId is None):
+        raise framework_error(FrameworkError.COORDINATION_GROUP_MISMATCH)
+    _validate_dme_data_job_ids(body.dmeDataJobIds)
+    job = _start_training(db, model_id=body.modelId, group_id=body.modelCoordinationGroupId,
+                          producer_id=body.producerId, required_data=body.requiredData,
+                          dme_data_job_ids=body.dmeDataJobIds, validation_criteria=body.validationCriteria,
+                          notification_uri=body.notificationUri, run_id=body.runId,
+                          training_dataset=body.trainingDataset, validation_dataset=body.validationDataset,
+                          consumer_rapp_id=body.consumerRappId, producer_rapp_id=body.producerRappId)
     db.commit()
     return {"trainingJobId": str(job.training_job_id)}
 
@@ -417,6 +490,11 @@ def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: 
     if job.model_id is not None:
         event = ModelLifecycleEvent.TRAINING_COMPLETE if body.succeeded else ModelLifecycleEvent.TRAINING_FAILED
         _fire_model_event(db, job.model_id, event)
+    _sync_training_process(db, job)
+    _write_training_report(db, job, body)
+    if job.ml_update_process_id is not None:
+        from .nrm import advance_ml_update_process
+        advance_ml_update_process(db, job.ml_update_process_id)
     db.commit()
     _notify_job_completion(job.notification_uri, "TRAINING", job.training_job_id, body.succeeded,
                             job.outcome_artifact_dme_type_id, job.model_metrics)
@@ -427,10 +505,19 @@ def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: 
 def cancel_training(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(TrainingJob, training_job_id)
     if job is not None:
-        job.status = "CANCELLED"
-        _nfo_terminate_execution(job.nf_deployment_id)
-        job.nf_deployment_id = None
+        _cancel_training_job(db, job)
         db.commit()
+
+
+def _cancel_training_job(db: Session, job: TrainingJob) -> None:
+    job.status = "CANCELLED"
+    job.cancel_request = True
+    _nfo_terminate_execution(job.nf_deployment_id)
+    job.nf_deployment_id = None
+    _sync_training_process(db, job)
+    if job.ml_update_process_id is not None:
+        from .nrm import advance_ml_update_process
+        advance_ml_update_process(db, job.ml_update_process_id)
 
 
 @app.post("/training-jobs/{training_job_id}/suspend")
@@ -453,6 +540,8 @@ def suspend_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessi
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot suspend a training job in status {job.status}")
     job.status = "SUSPENDED"
+    job.suspend_request = True
+    _sync_training_process(db, job)
     db.commit()
     return {"trainingJobId": str(job.training_job_id), "status": job.status}
 
@@ -466,6 +555,8 @@ def resume_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessio
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"cannot resume a training job in status {job.status}")
     job.status = "IN_PROGRESS"
+    job.suspend_request = False
+    _sync_training_process(db, job)
     db.commit()
     return {"trainingJobId": str(job.training_job_id), "status": job.status}
 
@@ -507,33 +598,50 @@ def list_training_jobs(model_id: uuid.UUID | None = None, status: str | None = N
 
 # ---------------------------------------------------------------- Validation
 
-@app.post("/validation-jobs", status_code=201)
-def request_validation(body: RequestValidationRequest, db: Session = Depends(get_session)):
-    """CreateValidation (AIMGF_OWNERSHIP.md's own request list) — new this
-    wave: Wave 1's flat FSM folded validation silently into
-    TRAINING_COMPLETE -> TESTED with no request/tracking of its own.
-    Requires the model to have finished training (TRAINED) AND an
-    operator to have already fired APPROVE_TRAINING (OPEN_ITEMS.md
-    section 6.1) — the state check alone isn't the gate.
+def _start_validation(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.UUID | None, producer_id: str,
+                      **job_fields) -> ValidationJob:
+    """CreateValidation (AIMGF_OWNERSHIP.md's own request list) — the one
+    place a validation (TS 28.105: testing) run starts, shared by
+    `POST /validation-jobs` and `POST /ml-testing-requests`.
+
+    A model-targeted run requires the model to have finished training
+    (TRAINED) AND an operator to have already fired APPROVE_TRAINING
+    (OPEN_ITEMS.md section 6.1) — the state check alone isn't the gate.
+    A coordination-group-targeted run (Wave 4, MLTestingRequest's
+    mLModelCoordinationGroupRef) tests the group as a unit and, exactly
+    like a group-targeted TrainingJob, drives no single member's lifecycle.
     """
-    _get_model(body.modelId)
-    lifecycle = _get_or_create_lifecycle(db, body.modelId)
-    if lifecycle.model_lifecycle_state != ModelLifecycleState.TRAINED:
-        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
-                               detail=f"cannot request validation for a model in state {lifecycle.model_lifecycle_state}")
-    if not lifecycle.training_approved:
-        raise framework_error(FrameworkError.TRAINING_NOT_APPROVED,
-                               detail="an operator must advance(APPROVE_TRAINING, decidedBy) before validation can start")
-    job = ValidationJob(model_id=body.modelId, training_job_id=body.trainingJobId, producer_id=body.producerId,
-                         validation_criteria=body.validationCriteria, status="RUNNING",
-                         notification_uri=body.notificationUri)
+    if (model_id is None) == (group_id is None):
+        raise framework_error(FrameworkError.COORDINATION_GROUP_MISMATCH)
+    if model_id is not None:
+        _get_model(model_id)
+        lifecycle = _get_or_create_lifecycle(db, model_id)
+        if lifecycle.model_lifecycle_state != ModelLifecycleState.TRAINED:
+            raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
+                                   detail=f"cannot request validation for a model in state {lifecycle.model_lifecycle_state}")
+        if not lifecycle.training_approved:
+            raise framework_error(FrameworkError.TRAINING_NOT_APPROVED,
+                                   detail="an operator must advance(APPROVE_TRAINING, decidedBy) before validation can start")
+    job = ValidationJob(model_id=model_id, model_coordination_group_id=group_id, producer_id=producer_id,
+                         status="RUNNING", **job_fields)
     db.add(job)
     db.flush()
     # OPEN_ITEMS.md section 6.2: MLVF's own real execution runtime.
     descriptor_id = _nfo_create_execution_descriptor("VALIDATION", job.validation_job_id)
     job.nf_deployment_descriptor_id = descriptor_id
     job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "VALIDATION", job.validation_job_id)
-    _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_VALIDATION)
+    if model_id is not None:
+        _fire_model_event(db, model_id, ModelLifecycleEvent.CREATE_VALIDATION)
+    db.flush()
+    return job
+
+
+@app.post("/validation-jobs", status_code=201)
+def request_validation(body: RequestValidationRequest, db: Session = Depends(get_session)):
+    """CreateValidation — see `_start_validation`."""
+    job = _start_validation(db, model_id=body.modelId, group_id=None, producer_id=body.producerId,
+                            training_job_id=body.trainingJobId, validation_criteria=body.validationCriteria,
+                            notification_uri=body.notificationUri)
     db.commit()
     return {"validationJobId": str(job.validation_job_id)}
 
@@ -551,14 +659,22 @@ def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, 
     job = db.get(ValidationJob, validation_job_id)
     if job is None:
         raise framework_error(FrameworkError.VALIDATION_JOB_NOT_FOUND, detail="no such validation job")
+    if job.status not in ("RUNNING", "SUSPENDED"):
+        raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
+                               detail=f"cannot complete a validation job in status {job.status}")
     job.status = "COMPLETED" if body.succeeded else "FAILED"
     job.metrics = body.metrics
     job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
     # OPEN_ITEMS.md section 6.2: the run is done — tear down its runtime.
     _nfo_terminate_execution(job.nf_deployment_id)
     job.nf_deployment_id = None
-    event = ModelLifecycleEvent.VALIDATION_COMPLETE if body.succeeded else ModelLifecycleEvent.VALIDATION_FAILED
-    _fire_model_event(db, job.model_id, event)
+    if job.model_id is not None:
+        event = ModelLifecycleEvent.VALIDATION_COMPLETE if body.succeeded else ModelLifecycleEvent.VALIDATION_FAILED
+        _fire_model_event(db, job.model_id, event)
+    # Wave 4 — TS 28.105 MLTestingReport.
+    db.add(MLTestingReport(validation_job_id=job.validation_job_id, ml_testing_function_id=job.ml_testing_function_id,
+                           model_performance_testing=ts28105.dump(body.modelPerformanceTesting),
+                           ml_testing_result="PASSED" if body.succeeded else "FAILED"))
     db.commit()
     _notify_job_completion(job.notification_uri, "VALIDATION", job.validation_job_id, body.succeeded,
                             job.outcome_artifact_dme_type_id, job.metrics)
@@ -595,8 +711,13 @@ def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_s
     if not lifecycle.validation_approved:
         raise framework_error(FrameworkError.VALIDATION_NOT_APPROVED,
                                detail="an operator must advance(APPROVE_VALIDATION, decidedBy) before emulation can start")
+    if body.aIMLInferenceEmulationFunctionRef is not None:
+        from .models import AIMLInferenceEmulationFunction
+        if db.get(AIMLInferenceEmulationFunction, body.aIMLInferenceEmulationFunctionRef) is None:
+            raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail="no such AIMLInferenceEmulationFunction")
     job = EmulationJob(model_id=body.modelId, producer_id=body.producerId, emulation_criteria=body.emulationCriteria,
-                        status="RUNNING", notification_uri=body.notificationUri)
+                        status="RUNNING", notification_uri=body.notificationUri,
+                        aiml_inference_emulation_function_id=body.aIMLInferenceEmulationFunctionRef)
     db.add(job)
     db.flush()
     # OPEN_ITEMS.md section 6.2: MLEF's own real execution runtime.
@@ -629,6 +750,14 @@ def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db
     job.nf_deployment_id = None
     event = ModelLifecycleEvent.EMULATION_COMPLETE if body.succeeded else ModelLifecycleEvent.EMULATION_FAILED
     _fire_model_event(db, job.model_id, event)
+    # Wave 4 — TS 28.105: an emulation run's result is an
+    # AIMLInferenceReport under its AIMLInferenceEmulationFunction.
+    if body.succeeded:
+        db.add(AIMLInferenceReport(aiml_inference_emulation_function_id=job.aiml_inference_emulation_function_id,
+                                   emulation_job_id=job.emulation_job_id,
+                                   inference_outputs=ts28105.dump(body.inferenceOutputs) or [],
+                                   potential_impact_info=ts28105.dump(body.potentialImpactInfo),
+                                   ml_model_refs=[str(job.model_id)]))
     db.commit()
     _notify_job_completion(job.notification_uri, "EMULATION", job.emulation_job_id, body.succeeded,
                             job.outcome_artifact_dme_type_id, job.metrics)
@@ -742,6 +871,12 @@ def deploy_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)
     never touches NFO at all.
     """
     _get_model(model_id)
+    lifecycle = _deploy_runtime(db, model_id)
+    db.commit()
+    return _lifecycle_view(lifecycle)
+
+
+def _deploy_runtime(db: Session, model_id: uuid.UUID) -> ModelLifecycle:
     lifecycle = _get_or_create_lifecycle(db, model_id)
     if lifecycle.model_lifecycle_state not in (ModelLifecycleState.CERTIFIED, ModelLifecycleState.PROMOTED):
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
@@ -754,8 +889,12 @@ def deploy_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_session)
     lifecycle.nf_deployment_id = deployment_id
 
     _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.DEPLOYMENT_COMPLETE)
-    db.commit()
-    return _lifecycle_view(lifecycle)
+    return lifecycle
+
+
+def _activate_runtime(db: Session, model_id: uuid.UUID) -> ModelLifecycle:
+    _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.ACTIVATE)
+    return _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.ACTIVATION_COMPLETE)
 
 
 @app.post("/models/{model_id}/runtime/activate")
@@ -767,8 +906,7 @@ def activate_model_runtime(model_id: uuid.UUID, db: Session = Depends(get_sessio
     decision about whether traffic should be sent yet, not a further NFO
     call.
     """
-    _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.ACTIVATE)
-    lifecycle = _fire_runtime_event(db, model_id, RuntimeLifecycleEvent.ACTIVATION_COMPLETE)
+    lifecycle = _activate_runtime(db, model_id)
     db.commit()
     return _lifecycle_view(lifecycle)
 
@@ -812,7 +950,9 @@ def update_node_groups(model_id: uuid.UUID, body: UpdateNodeGroupsRequest, db: S
 # ---------------------------------------------------------------- Inference
 
 @app.post("/models/{model_id}/inference-jobs", status_code=201)
-def request_inference(model_id: uuid.UUID, notification_destination: str | None = None, db: Session = Depends(get_session)):
+def request_inference(model_id: uuid.UUID, notification_destination: str | None = None,
+                      aiml_inference_function_id: uuid.UUID | None = None, consumer_ref: str | None = None,
+                      db: Session = Depends(get_session)):
     """RequestInference — MLEF-hosted (AI/ML Workflow LLD section 3).
     Gated on RuntimeLifecycleState.ACTIVE (a serving question), not
     ModelLifecycleState — a PROMOTED-but-not-yet-deployed model, or one
@@ -822,13 +962,25 @@ def request_inference(model_id: uuid.UUID, notification_destination: str | None 
     lifecycle = _get_or_create_lifecycle(db, model_id)
     if lifecycle.runtime_lifecycle_state != RuntimeLifecycleState.ACTIVE:
         raise framework_error(FrameworkError.INFERENCE_MODEL_NOT_ACTIVE)
+    # Wave 4 — TS 28.105 AIMLInferenceFunction: when named, it must be
+    # ACTIVATED and actually have this model loaded (MLModelLoadingProcess).
+    if aiml_inference_function_id is not None:
+        function = db.get(AIMLInferenceFunction, aiml_inference_function_id)
+        if function is None:
+            raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail="no such AIMLInferenceFunction")
+        if function.activation_status != "ACTIVATED":
+            raise framework_error(FrameworkError.INFERENCE_FUNCTION_NOT_ACTIVATED)
+        if str(model_id) not in function.ml_model_refs:
+            raise framework_error(FrameworkError.MODEL_NOT_LOADED,
+                                   detail=f"model {model_id} is not loaded on AIMLInferenceFunction {aiml_inference_function_id}")
     # OPEN_ITEMS.md section 6.2: MLIF's own execution runtime is the
     # model's already-live serving deployment (real since this state is
     # only reachable once deploy_model_runtime's own NFO call succeeded)
     # — a reference, not a new NFO call. See InferenceJob's own docstring
     # for why this differs from Training/Validation/Emulation.
     job = InferenceJob(model_id=model_id, status=InferenceState.RUNNING, notification_destination=notification_destination,
-                        nf_deployment_id=lifecycle.nf_deployment_id)
+                        nf_deployment_id=lifecycle.nf_deployment_id, aiml_inference_function_id=aiml_inference_function_id,
+                        consumer_ref=consumer_ref)
     db.add(job)
     db.commit()
     return {"inferenceJobId": str(job.inference_job_id)}
@@ -842,12 +994,26 @@ def query_inference_status(inference_job_id: uuid.UUID, db: Session = Depends(ge
 
 
 @app.post("/inference-jobs/{inference_job_id}/resolve")
-def resolve_inference(inference_job_id: uuid.UUID, succeeded: bool, db: Session = Depends(get_session)):
+def resolve_inference(inference_job_id: uuid.UUID, succeeded: bool, body: ResolveInferenceRequest | None = None,
+                      db: Session = Depends(get_session)):
     job = db.get(InferenceJob, inference_job_id)
     job.status = INFERENCE_JOB_FSM.fire(InferenceState(job.status), InferenceEvent.COMPLETE if succeeded else InferenceEvent.FAIL)
+    # Wave 4 — TS 28.105 AIMLInferenceReport for a successful inference.
+    # The bulk result is still pulled via DME against the model's
+    # outputDataType (section 3); this is the report the NRM exposes.
+    report_id = None
+    if succeeded:
+        body = body or ResolveInferenceRequest()
+        report = AIMLInferenceReport(aiml_inference_function_id=job.aiml_inference_function_id,
+                                     inference_job_id=job.inference_job_id,
+                                     inference_outputs=ts28105.dump(body.inferenceOutputs) or [],
+                                     potential_impact_info=ts28105.dump(body.potentialImpactInfo),
+                                     ml_model_refs=[str(job.model_id)])
+        db.add(report)
+        db.flush()
+        report_id = str(report.aiml_inference_report_id)
     db.commit()
-    # result itself is pulled via DME against the model's outputDataType — not carried here (section 3)
-    return {"inferenceJobId": str(job.inference_job_id), "status": job.status}
+    return {"inferenceJobId": str(job.inference_job_id), "status": job.status, "aIMLInferenceReportId": report_id}
 
 
 @app.get("/inference-jobs")
@@ -990,19 +1156,45 @@ def _trigger_group_retrain(db: Session, group: dict) -> list[uuid.UUID]:
         lifecycle = _get_or_create_lifecycle(db, member_id)
         if lifecycle.model_lifecycle_state != ModelLifecycleState.PROMOTED:
             continue
-        job = TrainingJob(model_id=member_id, producer_id="aimgf:group-retrain", status="IN_PROGRESS", ml_training_type="RE_TRAINING")
-        db.add(job)
-        db.flush()
-        # OPEN_ITEMS.md section 6.2: same real execution runtime a
-        # directly-requested retrain gets via request_training.
-        descriptor_id = _nfo_create_execution_descriptor("TRAINING", job.training_job_id)
-        job.nf_deployment_descriptor_id = descriptor_id
-        job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "TRAINING", job.training_job_id)
-        _fire_model_event(db, member_id, ModelLifecycleEvent.CREATE_TRAINING)
-        lifecycle.training_job_id = job.training_job_id
+        # OPEN_ITEMS.md section 6.2 / Wave 4: the same start path (NFO
+        # runtime, MLTrainingProcess, CREATE_TRAINING) a directly-requested
+        # retrain gets via request_training.
+        _start_training(db, model_id=member_id, group_id=None, producer_id="aimgf:group-retrain",
+                        ml_training_type="RE_TRAINING")
         retrained_model_ids.append(member_id)
     db.commit()
     return retrained_model_ids
+
+
+def _write_training_report(db: Session, job: TrainingJob, body: CompleteJobRequest) -> MLTrainingReport:
+    """Wave 4 — TS 28.105 MLTrainingReport, written on every training
+    completion. lastTrainingRef chains to the same target's previous
+    report; mLModelGeneratedRef is only set when the run succeeded.
+    """
+    previous = None
+    if job.model_id is not None or job.model_coordination_group_id is not None:
+        stmt = select(MLTrainingReport).join(TrainingJob, MLTrainingReport.training_job_id == TrainingJob.training_job_id)
+        if job.model_id is not None:
+            stmt = stmt.where(TrainingJob.model_id == job.model_id)
+        else:
+            stmt = stmt.where(TrainingJob.model_coordination_group_id == job.model_coordination_group_id)
+        previous = db.scalars(stmt.order_by(MLTrainingReport.created_at.desc())).first()
+    report = MLTrainingReport(
+        training_job_id=job.training_job_id, ml_training_function_id=job.ml_training_function_id,
+        used_consumer_training_data=body.usedConsumerTrainingData,
+        model_confidence_indication=body.modelConfidenceIndication,
+        model_performance_training=ts28105.dump(body.modelPerformanceTraining),
+        model_performance_validation=ts28105.dump(body.modelPerformanceValidation),
+        data_ratio_training_and_validation=body.dataRatioTrainingAndValidation,
+        are_new_training_data_used=body.areNewTrainingDataUsed,
+        fl_report_per_client=ts28105.dump(body.fLReportPerClient),
+        last_training_report_id=previous.ml_training_report_id if previous else None,
+        ml_model_generated_ref=job.model_id if body.succeeded else None,
+        ml_model_coordination_group_generated_ref=job.model_coordination_group_id if body.succeeded else None,
+    )
+    db.add(report)
+    db.flush()
+    return report
 
 
 def _training_job_view(j: TrainingJob) -> dict:
@@ -1016,7 +1208,8 @@ def _training_job_view(j: TrainingJob) -> dict:
 
 
 def _validation_job_view(j: ValidationJob) -> dict:
-    return {"validationJobId": str(j.validation_job_id), "modelId": str(j.model_id),
+    return {"validationJobId": str(j.validation_job_id), "modelId": str(j.model_id) if j.model_id else None,
+            "modelCoordinationGroupId": str(j.model_coordination_group_id) if j.model_coordination_group_id else None,
             "trainingJobId": str(j.training_job_id) if j.training_job_id else None,
             "producerId": j.producer_id, "validationCriteria": j.validation_criteria or {},
             "status": j.status, "metrics": j.metrics or {},
@@ -1026,6 +1219,7 @@ def _validation_job_view(j: ValidationJob) -> dict:
 
 def _emulation_job_view(j: EmulationJob) -> dict:
     return {"emulationJobId": str(j.emulation_job_id), "modelId": str(j.model_id), "producerId": j.producer_id,
+            "aIMLInferenceEmulationFunctionRef": str(j.aiml_inference_emulation_function_id) if j.aiml_inference_emulation_function_id else None,
             "emulationCriteria": j.emulation_criteria or {}, "status": j.status, "metrics": j.metrics or {},
             "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None,
             "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None}
@@ -1098,3 +1292,12 @@ def _feature_group_view(g: FeatureGroup) -> dict:
         "enableDme": g.enable_dme, "measuredObjClass": g.measured_obj_class, "dmePort": g.dme_port,
         "sourceName": g.source_name,
     }
+
+
+# ---------------------------------------------------------------- Wave 4: TS 28.105 NRM resources
+# Imported last: app/nrm.py reuses the helpers above (_start_training,
+# _start_validation, _deploy_runtime, ...), so it can only be loaded once
+# they exist.
+from .nrm import router as _nrm_router  # noqa: E402
+
+app.include_router(_nrm_router)

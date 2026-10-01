@@ -1,6 +1,244 @@
 {
   "components": {
     "schemas": {
+      "AIMLInferenceFunctionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "aIMLInferenceName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aimlinferencename"
+          },
+          "activationStatus": {
+            "default": "DEACTIVATED",
+            "enum": [
+              "ACTIVATED",
+              "DEACTIVATED"
+            ],
+            "title": "Activationstatus",
+            "type": "string"
+          },
+          "managedActivationScope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManagedActivationScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "userLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Userlabel"
+          }
+        },
+        "title": "AIMLInferenceFunctionBody",
+        "type": "object"
+      },
+      "AIMLInferenceFunctionPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "activationStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ACTIVATED",
+                  "DEACTIVATED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activationstatus"
+          },
+          "managedActivationScope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManagedActivationScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "userLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Userlabel"
+          }
+        },
+        "title": "AIMLInferenceFunctionPatch",
+        "type": "object"
+      },
+      "AIMLInferenceReportBody": {
+        "additionalProperties": false,
+        "description": "Posted by an inference/emulation runtime that reports outside the\nresolve/complete calls (e.g. periodic reporting).",
+        "properties": {
+          "aIMLInferenceEmulationFunctionRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aimlinferenceemulationfunctionref"
+          },
+          "aIMLInferenceFunctionRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aimlinferencefunctionref"
+          },
+          "inferenceOutputs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InferenceOutput"
+            },
+            "title": "Inferenceoutputs",
+            "type": "array"
+          },
+          "mLModelRefList": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Mlmodelreflist",
+            "type": "array"
+          },
+          "potentialImpactInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PotentialImpactInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mLModelRefList"
+        ],
+        "title": "AIMLInferenceReportBody",
+        "type": "object"
+      },
+      "AIMLManagementPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "managedActivationScope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManagedActivationScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thresholdList": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thresholdlist"
+          }
+        },
+        "title": "AIMLManagementPolicy",
+        "type": "object"
+      },
+      "AvailMLCapabilityReport": {
+        "additionalProperties": false,
+        "properties": {
+          "availMLCapabilityReportID": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availmlcapabilityreportid"
+          },
+          "expectedPerformanceGains": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ModelPerformance"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedperformancegains"
+          },
+          "mLCapabilityVersionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlcapabilityversionid"
+          },
+          "mLModelRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelref"
+          }
+        },
+        "title": "AvailMLCapabilityReport",
+        "type": "object"
+      },
       "Body_subscribe_performance_monitoring_mlmf_subscriptions_post": {
         "properties": {
           "guard_kpi_floor": {
@@ -29,13 +267,168 @@
         "title": "Body_subscribe_performance_monitoring_mlmf_subscriptions_post",
         "type": "object"
       },
+      "ClusteringCriteria": {
+        "additionalProperties": false,
+        "properties": {
+          "allowedClusterTrainingTime": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowedclustertrainingtime"
+          },
+          "performanceMetric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performancemetric"
+          },
+          "preferredModelDiversity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferredmodeldiversity"
+          },
+          "taskType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tasktype"
+          }
+        },
+        "title": "ClusteringCriteria",
+        "type": "object"
+      },
       "CompleteJobRequest": {
         "properties": {
+          "areNewTrainingDataUsed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arenewtrainingdataused"
+          },
+          "dataRatioTrainingAndValidation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataratiotrainingandvalidation"
+          },
+          "fLReportPerClient": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FLReportPerClient"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flreportperclient"
+          },
+          "inferenceOutputs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/InferenceOutput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inferenceoutputs"
+          },
           "metrics": {
             "additionalProperties": true,
             "default": {},
             "title": "Metrics",
             "type": "object"
+          },
+          "modelConfidenceIndication": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelconfidenceindication"
+          },
+          "modelPerformanceTesting": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ModelPerformance"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelperformancetesting"
+          },
+          "modelPerformanceTraining": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ModelPerformance"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelperformancetraining"
+          },
+          "modelPerformanceValidation": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ModelPerformance"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelperformancevalidation"
           },
           "outcomeArtifactDmeTypeId": {
             "anyOf": [
@@ -49,9 +442,33 @@
             ],
             "title": "Outcomeartifactdmetypeid"
           },
+          "potentialImpactInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PotentialImpactInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "succeeded": {
             "title": "Succeeded",
             "type": "boolean"
+          },
+          "usedConsumerTrainingData": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usedconsumertrainingdata"
           }
         },
         "required": [
@@ -151,6 +568,323 @@
         "title": "CreateFeatureGroupRequest",
         "type": "object"
       },
+      "DataStatisticalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "trainingDataWithOrWithoutOutliers": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trainingdatawithorwithoutoutliers"
+          },
+          "uniformlyDistributedTrainingData": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uniformlydistributedtrainingdata"
+          }
+        },
+        "title": "DataStatisticalProperties",
+        "type": "object"
+      },
+      "DistributedTrainingExpectation": {
+        "additionalProperties": false,
+        "properties": {
+          "dataSplitIndication": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datasplitindication"
+          },
+          "expectedTrainingTime": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedtrainingtime"
+          },
+          "suggestedTrainingNodeList": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestedtrainingnodelist"
+          }
+        },
+        "title": "DistributedTrainingExpectation",
+        "type": "object"
+      },
+      "EnvironmentScope": {
+        "additionalProperties": false,
+        "properties": {
+          "areaScope": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Areascope"
+          },
+          "managedEntitiesScope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Managedentitiesscope"
+          },
+          "timeWindow": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timewindow"
+          }
+        },
+        "title": "EnvironmentScope",
+        "type": "object"
+      },
+      "FLClientSelectionCriteria": {
+        "additionalProperties": false,
+        "properties": {
+          "clientRedundancy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clientredundancy"
+          },
+          "minimumAvailableDataSamples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimumavailabledatasamples"
+          },
+          "minimumAvailableTimeDuration": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimumavailabletimeduration"
+          },
+          "minimumInterimModelPerformance": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ModelPerformance"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimuminterimmodelperformance"
+          },
+          "servingGeoArea": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Servinggeoarea"
+          },
+          "trainingDataWithOrWithoutOutliers": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trainingdatawithorwithoutoutliers"
+          },
+          "uniformlyDistributedTrainingData": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uniformlydistributedtrainingdata"
+          }
+        },
+        "title": "FLClientSelectionCriteria",
+        "type": "object"
+      },
+      "FLParticipationInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "candidateFLClientRefList": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidateflclientreflist"
+          },
+          "fLRole": {
+            "anyOf": [
+              {
+                "enum": [
+                  "FL_SERVER",
+                  "FL_CLIENT"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flrole"
+          },
+          "isAvailableForFLTraining": {
+            "default": false,
+            "title": "Isavailableforfltraining",
+            "type": "boolean"
+          }
+        },
+        "title": "FLParticipationInfo",
+        "type": "object"
+      },
+      "FLReportPerClient": {
+        "additionalProperties": false,
+        "properties": {
+          "clientRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clientref"
+          },
+          "modelPerformanceOnClient": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ModelPerformance"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelperformanceonclient"
+          },
+          "numberOfDataSamplesUsed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numberofdatasamplesused"
+          },
+          "trainingTimeDuration": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trainingtimeduration"
+          }
+        },
+        "title": "FLReportPerClient",
+        "type": "object"
+      },
+      "FLRequirement": {
+        "additionalProperties": false,
+        "properties": {
+          "fLClientSelectionCriteria": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FLClientSelectionCriteria"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "FLRequirement",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -164,8 +898,1015 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ImpactedPM": {
+        "additionalProperties": false,
+        "properties": {
+          "pMIdentifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pmidentifier"
+          }
+        },
+        "title": "ImpactedPM",
+        "type": "object"
+      },
+      "InferenceOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "aIMLInferenceName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aimlinferencename"
+          },
+          "inferenceExplanationInfo": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inferenceexplanationinfo"
+          },
+          "inferenceOutputId": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inferenceoutputid"
+          },
+          "inferenceOutputTime": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inferenceoutputtime"
+          },
+          "inferencePerformance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelPerformance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outputResult": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputresult"
+          }
+        },
+        "title": "InferenceOutput",
+        "type": "object"
+      },
+      "MLKnowledge": {
+        "additionalProperties": false,
+        "properties": {
+          "knowledgeType": {
+            "anyOf": [
+              {
+                "enum": [
+                  "TABLE",
+                  "STATISTIC",
+                  "REGRESSION"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledgetype"
+          },
+          "mLKnowledgeName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlknowledgename"
+          },
+          "predictorResponseArray": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predictorresponsearray"
+          }
+        },
+        "title": "MLKnowledge",
+        "type": "object"
+      },
+      "MLModelLoadingPolicyBody": {
+        "additionalProperties": false,
+        "properties": {
+          "aIMLInferenceFunctionRef": {
+            "format": "uuid",
+            "title": "Aimlinferencefunctionref",
+            "type": "string"
+          },
+          "aIMLInferenceName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aimlinferencename"
+          },
+          "mLModelRef": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Mlmodelref",
+            "type": "array"
+          },
+          "policyForLoading": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AIMLManagementPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "aIMLInferenceFunctionRef",
+          "mLModelRef"
+        ],
+        "title": "MLModelLoadingPolicyBody",
+        "type": "object"
+      },
+      "MLModelLoadingRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "aIMLInferenceFunctionRef": {
+            "format": "uuid",
+            "title": "Aimlinferencefunctionref",
+            "type": "string"
+          },
+          "cancelRequest": {
+            "default": false,
+            "title": "Cancelrequest",
+            "type": "boolean"
+          },
+          "mLModelToLoadRef": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Mlmodeltoloadref",
+            "type": "array"
+          },
+          "suspendRequest": {
+            "default": false,
+            "title": "Suspendrequest",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "aIMLInferenceFunctionRef",
+          "mLModelToLoadRef"
+        ],
+        "title": "MLModelLoadingRequestBody",
+        "type": "object"
+      },
+      "MLTestingRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "mLModelCoordinationGroupRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelcoordinationgroupref"
+          },
+          "mLModelRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelref"
+          },
+          "mLTestingFunctionRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mltestingfunctionref"
+          },
+          "notificationUri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notificationuri"
+          },
+          "requestSource": {
+            "default": "nrm",
+            "title": "Requestsource",
+            "type": "string"
+          },
+          "trainingJobId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trainingjobid"
+          },
+          "validationCriteria": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Validationcriteria",
+            "type": "object"
+          }
+        },
+        "title": "MLTestingRequestBody",
+        "type": "object"
+      },
+      "MLTrainingFunctionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "fLParticipationInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FLParticipationInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mLKnowledge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLKnowledge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mLModelRepositoryRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelrepositoryref"
+          },
+          "supportedLearningTechnology": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupportedLearningTechnology"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "userLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Userlabel"
+          }
+        },
+        "title": "MLTrainingFunctionBody",
+        "type": "object"
+      },
+      "MLTrainingRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "aIMLInferenceName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aimlinferencename"
+          },
+          "candidateTrainingDataSource": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Candidatetrainingdatasource",
+            "type": "array"
+          },
+          "clusteringInfo": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ClusteringCriteria"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clusteringinfo"
+          },
+          "distributedTrainingExpectation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DistributedTrainingExpectation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dmeDataJobIds": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Dmedatajobids",
+            "type": "array"
+          },
+          "expectedInferenceScope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedinferencescope"
+          },
+          "fLRequirement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FLRequirement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mLKnowledgeName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlknowledgename"
+          },
+          "mLModelCoordinationGroupRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelcoordinationgroupref"
+          },
+          "mLModelRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelref"
+          },
+          "mLTrainingFunctionRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mltrainingfunctionref"
+          },
+          "mLTrainingType": {
+            "anyOf": [
+              {
+                "enum": [
+                  "INITIAL_TRAINING",
+                  "PRE_SPECIALISED_TRAINING",
+                  "RE_TRAINING",
+                  "FINE_TUNING"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mltrainingtype"
+          },
+          "notificationUri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notificationuri"
+          },
+          "performanceRequirements": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ModelPerformance"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performancerequirements"
+          },
+          "rLRequirement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RLRequirement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trainingDataQualityScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trainingdataqualityscore"
+          },
+          "trainingDataStatisticalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataStatisticalProperties"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trainingRequestSource": {
+            "title": "Trainingrequestsource",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trainingRequestSource"
+        ],
+        "title": "MLTrainingRequestBody",
+        "type": "object"
+      },
+      "MLUpdateFunctionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "availMLCapabilityReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AvailMLCapabilityReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mLModelRef": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Mlmodelref",
+            "type": "array"
+          },
+          "userLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Userlabel"
+          }
+        },
+        "title": "MLUpdateFunctionBody",
+        "type": "object"
+      },
+      "MLUpdateRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "mLModelRefList": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Mlmodelreflist",
+            "type": "array"
+          },
+          "mLUpdateFunctionRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlupdatefunctionref"
+          },
+          "mLUpdateReportingPeriod": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlupdatereportingperiod"
+          },
+          "newCapabilityVersionId": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newcapabilityversionid"
+          },
+          "performanceGainThreshold": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ModelPerformance"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performancegainthreshold"
+          },
+          "requestSource": {
+            "default": "nrm",
+            "title": "Requestsource",
+            "type": "string"
+          },
+          "updateTimeDeadline": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatetimedeadline"
+          }
+        },
+        "required": [
+          "mLModelRefList"
+        ],
+        "title": "MLUpdateRequestBody",
+        "type": "object"
+      },
+      "ManagedActivationScope": {
+        "additionalProperties": false,
+        "description": "oneOf in the spec (dNList | timeWindow | geoPolygon); accepted as\nany one of the three.",
+        "properties": {
+          "dNList": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dnlist"
+          },
+          "geoPolygon": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geopolygon"
+          },
+          "timeWindow": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timewindow"
+          }
+        },
+        "title": "ManagedActivationScope",
+        "type": "object"
+      },
+      "ModelPerformance": {
+        "additionalProperties": false,
+        "properties": {
+          "decisionConfidenceScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decisionconfidencescore"
+          },
+          "inferenceOutputName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inferenceoutputname"
+          },
+          "performanceMetric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performancemetric"
+          },
+          "performanceScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performancescore"
+          }
+        },
+        "title": "ModelPerformance",
+        "type": "object"
+      },
+      "PotentialImpactInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "impactedPM": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ImpactedPM"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impactedpm"
+          },
+          "impactedScope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManagedActivationScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "PotentialImpactInfo",
+        "type": "object"
+      },
+      "ProcessFlagsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelProcess": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelprocess"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "suspendProcess": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suspendprocess"
+          },
+          "terminationConditions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminationconditions"
+          }
+        },
+        "title": "ProcessFlagsBody",
+        "type": "object"
+      },
+      "ProcessMonitorUpdate": {
+        "additionalProperties": false,
+        "description": "The writable part of ProcessMonitor \u2014 what an execution runtime\nreports back as a run progresses.",
+        "properties": {
+          "progressPercentage": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progresspercentage",
+            "type": "integer"
+          },
+          "progressStateInfo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progressstateinfo"
+          },
+          "resultStateInfo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resultstateinfo"
+          }
+        },
+        "required": [
+          "progressPercentage"
+        ],
+        "title": "ProcessMonitorUpdate",
+        "type": "object"
+      },
+      "RLRequirement": {
+        "additionalProperties": false,
+        "properties": {
+          "rLEnvironmentScope": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EnvironmentScope"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rlenvironmentscope"
+          },
+          "rLEnvironmentType": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "SIMULATION_ENVIRONMENTS",
+                    "REAL_NETWORK_ENVIRONMENTS"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rlenvironmenttype"
+          },
+          "rLImpactedScope": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EnvironmentScope"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rlimpactedscope"
+          },
+          "rLPerformanceRequirements": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rlperformancerequirements"
+          }
+        },
+        "title": "RLRequirement",
+        "type": "object"
+      },
       "RequestEmulationRequest": {
         "properties": {
+          "aIMLInferenceEmulationFunctionRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aimlinferenceemulationfunctionref"
+          },
           "emulationCriteria": {
             "additionalProperties": true,
             "default": {},
@@ -198,6 +1939,36 @@
           "producerId"
         ],
         "title": "RequestEmulationRequest",
+        "type": "object"
+      },
+      "RequestFlagsBody": {
+        "additionalProperties": false,
+        "description": "cancelRequest / suspendRequest \u2014 the spec's in-place control flags.",
+        "properties": {
+          "cancelRequest": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelrequest"
+          },
+          "suspendRequest": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suspendrequest"
+          }
+        },
+        "title": "RequestFlagsBody",
         "type": "object"
       },
       "RequestTrainingRequest": {
@@ -372,6 +2143,110 @@
         "title": "RequestValidationRequest",
         "type": "object"
       },
+      "ResolveInferenceRequest": {
+        "description": "Wave 4 \u2014 optional body on resolve: the inference's own TS 28.105\nAIMLInferenceReport content.",
+        "properties": {
+          "inferenceOutputs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InferenceOutput"
+            },
+            "title": "Inferenceoutputs",
+            "type": "array"
+          },
+          "potentialImpactInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PotentialImpactInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ResolveInferenceRequest",
+        "type": "object"
+      },
+      "SupportedLearningTechnology": {
+        "additionalProperties": false,
+        "properties": {
+          "learningTechnologyName": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "RL",
+                    "FL",
+                    "DL"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learningtechnologyname"
+          },
+          "supportedFLRole": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "FL_SERVER",
+                    "FL_CLIENT"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 2,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedflrole"
+          },
+          "supportedInferenceNameList": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedinferencenamelist"
+          },
+          "supportedRLEnvironment": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "SIMULATION_ENVIRONMENTS",
+                    "REAL_NETWORK_ENVIRONMENTS"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedrlenvironment"
+          }
+        },
+        "title": "SupportedLearningTechnology",
+        "type": "object"
+      },
       "UpdateNodeGroupsRequest": {
         "properties": {
           "clearedNodeGroups": {
@@ -386,6 +2261,24 @@
           "clearedNodeGroups"
         ],
         "title": "UpdateNodeGroupsRequest",
+        "type": "object"
+      },
+      "UserLabelBody": {
+        "additionalProperties": false,
+        "properties": {
+          "userLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Userlabel"
+          }
+        },
+        "title": "UserLabelBody",
         "type": "object"
       },
       "ValidationError": {
@@ -443,6 +2336,547 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/aiml-inference-emulation-functions": {
+      "get": {
+        "operationId": "list_aiml_inference_emulation_functions_aiml_inference_emulation_functions_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Aiml Inference Emulation Functions"
+      },
+      "post": {
+        "operationId": "create_aiml_inference_emulation_function_aiml_inference_emulation_functions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserLabelBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Aiml Inference Emulation Function"
+      }
+    },
+    "/aiml-inference-emulation-functions/{function_id}": {
+      "delete": {
+        "operationId": "delete_aiml_inference_emulation_function_aiml_inference_emulation_functions__function_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Aiml Inference Emulation Function"
+      },
+      "get": {
+        "operationId": "get_aiml_inference_emulation_function_aiml_inference_emulation_functions__function_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Aiml Inference Emulation Function"
+      }
+    },
+    "/aiml-inference-functions": {
+      "get": {
+        "operationId": "list_aiml_inference_functions_aiml_inference_functions_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Aiml Inference Functions"
+      },
+      "post": {
+        "operationId": "create_aiml_inference_function_aiml_inference_functions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIMLInferenceFunctionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Aiml Inference Function"
+      }
+    },
+    "/aiml-inference-functions/{function_id}": {
+      "delete": {
+        "operationId": "delete_aiml_inference_function_aiml_inference_functions__function_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Aiml Inference Function"
+      },
+      "get": {
+        "operationId": "get_aiml_inference_function_aiml_inference_functions__function_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Aiml Inference Function"
+      },
+      "patch": {
+        "description": "activationStatus gates inference: a DEACTIVATED function refuses\n`POST /models/{id}/inference-jobs?aiml_inference_function_id=...`.",
+        "operationId": "modify_aiml_inference_function_aiml_inference_functions__function_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIMLInferenceFunctionPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Modify Aiml Inference Function"
+      }
+    },
+    "/aiml-inference-reports": {
+      "get": {
+        "operationId": "list_aiml_inference_reports_aiml_inference_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "aiml_inference_function_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Aiml Inference Function Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "aiml_inference_emulation_function_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Aiml Inference Emulation Function Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Id"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Aiml Inference Reports"
+      },
+      "post": {
+        "operationId": "create_aiml_inference_report_aiml_inference_reports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIMLInferenceReportBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Aiml Inference Report"
+      }
+    },
+    "/aiml-inference-reports/{report_id}": {
+      "get": {
+        "operationId": "get_aiml_inference_report_aiml_inference_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Aiml Inference Report"
+      }
+    },
     "/emulation-jobs": {
       "get": {
         "operationId": "list_emulation_jobs_emulation_jobs_get",
@@ -871,6 +3305,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ResolveInferenceRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -930,6 +3381,2228 @@
           }
         },
         "summary": "Query Inference Status"
+      }
+    },
+    "/ml-model-loading-policies": {
+      "get": {
+        "operationId": "list_ml_model_loading_policies_ml_model_loading_policies_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Model Loading Policies"
+      },
+      "post": {
+        "operationId": "create_ml_model_loading_policy_ml_model_loading_policies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MLModelLoadingPolicyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Ml Model Loading Policy"
+      }
+    },
+    "/ml-model-loading-policies/{policy_id}": {
+      "delete": {
+        "operationId": "delete_ml_model_loading_policy_ml_model_loading_policies__policy_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Ml Model Loading Policy"
+      },
+      "get": {
+        "operationId": "get_ml_model_loading_policy_ml_model_loading_policies__policy_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Model Loading Policy"
+      }
+    },
+    "/ml-model-loading-policies/{policy_id}/trigger": {
+      "post": {
+        "description": "Policy-driven loading: called when the policy's own condition\n(its thresholdList, evaluated by whoever monitors it \u2014 e.g. an MLMF\nsubscription's breach) is met. Starts an MLModelLoadingProcess with no\nMLModelLoadingRequest behind it, the spec's policy-triggered path.",
+        "operationId": "trigger_ml_model_loading_policy_ml_model_loading_policies__policy_id__trigger_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Policy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trigger Ml Model Loading Policy"
+      }
+    },
+    "/ml-model-loading-processes": {
+      "get": {
+        "operationId": "list_ml_model_loading_processes_ml_model_loading_processes_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Model Loading Processes"
+      }
+    },
+    "/ml-model-loading-processes/{process_id}": {
+      "get": {
+        "operationId": "get_ml_model_loading_process_ml_model_loading_processes__process_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "process_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Process Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Model Loading Process"
+      }
+    },
+    "/ml-model-loading-requests": {
+      "get": {
+        "operationId": "list_ml_model_loading_requests_ml_model_loading_requests_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Model Loading Requests"
+      },
+      "post": {
+        "description": "A request created with suspendRequest=true waits (SUSPENDED) until\nPATCHed back; cancelRequest=true records it CANCELLED and loads nothing.",
+        "operationId": "create_ml_model_loading_request_ml_model_loading_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MLModelLoadingRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Ml Model Loading Request"
+      }
+    },
+    "/ml-model-loading-requests/{request_id}": {
+      "get": {
+        "operationId": "get_ml_model_loading_request_ml_model_loading_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Model Loading Request"
+      },
+      "patch": {
+        "operationId": "modify_ml_model_loading_request_ml_model_loading_requests__request_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestFlagsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Modify Ml Model Loading Request"
+      }
+    },
+    "/ml-models/{model_id}/nrm-refs": {
+      "get": {
+        "description": "The read-only MLModel attributes whose truth is AIMgF's, for MLMR's\nown TS 28.105 MLModel view (`GET /mlmr/ml-models/{id}`): mLTrainingType\n(of the latest training), aIMLInferenceReportRefList and\nusedByFunctionRefList (the AIMLInferenceFunctions it is loaded on).",
+        "operationId": "get_ml_model_nrm_refs_ml_models__model_id__nrm_refs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Model Nrm Refs"
+      }
+    },
+    "/ml-testing-functions": {
+      "get": {
+        "operationId": "list_ml_testing_functions_ml_testing_functions_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Testing Functions"
+      },
+      "post": {
+        "operationId": "create_ml_testing_function_ml_testing_functions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserLabelBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Ml Testing Function"
+      }
+    },
+    "/ml-testing-functions/{function_id}": {
+      "delete": {
+        "operationId": "delete_ml_testing_function_ml_testing_functions__function_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Ml Testing Function"
+      },
+      "get": {
+        "operationId": "get_ml_testing_function_ml_testing_functions__function_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Testing Function"
+      }
+    },
+    "/ml-testing-reports": {
+      "get": {
+        "operationId": "list_ml_testing_reports_ml_testing_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "testing_request_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Testing Request Id"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Testing Reports"
+      }
+    },
+    "/ml-testing-reports/{report_id}": {
+      "get": {
+        "operationId": "get_ml_testing_report_ml_testing_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Testing Report"
+      }
+    },
+    "/ml-testing-requests": {
+      "get": {
+        "operationId": "list_ml_testing_requests_ml_testing_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ml_testing_function_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ml Testing Function Id"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Testing Requests"
+      },
+      "post": {
+        "operationId": "create_ml_testing_request_ml_testing_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MLTestingRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Ml Testing Request"
+      }
+    },
+    "/ml-testing-requests/{request_id}": {
+      "get": {
+        "operationId": "get_ml_testing_request_ml_testing_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Testing Request"
+      },
+      "patch": {
+        "description": "cancelRequest tears the run down and, for a model-targeted run,\nfails the model's VALIDATING state (VALIDATION_FAILED \u2014 FAILED is the\nlifecycle's own retry point) rather than leaving it stuck VALIDATING.\nsuspendRequest pauses/resumes a RUNNING job.",
+        "operationId": "modify_ml_testing_request_ml_testing_requests__request_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestFlagsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Modify Ml Testing Request"
+      }
+    },
+    "/ml-training-functions": {
+      "get": {
+        "operationId": "list_ml_training_functions_ml_training_functions_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Training Functions"
+      },
+      "post": {
+        "operationId": "create_ml_training_function_ml_training_functions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MLTrainingFunctionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Ml Training Function"
+      }
+    },
+    "/ml-training-functions/{function_id}": {
+      "delete": {
+        "operationId": "delete_ml_training_function_ml_training_functions__function_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Ml Training Function"
+      },
+      "get": {
+        "operationId": "get_ml_training_function_ml_training_functions__function_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Training Function"
+      },
+      "put": {
+        "operationId": "replace_ml_training_function_ml_training_functions__function_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MLTrainingFunctionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Ml Training Function"
+      }
+    },
+    "/ml-training-processes": {
+      "get": {
+        "operationId": "list_ml_training_processes_ml_training_processes_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Training Processes"
+      }
+    },
+    "/ml-training-processes/{process_id}": {
+      "get": {
+        "operationId": "get_ml_training_process_ml_training_processes__process_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "process_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Process Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Training Process"
+      },
+      "patch": {
+        "description": "priority/terminationConditions are plain writes; cancelProcess/\nsuspendProcess act on the run exactly like the request's own flags.",
+        "operationId": "modify_ml_training_process_ml_training_processes__process_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "process_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Process Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessFlagsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Modify Ml Training Process"
+      }
+    },
+    "/ml-training-processes/{process_id}/progress": {
+      "post": {
+        "description": "The MLTF execution runtime's own progress write-back (ProcessMonitor).\nOnly meaningful while the run is RUNNING; completion itself still goes\nthrough `POST /training-jobs/{id}/complete`.",
+        "operationId": "report_ml_training_progress_ml_training_processes__process_id__progress_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "process_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Process Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessMonitorUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Ml Training Progress"
+      }
+    },
+    "/ml-training-reports": {
+      "get": {
+        "operationId": "list_ml_training_reports_ml_training_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Id"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Training Reports"
+      }
+    },
+    "/ml-training-reports/{report_id}": {
+      "get": {
+        "operationId": "get_ml_training_report_ml_training_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Training Report"
+      }
+    },
+    "/ml-training-requests": {
+      "get": {
+        "operationId": "list_ml_training_requests_ml_training_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ml_training_function_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ml Training Function Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Request Status"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Training Requests"
+      },
+      "post": {
+        "operationId": "create_ml_training_request_ml_training_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MLTrainingRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Ml Training Request"
+      }
+    },
+    "/ml-training-requests/{request_id}": {
+      "delete": {
+        "description": "Deleting an in-flight request cancels it (the job row is kept as\nhistory, like `DELETE /training-jobs/{id}`).",
+        "operationId": "delete_ml_training_request_ml_training_requests__request_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Ml Training Request"
+      },
+      "get": {
+        "operationId": "get_ml_training_request_ml_training_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Training Request"
+      },
+      "patch": {
+        "operationId": "modify_ml_training_request_ml_training_requests__request_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestFlagsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Modify Ml Training Request"
+      }
+    },
+    "/ml-update-functions": {
+      "get": {
+        "operationId": "list_ml_update_functions_ml_update_functions_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Update Functions"
+      },
+      "post": {
+        "operationId": "create_ml_update_function_ml_update_functions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MLUpdateFunctionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Ml Update Function"
+      }
+    },
+    "/ml-update-functions/{function_id}": {
+      "delete": {
+        "operationId": "delete_ml_update_function_ml_update_functions__function_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Ml Update Function"
+      },
+      "get": {
+        "operationId": "get_ml_update_function_ml_update_functions__function_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "function_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Function Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Update Function"
+      }
+    },
+    "/ml-update-processes": {
+      "get": {
+        "operationId": "list_ml_update_processes_ml_update_processes_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Update Processes"
+      }
+    },
+    "/ml-update-processes/{process_id}": {
+      "get": {
+        "operationId": "get_ml_update_process_ml_update_processes__process_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "process_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Process Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Update Process"
+      }
+    },
+    "/ml-update-reports": {
+      "get": {
+        "operationId": "list_ml_update_reports_ml_update_reports_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Update Reports"
+      }
+    },
+    "/ml-update-reports/{report_id}": {
+      "get": {
+        "operationId": "get_ml_update_report_ml_update_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Update Report"
+      }
+    },
+    "/ml-update-requests": {
+      "get": {
+        "operationId": "list_ml_update_requests_ml_update_requests_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Update Requests"
+      },
+      "post": {
+        "description": "An ML update is realised as FINE_TUNING training of every named\nmodel (one MLTrainingRequest each, through the normal training start\npath and its lifecycle gate), tracked by one MLUpdateProcess; when all\nof them have finished, the MLUpdateReport is written. Every model must\nbe trainable (REGISTERED/PROMOTED/FAILED) \u2014 checked before any run\nstarts, so the update is all-or-nothing at start.",
+        "operationId": "create_ml_update_request_ml_update_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MLUpdateRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Ml Update Request"
+      }
+    },
+    "/ml-update-requests/{request_id}": {
+      "get": {
+        "operationId": "get_ml_update_request_ml_update_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Update Request"
+      },
+      "patch": {
+        "description": "cancelRequest cancels every still-running training run of the\nupdate; suspendRequest suspends/resumes them together.",
+        "operationId": "modify_ml_update_request_ml_update_requests__request_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestFlagsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Modify Ml Update Request"
       }
     },
     "/mlmf/reports": {
@@ -1521,6 +6194,39 @@
               ],
               "title": "Notification Destination"
             }
+          },
+          {
+            "in": "query",
+            "name": "aiml_inference_function_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Aiml Inference Function Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "consumer_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Consumer Ref"
+            }
           }
         ],
         "responses": {
@@ -1956,7 +6662,7 @@
         "summary": "List Training Jobs"
       },
       "post": {
-        "description": "RequestTraining \u2014 exactly one of modelId/modelCoordinationGroupId,\nenforced at the DB layer (exactly_one_target constraint) and checked\nhere for a clean error.\n\nmodelId-targeted requests also drive the model's own ModelLifecycle\nFSM: REGISTERED -> TRAINING (the very first cycle) or\nPROMOTED -> TRAINING (an ordinary retrain) or FAILED -> TRAINING (a\nretry). A model already TRAINING (an unresolved prior job) is treated\nas the operator's explicit decision to supersede it: the orphaned job\nis marked CANCELLED rather than left silently RUNNING and unreachable.",
+        "description": "RequestTraining \u2014 exactly one of modelId/modelCoordinationGroupId,\nenforced at the DB layer (exactly_one_target constraint) and checked\nhere for a clean error. See `_start_training` for the lifecycle rules.",
         "operationId": "request_training_training_jobs_post",
         "requestBody": {
           "content": {
@@ -2363,7 +7069,7 @@
         "summary": "List Validation Jobs"
       },
       "post": {
-        "description": "CreateValidation (AIMGF_OWNERSHIP.md's own request list) \u2014 new this\nwave: Wave 1's flat FSM folded validation silently into\nTRAINING_COMPLETE -> TESTED with no request/tracking of its own.\nRequires the model to have finished training (TRAINED) AND an\noperator to have already fired APPROVE_TRAINING (OPEN_ITEMS.md\nsection 6.1) \u2014 the state check alone isn't the gate.",
+        "description": "CreateValidation \u2014 see `_start_validation`.",
         "operationId": "request_validation_validation_jobs_post",
         "requestBody": {
           "content": {

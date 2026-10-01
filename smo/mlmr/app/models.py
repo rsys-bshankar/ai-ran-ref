@@ -11,6 +11,19 @@ from smo_shared.db import Base
 MODEL_DOMAINS = {"SPEECH_RECOGNITION", "IMAGE_RECOGNITION", "IMAGE_PROCESSING", "LOCATION_PREDICTION", "CUSTOM"}
 
 
+class MLModelRepository(Base):
+    """Wave 4 — TS 28.105 MLModelRepository IOC: the container MLModels
+    and MLModelCoordinationGroups are registered into. Optional for
+    either — a model/group with no repository is simply uncontained, as
+    every pre-Wave-4 row is.
+    """
+    __tablename__ = "ml_model_repository"
+
+    ml_model_repository_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_label: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))
+
+
 class MLModelCoordinationGroup(Base):
     __tablename__ = "ml_model_coordination_group"
 
@@ -20,6 +33,8 @@ class MLModelCoordinationGroup(Base):
     member_use_cases: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
     shared_feature_pipeline_ref: Mapped[str | None] = mapped_column(String)
     retrain_propagation: Mapped[str] = mapped_column(String, nullable=False, default="ANY_MEMBER_TRIGGERS")
+    ml_model_repository_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("ml_model_repository.ml_model_repository_id", ondelete="SET NULL"))
 
 
 class MLModel(Base):
@@ -80,6 +95,22 @@ class MLModel(Base):
     domain: Mapped[str | None] = mapped_column(String)
     custom_domain: Mapped[str | None] = mapped_column(String)
     vendors: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
+    # Wave 4 — TS 28.105 MLModel IOC attributes (TS28105_AiMlNrm.yaml),
+    # spec-shaped JSON for the complex datatypes. mLModelId/mLModelVersion
+    # are model_id/version; the read-only mLTrainingType,
+    # aIMLInferenceReportRefList and usedByFunctionRefList are AIMgF's
+    # truth and are joined in by `GET /ml-models/{id}`, not stored here.
+    aiml_inference_name: Mapped[str | None] = mapped_column(String)
+    expected_run_time_context: Mapped[dict | None] = mapped_column(JSON)
+    training_context: Mapped[dict | None] = mapped_column(JSON)
+    run_time_context: Mapped[dict | None] = mapped_column(JSON)
+    supported_performance_indicators: Mapped[list | None] = mapped_column(JSON)
+    ml_capabilities_info_list: Mapped[list | None] = mapped_column(JSON)
+    inference_scope: Mapped[list | None] = mapped_column(JSON)
+    retraining_events_monitor_ref: Mapped[str | None] = mapped_column(String)
+    source_trained_ml_model_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    ml_model_repository_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("ml_model_repository.ml_model_repository_id", ondelete="SET NULL"))
 
 
 class ModelArtifact(Base):

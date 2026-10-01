@@ -12,7 +12,7 @@ from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import MLModel, MLModelCoordinationGroup, ModelArtifact
+from app.models import MLModel, MLModelCoordinationGroup, MLModelRepository, ModelArtifact
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def db_session_factory():
     # provides (see smo_shared/testing.py's own docstring).
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
-        MLModel.__table__, MLModelCoordinationGroup.__table__, ModelArtifact.__table__,
+        MLModelRepository.__table__, MLModel.__table__, MLModelCoordinationGroup.__table__, ModelArtifact.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -370,3 +370,86 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}
+
+
+# ---------------------------------------------------------------- Wave 4: TS 28.105 MLModel / MLModelRepository / MLModelCoordinationGroup
+
+def _fake_aimgf_refs(monkeypatch, payload=None, status=200):
+    class Resp:
+        status_code = status
+
+        def json(self):
+            return payload
+
+    calls = []
+
+    def fake_get(self, path, **kw):
+        calls.append(path)
+        return Resp()
+
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    return calls
+
+
+def test_register_with_ts28105_attributes_and_nrm_view(client, monkeypatch):
+    repo = client.post("/ml-model-repositories", json={"userLabel": "mlmr-1"}).json()
+    resp = client.post("/models", json={
+        "modelType": "energy-saving", "version": "1.0", "aIMLInferenceName": "NG_RAN_NETWORK_ENERGY_SAVING",
+        "trainingContext": {"dataProviderRef": ["PRB_UTILIZATION"]},
+        "supportedPerformanceIndicators": [{"performanceIndicatorName": "MAE", "isSupportedForTraining": True}],
+        "mLCapabilitiesInfoList": [{"capabilityName": "sleep-recommendation"}],
+        "inferenceScope": ["NG_RAN_NETWORK_ENERGY_SAVING"], "mLModelRepositoryRef": repo["id"],
+    })
+    model_id = resp.json()["modelId"]
+    calls = _fake_aimgf_refs(monkeypatch, {"mLTrainingType": "INITIAL_TRAINING", "aIMLInferenceReportRefList": ["r1"],
+                                           "usedByFunctionRefList": ["f1"]})
+    attrs = client.get(f"/ml-models/{model_id}").json()["attributes"]
+    assert calls == [f"/aimgf/ml-models/{model_id}/nrm-refs"]
+    assert attrs["mLModelId"] == model_id and attrs["mLModelVersion"] == "1.0"
+    assert attrs["aIMLInferenceName"] == "NG_RAN_NETWORK_ENERGY_SAVING"
+    assert attrs["trainingContext"] == {"dataProviderRef": ["PRB_UTILIZATION"]}
+    assert attrs["supportedPerformanceIndicators"][0]["isSupportedForTesting"] is False
+    assert (attrs["mLTrainingType"], attrs["usedByFunctionRefList"]) == ("INITIAL_TRAINING", ["f1"])
+    assert client.get(f"/ml-model-repositories/{repo['id']}").json()["MLModel"] == [model_id]
+    # this build's own view carries the writable spec attributes too
+    assert client.get(f"/models/{model_id}").json()["mLModelRepositoryRef"] == repo["id"]
+
+
+def test_nrm_view_degrades_when_aimgf_unreachable(client, monkeypatch):
+    model_id = client.post("/models", json={"modelType": "m", "version": "1"}).json()["modelId"]
+    _fake_aimgf_refs(monkeypatch, None, status=503)
+    attrs = client.get(f"/ml-models/{model_id}").json()["attributes"]
+    assert attrs["mLTrainingType"] is None and attrs["aIMLInferenceReportRefList"] == []
+
+
+def test_ts28105_attributes_are_validated(client):
+    assert client.post("/models", json={"modelType": "m", "version": "1",
+                                        "supportedPerformanceIndicators": []}).status_code == 422
+    assert client.post("/models", json={"modelType": "m", "version": "1",
+                                        "trainingContext": {"notInSpec": 1}}).status_code == 422
+    assert client.post("/models", json={"modelType": "m", "version": "1",
+                                        "mLModelRepositoryRef": str(uuid.uuid4())}).status_code == 404
+    assert client.post("/models", json={"modelType": "m", "version": "1",
+                                        "sourceTrainedMLModelRef": str(uuid.uuid4())}).status_code == 404
+
+
+def test_source_trained_model_ref_and_update(client):
+    base = client.post("/models", json={"modelType": "m", "version": "1"}).json()["modelId"]
+    derived = client.post("/models", json={"modelType": "m", "version": "2", "sourceTrainedMLModelRef": base}).json()["modelId"]
+    assert client.get(f"/models/{derived}").json()["sourceTrainedMLModelRef"] == base
+    resp = client.put(f"/models/{derived}", json={"modelType": "m", "version": "2", "aIMLInferenceName": "X"})
+    assert resp.json()["aIMLInferenceName"] == "X"
+
+
+def test_coordination_group_nrm_view_and_repository_delete_uncontains(client):
+    repo = client.post("/ml-model-repositories", json={}).json()
+    a = client.post("/models", json={"modelType": "a", "version": "1", "mLModelRepositoryRef": repo["id"]}).json()["modelId"]
+    b = client.post("/models", json={"modelType": "b", "version": "1"}).json()["modelId"]
+    group_id = client.post("/coordination-groups", json={"memberModelIds": [a, b], "mLModelRepositoryRef": repo["id"]}).json()["groupId"]
+    view = client.get(f"/ml-model-coordination-groups/{group_id}").json()
+    assert view["attributes"]["memberMLModelRefList"] == [a, b]
+    assert client.get(f"/ml-model-repositories/{repo['id']}").json()["MLModelCoordinationGroup"] == [group_id]
+    assert client.delete(f"/ml-model-repositories/{repo['id']}").status_code == 204
+    assert client.get(f"/models/{a}").json()["mLModelRepositoryRef"] is None
+    assert client.get(f"/ml-model-coordination-groups/{group_id}").json()["attributes"]["mLModelRepositoryRef"] is None
+    assert client.get(f"/ml-model-repositories/{repo['id']}").status_code == 404

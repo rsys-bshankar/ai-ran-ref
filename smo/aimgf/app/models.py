@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, Boolean, CheckConstraint, ForeignKey, JSON, String, Uuid
+from sqlalchemy import ARRAY, Boolean, CheckConstraint, Float, ForeignKey, Integer, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -49,8 +49,21 @@ class ValidationJob(Base):
     """
     __tablename__ = "validation_job"
 
+    __table_args__ = (
+        CheckConstraint(
+            "(model_id IS NOT NULL AND model_coordination_group_id IS NULL) "
+            "OR (model_id IS NULL AND model_coordination_group_id IS NOT NULL)",
+            name="validation_exactly_one_target",
+        ),
+    )
+
     validation_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    model_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    # Wave 4 (TS 28.105 MLTestingRequest.mLModelCoordinationGroupRef):
+    # exactly one of model_id/model_coordination_group_id, the same
+    # exactly_one_target shape TrainingJob already has — and the same
+    # asymmetry: a group-targeted run drives no single model's lifecycle.
+    model_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    model_coordination_group_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     training_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("training_job.training_job_id"))
     producer_id: Mapped[str] = mapped_column(String, nullable=False)
     validation_criteria: Mapped[dict | None] = mapped_column(JSON)
@@ -62,6 +75,11 @@ class ValidationJob(Base):
     # (a DME DmeTypeId, set on completion).
     notification_uri: Mapped[str | None] = mapped_column(String)
     outcome_artifact_dme_type_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    # Wave 4 — TS 28.105 MLTestingRequest: the containing MLTestingFunction
+    # (optional) and the spec's own cancelRequest/suspendRequest flags.
+    ml_testing_function_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("ml_testing_function.ml_testing_function_id", ondelete="SET NULL"))
+    cancel_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    suspend_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # OPEN_ITEMS.md section 6.2: a real NFO-backed execution runtime for
     # this validation run — same bare-UUID cross-module-reference shape as
     # ModelLifecycle's own nf_deployment_descriptor_id/nf_deployment_id
@@ -89,6 +107,10 @@ class EmulationJob(Base):
     # OPEN_ITEMS.md section 6.5: same pair as ValidationJob's own.
     notification_uri: Mapped[str | None] = mapped_column(String)
     outcome_artifact_dme_type_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    # Wave 4 — TS 28.105 AIMLInferenceEmulationFunction that hosts this run
+    # (optional); completion writes an AIMLInferenceReport under it.
+    aiml_inference_emulation_function_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("aiml_inference_emulation_function.aiml_inference_emulation_function_id", ondelete="SET NULL"))
     # OPEN_ITEMS.md section 6.2: same pair as ValidationJob's own.
     nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
@@ -214,6 +236,30 @@ class TrainingJob(Base):
     # this training run — same pair as ValidationJob/EmulationJob's own.
     nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    # Wave 4 — TS 28.105 MLTrainingRequest: a TrainingJob *is* the spec's
+    # MLTrainingRequest (`GET /ml-training-requests/{id}` is this row), so
+    # every remaining spec attribute lives here rather than on a parallel
+    # table that would have to be kept in sync with it. Complex datatypes
+    # (FLRequirement, RLRequirement, ModelPerformance[], ...) are stored as
+    # their spec-shaped JSON, validated on the way in (app/ts28105.py).
+    ml_training_function_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("ml_training_function.ml_training_function_id", ondelete="SET NULL"))
+    aiml_inference_name: Mapped[str | None] = mapped_column(String)
+    fl_requirement: Mapped[dict | None] = mapped_column(JSON)
+    candidate_training_data_source: Mapped[list | None] = mapped_column(JSON)
+    training_data_quality_score: Mapped[float | None] = mapped_column(Float)
+    training_request_source: Mapped[str | None] = mapped_column(String)
+    performance_requirements: Mapped[list | None] = mapped_column(JSON)
+    rl_requirement: Mapped[dict | None] = mapped_column(JSON)
+    cancel_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    suspend_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    training_data_statistical_properties: Mapped[dict | None] = mapped_column(JSON)
+    distributed_training_expectation: Mapped[dict | None] = mapped_column(JSON)
+    ml_knowledge_name: Mapped[str | None] = mapped_column(String)
+    expected_inference_scope: Mapped[list | None] = mapped_column(JSON)
+    clustering_info: Mapped[list | None] = mapped_column(JSON)
+    # Set when an MLUpdateProcess started this run (FINE_TUNING) — its
+    # completion advances that process.
+    ml_update_process_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("ml_update_process.ml_update_process_id", ondelete="SET NULL"))
 
 
 class InferenceJob(Base):
@@ -236,6 +282,11 @@ class InferenceJob(Base):
     # queryable fact instead of unlinked.
     nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     notification_destination: Mapped[str | None] = mapped_column(String)
+    # Wave 4 — the TS 28.105 AIMLInferenceFunction this inference ran on
+    # (optional), and who consumed it (feeds usedByFunctionRefList).
+    aiml_inference_function_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("aiml_inference_function.aiml_inference_function_id", ondelete="SET NULL"))
+    consumer_ref: Mapped[str | None] = mapped_column(String)
 
 
 class MLMFSubscription(Base):
@@ -307,3 +358,220 @@ class FeatureGroup(Base):
     measured_obj_class: Mapped[str | None] = mapped_column(String)
     dme_port: Mapped[str | None] = mapped_column(String)
     source_name: Mapped[str | None] = mapped_column(String)
+
+
+# ---------------------------------------------------------------- Wave 4: TS 28.105 AI/ML NRM IOCs
+#
+# Every IOC of TS28105_AiMlNrm.yaml at REST level (WAVES_4_TO_10_WORK_ITEMS.md
+# decision D-9): flat REST resources with the spec's own attribute names and
+# enums, no DN containment tree (the one recorded deviation — addressing).
+# Requests are backed by the real job aggregates (MLTrainingRequest =
+# TrainingJob, MLTestingRequest = ValidationJob); everything else that had
+# no equivalent is a new table here. MLModel/MLModelRepository/
+# MLModelCoordinationGroup are MLMR's (mlmr/app/models.py).
+
+def _now():
+    return datetime.datetime.now(datetime.UTC)
+
+
+class MLTrainingFunction(Base):
+    __tablename__ = "ml_training_function"
+
+    ml_training_function_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_label: Mapped[str | None] = mapped_column(String)
+    supported_learning_technology: Mapped[dict | None] = mapped_column(JSON)
+    fl_participation_info: Mapped[dict | None] = mapped_column(JSON)
+    ml_knowledge: Mapped[dict | None] = mapped_column(JSON)
+    # readOnly in the spec: the mLTrainingType of the most recent training
+    # this function ran, stamped by request_training.
+    ml_training_type: Mapped[str | None] = mapped_column(String)
+    ml_model_repository_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> ml_model_repository (MLMR)
+    created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
+
+
+class MLTrainingProcess(Base):
+    """One per TrainingJob (= MLTrainingRequest), created alongside it by
+    every training entry point, so the spec's request/process split is
+    real for every run, not only for runs started via the NRM routes.
+    """
+    __tablename__ = "ml_training_process"
+
+    ml_training_process_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    training_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("training_job.training_job_id", ondelete="CASCADE"), nullable=False, unique=True)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    termination_conditions: Mapped[str | None] = mapped_column(String)
+    # ProcessMonitor
+    status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
+    progress_percentage: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    progress_state_info: Mapped[str | None] = mapped_column(String)
+    result_state_info: Mapped[str | None] = mapped_column(String)
+    cancel_process: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    suspend_process: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    participating_fl_client_refs: Mapped[list | None] = mapped_column(JSON)
+
+
+class MLTrainingReport(Base):
+    __tablename__ = "ml_training_report"
+
+    ml_training_report_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    training_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("training_job.training_job_id", ondelete="CASCADE"), nullable=False)
+    ml_training_function_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("ml_training_function.ml_training_function_id", ondelete="SET NULL"))
+    used_consumer_training_data: Mapped[list | None] = mapped_column(JSON)
+    model_confidence_indication: Mapped[int | None] = mapped_column(Integer)
+    model_performance_training: Mapped[list | None] = mapped_column(JSON)
+    model_performance_validation: Mapped[list | None] = mapped_column(JSON)
+    data_ratio_training_and_validation: Mapped[int | None] = mapped_column(Integer)
+    are_new_training_data_used: Mapped[bool | None] = mapped_column(Boolean)
+    fl_report_per_client: Mapped[list | None] = mapped_column(JSON)
+    last_training_report_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    ml_model_generated_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    ml_model_coordination_group_generated_ref: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
+
+
+class MLTestingFunction(Base):
+    __tablename__ = "ml_testing_function"
+
+    ml_testing_function_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_label: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
+
+
+class MLTestingReport(Base):
+    __tablename__ = "ml_testing_report"
+
+    ml_testing_report_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    validation_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("validation_job.validation_job_id", ondelete="CASCADE"), nullable=False)
+    ml_testing_function_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("ml_testing_function.ml_testing_function_id", ondelete="SET NULL"))
+    model_performance_testing: Mapped[list | None] = mapped_column(JSON)
+    ml_testing_result: Mapped[str] = mapped_column(String, nullable=False)  # PASSED | FAILED
+    created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
+
+
+class AIMLInferenceFunction(Base):
+    __tablename__ = "aiml_inference_function"
+
+    aiml_inference_function_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_label: Mapped[str | None] = mapped_column(String)
+    aiml_inference_name: Mapped[str | None] = mapped_column(String)
+    activation_status: Mapped[str] = mapped_column(String, nullable=False, default="DEACTIVATED")  # ACTIVATED | DEACTIVATED
+    managed_activation_scope: Mapped[dict | None] = mapped_column(JSON)
+    # readOnly in the spec: models loaded onto this function by an
+    # MLModelLoadingProcess.
+    ml_model_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
+
+
+class AIMLInferenceEmulationFunction(Base):
+    __tablename__ = "aiml_inference_emulation_function"
+
+    aiml_inference_emulation_function_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_label: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
+
+
+class AIMLInferenceReport(Base):
+    __tablename__ = "aiml_inference_report"
+
+    aiml_inference_report_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    aiml_inference_function_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("aiml_inference_function.aiml_inference_function_id", ondelete="CASCADE"))
+    aiml_inference_emulation_function_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("aiml_inference_emulation_function.aiml_inference_emulation_function_id", ondelete="CASCADE"))
+    inference_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("inference_job.inference_job_id", ondelete="SET NULL"))
+    emulation_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("emulation_job.emulation_job_id", ondelete="SET NULL"))
+    inference_outputs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    potential_impact_info: Mapped[dict | None] = mapped_column(JSON)
+    ml_model_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
+
+
+class MLModelLoadingPolicy(Base):
+    __tablename__ = "ml_model_loading_policy"
+
+    ml_model_loading_policy_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    aiml_inference_function_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("aiml_inference_function.aiml_inference_function_id", ondelete="CASCADE"), nullable=False)
+    aiml_inference_name: Mapped[str | None] = mapped_column(String)
+    policy_for_loading: Mapped[dict | None] = mapped_column(JSON)  # AIMLManagementPolicy
+    ml_model_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+
+class MLModelLoadingRequest(Base):
+    __tablename__ = "ml_model_loading_request"
+
+    ml_model_loading_request_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    aiml_inference_function_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("aiml_inference_function.aiml_inference_function_id", ondelete="CASCADE"), nullable=False)
+    request_status: Mapped[str] = mapped_column(String, nullable=False, default="NOT_STARTED")
+    cancel_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    suspend_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ml_model_to_load_refs: Mapped[list] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
+
+
+class MLModelLoadingProcess(Base):
+    __tablename__ = "ml_model_loading_process"
+
+    ml_model_loading_process_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    aiml_inference_function_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("aiml_inference_function.aiml_inference_function_id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
+    progress_percentage: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    progress_state_info: Mapped[str | None] = mapped_column(String)
+    result_state_info: Mapped[str | None] = mapped_column(String)
+    cancel_process: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    suspend_process: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    loading_request_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    loading_policy_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    loaded_ml_model_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+
+class MLUpdateFunction(Base):
+    __tablename__ = "ml_update_function"
+
+    ml_update_function_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_label: Mapped[str | None] = mapped_column(String)
+    avail_ml_capability_report: Mapped[dict | None] = mapped_column(JSON)
+    ml_model_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
+
+
+class MLUpdateRequest(Base):
+    __tablename__ = "ml_update_request"
+
+    ml_update_request_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    ml_update_function_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("ml_update_function.ml_update_function_id", ondelete="SET NULL"))
+    performance_gain_threshold: Mapped[list | None] = mapped_column(JSON)
+    new_capability_version_ids: Mapped[list | None] = mapped_column(JSON)
+    update_time_deadline: Mapped[dict | None] = mapped_column(JSON)
+    request_status: Mapped[str] = mapped_column(String, nullable=False, default="NOT_STARTED")
+    ml_update_reporting_period: Mapped[dict | None] = mapped_column(JSON)
+    cancel_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    suspend_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ml_model_refs: Mapped[list] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(default=_now)
+
+
+class MLUpdateProcess(Base):
+    __tablename__ = "ml_update_process"
+
+    ml_update_process_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    ml_update_request_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("ml_update_request.ml_update_request_id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
+    progress_percentage: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    progress_state_info: Mapped[str | None] = mapped_column(String)
+    result_state_info: Mapped[str | None] = mapped_column(String)
+    cancel_process: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    suspend_process: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ml_model_refs: Mapped[list] = mapped_column(JSON, nullable=False)
+
+
+class MLUpdateReport(Base):
+    __tablename__ = "ml_update_report"
+
+    ml_update_report_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    ml_update_process_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("ml_update_process.ml_update_process_id", ondelete="CASCADE"), nullable=False)
+    updated_ml_capability: Mapped[dict | None] = mapped_column(JSON)  # AvailMLCapabilityReport
+    ml_model_refs: Mapped[list] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(default=_now)

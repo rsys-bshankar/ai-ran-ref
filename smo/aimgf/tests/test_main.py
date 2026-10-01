@@ -24,6 +24,7 @@ from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
 
 from app.main import app
+from app import models as aimgf_models
 from app.models import (
     CertificationRecord, EmulationJob, FeatureGroup, InferenceJob, LifecycleTransition, MLMFSubscription,
     ModelLifecycle, PerformanceReport, TrainingJob, ValidationJob,
@@ -116,10 +117,11 @@ def _patch_nfo(monkeypatch) -> FakeNfo:
 @pytest.fixture
 def db_session_factory():
     engine = make_test_engine()
+    # Every table AIMgF's own models declare (Wave 4 added the TS 28.105
+    # NRM tables, which the job tables now reference).
     Base.metadata.create_all(engine, tables=[
-        ModelLifecycle.__table__, ValidationJob.__table__, EmulationJob.__table__, CertificationRecord.__table__,
-        LifecycleTransition.__table__, TrainingJob.__table__, MLMFSubscription.__table__, PerformanceReport.__table__,
-        InferenceJob.__table__, FeatureGroup.__table__,
+        cls.__table__ for cls in vars(aimgf_models).values()
+        if isinstance(cls, type) and issubclass(cls, Base) and cls is not Base and cls.__module__ == aimgf_models.__name__
     ])
     return sessionmaker(bind=engine)
 

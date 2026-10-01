@@ -317,6 +317,13 @@ MLMR, MLLF are its own real function names — though not yet its full
 containment-tree/DN-addressing/FL-RL shape, which remains future work.
 Findings below are otherwise unchanged and still accurate.)*
 
+*(**Wave 4 update:** items 1 and 2 below are now **closed at REST level**. Every IOC of
+`TS28105_AiMlNrm.yaml` is a REST resource with the spec's own attribute names and enums
+(`aimgf/app/nrm.py`, MLMR's `/ml-models`, `/ml-model-repositories`,
+`/ml-model-coordination-groups`). The agreed scope (WAVES_4_TO_10_WORK_ITEMS.md decision D-9)
+keeps one deviation, addressing: flat REST with id references, no DN containment tree. The
+full attribute-by-attribute matrix is in `docs/roadmap/TS28105_COMPLIANCE_MATRIX.md`.)*
+
 Spec read: `TS28105_AiMlNrm.yaml` (`paths: {}`, data-model only, same
 shape as the O2IMS spec below). Previously listed as "not yet audited"
 — `specs/README.md`'s claim that no directly relevant O-RAN-SC AI/ML
@@ -338,7 +345,10 @@ Request/Process/Report triplet, no DN addressing, no FL/RL modeling). A
 confirmed, deliberate architecture choice, the same category as
 FOCOM's O2IMS mismatch below, not a bug.
 
-1. **Whole NRM containment tree absent** — large/structural, confirmed
+1. ~~**Whole NRM containment tree absent**~~ — **closed in Wave 4 at
+   REST level** (all 20 IOCs, 125/126 attributes compliant; addressing is the
+   recorded deviation; see the compliance matrix). Original finding:
+   large/structural, confirmed
    deliberate. No `MLTestingFunction`/`MLTestingRequest`/
    `MLTestingReport`, no `MLUpdateFunction`/`MLUpdateRequest`/
    `MLUpdateProcess`/`MLUpdateReport`, no `MLModelLoadingRequest`/
@@ -347,7 +357,13 @@ FOCOM's O2IMS mismatch below, not a bug.
    analog with no `potentialImpactInfo`/`managedActivationScope`), no
    DN/typed addressing anywhere. This build targets `aiml-fw`'s own
    reference shape instead.
-2. **No FL/RL modeling at all** — large/structural, confirmed
+2. ~~**No FL/RL modeling at all**~~ — **closed in Wave 4 as data
+   model**: `FLRequirement`/`RLRequirement`/`FLParticipationInfo`/
+   `SupportedLearningTechnology`/`ClusteringCriteria`/`FLReportPerClient`
+   are validated against the spec enums and stored/returned on the real
+   resources. No distributed-training engine consumes them (the same
+   no-real-southbound-compute boundary as elsewhere). Original finding:
+   large/structural, confirmed
    deliberate. `FLRequirement`/`FLParticipationInfo`/`RLRequirement`/
    `SupportedLearningTechnology`/`ClusteringCriteria` have zero
    equivalent — consistent with no distributed-training-orchestration

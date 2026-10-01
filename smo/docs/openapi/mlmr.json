@@ -17,6 +17,18 @@
       },
       "CreateCoordinationGroupRequest": {
         "properties": {
+          "mLModelRepositoryRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelrepositoryref"
+          },
           "memberModelIds": {
             "items": {
               "format": "uuid",
@@ -69,8 +81,114 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "MLCapabilityInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "aIMLInferenceName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aimlinferencename"
+          },
+          "capabilityName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capabilityname"
+          },
+          "mLCapabilityParameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlcapabilityparameters"
+          }
+        },
+        "title": "MLCapabilityInfo",
+        "type": "object"
+      },
+      "MLContext": {
+        "additionalProperties": false,
+        "description": "TS 28.105 MLContext.",
+        "properties": {
+          "dataProviderRef": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataproviderref"
+          },
+          "inferenceEntityRef": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inferenceentityref"
+          }
+        },
+        "title": "MLContext",
+        "type": "object"
+      },
+      "MLModelRepositoryBody": {
+        "additionalProperties": false,
+        "properties": {
+          "userLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Userlabel"
+          }
+        },
+        "title": "MLModelRepositoryBody",
+        "type": "object"
+      },
       "RegisterModelRequest": {
         "properties": {
+          "aIMLInferenceName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aimlinferencename"
+          },
           "author": {
             "anyOf": [
               {
@@ -115,6 +233,30 @@
             ],
             "title": "Domain"
           },
+          "expectedRunTimeContext": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inferenceScope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inferencescope"
+          },
           "inputDataType": {
             "anyOf": [
               {
@@ -125,6 +267,33 @@
               }
             ],
             "title": "Inputdatatype"
+          },
+          "mLCapabilitiesInfoList": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MLCapabilityInfo"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlcapabilitiesinfolist"
+          },
+          "mLModelRepositoryRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelrepositoryref"
           },
           "modelType": {
             "title": "Modeltype",
@@ -163,6 +332,54 @@
             ],
             "title": "Requiredresourcetypeid"
           },
+          "retrainingEventsMonitorRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrainingeventsmonitorref"
+          },
+          "runTimeContext": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceTrainedMLModelRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcetrainedmlmodelref"
+          },
+          "supportedPerformanceIndicators": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SupportedPerfIndicator"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedperformanceindicators"
+          },
           "targetEnvironments": {
             "default": [],
             "items": {
@@ -171,6 +388,16 @@
             },
             "title": "Targetenvironments",
             "type": "array"
+          },
+          "trainingContext": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "vendors": {
             "anyOf": [
@@ -198,8 +425,43 @@
         "title": "RegisterModelRequest",
         "type": "object"
       },
+      "SupportedPerfIndicator": {
+        "additionalProperties": false,
+        "properties": {
+          "isSupportedForTesting": {
+            "default": false,
+            "title": "Issupportedfortesting",
+            "type": "boolean"
+          },
+          "isSupportedForTraining": {
+            "default": false,
+            "title": "Issupportedfortraining",
+            "type": "boolean"
+          },
+          "performanceIndicatorName": {
+            "title": "Performanceindicatorname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "performanceIndicatorName"
+        ],
+        "title": "SupportedPerfIndicator",
+        "type": "object"
+      },
       "UpdateModelRequest": {
         "properties": {
+          "aIMLInferenceName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aimlinferencename"
+          },
           "author": {
             "anyOf": [
               {
@@ -244,6 +506,30 @@
             ],
             "title": "Domain"
           },
+          "expectedRunTimeContext": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inferenceScope": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inferencescope"
+          },
           "inputDataType": {
             "anyOf": [
               {
@@ -265,6 +551,33 @@
               }
             ],
             "title": "Integrityhash"
+          },
+          "mLCapabilitiesInfoList": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MLCapabilityInfo"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlcapabilitiesinfolist"
+          },
+          "mLModelRepositoryRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelrepositoryref"
           },
           "modelType": {
             "title": "Modeltype",
@@ -303,6 +616,54 @@
             ],
             "title": "Requiredresourcetypeid"
           },
+          "retrainingEventsMonitorRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrainingeventsmonitorref"
+          },
+          "runTimeContext": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceTrainedMLModelRef": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcetrainedmlmodelref"
+          },
+          "supportedPerformanceIndicators": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SupportedPerfIndicator"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supportedperformanceindicators"
+          },
           "targetEnvironments": {
             "anyOf": [
               {
@@ -317,6 +678,16 @@
               }
             ],
             "title": "Targetenvironments"
+          },
+          "trainingContext": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "trainingDataLineage": {
             "anyOf": [
@@ -517,6 +888,243 @@
           }
         },
         "summary": "Health Check"
+      }
+    },
+    "/ml-model-coordination-groups/{group_id}": {
+      "get": {
+        "description": "TS 28.105 MLModelCoordinationGroup IOC view (memberMLModelRefList,\nminItems 2 \u2014 enforced at creation).",
+        "operationId": "get_ml_model_coordination_group_nrm_ml_model_coordination_groups__group_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Model Coordination Group Nrm"
+      }
+    },
+    "/ml-model-repositories": {
+      "get": {
+        "operationId": "list_ml_model_repositories_ml_model_repositories_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ml Model Repositories"
+      },
+      "post": {
+        "operationId": "create_ml_model_repository_ml_model_repositories_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MLModelRepositoryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Ml Model Repository"
+      }
+    },
+    "/ml-model-repositories/{repository_id}": {
+      "delete": {
+        "description": "Contained models/groups are not deleted \u2014 they become uncontained\n(ON DELETE SET NULL), since MLMR's model truth outlives a container.",
+        "operationId": "delete_ml_model_repository_ml_model_repositories__repository_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repository_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Repository Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Ml Model Repository"
+      },
+      "get": {
+        "operationId": "get_ml_model_repository_ml_model_repositories__repository_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repository_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Repository Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Model Repository"
+      }
+    },
+    "/ml-models/{model_id}": {
+      "get": {
+        "description": "TS 28.105 MLModel IOC view: the spec's own attribute names over\nMLMR's model row, plus AIMgF's read-only cross-references.",
+        "operationId": "get_ml_model_nrm_ml_models__model_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ml Model Nrm"
       }
     },
     "/models": {

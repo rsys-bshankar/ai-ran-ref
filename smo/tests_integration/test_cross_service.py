@@ -347,3 +347,44 @@ def test_ran_nf_oam_config_write_rejected_by_mock_o1_adaptor_is_recorded(mesh, l
     sub_change = status.json()["subChanges"][0]
     assert sub_change["status"] == "REJECTED"
     assert sub_change["rejectionReason"] == "NETCONF_RPC_FAILED"
+
+
+def test_ts28105_nrm_pipeline_across_aimgf_mlmr_and_nfo(mesh):
+    """Wave 4 (TS 28.105 at REST level): an MLTrainingRequest through real
+    AIMgF -> MLMR (model existence) -> NFO (MLTF runtime), its report, a
+    model loaded onto an AIMLInferenceFunction through the real
+    RuntimeLifecycle, and MLMR's own MLModel NRM view joining AIMgF's
+    read-only cross-references back through R1.
+    """
+    model_id = mesh["mlmr"].post("/models", json={
+        "modelType": "nrm-energy", "version": "1.0", "aIMLInferenceName": "NG_RAN_NETWORK_ENERGY_SAVING",
+    }).json()["modelId"]
+    request = mesh["aimgf"].post("/ml-training-requests", json={"mLModelRef": model_id, "trainingRequestSource": "es-rapp"})
+    assert request.status_code == 201, request.text
+    request_id = request.json()["id"]
+    assert request.json()["attributes"]["mLTrainingType"] == "INITIAL_TRAINING"
+    done = mesh["aimgf"].post(f"/training-jobs/{request_id}/complete", json={
+        "succeeded": True, "modelPerformanceTraining": [{"performanceMetric": "MAE", "performanceScore": 1.8}]})
+    assert done.status_code == 200, done.text
+
+    mesh["aimgf"].post(f"/models/{model_id}/advance", params={"event": "APPROVE_TRAINING", "decided_by": "op"})
+    testing = mesh["aimgf"].post("/ml-testing-requests", json={"mLModelRef": model_id})
+    assert testing.status_code == 201, testing.text
+    mesh["aimgf"].post(f"/validation-jobs/{testing.json()['id']}/complete", json={"succeeded": True})
+    mesh["aimgf"].post(f"/models/{model_id}/advance", params={"event": "APPROVE_VALIDATION", "decided_by": "op"})
+    emulation = mesh["aimgf"].post("/emulation-jobs", json={"modelId": model_id, "producerId": "es-rapp"}).json()
+    mesh["aimgf"].post(f"/emulation-jobs/{emulation['emulationJobId']}/complete", json={"succeeded": True})
+    for event in ("SUBMIT_FOR_APPROVAL", "APPROVE", "CERTIFY"):
+        assert mesh["aimgf"].post(f"/models/{model_id}/advance", params={"event": event, "decided_by": "op"}).status_code == 200
+
+    function_id = mesh["aimgf"].post("/aiml-inference-functions", json={"activationStatus": "ACTIVATED"}).json()["id"]
+    loading = mesh["aimgf"].post("/ml-model-loading-requests", json={
+        "aIMLInferenceFunctionRef": function_id, "mLModelToLoadRef": [model_id]})
+    assert loading.json()["attributes"]["requestStatus"] == "FINISHED", loading.text
+    lifecycle = mesh["aimgf"].get(f"/models/{model_id}/lifecycle").json()
+    assert lifecycle["runtimeLifecycleState"] == "ACTIVE" and lifecycle["nfDeploymentId"]
+
+    nrm = mesh["mlmr"].get(f"/ml-models/{model_id}").json()["attributes"]
+    assert nrm["mLTrainingType"] == "INITIAL_TRAINING"
+    assert nrm["usedByFunctionRefList"] == [function_id]
+    assert nrm["aIMLInferenceName"] == "NG_RAN_NETWORK_ENERGY_SAVING"
