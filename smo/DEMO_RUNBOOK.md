@@ -1372,8 +1372,8 @@ A `TrainingJob` with `producerId: sa-smos` and this
 
 SME's `SubscribeEvents` (the reference's `CAPIFEventFilter`,
 `eventservice.go`'s `getMatchingSubs`) filters by `eventTypes` and by
-`apiIds`, which map onto this build's `serviceId`. The reference's
-`apiInvokerId`/`aefId` filter dimensions are not implemented.
+`apiIds`, which map onto this build's `serviceId`, as well as by
+`aefIds` and `apiInvokerIds` (the last for the `API_INVOKER_*` events).
 
 Subscribe two consumers: `consumer-unscoped` gets every
 `SERVICE_API_UPDATE`; `consumer-scoped` only `helloworld-api`'s (its

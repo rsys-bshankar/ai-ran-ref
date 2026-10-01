@@ -11,7 +11,8 @@ import { parseJsonObject, splitList } from "../lib/domain";
 
 const TABS = ["dme", "a1-ei", "sme"] as const;
 const DELIVERY_METHODS = ["PULL_HTTP", "PUSH_HTTP", "STREAMING_KAFKA"];
-const EVENT_TYPES = ["SERVICE_API_AVAILABLE", "SERVICE_API_UNAVAILABLE", "SERVICE_API_UPDATE"];
+const EVENT_TYPES = ["SERVICE_API_AVAILABLE", "SERVICE_API_UNAVAILABLE", "SERVICE_API_UPDATE",
+  "API_INVOKER_ONBOARDED", "API_INVOKER_UPDATED", "API_INVOKER_OFFBOARDED"];
 
 export function Data() {
   const [tab, setTab] = useHashTab(TABS, "dme");
@@ -300,12 +301,16 @@ function Invokers() {
     <Card title="API invokers">
       <DataTable rows={invokers.data} loading={invokers.isLoading} error={invokers.error} rowKey={(i) => i.apiInvokerId} empty="No invokers onboarded." columns={[
         { header: "Invoker", render: (i) => <code className="small">{i.apiInvokerId}</code> },
+        { header: "Authenticates with", render: (i) => i.keyAuthentication ? "secret or signed assertion" : "secret" },
         { header: "Trusted", render: (i) => i.trusted ? <StateBadge state="ENABLED" /> : <span className="muted">no</span> },
-        { header: "", className: "actions", render: (i) => i.trusted
-          ? <ActionButton label="Remove trust" tone="danger" confirm="Remove this invoker's security context?" action={{ method: "DELETE", path: `/sme/trusted-invokers/${i.apiInvokerId}`, success: "Security context removed" }} />
-          : <Can method="PUT" path={`/sme/trusted-invokers/${i.apiInvokerId}`}><button className="btn small" onClick={() => setTrustFor(i.apiInvokerId)}>Trust…</button></Can> },
+        { header: "", className: "actions", render: (i) => <div className="row gap end">
+          {i.trusted
+            ? <ActionButton label="Remove trust" tone="danger" confirm="Remove this invoker's security context?" action={{ method: "DELETE", path: `/sme/trusted-invokers/${i.apiInvokerId}`, success: "Security context removed" }} />
+            : <Can method="PUT" path={`/sme/trusted-invokers/${i.apiInvokerId}`}><button className="btn small" onClick={() => setTrustFor(i.apiInvokerId)}>Trust…</button></Can>}
+          <ActionButton label="Offboard" tone="danger" confirm="Offboard this invoker? Its tokens and security context are revoked." action={{ method: "DELETE", path: `/sme/invoker-registrations/${i.apiInvokerId}`, success: "Invoker offboarded" }} />
+        </div> },
       ]} />
-      <p className="muted small">{trusted.data?.length ?? 0} with a security context. Onboarding secrets are hashed at SME and never shown again.</p>
+      <p className="muted small">{trusted.data?.length ?? 0} with a security context. Onboarding secrets are hashed at SME and never shown again. An invoker onboarded with a PEM public key can also authenticate with an RFC 7523 signed client assertion.</p>
       <Can method="POST" path="/sme/invoker-registrations">
         <div className="form inline">
           <Field label="Invoker public key"><input value={publicKey} onChange={(e) => setPublicKey(e.target.value)} placeholder="-----BEGIN PUBLIC KEY-----…" /></Field>
@@ -376,7 +381,10 @@ function EventSubscriptions() {
   const [types, setTypes] = useState<string[]>(["SERVICE_API_AVAILABLE"]);
   const [cb, setCb] = useState("");
   const [apiIds, setApiIds] = useState("");
+  const [invokerIds, setInvokerIds] = useState("");
+  const [aefIds, setAefIds] = useState("");
   const base = `/sme/capif-events/v1/${subscriber}/subscriptions`;
+  const listOrNull = (text: string) => (splitList(text).length ? splitList(text) : null);
   return (
     <Card title="CAPIF event subscriptions">
       <div className="form inline">
@@ -385,12 +393,20 @@ function EventSubscriptions() {
           <Field label="Events"><select multiple size={3} value={types} onChange={(e) => setTypes([...e.target.selectedOptions].map((o) => o.value))}>{EVENT_TYPES.map((t) => <option key={t}>{t}</option>)}</select></Field>
           <Field label="Callback URI"><input value={cb} onChange={(e) => setCb(e.target.value)} placeholder="http://subscriber:8000/capif-events" /></Field>
           <Field label="Only these services" hint="serviceIds from Published services, comma-separated; empty = every service"><input value={apiIds} onChange={(e) => setApiIds(e.target.value)} placeholder="all services" /></Field>
-          <ActionButton label="Subscribe" disabled={!subscriber || !cb || types.length === 0} action={{ method: "POST", path: base, json: { subscriberId: subscriber, eventTypes: types, callbackUri: cb, apiIds: splitList(apiIds).length ? splitList(apiIds) : null }, success: "Subscribed" }} />
+          <Field label="Only these AEFs" hint="aefIds; matches service events only"><input value={aefIds} onChange={(e) => setAefIds(e.target.value)} placeholder="all AEFs" /></Field>
+          <Field label="Only these invokers" hint="apiInvokerIds; matches invoker events only"><input value={invokerIds} onChange={(e) => setInvokerIds(e.target.value)} placeholder="all invokers" /></Field>
+          <ActionButton label="Subscribe" disabled={!subscriber || !cb || types.length === 0} action={{ method: "POST", path: base, json: {
+            subscriberId: subscriber, eventTypes: types, callbackUri: cb,
+            apiIds: listOrNull(apiIds), aefIds: listOrNull(aefIds), apiInvokerIds: listOrNull(invokerIds) }, success: "Subscribed" }} />
         </Can>
       </div>
       <DataTable rows={subs.data} rowKey={(s) => s.subscriptionId} empty="No subscriptions for this subscriber." columns={[
         { header: "Subscription", render: (s) => <Id value={s.subscriptionId} /> }, { header: "Events", render: (s) => s.eventTypes.join(", ") },
-        { header: "Services", render: (s) => s.apiIds?.length ? s.apiIds.map((id) => <code key={id} className="small">{id} </code>) : <span className="muted">all</span> },
+        { header: "Filters", render: (s) => {
+          const filters = [["services", s.apiIds], ["AEFs", s.aefIds], ["invokers", s.apiInvokerIds]] as const;
+          const set = filters.filter(([, ids]) => ids?.length);
+          return set.length ? set.map(([label, ids]) => <div key={label} className="small">{label}: <code>{ids!.join(", ")}</code></div>) : <span className="muted">none</span>;
+        } },
         { header: "Callback", render: (s) => <code className="small">{s.callbackUri}</code> },
         { header: "", className: "actions", render: (s) => <ActionButton label="Unsubscribe" action={{ method: "DELETE", path: `${base}/${s.subscriptionId}`, success: "Unsubscribed" }} /> },
       ]} />

@@ -10,7 +10,7 @@
 | Called by | rApps, the GUI BFF, `smo_shared.R1Client` in every module, the reference rApps |
 | Database tables | None (stateless) |
 | Unit tests | 18 passed (`tests/`, no DB, standalone) |
-| Status | Done. Token model is opaque-token introspection, not JWT/IdP signature checking ([OI-2-oauth2-scope](../OPEN_ITEMS.md)); route-level test depth tracked by [OI-4](../OPEN_ITEMS.md) |
+| Status | Done. Token model is opaque-token introspection, not JWT/IdP signature checking; route-level test depth tracked by [OI-4](../OPEN_ITEMS.md) |
 
 ## 1. High-level design (HLD)
 
@@ -163,8 +163,8 @@ Every other status and body is the backend's, passed through.
 
 ### 2.8 Limits and open items
 
-- Opaque-token introspection instead of signed JWTs; scopes are echoed by SME, not checked ([OI-2-oauth2-scope](../OPEN_ITEMS.md)).
-- Authentication only: no per-invoker or per-API authorization at the gateway.
+- Opaque-token introspection instead of signed JWTs. SME checks a token's scope when it issues it (HISTORY.md OI-2-oauth2-scope), but the gateway does not enforce it.
+- Authentication only: no per-invoker or per-API authorization at the gateway. Routes map to modules, not to published APIs, so there is nothing here to match a scope against.
 - No rate limiting, retry, circuit breaking or request-size limit.
 - Backend transport failures give 500 rather than 502/504; the default 5 s upstream timeout also caps any longer per-call timeout a caller sets further upstream.
 - Upstream response headers are forwarded verbatim, including those describing the encoding of the original body.

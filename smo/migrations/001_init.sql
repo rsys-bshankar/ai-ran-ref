@@ -40,9 +40,13 @@ CREATE TABLE service_authz_policy (
 CREATE TABLE service_event_subscription (
   subscription_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   subscriber_id      TEXT NOT NULL,
-  event_types        TEXT[] NOT NULL CHECK (event_types <@ ARRAY['SERVICE_API_AVAILABLE','SERVICE_API_UNAVAILABLE','SERVICE_API_UPDATE']),
+  event_types        TEXT[] NOT NULL CHECK (event_types <@ ARRAY['SERVICE_API_AVAILABLE','SERVICE_API_UNAVAILABLE','SERVICE_API_UPDATE',
+                                                                 'API_INVOKER_ONBOARDED','API_INVOKER_OFFBOARDED','API_INVOKER_UPDATED']),
   callback_uri        TEXT NOT NULL,
-  api_ids               TEXT[]  -- NEW section 5: CAPIFEventFilter.apiIds
+  api_ids               TEXT[],  -- NEW section 5: CAPIFEventFilter.apiIds
+  -- OI-5-sme-filters: the rest of CAPIFEventFilter
+  api_invoker_ids         TEXT[],
+  aef_ids                   TEXT[]
 );
 
 -- NEW section 5: Provider (APF) enrolment (providermanagement.go's own
@@ -63,8 +67,9 @@ CREATE TABLE provider_registration (
 CREATE TABLE invoker_registration (
   api_invoker_id            TEXT PRIMARY KEY,
   -- HISTORY.md §7 SME item 1: the real CAPIF core's onboarding is
-  -- public-key-based -- the client's own apiInvokerPublicKey, stored
-  -- but not yet cryptographically used anywhere in this build.
+  -- public-key-based -- the client's own apiInvokerPublicKey. A PEM key
+  -- verifies the invoker's RFC 7523 client assertions (SA-SME-1-public-key);
+  -- anything else is an opaque label (onboarding-secret auth only).
   public_key                 TEXT NOT NULL,
   onboarding_secret_hash       TEXT NOT NULL
 );
@@ -79,7 +84,16 @@ CREATE TABLE invoker_registration (
 CREATE TABLE issued_access_token (
   access_token_hash       TEXT PRIMARY KEY,
   api_invoker_id             TEXT NOT NULL,
-  expires_at                    TIMESTAMPTZ NOT NULL
+  expires_at                    TIMESTAMPTZ NOT NULL,
+  scope                           TEXT   -- OI-2-oauth2-scope: the checked, granted scope; NULL = unscoped
+);
+
+-- SA-SME-1-public-key: RFC 7523 client-assertion replay protection -- each
+-- assertion's jti, kept until the assertion expires.
+CREATE TABLE used_client_assertion (
+  jti               TEXT PRIMARY KEY,
+  api_invoker_id    TEXT NOT NULL,
+  expires_at        TIMESTAMPTZ NOT NULL
 );
 
 -- HISTORY.md §7 SME item 2: the real CAPIF core's "Trusted Invokers"

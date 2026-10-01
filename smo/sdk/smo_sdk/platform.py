@@ -51,9 +51,12 @@ class PlatformClient(BaseClient):
         }))
 
     def subscribe_to_events(self, subscriber_id: str, event_types: list[str], callback_uri: str,
-                             api_ids: list[str] | None = None) -> dict:
+                             api_ids: list[str] | None = None, api_invoker_ids: list[str] | None = None,
+                             aef_ids: list[str] | None = None) -> dict:
+        """CAPIF event subscription; each filter that is set must match the event."""
         return ensure_ok(self._r1.post(f"/sme/capif-events/v1/{subscriber_id}/subscriptions", json={
             "subscriberId": subscriber_id, "eventTypes": event_types, "callbackUri": callback_uri, "apiIds": api_ids,
+            "apiInvokerIds": api_invoker_ids, "aefIds": aef_ids,
         }))
 
     def list_event_subscriptions(self, subscriber_id: str) -> list[dict]:

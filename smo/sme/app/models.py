@@ -91,9 +91,11 @@ class InvokerRegistration(Base):
     client-supplied input instead — a self-asserted identity and a
     client-chosen secret, the weaker trust direction the real spec
     documents `apiInvokerId` as "shall not be present" in the client's
-    own request. Flipped to match. `public_key` is stored but not yet
-    cryptographically used anywhere (no signature verification exists
-    in this build); `onboarding_secret_hash` is still a genuine, checked
+    own request. Flipped to match. `public_key`, when it is a PEM public
+    key, authenticates the invoker's token requests by an RFC 7523
+    `private_key_jwt` client assertion (SA-SME-1-public-key); any other
+    value is an opaque label and the invoker can only use its onboarding
+    secret. `onboarding_secret_hash` is still a genuine, checked
     secret at token-issuance time, never stored in cleartext — only a
     salted `scrypt` hash (`salt:digest` hex), so a DB leak (backup, SQL
     injection elsewhere, a dump) can't hand out reusable client
@@ -127,6 +129,21 @@ class IssuedAccessToken(Base):
     __tablename__ = "issued_access_token"
 
     access_token_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    api_invoker_id: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # OI-2-oauth2-scope: the scope granted at issuance, after it was checked
+    # (main.py's _check_scope); returned by introspection. None = unscoped.
+    scope: Mapped[str | None] = mapped_column(String)
+
+
+class UsedClientAssertion(Base):
+    """SA-SME-1-public-key: the `jti` of every RFC 7523 client assertion
+    already exchanged for a token, kept until the assertion itself expires,
+    so one signed assertion buys exactly one token (RFC 7523 section 3,
+    replay protection)."""
+    __tablename__ = "used_client_assertion"
+
+    jti: Mapped[str] = mapped_column(String, primary_key=True)
     api_invoker_id: Mapped[str] = mapped_column(String, nullable=False)
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -168,6 +185,12 @@ class ServiceEventSubscription(Base):
     event_types: Mapped[list[str]] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"), nullable=False)
     callback_uri: Mapped[str] = mapped_column(String, nullable=False)
     api_ids: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))  # NEW section 5: CAPIFEventFilter.apiIds
+    # OI-5-sme-filters: the rest of TS 29.222's CAPIFEventFilter
+    api_invoker_ids: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
+    aef_ids: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
 
 
-EVENT_TYPES = {"SERVICE_API_AVAILABLE", "SERVICE_API_UNAVAILABLE", "SERVICE_API_UPDATE"}
+SERVICE_API_EVENTS = {"SERVICE_API_AVAILABLE", "SERVICE_API_UNAVAILABLE", "SERVICE_API_UPDATE"}
+# OI-5-sme-filters: TS 29.222 CAPIFEvent's invoker-onboarding events
+API_INVOKER_EVENTS = {"API_INVOKER_ONBOARDED", "API_INVOKER_OFFBOARDED", "API_INVOKER_UPDATED"}
+EVENT_TYPES = SERVICE_API_EVENTS | API_INVOKER_EVENTS

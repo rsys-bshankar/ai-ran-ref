@@ -60,7 +60,15 @@ def test_subscribe_to_events(client, r1):
     assert call["path"] == "/sme/capif-events/v1/sub-1/subscriptions"
     assert call["json"] == {
         "subscriberId": "sub-1", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://x/callback", "apiIds": None,
+        "apiInvokerIds": None, "aefIds": None,
     }
+
+
+def test_subscribe_to_events_passes_every_capif_event_filter(client, r1):
+    client.subscribe_to_events("sub-1", ["API_INVOKER_ONBOARDED"], "http://x/callback", api_ids=["s1"],
+                               api_invoker_ids=["inv-1"], aef_ids=["aef-1"])
+    assert {k: r1.calls[0]["json"][k] for k in ("apiIds", "apiInvokerIds", "aefIds")} == {
+        "apiIds": ["s1"], "apiInvokerIds": ["inv-1"], "aefIds": ["aef-1"]}
 
 
 def test_list_event_subscriptions(client, r1):

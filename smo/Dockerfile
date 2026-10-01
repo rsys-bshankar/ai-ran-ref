@@ -18,7 +18,7 @@ COPY sdk /srv/sdk
 COPY ${MODULE}/pyproject.toml* /srv/module/
 COPY ${MODULE}/app /srv/module/app
 WORKDIR /srv/module
-RUN pip install --no-cache-dir fastapi uvicorn[standard] sqlalchemy psycopg[binary] httpx pydantic python-multipart jsonschema pyyaml
+RUN pip install --no-cache-dir fastapi uvicorn[standard] sqlalchemy psycopg[binary] httpx pydantic python-multipart jsonschema pyyaml defusedxml "pyjwt[crypto]"
 
 ENV PYTHONPATH=/srv/module:/srv/sdk
 EXPOSE 8000

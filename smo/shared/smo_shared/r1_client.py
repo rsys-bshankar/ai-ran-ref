@@ -64,9 +64,9 @@ class _ModuleIdentity:
         return self.token_endpoint
 
     def _onboard(self, token_endpoint: str) -> None:
-        # SME stores apiInvokerPublicKey but verifies nothing against it (its
-        # token endpoint checks only the onboarding secret), so an opaque
-        # per-process label is the honest value here, not a real key.
+        # An opaque per-process label, not a PEM key: this client authenticates
+        # with its onboarding secret, so SME has no key to verify assertions
+        # with (an RFC 7523 client assertion needs a PEM key, SA-SME-1-public-key).
         sme = token_endpoint.rsplit("/oauth2/token", 1)[0]
         label = f"smo-module:{os.environ.get('MODULE', 'unknown')}:{secrets.token_urlsafe(8)}"
         resp = httpx.post(f"{sme}/invoker-registrations", json={"apiInvokerPublicKey": label}, timeout=5.0)

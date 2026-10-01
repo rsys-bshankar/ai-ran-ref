@@ -10,11 +10,14 @@ section 2.3).
 
 import datetime
 import hashlib
+import os
 import secrets
 import uuid
 from typing import Literal
 
 import httpx
+import jwt
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -29,9 +32,22 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.webhook import post_webhook
 
-from .models import EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile, TrustedInvoker
+from .models import (API_INVOKER_EVENTS, EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration,
+                     ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile, TrustedInvoker, UsedClientAssertion)
 
 ACCESS_TOKEN_TTL_SECONDS = 3600
+# OI-2-oauth2-scope: the scopes SMO's own clients request — every module's
+# R1Client (smo_shared/r1_client.py) and the GUI BFF. Granted as-is; they
+# name no published API, so there is nothing to check them against.
+INTERNAL_SCOPES = frozenset({"smo-internal", "smo-gui"})
+CAPIF_SCOPE_PREFIX = "3gpp#"
+# SA-SME-1-public-key: RFC 7523 client authentication by a signed JWT.
+CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+# The assertion's `aud` must name this token endpoint, as R1 Termination
+# advertises it (`{SME_URL}/oauth2/token`, r1-termination/app/main.py).
+TOKEN_ENDPOINT_AUDIENCE = os.environ.get("SME_TOKEN_AUDIENCE", f"{os.environ.get('SME_URL', 'http://sme:8000')}/oauth2/token")
+ASSERTION_ALGORITHMS = ["RS256", "RS384", "RS512", "PS256", "ES256", "ES384", "EdDSA"]
+MAX_ASSERTION_LIFETIME_SECONDS = 300
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P, _SCRYPT_DKLEN = 2**14, 8, 1, 32
 
 app = FastAPI(title="SME — Service Management and Exposure")
@@ -103,6 +119,8 @@ class EventSubscriptionRequest(BaseModel):
     eventTypes: list[str]
     callbackUri: str
     apiIds: list[str] | None = None
+    apiInvokerIds: list[str] | None = None  # OI-5-sme-filters
+    aefIds: list[str] | None = None
 
 
 class ProviderRegistrationRequest(BaseModel):
@@ -145,6 +163,22 @@ class InvokerRegistrationRequest(BaseModel):
     apiInvokerPublicKey: str
 
 
+def _pem_public_key(value: str):
+    """The invoker's key, if `apiInvokerPublicKey` is a PEM public key;
+    None for an opaque label (SMO's own clients onboard with one)."""
+    if not value.lstrip().startswith("-----BEGIN"):
+        return None
+    try:
+        return load_pem_public_key(value.encode())
+    except (ValueError, TypeError):
+        return None
+
+
+def _check_public_key(value: str) -> None:
+    if value.lstrip().startswith("-----BEGIN") and _pem_public_key(value) is None:
+        raise framework_error(FrameworkError.SECURITY_CONTEXT_INVALID, detail="apiInvokerPublicKey is not a valid PEM public key")
+
+
 @app.post("/invoker-registrations", status_code=201)
 def register_invoker(body: InvokerRegistrationRequest, db: Session = Depends(get_session)):
     """HISTORY.md §2: API Invoker onboarding
@@ -156,22 +190,57 @@ def register_invoker(body: InvokerRegistrationRequest, db: Session = Depends(get
     public-key-based — the client supplies `apiInvokerPublicKey`; the
     server *generates* both `apiInvokerId` and `onboardingSecret` and
     returns them (`apiInvokerId` "shall not be present" in the real
-    client request at all). Previously both were taken as
-    client-supplied input — a self-asserted identity and a
-    client-chosen secret — flipped to match the real trust direction.
-    Every call always mints a new invoker now (no more
-    update-in-place on a re-registration of the same id, since there's
-    no client-supplied id to match an existing row against — the same
-    real behavior the reference's own onboarding endpoint has: it
-    always creates, never updates, an onboarded invoker).
+    client request at all). Every call mints a new invoker (the reference
+    always creates, never updates, on onboarding).
+
+    SA-SME-1-public-key: a PEM public key is parsed here (422 if it is
+    malformed) and later verifies the invoker's signed token requests;
+    any other value is kept as an opaque label. OI-5-sme-filters: emits
+    API_INVOKER_ONBOARDED.
     """
+    _check_public_key(body.apiInvokerPublicKey)
     api_invoker_id = f"api-invoker-{uuid.uuid4()}"
     onboarding_secret = secrets.token_urlsafe(32)
     inv = InvokerRegistration(api_invoker_id=api_invoker_id, public_key=body.apiInvokerPublicKey,
                                onboarding_secret_hash=_hash_secret(onboarding_secret))
     db.add(inv)
     db.commit()
-    return {"apiInvokerId": inv.api_invoker_id, "onboardingSecret": onboarding_secret}
+    notify_invoker_change(db, api_invoker_id, "API_INVOKER_ONBOARDED")
+    return {"apiInvokerId": inv.api_invoker_id, "onboardingSecret": onboarding_secret,
+            "keyAuthentication": _pem_public_key(inv.public_key) is not None}
+
+
+@app.put("/invoker-registrations/{api_invoker_id}")
+def update_invoker(api_invoker_id: str, body: InvokerRegistrationRequest, db: Session = Depends(get_session)):
+    """PutOnboardedInvokersApiInvokerId — replaces the invoker's public key
+    (key rotation). Assertions signed with the old key stop verifying at
+    once. 404 for an unknown invoker. Emits API_INVOKER_UPDATED."""
+    inv = db.get(InvokerRegistration, api_invoker_id)
+    if inv is None:
+        raise framework_error(FrameworkError.INVOKER_NOT_REGISTERED, detail=f"invoker {api_invoker_id} not registered")
+    _check_public_key(body.apiInvokerPublicKey)
+    inv.public_key = body.apiInvokerPublicKey
+    db.commit()
+    notify_invoker_change(db, api_invoker_id, "API_INVOKER_UPDATED")
+    return {"apiInvokerId": inv.api_invoker_id, "keyAuthentication": _pem_public_key(inv.public_key) is not None}
+
+
+@app.delete("/invoker-registrations/{api_invoker_id}", status_code=204)
+def offboard_invoker(api_invoker_id: str, db: Session = Depends(get_session)):
+    """DeleteOnboardedInvokersApiInvokerId — offboarding. The invoker's
+    live tokens and trusted-invoker security context go with it, so
+    nothing it was granted outlives it. Idempotent (204 for an unknown id).
+    Emits API_INVOKER_OFFBOARDED."""
+    inv = db.get(InvokerRegistration, api_invoker_id)
+    if inv is None:
+        return
+    db.query(IssuedAccessToken).filter(IssuedAccessToken.api_invoker_id == api_invoker_id).delete()
+    trusted = db.get(TrustedInvoker, api_invoker_id)
+    if trusted is not None:
+        db.delete(trusted)
+    db.delete(inv)
+    db.commit()
+    notify_invoker_change(db, api_invoker_id, "API_INVOKER_OFFBOARDED")
 
 
 class AccessTokenRequest(BaseModel):
@@ -179,6 +248,77 @@ class AccessTokenRequest(BaseModel):
     client_id: str
     client_secret: str | None = None
     scope: str | None = None
+    # SA-SME-1-public-key: RFC 7523 section 2.2 client authentication
+    client_assertion_type: str | None = None
+    client_assertion: str | None = None
+
+
+def _token_error(error: str, description: str) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"error": error, "error_description": description})
+
+
+def _verify_client_assertion(db: Session, inv: InvokerRegistration, body: AccessTokenRequest) -> str | None:
+    """RFC 7523 `private_key_jwt`: None when the assertion authenticates the
+    invoker, else why not. The JWT must be signed with the invoker's
+    onboarded public key, name the invoker as both `iss` and `sub`, name
+    this token endpoint as `aud`, expire within MAX_ASSERTION_LIFETIME_SECONDS,
+    and carry a `jti` never used before — it is recorded here so the same
+    assertion can't buy a second token."""
+    if body.client_assertion_type != CLIENT_ASSERTION_TYPE:
+        return f"client_assertion_type must be {CLIENT_ASSERTION_TYPE}"
+    key = _pem_public_key(inv.public_key)
+    if key is None:
+        return "invoker has no PEM public key to verify an assertion with"
+    try:
+        claims = jwt.decode(body.client_assertion, key=key, algorithms=ASSERTION_ALGORITHMS,
+                            audience=TOKEN_ENDPOINT_AUDIENCE, options={"require": ["iss", "sub", "aud", "exp", "jti"]})
+    except jwt.PyJWTError as exc:
+        return f"client assertion not valid: {exc}"
+    if claims["iss"] != inv.api_invoker_id or claims["sub"] != inv.api_invoker_id:
+        return "client assertion iss and sub must both be the client_id"
+    now = datetime.datetime.now(datetime.UTC)
+    expires_at = datetime.datetime.fromtimestamp(claims["exp"], datetime.UTC)
+    if (expires_at - now).total_seconds() > MAX_ASSERTION_LIFETIME_SECONDS:
+        return f"client assertion must expire within {MAX_ASSERTION_LIFETIME_SECONDS} s"
+    db.query(UsedClientAssertion).filter(UsedClientAssertion.expires_at <= now).delete()
+    if db.get(UsedClientAssertion, str(claims["jti"])) is not None:
+        return "client assertion jti already used"
+    db.add(UsedClientAssertion(jti=str(claims["jti"]), api_invoker_id=inv.api_invoker_id, expires_at=expires_at))
+    return None
+
+
+def _visible_to(service: ServiceProfile, api_invoker_id: str) -> bool:
+    """discover_services' gate (section 2.2): may this invoker see it?"""
+    policy = service.authz_policy
+    return (policy is None or not policy.gates_discovery_visibility or not policy.allowed_consumers
+            or api_invoker_id in policy.allowed_consumers)
+
+
+def _check_scope(db: Session, scope: str | None, api_invoker_id: str) -> str | None:
+    """OI-2-oauth2-scope: None when the requested scope may be granted,
+    else why not. Absent, or one of INTERNAL_SCOPES: granted. Otherwise it
+    must be TS 29.222's `3gpp#aefId:apiName[,apiName...][;aefId:...]`, and
+    every apiName must be a published service that is exposed by that
+    aefId (one of its aefProfiles) and visible to this invoker — the same
+    checks as the reference's `IsFunctionRegistered`/`IsAPIPublished`,
+    plus discovery's visibility gate, so a token never names an API the
+    invoker could not discover."""
+    if not scope or scope in INTERNAL_SCOPES:
+        return None
+    if not scope.startswith(CAPIF_SCOPE_PREFIX):
+        return f"scope must be {sorted(INTERNAL_SCOPES)} or {CAPIF_SCOPE_PREFIX}aefId:apiName[,apiName][;aefId:apiName]"
+    for part in scope[len(CAPIF_SCOPE_PREFIX):].split(";"):
+        aef_id, sep, api_names = part.partition(":")
+        names = [n for n in api_names.split(",") if n]
+        if not sep or not aef_id or not names:
+            return f"malformed scope entry {part!r}, expected aefId:apiName[,apiName]"
+        for name in names:
+            service = db.scalar(select(ServiceProfile).where(ServiceProfile.service_name == name))
+            if service is None or not _visible_to(service, api_invoker_id):
+                return f"API {name!r} is not published"
+            if aef_id not in _aef_ids(service):
+                return f"API {name!r} is not exposed by AEF {aef_id!r}"
+    return None
 
 
 @app.post("/oauth2/token")
@@ -188,27 +328,41 @@ def issue_access_token(body: AccessTokenRequest, db: Session = Depends(get_sessi
     finally real. Mirrors `PostSecuritiesSecurityIdToken`
     (`securityservice.go`)'s real request/response shape (`client_id`/
     `client_secret`/`grant_type`/`scope`, `access_token`/`expires_in`/
-    `token_type`/`scope`) and its real two checks
-    (`IsInvokerRegistered`, `VerifyInvokerSecret`) — 400 on either
-    failure, same as the reference. The reference then delegates actual
-    JWT signing to an external Keycloak instance; this build has no real
-    IdP, so it issues its own opaque, server-tracked token instead (see
-    `IssuedAccessToken`). Per-scope AEF/API validation
-    (`IsFunctionRegistered`/`IsAPIPublished`) stays out of scope — this
-    build elides fine-grained AuthZ throughout (e.g. `create_policy`'s
-    own docstring), so `scope` is accepted and echoed back, never
-    checked against what's actually published.
+    `token_type`/`scope`) and its real checks — 400 on any failure, same
+    as the reference. The reference then delegates actual JWT signing to an
+    external Keycloak instance; this build has no real IdP, so it issues its
+    own opaque, server-tracked token instead (see `IssuedAccessToken`).
+
+    The client authenticates with exactly one of its onboarding secret
+    (`client_secret`) or an RFC 7523 client assertion signed with its
+    onboarded public key (`client_assertion`, SA-SME-1-public-key).
+    `scope` is checked before anything is issued (`_check_scope`,
+    OI-2-oauth2-scope): 400 `invalid_scope` names the first API that is
+    not published, not exposed by the named AEF, or not visible to the
+    invoker.
     """
     if body.grant_type != "client_credentials":
         return JSONResponse(status_code=400, content={"error": "unsupported_grant_type"})
+    if body.client_secret is not None and body.client_assertion is not None:
+        return _token_error("invalid_request", "use client_secret or client_assertion, not both")
     inv = db.get(InvokerRegistration, body.client_id)
     if inv is None:
-        return JSONResponse(status_code=400, content={"error": "invalid_client", "error_description": "invoker not registered"})
-    if not _verify_secret(body.client_secret or "", inv.onboarding_secret_hash):
-        return JSONResponse(status_code=400, content={"error": "unauthorized_client", "error_description": "onboarding secret not valid"})
+        return _token_error("invalid_client", "invoker not registered")
+    if body.client_assertion is not None:
+        problem = _verify_client_assertion(db, inv, body)
+        if problem is not None:
+            db.rollback()
+            return _token_error("invalid_client", problem)
+    elif not _verify_secret(body.client_secret or "", inv.onboarding_secret_hash):
+        return _token_error("unauthorized_client", "onboarding secret not valid")
+    problem = _check_scope(db, body.scope, inv.api_invoker_id)
+    if problem is not None:
+        db.rollback()
+        return _token_error("invalid_scope", problem)
     token = secrets.token_urlsafe(32)
     expires_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=ACCESS_TOKEN_TTL_SECONDS)
-    db.add(IssuedAccessToken(access_token_hash=_hash_token(token), api_invoker_id=inv.api_invoker_id, expires_at=expires_at))
+    db.add(IssuedAccessToken(access_token_hash=_hash_token(token), api_invoker_id=inv.api_invoker_id,
+                             expires_at=expires_at, scope=body.scope or None))
     db.commit()
     return {"access_token": token, "expires_in": ACCESS_TOKEN_TTL_SECONDS, "token_type": "Bearer", "scope": body.scope}
 
@@ -226,12 +380,16 @@ def introspect_token(body: IntrospectRequest, db: Session = Depends(get_session)
     forward it; an unauthenticated internal call, matching the same
     network-isolation reasoning /bootstrap's own docstring already gives
     for staying unauthenticated itself (SME<->R1 Termination traffic
-    never leaves the docker-compose network).
+    never leaves the docker-compose network). `scope` is the granted scope
+    (RFC 7662 section 2.2), for the resource server that enforces it.
     """
     rec = db.get(IssuedAccessToken, _hash_token(body.token))
     if rec is None or as_utc(rec.expires_at) <= datetime.datetime.now(datetime.UTC):
         return {"active": False}
-    return {"active": True, "client_id": rec.api_invoker_id, "exp": int(as_utc(rec.expires_at).timestamp())}
+    view = {"active": True, "client_id": rec.api_invoker_id, "exp": int(as_utc(rec.expires_at).timestamp())}
+    if rec.scope:
+        view["scope"] = rec.scope
+    return view
 
 
 class SecurityInformationRequest(BaseModel):
@@ -474,8 +632,8 @@ def discover_services(api_invoker_id: str, api_name: str | None = None, api_vers
     it's a JSON blob here rather than the reference's relational
     AefProfile/Version/Resource join — same adaptation as the field's
     own storage). apiCat isn't — this build's ServiceProfile has no
-    category concept at all, a gap ServiceProfile's own flattening note
-    already covers.
+    category, and nothing that publishes a service supplies one
+    (OI-5-sme-filters).
     """
     stmt = select(ServiceProfile)
     if api_name:
@@ -484,15 +642,7 @@ def discover_services(api_invoker_id: str, api_name: str | None = None, api_vers
         stmt = stmt.where(ServiceProfile.version == api_version)
     rows = db.scalars(stmt).all()
 
-    visible = []
-    for r in rows:
-        if not _matches_aef_filters(r, aef_id, protocol, data_format, comm_type):
-            continue
-        policy = r.authz_policy
-        if policy is None or not policy.gates_discovery_visibility:
-            visible.append(r)
-        elif not policy.allowed_consumers or api_invoker_id in policy.allowed_consumers:
-            visible.append(r)
+    visible = [r for r in rows if _matches_aef_filters(r, aef_id, protocol, data_format, comm_type) and _visible_to(r, api_invoker_id)]
     return [_service_view(r) for r in visible]
 
 
@@ -516,21 +666,15 @@ def _matches_aef_filters(r: ServiceProfile, aef_id: str | None, protocol: str | 
 
 @app.post("/capif-events/v1/{subscriber_id}/subscriptions", status_code=201)
 def subscribe_events(subscriber_id: str, body: EventSubscriptionRequest, db: Session = Depends(get_session)):
-    """HISTORY.md §5: event subscription filtering was type-only
-    — the reference's own CAPIFEventFilter also filters by apiId/
-    apiInvokerId/aefId (eventservice.go's getMatchingSubs). Of those,
-    only apiId is meaningfully implementable here: apiInvokerId filters
-    against an event's own ApiInvokerIds, which only API_INVOKER_ONBOARDED
-    events carry — a real CAPIF Invoker-onboarding subsystem this build
-    doesn't have (see this module's own structurally-out-of-scope note);
-    our SERVICE_API_* notifications have no invoker id in their payload
-    to filter on. aefId likewise needs aefProfiles, which ServiceProfile
-    doesn't model (the separate "flattened ServiceProfile" gap). apiId
-    maps directly onto this build's own service_id, so that one's real.
-    """
+    """SubscribeEvent, with TS 29.222's CAPIFEventFilter (OI-5-sme-filters):
+    `apiIds` (this build's serviceIds), `apiInvokerIds` and `aefIds`. Each
+    filter that is set must share a value with the event — see
+    `_filters_match` — and an event that carries no value of that kind
+    does not match it."""
     if not set(body.eventTypes) <= EVENT_TYPES:
-        raise framework_error(FrameworkError.SUBSCRIPTION_SCOPE_CONFLICT, detail=f"eventTypes must be a subset of {EVENT_TYPES}")
-    sub = ServiceEventSubscription(subscriber_id=subscriber_id, event_types=body.eventTypes, callback_uri=body.callbackUri, api_ids=body.apiIds)
+        raise framework_error(FrameworkError.SUBSCRIPTION_SCOPE_CONFLICT, detail=f"eventTypes must be a subset of {sorted(EVENT_TYPES)}")
+    sub = ServiceEventSubscription(subscriber_id=subscriber_id, event_types=body.eventTypes, callback_uri=body.callbackUri,
+                                   api_ids=body.apiIds, api_invoker_ids=body.apiInvokerIds, aef_ids=body.aefIds)
     db.add(sub)
     db.commit()
     return {"subscriptionId": str(sub.subscription_id)}
@@ -544,27 +688,48 @@ def unsubscribe_events(subscriber_id: str, subscription_id: uuid.UUID, db: Sessi
         db.commit()
 
 
+def _aef_ids(service: ServiceProfile) -> set[str]:
+    return {p["aefId"] for p in service.aef_profiles or [] if p.get("aefId")}
+
+
+def _filters_match(sub: ServiceEventSubscription, detail: dict) -> bool:
+    """CAPIFEventFilter matching (eventservice.go's getMatchingSubs): every
+    filter the subscription sets must intersect the event's own values of
+    that kind; an unset filter matches anything."""
+    for wanted, carried in ((sub.api_ids, detail.get("apiIds")), (sub.api_invoker_ids, detail.get("apiInvokerIds")),
+                            (sub.aef_ids, detail.get("aefIds"))):
+        if wanted and not set(wanted) & set(carried or ()):
+            return False
+    return True
+
+
+def _deliver(db: Session, event_type: str, detail: dict, payload: dict, visible=lambda sub: True) -> None:
+    for sub in db.scalars(select(ServiceEventSubscription)).all():
+        if event_type in sub.event_types and _filters_match(sub, detail) and visible(sub):
+            post_webhook(sub.callback_uri, json={**payload, "subscriptionId": str(sub.subscription_id),
+                                                  "eventType": event_type, "eventDetail": detail}, timeout=5.0)
+            # Phase 1: best-effort; no retry/backoff queue yet
+
+
 def notify_service_change(db: Session, service: ServiceProfile, event_type: str) -> None:
-    """Producer-initiated push (HISTORY.md §5): now wired in from
+    """Producer-initiated push (HISTORY.md §5): wired in from
     register_service (SERVICE_API_AVAILABLE on create, SERVICE_API_UPDATE
     on the idempotent re-registration path) and deregister_service
     (SERVICE_API_UNAVAILABLE). Delivered to every subscriber whose
-    eventTypes includes event_type AND who is authorized to see the
-    service, per discover_services' own gate (section 2.2) — the
-    docstring already claimed this authz check but the code never
-    enforced it until now.
+    eventTypes includes event_type, whose filters match the service (its
+    serviceId and its AEFs), and who is authorized to see the service, per
+    discover_services' own gate (section 2.2).
     """
-    subs = db.scalars(select(ServiceEventSubscription)).all()
-    policy = service.authz_policy
-    for sub in subs:
-        if event_type not in sub.event_types:
-            continue
-        if sub.api_ids and str(service.service_id) not in sub.api_ids:
-            continue
-        if policy is not None and policy.gates_discovery_visibility and policy.allowed_consumers and sub.subscriber_id not in policy.allowed_consumers:
-            continue
-        post_webhook(sub.callback_uri, json={"serviceId": str(service.service_id), "eventType": event_type}, timeout=5.0)
-        # Phase 1: best-effort; no retry/backoff queue yet
+    detail = {"apiIds": [str(service.service_id)], "aefIds": sorted(_aef_ids(service))}
+    _deliver(db, event_type, detail, {"serviceId": str(service.service_id)},
+             visible=lambda sub: _visible_to(service, sub.subscriber_id))
+
+
+def notify_invoker_change(db: Session, api_invoker_id: str, event_type: str) -> None:
+    """OI-5-sme-filters: API_INVOKER_ONBOARDED / _UPDATED / _OFFBOARDED,
+    delivered to subscribers of the event type whose filters match the
+    invoker (an apiIds or aefIds filter never matches an invoker event)."""
+    _deliver(db, event_type, {"apiInvokerIds": [api_invoker_id]}, {"apiInvokerId": api_invoker_id})
 
 
 def _service_view(r: ServiceProfile) -> dict:
@@ -599,6 +764,7 @@ def list_providers(limit: int = PageLimit, offset: int = PageOffset, db: Session
 def list_invokers(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     page = paginate(db, select(InvokerRegistration), limit, offset)
     return {**page, "items": [{"apiInvokerId": i.api_invoker_id, "apiInvokerPublicKey": i.public_key,
+             "keyAuthentication": _pem_public_key(i.public_key) is not None,
              "trusted": db.get(TrustedInvoker, i.api_invoker_id) is not None}
             for i in page["items"]]}
 
@@ -620,5 +786,5 @@ def list_event_subscriptions(subscriber_id: str, limit: int = PageLimit, offset:
     stmt = select(ServiceEventSubscription).where(ServiceEventSubscription.subscriber_id == subscriber_id)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"subscriptionId": str(s.subscription_id), "subscriberId": s.subscriber_id, "eventTypes": s.event_types,
-             "callbackUri": s.callback_uri, "apiIds": s.api_ids}
+             "callbackUri": s.callback_uri, "apiIds": s.api_ids, "apiInvokerIds": s.api_invoker_ids, "aefIds": s.aef_ids}
             for s in page["items"]]}

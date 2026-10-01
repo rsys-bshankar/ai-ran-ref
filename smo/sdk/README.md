@@ -9,7 +9,7 @@
 | Depends on (over R1) | R1 Termination, for routes of SME, DME, RAN NF OAM (read-only inventory), MLMR, AIMgF, MLLF, MDAF, RAN Analytics, Intent Service. Through `smo_shared.r1_client.R1Client` |
 | Called by | The four sample rApps (`../samples/{energy-saving,mobility-optimization,coverage-optimization,traffic-steering}-rapp/app/main.py`); any rApp author. No SMO module imports it |
 | Database tables | None |
-| Unit tests | 101 passed (`tests/`, no network: a recording fake `R1Client`) |
+| Unit tests | 102 passed (`tests/`, no network: a recording fake `R1Client`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -227,7 +227,7 @@ Module function `energy_saving_expectation(object_instance, cells=None, max_ener
 | `list_published_services(apf_id)` | `GET /sme/published-apis/v1/{apf}/service-apis` | |
 | `unpublish_service(apf_id, service_id)` -> None | `DELETE /sme/published-apis/v1/{apf}/service-apis/{id}` | |
 | `discover_services(api_invoker_id=None, api_name=None, api_version=None, aef_id=None, protocol=None, data_format=None, comm_type=None)` | `GET /sme/service-apis/v1/allServiceAPIs` | |
-| `subscribe_to_events(subscriber_id, event_types, callback_uri, api_ids=None)` | `POST /sme/capif-events/v1/{subscriber}/subscriptions` | `callbackUri` is SME's CAPIF-fixed name |
+| `subscribe_to_events(subscriber_id, event_types, callback_uri, api_ids=None, api_invoker_ids=None, aef_ids=None)` | `POST /sme/capif-events/v1/{subscriber}/subscriptions` | `callbackUri` is SME's CAPIF-fixed name; the three lists are CAPIFEventFilter |
 | `list_event_subscriptions(subscriber_id)` | `GET /sme/capif-events/v1/{subscriber}/subscriptions` | |
 | `unsubscribe_from_events(subscriber_id, subscription_id)` -> None | `DELETE /sme/capif-events/v1/{subscriber}/subscriptions/{id}` | |
 | `execute_action(requested_by, changes, action_id=None, source_context=None, scope="single-ME", msac_role=None)` | `POST /dme/actions` | An O1 configuration action mediated by DME to RAN NF OAM (NETCONF). `action_id` is an idempotency key: a repeat is `IGNORED` (DME reports the original status). Same route as `data.mediate_action`, which has no `actionId` parameter |
@@ -272,7 +272,7 @@ Each test asserts the verb, path, params and body the client sends against a scr
 | `tests/test_analytics.py` | Producer registration (with explicit `mda_type`), reports, subscriptions with scope and `thresholdInfo` body, `create_mda_request` dropping unset fields, `publish_mda_report`, `get_prediction` (named PM prediction, none without reports); 4xx | 13 |
 | `tests/test_intent.py` | `create_intent`, `energy_saving_expectation`, get/list/admin-state/delete, reports, RMIH register/deregister/list; 4xx | 12 |
 | `tests/test_models.py` | Register (with domain and vendors), discover, get, update, deregister, upload, download (raw response, `SdkError` on 4xx), coordination groups | 11 |
-| `tests/test_platform.py` | Provider register/deregister, publish/list/unpublish service, discover, event subscribe/list/unsubscribe; 4xx | 10 |
+| `tests/test_platform.py` | Provider register/deregister, publish/list/unpublish service, discover, event subscribe (with every CAPIFEventFilter)/list/unsubscribe; 4xx | 11 |
 | `tests/test_wave10_wrappers.py` | `get_dataset` (reuses the consumer's job, pages records oldest first; creates a job; 404 for unknown dataset), `store_model` (registers once, then adds artifact versions), the `start_*`/`complete_*` wrappers, `execute_action`, `read_config`, autonomy dispatch | 5 |
 
 ### 3.3 What is not covered here
