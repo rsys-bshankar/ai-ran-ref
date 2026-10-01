@@ -6,11 +6,11 @@ are the five directories under [`../samples/`](../samples/):
 
 | Short name | Directory | What it demonstrates |
 |---|---|---|
-| hello-world | `samples/hello-world-rapp/` | The minimal package: the full rApp lifecycle (onboard, deploy, activate, retire) with no AI. Used by [`DEMO_RUNBOOK.md`](../DEMO_RUNBOOK.md) §0–§23. |
-| ES | `samples/energy-saving-rapp/` | Energy Saving: cell sleep/wake from PRB forecasts |
-| MO | `samples/mobility-optimization-rapp/` | Mobility Robustness Optimization: per-relation CIO |
-| CO | `samples/coverage-optimization-rapp/` | Coverage Optimization: joint tilt / power |
-| TS | `samples/traffic-steering-rapp/` | Traffic Steering: idle priority and connected CIO |
+| hello-world | [`samples/hello-world-rapp/`](../samples/hello-world-rapp/README.md) | The minimal package: the full rApp lifecycle (onboard, deploy, activate, retire) with no AI. Used by [`DEMO_RUNBOOK.md`](../DEMO_RUNBOOK.md) §0–§23. |
+| ES | [`samples/energy-saving-rapp/`](../samples/energy-saving-rapp/README.md) | Energy Saving: cell sleep/wake from PRB forecasts |
+| MO | [`samples/mobility-optimization-rapp/`](../samples/mobility-optimization-rapp/README.md) | Mobility Robustness Optimization: per-relation CIO |
+| CO | [`samples/coverage-optimization-rapp/`](../samples/coverage-optimization-rapp/README.md) | Coverage Optimization: joint tilt / power |
+| TS | [`samples/traffic-steering-rapp/`](../samples/traffic-steering-rapp/README.md) | Traffic Steering: idle priority and connected CIO |
 
 Onboarding is [`../onboarding/README.md`](../onboarding/README.md); the code is
 `onboarding/app/main.py` (`_validate_package`, `_parse_ai_capabilities`,

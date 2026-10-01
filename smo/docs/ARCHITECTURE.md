@@ -192,15 +192,17 @@ pattern:
   and is verified by read-back (`sdk.data.read_config` → `GET /ran-nf-oam/managed-entities/{me}/config`).
   KPI-driven reverts and rollbacks go straight to DME `/actions` with the
   execution's correlation id.
-- **Coordination.** The rApps read each other's published states over R1 so
-  they never act on the same cell or relation at once.
+- **Coordination.** Mobility, Coverage and Traffic Steering read peer rApps'
+  published states over R1 (peer instance ids in the instance config) so they
+  do not act on the same cell or relation at once. Energy Saving relies on RAN NF
+  OAM cell guards, neighbour load and alarms instead.
 
 | rApp | Sample | O1 actuator(s) | Call flow |
 |---|---|---|---|
-| EnergySaving | `samples/energy-saving-rapp/` | `NRCellDU.administrativeState` or `CESManagementFunction.energySavingControl` (per instance) | [22](call-flows/22-energy-saving-closed-loop.md) |
-| Mobility Optimization | `samples/mobility-optimization-rapp/` | `NRCellRelation.cellIndividualOffset` within `DMROFunction` bounds | [23](call-flows/23-mobility-optimization-closed-loop.md) |
-| Coverage Optimization | `samples/coverage-optimization-rapp/` | `CommonBeamformingFunction.digitalTilt`, `NRSectorCarrier.configuredMaxTxPower` | [24](call-flows/24-coverage-optimization-closed-loop.md) |
-| Traffic Steering | `samples/traffic-steering-rapp/` | `NRFreqRelation.cellReselectionPriority` (idle), `NRCellRelation.cellIndividualOffset` (connected) | [25](call-flows/25-traffic-steering-closed-loop.md) |
+| EnergySaving | [`samples/energy-saving-rapp/`](../samples/energy-saving-rapp/README.md) | `NRCellDU.administrativeState` or `CESManagementFunction.energySavingControl` (per instance) | [22](call-flows/22-energy-saving-closed-loop.md) |
+| Mobility Optimization | [`samples/mobility-optimization-rapp/`](../samples/mobility-optimization-rapp/README.md) | `NRCellRelation.cellIndividualOffset` within `DMROFunction` bounds | [23](call-flows/23-mobility-optimization-closed-loop.md) |
+| Coverage Optimization | [`samples/coverage-optimization-rapp/`](../samples/coverage-optimization-rapp/README.md) | `CommonBeamformingFunction.digitalTilt`, `NRSectorCarrier.configuredMaxTxPower` | [24](call-flows/24-coverage-optimization-closed-loop.md) |
+| Traffic Steering | [`samples/traffic-steering-rapp/`](../samples/traffic-steering-rapp/README.md) | `NRFreqRelation.cellReselectionPriority` (idle), `NRCellRelation.cellIndividualOffset` (connected) | [25](call-flows/25-traffic-steering-closed-loop.md) |
 
 Design decisions, work items and evidence for each are in
 [ROADMAP.md](ROADMAP.md) (waves 10.1–10.4).

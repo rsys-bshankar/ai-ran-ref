@@ -71,11 +71,11 @@ what each parameter means is in [`docs/RAPP_PACKAGING.md`](docs/RAPP_PACKAGING.m
 
 | rApp | Directory | Use case | R1 route | Call flow |
 |---|---|---|---|---|
-| Hello World | `samples/hello-world-rapp/` | Minimal package for the lifecycle demo (no AI) | none (not a service in compose) | [01](docs/call-flows/01-rapp-onboarding-to-deployment.md) |
-| Energy Saving | `samples/energy-saving-rapp/` | Cell sleep/wake | `/energy-saving-rapp` | [22](docs/call-flows/22-energy-saving-closed-loop.md) |
-| Mobility Optimization | `samples/mobility-optimization-rapp/` | Per-relation CIO | `/mobility-optimization-rapp` | [23](docs/call-flows/23-mobility-optimization-closed-loop.md) |
-| Coverage Optimization | `samples/coverage-optimization-rapp/` | Joint tilt / power | `/coverage-optimization-rapp` | [24](docs/call-flows/24-coverage-optimization-closed-loop.md) |
-| Traffic Steering | `samples/traffic-steering-rapp/` | Idle priority + connected CIO | `/traffic-steering-rapp` | [25](docs/call-flows/25-traffic-steering-closed-loop.md) |
+| [Hello World](samples/hello-world-rapp/README.md) | `samples/hello-world-rapp/` | Minimal package for the lifecycle demo (no AI) | none (not a service in compose) | [01](docs/call-flows/01-rapp-onboarding-to-deployment.md) |
+| [Energy Saving](samples/energy-saving-rapp/README.md) | `samples/energy-saving-rapp/` | Cell sleep/wake | `/energy-saving-rapp` | [22](docs/call-flows/22-energy-saving-closed-loop.md) |
+| [Mobility Optimization](samples/mobility-optimization-rapp/README.md) | `samples/mobility-optimization-rapp/` | Per-relation CIO | `/mobility-optimization-rapp` | [23](docs/call-flows/23-mobility-optimization-closed-loop.md) |
+| [Coverage Optimization](samples/coverage-optimization-rapp/README.md) | `samples/coverage-optimization-rapp/` | Joint tilt / power | `/coverage-optimization-rapp` | [24](docs/call-flows/24-coverage-optimization-closed-loop.md) |
+| [Traffic Steering](samples/traffic-steering-rapp/README.md) | `samples/traffic-steering-rapp/` | Idle priority + connected CIO | `/traffic-steering-rapp` | [25](docs/call-flows/25-traffic-steering-closed-loop.md) |
 
 R1 Termination's routing table is `ROUTES` in `r1-termination/app/main.py`.
 It strips the prefix before forwarding, so `/sme/capif-events/...` reaches SME's
@@ -150,6 +150,7 @@ smo/
   gui-bff/                  GUI backend-for-frontend: auth, RBAC (app/rbac.py), audit, R1 proxy
   samples/
     build_csar.py           builds samples/<name>.csar from samples/<name>/
+    <name>-rapp/README.md   each sample's README: what it does, design, package, API, tests
     hello-world-rapp/       minimal sample package used by DEMO_RUNBOOK.md §0–§23
     energy-saving-rapp/     Wave 10.1 rApp: service, model, decision engine, demo.py (§24)
     mobility-optimization-rapp/  Wave 10.2 rApp: service, model, MRO engine, demo.py (§25)
