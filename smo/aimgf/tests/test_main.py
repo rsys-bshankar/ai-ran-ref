@@ -97,6 +97,22 @@ class FakeNfo:
         return FakeResponse(204, None)
 
 
+def _patch_nfo(monkeypatch) -> FakeNfo:
+    """OPEN_ITEMS.md section 6.2: request_training/request_validation/
+    request_emulation now always call NFO, so any test that reaches one
+    of those routes without the full `mlmr` fixture (e.g. the
+    coordination-group-targeted DME tests below, which only care about
+    patching R1Client.get) still needs POST/DELETE faked, or it would hit
+    a real network call. Standalone from the `mlmr` fixture since several
+    of those tests patch `.get` themselves for an unrelated reason (DME,
+    not MLMR's own model-existence check).
+    """
+    fake_nfo = FakeNfo()
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: fake_nfo.post(path, json=json, **kw))
+    monkeypatch.setattr("app.main.R1Client.delete", lambda self, path, **kw: fake_nfo.delete(path, **kw))
+    return fake_nfo
+
+
 @pytest.fixture
 def db_session_factory():
     engine = make_test_engine()
@@ -238,6 +254,7 @@ def test_request_training_accepts_known_dme_data_job_ids(client, monkeypatch):
         return FakeResponse(200, {})
 
     monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    _patch_nfo(monkeypatch)
     data_job_id = uuid.uuid4()
     resp = client.post("/training-jobs", json={
         "modelCoordinationGroupId": str(uuid.uuid4()), "producerId": "rapp-1",
@@ -254,6 +271,7 @@ def test_request_training_without_dme_data_job_ids_skips_the_check_entirely(clie
     """
     called = []
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: called.append(path))
+    _patch_nfo(monkeypatch)
     resp = client.post("/training-jobs", json={"modelCoordinationGroupId": str(uuid.uuid4()), "producerId": "rapp-1"})
     assert resp.status_code == 201
     assert called == []
@@ -261,6 +279,7 @@ def test_request_training_without_dme_data_job_ids_skips_the_check_entirely(clie
 
 def test_training_job_status_exposes_dme_data_job_ids(client, monkeypatch):
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeResponse(200, {}))
+    _patch_nfo(monkeypatch)
     data_job_id = uuid.uuid4()
     resp = client.post("/training-jobs", json={
         "modelCoordinationGroupId": str(uuid.uuid4()), "producerId": "rapp-1", "dmeDataJobIds": [str(data_job_id)],
@@ -313,6 +332,7 @@ def test_complete_training_for_coordination_group_job_never_touches_a_model_life
     event fired at creation either for a group target).
     """
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeResponse(200, {}))
+    _patch_nfo(monkeypatch)
     training_job_id = client.post("/training-jobs", json={
         "modelCoordinationGroupId": str(uuid.uuid4()), "producerId": "rapp-1",
     }).json()["trainingJobId"]
@@ -922,6 +942,113 @@ def test_request_inference_on_active_runtime_creates_a_running_job(client, mlmr,
     assert client.get(f"/inference-jobs/{job_id}/status").json()["status"] == "RUNNING"
 
 
+# ---------------------------------------------------------------- OPEN_ITEMS.md section 6.2: NFO-backed execution runtimes
+
+def test_request_training_creates_a_real_nfo_execution_runtime(client, mlmr):
+    model_id = mlmr.add_model()
+    training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+
+    status = client.get(f"/training-jobs/{training_job_id}/status").json()
+    assert status["nfDeploymentId"] is not None
+    assert uuid.UUID(status["nfDeploymentId"]) in {uuid.UUID(d) for d in mlmr.nfo.deployments}
+
+
+def test_complete_training_tears_down_the_execution_runtime(client, mlmr):
+    model_id = mlmr.add_model()
+    training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    deployment_id = client.get(f"/training-jobs/{training_job_id}/status").json()["nfDeploymentId"]
+    assert deployment_id in mlmr.nfo.deployments
+
+    resp = client.post(f"/training-jobs/{training_job_id}/complete", json={"succeeded": True})
+    assert resp.json()["nfDeploymentId"] is None
+    assert deployment_id not in mlmr.nfo.deployments
+
+
+def test_request_training_while_already_training_terminates_the_orphaned_jobs_runtime(client, mlmr):
+    """OPEN_ITEMS.md section 6.2: a superseded orphaned job (already
+    covered by request_training's own CANCELLED handling) doesn't just
+    stop being tracked — its own real execution runtime is abandoned
+    right alongside it, not left running indefinitely.
+    """
+    model_id = mlmr.add_model()
+    first_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
+    first_deployment_id = client.get(f"/training-jobs/{first_job_id}/status").json()["nfDeploymentId"]
+    assert first_deployment_id in mlmr.nfo.deployments
+
+    client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
+
+    assert first_deployment_id not in mlmr.nfo.deployments
+    assert client.get(f"/training-jobs/{first_job_id}/status").json()["nfDeploymentId"] is None
+
+
+def test_coordination_group_training_job_also_gets_a_real_execution_runtime(client, monkeypatch):
+    """A group-targeted job has no single model to advance (the existing
+    asymmetry), but it still needs somewhere to actually execute — the
+    NFO call isn't skipped for it the way the lifecycle event is.
+    """
+    fake_nfo = _patch_nfo(monkeypatch)
+    training_job_id = client.post("/training-jobs", json={
+        "modelCoordinationGroupId": str(uuid.uuid4()), "producerId": "rapp-1",
+    }).json()["trainingJobId"]
+
+    status = client.get(f"/training-jobs/{training_job_id}/status").json()
+    assert status["nfDeploymentId"] is not None
+    assert status["nfDeploymentId"] in fake_nfo.deployments
+
+
+def test_request_validation_creates_and_complete_tears_down_a_real_execution_runtime(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
+    job_id = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["validationJobId"]
+
+    created = client.get(f"/validation-jobs/{job_id}/status").json()
+    assert created["nfDeploymentId"] is not None
+    assert created["nfDeploymentId"] in mlmr.nfo.deployments
+
+    completed = client.post(f"/validation-jobs/{job_id}/complete", json={"succeeded": True}).json()
+    assert completed["nfDeploymentId"] is None
+    assert created["nfDeploymentId"] not in mlmr.nfo.deployments
+
+
+def test_request_emulation_creates_and_complete_tears_down_a_real_execution_runtime(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED, validation_approved=True)
+    job_id = client.post("/emulation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["emulationJobId"]
+
+    created = client.get(f"/emulation-jobs/{job_id}/status").json()
+    assert created["nfDeploymentId"] is not None
+    assert created["nfDeploymentId"] in mlmr.nfo.deployments
+
+    completed = client.post(f"/emulation-jobs/{job_id}/complete", json={"succeeded": True}).json()
+    assert completed["nfDeploymentId"] is None
+    assert created["nfDeploymentId"] not in mlmr.nfo.deployments
+
+
+def test_request_inference_references_the_models_already_live_serving_deployment(client, mlmr, db_session_factory):
+    """OPEN_ITEMS.md section 6.2: MLIF doesn't create a new NFO deployment
+    per inference call — it references the model's own already-live
+    serving deployment (ModelLifecycle.nf_deployment_id, real since
+    deploy_model_runtime's own NFO call), closing the gap without
+    duplicating that runtime.
+    """
+    model_id = mlmr.add_model()
+    serving_deployment_id = uuid.uuid4()
+    _set_lifecycle(db_session_factory, model_id, runtime_lifecycle_state=RuntimeLifecycleState.ACTIVE)
+    with db_session_factory() as session:
+        lifecycle = session.get(ModelLifecycle, model_id)
+        lifecycle.nf_deployment_id = serving_deployment_id
+        session.commit()
+
+    job_id = client.post(f"/models/{model_id}/inference-jobs").json()["inferenceJobId"]
+
+    status = client.get(f"/inference-jobs/{job_id}/status").json()
+    assert status["nfDeploymentId"] == str(serving_deployment_id)
+    # no new deployment was created — the only one NFO ever saw is the
+    # pre-existing serving one, stamped directly, not round-tripped
+    # through a POST /nfo/deployments call.
+    assert serving_deployment_id not in {uuid.UUID(d) for d in mlmr.nfo.deployments}
+
+
 def test_health_check_answers_the_gui_bff_liveness_probe(client):
     """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
     resp = client.get("/health")
@@ -951,7 +1078,8 @@ def test_list_inference_jobs_filters_by_model(client, mlmr, db_session_factory):
     job_id = client.post(f"/models/{model_id}/inference-jobs").json()["inferenceJobId"]
 
     listed = client.get("/inference-jobs", params={"model_id": str(model_id)}).json()["items"]
-    assert listed == [{"inferenceJobId": job_id, "modelId": str(model_id), "status": "RUNNING", "notificationDestination": None}]
+    assert listed == [{"inferenceJobId": job_id, "modelId": str(model_id), "status": "RUNNING",
+                        "notificationDestination": None, "nfDeploymentId": None}]
     assert client.get("/inference-jobs", params={"status": "COMPLETED"}).json()["items"] == []
 
 

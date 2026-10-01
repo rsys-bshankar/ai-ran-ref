@@ -248,6 +248,7 @@ function TrainingTable({ rows, loading, error }: { rows?: TrainingJob[]; loading
         { header: "Target", render: (j) => j.modelId ? (modelName(j.modelId) ?? <Id value={j.modelId} />) : <>group <Id value={j.modelCoordinationGroupId} /></> },
         { header: "Producer", render: (j) => j.producerId },
         { header: "Status", render: (j) => <StateBadge state={j.status} /> },
+        { header: "Runtime", render: (j) => <Id value={j.nfDeploymentId} /> },
         { header: "Metrics", render: (j) => <div className="row gap">
           {j.modelMetrics && <button className="btn small" onClick={() => setMetricsFor(j)}>View</button>}
           <Can method="POST" path={`/aimgf/training-jobs/${j.trainingJobId}/model-metrics`}><button className="btn small" onClick={() => setWriteFor(j)}>{j.modelMetrics ? "Update" : "Write back"}</button></Can>
@@ -281,6 +282,7 @@ function InferenceTable({ rows, loading, error }: { rows?: InferenceJob[]; loadi
       { header: "Job", render: (j) => <Id value={j.inferenceJobId} /> },
       { header: "Model", render: (j) => modelName(j.modelId) ?? <Id value={j.modelId} /> },
       { header: "Status", render: (j) => <StateBadge state={j.status} /> },
+      { header: "Runtime", render: (j) => <Id value={j.nfDeploymentId} /> },
       { header: "", className: "actions", render: (j) => j.status === "RUNNING" && (
         <div className="row gap end">
           <ActionButton label="Completed" action={{ method: "POST", path: `/aimgf/inference-jobs/${j.inferenceJobId}/resolve`, query: { succeeded: true }, success: "Inference COMPLETED" }} />
