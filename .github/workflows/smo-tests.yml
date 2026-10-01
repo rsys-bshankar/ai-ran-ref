@@ -6,6 +6,7 @@ on:
     paths: ["smo/**", ".github/workflows/smo-tests.yml"]
   pull_request:
     paths: ["smo/**", ".github/workflows/smo-tests.yml"]
+  workflow_dispatch:
 
 # Every job only checks out and runs tests: the GITHUB_TOKEN needs nothing
 # beyond reading the repository.
@@ -115,6 +116,66 @@ jobs:
       - name: docker compose config
         working-directory: smo
         run: docker compose config --quiet
+
+  compose-e2e:
+    name: Full docker-compose stack runs end to end
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docker compose up --build
+        working-directory: smo
+        env:
+          # No TLS terminator in front of the GUI in CI.
+          GUI_COOKIE_SECURE: "false"
+        run: docker compose up -d --build
+
+      - name: Serve the sample CSAR on the compose network (DEMO_RUNBOOK §1)
+        working-directory: smo
+        run: |
+          docker compose cp samples/hello-world-rapp.csar r1-termination:/tmp/hello-world-rapp.csar
+          docker compose exec -d r1-termination python3 -m http.server 8899 --directory /tmp
+
+      - name: Every service healthy + onboard, deploy, bootstrap (DEMO_RUNBOOK §2-§4)
+        working-directory: smo
+        run: docker compose exec -T r1-termination python3 - < scripts/compose_e2e.py
+
+      - name: a1_mock_net isolation (RT-7)
+        working-directory: smo
+        run: |
+          reach='import socket,sys; s=socket.socket(); s.settimeout(3); s.connect((sys.argv[1],int(sys.argv[2])))'
+          # a1-related is on both networks: it reaches the mock.
+          docker compose exec -T a1-related python3 -c "$reach" mock-near-rt-ric 8000
+          # r1-termination is only on `default`: the mock must not resolve.
+          if docker compose exec -T r1-termination python3 -c "$reach" mock-near-rt-ric 8000; then
+            echo "::error::mock-near-rt-ric reachable from the default network"; exit 1
+          fi
+          # `internal: true`: the mock has no route out.
+          if docker compose exec -T mock-near-rt-ric python3 -c "$reach" 1.1.1.1 443; then
+            echo "::error::mock-near-rt-ric has a route out of a1_mock_net"; exit 1
+          fi
+          # Only the documented host ports are published.
+          published=$(docker compose ps --format json | jq -rs '[.[] | select(any(.Publishers[]?; .PublishedPort > 0)) | .Service] | unique | join(" ")')
+          echo "services publishing host ports: $published"
+          [ "$published" = "gui postgres r1-termination" ]
+
+      - name: GUI serves the SPA and proxies /api to the BFF
+        run: |
+          curl -fsS --retry 10 --retry-delay 3 --retry-connrefused http://localhost:3000/ | grep -qi '<div id="root"'
+          curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:3000/api/modules/status
+
+      - name: Dump logs on failure
+        if: failure()
+        working-directory: smo
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail=200
+
+      - name: Tear down
+        if: always()
+        working-directory: smo
+        run: docker compose down -v
 
   migration-postgres:
     name: Consolidated migration applies to real Postgres

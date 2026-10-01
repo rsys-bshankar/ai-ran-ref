@@ -168,7 +168,6 @@ Every other status and body is the backend's, passed through.
 - No rate limiting, retry, circuit breaking or request-size limit.
 - Backend transport failures give 500 rather than 502/504; the default 5 s upstream timeout also caps any longer per-call timeout a caller sets further upstream.
 - Upstream response headers are forwarded verbatim, including those describing the encoding of the original body.
-- The full `docker-compose` stack has not been run end to end ([OI-2-compose-e2e](../OPEN_ITEMS.md)).
 - Test depth ([OI-4](../OPEN_ITEMS.md)).
 
 ## 3. Unit tests

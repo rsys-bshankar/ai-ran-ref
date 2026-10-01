@@ -113,7 +113,7 @@ Ids persist between steps in `$DEMO_STATE` (default `/tmp/coverage-optimization-
 ## Limits
 
 - One knob per cell per change, and at most 2 cells per pass.
-- The 5 % objective threshold is the same for every problem class and cell. Per-cell, per-class thresholds are listed in [OPEN_ITEMS.md](../../OPEN_ITEMS.md) (W10.3-thresholds).
+- The 5 % objective threshold is the same for every problem class and cell. Per-cell, per-class thresholds are noted in [HISTORY.md](../../HISTORY.md) (W10.3-thresholds).
 - The model is linear in the reach steps and needs training history in which tilt and power varied.
 - Peer states are read by polling R1; an unreachable peer is treated as "no information", not as a block.
 - `supportedVendorModes` lists `O1_NETCONF` and `O1_RESTCONF`; RAN NF OAM dispatches over whichever the managed element is provisioned for.

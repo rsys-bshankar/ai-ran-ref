@@ -144,7 +144,21 @@ Recurring conventions referred to below:
 - **OI-2-adopt-pattern-only** — Decision: ADOPT repos (`nonrtric-plt-sme`, ICS, `pti-o2`, …) are
   pattern references only; one Python/FastAPI stack, nothing vendored.
 - **OI-2-compose-config** — CI job `docker-compose-config` runs `docker compose config --quiet`.
-  A full `docker compose up` run stays open (OPEN_ITEMS OI-2-compose-e2e).
+- **OI-2-compose-e2e** — CI job `compose-e2e` (`smo-tests.yml`, GitHub's Docker-enabled
+  `ubuntu-latest`) runs `docker compose up -d --build` on the full stack, then:
+  - serves the sample CSAR on the compose network (DEMO_RUNBOOK §1) and runs
+    `scripts/compose_e2e.py` inside `r1-termination`: every service answers (`/health`; gui-bff and
+    the mock O1 adaptor, which have none, answer HTTP), the CSAR onboards to `AVAILABLE`, an rApp
+    instance deploys with an `oauthClientId`, `/bootstrap` names `service-apis`, and an
+    unauthenticated routed call is rejected (§2–§4);
+  - checks the `a1_mock_net` isolation (RT-7): `a1-related` reaches `mock-near-rt-ric`, the default
+    network cannot resolve it, and it has no route out (`internal: true`); only `gui`, `postgres`
+    and `r1-termination` publish host ports;
+  - checks the GUI serves the SPA and proxies `/api`; dumps logs on failure; `docker compose down -v`.
+  Also runnable by hand (`workflow_dispatch`). First run found no stack defect, only a bug in the
+  job's own port check.
+  - **Not taken:** DEMO_RUNBOOK §5–§27 against the live stack (those still replay in-process via
+    `tests_integration/test_demo_runbook.py`); extending the script is the next step.
 
 **Lifecycle (LCM) defects found by call flows 06, 07, 26 and 27, all fixed:**
 - **OI-2-terminate-workload** — `TERMINATE` releases the instance's resources
@@ -624,6 +638,8 @@ coverage alarm / override; hard, medium and soft guards; retries 0/5/10/20 s; re
 verification; rollback. LOCK follows the autonomy mode; wake/rollback/override go straight to DME.
 Exit review: 15/15 criteria, TC01–TC33 and Demo 00–11 green in CI. Deviations:
 NRCellDU target (D-2), no LSTM, no `GET /dme/datasets/{name}`, simulated NETCONF timeouts.
+**Not taken (W10-B1):** EnergySaving LSTM model variant (D-6 backlog); the shipped model is threshold +
+regression. Approach if wanted: a second model type in the same package, compared in validation.
 
 ### W10.2 — Mobility Optimization rApp — #148
 - D10.2-1 Per-relation `NRCellRelation.cellIndividualOffset` plus `DMROFunction` bounds.
@@ -643,6 +659,8 @@ entries; build-specific counter names.
   Mobility coordination; protected/alarmed cells.
 Exit review: 15/15, CCO-01..20 and Demo 00–11 green on a closed loop over a
 linear propagation model. Deviations: dBm power units, element-wide alarm hold, fixed 5 % thresholds.
+**Not taken (W10.3-thresholds):** the objective uses a fixed 5 % threshold per problem class; per-cell,
+per-class thresholds from the TS 28.541 CCO parameter sets are a refinement.
 
 ### W10.4 — Traffic Steering rApp — #150
 - D10.4-1 Idle `NRFreqRelation.cellReselectionPriority` and connected `NRCellRelation` CIO; shared

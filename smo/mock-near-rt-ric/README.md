@@ -105,7 +105,7 @@ None: no ProblemDetails are produced. Failure is expressed as `enforcementStatus
 - **Global duplicate scope.** Duplicate detection ignores the RIC id.
 - **A failed update to a duplicate** leaves the policy's earlier fingerprint in place while marking it `REJECTED`.
 - **Volatile.** All state is process memory.
-- Open items about the A1 side live in A1 Related (`OI-5-a1-ric-inventory`, `OI-1-a1-ml`); the compose isolation (`a1_mock_net`) is unverified end to end because the full stack has not been run (`OI-2-compose-e2e`). The route table in R1 Termination does not include it.
+- Open items about the A1 side live in A1 Related (`OI-5-a1-ric-inventory`, `OI-1-a1-ml`); the compose isolation (`a1_mock_net`) is checked on a live stack by the `compose-e2e` CI job (`OI-2-compose-e2e`, HISTORY.md). The route table in R1 Termination does not include it.
 
 ## 3. Unit tests
 
@@ -125,7 +125,7 @@ An autouse fixture clears `_policies` and `_fingerprints` between tests.
 
 ### 3.3 What is not covered here
 
-- The A1 Related <-> mock round trip and the compose network isolation: `tests_integration/` (round trip); the isolation is not verified anywhere (`OI-2-compose-e2e`).
+- The A1 Related <-> mock round trip and the compose network isolation: `tests_integration/` (round trip); the isolation is verified on a live stack by the `compose-e2e` CI job (HISTORY.md `OI-2-compose-e2e`).
 - A1AP conformance: not implemented.
 
 ## 4. References

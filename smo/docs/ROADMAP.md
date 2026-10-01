@@ -283,11 +283,11 @@ CIO bias (`samples/traffic-steering-rapp/`, call flow 25).
 
 | ID | Item | Status |
 |---|---|---|
-| W10-B1 | Energy model LSTM variant (D-6): PRB → PRB for the next N windows | Open |
+| W10-B1 | Energy model LSTM variant (D-6): PRB → PRB for the next N windows | Not taken; recorded in HISTORY.md (W10.1) |
 | W10-B2 | `CESManagementFunction.energySavingControl` as an alternative actuator (D-2) | Built in Wave 10.1: actuator selectable per instance (`actuator: ENERGY_SAVING_CONTROL`); covered in `test_energy_saving_rapp.py` |
 | W10.3-00 | Coverage Optimization (RSRP → tilt) | Built as [Wave 10.3](#wave-103) |
 | W10.4-00 | Traffic Steering (congestion → reselection bias) | Built as [Wave 10.4](#wave-104) |
-| — | Coverage: per-cell, per-class thresholds from the TS 28.541 CCO parameter sets (instead of the fixed 5 % excess) | Open (refinement noted at the 10.3 exit) |
+| — | Coverage: per-cell, per-class thresholds from the TS 28.541 CCO parameter sets (instead of the fixed 5 % excess) | Not taken; recorded in HISTORY.md (W10.3) |
 | — | NFO scaling with a target size (replicas / resources) | Open; see [Gap analysis](#gap-analysis-w7-01) |
 
 ## Standards compliance
