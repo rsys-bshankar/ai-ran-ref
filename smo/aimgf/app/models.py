@@ -62,6 +62,15 @@ class ValidationJob(Base):
     # (a DME DmeTypeId, set on completion).
     notification_uri: Mapped[str | None] = mapped_column(String)
     outcome_artifact_dme_type_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    # OPEN_ITEMS.md section 6.2: a real NFO-backed execution runtime for
+    # this validation run — same bare-UUID cross-module-reference shape as
+    # ModelLifecycle's own nf_deployment_descriptor_id/nf_deployment_id
+    # (NFO runs in its own process; referential integrity enforced at the
+    # DB level by migrations/001_init.sql's own FK on the descriptor
+    # column). Set on request, cleared on completion once NFO tears the
+    # transient deployment down.
+    nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
 
 
 class EmulationJob(Base):
@@ -80,6 +89,9 @@ class EmulationJob(Base):
     # OPEN_ITEMS.md section 6.5: same pair as ValidationJob's own.
     notification_uri: Mapped[str | None] = mapped_column(String)
     outcome_artifact_dme_type_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    # OPEN_ITEMS.md section 6.2: same pair as ValidationJob's own.
+    nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
 
 
 class CertificationRecord(Base):
@@ -198,6 +210,10 @@ class TrainingJob(Base):
     # this build, so only two of the spec's four values are ever
     # produced here — an honest partial mapping, not a fabricated one.
     ml_training_type: Mapped[str | None] = mapped_column(String)
+    # OPEN_ITEMS.md section 6.2: a real NFO-backed execution runtime for
+    # this training run — same pair as ValidationJob/EmulationJob's own.
+    nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
 
 
 class InferenceJob(Base):
@@ -206,6 +222,19 @@ class InferenceJob(Base):
     inference_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     model_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)  # bare UUID — see TrainingJob's docstring
     status: Mapped[str] = mapped_column(String, nullable=False, default="RUNNING")
+    # OPEN_ITEMS.md section 6.2: unlike TrainingJob/ValidationJob/
+    # EmulationJob (each a transient batch run that gets its own fresh
+    # NFO descriptor+deployment, torn down on completion), an
+    # InferenceJob doesn't create a new NFO deployment of its own —
+    # request_inference is already gated on RuntimeLifecycleState.ACTIVE,
+    # which means ModelLifecycle.nf_deployment_id (deploy_model_runtime's
+    # own real NFO call) is already a live serving deployment. Creating a
+    # second, parallel one per inference call would duplicate that
+    # runtime rather than use it. This is a read-only reference, stamped
+    # from the lifecycle at request time — MLIF's own "which NFO
+    # deployment actually served this inference" becomes a real,
+    # queryable fact instead of unlinked.
+    nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     notification_destination: Mapped[str | None] = mapped_column(String)
 
 

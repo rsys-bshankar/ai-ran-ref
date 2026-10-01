@@ -2677,7 +2677,7 @@ Whether the same operator-gate treatment should extend to Runtime transitions wa
 of the original question and hasn't been decided — flagged in call flow 17 as a candidate
 for the same decision, not folded into it.
 
-### 6.2 DECIDED: real NFO-backed execution runtimes for MLTF/MLVF/MLEF/MLIF
+### 6.2 DECIDED: real NFO-backed execution runtimes for MLTF/MLVF/MLEF/MLIF — CLOSED
 
 Today, "MLTF trains (Phase 1: elided)" / "MLVF validates (Phase 1: elided)" / "MLEF
 emulates (Phase 1: elided)" (call flow 02) are bare comments — no NFO `CreateDescriptor`/
@@ -2688,17 +2688,43 @@ really call NFO) — those exist for a model's *serving* runtime only, post-cert
 nothing analogous exists for the *execution* engines that produce a trained/validated/
 emulated model or run inference in the first place.
 
-**Decision** (user, this pass): build a real NFO-backed execution runtime for all four —
-MLTF, MLVF, MLEF, and MLIF — not just MLIF/serving as today. Not yet built. This is a
-significant new architecture layer: each of `RequestTraining`/`RequestValidation`/
-`RequestEmulation`/`RequestInference` would need to drive its own NFO
-`CreateDescriptor`/`Instantiate` (and presumably `Terminate` on completion), analogous to
-what `RequestModelRuntimeDeploy` already does, but for a transient execution job rather
-than a long-lived serving deployment. Needs its own design pass on: whether all four share
-one workload-template shape or each needs its own; how a job's NFO deployment ID surfaces
-back onto `TrainingJob`/`ValidationJob`/`EmulationJob` (which have no such field today);
-and whether `advance()`/`complete()` become NFO-driven callbacks instead of bare
-caller-pushed transitions once real execution exists to report completion from.
+**Closed.** Training/Validation/Emulation each gained a real NFO-backed execution
+runtime: `request_training`/`request_validation`/`request_emulation` now call a shared
+`_nfo_create_execution_descriptor`/`_nfo_instantiate_execution` helper pair (same
+`CreateDescriptor(packageId=null, workloadTemplate)`/`Instantiate` shape
+`RuntimeLifecycle`'s own `_nfo_create_descriptor`/`_nfo_instantiate` already use for a
+model's serving runtime, parameterized by job kind/id — `{"jobKind": "TRAINING",
+"jobId": ...}` etc — instead of model id, so one workload-template shape serves all
+three) right after the job row is created, storing the result on two new fields —
+`nf_deployment_descriptor_id`/`nf_deployment_id` — added to `TrainingJob`/
+`ValidationJob`/`EmulationJob` (exposed as `nfDeploymentId` on each job's own status/list
+views). Unlike `RuntimeLifecycle`'s long-lived serving deployment, an execution job's
+runtime is transient: `complete_training`/`complete_validation`/`complete_emulation` call
+a matching `_nfo_terminate_execution` helper (`DELETE /nfo/deployments/{id}`) and clear
+the field once the run is done, rather than leaving it running. A superseded orphaned
+training job (the existing CANCELLED-on-supersede handling in `request_training`) gets
+its own runtime torn down the same way, rather than abandoned and left running. A
+coordination-group-targeted training job gets a real runtime too — a training run needs
+somewhere to actually execute regardless of which kind of target it names, the same way
+the job row itself is always created either way; only the model-lifecycle event is
+asymmetric for that target type, not the NFO call.
+
+MLIF/Inference deliberately does **not** follow this same shape, by design rather than
+oversight: `request_inference` is already gated on `RuntimeLifecycleState.ACTIVE`, which
+means `ModelLifecycle.nf_deployment_id` (`RequestModelRuntimeDeploy`'s own real NFO call,
+already built) is already a live serving deployment — creating a second, parallel NFO
+deployment per individual inference call would duplicate that runtime rather than use it.
+Instead, `InferenceJob` gained a single `nf_deployment_id` field that's a **read-only
+reference**, stamped from the model's own `ModelLifecycle.nf_deployment_id` at request
+time, no new NFO call involved — "which NFO deployment actually served this inference"
+becomes a real, queryable fact instead of unlinked, without inventing a redundant
+per-call deployment mechanism. `advance()`/`complete()` stay bare caller-pushed
+transitions, not NFO-driven callbacks — real execution existing now doesn't change who
+reports completion; that's still a caller decision in this build, matching how every
+other job-completion route (e.g. `report_performance`, `publish_report`) already works.
+Call flow 02 updated to show both shapes (create+terminate for the three batch engines;
+a stamp-only reference for Inference) and `OPEN_ITEMS.md`/call flow 20's own forward
+references to this item updated to reflect it's built.
 
 ### 6.3 DECIDED: rApp Autonomy Modes — AUTONOMOUS / ASSIST / SHADOW
 
@@ -2849,13 +2875,11 @@ source NF or an operator, unaffected by FM's DME registration.
 0. **§6's seven AI/ML-pipeline items are the current front of the queue** — pick these up
    one at a time, per the user's own stated preference, rather than in a batch.
    ~~6.7 (FM→DME registration)~~, ~~6.6 (SO-SMOS dispatch entries)~~, ~~6.4
-   (training-data-DME validation)~~, ~~6.5 (training-outcome artifact/notification)~~, and
-   ~~6.1 (operator gate on Training/Validation/Emulation)~~ — **five closed**, the first
-   five items off this list (see each one's own entry above). Remaining suggested order,
-   easiest/most self-contained first: 6.2
-   (real NFO-backed execution runtimes — the largest code change of the seven) → 6.3 (rApp
-   Autonomy Modes — the largest *design* change of the seven, and the one the other six
-   don't block on, so it can move independently of where the rest land).
+   (training-data-DME validation)~~, ~~6.5 (training-outcome artifact/notification)~~,
+   ~~6.1 (operator gate on Training/Validation/Emulation)~~, and ~~6.2 (real NFO-backed
+   execution runtimes for MLTF/MLVF/MLEF/MLIF)~~ — **six closed**, the first six items off
+   this list (see each one's own entry above). Remaining: 6.3 (rApp Autonomy Modes — the
+   largest *design* change of the seven, and the only one left).
 1. **§5 is now fully closed — confirmed, not assumed** (see the
    "§5 audit" entry above). Every module's repo-audited completeness
    gap has been read end to end and is struck through. Do not

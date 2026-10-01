@@ -54,8 +54,17 @@ export interface TrainingJob {
   trainingJobId: string; modelId: string | null; modelCoordinationGroupId: string | null; producerId: string;
   status: string; runId: string | null; trainingDataset: string | null; validationDataset: string | null;
   modelMetrics: Record<string, unknown> | null;
+  // OPEN_ITEMS.md section 6.2: MLTF's own real NFO-backed execution
+  // runtime — set on request, cleared once the run completes.
+  nfDeploymentId: string | null;
 }
-export interface InferenceJob { inferenceJobId: string; modelId: string; status: string; notificationDestination: string | null }
+export interface InferenceJob {
+  inferenceJobId: string; modelId: string; status: string; notificationDestination: string | null;
+  // OPEN_ITEMS.md section 6.2: a reference to the model's own already-live
+  // serving deployment (ModelLifecycle.nfDeploymentId) — not a new NFO
+  // deployment of this job's own.
+  nfDeploymentId: string | null;
+}
 export interface CoordinationGroup {
   groupId: string; groupType: string; memberModelIds: string[]; memberUseCases: string[];
   sharedFeaturePipelineRef: string | null; retrainPropagation: string;

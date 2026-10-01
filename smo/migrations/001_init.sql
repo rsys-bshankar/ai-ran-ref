@@ -642,6 +642,11 @@ CREATE TABLE training_job (
   -- OPEN_ITEMS.md section 6.5: where the training run's real output
   -- artifact lives — a DME DmeTypeId reference, set on completion.
   outcome_artifact_dme_type_id                                     UUID,
+  -- OPEN_ITEMS.md section 6.2: a real NFO-backed execution runtime for
+  -- this training run — same bare-UUID cross-module-reference shape as
+  -- model_lifecycle's own pair. Set on request, cleared on completion.
+  nf_deployment_descriptor_id                                         UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
+  nf_deployment_id                                                       UUID,
   CONSTRAINT exactly_one_target CHECK (
     (model_id IS NOT NULL AND model_coordination_group_id IS NULL)
     OR (model_id IS NULL AND model_coordination_group_id IS NOT NULL)
@@ -676,7 +681,12 @@ CREATE TABLE inference_job (
   inference_job_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   model_id         UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
   status           TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','COMPLETED','FAILED')),
-  notification_destination TEXT
+  notification_destination TEXT,
+  -- OPEN_ITEMS.md section 6.2: a read-only reference to the model's own
+  -- already-live serving deployment (model_lifecycle.nf_deployment_id,
+  -- real since Wave 2) — not a new NFO deployment of this job's own; see
+  -- app/models.py's InferenceJob docstring for why.
+  nf_deployment_id UUID
 );
 
 -- Wave 2 (AI Platform Service Decomposition): the full eight-aggregate
@@ -713,7 +723,10 @@ CREATE TABLE validation_job (
   metrics                       JSONB,
   -- OPEN_ITEMS.md section 6.5: same additive pair training_job gained.
   notification_uri                TEXT,
-  outcome_artifact_dme_type_id       UUID
+  outcome_artifact_dme_type_id       UUID,
+  -- OPEN_ITEMS.md section 6.2: same pair as training_job's own.
+  nf_deployment_descriptor_id          UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
+  nf_deployment_id                        UUID
 );
 
 CREATE TABLE emulation_job (
@@ -725,7 +738,10 @@ CREATE TABLE emulation_job (
   metrics                    JSONB,
   -- OPEN_ITEMS.md section 6.5: same pair as validation_job's own.
   notification_uri             TEXT,
-  outcome_artifact_dme_type_id    UUID
+  outcome_artifact_dme_type_id    UUID,
+  -- OPEN_ITEMS.md section 6.2: same pair as training_job's own.
+  nf_deployment_descriptor_id        UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
+  nf_deployment_id                      UUID
 );
 
 CREATE TABLE certification_record (

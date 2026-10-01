@@ -219,6 +219,51 @@ class CreateFeatureGroupRequest(BaseModel):
     sourceName: str | None = None
 
 
+# ---------------------------------------------------------------- Execution runtimes (jointly with NFO)
+
+def _nfo_create_execution_descriptor(job_kind: str, job_id: uuid.UUID) -> uuid.UUID:
+    """OPEN_ITEMS.md section 6.2: a real NFO-backed execution runtime for
+    Training/Validation/Emulation — "MLTF trains (Phase 1: elided)" /
+    "MLVF validates (Phase 1: elided)" / "MLEF emulates (Phase 1: elided)"
+    were bare comments with no NFO call behind them at all, a structurally
+    different elision from RuntimeLifecycle's own genuine
+    descriptor/instantiate/terminate calls (`_nfo_create_descriptor`/
+    `_nfo_instantiate` above), which exist only for a model's serving
+    runtime, post-certification. Same shape as those — no onboarded
+    ApplicationPackage behind a transient execution job either, so
+    packageId is omitted — parameterized by job kind/id instead of
+    model id, since all four (Training/Validation/Emulation share this
+    helper; Inference doesn't, see InferenceJob's own docstring) use one
+    workload-template shape rather than each inventing its own.
+    """
+    resp = _r1.post("/nfo/descriptors", json={
+        "packageId": None, "name": f"aimgf-{job_kind.lower()}-{job_id}",
+        "workloadTemplate": {"jobKind": job_kind, "jobId": str(job_id)},
+    })
+    return uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
+
+
+def _nfo_instantiate_execution(descriptor_id: uuid.UUID, job_kind: str, job_id: uuid.UUID) -> uuid.UUID:
+    resp = _r1.post("/nfo/deployments", json={
+        "nfDeploymentDescriptorId": str(descriptor_id), "name": f"aimgf-{job_kind.lower()}-{job_id}",
+    })
+    return uuid.UUID(resp.json()["nfDeploymentId"])
+
+
+def _nfo_terminate_execution(nf_deployment_id: uuid.UUID | None) -> None:
+    """Unlike RuntimeLifecycle's own long-lived serving deployment
+    (terminated only by an explicit `terminate_model_runtime` call), a
+    Training/Validation/Emulation job's own execution runtime is
+    transient by nature — the run is done once the job completes, so its
+    NFO deployment is torn down right alongside the job's own completion,
+    not left running indefinitely. A job whose request never actually
+    reached NFO (nf_deployment_id still None — can't happen on the happy
+    path, but completion is reachable from other states too) is a no-op.
+    """
+    if nf_deployment_id is not None:
+        _r1.delete(f"/nfo/deployments/{nf_deployment_id}")
+
+
 # ---------------------------------------------------------------- Training
 
 def _validate_dme_data_job_ids(dme_data_job_ids: list[uuid.UUID]) -> None:
@@ -302,6 +347,16 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
     db.add(job)
     db.flush()
 
+    # OPEN_ITEMS.md section 6.2: MLTF's own real execution runtime —
+    # closes the "MLTF trains (Phase 1: elided)" gap. Every training job
+    # gets one, model-targeted or coordination-group-targeted alike: a
+    # training run needs somewhere to actually execute regardless of
+    # which kind of target it names, the same way the job row itself is
+    # always created either way.
+    descriptor_id = _nfo_create_execution_descriptor("TRAINING", job.training_job_id)
+    job.nf_deployment_descriptor_id = descriptor_id
+    job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "TRAINING", job.training_job_id)
+
     if lifecycle is not None:
         if lifecycle.model_lifecycle_state == ModelLifecycleState.TRAINING:
             existing_job_id = lifecycle.training_job_id
@@ -309,6 +364,10 @@ def request_training(body: RequestTrainingRequest, db: Session = Depends(get_ses
                 orphaned = db.get(TrainingJob, existing_job_id)
                 if orphaned is not None and orphaned.status == "IN_PROGRESS":
                     orphaned.status = "CANCELLED"
+                    # the orphaned job's own execution runtime is abandoned
+                    # right alongside it — left running otherwise.
+                    _nfo_terminate_execution(orphaned.nf_deployment_id)
+                    orphaned.nf_deployment_id = None
         else:
             _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_TRAINING)
         lifecycle.training_job_id = job.training_job_id
@@ -326,6 +385,7 @@ def query_training_job_status(training_job_id: uuid.UUID, db: Session = Depends(
         "consumerRappId": job.consumer_rapp_id, "producerRappId": job.producer_rapp_id,
         "mlTrainingType": job.ml_training_type, "dmeDataJobIds": [str(i) for i in job.dme_data_job_ids],
         "outcomeArtifactDmeTypeId": str(job.outcome_artifact_dme_type_id) if job.outcome_artifact_dme_type_id else None,
+        "nfDeploymentId": str(job.nf_deployment_id) if job.nf_deployment_id else None,
     }
 
 
@@ -354,6 +414,10 @@ def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: 
     job.status = "FINISHED" if body.succeeded else "FAILED"
     job.model_metrics = body.metrics
     job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
+    # OPEN_ITEMS.md section 6.2: the run is done — its execution runtime
+    # is torn down right alongside it, not left running indefinitely.
+    _nfo_terminate_execution(job.nf_deployment_id)
+    job.nf_deployment_id = None
     if job.model_id is not None:
         event = ModelLifecycleEvent.TRAINING_COMPLETE if body.succeeded else ModelLifecycleEvent.TRAINING_FAILED
         _fire_model_event(db, job.model_id, event)
@@ -368,6 +432,8 @@ def cancel_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessio
     job = db.get(TrainingJob, training_job_id)
     if job is not None:
         job.status = "CANCELLED"
+        _nfo_terminate_execution(job.nf_deployment_id)
+        job.nf_deployment_id = None
         db.commit()
 
 
@@ -467,6 +533,10 @@ def request_validation(body: RequestValidationRequest, db: Session = Depends(get
                          notification_uri=body.notificationUri)
     db.add(job)
     db.flush()
+    # OPEN_ITEMS.md section 6.2: MLVF's own real execution runtime.
+    descriptor_id = _nfo_create_execution_descriptor("VALIDATION", job.validation_job_id)
+    job.nf_deployment_descriptor_id = descriptor_id
+    job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "VALIDATION", job.validation_job_id)
     _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_VALIDATION)
     db.commit()
     return {"validationJobId": str(job.validation_job_id)}
@@ -488,6 +558,9 @@ def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, 
     job.status = "COMPLETED" if body.succeeded else "FAILED"
     job.metrics = body.metrics
     job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
+    # OPEN_ITEMS.md section 6.2: the run is done — tear down its runtime.
+    _nfo_terminate_execution(job.nf_deployment_id)
+    job.nf_deployment_id = None
     event = ModelLifecycleEvent.VALIDATION_COMPLETE if body.succeeded else ModelLifecycleEvent.VALIDATION_FAILED
     _fire_model_event(db, job.model_id, event)
     db.commit()
@@ -530,6 +603,10 @@ def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_s
                         status="RUNNING", notification_uri=body.notificationUri)
     db.add(job)
     db.flush()
+    # OPEN_ITEMS.md section 6.2: MLEF's own real execution runtime.
+    descriptor_id = _nfo_create_execution_descriptor("EMULATION", job.emulation_job_id)
+    job.nf_deployment_descriptor_id = descriptor_id
+    job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "EMULATION", job.emulation_job_id)
     _fire_model_event(db, body.modelId, ModelLifecycleEvent.CREATE_EMULATION)
     db.commit()
     return {"emulationJobId": str(job.emulation_job_id)}
@@ -551,6 +628,9 @@ def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db
     job.status = "COMPLETED" if body.succeeded else "FAILED"
     job.metrics = body.metrics
     job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
+    # OPEN_ITEMS.md section 6.2: the run is done — tear down its runtime.
+    _nfo_terminate_execution(job.nf_deployment_id)
+    job.nf_deployment_id = None
     event = ModelLifecycleEvent.EMULATION_COMPLETE if body.succeeded else ModelLifecycleEvent.EMULATION_FAILED
     _fire_model_event(db, job.model_id, event)
     db.commit()
@@ -746,7 +826,13 @@ def request_inference(model_id: uuid.UUID, notification_destination: str | None 
     lifecycle = _get_or_create_lifecycle(db, model_id)
     if lifecycle.runtime_lifecycle_state != RuntimeLifecycleState.ACTIVE:
         raise framework_error(FrameworkError.INFERENCE_MODEL_NOT_ACTIVE)
-    job = InferenceJob(model_id=model_id, status=InferenceState.RUNNING, notification_destination=notification_destination)
+    # OPEN_ITEMS.md section 6.2: MLIF's own execution runtime is the
+    # model's already-live serving deployment (real since this state is
+    # only reachable once deploy_model_runtime's own NFO call succeeded)
+    # — a reference, not a new NFO call. See InferenceJob's own docstring
+    # for why this differs from Training/Validation/Emulation.
+    job = InferenceJob(model_id=model_id, status=InferenceState.RUNNING, notification_destination=notification_destination,
+                        nf_deployment_id=lifecycle.nf_deployment_id)
     db.add(job)
     db.commit()
     return {"inferenceJobId": str(job.inference_job_id)}
@@ -755,7 +841,8 @@ def request_inference(model_id: uuid.UUID, notification_destination: str | None 
 @app.get("/inference-jobs/{inference_job_id}/status")
 def query_inference_status(inference_job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(InferenceJob, inference_job_id)
-    return {"inferenceJobId": str(job.inference_job_id), "status": job.status}
+    return {"inferenceJobId": str(job.inference_job_id), "status": job.status,
+            "nfDeploymentId": str(job.nf_deployment_id) if job.nf_deployment_id else None}
 
 
 @app.post("/inference-jobs/{inference_job_id}/resolve")
@@ -777,7 +864,8 @@ def list_inference_jobs(model_id: uuid.UUID | None = None, status: str | None = 
         stmt = stmt.where(InferenceJob.status == status)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"inferenceJobId": str(j.inference_job_id), "modelId": str(j.model_id), "status": j.status,
-             "notificationDestination": j.notification_destination} for j in page["items"]]}
+             "notificationDestination": j.notification_destination,
+             "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None} for j in page["items"]]}
 
 
 # ---------------------------------------------------------------- MLMF performance monitoring
@@ -913,6 +1001,11 @@ def _trigger_group_retrain(db: Session, group: dict) -> list[uuid.UUID]:
         job = TrainingJob(model_id=member_id, producer_id="aimgf:group-retrain", status="IN_PROGRESS", ml_training_type="RE_TRAINING")
         db.add(job)
         db.flush()
+        # OPEN_ITEMS.md section 6.2: same real execution runtime a
+        # directly-requested retrain gets via request_training.
+        descriptor_id = _nfo_create_execution_descriptor("TRAINING", job.training_job_id)
+        job.nf_deployment_descriptor_id = descriptor_id
+        job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "TRAINING", job.training_job_id)
         _fire_model_event(db, member_id, ModelLifecycleEvent.CREATE_TRAINING)
         lifecycle.training_job_id = job.training_job_id
         retrained_model_ids.append(member_id)
@@ -926,7 +1019,8 @@ def _training_job_view(j: TrainingJob) -> dict:
             "producerId": j.producer_id, "status": j.status, "runId": j.run_id,
             "trainingDataset": j.training_dataset, "validationDataset": j.validation_dataset,
             "modelMetrics": j.model_metrics, "mlTrainingType": j.ml_training_type,
-            "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None}
+            "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None,
+            "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None}
 
 
 def _validation_job_view(j: ValidationJob) -> dict:
@@ -934,13 +1028,15 @@ def _validation_job_view(j: ValidationJob) -> dict:
             "trainingJobId": str(j.training_job_id) if j.training_job_id else None,
             "producerId": j.producer_id, "validationCriteria": j.validation_criteria or {},
             "status": j.status, "metrics": j.metrics or {},
-            "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None}
+            "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None,
+            "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None}
 
 
 def _emulation_job_view(j: EmulationJob) -> dict:
     return {"emulationJobId": str(j.emulation_job_id), "modelId": str(j.model_id), "producerId": j.producer_id,
             "emulationCriteria": j.emulation_criteria or {}, "status": j.status, "metrics": j.metrics or {},
-            "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None}
+            "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None,
+            "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None}
 
 
 def _certification_record_view(r: CertificationRecord) -> dict:

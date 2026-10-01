@@ -43,8 +43,14 @@ sequenceDiagram
         Note over AIMgF,DME: OPEN_ITEMS.md 6.4, closed — mirrors MDAF's own<br/>publish_report cross-check (call flow 08) exactly — DME_ARTIFACT_NOT_FOUND<br/>otherwise. Optional and additive — requiredData itself stays opaque,<br/>and an omitted list skips the check entirely
     end
     Note over AIMgF: own ModelLifecycle row, lazily created — REGISTERED -> TRAINING
-    Note over AIMgF: MLTF trains (Phase 1: elided) — no MLMR/MLLF call here at all —<br/>the model's underlying artifact is untouched until Deploy, and no<br/>NFO-backed execution runtime exists yet for MLTF/MLVF/MLEF/MLIF —<br/>this whole box is a bare state transition (OPEN_ITEMS.md DECISION:<br/>build real NFO-backed execution runtimes for all four, not yet built)
+    AIMgF->>NFO: CreateDescriptor(packageId=null, workloadTemplate={jobKind=TRAINING, jobId})
+    NFO-->>AIMgF: nfDeploymentDescriptorId
+    AIMgF->>NFO: Instantiate(nfDeploymentDescriptorId)
+    NFO-->>AIMgF: nfDeploymentId
+    Note over AIMgF,NFO: OPEN_ITEMS.md 6.2, closed — MLTF's own real execution runtime<br/>(stored on TrainingJob, exposed as nfDeploymentId) — same shape as<br/>RuntimeLifecycle's own Deploy calls further below, parameterized by<br/>job kind/id rather than model id. A coordination-group-targeted job<br/>gets one too — it still needs somewhere to actually execute
     Producer->>AIMgF: POST /training-jobs/{id}/complete<br/>(succeeded=true, metrics, outcomeArtifactDmeTypeId?) -> TRAINED
+    AIMgF->>NFO: DELETE /nfo/deployments/{nfDeploymentId}
+    Note over AIMgF,NFO: the run is done — its transient execution runtime is torn<br/>down right alongside it, not left running indefinitely
     Note over AIMgF: OPEN_ITEMS.md 6.5, closed — a real, dedicated job-completion route<br/>(previously only the generic advance(TRAINING_COMPLETE) existed, with<br/>nowhere to record what the run produced). outcomeArtifactDmeTypeId<br/>is a DME DmeTypeId reference, the same "route it through DME" shape<br/>MLModel's own outputDataType already uses — set here, not at request time
     opt notificationUri registered at RequestTraining
         AIMgF->>Producer: best-effort POST notificationUri<br/>(jobKind, jobId, succeeded, outcomeArtifactDmeTypeId, metrics)
@@ -61,8 +67,10 @@ sequenceDiagram
     end
 
     Producer->>AIMgF: RequestValidation(modelId, trainingJobId, notificationUri?) -> VALIDATING
-    Note over AIMgF: MLVF validates (Phase 1: elided) — same elisions as Training above
+    AIMgF->>NFO: CreateDescriptor + Instantiate (jobKind=VALIDATION, jobId) -> nfDeploymentId
+    Note over AIMgF,NFO: OPEN_ITEMS.md 6.2, closed — MLVF's own real execution runtime, same shape as Training above
     Producer->>AIMgF: complete(validationJobId, succeeded=true, outcomeArtifactDmeTypeId?) -> VALIDATED
+    AIMgF->>NFO: DELETE /nfo/deployments/{nfDeploymentId}
     Note over AIMgF: same outcome-artifact + best-effort notification shape as Training above
 
     rect rgb(255, 240, 240)
@@ -72,8 +80,10 @@ sequenceDiagram
     end
 
     Producer->>AIMgF: RequestEmulation(modelId, notificationUri?) -> EMULATING
-    Note over AIMgF: MLEF emulates (Phase 1: elided) — same elisions as Training above
+    AIMgF->>NFO: CreateDescriptor + Instantiate (jobKind=EMULATION, jobId) -> nfDeploymentId
+    Note over AIMgF,NFO: OPEN_ITEMS.md 6.2, closed — MLEF's own real execution runtime, same shape as Training above
     Producer->>AIMgF: complete(emulationJobId, succeeded=true, outcomeArtifactDmeTypeId?) -> EMULATED
+    AIMgF->>NFO: DELETE /nfo/deployments/{nfDeploymentId}
     Note over AIMgF: same outcome-artifact + best-effort notification shape as Training above
     Note over Producer,AIMgF: Training->Validation and Validation->Emulation are now both<br/>operator-gated (above, OPEN_ITEMS.md 6.1, closed) — Emulation->SUBMIT_FOR_APPROVAL<br/>itself needs no separate gate, since the governance sequence right below<br/>already starts with an explicit operator action
 
@@ -102,6 +112,8 @@ sequenceDiagram
 
     Consumer->>AIMgF: RequestInference(modelId)
     Note over AIMgF: check RuntimeLifecycleState == ACTIVE — INFERENCE_MODEL_NOT_ACTIVE otherwise
+    AIMgF->>AIMgF: stamp InferenceJob.nfDeploymentId = ModelLifecycle.nfDeploymentId
+    Note over AIMgF,NFO: OPEN_ITEMS.md 6.2, closed — MLIF doesn't create a new NFO<br/>deployment per inference call: RuntimeLifecycleState ACTIVE already means<br/>Deploy (above) made a real, live serving deployment — this references it,<br/>never duplicates it. No new NFO call here, unlike Training/Validation/Emulation
     AIMgF-->>Consumer: inferenceJobId, status=RUNNING
     Note over AIMgF,DME: input features pulled via DME against the model's<br/>registered inputDataType — never inline in the request (LLD section 3)
     AIMgF->>AIMgF: resolve(succeeded=true) -> status=COMPLETED
@@ -138,5 +150,6 @@ sequenceDiagram
 - A model runtime has no onboarded `ApplicationPackage` behind it, unlike an rApp's own `NfDeploymentDescriptor` — NFO's `packageId` is optional since this wave for exactly that caller.
 - **Closed since this flow was first written**: `RequestTraining` had no way to check `requiredData` against anything real — an optional `dmeDataJobIds` field now cross-checks each declared id against a real DME `DataJob` (`DME_ARTIFACT_NOT_FOUND` otherwise), the same treatment MDAF's own `publish_report` already had (call flow 08). Additive only — `requiredData` itself stays the opaque blob it always was, and an omitted list skips the check entirely (`OPEN_ITEMS.md` section 6.4).
 - **Closed since this flow was first written**: Training had no dedicated completion route at all — only the generic `advance(TRAINING_COMPLETE)`, with no way to record what the run produced or notify anyone. `POST /training-jobs/{id}/complete` now brings it to the same real request/tracking-aggregate parity Validation/Emulation already had: an `outcomeArtifactDmeTypeId` (a DME reference, the same shape `MLModel.outputDataType` already uses) and a best-effort TS28.105-style completion notification, added to all three (Training/Validation/Emulation) — additive only, the generic `advance()` route is unchanged for callers that don't need job-level bookkeeping (`OPEN_ITEMS.md` section 6.5).
-- **Open, tracked in `OPEN_ITEMS.md`**: operator gating for Training->Validation->Emulation, real NFO-backed execution runtimes for MLTF/MLVF/MLEF/MLIF, and the rApp Autonomy-Mode design that eventually closes the inference-to-CM-action linkage this flow's tail end still lacks — none of these are built yet; see `OPEN_ITEMS.md` for the full write-up of each.
+- **Closed since this flow was first written**: Training/Validation/Emulation used to be bare state transitions — "MLTF trains (Phase 1: elided)" — with no NFO call behind any of them, a structurally different elision from RuntimeLifecycle's own genuine Deploy calls further below. Each now gets a real NFO `CreateDescriptor`/`Instantiate` on request and `DELETE /nfo/deployments/{id}` on completion — the exact same shape RuntimeLifecycle's own Deploy call uses, parameterized by job kind/id instead of model id, torn down once the transient run finishes rather than left running. Inference deliberately doesn't follow this pattern: `RequestInference` is already gated on `RuntimeLifecycleState.ACTIVE`, meaning a real serving deployment already exists (via `RequestModelRuntimeDeploy`, below) — a new NFO deployment per inference call would duplicate that runtime rather than use it, so `InferenceJob.nfDeploymentId` is a read-only reference to the model's own already-live serving deployment instead (`OPEN_ITEMS.md` section 6.2).
+- **Open, tracked in `OPEN_ITEMS.md`**: the rApp Autonomy-Mode design that eventually closes the inference-to-CM-action linkage this flow's tail end still lacks — not built yet; see `OPEN_ITEMS.md` for the full write-up.
 - **Closed since this flow was first written**: `MLMFSubscription` used to be create-and-read only, with no callback and no way to tear one down. It now carries an optional `notificationDestination` (same best-effort-push shape as MDAF's own subscriber notification, call flow 08) and a real `DELETE /mlmf/subscriptions/{id}`, idempotent like every other subscription-shaped resource's unsubscribe route in this build. See call flow 13 for the dedicated subscribe→notify→unsubscribe walkthrough, including the pull-only (no destination registered) case.
