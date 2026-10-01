@@ -1,0 +1,254 @@
+# Shared library (`shared/`)
+
+> The `smo_shared` Python package every SMO backend module imports: the database session, FSM base, ProblemDetails errors, pagination, correlation ids, SSRF-guarded webhooks, the R1 client, OpenAPI security declaration and test helpers behind the R1 API conventions.
+
+| | |
+|---|---|
+| Standards basis | Internal logic (common library; implements the RFC 7807 / RFC 7662 conventions used by every R1 service) |
+| R1 route / port | None: a library, installed into every service image (`pip install -e /srv/shared` in the root `Dockerfile`) |
+| Depends on (over R1) | `R1Client` calls R1 Termination (`/bootstrap`) and SME (`/invoker-registrations`, `/oauth2/token`) for its own token; no other module |
+| Called by | Every backend module (imports); the SDK (`sdk/`) and the four sample rApps via `R1Client`. Not imported by `gui-bff` |
+| Database tables | None. Provides `Base`, the engine and sessions that modules' `models.py` use |
+| Unit tests | 40 passed (`tests/`, no database) |
+| Status | Done. No OPEN_ITEMS ids |
+
+## 1. High-level design (HLD)
+
+### 1.1 Purpose and scope
+
+One place for the plumbing that must behave identically in every service, so a convention ("R1 API conventions" in [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md#r1-api-conventions)) is implemented once and imported rather than re-derived. It contains no domain logic and owns no data. Modules import individual submodules (`from smo_shared.errors import ...`); `smo_shared/__init__.py` is empty apart from its docstring and re-exports nothing.
+
+### 1.2 Standards basis
+
+| Convention | Realised by | Reference |
+|---|---|---|
+| RFC 7807 ProblemDetails | `errors.py` | Error model the R1 service groups defer to (CAPIF TS 29.222 for SME, TS 29.500 for others, TS 28.532 for CM/FM); A1 policy management keeps its own table |
+| RFC 7662 token introspection (R1 gateway) | Declared in OpenAPI by `openapi_security.py`; consumed by `r1_client.py` (obtains and sends the token). Enforcement lives in R1 Termination's `_authorized()`, not here | [`../../specs/5G_APIs/`](../../specs/5G_APIs/) CAPIF specs for the invoker path |
+| RFC 6749 client-credentials grant | `r1_client.py` (`_ModuleIdentity`) | |
+| TS 29.500 `3gpp-Sbi-Correlation-Info` | Deliberately not used: that header correlates subscriber identity, not requests. `X-Correlation-ID` is this build's own name | `correlation.py` module docstring |
+
+Deliberately not here: any enforcing auth dependency on a backend service (R1 Termination is the single enforcement point), and a per-operation OpenAPI declaration of `X-Correlation-ID`.
+
+### 1.3 Position in the platform
+
+Imported by all services; at runtime it adds three outbound behaviours: `R1Client` (calls through R1 Termination, never a service URL), `webhook` (calls to caller-registered callback URLs), and nothing else. It never opens a connection by itself at import, except constructing the SQLAlchemy `engine` object in `db.py` (lazy: no connection until first use).
+
+### 1.4 Ownership
+
+Mapping of the "R1 API conventions" table in `docs/ARCHITECTURE.md` to code:
+
+| Convention row | Implemented here | Not implemented here |
+|---|---|---|
+| Authentication | `openapi_security.apply_r1_gateway_security` (the `r1BearerAuth` scheme, global `security`, public-path exemptions); `R1Client` token acquisition | The introspection check (R1 Termination) and token issuance (SME) |
+| Versioning | `openapi_security.R1_CONTRACT_VERSION` (`1.0.0`), set as `app.version` | |
+| Errors | `errors.ProblemDetails`, `problem()`, `FrameworkError`, `framework_error()`, `illegal_transition_error()` | Each module's choice of code per route |
+| Pagination | `pagination.paginate()`, `PageLimit`, `PageOffset` | Per-resource view functions; `gui-bff` keeps its own local copy |
+| Subscriptions | Nothing (naming convention only: `notificationDestination`, with the CAPIF/O2ims exceptions) | Each module's request models |
+| Callbacks | `webhook.post_webhook` / `get_webhook` / `delete_webhook` / `is_safe_webhook_destination` | |
+| Correlation | `correlation.apply_correlation_id`, `get_correlation_id`; `R1Client` propagates | R1 Termination forwards its own current id |
+| Cross-module calls | `r1_client.R1Client` | Choosing which module to call |
+
+Also provided, outside that table: `db` (engine and session), `statemachine` (FSM base), `identity` (rAppId equivalence), `timeutil`, `testing`.
+
+### 1.5 Design decisions
+
+| Decision | Reason |
+|---|---|
+| One shared Postgres, partitioned by `moduleScope` columns, not per-module databases | Requirements v0.1 section 3. `db.py` offers one `Base`/engine; each module's models set and filter by their own scope. |
+| `R1Client` is synchronous `httpx` with one process-wide identity and token cache | Cross-module calls inside request handlers are sync. One invoker onboarded per process (or pinned by `SMO_INVOKER_ID`/`SMO_INVOKER_SECRET`); refreshed 30 s before expiry and once on 401. |
+| When no token can be obtained, `R1Client` sends the call without `Authorization` and logs a warning rather than raising | R1 answers 401, which every caller already treats as an ordinary failed call. |
+| Webhook guard blocks by scheme and literal address only (no DNS resolution, no hostname allowlist) | Legitimate callback hosts (rApp/producer containers) are assigned at deploy time and unknown in advance; unit tests use fictional hostnames. Residual risk: a hostname resolving to a blocked address (DNS rebinding) is accepted. |
+| Webhook helpers never raise on an unreachable destination | Callbacks are best effort; each call site previously swallowed `httpx.HTTPError`. |
+| FSM base holds only a transition table; state lives on the entity | One table per model class, reused across instances. |
+| Error codes are tuples `(title, status)` in one `FrameworkError` class | One importable name per code; routes raise `framework_error(code, detail)`. |
+| Correlation id is not declared in OpenAPI | A middleware-injected header is not a per-operation contract element. |
+
+## 2. Low-level design (LLD)
+
+### 2.1 Code map
+
+| File | Responsibility |
+|---|---|
+| `smo_shared/db.py` | `DATABASE_URL`, `engine`, `SessionLocal`, `Base`, `session_scope()`, `get_session()` |
+| `smo_shared/statemachine.py` | `StateMachine`, `Transition`, `IllegalTransition` |
+| `smo_shared/errors.py` | `ProblemDetails`, `problem()`, `FrameworkError`, `framework_error()`, `illegal_transition_error()` |
+| `smo_shared/pagination.py` | `paginate()`, `PageLimit`, `PageOffset`, `DEFAULT_LIMIT`, `MAX_LIMIT` |
+| `smo_shared/correlation.py` | `apply_correlation_id()`, `get_correlation_id()`, `HEADER_NAME` |
+| `smo_shared/webhook.py` | `post_webhook`, `get_webhook`, `delete_webhook`, `is_safe_webhook_destination` |
+| `smo_shared/r1_client.py` | `R1Client`, `R1_GATEWAY_URL`, per-process `_ModuleIdentity` token cache |
+| `smo_shared/openapi_security.py` | `apply_r1_gateway_security()`, `BEARER_SCHEME_NAME`, `R1_CONTRACT_VERSION` |
+| `smo_shared/identity.py` | `rapp_id_from_instance()`, `is_framework_internal_identity()` |
+| `smo_shared/timeutil.py` | `as_utc()` |
+| `smo_shared/testing.py` | `make_test_engine()` |
+| `tests/` | See 3.2 |
+| `pyproject.toml` | Package `smo-shared` 0.1.0, Python >= 3.11; deps sqlalchemy, psycopg, fastapi, pydantic, httpx, python-multipart, jsonschema |
+
+### 2.2 Data model
+
+None. `db.Base` is the declarative base all modules' `models.py` subclass; no table is defined in this package. The schema is `../migrations/001_init.sql`, checked against the ORM models by `../scripts/check_migration_matches_models.py`.
+
+### 2.3 State machines
+
+`statemachine.py` is the FSM base. Contract:
+
+- `StateMachine[S, E]` holds `transitions: list[Transition]`; instantiate once per model class and reuse.
+- `add(from_state, event, to_state, guard=None, action=None)` appends and returns the machine (chainable). `guard(**context) -> bool` is a precondition; `action(**context)` a side effect that runs only for the transition that wins.
+- `fire(current_state, event, **context) -> new_state`: collects transitions matching `(current_state, event)`, evaluates their guards in registration order, runs the first passing one's `action` and returns its `to_state`. Raises `IllegalTransition(state, event)` (attributes `.state`, `.event`) if nothing matches or every guard rejects. It does not mutate the entity.
+- `legal_events(current_state) -> list[E]`: events with at least one transition from that state, ignoring guards (can contain duplicates when several guarded transitions share an event).
+
+Used by onboarding, rapp-mgmt, ran-nf-oam, nfo and aimgf for their own tables (each in its own `app/statemachine.py`; see those READMEs). `errors.illegal_transition_error(exc, subject)` turns an `IllegalTransition` into 409 `LIFECYCLE_ILLEGAL_TRANSITION` with detail `"<subject>: event <E> is not allowed in state <S>"`.
+
+### 2.4 API: public helpers
+
+**`db`**
+
+| Name | Contract |
+|---|---|
+| `DATABASE_URL` | `SMO_DATABASE_URL`, default `postgresql+psycopg://smo:smo@postgres:5432/smo` |
+| `engine`, `SessionLocal` | `create_engine(..., pool_pre_ping=True, future=True)`; `sessionmaker(autoflush=False, autocommit=False)`. Created at import; no connection until used |
+| `Base` | `DeclarativeBase` shared by all models |
+| `session_scope()` | Context manager: commit on success, rollback and re-raise on exception, always close |
+| `get_session()` | FastAPI dependency: yields a session, always closes; never commits (the route must) |
+
+Unit tests override the dependency with a `make_test_engine()` session.
+
+**`errors`**
+
+| Name | Contract |
+|---|---|
+| `ProblemDetails` | Pydantic: `type` (default `about:blank`), `title`, `status`, `detail`, `instance` |
+| `problem(status, title, detail=None)` | Returns (does not raise) an `HTTPException(status_code, detail=<ProblemDetails dict>)`; routes `raise problem(...)` |
+| `FrameworkError` | Class of `(CODE, http_status)` tuples. Full list in 2.7 |
+| `framework_error(code, detail=None)` | `problem(status, title=CODE, detail)` |
+| `illegal_transition_error(exc, subject)` | See 2.3 |
+
+The package installs no exception handler. FastAPI therefore serialises these as `{"detail": {"type": "about:blank", "title": CODE, "status": N, "detail": "...", "instance": null}}`: the ProblemDetails object is nested under `detail`, and `type` is always `about:blank` unless a service builds its own response. Callers (the SDK's `SdkError`, the sample rApps) read the nested shape. R1 Termination's own errors (`NO_ROUTE`, `UNAUTHORIZED`) are flat `{title, status}`.
+
+**`pagination`**
+
+| Name | Contract |
+|---|---|
+| `PageLimit` / `PageOffset` | `Query(100, ge=1, le=500)` / `Query(0, ge=0)`; use as route parameter defaults so every OpenAPI spec documents identical bounds |
+| `paginate(db, stmt, limit, offset)` | `COUNT(*)` over `stmt.subquery()` plus `stmt.limit().offset()` executed in SQL. Returns `{"items": [ORM rows], "total", "limit", "offset"}`. Rows are raw ORM objects; the caller maps them: `{**page, "items": [view(r) for r in page["items"]]}`. The statement must carry its own `ORDER BY` for stable paging |
+
+**`correlation`**
+
+| Name | Contract |
+|---|---|
+| `HEADER_NAME` | `X-Correlation-ID` |
+| `apply_correlation_id(app)` | Registers an HTTP middleware: reuse the inbound header, else a fresh UUID4; store it in a `ContextVar` for the request; echo it on the response |
+| `get_correlation_id()` | Current id, or `None` outside a request or in a service that did not apply the middleware. `R1Client` uses it to set the header on every downstream call |
+
+**`webhook`**
+
+| Name | Contract |
+|---|---|
+| `is_safe_webhook_destination(dest)` | True only for `http`/`https` with a hostname that is not `localhost`, `metadata.google.internal` or `metadata`, and not a literal loopback, link-local (includes 169.254.169.254), multicast, unspecified or reserved IP. No DNS resolution |
+| `post_webhook(dest, json, timeout=5.0)` | Best-effort POST; returns the `httpx.Response`, or `None` if the destination is missing/unsafe (a warning is logged for an unsafe non-empty one) or the call raises `httpx.HTTPError` |
+| `get_webhook(dest, timeout=5.0)` / `delete_webhook(dest, timeout=5.0)` | Same semantics for GET / DELETE (no log line on rejection) |
+
+Rule: any caller-supplied callback URL (`notificationDestination`, `callbackUri`, ...) is called only through these helpers, never a raw `httpx` call.
+
+**`r1_client.R1Client(base_url=R1_GATEWAY_URL, bearer_token=None)`**
+
+| Name | Contract |
+|---|---|
+| `R1_GATEWAY_URL` | `R1_GATEWAY_URL`, default `http://r1-termination:8000` |
+| `get(path, **kw)`, `post(path, json=None, **kw)`, `put(...)`, `patch(...)`, `delete(path, **kw)` | `path` is `/<module>/...`; extra kwargs go to `httpx` (`params`, `files`, `timeout`, ...). Returns the raw `httpx.Response` (no status check, no raise) |
+| Auth | Explicit `bearer_token` is used as is and never refreshed. Otherwise the process token: (1) `GET {base}/bootstrap` -> first `tokenEndPoint.uri`; (2) onboard once at SME `/invoker-registrations` (label `smo-module:<MODULE>:<random>`) unless `SMO_INVOKER_ID` and `SMO_INVOKER_SECRET` are set; (3) `client_credentials` grant, scope `smo-internal`. If SME answers 400 it onboards afresh once. Cached until `expires_in` minus 30 s; refreshed once on a 401 and the call retried once. Thread-safe (lock) |
+| Failure | Token acquisition errors (`httpx.HTTPError`, no token endpoint, bad body) are logged and the call is sent without `Authorization` |
+| Correlation | Adds `X-Correlation-ID` when `get_correlation_id()` is set; adds none otherwise |
+| Timeouts | The bootstrap/onboard/grant calls use 5 s; the module call uses httpx's default unless `timeout=` is passed |
+
+All instances in a process share one identity and token (`_identity`).
+
+**`openapi_security.apply_r1_gateway_security(app, *, public_paths=frozenset())`**
+
+Sets `app.version = R1_CONTRACT_VERSION` (`1.0.0`) and replaces `app.openapi` so the generated schema carries `components.securitySchemes.r1BearerAuth` (HTTP bearer, JWT), a global `security` requirement, and `security: []` on every operation under a path in `public_paths` (SME token/introspection, R1 Termination `/health` and `/bootstrap`). Declarative only: it adds no runtime check. Applied by 17 services (every R1-facing backend plus R1 Termination); the committed `../docs/openapi/*.json` are generated from it.
+
+**`identity`**
+
+| Name | Contract |
+|---|---|
+| `rapp_id_from_instance(instance_id)` | `str(UUID)`: `RAppInstance.instanceId` is the framework's rAppId; every producerId, consumerId, api-invoker-id and apfId must be this value |
+| `is_framework_internal_identity(identity)` | True when the string is not a UUID (SO SMOS / SA SMOS register as RMIH producers with service-name identities). Used by Intent Service |
+
+**`timeutil.as_utc(dt)`**: returns `dt` unchanged if tz-aware, else `dt` with `tzinfo=UTC`. Needed because SQLite returns `DateTime(timezone=True)` naive; Postgres returns aware values.
+
+**`testing.make_test_engine()`**: in-memory SQLite engine for unit tests: `StaticPool` with `check_same_thread=False` (one shared connection, so `create_all()` and request sessions see the same database), a JSON serializer that encodes `uuid.UUID` (for the `ARRAY(Uuid)` SQLite JSON fallback), and pysqlite implicit transactions disabled (`isolation_level=None`, explicit `BEGIN` on each SQLAlchemy begin) so nested sessions in the cross-service integration suite do not commit each other's work. A production concern it does not have: it is for tests only. Models use Postgres types with `.with_variant(...)` SQLite fallbacks (`ARRAY`, `JSON`, `Uuid`).
+
+### 2.5 Interactions
+
+| Piece | Outbound call | Failure behaviour |
+|---|---|---|
+| `R1Client` | R1 `/bootstrap`; SME `/invoker-registrations`, `/oauth2/token`; the module call | No token: call sent unauthenticated (R1 401). Transport errors on the module call propagate as `httpx` exceptions to the caller (callers catch them) |
+| `webhook` | HTTP to a caller-registered URL | Returns `None`; never raises for `httpx.HTTPError` |
+| `correlation` | None (middleware only) | |
+
+No background tasks.
+
+### 2.6 Configuration
+
+| Variable | Default | Where |
+|---|---|---|
+| `SMO_DATABASE_URL` | `postgresql+psycopg://smo:smo@postgres:5432/smo` | `db.py` |
+| `R1_GATEWAY_URL` | `http://r1-termination:8000` | `r1_client.py` |
+| `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset: onboard a fresh invoker on first use | `r1_client.py` |
+| `MODULE` | `unknown` (set by the root `Dockerfile` build arg) | `r1_client.py`, label of the onboarded invoker |
+
+### 2.7 Error codes
+
+`FrameworkError` codes (all `(title, status)`; route files choose when to raise them, so see each module README for conditions).
+
+| Status | Codes |
+|---|---|
+| 400 | `MODEL_IDENTITY_IMMUTABLE`, `FEATURE_GROUP_NAME_INVALID`, `DATA_JOB_TARGET_IMMUTABLE`, `INVOKER_NOT_REGISTERED` |
+| 403 | `MSAC_ACCESS_DENIED`, `NODE_GROUP_NOT_CLEARED`, `APF_NOT_REGISTERED` |
+| 404 | `DME_TYPE_NOT_FOUND`, `POLICY_TYPE_NOT_FOUND`, `A1_SERVICE_REGISTRATION_NOT_FOUND`, `MODEL_NOT_FOUND`, `TRAINING_JOB_NOT_FOUND`, `VALIDATION_JOB_NOT_FOUND`, `EMULATION_JOB_NOT_FOUND`, `INFERENCE_JOB_NOT_FOUND`, `MLMF_SUBSCRIPTION_NOT_FOUND`, `PRODUCER_NOT_FOUND`, `TYPE_SUBSCRIPTION_NOT_FOUND`, `DATA_JOB_NOT_FOUND`, `DATA_OFFER_NOT_FOUND`, `DME_ACTION_NOT_FOUND`, `RESOURCE_TYPE_NOT_FOUND`, `RESOURCE_POOL_NOT_FOUND`, `DEPLOYMENT_MANAGER_NOT_FOUND`, `INTENT_HANDLING_FUNCTION_NOT_FOUND`, `INTENT_NOT_FOUND`, `ARTIFACT_VERSION_NOT_FOUND`, `NFDEPLOYMENT_NOT_FOUND`, `RAPP_INSTANCE_NOT_FOUND`, `ASSURANCE_MONITOR_NOT_FOUND`, `PUBLISHING_FUNCTION_NOT_FOUND`, `TRUSTED_INVOKER_NOT_FOUND`, `AUTONOMY_DISPATCH_NOT_FOUND`, `NRM_OBJECT_NOT_FOUND`, `PACKAGE_NOT_FOUND`, `VENDOR_CAPABILITY_NOT_FOUND`, `CM_SCHEMA_NOT_FOUND`, `MANAGED_ENTITY_NOT_FOUND`, `PACKAGE_USAGE_REGISTRATION_NOT_FOUND` |
+| 409 | `PROTOCOL_NOT_SUPPORTED`, `MODEL_NOT_CERTIFIED`, `INFERENCE_MODEL_NOT_ACTIVE`, `MODEL_ALREADY_REGISTERED`, `FEATURE_GROUP_ALREADY_REGISTERED`, `LIFECYCLE_ILLEGAL_TRANSITION`, `TRAINING_JOB_ILLEGAL_TRANSITION`, `SERVICE_NAME_CONFLICT`, `DME_TYPE_VERSION_CONFLICT`, `DME_TYPE_HAS_ACTIVE_PRODUCERS`, `DELIVERY_METHOD_NOT_OFFERED`, `ROLLBACK_HISTORY_UNAVAILABLE`, `NFDEPLOYMENT_NAME_CONFLICT`, `NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED`, `NFDEPLOYMENT_ILLEGAL_OPERATION`, `RAPP_INSTANCE_NOT_UNDEPLOYED`, `TRAINING_NOT_APPROVED`, `VALIDATION_NOT_APPROVED`, `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE`, `INFERENCE_FUNCTION_NOT_ACTIVATED`, `MODEL_NOT_LOADED`, `O1_SERVICE_NOT_SUPPORTED`, `CM_SCHEMA_CONFLICT`, `RAPP_UPGRADE_TIMED_OUT` |
+| 415 | `ARTIFACT_FORMAT_INVALID` |
+| 422 | `SCHEMA_VALIDATION_FAILED`, `COORDINATION_GROUP_MISMATCH`, `COORDINATION_GROUP_TOO_SMALL`, `GOVERNANCE_DECIDER_REQUIRED`, `DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE`, `DME_ARTIFACT_NOT_FOUND`, `RMIH_CAPABILITY_MISMATCH`, `POLICY_TYPE_NOT_SUPPORTED`, `POLICY_OBJECT_SCHEMA_INVALID`, `SUBSCRIPTION_SCOPE_CONFLICT`, `NFDEPLOYMENT_DESCRIPTOR_NOT_FOUND`, `SECURITY_CONTEXT_INVALID`, `MDA_CAPABILITY_NOT_SUPPORTED` |
+| 503 | `ENDPOINT_UNREACHABLE` |
+
+Defined but never raised anywhere in the repo: `NODE_GROUP_NOT_CLEARED` (MLLF deploy now stamps node groups instead of checking them).
+
+`problem()` itself accepts any status and title, so modules also raise ad-hoc titles (see each module README, and `gui-bff`, which uses its own flat `{title, status, detail}` helper).
+
+### 2.8 Limits and open items
+
+- `R1Client` and the webhook helpers are synchronous; an async caller would block the event loop.
+- Webhook guard: DNS-rebinding residual risk accepted (1.5).
+- `db.engine` is built at import from `SMO_DATABASE_URL`; modules that need a different database in tests override `get_session` or use `make_test_engine()`.
+- Stale docstrings in the package: `__init__.py` and `db.py` say "fourteen modules"; the build has more services (documentation only, no behaviour).
+- No OPEN_ITEMS ids refer to this package.
+
+## 3. Unit tests
+
+### 3.1 Running them
+
+```bash
+cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
+```
+
+### 3.2 What is covered
+
+| Test file | Covers | Passed |
+|---|---|---|
+| `tests/test_correlation.py` | Id generated when the caller sends none; caller's id propagated and echoed; `get_correlation_id()` is `None` outside a request; two requests get distinct ids | 4 |
+| `tests/test_r1_client.py` | Token obtained "the rApp way" (bootstrap, onboarding, client credentials) and attached; token cached across clients and calls; revoked token refreshed once with the same invoker; explicit bearer used as is; SME down means call sent unauthenticated, not raised; correlation header absent outside a request and propagated inside one | 7 |
+| `tests/test_webhook.py` | Allowed destinations (http/https, ordinary and private-range hosts); rejected ones (bad scheme, loopback, link-local/metadata, multicast, unspecified, malformed; parametrized); `post_webhook`/`get_webhook`/`delete_webhook` call `httpx` for an allowed destination, no-op for a disallowed one, and `post_webhook` swallows an unreachable destination | 29 |
+
+### 3.3 What is not covered here
+
+`db`, `errors`, `pagination`, `statemachine`, `identity`, `timeutil`, `openapi_security` and `testing` have no tests in `shared/tests/`; they are exercised through the module suites (e.g. `aimgf/tests/test_statemachine.py`, `onboarding/tests/test_statemachine.py`, every module's `tests/` using `make_test_engine()`, `paginate()` and `framework_error()`) and through `../tests_integration/` (including `test_openapi_specs.py`, which compares each committed `../docs/openapi/*.json` with the live schema). The real Postgres path of `db.py` is covered only by `../scripts/check_migration_matches_models.py`.
+
+## 4. References
+
+- [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md#r1-api-conventions): "R1 API conventions" (the table implemented here) and the golden rules
+- [`../docs/call-flows/14-correlation-id-propagation.md`](../docs/call-flows/14-correlation-id-propagation.md): correlation id across a fan-out
+- [`../r1-termination/README.md`](../r1-termination/README.md): the gateway `R1Client` calls and the enforcement point for the bearer scheme
+- [`../sme/README.md`](../sme/README.md): invoker onboarding, token issuance, introspection
+- [`../sdk/README.md`](../sdk/README.md): the rApp-facing client built on `R1Client`
+- [`../gui-bff/README.md`](../gui-bff/README.md): the one service that does not use this package
+- [`../CLAUDE.md`](../CLAUDE.md): cross-cutting conventions (R1Client, webhook, SQLite test engine)
+- [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)
