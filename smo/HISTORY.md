@@ -299,10 +299,39 @@ closed partially; residuals are in OPEN_ITEMS.
 - **OI-5-aiml-metadata** — `description`, `author`, `owner`, `inputDataType`, `outputDataType`,
   `targetEnvironments` (JSON), optional.
 - **OI-5-aiml-trainingjob** — `runId`, `trainingDataset`, `validationDataset`, `consumerRappId`,
-  `producerRappId`; `POST`/`GET /training-jobs/{id}/model-metrics`. Step×status tracking not
-  adopted (residual).
-- **OI-5-aiml-featuregroup** — `POST`/`GET /feature-groups`, name rule `\w+` 3–63, duplicate 409;
-  `enableDme` stored, not acted on.
+  `producerRappId`; `POST`/`GET /training-jobs/{id}/model-metrics`. Step tracking followed in
+  OI-5-aiml-trainingjob-steps.
+- **OI-5-aiml-trainingjob-steps** — A training run's steps: `DATA_EXTRACTION`, `TRAINING` and
+  `TRAINED_MODEL` (the reference Training Manager's three main steps).
+  - **Reporting:** the execution runtime reports the step it has reached with
+    `POST /training-jobs/{id}/progress`. The report goes forward only, and only for an
+    `IN_PROGRESS` run (409 `TRAINING_JOB_ILLEGAL_TRANSITION` otherwise).
+  - **Storage:** `training_job.current_step` keeps the furthest step reached.
+  - **Each step's status is derived**, not stored: steps before the current one are `FINISHED`.
+    The current step carries the job's state (`IN_PROGRESS`, `SUSPENDED`, `FAILED`, `CANCELLED`),
+    and later steps are `NOT_STARTED`. A `FINISHED` run finished every step.
+  - Job views (`/status`, list, complete) carry `currentStep` and `steps`.
+  - **Not taken:** a per-step status state machine stored beside `status`, as the reference has.
+    Every place that ends a run (complete, cancel, timeout, the NRM flags, MLUpdate) would have to
+    keep it in step. Deriving it leaves `status` the single record of how the run ended.
+  - **Not taken:** the reference's composite steps (`DATA_EXTRACTION_AND_TRAINING`,
+    `TRAINING_AND_TRAINED_MODEL`), which only mark the hand-over between two steps.
+- **OI-5-aiml-featuregroup** — `POST`/`GET /feature-groups`, name rule `\w+` 3–63, duplicate 409.
+- **OI-5-aiml-featuregroup-dme** — An `enableDme` feature group gets a real DME data job, like the
+  reference's `create_dme_filtered_data_job`.
+  - **Request:** `dmeTypeId` is required with `enableDme` (422 `FEATURE_GROUP_DME_JOB_REFUSED`).
+  - **The job:** `CONTINUOUS`, `lifecycleStage` `TRAINING`, consumer `aimgf:feature-group:<name>`,
+    delivery `dataDeliveryMethod` (default `PULL_HTTP`). Its definition carries the group's
+    features, `measuredObjClass`, `sourceName` and `measurement`.
+  - **Order:** the job is created before the group is stored. If DME refuses it (an unknown type,
+    a definition its schema rejects, a delivery method no offer commits to), there is no group,
+    and the error is 422 with DME's reason. A duplicate name is refused before any job is created.
+  - **Storage:** `feature_group.dme_type_id` / `dme_data_job_id`.
+  - **New routes:** `GET` / `DELETE /feature-groups/{name}`. The delete terminates the job, best
+    effort, with the outcome in `dmeDataJobTeardown`.
+  - **GUI BFF:** gains the missing operator rules for creating, reading and deleting a group (the
+    single-group read carries the datalake token, like the list).
+  - **Not taken:** the feature store itself, as before.
 - **OI-5-aiml-uniqueness** — `UniqueConstraint(model_type, version)`; `MODEL_ALREADY_REGISTERED` 409.
 
 ### RAN Analytics (now `ran-analytics/` + `mdaf/`) vs `aiml-fw-apm-*`

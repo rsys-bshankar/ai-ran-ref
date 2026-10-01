@@ -83,6 +83,10 @@ export interface TrainingJob {
   // HISTORY.md OI-6.2: MLTF's own real NFO-backed execution
   // runtime — set on request, cleared once the run completes.
   nfDeploymentId: string | null;
+  // OI-5-aiml-trainingjob-steps: the furthest step reported, and each
+  // step's status (derived from it and `status`)
+  currentStep: "DATA_EXTRACTION" | "TRAINING" | "TRAINED_MODEL";
+  steps: Record<"DATA_EXTRACTION" | "TRAINING" | "TRAINED_MODEL", string>;
 }
 export interface InferenceJob {
   inferenceJobId: string; modelId: string; status: string; notificationDestination: string | null;
@@ -175,7 +179,7 @@ export interface PackageArtifact { artifactId: string; path: string; accessUrl: 
 export interface NfDescriptor { nfDeploymentDescriptorId: string; packageId: string; name: string; requiredResourceTypeId: string | null; workloadTemplate: Record<string, unknown> }
 export interface LcmOperation { operationId: string; operationType: string; status: string }
 export interface InventorySubscription { subscriptionId: string; callback: string; consumerSubscriptionId: string | null; resourceTypeId: string | null }
-export interface FeatureGroup { featureGroupId: string; featureGroupName: string; featureList: string; datalakeSource: string; host: string; port: string; bucket: string; dbOrg: string; measurement: string; enableDme: boolean; measuredObjClass: string | null; sourceName: string | null }
+export interface FeatureGroup { featureGroupId: string; featureGroupName: string; featureList: string; datalakeSource: string; host: string; port: string; bucket: string; dbOrg: string; measurement: string; enableDme: boolean; measuredObjClass: string | null; sourceName: string | null; dmeTypeId: string | null; dmeDataJobId: string | null }
 
 // ---- Wave 10.1: EnergySaving reference rApp (samples/energy-saving-rapp)
 export interface EsInstance {

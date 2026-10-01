@@ -239,6 +239,9 @@ function TrainingJobs() {
   );
 }
 
+// OI-5-aiml-trainingjob-steps: the steps a run passes through, reported by its runtime
+const STEP_LABEL: Record<TrainingJob["currentStep"], string> = { DATA_EXTRACTION: "1/3 data extraction", TRAINING: "2/3 training", TRAINED_MODEL: "3/3 trained model" };
+
 function TrainingTable({ rows, loading, error }: { rows?: TrainingJob[]; loading?: boolean; error?: unknown }) {
   const modelName = useModelNames();
   const [metricsFor, setMetricsFor] = useState<TrainingJob | null>(null);
@@ -250,6 +253,7 @@ function TrainingTable({ rows, loading, error }: { rows?: TrainingJob[]; loading
         { header: "Target", render: (j) => j.modelId ? (modelName(j.modelId) ?? <Id value={j.modelId} />) : <>group <Id value={j.modelCoordinationGroupId} /></> },
         { header: "Producer", render: (j) => j.producerId },
         { header: "Status", render: (j) => <StateBadge state={j.status} /> },
+        { header: "Step", render: (j) => j.steps ? <span className="small">{STEP_LABEL[j.currentStep]} <span className="muted">({j.steps[j.currentStep].toLowerCase().replace("_", " ")})</span></span> : "—" },
         { header: "Runtime", render: (j) => <Id value={j.nfDeploymentId} /> },
         { header: "Metrics", render: (j) => <div className="row gap">
           {j.modelMetrics && <button className="btn small" onClick={() => setMetricsFor(j)}>View</button>}
@@ -476,6 +480,8 @@ function FeatureGroups() {
   const groups = useSmo<FeatureGroup[]>(allowed ? "/aimgf/feature-groups" : null);
   const [f, setF] = useState({ featureGroupName: "", featureList: "", datalakeSource: "InfluxSource", host: "", port: "8086", bucket: "", token: "", dbOrg: "", measurement: "", sourceName: "" });
   const [enableDme, setEnableDme] = useState(false);
+  const [dmeTypeId, setDmeTypeId] = useState("");
+  const dmeTypes = useSmo<DmeType[]>(enableDme ? "/dme/dme-types" : null);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const valid = /^\w{3,63}$/.test(f.featureGroupName);
   return (
@@ -493,9 +499,12 @@ function FeatureGroups() {
             <Field label="DB org"><input value={f.dbOrg} onChange={set("dbOrg")} /></Field>
             <Field label="Measurement"><input value={f.measurement} onChange={set("measurement")} /></Field>
             <label className="check"><input type="checkbox" checked={enableDme} onChange={(e) => setEnableDme(e.target.checked)} /> source via DME</label>
+            {enableDme && <Field label="DME type" hint="AIMgF creates a DME data job of this type for the group">
+              <select value={dmeTypeId} onChange={(e) => setDmeTypeId(e.target.value)}><option value="">Choose…</option>{dmeTypes.data?.map((t) => <option key={t.dmeTypeId} value={t.dmeTypeId}>{t.typeName}</option>)}</select>
+            </Field>}
           </div>
-          <ActionButton label="Create feature group" tone="primary" disabled={!valid || !f.featureList || !f.host || !f.bucket || !f.token || !f.dbOrg || !f.measurement}
-            action={{ method: "POST", path: "/aimgf/feature-groups", json: { ...f, sourceName: f.sourceName || null, enableDme }, success: "Feature group created" }} />
+          <ActionButton label="Create feature group" tone="primary" disabled={!valid || !f.featureList || !f.host || !f.bucket || !f.token || !f.dbOrg || !f.measurement || (enableDme && !dmeTypeId)}
+            action={{ method: "POST", path: "/aimgf/feature-groups", json: { ...f, sourceName: f.sourceName || null, enableDme, dmeTypeId: enableDme ? dmeTypeId : null }, success: "Feature group created" }} />
         </Card>
       </Can>
       {!allowed && <Card title="Feature groups"><p className="muted">Feature groups carry datalake credentials, so they're visible to operators and admins only.</p></Card>}
@@ -503,7 +512,8 @@ function FeatureGroups() {
         <DataTable rows={groups.data} loading={groups.isLoading} error={groups.error} rowKey={(g) => g.featureGroupId} empty="No feature groups." columns={[
           { header: "Name", render: (g) => <strong>{g.featureGroupName}</strong> }, { header: "Features", render: (g) => <code className="small">{g.featureList}</code> },
           { header: "Source", render: (g) => `${g.datalakeSource} ${g.host}:${g.port}` }, { header: "Bucket / measurement", render: (g) => `${g.bucket} / ${g.measurement}` },
-          { header: "DME", render: (g) => (g.enableDme ? "yes" : "no") },
+          { header: "DME data job", render: (g) => (g.dmeDataJobId ? <Id value={g.dmeDataJobId} /> : <span className="muted">none</span>) },
+          { header: "", className: "actions", render: (g) => <ActionButton label="Delete" tone="danger" confirm={`Delete feature group ${g.featureGroupName}${g.dmeDataJobId ? " and its DME data job" : ""}?`} action={{ method: "DELETE", path: `/aimgf/feature-groups/${g.featureGroupName}`, success: "Feature group deleted" }} /> },
         ]} />
       </Card>}
     </>

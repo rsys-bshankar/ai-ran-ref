@@ -1337,19 +1337,16 @@ def test_list_feature_groups_returns_empty_list_when_none_registered(client):
     assert resp.json() == {"items": [], "total": 0, "limit": 100, "offset": 0}
 
 
-def test_create_feature_group_stores_enable_dme_and_dme_fields(client):
-    """enableDme is stored and returned faithfully — the real DME job
-    creation it would trigger in the reference is a deliberate elision,
-    not silently dropped data.
-    """
+def test_create_feature_group_with_enable_dme_needs_a_dme_type(client):
+    """OI-5-aiml-featuregroup-dme: an enable_dme group gets a real DME data
+    job, so it must say which DME type that job collects
+    (tests/test_steps_and_feature_groups.py covers the job itself)."""
     resp = client.post("/feature-groups", json=_feature_group_body(
         enableDme=True, sourceName="ran-nf-oam", dmePort="8000", measuredObjClass="NRCellDU",
     ))
-    body = resp.json()
-    assert body["enableDme"] is True
-    assert body["sourceName"] == "ran-nf-oam"
-    assert body["dmePort"] == "8000"
-    assert body["measuredObjClass"] == "NRCellDU"
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["title"] == "FEATURE_GROUP_DME_JOB_REFUSED"
+    assert client.get("/feature-groups").json()["total"] == 0
 
 
 # ---------------------------------------------------------------- OI-2-training-lifecycle-edges: cancel

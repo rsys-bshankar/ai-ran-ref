@@ -35,6 +35,7 @@ import datetime
 import os
 import re
 import uuid
+from typing import Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
@@ -55,7 +56,7 @@ from smo_shared.webhook import post_webhook
 from .models import (
     AIMLInferenceEmulationFunction, AIMLInferenceFunction, AIMLInferenceReport, CertificationRecord, EmulationJob, FeatureGroup, InferenceJob,
     LifecycleTransition, MLMFSubscription, MLTestingReport, MLTrainingFunction, MLTrainingProcess, MLTrainingReport,
-    ModelLifecycle, PerformanceReport, TrainingJob, ValidationJob,
+    ModelLifecycle, PerformanceReport, TRAINING_STEPS, TrainingJob, ValidationJob,
 )
 from . import ts28105
 from .statemachine import (
@@ -268,6 +269,16 @@ class CreateFeatureGroupRequest(BaseModel):
     measuredObjClass: str | None = None
     dmePort: str | None = None
     sourceName: str | None = None
+    # OI-5-aiml-featuregroup-dme: required when enableDme — the DME type the
+    # group's data job collects, and how the trainer gets the data.
+    dmeTypeId: uuid.UUID | None = None
+    dataDeliveryMethod: Literal["PULL_HTTP", "PUSH_HTTP", "STREAMING_KAFKA"] = "PULL_HTTP"
+
+
+class TrainingProgressRequest(BaseModel):
+    """OI-5-aiml-trainingjob-steps: the execution runtime reports the step
+    the run has reached."""
+    step: Literal["DATA_EXTRACTION", "TRAINING", "TRAINED_MODEL"]
 
 
 # ---------------------------------------------------------------- Execution runtimes (jointly with NFO)
@@ -599,6 +610,7 @@ def query_training_job_status(training_job_id: uuid.UUID, db: Session = Depends(
         "nfDeploymentId": str(job.nf_deployment_id) if job.nf_deployment_id else None,
         "runtimeProfile": job.runtime_profile, "timeoutSeconds": job.timeout_seconds,
         "startedAt": _aware(job.started_at).isoformat(),
+        "currentStep": job.current_step, "steps": _training_steps(job),
     }
 
 
@@ -743,6 +755,32 @@ def resume_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessio
     _resume_training_job(db, job)
     db.commit()
     return {"trainingJobId": str(job.training_job_id), "status": job.status}
+
+
+@app.post("/training-jobs/{training_job_id}/progress")
+def report_training_progress(training_job_id: uuid.UUID, body: TrainingProgressRequest, db: Session = Depends(get_session)):
+    """OI-5-aiml-trainingjob-steps: the run's execution runtime (the NFO
+    deployment `_start_training` created) reports the step it has reached —
+    DATA_EXTRACTION, then TRAINING, then TRAINED_MODEL. Forward only:
+    repeating the current step is a no-op, going back is refused. Only an
+    IN_PROGRESS run makes progress (a SUSPENDED one is paused; an ended one
+    is history), 409 otherwise. Completion stays `POST .../complete`: this
+    reports where the run is, not how it ended.
+    """
+    _expire_overdue_jobs(db)
+    job = db.get(TrainingJob, training_job_id)
+    if job is None:
+        raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
+    if job.status != "IN_PROGRESS":
+        raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
+                               detail=f"a training job in status {job.status} makes no progress")
+    if TRAINING_STEPS.index(body.step) < TRAINING_STEPS.index(job.current_step):
+        raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
+                               detail=f"step {body.step} is behind the run's current step {job.current_step}")
+    job.current_step = body.step
+    db.commit()
+    return {"trainingJobId": str(job.training_job_id), "status": job.status,
+            "currentStep": job.current_step, "steps": _training_steps(job)}
 
 
 @app.post("/training-jobs/{training_job_id}/model-metrics")
@@ -1482,7 +1520,27 @@ def _training_job_view(j: TrainingJob) -> dict:
             "modelMetrics": j.model_metrics, "mlTrainingType": j.ml_training_type,
             "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None,
             "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None,
-            "runtimeProfile": j.runtime_profile, "timeoutSeconds": j.timeout_seconds}
+            "runtimeProfile": j.runtime_profile, "timeoutSeconds": j.timeout_seconds,
+            "currentStep": j.current_step, "steps": _training_steps(j)}
+
+
+# OI-5-aiml-trainingjob-steps: what the current step shows for each job status
+_CURRENT_STEP_STATUS = {"NOT_STARTED": "NOT_STARTED", "IN_PROGRESS": "IN_PROGRESS", "SUSPENDED": "SUSPENDED",
+                        "FAILED": "FAILED", "CANCELLED": "CANCELLED", "FINISHED": "FINISHED"}
+
+
+def _training_steps(job: TrainingJob) -> dict:
+    """Each step's status, derived from the job's `status` and the furthest
+    step its runtime reported (`current_step`): steps before it FINISHED,
+    the current one carries the job's state (IN_PROGRESS, SUSPENDED, or
+    how the run ended), later ones NOT_STARTED. A FINISHED run finished
+    every step — completion is the runtime's report that the trained
+    model was produced, whichever step it last reported."""
+    if job.status == "FINISHED":
+        return {step: "FINISHED" for step in TRAINING_STEPS}
+    current = TRAINING_STEPS.index(job.current_step)
+    return {step: ("FINISHED" if i < current else _CURRENT_STEP_STATUS[job.status] if i == current else "NOT_STARTED")
+            for i, step in enumerate(TRAINING_STEPS)}
 
 
 def _validation_job_view(j: ValidationJob) -> dict:
@@ -1537,26 +1595,95 @@ def create_feature_group(body: CreateFeatureGroupRequest, db: Session = Depends(
     CreateFeatureGroup (featuregroup_controller.py): name must be
     `\\w+` (word characters only) and 3-63 characters long, and a
     duplicate `featureGroupName` 409s, matching `DBException`
-    ("already exist") there. `enableDme`'s real DME job creation is a
-    deliberate elision — `enableDme` is stored and returned faithfully,
-    just not acted on, the same no-real-southbound-compute pattern as
-    elsewhere in this build.
+    ("already exist") there.
+
+    OI-5-aiml-featuregroup-dme: with `enableDme`, the group's DME data job
+    is created first, like the reference's create_dme_filtered_data_job —
+    a CONTINUOUS TRAINING-stage job of `dmeTypeId`, consumer
+    `aimgf:feature-group:<name>`, whose production job definition carries
+    the group's features and filters. If DME refuses it (an unknown type, a
+    definition its schema rejects, a delivery method no offer commits to)
+    the group is not created: 422 FEATURE_GROUP_DME_JOB_REFUSED with DME's
+    reason. `dmeTypeId` is required with `enableDme`.
     """
     if not re.fullmatch(r"\w+", body.featureGroupName) or not (3 <= len(body.featureGroupName) <= 63):
         raise framework_error(FrameworkError.FEATURE_GROUP_NAME_INVALID, detail=f"featureGroupName {body.featureGroupName!r} must be 3-63 word characters")
+    if db.scalar(select(FeatureGroup).where(FeatureGroup.feature_group_name == body.featureGroupName)) is not None:
+        raise framework_error(FrameworkError.FEATURE_GROUP_ALREADY_REGISTERED, detail=f"feature group {body.featureGroupName!r} already exists")
+    if body.enableDme and body.dmeTypeId is None:
+        raise framework_error(FrameworkError.FEATURE_GROUP_DME_JOB_REFUSED, detail="enableDme needs the dmeTypeId the group's data job collects")
+    data_job_id = _create_feature_group_data_job(body) if body.enableDme else None
     group = FeatureGroup(
         feature_group_name=body.featureGroupName, feature_list=body.featureList, datalake_source=body.datalakeSource,
         host=body.host, port=body.port, bucket=body.bucket, token=body.token, db_org=body.dbOrg,
         measurement=body.measurement, enable_dme=body.enableDme, measured_obj_class=body.measuredObjClass,
         dme_port=body.dmePort, source_name=body.sourceName,
+        dme_type_id=body.dmeTypeId if body.enableDme else None, dme_data_job_id=data_job_id,
     )
     db.add(group)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
+        _terminate_feature_group_data_job(data_job_id)  # lost a race on the name: don't leave the job behind
         raise framework_error(FrameworkError.FEATURE_GROUP_ALREADY_REGISTERED, detail=f"feature group {body.featureGroupName!r} already exists")
     return _feature_group_view(group)
+
+
+def _create_feature_group_data_job(body: CreateFeatureGroupRequest) -> uuid.UUID:
+    definition = {"featureGroupName": body.featureGroupName,
+                  "features": [f.strip() for f in body.featureList.split(",") if f.strip()]}
+    definition.update({k: v for k, v in (("measuredObjClass", body.measuredObjClass), ("sourceName", body.sourceName),
+                                         ("measurement", body.measurement)) if v})
+    resp = _r1.post("/dme/data-jobs", json={
+        "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": str(body.dmeTypeId), "productionJobDefinition": definition,
+        "dataDeliveryMethod": body.dataDeliveryMethod, "deliveryDetails": {}, "lifecycleStage": "TRAINING",
+        "consumerId": f"aimgf:feature-group:{body.featureGroupName}",
+    })
+    if resp.status_code >= 300:
+        try:
+            reason = resp.json().get("detail")
+        except ValueError:
+            reason = None
+        if isinstance(reason, dict):
+            reason = f"{reason.get('title')}: {reason.get('detail')}"
+        raise framework_error(FrameworkError.FEATURE_GROUP_DME_JOB_REFUSED,
+                              detail=f"DME refused the data job ({resp.status_code}): {reason or 'no reason given'}")
+    return uuid.UUID(resp.json()["dataJobId"])
+
+
+def _terminate_feature_group_data_job(data_job_id: uuid.UUID | None) -> str:
+    """Best effort, like every other teardown here: DONE, SKIPPED or FAILED."""
+    if data_job_id is None:
+        return "SKIPPED"
+    try:
+        resp = _r1.delete(f"/dme/data-jobs/{data_job_id}")
+    except httpx.HTTPError as exc:
+        return f"FAILED: {exc.__class__.__name__}"
+    return "DONE" if resp.status_code < 300 or resp.status_code == 404 else f"FAILED: HTTP {resp.status_code}"
+
+
+@app.get("/feature-groups/{feature_group_name}")
+def get_feature_group(feature_group_name: str, db: Session = Depends(get_session)):
+    return _feature_group_view(_feature_group_or_404(db, feature_group_name))
+
+
+@app.delete("/feature-groups/{feature_group_name}")
+def delete_feature_group(feature_group_name: str, db: Session = Depends(get_session)):
+    """DeleteFeatureGroup — and, for an enable_dme group, terminates its DME
+    data job (best effort; the outcome is in `dmeDataJobTeardown`)."""
+    group = _feature_group_or_404(db, feature_group_name)
+    teardown = _terminate_feature_group_data_job(group.dme_data_job_id)
+    db.delete(group)
+    db.commit()
+    return {"featureGroupName": feature_group_name, "dmeDataJobTeardown": teardown}
+
+
+def _feature_group_or_404(db: Session, name: str) -> FeatureGroup:
+    group = db.scalar(select(FeatureGroup).where(FeatureGroup.feature_group_name == name))
+    if group is None:
+        raise framework_error(FrameworkError.FEATURE_GROUP_NOT_FOUND, detail=f"no feature group {name!r}")
+    return group
 
 
 @app.get("/feature-groups")
@@ -1572,6 +1699,8 @@ def _feature_group_view(g: FeatureGroup) -> dict:
         "bucket": g.bucket, "token": g.token, "dbOrg": g.db_org, "measurement": g.measurement,
         "enableDme": g.enable_dme, "measuredObjClass": g.measured_obj_class, "dmePort": g.dme_port,
         "sourceName": g.source_name,
+        "dmeTypeId": str(g.dme_type_id) if g.dme_type_id else None,
+        "dmeDataJobId": str(g.dme_data_job_id) if g.dme_data_job_id else None,
     }
 
 

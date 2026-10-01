@@ -831,7 +831,11 @@ CREATE TABLE training_job (
   CONSTRAINT exactly_one_target CHECK (
     (model_id IS NOT NULL AND model_coordination_group_id IS NULL)
     OR (model_id IS NULL AND model_coordination_group_id IS NOT NULL)
-  )
+  ),
+  -- OI-5-aiml-trainingjob-steps: the furthest step the run's execution
+  -- runtime reported; each step's status is derived from it and `status`.
+  current_step                     TEXT NOT NULL DEFAULT 'DATA_EXTRACTION'
+                                     CHECK (current_step IN ('DATA_EXTRACTION','TRAINING','TRAINED_MODEL'))
 );
 
 CREATE TABLE model_change_subscription (
@@ -1086,7 +1090,11 @@ CREATE TABLE feature_group (
   enable_dme                            BOOLEAN NOT NULL DEFAULT false,
   measured_obj_class                       TEXT,
   dme_port                                   TEXT,
-  source_name                                  TEXT
+  source_name                                  TEXT,
+  -- OI-5-aiml-featuregroup-dme: an enable_dme group's DME type and the data
+  -- job created for it (bare refs: the job is DME's, terminated with the group).
+  dme_type_id                                    UUID,
+  dme_data_job_id                                  UUID
 );
 
 -- ============================================================

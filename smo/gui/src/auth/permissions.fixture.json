@@ -6,6 +6,24 @@
     "queryMatch": {}
   },
   {
+    "method": "GET",
+    "pattern": "^/aimgf/feature-groups/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/feature-groups$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/aimgf/feature-groups/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
     "method": "POST",
     "pattern": "^/onboarding/packages$",
     "role": "operator",
@@ -222,6 +240,12 @@
   {
     "method": "POST",
     "pattern": "^/aimgf/training-jobs/[^/]+/complete$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/aimgf/training-jobs/[^/]+/progress$",
     "role": "operator",
     "queryMatch": {}
   },

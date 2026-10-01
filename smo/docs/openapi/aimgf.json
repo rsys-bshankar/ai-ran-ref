@@ -483,6 +483,16 @@
             "title": "Bucket",
             "type": "string"
           },
+          "dataDeliveryMethod": {
+            "default": "PULL_HTTP",
+            "enum": [
+              "PULL_HTTP",
+              "PUSH_HTTP",
+              "STREAMING_KAFKA"
+            ],
+            "title": "Datadeliverymethod",
+            "type": "string"
+          },
           "datalakeSource": {
             "title": "Datalakesource",
             "type": "string"
@@ -501,6 +511,18 @@
               }
             ],
             "title": "Dmeport"
+          },
+          "dmeTypeId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dmetypeid"
           },
           "enableDme": {
             "default": false,
@@ -2460,6 +2482,25 @@
         "title": "SupportedLearningTechnology",
         "type": "object"
       },
+      "TrainingProgressRequest": {
+        "description": "OI-5-aiml-trainingjob-steps: the execution runtime reports the step\nthe run has reached.",
+        "properties": {
+          "step": {
+            "enum": [
+              "DATA_EXTRACTION",
+              "TRAINING",
+              "TRAINED_MODEL"
+            ],
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step"
+        ],
+        "title": "TrainingProgressRequest",
+        "type": "object"
+      },
       "UpdateNodeGroupsRequest": {
         "properties": {
           "clearedNodeGroups": {
@@ -3371,7 +3412,7 @@
         "summary": "List Feature Groups"
       },
       "post": {
-        "description": "HISTORY.md \u00a75: no feature-group/feature-store concept\nexisted at all. Matches the reference's own\nCreateFeatureGroup (featuregroup_controller.py): name must be\n`\\w+` (word characters only) and 3-63 characters long, and a\nduplicate `featureGroupName` 409s, matching `DBException`\n(\"already exist\") there. `enableDme`'s real DME job creation is a\ndeliberate elision \u2014 `enableDme` is stored and returned faithfully,\njust not acted on, the same no-real-southbound-compute pattern as\nelsewhere in this build.",
+        "description": "HISTORY.md \u00a75: no feature-group/feature-store concept\nexisted at all. Matches the reference's own\nCreateFeatureGroup (featuregroup_controller.py): name must be\n`\\w+` (word characters only) and 3-63 characters long, and a\nduplicate `featureGroupName` 409s, matching `DBException`\n(\"already exist\") there.\n\nOI-5-aiml-featuregroup-dme: with `enableDme`, the group's DME data job\nis created first, like the reference's create_dme_filtered_data_job \u2014\na CONTINUOUS TRAINING-stage job of `dmeTypeId`, consumer\n`aimgf:feature-group:<name>`, whose production job definition carries\nthe group's features and filters. If DME refuses it (an unknown type, a\ndefinition its schema rejects, a delivery method no offer commits to)\nthe group is not created: 422 FEATURE_GROUP_DME_JOB_REFUSED with DME's\nreason. `dmeTypeId` is required with `enableDme`.",
         "operationId": "create_feature_group_feature_groups_post",
         "requestBody": {
           "content": {
@@ -3404,6 +3445,79 @@
           }
         },
         "summary": "Create Feature Group"
+      }
+    },
+    "/feature-groups/{feature_group_name}": {
+      "delete": {
+        "description": "DeleteFeatureGroup \u2014 and, for an enable_dme group, terminates its DME\ndata job (best effort; the outcome is in `dmeDataJobTeardown`).",
+        "operationId": "delete_feature_group_feature_groups__feature_group_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feature_group_name",
+            "required": true,
+            "schema": {
+              "title": "Feature Group Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Feature Group"
+      },
+      "get": {
+        "operationId": "get_feature_group_feature_groups__feature_group_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feature_group_name",
+            "required": true,
+            "schema": {
+              "title": "Feature Group Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Feature Group"
       }
     },
     "/health": {
@@ -7146,6 +7260,55 @@
           }
         },
         "summary": "Update Training Job Model Metrics"
+      }
+    },
+    "/training-jobs/{training_job_id}/progress": {
+      "post": {
+        "description": "OI-5-aiml-trainingjob-steps: the run's execution runtime (the NFO\ndeployment `_start_training` created) reports the step it has reached \u2014\nDATA_EXTRACTION, then TRAINING, then TRAINED_MODEL. Forward only:\nrepeating the current step is a no-op, going back is refused. Only an\nIN_PROGRESS run makes progress (a SUSPENDED one is paused; an ended one\nis history), 409 otherwise. Completion stays `POST .../complete`: this\nreports where the run is, not how it ended.",
+        "operationId": "report_training_progress_training_jobs__training_job_id__progress_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "training_job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Training Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingProgressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Training Progress"
       }
     },
     "/training-jobs/{training_job_id}/resume": {

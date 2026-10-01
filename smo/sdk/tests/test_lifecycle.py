@@ -173,9 +173,27 @@ def test_create_feature_group(client, r1):
     assert call["json"]["enableDme"] is False
 
 
+def test_create_feature_group_with_its_dme_type(client, r1):
+    type_id = uuid.uuid4()
+    client.create_feature_group("fg-1", "feat1", "influx", "host", "8086", "bucket", "token", "org", "meas",
+                                enable_dme=True, dme_type_id=type_id)
+    json = r1.calls[0]["json"]
+    assert (json["enableDme"], json["dmeTypeId"], json["dataDeliveryMethod"]) == (True, str(type_id), "PULL_HTTP")
+
+
 def test_list_feature_groups(client, r1):
     client.list_feature_groups()
     assert r1.calls[0] == {"verb": "get", "path": "/aimgf/feature-groups", "params": None}
+
+
+def test_delete_feature_group(client, r1):
+    client.delete_feature_group("fg-1")
+    assert (r1.calls[0]["verb"], r1.calls[0]["path"]) == ("delete", "/aimgf/feature-groups/fg-1")
+
+
+def test_report_training_progress(client, r1):
+    client.report_training_progress("job-1", "TRAINING")
+    assert (r1.calls[0]["path"], r1.calls[0]["json"]) == ("/aimgf/training-jobs/job-1/progress", {"step": "TRAINING"})
 
 
 def test_deploy_model_sends_raw_unwrapped_body(client, r1):

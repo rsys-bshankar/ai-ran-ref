@@ -6,10 +6,10 @@
 |---|---|
 | Standards basis | 3GPP TS 28.105 (AI/ML NRM) + internal lifecycle orchestration |
 | R1 route / port | `/aimgf` via R1 Termination (container :8000) |
-| Depends on (over R1) | MLMR (`/mlmr/models`, `/mlmr/coordination-groups`), NFO (`/nfo/descriptors`, `/nfo/deployments`), DME (`/dme/data-jobs/{id}`), Onboarding (`/onboarding/packages/{id}/onboarding-status`) |
+| Depends on (over R1) | MLMR (`/mlmr/models`, `/mlmr/coordination-groups`), NFO (`/nfo/descriptors`, `/nfo/deployments`), DME (`/dme/data-jobs`: check a training run's jobs; create and terminate a feature group's), Onboarding (`/onboarding/packages/{id}/onboarding-status`) |
 | Called by | rApps through the SDK (`sdk/smo_sdk/lifecycle.py`), MLLF (lifecycle read + node-group write), MLMR (`nrm-refs` join), MDAF (MLMF subscriptions and reports), SA SMOS and SO SMOS (training / validation / emulation / deploy / inference steps), GUI via the BFF |
 | Database tables | `model_lifecycle`, `training_job`, `validation_job`, `emulation_job`, `inference_job`, `certification_record`, `lifecycle_transition`, `mlmf_subscription`, `performance_report`, `feature_group`, `ml_training_function`, `ml_training_process`, `ml_training_report`, `ml_testing_function`, `ml_testing_report`, `aiml_inference_function`, `aiml_inference_emulation_function`, `aiml_inference_report`, `ml_model_loading_policy`, `ml_model_loading_request`, `ml_model_loading_process`, `ml_update_function`, `ml_update_request`, `ml_update_process`, `ml_update_report` |
-| Unit tests | 176 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 189 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Open: `OI-1-weighted-triggers` (group-retrain `WEIGHTED_TRIGGERS` raises `NotImplementedError`), `OI-6.1-runtime-gate` (no operator gate on RuntimeLifecycle transitions); runtime scale takes no target size (NFO's scale has no argument) |
 
 ## 1. High-level design (HLD)
@@ -134,7 +134,7 @@ Cross-module references are bare UUIDs. `model_lifecycle.model_id` references ML
 
 | Table (= NRM resource) | Key columns and constraints |
 |---|---|
-| `training_job` (= MLTrainingRequest) | `model_id` xor `model_coordination_group_id` (CHECK `exactly_one_target`); `status` (`NOT_STARTED` default, `IN_PROGRESS`, `SUSPENDED`, `FINISHED`, `FAILED`, `CANCELLED`); `ml_training_type`; `dme_data_job_ids`; `notification_uri`; `outcome_artifact_dme_type_id`; `model_metrics`; spec attributes (`fl_requirement`, `rl_requirement`, `performance_requirements`, `clustering_info`, ...); `cancel_request`, `suspend_request`; FK `ml_training_function_id` (SET NULL), FK `ml_update_process_id` (SET NULL) |
+| `training_job` (= MLTrainingRequest) | `model_id` xor `model_coordination_group_id` (CHECK `exactly_one_target`); `status` (`NOT_STARTED` default, `IN_PROGRESS`, `SUSPENDED`, `FINISHED`, `FAILED`, `CANCELLED`); `ml_training_type`; `dme_data_job_ids`; `notification_uri`; `outcome_artifact_dme_type_id`; `model_metrics`; spec attributes (`fl_requirement`, `rl_requirement`, `performance_requirements`, `clustering_info`, ...); `cancel_request`, `suspend_request`; `current_step` (`DATA_EXTRACTION` default, `TRAINING`, `TRAINED_MODEL`: the furthest step the runtime reported); FK `ml_training_function_id` (SET NULL), FK `ml_update_process_id` (SET NULL) |
 | `validation_job` (= MLTestingRequest) | `model_id` xor `model_coordination_group_id` (CHECK `validation_exactly_one_target`); `status` (`RUNNING`, `SUSPENDED`, `COMPLETED`, `FAILED`, `CANCELLED`); FK `training_job_id`, FK `ml_testing_function_id` (SET NULL) |
 | `emulation_job` | `model_id` (required); `status` (`RUNNING`, `COMPLETED`, `FAILED`); FK `aiml_inference_emulation_function_id` (SET NULL) |
 | `inference_job` | `model_id`; `status` (`RUNNING`, `COMPLETED`, `FAILED`); `nf_deployment_id` (the model's serving deployment); `consumer_ref`; FK `aiml_inference_function_id` (SET NULL) |
@@ -152,7 +152,7 @@ Cross-module references are bare UUIDs. `model_lifecycle.model_id` references ML
 |---|---|
 | `mlmf_subscription` | `model_id`, `metric_types`, `dme_type_id`, `guard_kpi_floor` (metric → minimum), `notification_destination` |
 | `performance_report` | FK `subscription_id` (CASCADE), `metrics`, `breached_floor`, `reported_at` |
-| `feature_group` | `feature_group_name` (unique, 3-63 word characters), `feature_list`, `datalake_source`, `host`, `port`, `bucket`, `token`, `db_org`, `measurement`, `enable_dme` (stored, not acted on), `measured_obj_class`, `dme_port`, `source_name` |
+| `feature_group` | `feature_group_name` (unique, 3-63 word characters), `feature_list`, `datalake_source`, `host`, `port`, `bucket`, `token`, `db_org`, `measurement`, `enable_dme`, `measured_obj_class`, `dme_port`, `source_name`, `dme_type_id` and `dme_data_job_id` (an `enable_dme` group's DME type and the data job created for it) |
 
 **TS 28.105 NRM tables**
 
@@ -247,6 +247,7 @@ Paths are relative to `/aimgf`. Lists are `{items, total, limit, offset}` with `
 | DELETE | `/training-jobs/{id}` | Cancel. 204; no-op for unknown / already `CANCELLED`; 409 for `FINISHED` / `FAILED` |
 | POST | `/training-jobs/{id}/suspend`, `/resume` | 409 `TRAINING_JOB_ILLEGAL_TRANSITION` from the wrong status |
 | POST / GET | `/training-jobs/{id}/model-metrics` | Replace (not merge) / read metrics |
+| POST | `/training-jobs/{id}/progress` | The execution runtime's step report, body `{step}` (`DATA_EXTRACTION`, `TRAINING`, `TRAINED_MODEL`). Forward only; repeating the current step is a no-op. 409 `TRAINING_JOB_ILLEGAL_TRANSITION` going back or unless `IN_PROGRESS`. Job views carry `currentStep` and `steps`: steps before the current one `FINISHED`, the current one the job's state (`IN_PROGRESS`, `SUSPENDED`, `FAILED`, `CANCELLED`), later ones `NOT_STARTED`; a `FINISHED` run finished every step |
 | POST | `/validation-jobs` | Requires model `TRAINED` and `training_approved` (409 `LIFECYCLE_ILLEGAL_TRANSITION`, `TRAINING_NOT_APPROVED`) |
 | GET | `/validation-jobs`, `/validation-jobs/{id}/status` | |
 | POST | `/validation-jobs/{id}/complete` | Writes MLTestingReport (`PASSED` / `FAILED`) |
@@ -274,7 +275,8 @@ Paths are relative to `/aimgf`. Lists are `{items, total, limit, offset}` with `
 | GET / DELETE | `/mlmf/subscriptions`, `/mlmf/subscriptions/{id}` | List (filter `model_id`); idempotent delete |
 | POST / GET | `/mlmf/subscriptions/{id}/reports` | Report metrics (breach = any metric below its floor; response may carry `groupRetrainTriggered`, `retrainedModelIds`) / list. 404 `MLMF_SUBSCRIPTION_NOT_FOUND` |
 | GET | `/mlmf/reports?breached_only=` | Recent reports across subscriptions |
-| POST / GET | `/feature-groups` | 400 `FEATURE_GROUP_NAME_INVALID`, 409 `FEATURE_GROUP_ALREADY_REGISTERED` |
+| POST / GET | `/feature-groups` | Create / list. With `enableDme`, `dmeTypeId` is required and the group's DME data job is created first (CONTINUOUS, `lifecycleStage` TRAINING, consumer `aimgf:feature-group:<name>`, definition `{featureGroupName, features, measuredObjClass?, sourceName?, measurement}`, delivery `dataDeliveryMethod`, default `PULL_HTTP`); a refusal means no group. 400 `FEATURE_GROUP_NAME_INVALID`, 409 `FEATURE_GROUP_ALREADY_REGISTERED`, 422 `FEATURE_GROUP_DME_JOB_REFUSED` |
+| GET / DELETE | `/feature-groups/{name}` | Read / delete; delete terminates the DME data job (best effort, outcome in `dmeDataJobTeardown`). 404 `FEATURE_GROUP_NOT_FOUND` |
 | GET | `/health` | Liveness |
 
 **TS 28.105 NRM resources.** Each is `{"id", "attributes"}`; unknown ids are 404 `NRM_OBJECT_NOT_FOUND`; bodies reject unknown attributes (422).
@@ -351,6 +353,8 @@ Errors are RFC 7807 ProblemDetails from `framework_error()`; the code is carried
 | `INFERENCE_MODEL_NOT_ACTIVE` | 409 | runtime not `ACTIVE`, or model `RETIRED` |
 | `INFERENCE_FUNCTION_NOT_ACTIVATED`, `MODEL_NOT_LOADED` | 409 | named AIMLInferenceFunction is `DEACTIVATED` or lacks the model |
 | `FEATURE_GROUP_ALREADY_REGISTERED` | 409 | duplicate feature-group name |
+| `FEATURE_GROUP_DME_JOB_REFUSED` | 422 | `enableDme` without `dmeTypeId`, or DME refused the group's data job |
+| `FEATURE_GROUP_NOT_FOUND` | 404 | unknown feature-group name |
 | `FEATURE_GROUP_NAME_INVALID` | 400 | name not 3-63 word characters |
 | `COORDINATION_GROUP_MISMATCH` | 422 | not exactly one of model / group target |
 | `GOVERNANCE_DECIDER_REQUIRED` | 422 | governance event without `decidedBy` |
@@ -362,7 +366,7 @@ Errors are RFC 7807 ProblemDetails from `framework_error()`; the code is carried
 
 - `WEIGHTED_TRIGGERS` group-retrain propagation is reserved and raises `NotImplementedError`: `OI-1-weighted-triggers` ([`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)). `MAJORITY_TRIGGERS` is evaluated with a breach count of one per report.
 - RuntimeLifecycle transitions have no operator gate: `OI-6.1-runtime-gate`.
-- Runtime scaling takes no target size (NFO scale has no replica or resource argument); there is no asynchronous completion from NFO (instantiate is synchronous). `enableDme` on feature groups is stored, not acted on.
+- Runtime scaling takes no target size (NFO scale has no replica or resource argument); there is no asynchronous completion from NFO (instantiate is synchronous).
 - No distributed-training engine consumes the FL / RL requirements.
 - NFO call results are not status-checked (2.5): a failed instantiate surfaces as a 500 with nothing committed, but a failed delete is ignored and can leave an NFO deployment behind. A crash between the NFO call and `commit` leaves an NFO deployment AIMgF does not know of.
 - `GET /aiml-inference-reports` filters and paginates in Python after loading all rows (not SQL `LIMIT` / `OFFSET`), and `nrm-refs` scans all reports and functions.
@@ -386,9 +390,10 @@ NFO, MLMR and the webhook are faked in-process; the database is SQLite.
 | `tests/test_main.py` | training / validation / emulation request, complete, cancel, suspend / resume, supersede, DME check, completion notifications; advance, governance records, operator gates, lifecycle history; runtime deploy / activate / scale / terminate and end-of-life; inference gating; NFO execution runtime create / teardown per job kind; MLMF subscribe / report / notify / unsubscribe and group retrain; feature groups; health | 100 |
 | `tests/test_nrm.py` | TS 28.105 requests as real jobs, spec enum rejection, process flags and progress, chained training reports, testing requests, loading request / policy / process, inference-function gating, emulation reports, update request / report, 404 for unknown NRM objects | 21 |
 | `tests/test_runtime.py` | runtime profile sizing (package, explicit, unknown package), per-mode profiles, stage timeouts, lazy expiry, suspended runs pausing, timeouts never forcing an illegal transition, 5 s inference default, clock restart on NRM resume | 13 |
+| `tests/test_steps_and_feature_groups.py` | training steps (start, forward progress, no going back, suspended and ended runs, how a run ended, a finished run, validation); feature-group DME job (created with the group, none without `enableDme`, a refusal means no group, duplicate name first, delete terminates it, delete without a job) | 13 |
 | `tests/test_statemachine.py` | both FSMs (full pipeline, no shortcuts, retrain re-entry, rollback, reject, terminal states, state counts), inference FSM, retrain propagation policies, `ADVANCEABLE_EVENTS`, `TRAINABLE_STATES` | 25 |
 
-The totals are counted as test functions (159); the suite reports 176 passed because some tests are parametrised.
+The totals are counted as test functions (172); the suite reports 189 passed because some tests are parametrised.
 
 ### 3.3 What is not covered here
 
