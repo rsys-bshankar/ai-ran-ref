@@ -30,6 +30,7 @@ done
 (cd gui-bff && PYTHONPATH=.:../shared python -m pytest tests/ -q)
 (cd samples/energy-saving-rapp && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q)
 (cd samples/mobility-optimization-rapp && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q)
+(cd samples/coverage-optimization-rapp && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q)
 ```
 
 After changing anything under a sample rApp (`samples/<name>/`), rebuild its

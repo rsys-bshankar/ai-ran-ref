@@ -79,6 +79,8 @@ const TONES: Record<string, string> = {
   STEADY: "ok", OBSERVING: "warn", CONFIRMED: "ok", REVERTED: "warn", REVERT_FAILED: "bad",
   RAISE_CIO: "info", LOWER_CIO: "info", REVERT_CIO: "warn", HEALTHY: "ok", HOLD: "muted", NONE: "muted",
   ACTION_FAILED_ROLLED_BACK: "bad", VERIFY_FAILED_ROLLED_BACK: "bad",
+  // Wave 10.3 Coverage Optimization rApp
+  DOWNTILT: "info", UPTILT: "info", POWER_UP: "info", POWER_DOWN: "info", REVERT: "warn",
 };
 
 export function StateBadge({ state }: { state: string | null | undefined }) {

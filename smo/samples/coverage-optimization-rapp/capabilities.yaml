@@ -1,0 +1,59 @@
+# CoverageOptimization_rApp capabilities (Wave 10.3, W10.3-01).
+capabilities:
+  consumes:
+    - namespace: data
+      description: >-
+        COVERAGE_PERFORMANCE (per-cell measurement-report statistics with the
+        CM snapshot, O1 PM via RAN NF OAM → DME) for training, validation and
+        live inference; COVERAGE_PERFORMANCE_SIM (Digital Twin, injected
+        faults) for emulation; cell guards, alarms and O1 config read-back
+        from RAN NF OAM.
+    - namespace: models
+      description: Registers CoverageSensitivityModel in MLMR and stores its artifact, via sdk.models.
+    - namespace: lifecycle
+      description: AIMgF training/validation/emulation jobs, MLLF + MLIF runtime deployment, inference jobs.
+    - namespace: intent
+      description: AutonomyDispatch of tilt and power change sets (SHADOW / ASSIST / AUTONOMOUS), via sdk.intent.
+    - namespace: platform
+      description: Direct DME O1 actions for KPI reverts and rollbacks, via sdk.platform.
+  provides:
+    - namespace: data
+      description: The COVERAGE_PERFORMANCE_SIM Digital Twin dataset (sample producer).
+
+datasets:
+  - COVERAGE_PERFORMANCE
+  - COVERAGE_PERFORMANCE_SIM
+supportedStages:
+  - TRAINING
+  - VALIDATION
+  - EMULATION
+  - INFERENCE
+producedModel:
+  name: CoverageSensitivityModel
+  type: REGRESSION_OPTIMISATION
+inputs:
+  - MR.Total
+  - MR.WeakRsrp
+  - MR.Overshoot
+  - MR.PilotPollution
+  - MR.Overlap
+  - CM.DigitalTilt
+  - CM.ConfiguredMaxTxPower
+outputs:
+  - digitalTilt
+  - configuredMaxTxPower
+supportedActions:
+  - DOWNTILT
+  - UPTILT
+  - POWER_UP
+  - POWER_DOWN
+  - REVERT
+o1Targets:
+  - CommonBeamformingFunction
+  - NRSectorCarrier
+o1Attributes:
+  - digitalTilt
+  - configuredMaxTxPower
+supportedVendorModes:
+  - O1_NETCONF
+  - O1_RESTCONF

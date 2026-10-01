@@ -42,6 +42,7 @@ services:
       SA_SMOS_URL: http://sa-smos:8000
       ENERGY_SAVING_RAPP_URL: http://energy-saving-rapp:8000
       MOBILITY_OPTIMIZATION_RAPP_URL: http://mobility-optimization-rapp:8000
+      COVERAGE_OPTIMIZATION_RAPP_URL: http://coverage-optimization-rapp:8000
 
   sme:
     build: { context: ., args: { MODULE: sme } }
@@ -99,6 +100,15 @@ services:
   # (samples/mobility-optimization-rapp) — R1-only, like energy-saving-rapp.
   mobility-optimization-rapp:
     build: { context: ., args: { MODULE: samples/mobility-optimization-rapp } }
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+
+  # Wave 10.3: the Coverage Optimization reference rApp
+  # (samples/coverage-optimization-rapp) — R1-only, like energy-saving-rapp.
+  coverage-optimization-rapp:
+    build: { context: ., args: { MODULE: samples/coverage-optimization-rapp } }
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env

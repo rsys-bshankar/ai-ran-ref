@@ -1,0 +1,53 @@
+# CoverageOptimization_rApp package manifest (Wave 10.3, W10.3-01)
+rappManifest:
+  manifestVersion: "1.0"
+  aiRuntimeSdkVersion: "1.0"
+
+name: CoverageOptimization_rApp
+version: 1.0.0
+vendor: Radisys
+ownerTeam: AI-RAN-SMO
+description: >
+  AI-driven Coverage and Capacity Optimization. It learns how weak coverage,
+  overshoot and pilot pollution respond to each cell's tilt and transmit
+  power, and its neighbours', then tunes a cluster of cells jointly through
+  O1.
+useCase: Coverage Optimization
+domain: RAN
+deploymentModel: NonRT-RIC
+
+executionModes:
+  - TRAINING
+  - VALIDATION
+  - EMULATION
+  - INFERENCE
+
+autonomyModes:
+  - SHADOW
+  - ASSIST
+  - AUTONOMOUS
+
+requiredServices:
+  - DME
+  - AIMgF
+  - MLMR
+  - MLLF
+  - RAN-NF-OAM
+
+runtimeProfiles:
+  TRAINING:
+    cpu: 4
+    memory: 8Gi
+    gpu: 0
+  VALIDATION:
+    cpu: 2
+    memory: 4Gi
+    gpu: 0
+  EMULATION:
+    cpu: 2
+    memory: 4Gi
+    gpu: 0
+  INFERENCE:
+    cpu: 1
+    memory: 2Gi
+    gpu: 0

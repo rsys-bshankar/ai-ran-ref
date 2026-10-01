@@ -47,6 +47,11 @@ IOC_DEFAULTS = {
     # the gNB's own distributed MRO (TS 28.541 DMROFunction) and its bounds
     "DMROFunction": {"dmroControl": "true", "maximumDeviationHoTriggerLow": "-12", "maximumDeviationHoTriggerHigh": "12",
                      "minimumTimeBetweenHoTriggerChange": "10", "tstoreUEcntxt": "100"},
+    # Wave 10.3 (W10.3-04): a cell's coverage knobs — its beam's digital tilt
+    # (TS 28.541, tenths of a degree, positive = downtilt) and its sector
+    # carrier's maximum transmit power (dBm in this build)
+    "CommonBeamformingFunction": {"digitalTilt": "60", "digitalAzimuth": "0", "coverageShape": "0"},
+    "NRSectorCarrier": {"configuredMaxTxPower": "43", "txDirection": "DL_AND_UL"},
 }
 # TS 28.541 CESManagementFunction: energySavingState follows energySavingControl
 ENERGY_SAVING_STATE = {"TO_BE_ENERGY_SAVING": "IS_ENERGY_SAVING", "TO_BE_NOT_ENERGY_SAVING": "IS_NOT_ENERGY_SAVING"}

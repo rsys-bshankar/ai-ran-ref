@@ -72,6 +72,8 @@ ROUTES = {
     "/energy-saving-rapp": os.environ.get("ENERGY_SAVING_RAPP_URL", "http://energy-saving-rapp:8000"),
     # Wave 10.2: the Mobility Optimization reference rApp
     "/mobility-optimization-rapp": os.environ.get("MOBILITY_OPTIMIZATION_RAPP_URL", "http://mobility-optimization-rapp:8000"),
+    # Wave 10.3: the Coverage Optimization reference rApp
+    "/coverage-optimization-rapp": os.environ.get("COVERAGE_OPTIMIZATION_RAPP_URL", "http://coverage-optimization-rapp:8000"),
 }
 
 

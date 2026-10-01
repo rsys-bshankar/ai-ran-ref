@@ -49,7 +49,7 @@ Smaller inconsistencies resolved without a decision:
 Wave-4 (TS 28.105) ─┬───────────────► Wave-7 (Runtime) ──┐
 Wave-5 (TS 28.104) ─┤                                    ├─► Wave-8 (Autonomy) ──► Wave-10.1 (Energy Saving)
 Wave-6 (TS 28.312) ─┴────────────────────────────────────┘                          │
-Wave-9 (Multi-vendor O1) ── independent; the 10.1 O1 path must not regress it       └─► 10.2 (Mobility) ✅ / 10.3 / 10.4
+Wave-9 (Multi-vendor O1) ── independent; the 10.1 O1 path must not regress it       └─► 10.2 (Mobility) ✅ / 10.3 (Coverage) ✅ / 10.4
 ```
 Wave-10 depends on Waves 4, 5, 7 and 8 `[W10]`, on Wave 6 via the Intent-routed AUTONOMOUS/ASSIST path (D-1), and on Wave 9 for the D-5 guard data and vendor-mode registry.
 
@@ -237,11 +237,36 @@ A1, Near-RT RIC, xApps or E2. Design pass decisions, agreed with the user and **
 | W10.2-09 | Audit trail per relation per pass, dashboard, GUI **Mobility** page, BFF rules, R1 route, compose service | ✅ Operator sees the failure trend, cause, prediction, decision, intent, action, verification and revert (MRO-20; GUI `pages/Mobility.tsx`) |
 | W10.2-10 | Integration tests MRO-01..MRO-20, the runbook demo (§25), call flow 23, exit review `WAVE_10_2_EXIT_REVIEW.md` | ✅ All green: `tests_integration/test_mobility_optimization_rapp.py`, `test_demo_runbook.py::test_mobility_optimization_demo_00_to_11_runs_end_to_end` |
 
-## 10b. Wave-10.3 / 10.4 — backlog placeholders (D-8)
+## 10a. Wave-10.3 — Coverage Optimization rApp (weak coverage / overshoot / pilot pollution → tilt + power) — ✅ DONE (PR-W10.3; exit review: `WAVE_10_3_EXIT_REVIEW.md`)
+
+Started after the 10.2 exit. It follows the 10.1/10.2 pattern: one PR, O1 PM in and O1 CM out, R1 only, no A1,
+Near-RT RIC, xApps or E2. Design pass decisions, agreed with the user and **frozen**:
+
+| # | Topic | Decision |
+|---|-------|----------|
+| D10.3-1 | O1 actuator | **Tilt plus transmit power.** Per cell, `CommonBeamformingFunction.digitalTilt` (TS 28.541, tenths of a degree, positive = downtilt) and `NRSectorCarrier.configuredMaxTxPower`. One knob moves per cell per change. |
+| D10.3-2 | Algorithm | **Joint neighbour optimisation.** Per cell and hourly window, measurement-report PM gives three problem shares: weak coverage, overshoot and pilot pollution (the TS 28.541 CCO problem classes), plus the overlap with each neighbour. A learned linear sensitivity model predicts how each share responds to the cell's own tilt/power step and, weighted by overlap, to its neighbours' steps. A joint search over the cluster picks the move set (at most 2 cells per pass) that most reduces the cluster objective. The cluster objective is the sum of every share's excess over 5 %, plus a cost per changed cell. So an overshooting cell is downtilted, rather than the neighbours it pollutes. |
+| D10.3-3 | Code structure | **A standalone sample**, `samples/coverage-optimization-rapp/`, beside the other two; 10.1 and 10.2 are left untouched. |
+| D10.3-4 | Safety | All four rule sets apply. (a) Bounds and pacing: tilt within baseline ± 4°, steps of 1°; power within baseline ± 3 dB, steps of 1 dB; at least 60 min between changes on a cell; at least 100 measurement reports per window. (b) KPI-verified revert: a change set is observed for 60 min. If the cluster objective then got worse, every cell in the set is reverted. (c) Coordination: never change a cell while it or a neighbour is asleep, pre-sleep or < 30 min past a wake (O1 state and the EnergySaving rApp's states), or while the Mobility rApp has one of the cell's relations OBSERVING. (d) Protected cells: skip EMERGENCY and incident-zone cells and cells under an active critical alarm. |
+
+| ID | Work item | Done when |
+|----|-----------|-----------|
+| W10.3-01 | Package `samples/coverage-optimization-rapp/` → `coverage-optimization-rapp.csar` (manifest, capabilities, ASD; 4 execution modes, 3 autonomy modes, runtime profiles) | ✅ Onboards → AVAILABLE (CCO-01) |
+| W10.3-02 | Model `CoverageSensitivityModel`: 12 learned sensitivities (3 shares × own tilt / own power / neighbours' tilt / neighbours' power), fitted on history where tilt and power varied; the joint optimiser; logic files for training, validation, emulation and inference; JSON artifact in MLMR | ✅ Trained, validated and emulated through AIMgF (CCO-03..05); the learned sensitivities recover the propagation model's (RMSE ≈ 0.1); emulation move accuracy 1.0, no false actions |
+| W10.3-03 | `COVERAGE_PERFORMANCE` PM per cell (`MR.Total`, `MR.WeakRsrp`, `MR.Overshoot`, `MR.PilotPollution`, `MR.Overlap.<cell>`, plus the CM snapshot `CM.DigitalTilt` / `CM.ConfiguredMaxTxPower`) in DME; the Digital Twin `COVERAGE_PERFORMANCE_SIM` producer with injected faults; a sample propagation model that turns the live O1 tilt/power into PM, so a closed loop is observable | ✅ rApp reads both via `sdk.data.get_dataset` (CCO-02); live PM follows the live O1 settings |
+| W10.3-04 | O1 model in the mock adaptor: `CommonBeamformingFunction` and `NRSectorCarrier` with defaults, writes and read-back | ✅ Read-back reflects writes (mock-o1-adaptor unit test, CCO-09) |
+| W10.3-05 | Engine: guards (D10.3-4), bounds, pacing, sample minimum; the allowed moves per cell feed the joint optimiser | ✅ Unit tests per rule (`samples/coverage-optimization-rapp/tests/test_engine.py`) |
+| W10.3-06 | Actuation: one AutonomyDispatch per pass, one expectation per changed cell, then Intent, the SA SMOS O1-CM handler (new `CommonBeamformingFunction.digitalTilt` and `NRSectorCarrier.configuredMaxTxPower` CM targets), DME and RAN NF OAM. Reverts and rollbacks go straight to DME. | ✅ Tilt / power written per cell, read back (CCO-08/09/14) |
+| W10.3-07 | KPI-verified revert of the whole change set, else CONFIRMED | ✅ Revert test (CCO-16: the whole set REVERTED through DME with the execution's correlation id); confirmation (CCO-11) |
+| W10.3-08 | Coordination with EnergySaving (cell and neighbours) and Mobility (relations OBSERVING), read over R1 | ✅ Coordination tests (CCO-18: CELL_ASLEEP / NEIGHBOUR_ASLEEP / RECENTLY_WOKEN with EnergySaving, MRO_OBSERVING with Mobility) |
+| W10.3-09 | Audit trail per cell per pass, dashboard, GUI **Coverage** page, BFF rules, R1 route, compose service | ✅ Operator sees the problem shares, the joint plan and its predicted gain, decision, intent, action, verification and revert (CCO-20; GUI `pages/Coverage.tsx`) |
+| W10.3-10 | Integration tests CCO-01..CCO-20, the runbook demo (§26), call flow 24, exit review `WAVE_10_3_EXIT_REVIEW.md` | ✅ All green: `tests_integration/test_coverage_optimization_rapp.py`, `test_demo_runbook.py::test_coverage_optimization_demo_00_to_11_runs_end_to_end` |
+
+## 10b. Wave-10.4 — backlog placeholders (D-8)
 
 | ID | rApp | Input → Output | Next step |
 |----|------|----------------|-----------|
-| W10.3-00 | Coverage Optimization | RSRP → antenna tilt | Design pass after 10.1 exit |
+| W10.3-00 | Coverage Optimization | RSRP → antenna tilt | ✅ Designed and built as Wave 10.3 (§10a) |
 | W10.4-00 | Traffic Steering | Congestion score → cell reselection bias | Design pass after 10.1 exit |
 | W10-B1 | Energy model LSTM variant (D-6) | PRB → PRB for the next N windows | ✅ After 10.1 |
 | W10-B2 | `CESManagementFunction.energySavingControl` as an alternative actuator (D-2) | — | ✅ After 10.1 |

@@ -61,6 +61,10 @@ DEFAULT_CM_TARGETS = {
     # QOffsetRange dB entries) isn't enumerable here — RAN NF OAM's schema
     # pre-check validates the write against the vendor's data model.
     "NRCellRelation.cellIndividualOffset": [],
+    # Wave 10.3 (W10.3-06): a cell's coverage knobs (integers, schema-checked
+    # by RAN NF OAM like the CIO)
+    "CommonBeamformingFunction.digitalTilt": [],
+    "NRSectorCarrier.configuredMaxTxPower": [],
 }
 SUCCESS_STATUSES = {"COMPLETED"}
 ACTION_ID_NAMESPACE = uuid.UUID("6f2b8c1e-3d4a-5b6c-8d9e-0a1b2c3d4e5f")
