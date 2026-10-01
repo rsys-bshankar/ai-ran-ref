@@ -27,7 +27,7 @@ jobs:
         working-directory: smo
         run: |
           pip install -e shared
-          pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic python-multipart jsonschema pyyaml pytest defusedxml
+          pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic python-multipart jsonschema pyyaml pytest defusedxml "pyjwt[crypto]"
 
       - name: Run each module's unit test suite
         working-directory: smo
@@ -156,7 +156,7 @@ jobs:
         working-directory: smo
         run: |
           pip install -e shared
-          pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic python-multipart jsonschema pyyaml defusedxml
+          pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" httpx pydantic python-multipart jsonschema pyyaml defusedxml "pyjwt[crypto]"
 
       - name: Every ORM-declared column actually exists in the migration, with matching nullability
         working-directory: smo

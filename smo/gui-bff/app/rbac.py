@@ -211,6 +211,8 @@ RULES: list[Rule] = [
     _rule("POST", "/sme/published-apis/v1/{id}/service-apis", A),
     _rule("DELETE", "/sme/published-apis/v1/{id}/service-apis/{id}", A),
     _rule("POST", "/sme/invoker-registrations", A),
+    _rule("PUT", "/sme/invoker-registrations/{id}", A),      # key rotation (SA-SME-1-public-key)
+    _rule("DELETE", "/sme/invoker-registrations/{id}", A),   # offboarding
     _rule("PUT", "/sme/trusted-invokers/{id}", A),
     _rule("POST", "/sme/trusted-invokers/{id}/(update|delete)", A),
     _rule("DELETE", "/sme/trusted-invokers/{id}", A),

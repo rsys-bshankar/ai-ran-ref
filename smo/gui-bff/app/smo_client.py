@@ -67,9 +67,9 @@ class R1Gateway:
         return self._sme_url_override or token_endpoint.rsplit("/oauth2/token", 1)[0]
 
     async def _onboard_invoker(self, token_endpoint: str) -> SmoCredential:
-        # SME stores apiInvokerPublicKey but never verifies anything against
-        # it (its token endpoint checks only the onboarding secret), so an
-        # opaque per-BFF identifier is the honest value here, not a key.
+        # An opaque per-BFF label, not a PEM key: the BFF authenticates with
+        # its onboarding secret, so SME has no key to verify assertions with
+        # (an RFC 7523 client assertion needs a PEM key, SA-SME-1-public-key).
         resp = await self._client.post(f"{self._sme_base(token_endpoint)}/invoker-registrations",
                                        json={"apiInvokerPublicKey": f"smo-gui-bff:{secrets.token_urlsafe(16)}"})
         if resp.status_code != 201:

@@ -164,9 +164,12 @@ export interface A1Service { serviceId: string; callbackUrl: string | null; keep
 export interface PolicyStatusSubscription { subscriptionId: string; notificationDestination: string; subscriptionScope: string | null; policyIdList: string[] | null; policyTypeIdList: string[] | null; nearRtRicIdList: string[] | null }
 export interface SmeProvider { apfId: string; providerDomainInfo: string | null; serviceCount: number }
 export interface SmeService { serviceId: string; serviceName: string; producerId: string; endpoint: string; version: string; fullApiVersions: string[]; serviceCapabilities: Record<string, unknown>; aefProfiles: Record<string, unknown>[] }
-export interface SmeInvoker { apiInvokerId: string; apiInvokerPublicKey: string; trusted: boolean }
+export interface SmeInvoker { apiInvokerId: string; apiInvokerPublicKey: string; keyAuthentication: boolean; trusted: boolean }
 export interface TrustedInvoker { apiInvokerId: string; notificationDestination: string; requestTestNotification: boolean; securityInfo: Record<string, unknown>[] }
-export interface CapifEventSubscription { subscriptionId: string; subscriberId: string; eventTypes: string[]; callbackUri: string; apiIds: string[] | null }
+export interface CapifEventSubscription {
+  subscriptionId: string; subscriberId: string; eventTypes: string[]; callbackUri: string;
+  apiIds: string[] | null; apiInvokerIds: string[] | null; aefIds: string[] | null;  // CAPIFEventFilter (OI-5-sme-filters)
+}
 export interface PackageUsage { registrationId: string; consumerId: string; stoppedAt: string | null; active: boolean }
 export interface PackageArtifact { artifactId: string; path: string; accessUrl: string }
 export interface NfDescriptor { nfDeploymentDescriptorId: string; packageId: string; name: string; requiredResourceTypeId: string | null; workloadTemplate: Record<string, unknown> }

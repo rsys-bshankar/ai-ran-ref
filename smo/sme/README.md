@@ -8,9 +8,9 @@
 | R1 route / port | `/sme` via R1 Termination (container `:8000`) |
 | Depends on (over R1) | Caller-registered event callback URLs only; no other module |
 | Called by | R1 Termination (`/oauth2/introspect` on every proxied request); every module's `R1Client` (invoker onboarding and `/oauth2/token`); rApps and producers (publish, discover, subscribe); rApp Management (registers a package's declared providers and service APIs per instance); RAN Analytics (producer registration creates a service); GUI BFF |
-| Database tables | `service_profile`, `service_authz_policy`, `provider_registration`, `invoker_registration`, `issued_access_token`, `trusted_invoker`, `service_event_subscription` |
-| Unit tests | 71 passed (`tests/`, SQLite, standalone) |
-| Status | Done for the subset in 1.2. Open: [SA-SME-1-public-key](../OPEN_ITEMS.md), [OI-2-oauth2-scope](../OPEN_ITEMS.md), [OI-5-sme-filters](../OPEN_ITEMS.md) |
+| Database tables | `service_profile`, `service_authz_policy`, `provider_registration`, `invoker_registration`, `issued_access_token`, `used_client_assertion`, `trusted_invoker`, `service_event_subscription` |
+| Unit tests | 101 passed (`tests/`, SQLite, standalone) |
+| Status | Done for the subset in 1.2 |
 
 ## 1. High-level design (HLD)
 
@@ -19,8 +19,8 @@
 SME gives the platform three things:
 
 1. **Service exposure.** A registered publisher (APF) publishes a service API; a consumer discovers it. One authorization gate decides discoverability: a consumer who is not allowed never learns the service exists.
-2. **Identity and tokens.** An API invoker (an rApp container, or an SMO module acting as one) is onboarded, receives a server-generated id and secret, and trades them for a bearer token. R1 Termination asks SME whether that token is active on every call.
-3. **Change events.** Subscribers are notified when a service becomes available, changes or goes away.
+2. **Identity and tokens.** An API invoker (an rApp container, or an SMO module acting as one) is onboarded, receives a server-generated id and secret, and trades them, or a JWT signed with its onboarded key, for a bearer token whose scope names only APIs it may use. R1 Termination asks SME whether that token is active on every call.
+3. **Change events.** Subscribers are notified when a service becomes available, changes or goes away, and when an invoker is onboarded, updated or offboarded.
 
 It also keeps a per-invoker security context (trusted invokers) as CAPIF's security API defines it.
 
@@ -33,16 +33,16 @@ SME is a profile of 3GPP CAPIF (TS 23.222 architecture, TS 29.222 APIs), as R1AP
 | Publish Service API | [`TS29222_CAPIF_Publish_Service_API.yaml`](../../specs/5G_APIs/TS29222_CAPIF_Publish_Service_API.yaml) | `POST/DELETE/GET /published-apis/v1/{apfId}/service-apis` |
 | Discover Service API | [`TS29222_CAPIF_Discover_Service_API.yaml`](../../specs/5G_APIs/TS29222_CAPIF_Discover_Service_API.yaml) | `GET /service-apis/v1/allServiceAPIs` with `api_name`, `api_version`, `aef_id`, `protocol`, `data_format`, `comm_type` filters (plus the required `api_invoker_id`) |
 | API Provider Management | [`TS29222_CAPIF_API_Provider_Management_API.yaml`](../../specs/5G_APIs/TS29222_CAPIF_API_Provider_Management_API.yaml) | `/provider-registrations` (APF enrolment, flattened) |
-| API Invoker Management | [`TS29222_CAPIF_API_Invoker_Management_API.yaml`](../../specs/5G_APIs/TS29222_CAPIF_API_Invoker_Management_API.yaml) | `/invoker-registrations` (public-key onboarding, server-generated id and secret) |
-| Security API | [`TS29222_CAPIF_Security_API.yaml`](../../specs/5G_APIs/TS29222_CAPIF_Security_API.yaml) | `/trusted-invokers/{id}` (`PUT`, `GET`, `DELETE`, `POST .../update`, `POST .../delete` revocation); token issuance at `/oauth2/token` |
-| Events API | [`TS29222_CAPIF_Events_API.yaml`](../../specs/5G_APIs/TS29222_CAPIF_Events_API.yaml) | `/capif-events/v1/{subscriberId}/subscriptions`; events `SERVICE_API_AVAILABLE`, `SERVICE_API_UNAVAILABLE`, `SERVICE_API_UPDATE` |
+| API Invoker Management | [`TS29222_CAPIF_API_Invoker_Management_API.yaml`](../../specs/5G_APIs/TS29222_CAPIF_API_Invoker_Management_API.yaml) | `/invoker-registrations` (public-key onboarding, server-generated id and secret; `PUT` key update, `DELETE` offboarding) |
+| Security API | [`TS29222_CAPIF_Security_API.yaml`](../../specs/5G_APIs/TS29222_CAPIF_Security_API.yaml) | `/trusted-invokers/{id}` (`PUT`, `GET`, `DELETE`, `POST .../update`, `POST .../delete` revocation); token issuance at `/oauth2/token`, with the `3gpp#aefId:apiName` scope and RFC 7523 client assertions |
+| Events API | [`TS29222_CAPIF_Events_API.yaml`](../../specs/5G_APIs/TS29222_CAPIF_Events_API.yaml) | `/capif-events/v1/{subscriberId}/subscriptions`; events `SERVICE_API_AVAILABLE`, `SERVICE_API_UNAVAILABLE`, `SERVICE_API_UPDATE`, `API_INVOKER_ONBOARDED`, `API_INVOKER_UPDATED`, `API_INVOKER_OFFBOARDED`; `CAPIFEventFilter` on `apiIds`, `apiInvokerIds` and `aefIds` |
 
 Deliberate adaptations and omissions:
 
 - Identity is flattened: `apfId == producerId == rAppId`, and an invoker id is the rAppId or an SMO module's own invoker id. There is no provider-domain / function-id hierarchy, so the domain-level collision detection of CAPIF core does not apply. Enrolment is an idempotent upsert on `apfId`.
 - Tokens are opaque and server-tracked, not signed JWTs (no IdP is run). Validity is asked through RFC 7662 `POST /oauth2/introspect`, which R1 Termination calls. The token request/response shape follows CAPIF's security token operation (`client_id`, `client_secret`, `grant_type=client_credentials`, `scope`; `access_token`, `expires_in`, `token_type`, `scope`), with RFC 6749 error bodies.
 - `ServiceProfile` keeps only the fields discovery filters need from `AefProfile` (`aefId`, `protocol`, `dataFormat`, `versions[].resources[].commType`), stored as JSON; the rest of `aefProfiles` passes through untouched.
-- Not implemented: Access Control Policy, Auditing, Logging, Routing Info and Open Discover APIs; `apiCat` discovery filter; event filters on `apiInvokerId` and `aefId` (see 2.8).
+- Not implemented: Access Control Policy, Auditing, Logging, Routing Info and Open Discover APIs; the `apiCat` discovery filter (no published service carries a category).
 
 ### 1.3 Position in the platform
 
@@ -79,7 +79,10 @@ SME calls nothing but subscriber callbacks. It reads no other module's data, and
 | Registering a service needs prior provider enrolment (`APF_NOT_REGISTERED`, 403). | CAPIF's `IsPublishingFunctionRegistered` gate. |
 | The server mints `apiInvokerId` and the onboarding secret; the client supplies only a public key. Every onboarding creates a new invoker. | CAPIF trust direction: a client does not choose its own identity or secret. |
 | Onboarding secrets are stored as salted scrypt hashes (`salt:digest`, n=2^14, r=8, p=1); tokens as SHA-256 hashes. Raw values are returned once and never stored. A DB leak yields no reusable credentials. Token hashing uses a fast hash because the token is 256 bits of randomness. | Security review. |
-| Token endpoint rejects with 400 (`unsupported_grant_type`, `invalid_client`, `unauthorized_client`) and bodies `{"error", "error_description"}`, not ProblemDetails. | RFC 6749 / CAPIF shape. |
+| Token endpoint rejects with 400 (`unsupported_grant_type`, `invalid_request`, `invalid_client`, `unauthorized_client`, `invalid_scope`) and bodies `{"error", "error_description"}`, not ProblemDetails. | RFC 6749 / CAPIF shape. |
+| A token's `scope` is checked before it is issued. Absent, `smo-internal` or `smo-gui`: granted as-is. Otherwise TS 29.222's `3gpp#aefId:apiName[,apiName][;aefId:...]`, where each API must be published, exposed by that AEF (one of its `aefProfiles`) and discoverable by the invoker; anything else is `invalid_scope`. The granted scope is stored on the token and returned by introspection. | CAPIF core's `IsFunctionRegistered` / `IsAPIPublished` checks, plus the discovery gate, so a token never names an API the invoker could not discover. The two internal scopes are what SMO's own clients request. |
+| An invoker onboarded with a PEM public key can authenticate a token request with an RFC 7523 client assertion instead of its secret: a JWT signed with that key (RS/PS/ES/EdDSA), `iss` and `sub` = the invoker, `aud` = the token endpoint, expiring within 300 s, with a `jti` used only once. Any other `apiInvokerPublicKey` is an opaque label and the invoker uses its secret. | Makes the onboarded key a real credential; replay protection is RFC 7523's. SMO's own clients onboard with labels and keep using secrets. |
+| Offboarding an invoker deletes its live tokens and trusted-invoker context. A key update takes effect at once. | Nothing an invoker was granted outlives it. |
 | `GET /trusted-invokers/{id}` redacts `authenticationInfo` and `authorizationInfo` to `""` unless asked per query flag. Invoker listings never expose a secret or its hash. | As CAPIF core. |
 | `selSecurityMethod` of a trusted-invoker entry is the caller's first `prefSecurityMethods`; it is not matched against AEF-side capabilities. | No AEF-side security-method catalogue exists here to match against. |
 | Revocation (`POST .../delete`) removes only entries matching the notified `aefId` or `apiIds`, and drops the record once none remain. | Implements CAPIF's stated filter semantics directly. |
@@ -95,7 +98,7 @@ Failure behaviour: SME has no outbound dependency whose failure changes a respon
 | File | Responsibility |
 |---|---|
 | `app/main.py` | All routes; secret and token hashing; discovery filter and gate; event notification; trusted-invoker validation. |
-| `app/models.py` | The tables and `EVENT_TYPES`. |
+| `app/models.py` | The tables and the event types (`SERVICE_API_EVENTS`, `API_INVOKER_EVENTS`). |
 | `../shared/smo_shared/` | `webhook`, `pagination`, `errors`, `timeutil`, `openapi_security` (exempts `/oauth2/token` and `/oauth2/introspect` from the declared bearer scheme), `r1_client` (the client side of onboarding and token fetch). |
 
 ### 2.2 Data model
@@ -115,19 +118,21 @@ Failure behaviour: SME has no outbound dependency whose failure changes a respon
 
 **`provider_registration`**: `apf_id` (PK), `provider_domain_info`.
 
-**`invoker_registration`**: `api_invoker_id` (PK, `api-invoker-<uuid>`), `public_key` (stored, never used), `onboarding_secret_hash`.
+**`invoker_registration`**: `api_invoker_id` (PK, `api-invoker-<uuid>`), `public_key` (a PEM key verifies client assertions; anything else is a label), `onboarding_secret_hash`.
 
-**`issued_access_token`**: `access_token_hash` (PK), `api_invoker_id`, `expires_at`. Rows are never purged.
+**`issued_access_token`**: `access_token_hash` (PK), `api_invoker_id`, `expires_at`, `scope` (the granted scope, null if unscoped). Expired rows are not purged; an invoker's rows are deleted when it is offboarded.
+
+**`used_client_assertion`**: `jti` (PK), `api_invoker_id`, `expires_at`. One row per assertion exchanged; expired rows are purged on the next assertion.
 
 **`trusted_invoker`**: `api_invoker_id` (PK), `notification_destination`, `request_test_notification`, `security_info` (JSON list of `{aefId, apiId, authenticationInfo, authorizationInfo, prefSecurityMethods, selSecurityMethod}`).
 
-**`service_event_subscription`**: `subscription_id` (PK), `subscriber_id`, `event_types` (array), `callback_uri`, `api_ids` (array, null).
+**`service_event_subscription`**: `subscription_id` (PK), `subscriber_id`, `event_types` (array), `callback_uri`, `api_ids`, `api_invoker_ids`, `aef_ids` (arrays, null = no filter).
 
 No cross-module references.
 
 ### 2.3 State machines
 
-None: stateless as to lifecycle. The only time-dependent state is token validity: a token is active until `expires_at` (issuance plus `ACCESS_TOKEN_TTL_SECONDS` = 3600); there is no revocation route.
+None: stateless as to lifecycle. The only time-dependent state is token validity: a token is active until `expires_at` (issuance plus `ACCESS_TOKEN_TTL_SECONDS` = 3600), or until its invoker is offboarded.
 
 ### 2.4 API
 
@@ -143,10 +148,12 @@ None: stateless as to lifecycle. The only time-dependent state is token validity
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/invoker-registrations` (201) | `{apiInvokerPublicKey}` → `{apiInvokerId, onboardingSecret}`; always creates a new invoker | |
-| GET | `/invoker-registrations` | Paged: `apiInvokerId`, `apiInvokerPublicKey`, `trusted` | |
-| POST | `/oauth2/token` | `{grant_type: client_credentials, client_id, client_secret, scope?}` → `{access_token, expires_in, token_type: Bearer, scope}`; `scope` is echoed, not checked | 400 `unsupported_grant_type`, `invalid_client`, `unauthorized_client` |
-| POST | `/oauth2/introspect` | `{token}` → `{active: false}` or `{active: true, client_id, exp}`; unauthenticated | |
+| POST | `/invoker-registrations` (201) | `{apiInvokerPublicKey}` → `{apiInvokerId, onboardingSecret, keyAuthentication}`; always creates a new invoker; emits `API_INVOKER_ONBOARDED` | 422 `SECURITY_CONTEXT_INVALID` (a malformed PEM key) |
+| PUT | `/invoker-registrations/{id}` | Replace the public key (rotation) → `{apiInvokerId, keyAuthentication}`; emits `API_INVOKER_UPDATED` | 400 `INVOKER_NOT_REGISTERED`; 422 |
+| DELETE | `/invoker-registrations/{id}` (204) | Offboard: the invoker, its tokens and its trusted-invoker context; idempotent; emits `API_INVOKER_OFFBOARDED` | |
+| GET | `/invoker-registrations` | Paged: `apiInvokerId`, `apiInvokerPublicKey`, `keyAuthentication`, `trusted` | |
+| POST | `/oauth2/token` | `{grant_type: client_credentials, client_id, client_secret? \| client_assertion_type + client_assertion?, scope?}` → `{access_token, expires_in, token_type: Bearer, scope}` | 400 `unsupported_grant_type`, `invalid_request` (secret and assertion together), `invalid_client`, `unauthorized_client`, `invalid_scope` |
+| POST | `/oauth2/introspect` | `{token}` → `{active: false}` or `{active: true, client_id, exp, scope?}`; unauthenticated | |
 
 **Trusted invokers (CAPIF security contexts)**
 
@@ -172,7 +179,7 @@ None: stateless as to lifecycle. The only time-dependent state is token validity
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/capif-events/v1/{subscriber_id}/subscriptions` (201) | `{subscriberId, eventTypes[], callbackUri, apiIds?}` → `{subscriptionId}` | 422 `SUBSCRIPTION_SCOPE_CONFLICT` (an event type outside `EVENT_TYPES`) |
+| POST | `/capif-events/v1/{subscriber_id}/subscriptions` (201) | `{subscriberId, eventTypes[], callbackUri, apiIds?, apiInvokerIds?, aefIds?}` → `{subscriptionId}`. Each filter that is set must share a value with the event; an event with no value of that kind (an invoker event for an `apiIds` filter) does not match. | 422 `SUBSCRIPTION_SCOPE_CONFLICT` (an event type outside `EVENT_TYPES`) |
 | GET | `/capif-events/v1/{subscriber_id}/subscriptions` | Paged; a build addition (CAPIF defines only `POST`) | |
 | DELETE | `/capif-events/v1/{subscriber_id}/subscriptions/{subscription_id}` (204) | Only if the subscriber matches; otherwise a silent no-op | |
 
@@ -183,13 +190,14 @@ None: stateless as to lifecycle. The only time-dependent state is token validity
 | Direction | Call | When | Failure behaviour |
 |---|---|---|---|
 | in | `POST /oauth2/introspect` from R1 Termination | every proxied request | n/a |
-| out, webhook | `POST {callbackUri}` `{serviceId, eventType}` (5 s) | register (`SERVICE_API_AVAILABLE`), re-register (`SERVICE_API_UPDATE`), deregister (`SERVICE_API_UNAVAILABLE`, sent before the row is deleted) | Best effort; no retry or backoff queue. A subscriber is skipped if its `eventTypes` lacks the event, its `apiIds` filter lacks the service, or the service's policy lists consumers and the subscriber is not one of them. |
+| out, webhook | `POST {callbackUri}` `{serviceId, subscriptionId, eventType, eventDetail: {apiIds, aefIds}}` (5 s) | register (`SERVICE_API_AVAILABLE`), re-register (`SERVICE_API_UPDATE`), deregister (`SERVICE_API_UNAVAILABLE`, sent before the row is deleted) | Best effort; no retry or backoff queue. A subscriber is skipped if its `eventTypes` lacks the event, a filter it sets does not match, or the service's policy lists consumers and the subscriber is not one of them. |
+| out, webhook | `POST {callbackUri}` `{apiInvokerId, subscriptionId, eventType, eventDetail: {apiInvokerIds}}` (5 s) | invoker onboarded, key updated, offboarded | Same; no visibility gate. |
 
 Matching rule for the last case: the subscriber id is compared with `allowedConsumers` exactly as the discovery gate compares `api_invoker_id`.
 
 ### 2.6 Configuration
 
-SME reads no environment variable of its own. Through `smo_shared`: `SMO_DATABASE_URL` (default `postgresql+psycopg://smo:smo@postgres:5432/smo`). Constants in code: `ACCESS_TOKEN_TTL_SECONDS = 3600`; scrypt parameters `n=2**14, r=8, p=1, dklen=32`.
+`SME_TOKEN_AUDIENCE`: the `aud` a client assertion must carry (default `{SME_URL}/oauth2/token`, with `SME_URL` default `http://sme:8000`: the token endpoint R1 Termination advertises). Through `smo_shared`: `SMO_DATABASE_URL` (default `postgresql+psycopg://smo:smo@postgres:5432/smo`). Constants in code: `ACCESS_TOKEN_TTL_SECONDS = 3600`; `INTERNAL_SCOPES = {smo-internal, smo-gui}`; `MAX_ASSERTION_LIFETIME_SECONDS = 300`; scrypt parameters `n=2**14, r=8, p=1, dklen=32`.
 
 ### 2.7 Error codes
 
@@ -199,19 +207,19 @@ SME reads no environment variable of its own. Through `smo_shared`: `SMO_DATABAS
 | `SERVICE_NAME_CONFLICT` | 409 | `serviceName` held by a different producer |
 | `PUBLISHING_FUNCTION_NOT_FOUND` | 404 | Own-services query for an unenrolled `apf_id` with no services |
 | `SUBSCRIPTION_SCOPE_CONFLICT` | 422 | Unknown event type (the name is shared with A1; here it means an invalid `eventTypes`) |
-| `INVOKER_NOT_REGISTERED` | 400 | `PUT /trusted-invokers` for an invoker never onboarded |
+| `INVOKER_NOT_REGISTERED` | 400 | `PUT /trusted-invokers` or `PUT /invoker-registrations/{id}` for an invoker never onboarded |
 | `TRUSTED_INVOKER_NOT_FOUND` | 404 | Read, update or revoke without a context |
-| `SECURITY_CONTEXT_INVALID` | 422 | Malformed `ServiceSecurity` or `SecurityNotification` |
-| `unsupported_grant_type`, `invalid_client`, `unauthorized_client` | 400 | `/oauth2/token` (body `{"error": ...}`, not ProblemDetails) |
+| `SECURITY_CONTEXT_INVALID` | 422 | Malformed `ServiceSecurity` or `SecurityNotification`; a malformed PEM `apiInvokerPublicKey` |
+| `unsupported_grant_type`, `invalid_request`, `invalid_client`, `unauthorized_client`, `invalid_scope` | 400 | `/oauth2/token` (body `{"error", "error_description"}`, not ProblemDetails) |
 | FastAPI request validation | 422 | Missing or mistyped fields |
 
 ### 2.8 Limits and open items
 
-- Invoker `public_key` is stored but no signature is verified; the secret is the only credential ([SA-SME-1-public-key](../OPEN_ITEMS.md)).
-- `scope` on the token request is echoed, not checked against published AEFs or APIs; tokens are opaque, with no IdP ([OI-2-oauth2-scope](../OPEN_ITEMS.md)).
-- Event filters on `apiInvokerId` and `aefId`, and a `category` discovery filter, are missing ([OI-5-sme-filters](../OPEN_ITEMS.md)).
+- Tokens are opaque, with no IdP. SME checks a scope when it issues the token, and introspection reports it, but no resource server enforces it per call: R1 Termination checks only that the token is active.
+- No `category` discovery filter: no published service carries a category.
 - Discovery does not verify that `api_invoker_id` is an onboarded invoker or the caller's own identity.
-- Expired tokens are not purged; invokers and tokens cannot be revoked or deleted.
+- Expired tokens are not purged; a single token cannot be revoked (offboarding the invoker revokes all of its tokens).
+- The key-update and offboarding routes do not prove the caller is the invoker; like every other route they sit behind R1 Termination's token check, and the GUI allows them to admins only.
 - `gates_discovery_visibility` is always true; `module_scope` is stored only.
 - No retry for event delivery.
 - Out of scope: CAPIF Access Control Policy, Auditing, Logging, Routing Info, Open Discover.
@@ -234,7 +242,10 @@ cd smo/sme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Invoker onboarding, token issue and introspection (server-generated id and secret, no cleartext secret or token, bad grant / client / secret, expired and unknown tokens) | 12 |
 | | Trusted invokers: validation, replace, redaction and reveal, update, revocation (by `aefId`, whole record), 404s | 17 |
 | | Registry reads (providers with service count, invokers without secrets, trusted invokers, event subscriptions) and health | 5 |
-| | Total | 71 |
+| `tests/test_security.py` | Scope: unscoped and internal scopes, a `3gpp#` scope over published APIs (and introspection of it), unpublished API, wrong AEF, malformed entries, unknown scope, an API hidden from the invoker | 10 |
+| | Client assertions: RSA and EC keys, one token per assertion, wrong key / audience / issuer, expired, too long-lived, no `jti`, label-only invoker, secret and assertion together, malformed PEM at onboarding, key rotation, offboarding revokes tokens | 14 |
+| | Invoker events and filters: onboarded / updated / offboarded delivery, `apiInvokerIds` filter, `aefIds` filter, a filter of another kind never matches, filters listed, unknown event type | 6 |
+| | Total | 101 |
 
 ### 3.3 What is not covered here
 

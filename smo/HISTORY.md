@@ -119,7 +119,19 @@ Recurring conventions referred to below:
 - **OI-2-oauth2** — SME `InvokerRegistration` (`POST /invoker-registrations`), `POST /oauth2/token`
   (client_credentials) and `POST /oauth2/introspect` (RFC 7662, opaque server-tracked tokens).
   R1 Termination enforces a token on every proxied call except `/bootstrap` and fails closed if SME
-  is unreachable. Secrets stored as salted scrypt, tokens as SHA-256. Scopes are echoed, not checked.
+  is unreachable. Secrets stored as salted scrypt, tokens as SHA-256. Scopes are checked since
+  OI-2-oauth2-scope.
+- **OI-2-oauth2-scope** — `POST /oauth2/token` checks `scope` before issuing (`_check_scope`).
+  - **Granted as-is:** absent, or one of SMO's own scopes (`smo-internal`, `smo-gui`).
+  - **Checked:** TS 29.222's `3gpp#aefId:apiName[,apiName][;aefId:...]`. Each API must be a
+    published service, exposed by that AEF (one of its `aefProfiles`), and discoverable by the
+    invoker under the same gate as `discover_services`.
+  - **Refused:** anything else, with 400 `invalid_scope` naming the first problem.
+  - The granted scope is stored on `issued_access_token.scope` and returned by
+    `/oauth2/introspect` (RFC 7662 `scope`).
+  - **Not taken:** per-call enforcement at R1 Termination. The gateway maps paths to modules, not
+    to published APIs, so it has nothing to match a scope against; the AEF that serves the API is
+    the place that would. Signed JWT tokens are not taken either: no IdP is run.
 - **OI-2-mns-registry** — Endpoint staleness is computed live at the `write_configuration_changes`
   gate (`_age_endpoint_health`, shared with `/discover`). Real MnS Registry polling stays elided.
   `smo_shared.timeutil.as_utc` handles SQLite naive datetimes.
@@ -200,10 +212,20 @@ closed partially; residuals are in OPEN_ITEMS.
 - **OI-5-sme-events** — `register_service` fires `SERVICE_API_AVAILABLE`/`SERVICE_API_UPDATE`,
   `deregister_service` fires `SERVICE_API_UNAVAILABLE`; `notify_service_change` enforces the same
   authz gate as `discover_services`.
-- **OI-5-sme-apiids** — `apiIds` filter on `SubscribeEvents`. `apiInvokerId`/`aefId` filters not
-  implemented (residual).
-- **OI-5-sme-discover** — `discover_services` filters on `aefId`/`protocol`/`dataFormat`/`commType`;
-  `category` has no model concept (residual).
+- **OI-5-sme-apiids** — `apiIds` filter on `SubscribeEvents`. The `apiInvokerId`/`aefId` filters
+  followed in OI-5-sme-filters.
+- **OI-5-sme-discover** — `discover_services` filters on `aefId`/`protocol`/`dataFormat`/`commType`.
+- **OI-5-sme-filters** — The rest of TS 29.222's `CAPIFEventFilter`, plus invoker events.
+  - **Events:** invoker onboarding, key update (`PUT /invoker-registrations/{id}`) and offboarding
+    (`DELETE /invoker-registrations/{id}`) emit `API_INVOKER_ONBOARDED`, `API_INVOKER_UPDATED` and
+    `API_INVOKER_OFFBOARDED`.
+  - **Filters:** subscriptions take `apiInvokerIds` and `aefIds` beside `apiIds`. Each filter
+    that is set must share a value with the event, whose `eventDetail` carries `apiIds` and `aefIds`
+    (from the service's `aefProfiles`) or `apiInvokerIds`. An event with no value of a filtered kind
+    does not match, as in CAPIF core's `getMatchingSubs`.
+  - **Offboarding** deletes the invoker's tokens and trusted-invoker context.
+  - **Not taken:** the `category` discovery filter. No published service carries a category, and
+    there is nothing that would supply one.
 - **OI-5-sme-aefprofiles** — `aefProfiles` (JSON), `apiSuppFeats`, `shareableInfo` on
   `ServiceProfile`; only the fields the filters need are kept.
 - **OI-5-sme-provider-enrolment** — `ProviderRegistration` (`POST`/`DELETE /provider-registrations`);
@@ -364,7 +386,22 @@ Large-structural items are confirmed Phase 1 scope cuts unless noted; open ones 
 
 ### SME vs CAPIF core source (`SA-SME-n`)
 - **SA-SME-1** Invoker onboarding takes only `apiInvokerPublicKey`; server mints `apiInvokerId` and
-  `onboardingSecret` (hashed). Public key stored, unused (OPEN_ITEMS). (Moderate item 3.)
+  `onboardingSecret` (hashed). The key is used since SA-SME-1-public-key. (Moderate item 3.)
+- **SA-SME-1-public-key** — An onboarded PEM public key is a credential: a token request can
+  authenticate with an RFC 7523 client assertion instead of the onboarding secret.
+  - **Checks:** the JWT must be signed with the invoker's key (RS, PS, ES or EdDSA), carry
+    `iss` = `sub` = the invoker and `aud` = the token endpoint (`SME_TOKEN_AUDIENCE`, default
+    `{SME_URL}/oauth2/token`), and expire within 300 s.
+  - **Replay:** its `jti` is recorded in `used_client_assertion` until it expires, so one assertion
+    buys one token.
+  - **Errors:** secret and assertion together is `invalid_request`; a failed check is
+    `invalid_client`, naming the reason.
+  - **Onboarding:** a malformed PEM key is refused (422 `SECURITY_CONTEXT_INVALID`). Any other
+    value stays an opaque label, which SMO's own clients use: they keep authenticating with
+    their secret. `PUT /invoker-registrations/{id}` rotates the key, effective at once.
+  - **Dependency:** `pyjwt[crypto]` is added to the service image and to CI.
+  - **Not taken:** signature checks on other requests (only the token endpoint authenticates
+    invokers), and mTLS.
 - **SA-SME-2** Trusted Invokers: `PUT`/`GET`/`DELETE /trusted-invokers/{apiInvokerId}` and `POST
   …/delete` revocation; invoker-registration gate, body validation, auth-info redaction, per-entry
   revocation. `selSecurityMethod` = first declared preference. Token issuance does not read it.

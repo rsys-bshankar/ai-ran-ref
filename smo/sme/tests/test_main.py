@@ -14,7 +14,8 @@ from sqlalchemy.pool import StaticPool
 from smo_shared.db import Base, get_session
 
 from app.main import app
-from app.models import InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile, TrustedInvoker
+from app.models import (InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription,
+                        ServiceProfile, TrustedInvoker, UsedClientAssertion)
 
 # Every test in this file registers services under one of these three
 # identities — pre-enrolling them here (via the real POST
@@ -30,7 +31,7 @@ def db_session_factory():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine, tables=[
         ServiceProfile.__table__, ServiceAuthzPolicy.__table__, ServiceEventSubscription.__table__, ProviderRegistration.__table__,
-        InvokerRegistration.__table__, IssuedAccessToken.__table__, TrustedInvoker.__table__,
+        InvokerRegistration.__table__, IssuedAccessToken.__table__, TrustedInvoker.__table__, UsedClientAssertion.__table__,
     ])
     return sessionmaker(bind=engine)
 

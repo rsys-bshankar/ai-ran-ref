@@ -28,14 +28,6 @@ Each item: what is missing, why it matters, suggested approach.
   daemon in the sandbox or CI); only `docker compose config` is checked. The `a1_mock_net` isolation
   (RT-7) is unverified. Approach: a CI job on a runner with Docker that brings the stack up and runs
   `DEMO_RUNBOOK.md` against it.
-- **OI-2-oauth2-scope** — `/oauth2/token` accepts and echoes `scope` without checking it against
-  published AEFs/APIs; tokens are opaque and introspected, no JWT/IdP. Approach: check `scope`
-  against `ServiceProfile`/`TrustedInvoker` entries; optional signed JWT if an IdP is added.
-- **SA-SME-1-public-key** — `InvokerRegistration.public_key` is stored but never used; no signature
-  verification exists. Approach: verify a signed token request or client assertion with the key.
-- **OI-5-sme-filters** — Event subscriptions cannot filter by `apiInvokerId` (no invoker-onboarding
-  events) or `aefId`; `discover_services` has no `category`. Approach: emit `API_INVOKER_*` events
-  from invoker registration, then add both filters; add `category` only with a source for it.
 - **OI-5-a1-scope** — `subscriptionScope` OWN/OTHERS is treated as ALL; no subscriber identity is
   tracked. Approach: record the subscriber's rApp id (from the R1 token) and compare with
   `creator_id`.

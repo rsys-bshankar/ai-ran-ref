@@ -4,9 +4,10 @@ SME's CAPIF security surface: Provider (APF) enrolment, API Invoker onboarding, 
 trust-context (`TrustedInvoker`) registry, and the `/oauth2/token` + `/oauth2/introspect`
 pair behind R1 Termination's advertised `tokenEndPoint` (HISTORY.md OI-2-oauth2,
 OI-5-sme-provider-enrolment, SA-SME-1, SA-SME-2). This is the security exchange that other
-flows' `Container->>R1: obtain OAuth2.0 token` line (call flow 01) abbreviates. Requested
-scopes are echoed, not checked, and the invoker's public key is stored but not yet used
-(OPEN_ITEMS.md OI-2-oauth2-scope, SA-SME-1-public-key).
+flows' `Container->>R1: obtain OAuth2.0 token` line (call flow 01) abbreviates. A requested
+scope is checked against the published APIs before a token is issued, and an invoker onboarded
+with a PEM key can authenticate with a signed client assertion instead of its secret
+(HISTORY.md OI-2-oauth2-scope, SA-SME-1-public-key, OI-5-sme-filters).
 
 ```mermaid
 sequenceDiagram
@@ -42,15 +43,21 @@ sequenceDiagram
 
     rect rgb(255, 250, 230)
     Note over Container,R1: Token issuance and introspection — R1's own tokenEndPoint, finally real
-    Container->>SME: POST /oauth2/token (grant_type=client_credentials, client_id=apiInvokerId, client_secret=onboardingSecret)
-    SME->>SME: IsInvokerRegistered? VerifyInvokerSecret? — both real checks,<br/>400 on either failure, matching the reference exactly
-    SME-->>Container: access_token, expires_in, token_type=Bearer
+    alt authenticate with the onboarding secret
+        Container->>SME: POST /oauth2/token (client_credentials, client_id=apiInvokerId,<br/>client_secret=onboardingSecret, scope=3gpp#aef-1:kpi-api)
+        SME->>SME: IsInvokerRegistered? VerifyInvokerSecret? — 400 on either failure
+    else authenticate with a signed client assertion (RFC 7523)
+        Container->>SME: POST /oauth2/token (client_credentials, client_id,<br/>client_assertion_type=jwt-bearer, client_assertion=JWT, scope)
+        SME->>SME: verify the JWT with the onboarded PEM key, iss=sub=client_id,<br/>aud=token endpoint, exp within 300 s, jti never used — else 400 invalid_client
+    end
+    SME->>SME: check scope — each API published, exposed by that AEF,<br/>discoverable by the invoker — else 400 invalid_scope
+    SME-->>Container: access_token, expires_in, token_type=Bearer, scope
     Note over SME: an opaque, server-tracked token — this build has no real IdP<br/>to delegate JWT signing to, unlike the reference's own Keycloak
 
     Container->>R1: GET /some-r1-route (Authorization: Bearer access_token)
     R1->>SME: POST /oauth2/introspect (token)
     Note over R1,SME: unauthenticated internal call — SME<->R1 traffic never<br/>leaves the docker-compose network, same reasoning /bootstrap<br/>itself already gives for staying unauthenticated
-    SME-->>R1: active=true, client_id=apiInvokerId, exp
+    SME-->>R1: active=true, client_id=apiInvokerId, exp, scope
     R1-->>Container: (request forwarded)
     end
 
@@ -78,3 +85,6 @@ sequenceDiagram
 - `GetTrustedInvokersApiInvokerId` redacts `authenticationInfo`/`authorizationInfo` to empty strings by default — a caller must explicitly ask for each via its own query parameter to see the raw value, mirroring the reference's default-deny shape rather than handing out secrets to anyone who can read the record.
 - `/oauth2/introspect` is deliberately unauthenticated — the same network-isolation reasoning applied to `/bootstrap` (call flow 01): this is R1 Termination checking a token on the SME<->R1 internal link, never exposed past the docker-compose network boundary.
 - This build issues opaque, server-tracked tokens (`IssuedAccessToken`, looked up by hash) rather than self-contained signed JWTs — the reference delegates signing to an external Keycloak instance this build has no equivalent of; introspection is the substitute.
+- A `3gpp#aefId:apiName` scope is granted only if every API is published, exposed by that AEF and discoverable by the invoker; otherwise 400 `invalid_scope`. Introspection returns the granted scope. SMO's own clients request `smo-internal` / `smo-gui`, granted as-is.
+- An RFC 7523 client assertion is verified with the invoker's onboarded PEM key and can be exchanged once (its `jti` is recorded until it expires). An invoker onboarded with an opaque label can only use its secret.
+- Onboarding, key update and offboarding emit `API_INVOKER_ONBOARDED` / `_UPDATED` / `_OFFBOARDED`; offboarding revokes the invoker's tokens and drops its trust context.

@@ -89,10 +89,13 @@ declined, but a way to exploit one in a surprising way is welcome.
   plain HTTP.
 - Module-to-module traffic on the compose network is unauthenticated apart from
   the R1 token check at the gateway; there is no mTLS between services.
-- OAuth2 tokens are opaque and introspected; `scope` is not enforced and
-  `InvokerRegistration.public_key` is stored but unused
+- OAuth2 tokens are opaque and introspected. SME checks a token's `scope`
+  against the published APIs when it issues the token, but R1 Termination
+  checks only that a token is active, not what its scope allows. An invoker
+  onboarded with a PEM key can authenticate with an RFC 7523 signed client
+  assertion; SMO's own modules authenticate with their onboarding secret
   (`OI-2-oauth2-scope`, `SA-SME-1-public-key` in
-  [`smo/OPEN_ITEMS.md`](smo/OPEN_ITEMS.md)).
+  [`smo/HISTORY.md`](smo/HISTORY.md)).
 - Onboarding's package signature check is an internal-consistency check, not
   verification against a trust anchor.
 - The O1 transports are not hardened: RAN NF OAM speaks RFC 6241-shaped

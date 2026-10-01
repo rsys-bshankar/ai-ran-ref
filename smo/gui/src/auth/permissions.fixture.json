@@ -497,6 +497,18 @@
   },
   {
     "method": "PUT",
+    "pattern": "^/sme/invoker-registrations/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/sme/invoker-registrations/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
     "pattern": "^/sme/trusted-invokers/[^/]+$",
     "role": "admin",
     "queryMatch": {}
