@@ -51,9 +51,18 @@ class ModelLifecycleEvent(StrEnum):
     CREATE_TRAINING = "CREATE_TRAINING"            # REGISTERED/PROMOTED/FAILED -> TRAINING (first cycle or retrain)
     TRAINING_COMPLETE = "TRAINING_COMPLETE"          # -> TRAINED
     TRAINING_FAILED = "TRAINING_FAILED"                # -> FAILED
+    # OPEN_ITEMS.md section 6.1: an explicit operator-approval gate,
+    # mirroring the existing CERTIFY/PROMOTE governance shape — a real,
+    # decidedBy-carrying event with its own CertificationRecord, not a
+    # bare state check. Self-loops (TRAINED->TRAINED / VALIDATED->
+    # VALIDATED): the model's own ModelLifecycleState doesn't change,
+    # only ModelLifecycle.training_approved/validation_approved, which
+    # CREATE_VALIDATION/CREATE_EMULATION now gate on (main.py).
+    APPROVE_TRAINING = "APPROVE_TRAINING"                # TRAINED -> TRAINED (gates CREATE_VALIDATION)
     CREATE_VALIDATION = "CREATE_VALIDATION"              # TRAINED -> VALIDATING (MLVF)
     VALIDATION_COMPLETE = "VALIDATION_COMPLETE"            # -> VALIDATED
     VALIDATION_FAILED = "VALIDATION_FAILED"                  # -> FAILED
+    APPROVE_VALIDATION = "APPROVE_VALIDATION"                  # VALIDATED -> VALIDATED (gates CREATE_EMULATION)
     CREATE_EMULATION = "CREATE_EMULATION"                      # VALIDATED -> EMULATING (MLEF)
     EMULATION_COMPLETE = "EMULATION_COMPLETE"                    # -> EMULATED
     EMULATION_FAILED = "EMULATION_FAILED"                          # -> FAILED
@@ -75,6 +84,8 @@ class ModelLifecycleEvent(StrEnum):
 GOVERNANCE_EVENTS = frozenset({
     ModelLifecycleEvent.SUBMIT_FOR_APPROVAL, ModelLifecycleEvent.APPROVE, ModelLifecycleEvent.REJECT,
     ModelLifecycleEvent.CERTIFY, ModelLifecycleEvent.PROMOTE, ModelLifecycleEvent.ROLLBACK,
+    # OPEN_ITEMS.md section 6.1
+    ModelLifecycleEvent.APPROVE_TRAINING, ModelLifecycleEvent.APPROVE_VALIDATION,
 })
 
 
@@ -84,9 +95,11 @@ def build_model_lifecycle_fsm() -> StateMachine[ModelLifecycleState, ModelLifecy
     fsm.add(S.REGISTERED, E.CREATE_TRAINING, S.TRAINING)
     fsm.add(S.TRAINING, E.TRAINING_COMPLETE, S.TRAINED)
     fsm.add(S.TRAINING, E.TRAINING_FAILED, S.FAILED)
+    fsm.add(S.TRAINED, E.APPROVE_TRAINING, S.TRAINED)  # OPEN_ITEMS.md 6.1 — operator gate, no state change
     fsm.add(S.TRAINED, E.CREATE_VALIDATION, S.VALIDATING)
     fsm.add(S.VALIDATING, E.VALIDATION_COMPLETE, S.VALIDATED)
     fsm.add(S.VALIDATING, E.VALIDATION_FAILED, S.FAILED)
+    fsm.add(S.VALIDATED, E.APPROVE_VALIDATION, S.VALIDATED)  # OPEN_ITEMS.md 6.1 — operator gate, no state change
     fsm.add(S.VALIDATED, E.CREATE_EMULATION, S.EMULATING)
     fsm.add(S.EMULATING, E.EMULATION_COMPLETE, S.EMULATED)
     fsm.add(S.EMULATING, E.EMULATION_FAILED, S.FAILED)

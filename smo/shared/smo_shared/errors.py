@@ -113,6 +113,11 @@ class FrameworkError:
     RAPP_INSTANCE_NOT_FOUND = ("RAPP_INSTANCE_NOT_FOUND", 404)
     ASSURANCE_MONITOR_NOT_FOUND = ("ASSURANCE_MONITOR_NOT_FOUND", 404)
     PUBLISHING_FUNCTION_NOT_FOUND = ("PUBLISHING_FUNCTION_NOT_FOUND", 404)
+    # OPEN_ITEMS.md section 6.1 — an explicit operator-approval gate on
+    # Training->Validation->Emulation, mirroring the existing
+    # CERTIFY/PROMOTE governance shape.
+    TRAINING_NOT_APPROVED = ("TRAINING_NOT_APPROVED", 409)
+    VALIDATION_NOT_APPROVED = ("VALIDATION_NOT_APPROVED", 409)
 
 
 def framework_error(code: tuple[str, int], detail: str | None = None) -> HTTPException:

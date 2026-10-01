@@ -696,7 +696,11 @@ CREATE TABLE model_lifecycle (
   training_job_id                   UUID,
   cleared_node_groups                  TEXT[],
   nf_deployment_descriptor_id             UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
-  nf_deployment_id                          UUID  -- -> nf_deployment (NFO) — bare UUID, cross-module reference
+  nf_deployment_id                          UUID, -- -> nf_deployment (NFO) — bare UUID, cross-module reference
+  -- OPEN_ITEMS.md section 6.1: operator gate on Training->Validation->
+  -- Emulation. Reset to false whenever CREATE_TRAINING fires.
+  training_approved                           BOOLEAN NOT NULL DEFAULT false,
+  validation_approved                           BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE validation_job (

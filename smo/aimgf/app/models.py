@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, CheckConstraint, ForeignKey, JSON, String, Uuid
+from sqlalchemy import ARRAY, Boolean, CheckConstraint, ForeignKey, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -33,6 +33,12 @@ class ModelLifecycle(Base):
     cleared_node_groups: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
     nf_deployment_descriptor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> nf_deployment_descriptor (NFO)
     nf_deployment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # -> nf_deployment (NFO)
+    # OPEN_ITEMS.md section 6.1: operator gate on Training->Validation->
+    # Emulation. Reset to False whenever CREATE_TRAINING fires (a fresh
+    # training run re-requires approval) — a stale approval from a prior
+    # cycle should never silently carry forward into a new one.
+    training_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    validation_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class ValidationJob(Base):

@@ -45,6 +45,7 @@ export interface Model {
 export interface ModelLifecycle {
   modelId: string; modelLifecycleState: string; runtimeLifecycleState: string; trainingJobId: string | null;
   clearedNodeGroups: string[]; nfDeploymentDescriptorId: string | null; nfDeploymentId: string | null;
+  trainingApproved: boolean; validationApproved: boolean;
 }
 export interface CertificationRecord {
   certificationRecordId: string; modelId: string; decision: string; decidedBy: string; rationale: string | null; decidedAt: string;

@@ -450,10 +450,20 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert advanced.status_code == 200
     assert advanced.json()["modelLifecycleState"] == "TRAINED"
 
+    # OPEN_ITEMS.md 6.1 — an operator must approve training before validation can start.
+    approve_training = mesh["aimgf"].post(f"/models/{model_id}/advance",
+                                           params={"event": "APPROVE_TRAINING", "decided_by": "demo-operator", "rationale": "training approved for the demo"})
+    assert approve_training.status_code == 200
+
     validation = mesh["aimgf"].post("/validation-jobs", json={"modelId": model_id, "trainingJobId": training_job_id, "producerId": "hello-world-rapp"})
     assert validation.status_code == 201
     validation_complete = mesh["aimgf"].post(f"/validation-jobs/{validation.json()['validationJobId']}/complete", json={"succeeded": True, "metrics": {"accuracy": 0.95}})
     assert validation_complete.json()["status"] == "COMPLETED"
+
+    # OPEN_ITEMS.md 6.1 — same gate between validation and emulation.
+    approve_validation = mesh["aimgf"].post(f"/models/{model_id}/advance",
+                                             params={"event": "APPROVE_VALIDATION", "decided_by": "demo-operator", "rationale": "validation approved for the demo"})
+    assert approve_validation.status_code == 200
 
     emulation = mesh["aimgf"].post("/emulation-jobs", json={"modelId": model_id, "producerId": "hello-world-rapp"})
     assert emulation.status_code == 201
@@ -466,7 +476,9 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert governed.json()["modelLifecycleState"] == "PROMOTED"
 
     history = mesh["aimgf"].get(f"/models/{model_id}/governance-history")
-    assert [h["decision"] for h in history.json()["items"]] == ["SUBMIT_FOR_APPROVAL", "APPROVE", "CERTIFY", "PROMOTE"]
+    assert [h["decision"] for h in history.json()["items"]] == [
+        "APPROVE_TRAINING", "APPROVE_VALIDATION", "SUBMIT_FOR_APPROVAL", "APPROVE", "CERTIFY", "PROMOTE",
+    ]
 
     deployed = mesh["aimgf"].post(f"/models/{model_id}/runtime/deploy")
     assert deployed.status_code == 201
