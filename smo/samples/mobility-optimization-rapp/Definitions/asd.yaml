@@ -2,7 +2,7 @@ tosca_definitions_version: tosca_simple_yaml_1_3
 
 description: >
   MobilityOptimization_rApp — the Wave 10.2 reference rApp
-  (smo/docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md §10). A Non-RT RIC rApp that
+  (docs/ROADMAP.md Wave 10.2). A Non-RT RIC rApp that
   classifies handover failures per neighbour relation (too-late / too-early /
   wrong-cell / ping-pong) from O1 PM data and tunes each relation's Cell
   Individual Offset (NRCellRelation.cellIndividualOffset) through O1, within

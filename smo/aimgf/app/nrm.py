@@ -1,4 +1,4 @@
-"""TS 28.105 AI/ML NRM at REST level — Wave 4 (WAVES_4_TO_10_WORK_ITEMS.md
+"""TS 28.105 AI/ML NRM at REST level — Wave 4 (docs/ROADMAP.md
 W4-04, decision D-9). Every IOC of specs/5G_APIs/TS28105_AiMlNrm.yaml that
 AIMgF owns, as a flat REST resource carrying the spec's own attribute
 names (`{"id": ..., "attributes": {...}}`, the same id/attributes split

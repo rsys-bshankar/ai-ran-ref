@@ -1,7 +1,7 @@
 """NETCONF-shaped CM write dispatch — RAN NF OAM LLD section 5.1's PATCH
 step, previously elided behind a comment that recorded every sub_change as
 APPLIED without ever dispatching anything. Protocol choice (NETCONF over
-RESTCONF) confirmed against OPEN_ITEMS.md's "CM cache sync method" item.
+RESTCONF) confirmed against HISTORY.md's "CM cache sync method" item.
 
 Phase 1: an RFC 6241 <edit-config> request/response shape, sent as XML over
 plain HTTP to the O1 Adaptor's adaptor_uri — not a real SSH/ncclient

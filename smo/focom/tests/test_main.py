@@ -42,7 +42,7 @@ def client(db_session):
 
 
 def test_query_inventory_returns_degenerate_cluster(client):
-    """SPEC_AUDIT.md item 8: /inventory reshaped toward the real O2IMS
+    """HISTORY.md §7 item 8: /inventory reshaped toward the real O2IMS
     OCloud schema — oCloudId, not the previously invented clusterId.
     """
     resp = client.get("/inventory")
@@ -57,7 +57,7 @@ def test_query_inventory_includes_the_real_seeded_resource_type_and_deployment_m
 
 
 def test_query_inventory_has_no_fabricated_location_data(client):
-    """SPEC_AUDIT.md item 8: the real spec requires locations/oCloudSites
+    """HISTORY.md §7 item 8: the real spec requires locations/oCloudSites
     (minItems: 1) but FOCOM has no OCloudSite/Location concept at all —
     honestly empty rather than fabricated.
     """
@@ -70,7 +70,7 @@ def test_query_inventory_filters_resource_types_by_the_requested_type(client):
     """NFO+FOCOM LLD section 4: NFO's Instantiate passes resource_type
     through — this is the query parameter name NFO must use
     (resource_type, not resourceType; a silent bug this exact mismatch
-    caused before it was fixed). SPEC_AUDIT.md item 8: now a real filter
+    caused before it was fixed). HISTORY.md §7 item 8: now a real filter
     against a known ResourceType, not just an unvalidated echo.
     """
     client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"})
@@ -91,7 +91,7 @@ def test_subscribe_inventory_changes_returns_subscription_id(client):
 
 
 def test_subscribe_inventory_changes_persists_and_returns_consumer_subscription_id(client):
-    """SPEC_AUDIT.md item 8: ORAN.O2ims.Inventory.yaml's
+    """HISTORY.md §7 item 8: ORAN.O2ims.Inventory.yaml's
     consumerSubscriptionId (the consumer's own tracking id for the
     subscription), previously entirely absent from this model.
     """
@@ -106,7 +106,7 @@ def test_subscribe_inventory_changes_without_consumer_subscription_id_defaults_t
 
 
 def test_provision_resource_notification_passes_through_consumer_subscription_id(client, monkeypatch):
-    """SPEC_AUDIT.md item 8: the spec's own description says
+    """HISTORY.md §7 item 8: the spec's own description says
     consumerSubscriptionId exists "for tracking, routing, or
     identifying the subscription used to report the event" — it must
     come back on the notification itself, not just be stored.
@@ -139,7 +139,7 @@ def test_unsubscribe_unknown_inventory_subscription_is_idempotent(client):
 
 
 def test_provision_resource_notifies_matching_subscriber(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: subscribe_inventory_changes took no
+    """HISTORY.md §5: subscribe_inventory_changes took no
     callback parameter, stored nothing, and delivered nothing. This is
     the headline fix — provisioning a resource now actually reaches a
     matching subscriber's callback.
@@ -288,7 +288,7 @@ def test_query_inventory_defaults_to_every_registered_resource_type(client):
 
 
 def test_query_inventory_reflects_the_real_seeded_deployment_manager_row(client, db_session):
-    """OPEN_ITEMS.md section 2: /inventory used to be a hardcoded literal,
+    """HISTORY.md §2: /inventory used to be a hardcoded literal,
     entirely disconnected from the real ResourcePool/DeploymentManager
     schema every drill-down route already reads. Proves it's genuinely
     DB-backed now, not a literal that merely happens to agree with the
@@ -341,7 +341,7 @@ def test_deprovision_arbitrary_unprovisioned_resource_succeeds(client):
 
 
 def test_list_resource_types_returns_seeded_phase1_type(client):
-    """OPEN_ITEMS.md section 5: no ResourceType/ResourcePool/
+    """HISTORY.md §5: no ResourceType/ResourcePool/
     DeploymentManager schema existed at all, and no drill-down
     endpoints existed either. Phase 1's degenerate topology is now
     real, seeded rows, not a hardcoded literal.
@@ -363,7 +363,7 @@ def test_get_unknown_resource_type_is_404(client):
 
 
 def test_resource_type_view_exposes_the_new_spec_fields(client):
-    """SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's ResourceType
+    """HISTORY.md §7 item 7: ORAN.O2ims.Inventory.yaml's ResourceType
     requires alarmDictionaryId/performanceDictionaryId/resourceKind/
     resourceClass/extensions — entirely absent from this model before.
     No route in this build sets them yet, so they're null on the
@@ -426,7 +426,7 @@ def test_list_pool_resources_reflects_provisioned_resource(client):
 
 
 def test_provision_resource_persists_global_asset_id_tags_and_groups(client):
-    """SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's Resource requires
+    """HISTORY.md §7 item 7: ORAN.O2ims.Inventory.yaml's Resource requires
     globalAssetId/tags/groups — previously not even readable from
     provision_resource's already-untyped spec dict, let alone persisted.
     """
@@ -481,7 +481,7 @@ def test_get_unknown_deployment_manager_is_404(client):
 
 
 def test_deployment_manager_view_exposes_the_new_spec_fields(client):
-    """SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's DeploymentManager
+    """HISTORY.md §7 item 7: ORAN.O2ims.Inventory.yaml's DeploymentManager
     requires supportedLocations/capabilities/capacity — entirely absent
     from this model before. No route in this build sets them yet
     (only the Phase 1 seed, which has no real capacity introspection),
@@ -495,7 +495,7 @@ def test_deployment_manager_view_exposes_the_new_spec_fields(client):
 
 
 def test_topology_export_includes_phase1_seeded_entities(client):
-    """OPEN_ITEMS.md section 5: FOCOM had no typed entity/relationship
+    """HISTORY.md §5: FOCOM had no typed entity/relationship
     model and no /topology-shaped endpoint at all — not even a stub —
     despite the Blueprint naming FOCOM's placement as a TEIV data
     source. Phase 1's seeded ResourceType/ResourcePool/DeploymentManager

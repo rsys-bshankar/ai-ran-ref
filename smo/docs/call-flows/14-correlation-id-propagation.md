@@ -1,12 +1,10 @@
 # Call Flow: Correlation-ID Propagation Across a Multi-Service Fan-Out
 
-Stitches together Wave 3's closing cross-cutting standardization item
-(`shared/smo_shared/correlation.py`, `AI_PLATFORM_BASELINE.md`): every other slice
-(OAuth2/JWT+Versioning, Error Schema, Pagination, Subscriptions) shipped without this, so
-one inbound request's fan-out across several services had no way to be tied back together
-in logs or traces. This flow shows the mechanics directly, rather than a business scenario
-— reusing call flow 10's own three-step `ServiceOrder` (`INFRA`→`TRAINING`→`DEPLOY`) as
-the fan-out that makes propagation observable.
+How one inbound request's fan-out across several services is tied together in logs and
+traces by an `X-Correlation-ID` header (`shared/smo_shared/correlation.py`; see "R1 API
+conventions" in `docs/ARCHITECTURE.md`). The flow shows the mechanics directly rather than
+a business scenario, reusing call flow 10's three-step `ServiceOrder`
+(`INFRA`→`TRAINING`→`DEPLOY`) as the fan-out that makes propagation observable.
 
 ```mermaid
 sequenceDiagram
@@ -43,7 +41,7 @@ sequenceDiagram
 ```
 
 **Key decisions this flow depends on:**
-- The ID lives in a `ContextVar`, not a request parameter every handler has to thread through — `get_correlation_id()` reads whatever the current request's middleware set, and `R1Client` (every service's own cross-service caller) attaches it automatically to every outbound call. No dispatcher (`dispatch_infra`/`dispatch_training`/`dispatch_deploy`, call flow 10) or route handler had to change to participate.
-- **r1-termination is the one place that overrides rather than reuses** — its own generic proxy always forwards `get_correlation_id()`'s value (the ID *this* request was assigned or reused), even if the original inbound call happened to carry a different, stale, or malformed header of its own. Every other service's own `apply_correlation_id` middleware reuses an inbound header verbatim if present.
-- Deliberately not in any OpenAPI schema — a header injected by middleware on every route isn't a per-operation contract element; declaring it as a formal parameter on ~200 operations across 18 services would be a much larger, largely cosmetic diff for no real behavior gain (confirmed by the OpenAPI-drift integration test, which stayed green with zero spec regeneration needed when this shipped).
-- No formal 3GPP/O-RAN spec defines a header for this exact purpose — `TS29500_CustomHeaders.abnf`'s own `3gpp-Sbi-Correlation-Info` is a different concept (subscriber-identity correlation: imsi/msisdn/impu, not request tracing), confirmed by reading its ABNF grammar directly rather than assumed from the name. `X-Correlation-ID` is this build's own HTTP-native name for the same idea `smo-teiv`'s own CloudEvent `correlationid` tracks over a different transport.
+- The ID lives in a `ContextVar`, not a request parameter every handler has to thread through — `get_correlation_id()` reads whatever the current request's middleware set, and `R1Client` (every service's cross-service caller) attaches it automatically to every outbound call. Dispatchers (`dispatch_infra`/`dispatch_training`/`dispatch_deploy`, call flow 10) and route handlers need no code to participate.
+- **r1-termination is the one place that overrides rather than reuses** — its generic proxy always forwards `get_correlation_id()`'s value (the ID *this* request was assigned or reused), even if the original inbound call carried a different, stale or malformed header of its own. Every other service's `apply_correlation_id` middleware reuses an inbound header verbatim if present.
+- Deliberately not in any OpenAPI schema — a header injected by middleware on every route isn't a per-operation contract element, and declaring it as a formal parameter on every operation of every service would be a large, cosmetic diff with no behavior gain. The generated specs in `docs/openapi/` therefore don't mention it.
+- No formal 3GPP/O-RAN spec defines a header for this exact purpose — `TS29500_CustomHeaders.abnf`'s `3gpp-Sbi-Correlation-Info` is a different concept (subscriber-identity correlation: imsi/msisdn/impu, not request tracing). `X-Correlation-ID` is this build's HTTP-native name for the same idea `smo-teiv`'s CloudEvent `correlationid` tracks over a different transport.

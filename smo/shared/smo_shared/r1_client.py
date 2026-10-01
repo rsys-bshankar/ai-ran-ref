@@ -151,11 +151,7 @@ class R1Client:
         return self._send(httpx.put, path, json=json, **kwargs)
 
     def patch(self, path: str, json: dict | None = None, **kwargs) -> httpx.Response:
-        """Added for Wave 1 (AI Platform Service Decomposition): AIMgF/MLLF's
-        own cross-service write-back into MLMR's `PATCH /models/{id}/lifecycle`
-        (docs/ownership/MLMR_OWNERSHIP.md) — the first caller in this build
-        that needs PATCH rather than GET/POST/PUT/DELETE.
-        """
+        """PATCH through R1 (e.g. the SDK's Intent admin-state update)."""
         return self._send(httpx.patch, path, json=json, **kwargs)
 
     def delete(self, path: str, **kwargs) -> httpx.Response:

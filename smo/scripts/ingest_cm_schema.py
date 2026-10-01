@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Derives a CM capability descriptor from 3GPP NRM OpenAPI definitions —
-Wave 9 (WAVES_4_TO_10_WORK_ITEMS.md W9-02), step 4 of
-`docs/architecture/O1_VENDOR_ONBOARDING_GUIDE.md`'s sketch: the descriptor a
+Wave 9 (docs/ROADMAP.md W9-02), step 4 of
+`docs/ARCHITECTURE.md`'s sketch: the descriptor a
 vendor's `CMSchemaCache` entry points at is generated mechanically from a
 source of truth, never hand-transcribed.
 

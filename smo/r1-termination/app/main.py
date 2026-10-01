@@ -106,7 +106,7 @@ def bootstrap():
 
 @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], operation_id="proxy")
 async def proxy(full_path: str, request: Request):
-    """OPEN_ITEMS.md section 2: explicit operation_id, not FastAPI's
+    """HISTORY.md §2: explicit operation_id, not FastAPI's
     auto-derived one — generate_unique_id() picks
     list(route.methods)[0].lower() for its default, and route.methods is
     a plain set, so the auto id (and the "Duplicate Operation ID"
@@ -160,7 +160,7 @@ async def proxy(full_path: str, request: Request):
 
 
 async def _authorized(request: Request) -> bool:
-    """OPEN_ITEMS.md section 2: "No real OAuth2/token enforcement at R1
+    """HISTORY.md §2: "No real OAuth2/token enforcement at R1
     Termination — only a comment and a tokenEndPoint URI in the bootstrap
     response; no actual validation code path." This is that path, per
     SMO Design v1.3 section 3.3's route table (auth: oauth2 on every

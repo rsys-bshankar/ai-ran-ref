@@ -42,18 +42,18 @@ class FrameworkError:
     FEATURE_GROUP_NAME_INVALID = ("FEATURE_GROUP_NAME_INVALID", 400)
     FEATURE_GROUP_ALREADY_REGISTERED = ("FEATURE_GROUP_ALREADY_REGISTERED", 409)
     # Wave 2 (AI Platform Service Decomposition) — AIMgF's own two real
-    # state machines, docs/ownership/AIMGF_OWNERSHIP.md
+    # state machines, docs/ARCHITECTURE.md (AIMgF)
     LIFECYCLE_ILLEGAL_TRANSITION = ("LIFECYCLE_ILLEGAL_TRANSITION", 409)
     GOVERNANCE_DECIDER_REQUIRED = ("GOVERNANCE_DECIDER_REQUIRED", 422)
     # Wave 3 (AI Platform Service Decomposition) — DME's revised dual
-    # data-plane + O1-mediation role, docs/ownership/DME_OWNERSHIP.md
+    # data-plane + O1-mediation role, docs/ARCHITECTURE.md (DME)
     DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE = ("DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE", 422)
     DME_ARTIFACT_NOT_FOUND = ("DME_ARTIFACT_NOT_FOUND", 422)
-    # Wave 3 — AIMgF's TrainingJob suspend/resume, SPEC_AUDIT.md's
+    # Wave 3 — AIMgF's TrainingJob suspend/resume, HISTORY.md §7's
     # AI/ML Workflow section item 6
     TRAINING_JOB_ILLEGAL_TRANSITION = ("TRAINING_JOB_ILLEGAL_TRANSITION", 409)
     # Wave 3 — Intent Service's consumer-side RMIH selection,
-    # docs/ownership/INTENT_SERVICE_OWNERSHIP.md's Wave 3 resolution
+    # docs/ARCHITECTURE.md's Intent Service Wave 3 resolution
     RMIH_CAPABILITY_MISMATCH = ("RMIH_CAPABILITY_MISMATCH", 422)
     # A1 Related LLD section 1.3
     POLICY_TYPE_NOT_SUPPORTED = ("POLICY_TYPE_NOT_SUPPORTED", 422)
@@ -62,7 +62,7 @@ class FrameworkError:
     # Foundational Platform LLD section 5
     SERVICE_NAME_CONFLICT = ("SERVICE_NAME_CONFLICT", 409)
     DME_TYPE_VERSION_CONFLICT = ("DME_TYPE_VERSION_CONFLICT", 409)
-    # SPEC_AUDIT.md — DME vs. the real ICS API, Producer/Type conflation
+    # HISTORY.md §7 — DME vs. the real ICS API, Producer/Type conflation
     # finding, closed: a real ICS deleteInfoType 409 ("has one or several
     # active producers"), and its own 404 for an unknown type — the type
     # itself never had a dedicated not-found code before since it was
@@ -113,12 +113,12 @@ class FrameworkError:
     RAPP_INSTANCE_NOT_FOUND = ("RAPP_INSTANCE_NOT_FOUND", 404)
     ASSURANCE_MONITOR_NOT_FOUND = ("ASSURANCE_MONITOR_NOT_FOUND", 404)
     PUBLISHING_FUNCTION_NOT_FOUND = ("PUBLISHING_FUNCTION_NOT_FOUND", 404)
-    # OPEN_ITEMS.md section 6.1 — an explicit operator-approval gate on
+    # HISTORY.md OI-6.1 — an explicit operator-approval gate on
     # Training->Validation->Emulation, mirroring the existing
     # CERTIFY/PROMOTE governance shape.
     TRAINING_NOT_APPROVED = ("TRAINING_NOT_APPROVED", 409)
     VALIDATION_NOT_APPROVED = ("VALIDATION_NOT_APPROVED", 409)
-    # OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes.
+    # HISTORY.md OI-6.3 — rApp Autonomy Modes.
     AUTONOMY_DISPATCH_NOT_FOUND = ("AUTONOMY_DISPATCH_NOT_FOUND", 404)
     AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE = ("AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE", 409)
     # Wave 4 — TS 28.105 AI/ML NRM resources (aimgf/app/nrm.py, MLMR).
@@ -129,8 +129,8 @@ class FrameworkError:
     MDA_CAPABILITY_NOT_SUPPORTED = ("MDA_CAPABILITY_NOT_SUPPORTED", 422)
     # Wave 7 — runtime profiles (rApp package lookup) and inference reads.
     PACKAGE_NOT_FOUND = ("PACKAGE_NOT_FOUND", 404)
-    # Wave 9 (WAVES_4_TO_10_WORK_ITEMS.md W9-01..06) — RAN NF OAM's
-    # multi-vendor capability registry, docs/architecture/O1_VENDOR_ONBOARDING_GUIDE.md
+    # Wave 9 (docs/ROADMAP.md W9-01..06) — RAN NF OAM's
+    # multi-vendor capability registry, docs/ARCHITECTURE.md
     O1_SERVICE_NOT_SUPPORTED = ("O1_SERVICE_NOT_SUPPORTED", 409)
     VENDOR_CAPABILITY_NOT_FOUND = ("VENDOR_CAPABILITY_NOT_FOUND", 404)
     CM_SCHEMA_NOT_FOUND = ("CM_SCHEMA_NOT_FOUND", 404)

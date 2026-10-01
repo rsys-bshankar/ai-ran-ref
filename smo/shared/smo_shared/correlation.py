@@ -1,6 +1,6 @@
 """Real request-correlation-ID propagation across the R1 mesh — Wave 3
 cross-cutting standardization's last item (docs/architecture/
-AI_PLATFORM_BASELINE.md). Audited at the start of the Wave 3
+docs/ARCHITECTURE.md). Audited at the start of the Wave 3
 standardization pass ("Correlation-ID: totally absent") but never picked
 up by any of the four shipped slices (OAuth2/JWT+Versioning, Error
 Schema, Pagination, Subscriptions) — this closes it.

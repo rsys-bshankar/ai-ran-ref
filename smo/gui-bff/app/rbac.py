@@ -190,7 +190,7 @@ RULES: list[Rule] = [
     _rule("POST", "/dme/offers", A),
     _rule("POST", "/dme/offers/{id}/notify", A),
     _rule("DELETE", "/dme/offers/{id}", A),
-    # Wave 3 (docs/ownership/DME_OWNERSHIP.md): ingesting a real data
+    # Wave 3 (docs/ARCHITECTURE.md (DME)): ingesting a real data
     # payload is a producer-side operation, same tier as production-
     # capabilities/offers above. Mediating an O1 action is consumer-side
     # (an rApp's AI/ML decision) — operator, mirroring ran-nf-oam's own
@@ -226,7 +226,7 @@ RULES: list[Rule] = [
     _rule("DELETE", "/focom/inventory/subscriptions/{id}", O),
 
     # --- Intent Service (formerly Policy Mgmt — renamed in Wave 1 of the
-    # AI Platform Service Decomposition; see docs/ownership/INTENT_SERVICE_OWNERSHIP.md)
+    # AI Platform Service Decomposition; see docs/ARCHITECTURE.md (Intent Service))
     _rule("POST", "/intent-service/intents", O, json_overrides=lambda u: {"rmioId": GUI_RMIO_ID}),
     _rule("PATCH", "/intent-service/intents/{id}/admin-state", O, json_overrides=lambda u: {"requesterId": GUI_RMIO_ID}),
     _rule("DELETE", "/intent-service/intents/{id}", A),
@@ -236,7 +236,7 @@ RULES: list[Rule] = [
     _rule("POST", "/intent-service/intent-handling-functions", A),
     _rule("DELETE", "/intent-service/intent-handling-functions/{id}", A),
     _rule("POST", "/intent-service/intent-reports", A),
-    # rApp autonomy modes (OPEN_ITEMS.md 6.3; Wave 8 W8-08): an operator
+    # rApp autonomy modes (HISTORY.md OI-6.3; Wave 8 W8-08): an operator
     # requests a dispatch, and scopes (resolve) or rejects an ASSIST one
     # left AWAITING_SCOPE — who rejected is pinned to the GUI identity.
     _rule("POST", "/intent-service/autonomy-dispatches", O),

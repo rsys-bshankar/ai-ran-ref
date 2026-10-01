@@ -91,9 +91,9 @@ def test_retired_is_terminal():
 
 
 def test_governance_events_are_exactly_the_documented_four_decisions_plus_their_framing():
-    """AIMGF_OWNERSHIP.md's own Governance list: Approval, Certification,
+    """docs/ARCHITECTURE.md's AIMgF Governance list: Approval, Certification,
     Promotion, Rollback — plus the submit/reject pair framing approval,
-    plus (OPEN_ITEMS.md section 6.1) the Training/Validation operator
+    plus (HISTORY.md OI-6.1) the Training/Validation operator
     gate's own two decisions — so the CertificationRecord audit trail
     covers the whole governance conversation main.py writes it for.
     """

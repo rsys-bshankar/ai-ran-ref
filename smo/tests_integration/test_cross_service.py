@@ -217,7 +217,7 @@ def test_onboarding_to_rapp_management_status_check(mesh):
 
 
 def test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_descriptor(mesh, loaded_apps, db_connection, monkeypatch):
-    """The actual fix for OPEN_ITEMS.md's top item: NFO's CreateDescriptor
+    """The actual fix for HISTORY.md's top item: NFO's CreateDescriptor
     (NFO+FOCOM LLD section 2) is now called from OnboardPackage once
     validation succeeds, and rApp Management's CreateInstance now passes
     that REAL nfDeploymentDescriptorId to NFO instead of packageId. Proven
@@ -264,7 +264,7 @@ def test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_de
 
 
 def test_ran_nf_oam_config_write_reaches_a_real_mock_o1_adaptor(mesh, loaded_apps, db_connection):
-    """OPEN_ITEMS.md section 2: "no real southbound integrations beyond
+    """HISTORY.md §2: "no real southbound integrations beyond
     the A1 mock" — RAN NF OAM LLD section 5.1's PATCH step
     (netconf_client.py) always dispatched a real RFC 6241 <edit-config>
     RPC, but nothing in this build's own topology ever answered it for

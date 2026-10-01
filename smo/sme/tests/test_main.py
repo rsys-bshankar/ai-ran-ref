@@ -20,7 +20,7 @@ from app.models import InvokerRegistration, IssuedAccessToken, ProviderRegistrat
 # identities — pre-enrolling them here (via the real POST
 # /provider-registrations route, not a data shortcut) keeps every existing
 # register_service call site unchanged now that it requires a registered
-# publishing function (OPEN_ITEMS.md section 5), the same way a test suite
+# publishing function (HISTORY.md §5), the same way a test suite
 # logs in a fixture user once rather than re-testing login in every test.
 KNOWN_TEST_PUBLISHERS = ["rapp-1", "rapp-2", "rapp-3"]
 
@@ -168,7 +168,7 @@ def test_discover_services_filters_by_api_version(client):
 
 
 def test_register_service_stores_and_exposes_aef_profiles(client):
-    """OPEN_ITEMS.md section 5: ServiceProfile was flattened — no
+    """HISTORY.md §5: ServiceProfile was flattened — no
     aefProfiles (multiple exposing functions per API), apiSuppFeats, or
     shareableInfo (cross-provider sharing flag).
     """
@@ -189,7 +189,7 @@ def test_register_service_stores_and_exposes_aef_profiles(client):
 
 
 def test_discover_services_filters_by_aef_id(client):
-    """OPEN_ITEMS.md section 5: discover_services only filtered on
+    """HISTORY.md §5: discover_services only filtered on
     api_name/api_version — the reference (discoverservice.go's
     matchesFilter) also filters against each service's AefProfiles.
     """
@@ -280,7 +280,7 @@ def test_unsubscribe_by_wrong_subscriber_is_a_silent_noop(client, db_session_fac
 
 
 def test_register_service_notifies_only_matching_subscribers(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: notify_service_change was real logic
+    """HISTORY.md §5: notify_service_change was real logic
     (event-type filtering, the same authz gate discover_services uses,
     best-effort delivery) but was never actually called from anywhere —
     its own docstring said "wired in as a follow-up". This is the
@@ -351,7 +351,7 @@ def test_deregister_by_wrong_producer_does_not_notify(client, monkeypatch):
 
 
 def test_subscription_with_api_ids_filter_only_notifies_for_a_matching_service(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: event subscription filtering was
+    """HISTORY.md §5: event subscription filtering was
     type-only — the reference's own CAPIFEventFilter also filters by
     apiId (eventservice.go's getMatchingSubs/matchesFilters). A
     subscription scoped to one service's apiId must not be notified
@@ -425,7 +425,7 @@ def test_notify_service_change_survives_unreachable_subscriber(client, monkeypat
 
 
 def test_register_service_without_enrollment_is_forbidden(client):
-    """OPEN_ITEMS.md section 5: register_service used to accept any apf_id
+    """HISTORY.md §5: register_service used to accept any apf_id
     with no check that it's an actual registered publisher. The
     reference's own gate (PostApfIdServiceApis: 403, "api is only
     available for publishers") is now real.
@@ -499,7 +499,7 @@ def test_query_own_services_returns_existing_services_even_after_deregistration(
 
 
 def _register_invoker(client, public_key="pk-1"):
-    """SPEC_AUDIT.md SME item 1: the real CAPIF onboarding flow is
+    """HISTORY.md §7 SME item 1: the real CAPIF onboarding flow is
     public-key-based — the client supplies apiInvokerPublicKey; the
     server generates and returns both apiInvokerId and
     onboardingSecret. Every test that needs a registered invoker now
@@ -512,7 +512,7 @@ def _register_invoker(client, public_key="pk-1"):
 
 
 def test_register_invoker_generates_id_and_secret_server_side(client):
-    """SPEC_AUDIT.md SME item 1: apiInvokerId/onboardingSecret were
+    """HISTORY.md §7 SME item 1: apiInvokerId/onboardingSecret were
     previously client-supplied (a self-asserted identity, a
     client-chosen secret) — the weaker trust direction the real CAPIF
     core's own schema explicitly forbids ("apiInvokerId shall not be

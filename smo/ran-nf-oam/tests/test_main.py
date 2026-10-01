@@ -72,7 +72,7 @@ def test_config_change_dispatches_netconf_and_applies(client, db_session_factory
 
 
 def test_config_change_threads_operation_and_allows_empty_payload_for_delete(client, db_session_factory, monkeypatch):
-    """SPEC_AUDIT.md item 3: RFC 6241 section 7.2's real edit-config
+    """HISTORY.md §7 item 3: RFC 6241 section 7.2's real edit-config
     `operation` attribute, previously not modeled at all — every write
     was implicitly a merge. A delete legitimately carries no
     attributeChanges, which the pre-fix `change["attributeChanges"]`
@@ -118,7 +118,7 @@ def test_config_change_rejects_when_netconf_rpc_fails(client, db_session_factory
 
 def test_config_change_rejects_restconf_me_as_protocol_not_supported(client, db_session_factory, monkeypatch):
     """RESTCONF has no dispatch implementation yet — the confirmed
-    protocol (OPEN_ITEMS.md) is NETCONF only, so a RESTCONF-provisioned ME
+    protocol (HISTORY.md) is NETCONF only, so a RESTCONF-provisioned ME
     is rejected honestly rather than silently treated as applied.
     """
     _make_me(db_session_factory, protocol="RESTCONF")
@@ -146,7 +146,7 @@ def test_config_change_rejects_unreachable_endpoint_without_dispatch(client, db_
 
 
 def test_config_change_rejects_a_stale_active_endpoint_live_without_an_explicit_discover_call(client, db_session_factory, monkeypatch):
-    """The heartbeat-aging check (OPEN_ITEMS.md section 2) is computed live
+    """The heartbeat-aging check (HISTORY.md §2) is computed live
     at this gate now, the same "no scheduler exists anywhere in this
     build" pattern already used for DME's producer health and A1 Related's
     service supervision — so a stale endpoint is caught here even though
@@ -272,7 +272,7 @@ def test_registered_endpoint_can_then_heartbeat_to_active(client, db_session_fac
 
 
 def test_subscribe_pm_persists_and_returns_granularity_period(client, db_session_factory, monkeypatch):
-    """SPEC_AUDIT.md item 4: TS28550_PerfMeasJobCtrlMnS.yaml's
+    """HISTORY.md §7 item 4: TS28550_PerfMeasJobCtrlMnS.yaml's
     granularityPeriod (the sampling interval), previously absent
     entirely from PMSubscription — subscribe_pm's own docstring already
     confirms the rest of that job-control shape (schedule/priority/
@@ -326,7 +326,7 @@ def test_unsubscribe_unknown_pm_subscription_is_idempotent(client):
 
 
 def test_subscribe_fm_registers_ran_nf_oam_as_a_dme_producer(client, db_session_factory, monkeypatch):
-    """OPEN_ITEMS.md section 6.7, closed: unlike PM (subscribe_pm calls
+    """HISTORY.md OI-6.7, closed: unlike PM (subscribe_pm calls
     RegisterDMEType), FM/alarms had no DME producer registration at all.
     subscribe_fm mirrors subscribe_pm's own shape exactly.
     """
@@ -389,7 +389,7 @@ def test_unsubscribe_unknown_fm_subscription_is_idempotent(client):
 
 
 def test_health_endpoint_answers_the_callback_url_subscribe_pm_registers(client):
-    """OPEN_ITEMS.md section 5: subscribe_pm registers
+    """HISTORY.md §5: subscribe_pm registers
     http://ran-nf-oam:8000/health as this producer's health-supervision
     callback with DME, but no route ever answered it — a poller hitting
     that URL would 404. Confirms the route now exists and returns 200.
@@ -400,7 +400,7 @@ def test_health_endpoint_answers_the_callback_url_subscribe_pm_registers(client)
 
 
 def test_dme_jobs_endpoint_answers_the_callback_url_subscribe_pm_registers(client):
-    """OPEN_ITEMS.md section 5: subscribe_pm now also registers
+    """HISTORY.md §5: subscribe_pm now also registers
     http://ran-nf-oam:8000/dme-jobs as this producer's jobCallbackUrl —
     DME's own create_data_job/terminate_data_job actually push to it
     now, so this closes the same class of dangling-callback bug the
@@ -415,11 +415,11 @@ def test_dme_jobs_endpoint_answers_the_callback_url_subscribe_pm_registers(clien
 
 
 def test_ingest_alarm_persists_standard_fault_fields(client, db_session_factory):
-    """OPEN_ITEMS.md section 5: the alarm model was missing the standard
+    """HISTORY.md §5: the alarm model was missing the standard
     fault fields the wire format (VES/3GPP alarm IRP, per oam's own
     NotifyNewAlarm template) carries — probableCause, specificProblem,
     rootCauseIndicator, correlatedNotifications, proposedRepairActions.
-    alarmType (SPEC_AUDIT.md, TS28111_FaultNrm.yaml's AlarmRecord) was
+    alarmType (HISTORY.md §7, TS28111_FaultNrm.yaml's AlarmRecord) was
     the one of these still missing after that pass.
     """
     _make_me(db_session_factory)
@@ -500,7 +500,7 @@ def test_change_alarm_ack_state(client, db_session_factory):
 
 
 def test_change_alarm_ack_state_records_ack_user_id_and_changed_at(client, db_session_factory):
-    """SPEC_AUDIT.md: TS28111_FaultNrm.yaml's AlarmRecord carries
+    """HISTORY.md §7: TS28111_FaultNrm.yaml's AlarmRecord carries
     ackUserId (who acknowledged it) and alarmChangedTime (its own "last
     mutated" timestamp) — PATCH /alarms/{id}/ack never recorded either.
     """
@@ -518,7 +518,7 @@ def test_change_alarm_ack_state_records_ack_user_id_and_changed_at(client, db_se
 
 
 def test_clear_alarm_sets_cleared_severity_and_metadata(client, db_session_factory):
-    """OPEN_ITEMS.md section 5: no alarm-cleared lifecycle existed at
+    """HISTORY.md §5: no alarm-cleared lifecycle existed at
     all — an alarm that stopped recurring on the NF had no way to ever
     be marked resolved. Matches the reference's own NotifyClearedAlarm
     shape: perceivedSeverity=CLEARED, not a separate state field.

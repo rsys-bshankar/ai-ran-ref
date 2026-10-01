@@ -1,5 +1,5 @@
 """AI Runtime SDK — Wave 1 of the AI Platform Service Decomposition
-(docs/architecture/AI_PLATFORM_BASELINE.md). A thin rApp-facing client
+(docs/ARCHITECTURE.md). A thin rApp-facing client
 layer over R1 Termination, wrapping smo_shared.r1_client.R1Client so an
 rApp author calls e.g. `sdk.models.register_model(...)` instead of
 hand-building an HTTP request against `/mlmr/models` (golden rule 6:

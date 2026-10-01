@@ -1,6 +1,6 @@
 """smo_shared/webhook.py — the shared SSRF guard every module's
 caller-registered notification/callback destination now routes through
-(OPEN_ITEMS.md 6.3's PR #138 CodeQL py/full-ssrf finding). Run with:
+(HISTORY.md OI-6.3's PR #138 CodeQL py/full-ssrf finding). Run with:
 cd smo/shared && PYTHONPATH=. python -m pytest tests -q
 """
 

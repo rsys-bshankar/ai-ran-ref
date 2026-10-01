@@ -24,9 +24,9 @@ export type ModelAction =
  * TrainingJob/ValidationJob/EmulationJob row exists for each. `governance`
  * actions are the eight decisions AIMgF requires a decidedBy for
  * (SUBMIT_FOR_APPROVAL/APPROVE/REJECT/CERTIFY/PROMOTE/ROLLBACK, plus
- * OPEN_ITEMS.md section 6.1's own APPROVE_TRAINING/APPROVE_VALIDATION
+ * HISTORY.md OI-6.1's own APPROVE_TRAINING/APPROVE_VALIDATION
  * operator gate) — DEPRECATE/RETIRE aren't governance in
- * AIMGF_OWNERSHIP.md's own sense.
+ * docs/ARCHITECTURE.md's AIMgF sense.
  *
  * `gate` reflects ModelLifecycle.trainingApproved/validationApproved —
  * TRAINED/VALIDATED only offer the next request route once an operator
@@ -87,7 +87,7 @@ export const DEPLOYABLE_MODEL_STATES = ["CERTIFIED", "PROMOTED"];
 export const RUNTIME_PIPELINE = ["NOT_DEPLOYED", "DEPLOYMENT_REQUESTED", "DEPLOYED", "ACTIVATING", "ACTIVE"] as const;
 
 /** The operator actions legal from a RuntimeLifecycleState — jointly owned
- * with NFO (AIMGF_OWNERSHIP.md's own "NFO invocation" list). */
+ * with NFO (docs/ARCHITECTURE.md's AIMgF "NFO invocation" list). */
 export function runtimeActions(state: string): { action: "deploy" | "activate" | "scale" | "terminate"; label: string }[] {
   switch (state) {
     case "NOT_DEPLOYED": return [{ action: "deploy", label: "Deploy runtime" }];

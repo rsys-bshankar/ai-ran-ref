@@ -51,7 +51,7 @@ def _make_model(db_session_factory, model_type="t") -> uuid.UUID:
 
 
 def test_get_model_by_id_returns_its_fields(client):
-    """OPEN_ITEMS.md section 5: model CRUD was incomplete — only create
+    """HISTORY.md §5: model CRUD was incomplete — only create
     and a type-filtered list existed, no GET-by-id at all.
     """
     created = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()
@@ -65,7 +65,7 @@ def test_get_model_by_id_returns_its_fields(client):
 
 
 def test_register_model_stores_and_exposes_registration_metadata(client):
-    """OPEN_ITEMS.md section 5: registration metadata was thin — no I/O
+    """HISTORY.md §5: registration metadata was thin — no I/O
     data type schema, no author/owner, no TargetEnvironment
     declarations, all real fields on the reference's own
     ModelRelatedInformation/ModelInformation/Metadata (modelInfo.go).
@@ -113,7 +113,7 @@ def test_update_model_changes_registration_metadata(client):
 
 
 def test_register_model_rejects_duplicate_type_and_version(client):
-    """OPEN_ITEMS.md section 5: the reference's own RegisterModel
+    """HISTORY.md §5: the reference's own RegisterModel
     (mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint
     violation — this build accepted a duplicate silently, creating a
     second, indistinguishable row for the same (modelType, version).
@@ -199,7 +199,7 @@ def test_upload_model_artifact_records_size_bytes(client):
 
 
 def test_upload_model_artifact_stamps_version_one_and_records_location(client):
-    """OPEN_ITEMS.md section 5: the reference's real UploadModel — ours had
+    """HISTORY.md §5: the reference's real UploadModel — ours had
     an artifact_location field nothing in main.py ever read or wrote.
     """
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
@@ -263,7 +263,7 @@ def test_download_unknown_artifact_version_is_404(client):
 
 
 def test_update_model_changes_metadata_fields(client):
-    """OPEN_ITEMS.md section 5: model CRUD was incomplete — create, list,
+    """HISTORY.md §5: model CRUD was incomplete — create, list,
     and (as of the previous pass) get-by-id existed, but no update at all.
     requiredResourceTypeId/trainingDataLineage/integrityHash are write-only
     from `_model_view`'s own perspective (pre-existing, unrelated to Wave
@@ -319,7 +319,7 @@ def test_delete_unknown_model_is_idempotent(client):
 
 
 def test_delete_model_cascades_its_own_artifacts(client):
-    """OPEN_ITEMS.md section 5: model_artifact had no cascade behavior at
+    """HISTORY.md §5: model_artifact had no cascade behavior at
     all. Wave 1's split moved TrainingJob/ModelChangeSubscription/
     MLMFSubscription/InferenceJob/PerformanceReport to AIMgF's own
     process — this module no longer imports them, so it can no longer

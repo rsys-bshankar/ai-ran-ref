@@ -24,7 +24,7 @@ class NFDeploymentDescriptor(Base):
 
 
 class NFDeployment(Base):
-    """OPEN_ITEMS.md section 5: `name` didn't exist at all — the
+    """HISTORY.md §5: `name` didn't exist at all — the
     reference's own duplication guard (`_check_duplication`,
     dms_lcm_nfdeployment.py) rejects a second NfDeployment with the same
     name or targeting the same descriptorId, which this build couldn't
@@ -44,7 +44,7 @@ class NFDeployment(Base):
 
 class NFOCloudResource(Base):
     """The reference's own NfOCloudVResource (o2dms/domain/dms.py) — the
-    resource-linkage object OPEN_ITEMS.md section 5 flagged as entirely
+    resource-linkage object HISTORY.md §5 flagged as entirely
     missing. Real per-vResource granularity (CPU/RAM/interface-level
     linkage) needs actual K8s pod introspection, out of scope same as
     elsewhere; resource_ref is the clusterId Instantiate already

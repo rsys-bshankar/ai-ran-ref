@@ -1,4 +1,4 @@
-"""TS 28.104 MDA NRM at REST level — Wave 5 (WAVES_4_TO_10_WORK_ITEMS.md
+"""TS 28.104 MDA NRM at REST level — Wave 5 (docs/ROADMAP.md
 W5-01..W5-04, decision D-9): MDAFunction, MDARequest and MDAReport with the
 spec's own attribute names and enums, as `{"id", "attributes"}` resources.
 
@@ -14,7 +14,7 @@ open requests and delivered to each one that it satisfies:
   FILE          the report is a downloadable file (`GET /mda-reports/{id}/file`)
                 and a file-ready notification goes to `reportingTarget`
   STREAMING     recorded and retrievable; this build has no TS 28.532
-                streaming transport (the same gap SPEC_AUDIT.md records
+                streaming transport (the same gap OPEN_ITEMS.md §3 records
                 for RAN NF OAM), so this is the one reporting-method deviation
 
 A DRIFT report (W5-04) naming a model (`mLModelRef` output IE) is forwarded

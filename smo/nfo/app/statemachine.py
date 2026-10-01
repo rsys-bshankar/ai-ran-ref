@@ -1,6 +1,6 @@
 """NFDeployment lifecycle.
 
-OPEN_ITEMS.md section 5: the reference's real NfDeploymentState
+HISTORY.md §5: the reference's real NfDeploymentState
 (o2dms/domain/states.py) has 7 states — Initial/Installing/Installed/
 Updating/Uninstalling/Abnormal/Deleting — plus dispatch logic in
 dms_lcm_nfdeployment.py's lcm_nfdeployment_uninstall; this build only

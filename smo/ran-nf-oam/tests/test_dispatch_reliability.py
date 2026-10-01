@@ -1,4 +1,4 @@
-"""Wave 10.1 (WAVES_4_TO_10_WORK_ITEMS.md W10-17/W10-19/W10-20): per-function
+"""Wave 10.1 (docs/ROADMAP.md W10-17/W10-19/W10-20): per-function
 addressing, NETCONF retries with backoff, the alarm raised when they are
 exhausted, and read-after-write. Run with: pytest smo/ran-nf-oam/tests -q
 """

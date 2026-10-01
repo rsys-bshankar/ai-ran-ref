@@ -1,6 +1,6 @@
 """TS 28.312 Intent NRM datatypes (specs/5G_APIs/TS28312_IntentNrm.yaml and
 the five expectation-family files) as strict request models — Wave 6,
-WAVES_4_TO_10_WORK_ITEMS.md decision D-9 (agreed: strict validation, every
+docs/ROADMAP.md decision D-9 (agreed: strict validation, every
 caller migrated).
 
 Spec camelCase names, closed enums, required fields and `extra="forbid"`.

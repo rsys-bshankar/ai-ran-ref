@@ -48,7 +48,7 @@ class FakeDmeResponse:
 @pytest.fixture(autouse=True)
 def _dme_data_jobs_are_known_by_default(monkeypatch):
     """Wave 3: publish_report's cross-service check
-    (docs/ownership/DME_OWNERSHIP.md's "MDAF sources from DME only" rule)
+    (docs/ARCHITECTURE.md's DME "MDAF sources from DME only" rule)
     calls out to DME for every input_sources id. Every existing test uses
     either an empty list or an arbitrary placeholder UUID never meant to
     be a real negative-case test — defaulting the lookup to "found" keeps
@@ -119,7 +119,7 @@ def test_publish_report_persists_scope(client, db_session_factory):
 
 
 def test_list_subscriptions_returns_active_subscription(client):
-    """OPEN_ITEMS.md section 5: no list/query endpoint for active
+    """HISTORY.md §5: no list/query endpoint for active
     subscriptions existed at all — same gap as ran-analytics's own
     producer list.
     """
@@ -161,7 +161,7 @@ def test_list_subscriptions_excludes_unsubscribed(client):
 
 
 def test_publish_report_notifies_subscriber_with_a_notification_destination(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: PublishAnalyticsReport's subscriber loop
+    """HISTORY.md §5: PublishAnalyticsReport's subscriber loop
     was a deliberate no-op (`for sub in subs: pass`) — a matching
     MDASubscription was looked up but never actually notified. This is
     the headline fix — a published report now actually reaches a

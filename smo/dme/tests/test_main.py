@@ -48,7 +48,7 @@ def _default_producer_callbacks_are_harmless(monkeypatch):
     """Every test registers producers at fake hostnames
     (http://ran-nf-oam:8000/...) that only resolve inside the real
     docker-compose network — health checks and job push/stop are all
-    best-effort by design (OPEN_ITEMS.md section 5), so defaulting them
+    best-effort by design (HISTORY.md §5), so defaulting them
     to a harmless, deterministic response keeps every test that doesn't
     care about this behavior fast and stable. Tests that actually
     exercise health/push/stop behavior override this with their own
@@ -172,7 +172,7 @@ def test_data_job_accepts_wire_exact_delivery_values(client):
 
 
 def test_data_job_rejects_a_definition_violating_the_registered_schema(client):
-    """OPEN_ITEMS.md section 5: ICS's own InfoJobs.validateJsonObjectAgainstSchema
+    """HISTORY.md §5: ICS's own InfoJobs.validateJsonObjectAgainstSchema
     (validatePutInfoJob) — productionJobDefinition used to be accepted as an
     arbitrary dict, never checked against the DmeType's own
     dataProductionSchema.
@@ -310,7 +310,7 @@ def test_data_job_unaffected_by_offer_check_when_no_offer_exists(client):
 
 
 def test_deregister_producer_leaves_its_types_registered_but_disabled(client):
-    """SPEC_AUDIT.md — DME vs. the real ICS API, Producer/Type conflation
+    """HISTORY.md §7 — DME vs. the real ICS API, Producer/Type conflation
     finding, closed: ICS's own deleteInfoProducer never touches
     info-types at all (those are only ever removed via their own
     DELETE /info-types/{id}, see the delete_dme_type tests below) — this
@@ -474,7 +474,7 @@ def test_terminate_data_offer_fires_termination_notification(client, monkeypatch
 
 
 def test_get_data_job_by_id_returns_its_fields(client):
-    """OPEN_ITEMS.md section 5: no GET-by-id for DataJob existed at all."""
+    """HISTORY.md §5: no GET-by-id for DataJob existed at all."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     created = client.post("/data-jobs", json={
         "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
@@ -517,7 +517,7 @@ def test_query_unknown_data_job_status_is_404(client):
 
 
 def test_update_data_job_changes_its_definition(client):
-    """OPEN_ITEMS.md section 5: DME had no update-in-place semantics at
+    """HISTORY.md §5: DME had no update-in-place semantics at
     all — only POST-create/DELETE. ICS's own PutIndividualInfoJob.
     """
     reg = client.post("/production-capabilities", json=register_type_body()).json()
@@ -608,7 +608,7 @@ def test_update_data_job_re_pushes_to_the_producer(client, monkeypatch):
 
 
 def test_get_data_offer_by_id_returns_its_fields(client):
-    """OPEN_ITEMS.md section 5: no GET-by-id for DataOffer existed at all."""
+    """HISTORY.md §5: no GET-by-id for DataOffer existed at all."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     created = client.post("/offers", json={
         "dmeTypeId": reg["registrationId"], "dataDeliveryMode": "CONTINUOUS",
@@ -631,7 +631,7 @@ def test_get_unknown_data_offer_is_404(client):
 
 
 def test_discover_filters_by_data_category(client):
-    """OPEN_ITEMS.md section 5: data_category was declared as a query
+    """HISTORY.md §5: data_category was declared as a query
     param but silently never applied — every call returned every type
     regardless of the filter.
     """
@@ -662,7 +662,7 @@ def test_discover_without_data_category_returns_every_type(client):
 
 
 def test_create_data_job_pushes_the_job_to_the_producer(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: create_data_job/terminate_data_job only
+    """HISTORY.md §5: create_data_job/terminate_data_job only
     ever touched our own DB — ICS's own ProducerCallbacks.startInfoJob
     actually POSTs the job to the producer's jobCallbackUrl
     (ProducerJobInfo's wire shape). This is the actual fix.
@@ -751,7 +751,7 @@ def test_terminate_data_job_succeeds_even_if_the_producer_stop_fails(client, mon
 
 
 def test_terminate_data_jobs_for_consumer_deletes_every_matching_job(client, monkeypatch):
-    """SPEC_AUDIT.md's DME vs. real ICS finding: the real
+    """HISTORY.md §7's DME vs. real ICS finding: the real
     DELETE /data-consumer/v1/info-jobs?owner=X (ics-api.yaml's own
     deleteJobsForOwner) — every job one consumer owns torn down in one
     call, including the same per-job producer-stop notification
@@ -797,7 +797,7 @@ def test_register_dme_type_exposes_job_callback_url_on_its_producer(client):
 
 
 def test_query_producer_status_enabled_when_healthy(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: no producer-status endpoint existed at
+    """HISTORY.md §5: no producer-status endpoint existed at
     all — ICS's own GET .../info-producers/{id}/status.
     """
     calls = []
@@ -843,7 +843,7 @@ def test_query_producer_status_after_deregistration_is_404(client):
 
 
 def test_subscribe_and_unsubscribe_type_changes(client):
-    """OPEN_ITEMS.md section 5: ICS's own `/info-type-subscription` — a
+    """HISTORY.md §5: ICS's own `/info-type-subscription` — a
     consumer notified whenever any DmeType is registered or removed.
     Entirely absent from this build until this pass.
     """

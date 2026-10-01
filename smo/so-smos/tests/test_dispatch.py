@@ -120,7 +120,7 @@ def test_dispatch_inference_without_notification_destination_sends_no_params():
 
 
 def test_full_ai_ml_pipeline_can_now_be_composed_in_one_order():
-    """OPEN_ITEMS.md section 6.6, closed: previously only TRAINING had a
+    """HISTORY.md OI-6.6, closed: previously only TRAINING had a
     dispatch entry — an operator could not compose Validation, Emulation,
     a model-runtime Deploy, or Inference into a multi-step ServiceOrder
     the way call flow 10 already shows for Training. All five now dispatch.

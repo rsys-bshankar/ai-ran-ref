@@ -8,7 +8,7 @@ from smo_shared.db import Base
 
 
 class InventorySubscription(Base):
-    """SPEC_AUDIT.md item 8: ORAN.O2ims.Inventory.yaml's InventorySubscription
+    """HISTORY.md §7 item 8: ORAN.O2ims.Inventory.yaml's InventorySubscription
     names this field `callback`, not `callbackUri` — this build's own
     invented name, previously undocumented as a deviation. Renamed
     outright rather than documented: no cross-module caller in this
@@ -25,7 +25,7 @@ class InventorySubscription(Base):
 
 
 class ResourceType(Base):
-    """OPEN_ITEMS.md section 5: no ResourceType/ResourcePool/DeploymentManager
+    """HISTORY.md §5: no ResourceType/ResourcePool/DeploymentManager
     schema existed at all — not just an empty collection behind the
     documented single-cluster limitation, but no model shape to extend
     later. String PK (not a random UUID), matching this module's existing
@@ -40,7 +40,7 @@ class ResourceType(Base):
     vendor: Mapped[str | None] = mapped_column(String)
     model: Mapped[str | None] = mapped_column(String)
     version: Mapped[str | None] = mapped_column(String)
-    # SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's ResourceType
+    # HISTORY.md §7 item 7: ORAN.O2ims.Inventory.yaml's ResourceType
     # requires these five fields — dictionary refs, a "physicality" enum,
     # a functional-role enum, and vendor extensions — entirely absent
     # from this model. Nullable: no route in this build registers a
@@ -79,7 +79,7 @@ class Resource(Base):
     resource_pool_id: Mapped[str] = mapped_column(String, ForeignKey("resource_pool.resource_pool_id"), nullable=False)
     parent_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     description: Mapped[str | None] = mapped_column(String)
-    # SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml's Resource requires
+    # HISTORY.md §7 item 7: ORAN.O2ims.Inventory.yaml's Resource requires
     # globalAssetId/tags/groups, all absent — nullable, all optional in
     # the real spec too (globalAssetId "required only if" reportable;
     # tags/groups have no minItems).
@@ -96,7 +96,7 @@ class DeploymentManager(Base):
     description: Mapped[str | None] = mapped_column(String)
     o_cloud_id: Mapped[str] = mapped_column(String, nullable=False)
     service_uri: Mapped[str | None] = mapped_column(String)
-    # SPEC_AUDIT.md item 7: ORAN.O2ims.Inventory.yaml requires these three
+    # HISTORY.md §7 item 7: ORAN.O2ims.Inventory.yaml requires these three
     # (arrays of globalLocationId / AttributeValuePair / AttributeValuePair
     # respectively) — entirely absent from this model. Nullable: no route
     # in this build registers a DeploymentManager with this much detail

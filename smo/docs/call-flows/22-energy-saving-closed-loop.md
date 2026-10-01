@@ -1,7 +1,7 @@
 # Call Flow: EnergySaving rApp — PM → Prediction → Safety → O1 Action → Verification → Rollback
 
-Wave 10.1 (`docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md` §9) is the first
-reference rApp built on the platform (`samples/energy-saving-rapp/`). It uses
+The EnergySaving rApp (`samples/energy-saving-rapp/`; Wave 10.1 in `docs/ROADMAP.md`) is
+the first reference rApp built on the platform. It uses
 O1 PM data only and the R1 control plane only; there is no A1, Near-RT RIC,
 xApp or E2.
 
@@ -12,7 +12,7 @@ the SDK. In the diagram:
 * the rApp is a regular R1 consumer and reaches every module through R1
   Termination via the AI Runtime SDK;
 * `RAN NF OAM` is both the PM source and the O1 executor;
-* `SA SMOS` is the generic O1-CM intent handler from Wave 8.
+* `SA SMOS` is the generic O1-CM intent handler (call flow 09).
 
 ```mermaid
 sequenceDiagram

@@ -18,7 +18,7 @@ def test_build_edit_config_rpc_embeds_target_and_attributes():
 
 
 def test_build_edit_config_rpc_emits_the_requested_operation():
-    """SPEC_AUDIT.md item 3: RFC 6241 section 7.2's edit-config operation
+    """HISTORY.md §7 item 3: RFC 6241 section 7.2's edit-config operation
     attribute (merge/replace/create/delete/remove), previously never
     emitted at all — every write was implicitly a merge.
     """

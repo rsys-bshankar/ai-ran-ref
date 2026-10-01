@@ -341,7 +341,7 @@ const STEP_TEMPLATES: Record<string, Record<string, unknown>> = {
   DEPLOY: { stepType: "DEPLOY", targetModule: "NFO", nfDeploymentDescriptorId: "<descriptor uuid>", name: "so-deploy-1" },
   INFRA: { stepType: "INFRA", targetModule: "FOCOM", spec: { description: "GPU node" } },
   TRAINING: { stepType: "TRAINING", targetModule: "AI_ML_WORKFLOW", modelId: "<model uuid>" },
-  // OPEN_ITEMS.md section 6.6, closed: previously only TRAINING had a
+  // HISTORY.md OI-6.6, closed: previously only TRAINING had a
   // dispatch entry, so this was the only AI/ML step an order could
   // compose. MODEL_DEPLOY is deliberately its own key, distinct from
   // DEPLOY above — same stepType ("DEPLOY"), different targetModule

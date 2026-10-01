@@ -14,7 +14,7 @@ client = TestClient(app)
 def _reset_mock_state():
     """_policies/_fingerprints are plain module-level dicts (this is a
     Phase 1 test double, not a real persistent service) — without this,
-    OPEN_ITEMS.md section 5's new duplicate-content check would see
+    HISTORY.md §5's new duplicate-content check would see
     every test's identical {"scope": "cell1"} payload under "t1" as a
     duplicate of whichever test happened to run first.
     """
@@ -103,7 +103,7 @@ def test_policies_are_tracked_independently():
 
 
 def test_create_policy_rejects_duplicate_content_for_the_same_type():
-    """OPEN_ITEMS.md section 5: the real near-rt-ric-simulator's own
+    """HISTORY.md §5: the real near-rt-ric-simulator's own
     fingerprint-based duplicate check (a1_mediator_controller.py) was
     entirely unenforced here — a second, byte-identical policyObject
     under the same type used to be accepted without complaint.

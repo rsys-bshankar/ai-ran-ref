@@ -36,7 +36,7 @@ function Dme() {
   const typeName = (id: string) => types.data?.find((t) => t.dmeTypeId === id)?.typeName ?? id.slice(0, 8);
   return (
     <>
-      <Card title="Producers" actions={<span className="muted small">A producer is its own entity now (SPEC_AUDIT.md) — several may support the same type</span>}>
+      <Card title="Producers" actions={<span className="muted small">A producer is its own entity now (HISTORY.md §7) — several may support the same type</span>}>
         <DataTable rows={producers.data} loading={producers.isLoading} error={producers.error} rowKey={(p) => p.producerId} empty="No producers registered." columns={[
           { header: "Producer", render: (p) => <code>{p.producerId}</code> }, { header: "Health callback", render: (p) => p.producerHealthCallbackUrl },
           { header: "Job callback", render: (p) => p.jobCallbackUrl }, { header: "Supported types", render: (p) => p.supportedTypeIds.map(typeName).join(", ") || "—" },

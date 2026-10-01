@@ -1,10 +1,9 @@
 # Call Flow: FOCOM Resource/Inventory Lifecycle — Subscribe → Provision → Notify → Deprovision
 
-Stitches together NFO+FOCOM LLD section 4 and `OPEN_ITEMS.md` section 5's inventory-change
-notification gap, closed: `SubscribeInventoryChanges` previously took no callback at all
-and delivered nothing. Only `provision_resource` gets touched briefly, once, inside call
-flow 10 today — this is FOCOM's own dedicated walkthrough of subscribe→provision→notify→
-deprovision, plus the one real Postgres-only bug this exact sequence caught.
+FOCOM's resource and inventory lifecycle (NFO+FOCOM LLD section 4): a consumer subscribes
+to inventory changes with a callback, a resource is provisioned and deprovisioned, and each
+change is notified to the matching subscriptions (HISTORY.md OI-5-focom-subscription).
+Call flow 10 uses `provision_resource` as its INFRA step.
 
 ```mermaid
 sequenceDiagram
@@ -45,8 +44,8 @@ sequenceDiagram
 ```
 
 **Key decisions this flow depends on:**
-- `consumerSubscriptionId` is stored *and* echoed back on every notification — the real O2IMS spec's own text says it exists "for tracking, routing, or identifying the subscription used to report the event," not just to be recorded and forgotten (`SPEC_AUDIT.md` item 8).
+- `consumerSubscriptionId` is stored *and* echoed back on every notification — the O2IMS spec's own text says it exists "for tracking, routing, or identifying the subscription used to report the event," not just to be recorded and forgotten (HISTORY.md SA-FOCOM-5).
 - Notification is best-effort and filtered, not broadcast: a subscription with a `resourceTypeId` filter only hears about matching resources; one with no filter hears about everything, including a deprovision against an id FOCOM never actually provisioned (`resourceTypeId=null` on that notification, matching an unset filter always matching rather than being silently dropped).
-- Provisioning an unrecognized `resourceTypeId` auto-registers it rather than rejecting the request — Phase 1 never validated this field at all, so starting to reject it now would be a real behavior change, not just filling in a schema gap.
-- Deprovisioning a never-provisioned or malformed `resourceId` is a deliberate no-op, not an error — mirrors DME's own idempotent unsubscribe/deregister routes and NFO's own idempotent double-terminate-on-missing-row shape (call flow 15).
-- **Closed since this flow was first written**: the exact sequence this flow walks (a fresh `ResourceType` auto-registered, then immediately referenced by a new `Resource` row in the same request) is what caught a real Postgres-only `ForeignKeyViolation` — SQLite's own test harness never enforces the FK, so no unit test had ever caught it; an explicit `flush()` between the two inserts (the same pattern NFO's own `Instantiate` already uses between its own dependent inserts) fixed it.
+- Provisioning an unrecognized `resourceTypeId` auto-registers it rather than rejecting the request — Phase 1 never validated this field, so rejecting it would be a behavior change, not just filling in a schema gap. O2IMS treats `ResourceType` as read-only; tightening this is OPEN_ITEMS.md SA-FOCOM-9.
+- Deprovisioning a never-provisioned or malformed `resourceId` is a deliberate no-op, not an error — mirroring DME's idempotent unsubscribe/deregister routes and NFO's idempotent double-terminate-on-missing-row shape (call flow 15).
+- A fresh `ResourceType` auto-registered and then referenced by a new `Resource` row in the same request needs an explicit `flush()` between the two inserts (the same pattern NFO's `Instantiate` uses between its own dependent inserts); without it Postgres raises a `ForeignKeyViolation` that SQLite's test harness, which doesn't enforce the FK, never shows.

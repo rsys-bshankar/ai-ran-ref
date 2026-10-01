@@ -2,7 +2,7 @@ tosca_definitions_version: tosca_simple_yaml_1_3
 
 description: >
   EnergySaving_rApp — the Wave 10.1 reference rApp
-  (smo/docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md §9). A Non-RT RIC rApp that
+  (docs/ROADMAP.md Wave 10.1). A Non-RT RIC rApp that
   predicts sustained low PRB utilisation from O1 PM data and puts cells to
   sleep through O1 (NRCellDU.administrativeState or
   CESManagementFunction.energySavingControl), waking them before load

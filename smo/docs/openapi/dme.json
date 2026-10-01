@@ -510,7 +510,7 @@
     },
     "/data-jobs": {
       "delete": {
-        "description": "SPEC_AUDIT.md's DME vs. real ICS finding: the real\n`DELETE /data-consumer/v1/info-jobs?owner=X` (ics-api.yaml's own\n`deleteJobsForOwner`) \u2014 every job one consumer owns, torn down in\none call, not one `terminate_data_job` at a time. Same per-job\nteardown as that route (producer notification included), just\nfanned out across every matching job.",
+        "description": "HISTORY.md \u00a77's DME vs. real ICS finding: the real\n`DELETE /data-consumer/v1/info-jobs?owner=X` (ics-api.yaml's own\n`deleteJobsForOwner`) \u2014 every job one consumer owns, torn down in\none call, not one `terminate_data_job` at a time. Same per-job\nteardown as that route (producer notification included), just\nfanned out across every matching job.",
         "operationId": "terminate_data_jobs_for_consumer_data_jobs_delete",
         "parameters": [
           {
@@ -929,7 +929,7 @@
     },
     "/dme-types": {
       "get": {
-        "description": "OPEN_ITEMS.md section 5: data_category was declared but silently\nnever applied to the query. DMEType has no dedicated category\ncolumn \u2014 namespace (the grouping half of R1AP's typeName convention,\ne.g. \"RAN\" in \"RAN.CoverageIssue\") is the closest concept it does\nhave, so that's what this filters on.",
+        "description": "HISTORY.md \u00a75: data_category was declared but silently\nnever applied to the query. DMEType has no dedicated category\ncolumn \u2014 namespace (the grouping half of R1AP's typeName convention,\ne.g. \"RAN\" in \"RAN.CoverageIssue\") is the closest concept it does\nhave, so that's what this filters on.",
         "operationId": "discover_dme_types_dme_types_get",
         "parameters": [
           {
@@ -1247,7 +1247,7 @@
     },
     "/production-capabilities": {
       "delete": {
-        "description": "The DME half of rApp Management's producer-reconsideration trigger\n(OPEN_ITEMS.md section 1): when a RAppInstance crashes or terminates,\nits own DME registration is no longer trustworthy and is torn down\nhere. Idempotent \u2014 a producer_id with nothing registered is a no-op,\nnot an error.\n\nSPEC_AUDIT.md \u2014 DME vs. the real ICS API: this used to also delete\nevery DmeType (and dependent DataJob/DataOffer rows) this producer_id\nhappened to have registered, because the old schema conflated a type\nwith its one-and-only producer. Now that Producer and Type are two\nreal, separately-owned entities (ICS's own deleteInfoProducer never\ntouches info-types at all \u2014 those are only ever removed via their own\n`DELETE /info-types/{id}`, see `delete_dme_type` below), this only\nremoves the producer and its producer-type links; a type some other\nproducer still supports keeps serving, and a type this was the last\nproducer for simply goes DISABLED until deleted or re-registered \u2014\nthe real fix for the conflation, not a cosmetic rename.",
+        "description": "The DME half of rApp Management's producer-reconsideration trigger\n(HISTORY.md \u00a71): when a RAppInstance crashes or terminates,\nits own DME registration is no longer trustworthy and is torn down\nhere. Idempotent \u2014 a producer_id with nothing registered is a no-op,\nnot an error.\n\nHISTORY.md \u00a77 \u2014 DME vs. the real ICS API: this used to also delete\nevery DmeType (and dependent DataJob/DataOffer rows) this producer_id\nhappened to have registered, because the old schema conflated a type\nwith its one-and-only producer. Now that Producer and Type are two\nreal, separately-owned entities (ICS's own deleteInfoProducer never\ntouches info-types at all \u2014 those are only ever removed via their own\n`DELETE /info-types/{id}`, see `delete_dme_type` below), this only\nremoves the producer and its producer-type links; a type some other\nproducer still supports keeps serving, and a type this was the last\nproducer for simply goes DISABLED until deleted or re-registered \u2014\nthe real fix for the conflation, not a cosmetic rename.",
         "operationId": "deregister_producer_production_capabilities_delete",
         "parameters": [
           {
@@ -1293,7 +1293,7 @@
         "summary": "List Producers"
       },
       "post": {
-        "description": "SPEC_AUDIT.md \u2014 DME vs. the real ICS API, Producer/Type conflation\nfinding, closed: ICS's own `PUT .../info-producers/{id}` and\n`PUT .../info-types/{id}` are two separate, idempotent create-or-update\ncalls against two separate entities, many-to-many. This build keeps\none wire-compatible request body (no caller needs to change), but now\nupserts a real `DMEProducer` row, upserts a real `DMEType` row keyed\non (namespace, name, version) rather than erroring on an existing one,\nand links them \u2014 so a second producer registering an already-known\ntype identity, or the same producer re-registering after a restart,\nboth succeed instead of the old global `DME_TYPE_VERSION_CONFLICT`.",
+        "description": "HISTORY.md \u00a77 \u2014 DME vs. the real ICS API, Producer/Type conflation\nfinding, closed: ICS's own `PUT .../info-producers/{id}` and\n`PUT .../info-types/{id}` are two separate, idempotent create-or-update\ncalls against two separate entities, many-to-many. This build keeps\none wire-compatible request body (no caller needs to change), but now\nupserts a real `DMEProducer` row, upserts a real `DMEType` row keyed\non (namespace, name, version) rather than erroring on an existing one,\nand links them \u2014 so a second producer registering an already-known\ntype identity, or the same producer re-registering after a restart,\nboth succeed instead of the old global `DME_TYPE_VERSION_CONFLICT`.",
         "operationId": "register_dme_type_production_capabilities_post",
         "requestBody": {
           "content": {
@@ -1474,7 +1474,7 @@
         "summary": "List Type Subscriptions"
       },
       "post": {
-        "description": "OPEN_ITEMS.md section 5: ICS's own `/info-type-subscription`\n(InfoTypeSubscriptions/ConsumerCallbacks) \u2014 a consumer notified\nwhenever any DmeType is registered or removed. Entirely absent from\nthis build until now. ICS's own PUT is create-or-update against a\ncaller-supplied subscriptionId; this build's id is server-generated\n(same adaptation already made for every other subscription in this\ncodebase \u2014 RAN Analytics, A1 Related, Policy Mgmt, FOCOM).",
+        "description": "HISTORY.md \u00a75: ICS's own `/info-type-subscription`\n(InfoTypeSubscriptions/ConsumerCallbacks) \u2014 a consumer notified\nwhenever any DmeType is registered or removed. Entirely absent from\nthis build until now. ICS's own PUT is create-or-update against a\ncaller-supplied subscriptionId; this build's id is server-generated\n(same adaptation already made for every other subscription in this\ncodebase \u2014 RAN Analytics, A1 Related, Policy Mgmt, FOCOM).",
         "operationId": "subscribe_type_changes_type_subscriptions_post",
         "requestBody": {
           "content": {

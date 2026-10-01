@@ -38,7 +38,7 @@ def dispatch_config(r1: R1Client, step: dict) -> dict:
 def dispatch_deploy(r1: R1Client, step: dict) -> dict:
     resp = r1.post("/nfo/deployments", json={
         "nfDeploymentDescriptorId": step["nfDeploymentDescriptorId"],
-        "name": step.get("name") or f"deploy-{step['nfDeploymentDescriptorId']}",  # NFO's own duplication guard (OPEN_ITEMS.md section 5) needs a real name
+        "name": step.get("name") or f"deploy-{step['nfDeploymentDescriptorId']}",  # NFO's own duplication guard (HISTORY.md §5) needs a real name
         "requiredResourceTypeId": step.get("requiredResourceTypeId"),
     })
     return _ensure_ok(resp)
@@ -71,7 +71,7 @@ def dispatch_policy(r1: R1Client, step: dict) -> dict:
 
 
 def dispatch_validation(r1: R1Client, step: dict) -> dict:
-    """OPEN_ITEMS.md section 6.6, closed: `DISPATCH_TABLE` previously had
+    """HISTORY.md OI-6.6, closed: `DISPATCH_TABLE` previously had
     only a TRAINING entry for the whole AI/ML pipeline — Validation could
     only ever be reached by calling AIMgF directly, never composed into a
     multi-step `ServiceOrder` the way Training could. Same request shape
@@ -87,7 +87,7 @@ def dispatch_validation(r1: R1Client, step: dict) -> dict:
 
 
 def dispatch_emulation(r1: R1Client, step: dict) -> dict:
-    """OPEN_ITEMS.md section 6.6, closed: same gap as dispatch_validation,
+    """HISTORY.md OI-6.6, closed: same gap as dispatch_validation,
     for Emulation.
     """
     resp = r1.post("/aimgf/emulation-jobs", json={
@@ -99,7 +99,7 @@ def dispatch_emulation(r1: R1Client, step: dict) -> dict:
 
 
 def dispatch_model_runtime_deploy(r1: R1Client, step: dict) -> dict:
-    """OPEN_ITEMS.md section 6.6, closed: a model-runtime deploy
+    """HISTORY.md OI-6.6, closed: a model-runtime deploy
     (AIMgF's own `RequestModelRuntimeDeploy`, call flow 17) — deliberately
     a separate (stepType, targetModule) key from `("DEPLOY", "NFO")`
     above, which dispatches a workload's own NFO deployment, not a
@@ -113,7 +113,7 @@ def dispatch_model_runtime_deploy(r1: R1Client, step: dict) -> dict:
 
 
 def dispatch_inference(r1: R1Client, step: dict) -> dict:
-    """OPEN_ITEMS.md section 6.6, closed: same gap as dispatch_validation,
+    """HISTORY.md OI-6.6, closed: same gap as dispatch_validation,
     for Inference (AIMgF's own `RequestInference`, gated on
     `RuntimeLifecycleState.ACTIVE`, not composable via this table before now).
     """

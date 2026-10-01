@@ -49,7 +49,7 @@ def create_policy(near_rt_ric_id: str, policy_type_id: str, policy_object: dict)
     as a test double. REJECTED on an empty policyObject, purely so the
     reject path has something to actually exercise in tests.
 
-    OPEN_ITEMS.md section 5: also REJECTED on duplicate policy content
+    HISTORY.md §5: also REJECTED on duplicate policy content
     for the same policy type — the real near-rt-ric-simulator's own
     fingerprint check (a1_mediator_controller.py's is_duplicate_check()
     path), previously entirely unenforced here (only the empty-object
@@ -71,7 +71,7 @@ def create_policy(near_rt_ric_id: str, policy_type_id: str, policy_object: dict)
 
 @app.put("/a1-p/policies/{policy_id}")
 def update_policy(policy_id: str, policy_object: dict):
-    """OPEN_ITEMS.md section 5: same duplicate-content check as create,
+    """HISTORY.md §5: same duplicate-content check as create,
     matching the reference's own PUT-is-create-or-update semantics — a
     new fingerprint colliding with a DIFFERENT policy's is rejected
     (updating a policy back to its own current content is not a

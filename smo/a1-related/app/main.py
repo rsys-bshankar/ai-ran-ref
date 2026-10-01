@@ -62,7 +62,7 @@ def query_policy_types(near_rt_ric_id: str | None = None):
 
 @app.get("/policy-types/{policy_type_id}")
 def get_policy_type(policy_type_id: str):
-    """OPEN_ITEMS.md section 5: the reference's own GetPolicyTypeDefinition
+    """HISTORY.md §5: the reference's own GetPolicyTypeDefinition
     (`GET /policy-types/{policyTypeId}`, pms-api-v3.json) — 404 on an
     unknown type, else a real `PolicyTypeObject` (`policySchema` — the
     JSON Schema every A1 Policy Instance of this type must satisfy —
@@ -109,7 +109,7 @@ def create_policy(body: CreatePolicyRequest, db: Session = Depends(get_session),
 @app.get("/policies")
 def query_policies(policy_type_id: str | None = None, near_rt_ric_id: str | None = None, creator_id: str | None = None,
                     limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: no policy list/query-by-filter endpoint
+    """HISTORY.md §5: no policy list/query-by-filter endpoint
     existed at all — only GET /policies/{id}, despite the mapping-store's
     whole job (section 1.1) being to track these mappings. Filterable by
     policyTypeId/nearRtRicId/creatorId (the "type/RIC/service" filters
@@ -187,8 +187,7 @@ def query_policy_status(policy_id: uuid.UUID, db: Session = Depends(get_session)
 
 
 def _notify_policy_status_subscribers(db: Session, policy: A1Policy) -> None:
-    """A1 Related LLD section 1.2's subscription mechanism (OPEN_ITEMS.md
-    section 5): SubscribePolicyStatus/UnsubscribePolicyStatus stored and
+    """A1 Related LLD section 1.2's subscription mechanism (HISTORY.md §5): SubscribePolicyStatus/UnsubscribePolicyStatus stored and
     removed subscription rows but nothing ever delivered to
     notification_destination on an actual status change. Filters by
     policyIdList/policyTypeIdList/nearRtRicIdList (an unset filter
@@ -248,7 +247,7 @@ def _seconds_since_activity(svc: A1ServiceRegistration) -> float:
 
 
 def _sweep_stale_service(db: Session, svc: A1ServiceRegistration, a1t: A1TerminationClient) -> bool:
-    """A1 Related LLD/OPEN_ITEMS.md section 5: the reference's own Service
+    """A1 Related LLD/HISTORY.md §5: the reference's own Service
     Registry and Supervision contract (pms-api-v3.json's keepAliveService/
     ServiceStatus) — "An unavailable service will be automatically
     deregistered and its policies will be deleted." No scheduler exists
@@ -280,7 +279,7 @@ def _service_status_view(svc: A1ServiceRegistration) -> dict:
 
 @app.put("/services")
 def register_service(body: ServiceRegistrationRequest, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: Service Registry and Supervision
+    """HISTORY.md §5: Service Registry and Supervision
     (putService, pms-api-v3.json) — entirely absent before this pass, not
     just thin. Register-or-update in place: re-registering an
     already-known serviceId updates its callbackUrl/
@@ -386,7 +385,7 @@ def deregister_ei_type(ei_type_id: str, db: Session = Depends(get_session)):
 
 @app.get("/health")
 def health_check():
-    """Producer health-supervision callback (OPEN_ITEMS.md section 5):
+    """Producer health-supervision callback (HISTORY.md §5):
     register_ei_type registers this exact URL with DME as its
     producerHealthCallbackUrl, but no route ever answered it — a health
     poller hitting the registered callback would 404 against a producer
@@ -398,7 +397,7 @@ def health_check():
 
 @app.post("/dme-jobs")
 def receive_dme_job(body: dict):
-    """DME's own job-push callback (OPEN_ITEMS.md section 5): DME's
+    """DME's own job-push callback (HISTORY.md §5): DME's
     create_data_job now actually POSTs the job to jobCallbackUrl on
     create — register_ei_type registers this exact URL, so this closes
     the same class of dangling-callback bug the /health route closed

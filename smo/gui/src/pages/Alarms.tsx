@@ -65,7 +65,7 @@ function RanAlarms() {
   );
 }
 
-// ---------------------------------------------------------------- FM → DME (OPEN_ITEMS.md 6.7)
+// ---------------------------------------------------------------- FM → DME (HISTORY.md OI-6.7)
 
 function FmSubscriptions() {
   const subs = useSmo<FmSubscription[]>("/ran-nf-oam/fm-subscriptions");

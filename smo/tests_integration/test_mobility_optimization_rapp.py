@@ -1,5 +1,5 @@
 """Wave 10.2 — the Mobility Optimization rApp end to end
-(WAVES_4_TO_10_WORK_ITEMS.md §10, W10.2-10): MRO-01..MRO-20, run against
+(docs/ROADMAP.md Wave 10.2, W10.2-10): MRO-01..MRO-20, run against
 the real services in the in-process mesh.
 
 The chain under test:

@@ -1,6 +1,11 @@
 # Call Flow: rApp Onboarding → Running Instance
 
-Stitches together: Onboarding/rApp Mgmt LLD sections 1-6, Foundational Platform LLD section 4.4, NFO+FOCOM LLD section 4.
+An operator onboards an rApp package and creates an instance of it. rApp Management
+deploys the instance's workload through NFO, which places it on a FOCOM cluster, and the
+running container bootstraps through R1 Termination: it registers its services with SME
+(and its data types with DME when it is a producer) and then reports `bootstrap-complete`.
+Design sources: Onboarding/rApp Mgmt LLD sections 1-6, Foundational Platform LLD section
+4.4, NFO+FOCOM LLD section 4.
 
 ```mermaid
 sequenceDiagram
@@ -24,7 +29,7 @@ sequenceDiagram
     Onb-->>Rapp: state=AVAILABLE
     Rapp->>Rapp: read Definitions/<name>.yaml via toscaEntryDefinitions
     Rapp->>Rapp: create RAppInstance, state=DEPLOYING, issue oauthClientId (== rAppId)
-    Note over Rapp: OPEN_ITEMS.md 6.3, closed — autonomyMode (AUTONOMOUS/ASSIST/SHADOW,<br/>default SHADOW) and regionScope are fixed here, for this instance's whole<br/>lifetime — see call flow 09 for what they drive at inference time
+    Note over Rapp: HISTORY.md OI-6.3, closed — autonomyMode (AUTONOMOUS/ASSIST/SHADOW,<br/>default SHADOW) and regionScope are fixed here, for this instance's whole<br/>lifetime — see call flow 09 for what they drive at inference time
 
     Rapp->>NFO: Instantiate(nfDeploymentDescriptorId, requiredResourceTypeId)
     NFO->>Focom: QueryInventory(resourceType)
@@ -54,3 +59,5 @@ sequenceDiagram
 - `RAppInstance.instanceId` (via `oauth_client_id`) **is** the rAppId used in every subsequent SME/DME call — Foundational Platform LLD section 1.
 - NFO always resolves `clusterId` through FOCOM before placing a workload, even though Phase 1's answer is always the same degenerate cluster — NFO+FOCOM LLD section 4.
 - Bootstrap never returns an events-subscription endpoint — only `service-apis` and `published-apis` — Foundational Platform LLD section 4.1.
+- `autonomyMode` and `regionScope` are fixed at `CreateInstance` for the instance's whole lifetime; call flow 09 shows what they drive (HISTORY.md OI-6.3).
+- `CreateInstance` also records the instance's use of its package with Onboarding (`usage/start`), and `TerminateInstance` stops it (`usage/stop`), so Onboarding's cascade-delete guard (call flow 06) sees every deployed instance.

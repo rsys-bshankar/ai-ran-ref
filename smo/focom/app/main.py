@@ -62,7 +62,7 @@ def _ensure_phase1_topology(db: Session) -> None:
 
 
 class SubscribeInventoryRequest(BaseModel):
-    """SPEC_AUDIT.md item 8: ORAN.O2ims.Inventory.yaml's InventorySubscription
+    """HISTORY.md §7 item 8: ORAN.O2ims.Inventory.yaml's InventorySubscription
     names this field `callback`, not this build's own invented
     `callbackUri` — renamed to match. consumerSubscriptionId (the
     spec's own consumer-provided tracking id) was entirely absent.
@@ -74,7 +74,7 @@ class SubscribeInventoryRequest(BaseModel):
 
 @app.get("/inventory")
 def query_inventory(resource_type: str = "", db: Session = Depends(get_session)):
-    """QueryInventory — SPEC_AUDIT.md item 8 (formerly moderate item 2 of
+    """QueryInventory — HISTORY.md §7 item 8 (formerly moderate item 2 of
     the "Moderate/breaking-shape items" list): reshaped toward the real
     O2IMS `OCloud` schema (`ORAN.O2ims.Inventory.yaml`), the spec's own
     aggregate root — this route previously returned an ad hoc
@@ -87,7 +87,7 @@ def query_inventory(resource_type: str = "", db: Session = Depends(get_session))
     fabricated data). `locations`/`oCloudSites` are required
     (`minItems: 1`) in the real spec, but genuinely empty here: FOCOM
     has no `OCloudSite`/`Location` concept at all (a confirmed
-    large/structural scope cut, `SPEC_AUDIT.md`'s FOCOM section), so
+    large/structural scope cut, OPEN_ITEMS.md §3, FOCOM), so
     they're honestly empty rather than fabricated —
     `globalCloudId`/`infrastructureManagementServicesEndPoint`/
     `smoRegistrationService` are `None` for the same reason.
@@ -121,7 +121,7 @@ def query_inventory(resource_type: str = "", db: Session = Depends(get_session))
 
 @app.get("/resource-types")
 def list_resource_types(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: no per-resource-type/pool/resource
+    """HISTORY.md §5: no per-resource-type/pool/resource
     drill-down endpoints existed at all — the reference exposes
     /resourceTypes, /resourceTypes/{id}, /resourcePools/{id}/resources,
     /deploymentManagers/{id} as distinct operations; FOCOM collapsed
@@ -190,7 +190,7 @@ TEIV_URN_PREFIX = "urn:oran:smo:teiv"
 
 @app.get("/topology")
 def export_topology(db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: the Blueprint names "FOCOM's placement as
+    """HISTORY.md §5: the Blueprint names "FOCOM's placement as
     a TEIV data source" as a confirmed integration point, but FOCOM had
     no typed entity/relationship model and no /topology-shaped endpoint
     at all — not even a stub. This exports FOCOM's real ResourceType/
@@ -280,7 +280,7 @@ def export_topology(db: Session = Depends(get_session)):
 
 
 def _notify_inventory_subscribers(db: Session, event_type: str, resource_id: str, resource_type_id: str | None) -> None:
-    """OPEN_ITEMS.md section 5: subscribe_inventory_changes took no
+    """HISTORY.md §5: subscribe_inventory_changes took no
     callback parameter, stored nothing, and delivered nothing — the
     reference's real Subscription model stores a callback + filter and
     pushes typed create/modify/delete notifications on inventory
@@ -291,7 +291,7 @@ def _notify_inventory_subscribers(db: Session, event_type: str, resource_id: str
     Best-effort delivery, same pattern as Policy Mgmt's CreateIntent
     notification.
 
-    consumerSubscriptionId (SPEC_AUDIT.md item 8): the spec's own
+    consumerSubscriptionId (HISTORY.md §7 item 8): the spec's own
     description is explicit that it exists "for tracking, routing, or
     identifying the subscription used to report the event" — i.e. it's
     meant to come back on the notification itself, not just be stored.
@@ -326,7 +326,7 @@ def unsubscribe_inventory_changes(subscription_id: uuid.UUID, db: Session = Depe
 @app.post("/resources/provision")
 def provision_resource(spec: dict, db: Session = Depends(get_session)):
     """Previously returned a random UUID and persisted nothing at all —
-    OPEN_ITEMS.md section 5's "no model shape to extend later" gap. Now
+    HISTORY.md §5's "no model shape to extend later" gap. Now
     creates a real Resource row in the Phase 1 pool, so the new
     GET /resource-pools/{id}/resources drill-down actually has
     something behind it. An unrecognized resourceTypeId is
@@ -348,7 +348,7 @@ def provision_resource(spec: dict, db: Session = Depends(get_session)):
         # ResourceType row visible before the Resource row that references
         # it is ever inserted.
         db.flush()
-    # SPEC_AUDIT.md item 7: globalAssetId/tags/groups — real
+    # HISTORY.md §7 item 7: globalAssetId/tags/groups — real
     # ORAN.O2ims.Inventory.yaml Resource fields, previously not even
     # readable from this already-untyped spec dict, let alone persisted.
     resource = Resource(resource_type_id=resource_type_id, resource_pool_id=PHASE1_POOL_ID, description=spec.get("description"),

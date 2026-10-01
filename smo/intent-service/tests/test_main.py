@@ -211,7 +211,7 @@ def test_delete_intent_is_idempotent_for_an_unknown_id(client):
 
 
 def test_create_intent_stores_and_returns_intent_mgmt_purpose(client):
-    """SPEC_AUDIT.md item 3: intentMgmtPurpose is the spec's
+    """HISTORY.md §7 item 3: intentMgmtPurpose is the spec's
     workflow-procedure enum, defaulting to FULFILMENT_WITHOUT_NEGOTIATION."""
     _register_rmih(client)
     created = client.post("/intents", json=_intent()).json()
@@ -519,7 +519,7 @@ def test_intent_utility_formula_ioc(client):
     assert client.get(f"/intent-utility-formulas/{formula_id}").status_code == 404
 
 
-# ---------------------------------------------------------------- OPEN_ITEMS.md section 6.3: rApp Autonomy Modes
+# ---------------------------------------------------------------- HISTORY.md OI-6.3: rApp Autonomy Modes
 
 def _dispatch(instance_id, rmih="so-smos", expectations=None, **extra):
     return {"instanceId": str(instance_id), "expectations": expectations or [_expectation()], "rmihId": rmih, **extra}

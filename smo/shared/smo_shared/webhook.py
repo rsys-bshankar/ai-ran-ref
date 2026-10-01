@@ -10,7 +10,7 @@ later), and a best-effort POST/GET goes out to it. A private-IP
 blocklist is the textbook SSRF mitigation, but a *hostname* allowlist
 is not viable here — this build's legitimate targets are frequently
 other rApp/producer containers whose hostnames are assigned at deploy
-time (NFO) and are never known in advance (OPEN_ITEMS.md 6.3's own
+time (NFO) and are never known in advance (HISTORY.md OI-6.3's own
 PR #138 discussion). So the barrier this module applies is the
 part of SSRF mitigation that doesn't depend on knowing the target set
 up front: block the scheme (http/https only — no file:///, gopher://,

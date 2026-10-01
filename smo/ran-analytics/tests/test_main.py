@@ -109,7 +109,7 @@ def test_register_analytics_producer_publishes_sme_service_registration(client, 
 
 
 def test_list_producers_returns_registered_producer(client):
-    """OPEN_ITEMS.md section 5: no list/query endpoint for registered
+    """HISTORY.md §5: no list/query endpoint for registered
     producers existed at all — the reference defines this route (even
     if its own implementation is a no-op stub).
     """
@@ -156,7 +156,7 @@ def test_list_producers_returns_empty_list_when_none_registered(client):
 
 
 def test_register_analytics_producer_infers_mda_type_for_a_known_shorthand(client):
-    """SPEC_AUDIT.md's `analytics_type` enum finding, closed: TS28104's
+    """HISTORY.md §7's `analytics_type` enum finding, closed: TS28104's
     own real MDAType is derived automatically for the two shorthand
     values this build honestly maps unambiguously.
     """

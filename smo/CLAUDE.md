@@ -1,10 +1,16 @@
 # Working in this repo
 
-This is the Phase 1 SMO reference implementation — see `README.md` for
-the stack/layout and `OPEN_ITEMS.md` for what's deliberately incomplete
-and why. The rest of this file is working practice for anyone (human or
-agent) changing code here, distilled from the backlog closed out in
-`OPEN_ITEMS.md` section 6.
+This is the Phase 1 SMO reference implementation. The documentation:
+
+- `README.md` — what it is, the modules, quickstart, layout, status;
+- `docs/ARCHITECTURE.md` — platform baseline, service ownership, O1 vendor onboarding;
+- `docs/ROADMAP.md` — Waves 4–10.4, frozen decisions, standards compliance matrices;
+- `OPEN_ITEMS.md` — what is still open, and why;
+- `HISTORY.md` — what was decided and built (code comments cite it as `HISTORY.md §5` or `HISTORY.md OI-6.3`);
+- `DEMO_RUNBOOK.md` — a live walkthrough; `docs/call-flows/` — one sequence diagram per flow.
+
+The rest of this file is working practice for anyone (human or agent)
+changing code here.
 
 ## Before pushing or opening a PR: run the full verification battery
 
@@ -59,7 +65,7 @@ cd smo && docker compose config --quiet
 matching nullability — against a real Postgres, not SQLite** (SQLite's
 unit-test runs don't catch a `CHECK` constraint or a nullable/NOT NULL
 mismatch the same way Postgres does — this caught a real regression
-once, see `OPEN_ITEMS.md`'s §6.2 hotfix). Point `SMO_DATABASE_URL` at
+once, see `HISTORY.md` OI-6.2). Point `SMO_DATABASE_URL` at
 any reachable Postgres 16 instance, or start one if you don't have one:
 
 ```bash
@@ -91,14 +97,15 @@ only shows up as a render error on the PR, never in a text diff. Run it
 ## PR conventions
 
 - Branch names: `claude/<kebab-case-description>`.
-- PR body: a `## Summary` (what changed and why, referencing the
-  `OPEN_ITEMS.md` section it closes if applicable) and a `## Test plan`
+- PR body: a `## Summary` (what changed and why, naming the
+  `OPEN_ITEMS.md` item it closes if applicable) and a `## Test plan`
   checklist naming the specific battery steps above that were run.
 - When a change closes (or partially closes) an `OPEN_ITEMS.md` item,
-  update that section in the same PR — mark it closed with real
-  implementation detail (not just "done"), and keep `README.md`'s status
+  move it to `HISTORY.md` in the same PR, under the same ID, with real
+  implementation detail (not just "done"); keep `README.md`'s status
   table in sync. A design choice deliberately *not* taken belongs in the
-  same closure note, not left implicit.
+  same entry, not left implicit. Keep docs current: state what the code
+  does now, not how it got there.
 - Don't merge your own PR on the assumption that's always wanted —
   that's a per-task call the person running the session makes explicitly
   each time, not a standing default this file grants.
@@ -117,3 +124,10 @@ only shows up as a render error on the PR, never in a text diff. Run it
   `py/full-ssrf`, and why a hostname allowlist isn't viable here). Adding
   a new callback-shaped field anywhere in this build should use it from
   the start rather than adding another ad-hoc `httpx.post` + swallow.
+- **SQLite in unit tests** (`smo_shared/testing.py`'s `make_test_engine()`):
+  models use Postgres types (`ARRAY`, `JSON`, `Uuid`) with a SQLite
+  `.with_variant(...)` fallback. `make_test_engine()` already stores a
+  Python `None` as SQL `NULL` in `JSON` columns and encodes UUIDs in the
+  `ARRAY(Uuid)` fallback. SQLite returns `DateTime(timezone=True)` values
+  naive, so any elapsed-time computation on such a column must normalise
+  with `smo_shared.timeutil.as_utc()` first.

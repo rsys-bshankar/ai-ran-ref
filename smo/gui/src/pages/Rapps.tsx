@@ -178,7 +178,7 @@ function CreateInstance({ pkg, onClose }: { pkg: Package; onClose: () => void })
         <Field label="Instance configuration (JSON)" hint={parsed.ok ? "Optional. requiredResourceTypeId is passed to NFO for placement." : <span className="text-bad">{parsed.error}</span>}>
           <textarea rows={6} value={config} onChange={(e) => setConfig(e.target.value)} spellCheck={false} />
         </Field>
-        <Field label="Autonomy mode" hint="Fixed for this instance's lifetime — how it may act on its own AI/ML inference outcomes (OPEN_ITEMS.md section 6.3).">
+        <Field label="Autonomy mode" hint="Fixed for this instance's lifetime — how it may act on its own AI/ML inference outcomes (HISTORY.md OI-6.3).">
           <select value={autonomyMode} onChange={(e) => setAutonomyMode(e.target.value)}>
             <option value="SHADOW">SHADOW — observe-only, never dispatched</option>
             <option value="ASSIST">ASSIST — operator scopes before dispatch</option>

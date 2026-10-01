@@ -1,5 +1,5 @@
 """Tests for NFO SMOS (NFO+FOCOM LLD sections 2, 4), extended by
-OPEN_ITEMS.md section 5's real deployment state machine, duplication/
+HISTORY.md §5's real deployment state machine, duplication/
 dependency guards, resource-linkage object, and Heal/Scale transitions.
 Run with: pytest smo/nfo/tests -q
 """
@@ -96,7 +96,7 @@ def test_create_descriptor_without_a_package_id_for_a_model_runtime(client, db_s
     """Wave 2 (AI Platform Service Decomposition): AIMgF's own Runtime
     Lifecycle creates a descriptor per model runtime, with no onboarded
     ApplicationPackage behind it — packageId is optional since this wave
-    for exactly that caller (docs/ownership/AIMGF_OWNERSHIP.md).
+    for exactly that caller (docs/ARCHITECTURE.md (AIMgF)).
     """
     resp = client.post("/descriptors", json={
         "name": "aimgf-model-<id>-runtime", "workloadTemplate": {"modelId": "some-model-id"},
@@ -131,7 +131,7 @@ def test_instantiate_falls_back_to_degenerate_cluster_if_focom_unreachable(clien
 
 
 def test_instantiate_creates_a_resource_link(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: the reference's own NfOCloudVResource —
+    """HISTORY.md §5: the reference's own NfOCloudVResource —
     the resource-linkage object between an NfDeployment and the O-Cloud
     resource it consumes, missing entirely before this pass.
     """
@@ -328,7 +328,7 @@ def test_heal_unknown_deployment_is_404(client):
 
 
 def test_scale_moves_running_deployment_through_updating_back_to_running(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: Scale previously had no state transition
+    """HISTORY.md §5: Scale previously had no state transition
     of any kind — now drives the reference's real RUNNING->UPDATING
     edge, completing synchronously (same elision pattern as Instantiate).
     """

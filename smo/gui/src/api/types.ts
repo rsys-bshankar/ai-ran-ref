@@ -18,14 +18,14 @@ export interface Package {
   descriptorId: string | null; descriptorInvariantId: string | null;
   descriptorVersion: string | null; schemaVersion: string | null;
   // Real CSAR-bundled Files/Sme/providers + Files/Sme/serviceapis
-  // declarations (SPEC_AUDIT.md's Onboarding/rApp Mgmt finding 3) — null
+  // declarations (HISTORY.md §7's Onboarding/rApp Mgmt finding 3) — null
   // for a package whose CSAR declares neither directory. Registered per
   // instance at bootstrap-complete, not here at onboarding time.
   smeDeclarations: { providers: Record<string, unknown>[]; serviceApis: Record<string, unknown>[] } | null;
 }
 export interface InstanceSummary {
   instanceId: string; packageId: string; state: string;
-  // OPEN_ITEMS.md section 6.3: fixed at onboarding (CreateInstance), SHADOW by default.
+  // HISTORY.md OI-6.3: fixed at onboarding (CreateInstance), SHADOW by default.
   autonomyMode: string;
 }
 export interface Instance extends InstanceSummary {
@@ -48,7 +48,7 @@ export interface Model {
   inputDataType: string | null; outputDataType: string | null; targetEnvironments: Record<string, unknown>[];
 }
 // aimgf's own model_lifecycle row (Wave 2) — MLMR's Model no longer
-// carries state/clearedNodeGroups at all, see MLMR_OWNERSHIP.md.
+// carries state/clearedNodeGroups at all, see docs/ARCHITECTURE.md (MLMR).
 export interface ModelLifecycle {
   modelId: string; modelLifecycleState: string; runtimeLifecycleState: string; trainingJobId: string | null;
   clearedNodeGroups: string[]; nfDeploymentDescriptorId: string | null; nfDeploymentId: string | null;
@@ -61,13 +61,13 @@ export interface TrainingJob {
   trainingJobId: string; modelId: string | null; modelCoordinationGroupId: string | null; producerId: string;
   status: string; runId: string | null; trainingDataset: string | null; validationDataset: string | null;
   modelMetrics: Record<string, unknown> | null;
-  // OPEN_ITEMS.md section 6.2: MLTF's own real NFO-backed execution
+  // HISTORY.md OI-6.2: MLTF's own real NFO-backed execution
   // runtime — set on request, cleared once the run completes.
   nfDeploymentId: string | null;
 }
 export interface InferenceJob {
   inferenceJobId: string; modelId: string; status: string; notificationDestination: string | null;
-  // OPEN_ITEMS.md section 6.2: a reference to the model's own already-live
+  // HISTORY.md OI-6.2: a reference to the model's own already-live
   // serving deployment (ModelLifecycle.nfDeploymentId) — not a new NFO
   // deployment of this job's own.
   nfDeploymentId: string | null;
@@ -100,7 +100,7 @@ export interface Intent { intentId: string; intentAdminState: string; intentPrio
 export interface IntentReport { reportId: string; intentId: string; attributes: Record<string, unknown> & { lastUpdatedTime: string } }
 export interface RmihCapability { intentHandlingCapabilityId: string; supportedExpectationObjectType: string; supportedExpectationTargetInfoList: { supportedTargetName: string }[] }
 export interface Rmih { rmihId: string; smeServiceId: string; notificationDestination: string; intentHandlingScope: string[] | null; attributes: { intentHandlingCapabilityList: RmihCapability[]; supportedNegotiationFunctionalities: string[] | null } }
-// OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes: a real record of each
+// HISTORY.md OI-6.3 — rApp Autonomy Modes: a real record of each
 // inference-driven dispatch decision, distinct from Intent itself since
 // not every mode actually produces one (SHADOW never does; ASSIST
 // doesn't until an operator resolves it).

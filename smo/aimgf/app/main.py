@@ -2,7 +2,7 @@
 
 Wave 2 of the AI Platform Service Decomposition: the full eight-aggregate
 domain model and two real state machines (see docs/architecture/
-AI_PLATFORM_BASELINE.md and docs/ownership/AIMGF_OWNERSHIP.md), deepening
+docs/ARCHITECTURE.md and docs/ARCHITECTURE.md (AIMgF)), deepening
 Wave 1's structural split of the former flat `ai-ml-workflow/` module.
 
   - ModelLifecycle  — a model's own identity/certification path
@@ -10,14 +10,14 @@ Wave 1's structural split of the former flat `ai-ml-workflow/` module.
                       -> deprecation/retirement). AIMgF's own storage now
                       (`.models.ModelLifecycle`), not MLMR's row: Wave 1's
                       `PATCH /mlmr/models/{id}/lifecycle` is gone —
-                      `docs/architecture/SERVICE_OWNERSHIP_MATRIX.md`'s
+                      `docs/ARCHITECTURE.md`'s
                       own "Lifecycle state: AIMgF ✅, MLMR ❌" is now
                       actually true, not just documented.
   - RuntimeLifecycle — a model's serving existence once PROMOTED, jointly
                       owned with NFO: AIMgF now really calls NFO's
                       descriptor/instantiate/scale/terminate routes
                       (`_nfo_*` below) for "request runtime creation/
-                      termination/scaling" (AIMGF_OWNERSHIP.md's own list),
+                      termination/scaling" (docs/ARCHITECTURE.md's AIMgF list),
                       not just tracking a state that never drove anything.
                       A model runtime has no onboarded ApplicationPackage
                       behind it, unlike an rApp's own NfDeploymentDescriptor
@@ -110,7 +110,7 @@ def _fire_model_event(db: Session, model_id: uuid.UUID, event: ModelLifecycleEve
     """Fires a ModelLifecycle transition, records it (LifecycleTransition),
     and — for the four governance decisions plus their submit/reject
     framing (`GOVERNANCE_EVENTS`) — writes a CertificationRecord too, per
-    AIMGF_OWNERSHIP.md's own Governance list.
+    docs/ARCHITECTURE.md's AIMgF Governance list.
     """
     if event in GOVERNANCE_EVENTS and decided_by is None:
         raise framework_error(FrameworkError.GOVERNANCE_DECIDER_REQUIRED, detail=f"{event} requires decidedBy")
@@ -125,7 +125,7 @@ def _fire_model_event(db: Session, model_id: uuid.UUID, event: ModelLifecycleEve
     db.add(LifecycleTransition(model_id=model_id, fsm="MODEL", from_state=from_state, to_state=new_state, event=event))
     if event in GOVERNANCE_EVENTS:
         db.add(CertificationRecord(model_id=model_id, decision=event, decided_by=decided_by, rationale=rationale))
-    # OPEN_ITEMS.md section 6.1: the operator gate's own two flags.
+    # HISTORY.md OI-6.1: the operator gate's own two flags.
     # APPROVE_TRAINING/APPROVE_VALIDATION set them; a fresh CREATE_TRAINING
     # (first cycle or retrain) resets both — a stale approval from a prior
     # pipeline run must never silently carry forward into a new one.
@@ -181,7 +181,7 @@ class RequestTrainingRequest(RuntimeSizing):
     modelCoordinationGroupId: uuid.UUID | None = None
     producerId: str
     requiredData: dict = {}
-    # OPEN_ITEMS.md section 6.4: a separate, explicitly-typed reference to
+    # HISTORY.md OI-6.4: a separate, explicitly-typed reference to
     # the real DME DataJob(s) training actually consumes — requiredData
     # itself stays the opaque blob it always was. Optional and additive:
     # an empty/omitted list skips the check entirely, the same permissive
@@ -202,7 +202,7 @@ class RequestValidationRequest(RuntimeSizing):
     trainingJobId: uuid.UUID | None = None
     producerId: str
     validationCriteria: dict = {}
-    # OPEN_ITEMS.md section 6.5: TS28.105-style completion notification —
+    # HISTORY.md OI-6.5: TS28.105-style completion notification —
     # same optional, best-effort shape TrainingJob's own notificationUri
     # already had (and never used); now genuinely fired on completion.
     notificationUri: str | None = None
@@ -220,7 +220,7 @@ class RequestEmulationRequest(RuntimeSizing):
 class CompleteJobRequest(BaseModel):
     succeeded: bool
     metrics: dict = {}
-    # OPEN_ITEMS.md section 6.5: where the real output artifact lives —
+    # HISTORY.md OI-6.5: where the real output artifact lives —
     # a DME DmeTypeId reference, the same "route it through DME" shape
     # MLModel's own outputDataType already uses. Optional: a job the
     # producer doesn't attach an artifact to (e.g. a failed run) simply
@@ -272,7 +272,7 @@ class CreateFeatureGroupRequest(BaseModel):
 # ---------------------------------------------------------------- Execution runtimes (jointly with NFO)
 
 def _nfo_create_execution_descriptor(job_kind: str, job_id: uuid.UUID, runtime_profile: dict | None = None) -> uuid.UUID:
-    """OPEN_ITEMS.md section 6.2: a real NFO-backed execution runtime for
+    """HISTORY.md OI-6.2: a real NFO-backed execution runtime for
     Training/Validation/Emulation — "MLTF trains (Phase 1: elided)" /
     "MLVF validates (Phase 1: elided)" / "MLEF emulates (Phase 1: elided)"
     were bare comments with no NFO call behind them at all, a structurally
@@ -427,7 +427,7 @@ def sweep_execution_timeouts(db: Session = Depends(get_session)):
 # ---------------------------------------------------------------- Training
 
 def _validate_dme_data_job_ids(dme_data_job_ids: list[uuid.UUID]) -> None:
-    """OPEN_ITEMS.md section 6.4: mirrors MDAF's own
+    """HISTORY.md OI-6.4: mirrors MDAF's own
     `_validate_input_sources_are_real_dme_artifacts` (`mdaf/app/main.py`)
     exactly — every declared id must resolve to a real DME `DataJob`.
     AIMgF doesn't fetch the data itself here either, only proves the
@@ -443,7 +443,7 @@ def _validate_dme_data_job_ids(dme_data_job_ids: list[uuid.UUID]) -> None:
 
 def _notify_job_completion(notification_uri: str | None, job_kind: str, job_id: uuid.UUID, succeeded: bool,
                             outcome_artifact_dme_type_id: uuid.UUID | None, metrics: dict) -> None:
-    """OPEN_ITEMS.md section 6.5: TS28.105-style completion notification —
+    """HISTORY.md OI-6.5: TS28.105-style completion notification —
     `advance(TRAINING_COMPLETE)`/`complete(validationJobId, ...)`/
     `complete(emulationJobId, ...)` used to be bare state transitions
     with no side effect beyond the FSM move itself. Best-effort, the
@@ -533,7 +533,7 @@ def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.U
         if function is not None:
             function.ml_training_type = ml_training_type
 
-    # OPEN_ITEMS.md section 6.2: MLTF's own real execution runtime —
+    # HISTORY.md OI-6.2: MLTF's own real execution runtime —
     # closes the "MLTF trains (Phase 1: elided)" gap. Every training job
     # gets one, model-targeted or coordination-group-targeted alike: a
     # training run needs somewhere to actually execute regardless of
@@ -603,7 +603,7 @@ def query_training_job_status(training_job_id: uuid.UUID, db: Session = Depends(
 
 @app.post("/training-jobs/{training_job_id}/complete")
 def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 6.5, closed: unlike Validation/Emulation
+    """HISTORY.md OI-6.5, closed: unlike Validation/Emulation
     (which already had their own dedicated `.../complete` routes),
     Training's own completion only ever went through the generic
     `POST /models/{id}/advance(TRAINING_COMPLETE)` route — real for the
@@ -632,7 +632,7 @@ def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: 
     job.status = "FINISHED" if body.succeeded else "FAILED"
     job.model_metrics = body.metrics
     job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
-    # OPEN_ITEMS.md section 6.2: the run is done — its execution runtime
+    # HISTORY.md OI-6.2: the run is done — its execution runtime
     # is torn down right alongside it, not left running indefinitely.
     _nfo_terminate_execution(job.nf_deployment_id)
     job.nf_deployment_id = None
@@ -669,7 +669,7 @@ def _cancel_training_job(db: Session, job: TrainingJob) -> None:
 
 @app.post("/training-jobs/{training_job_id}/suspend")
 def suspend_training(training_job_id: uuid.UUID, db: Session = Depends(get_session)):
-    """SPEC_AUDIT.md's AI/ML Workflow section item 6: TrainingJob had no
+    """HISTORY.md §7's AI/ML Workflow section item 6: TrainingJob had no
     suspend concept at all, only a hard cancel. This is deliberately a
     plain status flip, not a third state machine — the two real FSMs
     Wave 2 built (ModelLifecycleState/RuntimeLifecycleState) operate one
@@ -712,7 +712,7 @@ def resume_training(training_job_id: uuid.UUID, db: Session = Depends(get_sessio
 
 @app.post("/training-jobs/{training_job_id}/model-metrics")
 def update_training_job_model_metrics(training_job_id: uuid.UUID, model_metrics: dict, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: TrainingJob had no metrics-writeback
+    """HISTORY.md §5: TrainingJob had no metrics-writeback
     endpoint at all. The reference's own
     POST /training-jobs/update-model-metrics/<id> (trainingjob_controller.py)
     replaces model_metrics wholesale, not a merge — same here.
@@ -750,13 +750,13 @@ def list_training_jobs(model_id: uuid.UUID | None = None, status: str | None = N
 
 def _start_validation(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.UUID | None, producer_id: str,
                       **job_fields) -> ValidationJob:
-    """CreateValidation (AIMGF_OWNERSHIP.md's own request list) — the one
+    """CreateValidation (docs/ARCHITECTURE.md's AIMgF request list) — the one
     place a validation (TS 28.105: testing) run starts, shared by
     `POST /validation-jobs` and `POST /ml-testing-requests`.
 
     A model-targeted run requires the model to have finished training
     (TRAINED) AND an operator to have already fired APPROVE_TRAINING
-    (OPEN_ITEMS.md section 6.1) — the state check alone isn't the gate.
+    (HISTORY.md OI-6.1) — the state check alone isn't the gate.
     A coordination-group-targeted run (Wave 4, MLTestingRequest's
     mLModelCoordinationGroupRef) tests the group as a unit and, exactly
     like a group-targeted TrainingJob, drives no single member's lifecycle.
@@ -778,7 +778,7 @@ def _start_validation(db: Session, *, model_id: uuid.UUID | None, group_id: uuid
                          status="RUNNING", **job_fields)
     db.add(job)
     db.flush()
-    # OPEN_ITEMS.md section 6.2: MLVF's own real execution runtime.
+    # HISTORY.md OI-6.2: MLVF's own real execution runtime.
     descriptor_id = _nfo_create_execution_descriptor("VALIDATION", job.validation_job_id, job.runtime_profile)
     job.nf_deployment_descriptor_id = descriptor_id
     job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "VALIDATION", job.validation_job_id)
@@ -821,7 +821,7 @@ def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, 
     job.status = "COMPLETED" if body.succeeded else "FAILED"
     job.metrics = body.metrics
     job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
-    # OPEN_ITEMS.md section 6.2: the run is done — tear down its runtime.
+    # HISTORY.md OI-6.2: the run is done — tear down its runtime.
     _nfo_terminate_execution(job.nf_deployment_id)
     job.nf_deployment_id = None
     if job.model_id is not None:
@@ -857,8 +857,7 @@ def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_s
     """CreateEmulation — new this wave, split out from Wave 1's flat
     VALIDATION_COMPLETE -> EMULATED transition the same way ValidationJob
     is. Requires the model to have passed validation (VALIDATED) AND an
-    operator to have already fired APPROVE_VALIDATION (OPEN_ITEMS.md
-    section 6.1) — the same gate shape as request_validation's own.
+    operator to have already fired APPROVE_VALIDATION (HISTORY.md OI-6.1) — the same gate shape as request_validation's own.
     """
     _get_model(body.modelId)
     lifecycle = _get_or_create_lifecycle(db, body.modelId)
@@ -878,7 +877,7 @@ def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_s
                         timeout_seconds=_timeout_for("EMULATION", body.timeoutSeconds))
     db.add(job)
     db.flush()
-    # OPEN_ITEMS.md section 6.2: MLEF's own real execution runtime.
+    # HISTORY.md OI-6.2: MLEF's own real execution runtime.
     descriptor_id = _nfo_create_execution_descriptor("EMULATION", job.emulation_job_id, job.runtime_profile)
     job.nf_deployment_descriptor_id = descriptor_id
     job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "EMULATION", job.emulation_job_id)
@@ -908,7 +907,7 @@ def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db
     job.status = "COMPLETED" if body.succeeded else "FAILED"
     job.metrics = body.metrics
     job.outcome_artifact_dme_type_id = body.outcomeArtifactDmeTypeId
-    # OPEN_ITEMS.md section 6.2: the run is done — tear down its runtime.
+    # HISTORY.md OI-6.2: the run is done — tear down its runtime.
     _nfo_terminate_execution(job.nf_deployment_id)
     job.nf_deployment_id = None
     event = ModelLifecycleEvent.EMULATION_COMPLETE if body.succeeded else ModelLifecycleEvent.EMULATION_FAILED
@@ -951,7 +950,7 @@ def advance_model_lifecycle(model_id: uuid.UUID, event: str, decided_by: str | N
     FSM transition (statemachine.py). `decidedBy` is required for the six
     governance decisions (`GOVERNANCE_EVENTS`) and written onto a real
     CertificationRecord; omitted for DEPRECATE/RETIRE, which aren't
-    governance decisions in AIMGF_OWNERSHIP.md's own sense.
+    governance decisions in docs/ARCHITECTURE.md's AIMgF sense.
     """
     _get_model(model_id)
     ev = ModelLifecycleEvent(event)
@@ -1032,7 +1031,7 @@ def _nfo_instantiate(descriptor_id: uuid.UUID, model_id: uuid.UUID) -> uuid.UUID
 def deploy_model_runtime(model_id: uuid.UUID, package_id: uuid.UUID | None = None, body: RuntimeProfile | None = None,
                          db: Session = Depends(get_session)):
     """RuntimeLifecycle's own DEPLOY — jointly owned with NFO
-    (AIMGF_OWNERSHIP.md's "NFO invocation: request runtime creation").
+    (docs/ARCHITECTURE.md's AIMgF "NFO invocation: request runtime creation").
     Requires the model to have cleared governance (CERTIFIED or
     PROMOTED). The RuntimeLifecycle guard fires before any NFO call, so a
     duplicate deploy attempt (already DEPLOYMENT_REQUESTED-or-later)
@@ -1142,7 +1141,7 @@ def request_inference(model_id: uuid.UUID, notification_destination: str | None 
         if str(model_id) not in function.ml_model_refs:
             raise framework_error(FrameworkError.MODEL_NOT_LOADED,
                                    detail=f"model {model_id} is not loaded on AIMLInferenceFunction {aiml_inference_function_id}")
-    # OPEN_ITEMS.md section 6.2: MLIF's own execution runtime is the
+    # HISTORY.md OI-6.2: MLIF's own execution runtime is the
     # model's already-live serving deployment (real since this state is
     # only reachable once deploy_model_runtime's own NFO call succeeded)
     # — a reference, not a new NFO call. See InferenceJob's own docstring
@@ -1219,7 +1218,7 @@ def subscribe_performance_monitoring(model_id: uuid.UUID, metric_types: list[str
     """MLMF — new sub-function, AI/ML Workflow LLD section 2. Distinct
     domain from RAN Analytics' MDAF (model performance, not RAN behavior).
 
-    SPEC_AUDIT.md's `MLMFSubscription` finding, closed: `notification_destination`
+    HISTORY.md §7's `MLMFSubscription` finding, closed: `notification_destination`
     (optional, matching every other subscription-shaped resource's own
     permissive shape — a purely poll-based consumer may still omit it).
     """
@@ -1232,7 +1231,7 @@ def subscribe_performance_monitoring(model_id: uuid.UUID, metric_types: list[str
 
 @app.delete("/mlmf/subscriptions/{subscription_id}", status_code=204)
 def unsubscribe_performance_monitoring(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
-    """SPEC_AUDIT.md's `MLMFSubscription` finding, closed: previously
+    """HISTORY.md §7's `MLMFSubscription` finding, closed: previously
     this subscription could only be created and read, never torn down —
     idempotent, matching every other subscription-shaped resource's own
     unsubscribe route (DME/MDAF/A1-Related/Intent Service).
@@ -1266,7 +1265,7 @@ def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = 
     db.add(report)
     db.commit()
 
-    # SPEC_AUDIT.md's `MLMFSubscription` finding, closed: best-effort,
+    # HISTORY.md §7's `MLMFSubscription` finding, closed: best-effort,
     # same pattern as every other subscription notification in this
     # build — an unreachable subscriber never fails the report call
     # that triggered it.
@@ -1337,7 +1336,7 @@ def _trigger_group_retrain(db: Session, group: dict) -> list[uuid.UUID]:
         lifecycle = _get_or_create_lifecycle(db, member_id)
         if lifecycle.model_lifecycle_state != ModelLifecycleState.PROMOTED:
             continue
-        # OPEN_ITEMS.md section 6.2 / Wave 4: the same start path (NFO
+        # HISTORY.md OI-6.2 / Wave 4: the same start path (NFO
         # runtime, MLTrainingProcess, CREATE_TRAINING) a directly-requested
         # retrain gets via request_training.
         _start_training(db, model_id=member_id, group_id=None, producer_id="aimgf:group-retrain",
@@ -1436,7 +1435,7 @@ def _lifecycle_view(l: ModelLifecycle) -> dict:
 
 @app.post("/feature-groups", status_code=201)
 def create_feature_group(body: CreateFeatureGroupRequest, db: Session = Depends(get_session)):
-    """OPEN_ITEMS.md section 5: no feature-group/feature-store concept
+    """HISTORY.md §5: no feature-group/feature-store concept
     existed at all. Matches the reference's own
     CreateFeatureGroup (featuregroup_controller.py): name must be
     `\\w+` (word characters only) and 3-63 characters long, and a

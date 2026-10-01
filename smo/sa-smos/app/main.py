@@ -18,7 +18,7 @@ ROLLBACK's NF-oriented meanings don't map onto a model group at all.
 Remedial action for one always means the same thing regardless of the
 requested actionType — trigger a retrain of the group via AI/ML
 Workflow's RequestTraining, converging with that module's own
-groupRetrainTriggered fix (OPEN_ITEMS.md section 1's
+groupRetrainTriggered fix (HISTORY.md §1's
 MLModelCoordinationGroup x SA SMOS convergence item).
 """
 

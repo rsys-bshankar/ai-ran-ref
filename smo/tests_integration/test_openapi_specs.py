@@ -1,4 +1,4 @@
-"""OPEN_ITEMS.md section 2: "No persisted OpenAPI spec files anywhere —
+"""HISTORY.md §2: "No persisted OpenAPI spec files anywhere —
 relying entirely on FastAPI's live /docs generation rather than committed
 contracts." docs/openapi/<module>.json are that live generation, frozen to
 disk (scripts/generate_openapi_specs.py writes them) so a real contract

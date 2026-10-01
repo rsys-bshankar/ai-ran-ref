@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from smo_shared.db import Base
 
 # Wave 3 (AI Platform Service Decomposition) — TS29482_MLR_MLModelManagement.yaml's
-# MLModelDomain enum, SPEC_AUDIT.md's MLMR section.
+# MLModelDomain enum, HISTORY.md §7's MLMR section.
 MODEL_DOMAINS = {"SPEECH_RECOGNITION", "IMAGE_RECOGNITION", "IMAGE_PROCESSING", "LOCATION_PREDICTION", "CUSTOM"}
 
 
@@ -39,7 +39,7 @@ class MLModelCoordinationGroup(Base):
 
 class MLModel(Base):
     """Wave 1 (AI Platform Service Decomposition): renamed from AIMLModel to
-    match TS 28.105's own vocabulary — docs/ownership/MLMR_OWNERSHIP.md.
+    match TS 28.105's own vocabulary — docs/ARCHITECTURE.md (MLMR).
     Table name (`aiml_model`) is unchanged: it's internal storage, not a
     public contract, so keeping it avoids an unnecessary migration.
 
@@ -48,11 +48,11 @@ class MLModel(Base):
     `cleared_node_groups` on this same row as a structural shortcut
     (AIMgF/MLLF read/wrote them via `PATCH /models/{id}/lifecycle`); Wave 2
     moves all three to AIMgF's own `model_lifecycle` table — MLMR is model
-    truth, not lifecycle truth (docs/architecture/SERVICE_OWNERSHIP_MATRIX.md:
+    truth, not lifecycle truth (docs/ARCHITECTURE.md:
     "Lifecycle state: AIMgF ✅, MLMR ❌") — so this row no longer carries
     them at all.
 
-    OPEN_ITEMS.md section 5: no uniqueness/conflict check on
+    HISTORY.md §5: no uniqueness/conflict check on
     (model_type, version) existed — duplicate registrations silently
     succeeded where the reference 409s. The reference's own ModelID
     (modelInfo.go) is a composite primary key on
@@ -87,10 +87,10 @@ class MLModel(Base):
     output_data_type: Mapped[str | None] = mapped_column(String)
     target_environments: Mapped[list[dict] | None] = mapped_column(JSON)
     # Wave 3: TS29482_MLR_MLModelManagement.yaml's MLModel schema
-    # (SPEC_AUDIT.md's MLMR section) — domain/customDomain mirror the
+    # (HISTORY.md §7's MLMR section) — domain/customDomain mirror the
     # spec's own domain+CUSTOM-string pairing; vendors ties into DME's
     # own Wave 3 multi-vendor provenance principle
-    # (docs/ownership/DME_OWNERSHIP.md), same theme applied to model
+    # (docs/ARCHITECTURE.md (DME)), same theme applied to model
     # identity rather than data-source identity.
     domain: Mapped[str | None] = mapped_column(String)
     custom_domain: Mapped[str | None] = mapped_column(String)
@@ -114,7 +114,7 @@ class MLModel(Base):
 
 
 class ModelArtifact(Base):
-    """OPEN_ITEMS.md section 5: the reference's real UploadModel/DownloadModel
+    """HISTORY.md §5: the reference's real UploadModel/DownloadModel
     (S3-backed), with an auto-incrementing artifactVersion distinct from
     modelVersion. Real S3 storage is a total, deliberate elision in this
     build (same as elsewhere), so `content` holds the actual uploaded bytes
@@ -135,7 +135,7 @@ class ModelArtifact(Base):
     content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     uploaded_at: Mapped[datetime.datetime] = mapped_column(default=lambda: datetime.datetime.now(datetime.UTC))
     # Wave 3: TS29482_MLR_MLModelManagement.yaml's MLModel.mlModelSize
-    # (SPEC_AUDIT.md's MLMR section) — computed from the real uploaded
+    # (HISTORY.md §7's MLMR section) — computed from the real uploaded
     # bytes, not a separately-declared value that could drift from them.
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
 

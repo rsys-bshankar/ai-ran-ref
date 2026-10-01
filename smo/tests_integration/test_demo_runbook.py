@@ -68,7 +68,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     })
     assert prov.status_code == 201
 
-    # SPEC_AUDIT.md SME item 1: apiInvokerId/onboardingSecret are now
+    # HISTORY.md §7 SME item 1: apiInvokerId/onboardingSecret are now
     # server-generated, not client-supplied — the client submits its
     # own public key instead.
     inv_reg = mesh["sme"].post("/invoker-registrations", json={"apiInvokerPublicKey": "demo-rapp-public-key"})
@@ -99,7 +99,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     })
     assert dme_prod.status_code == 201
 
-    # step 5: bootstrap-complete — DEPLOYING -> RUNNING. SPEC_AUDIT.md's
+    # step 5: bootstrap-complete — DEPLOYING -> RUNNING. HISTORY.md §7's
     # Onboarding/rApp Mgmt finding 3: this also registers the package's
     # own CSAR-bundled Files/Sme/ declarations with SME automatically,
     # under this instance's own real oauthClientId — a real, separate
@@ -239,7 +239,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
 
     # step 10: Intent Service automation — register an RMIH, create an
     # Intent addressed to it (Wave 3's consumer-side selection —
-    # docs/ownership/INTENT_SERVICE_OWNERSHIP.md's Wave 3 resolution),
+    # docs/ARCHITECTURE.md's Intent Service Wave 3 resolution),
     # observe the real dispatch notification, retract.
     # Intercepted at the same httpx.post call create_intent makes,
     # same technique as FOCOM's step above.
@@ -450,7 +450,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     assert advanced.status_code == 200
     assert advanced.json()["modelLifecycleState"] == "TRAINED"
 
-    # OPEN_ITEMS.md 6.1 — an operator must approve training before validation can start.
+    # HISTORY.md OI-6.1 — an operator must approve training before validation can start.
     approve_training = mesh["aimgf"].post(f"/models/{model_id}/advance",
                                            params={"event": "APPROVE_TRAINING", "decided_by": "demo-operator", "rationale": "training approved for the demo"})
     assert approve_training.status_code == 200
@@ -460,7 +460,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
     validation_complete = mesh["aimgf"].post(f"/validation-jobs/{validation.json()['validationJobId']}/complete", json={"succeeded": True, "metrics": {"accuracy": 0.95}})
     assert validation_complete.json()["status"] == "COMPLETED"
 
-    # OPEN_ITEMS.md 6.1 — same gate between validation and emulation.
+    # HISTORY.md OI-6.1 — same gate between validation and emulation.
     approve_validation = mesh["aimgf"].post(f"/models/{model_id}/advance",
                                              params={"event": "APPROVE_VALIDATION", "decided_by": "demo-operator", "rationale": "validation approved for the demo"})
     assert approve_validation.status_code == 200
@@ -654,7 +654,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, shared_engine, monkey
 
     deregistered = mesh["dme"].delete("/production-capabilities", params={"producer_id": "hello-world-rapp"})
     assert deregistered.status_code == 204
-    # SPEC_AUDIT.md's Producer/Type conflation finding, closed: Producer
+    # HISTORY.md §7's Producer/Type conflation finding, closed: Producer
     # and Type are two real, separately-owned entities now (ICS's own
     # deleteInfoProducer never touches info-types at all) — no
     # notification fires here; both hello-world-rapp's DmeTypes (step 4's

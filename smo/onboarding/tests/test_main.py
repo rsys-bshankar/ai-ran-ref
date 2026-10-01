@@ -1,6 +1,6 @@
 """Tests for the OnboardPackage route (Onboarding/rApp Mgmt LLD sections
 1-2), covering NFO's CreateDescriptor wiring — the actual fix for the
-NFDeploymentDescriptor gap OPEN_ITEMS.md flagged as the top item.
+NFDeploymentDescriptor gap HISTORY.md flagged as the top item.
 Run with: pytest smo/onboarding/tests -q
 """
 
@@ -154,7 +154,7 @@ def _mock_fetch(monkeypatch, content: bytes) -> None:
 
 
 def test_onboard_routes_to_failed_when_location_does_not_end_with_csar(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: the reference's own NamingValidator — a
+    """HISTORY.md §5: the reference's own NamingValidator — a
     package filename that doesn't follow the `.csar` convention was
     previously accepted without complaint. Checked before ever fetching
     the location, so no network mock is even needed here.
@@ -171,7 +171,7 @@ def test_onboard_succeeds_without_the_onap_acm_composition_file(client, monkeypa
     Files/Acm/definition/compositions.json (an ONAP ACM composition
     file) alongside TOSCA-Metadata/TOSCA.meta. Deliberately NOT adopted
     here (formal-spec audit, Onboarding/rApp Mgmt vs. the real ASD/TOSCA
-    CSAR format — see SPEC_AUDIT.md): this build never calls ONAP ACM at
+    CSAR format — see HISTORY.md §7): this build never calls ONAP ACM at
     all, so requiring every CSAR to bundle an ONAP-specific file just to
     pass validation isn't real spec fidelity, it's an unwanted
     dependency. A package that omits the file onboards the same as one
@@ -356,7 +356,7 @@ def test_onboard_parses_sme_provider_and_service_api_declarations_when_present(c
     """Real O-RAN SC rApp Manager CSAR layout (nonrtric-plt-rappmanager's
     own sample-rapp-generator packages): Files/Sme/providers/*.json + Files/
     Sme/serviceapis/*.json, read raw and stored for rapp-mgmt's own
-    bootstrap-complete to register per-instance (SPEC_AUDIT.md's
+    bootstrap-complete to register per-instance (HISTORY.md §7's
     Onboarding/rApp Mgmt finding 3).
     """
     provider_json = '{"apiProvDomInfo": "Provider domain", "apiProvFuncs": [{"apiProvFuncRole": "APF"}]}'
@@ -389,7 +389,7 @@ def test_onboard_routes_to_failed_on_malformed_sme_provider_json(client, monkeyp
 
 
 def test_onboard_routes_to_failed_for_a_byte_identical_duplicate_package(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: the reference's own AsdDescriptorValidator
+    """HISTORY.md §5: the reference's own AsdDescriptorValidator
     rejects re-onboarding a package whose ASD descriptor already exists;
     adapted here to this build's own identity (a content hash, since
     real ASD descriptor data doesn't exist in this build) — a
@@ -421,7 +421,7 @@ def test_onboarding_status_for_unknown_package_reuses_dme_type_version_conflict(
 
 
 def _make_available_package(client, monkeypatch, integrity_hash="deadbeef") -> str:
-    # integrity_hash is a real, checked field now (OPEN_ITEMS.md section 5's
+    # integrity_hash is a real, checked field now (HISTORY.md §5's
     # duplicate-package detection) — a caller onboarding more than one
     # package in the same test must vary it, or the second one routes to
     # FAILED as a genuine duplicate.
@@ -521,7 +521,7 @@ def test_delete_succeeds_once_usage_registration_is_stopped(client, monkeypatch)
 
 
 def test_prime_moves_available_package_to_primed(client, monkeypatch):
-    """OPEN_ITEMS.md section 5: the reference's real
+    """HISTORY.md §5: the reference's real
     COMMISSIONED->PRIMING->PRIMED lifecycle was missing entirely —
     this build went ONBOARDING->AVAILABLE directly.
     """

@@ -67,7 +67,7 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/mdaf/reports", "admin"),
     ("POST", "/focom/inventory/subscriptions", "operator"),
     ("POST", "/dme/production-capabilities", "admin"),
-    # Wave 3 (docs/ownership/DME_OWNERSHIP.md)
+    # Wave 3 (docs/ARCHITECTURE.md (DME))
     ("POST", "/dme/data-jobs/j/records", "admin"),
     ("POST", "/dme/actions", "operator"),
     ("POST", "/aimgf/training-jobs/j/suspend", "operator"),

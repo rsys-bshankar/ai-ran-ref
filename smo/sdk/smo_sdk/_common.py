@@ -1,6 +1,6 @@
 """Shared plumbing every sdk.* client uses.
 
-Golden rule 6 (docs/architecture/AI_PLATFORM_BASELINE.md): the AI Runtime
+Golden rule 6 (docs/ARCHITECTURE.md): the AI Runtime
 SDK is a thin client over the same R1 Termination path every other
 cross-module call in this build already uses — not a second one. Each
 client class below wraps `smo_shared.r1_client.R1Client`, one typed

@@ -1,20 +1,20 @@
 """MLLF (ML Loading Function) — TS 28.105 AI/ML NRM realization.
 
 Wave 1 of the AI Platform Service Decomposition split this module out of
-the former flat `ai-ml-workflow/` (see docs/architecture/AI_PLATFORM_BASELINE.md
-and docs/ownership/MLLF_OWNERSHIP.md). MLLF is deployment truth — it
-answers "is this model loaded and active anywhere," distinct from AIMgF's
-lifecycle-state question and MLMR's repository question.
+the former flat `ai-ml-workflow/` (see the MLLF section of
+docs/ARCHITECTURE.md). MLLF answers "may this model be loaded on these
+node groups" — the deployment gate — distinct from AIMgF's lifecycle
+state and MLMR's repository.
 
 Deliberately thin: `ai-ml-workflow` never had a dedicated
 load/unload/activate/deactivate surface of its own beyond
-`request_model_deployment` (see MLLF_OWNERSHIP.md's own migration-source
+`request_model_deployment` (see docs/ARCHITECTURE.md's MLLF migration-source
 note) — that one route moves here unchanged since Wave 1. Wave 2 only
 repoints its gate/write-back at AIMgF's own `model_lifecycle` row instead
 of MLMR's (Wave 1's `PATCH /mlmr/models/{id}/lifecycle` is gone —
 lifecycle/node-group state was never MLMR's to carry).
 
-Wave 3 correction (docs/ownership/MLLF_OWNERSHIP.md): the fuller
+Wave 3 correction (docs/ARCHITECTURE.md (MLLF)): the fuller
 load/unload/activate/deactivate surface once described as future work
 for MLLF turned out to already exist — AIMgF's own `RuntimeLifecycleState`
 (built jointly with NFO in Wave 2) already answers that question.

@@ -1,6 +1,6 @@
 """TS 28.104 MDA NRM / MDA report datatypes (specs/5G_APIs/TS28104_MdaNrm.yaml,
 TS28104_MdaReport.yaml) as request-validation models — Wave 5,
-WAVES_4_TO_10_WORK_ITEMS.md decision D-9.
+docs/ROADMAP.md decision D-9.
 
 Spec camelCase names and closed enums, `extra="forbid"`. `mDAOutputList`
 is a oneOf in the spec; here it is validated against the one output type

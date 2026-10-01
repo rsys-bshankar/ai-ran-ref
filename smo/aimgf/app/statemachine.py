@@ -1,5 +1,5 @@
 """Wave 2 (AI Platform Service Decomposition): AIMgF's own two real state
-machines, per docs/ownership/AIMGF_OWNERSHIP.md — replacing Wave 1's single
+machines, per docs/ARCHITECTURE.md (AIMgF) — replacing Wave 1's single
 flat `ModelState`/`ModelEvent` (which conflated a model's own identity/
 certification progress with its runtime/serving existence, and lived partly
 on MLMR's row via `PATCH /models/{id}/lifecycle`).
@@ -8,7 +8,7 @@ on MLMR's row via `PATCH /models/{id}/lifecycle`).
                       path: training -> validation -> emulation ->
                       governance (approval/certification/promotion) ->
                       deprecation/retirement. AIMgF's own truth end to end
-                      (docs/architecture/SERVICE_OWNERSHIP_MATRIX.md:
+                      (docs/ARCHITECTURE.md:
                       "Lifecycle state: AIMgF ✅, MLMR ❌").
   - RuntimeLifecycle (8 states) — a model's serving existence once
                       PROMOTED, jointly owned with NFO (NFO invocation:
@@ -51,7 +51,7 @@ class ModelLifecycleEvent(StrEnum):
     CREATE_TRAINING = "CREATE_TRAINING"            # REGISTERED/PROMOTED/FAILED -> TRAINING (first cycle or retrain)
     TRAINING_COMPLETE = "TRAINING_COMPLETE"          # -> TRAINED
     TRAINING_FAILED = "TRAINING_FAILED"                # -> FAILED
-    # OPEN_ITEMS.md section 6.1: an explicit operator-approval gate,
+    # HISTORY.md OI-6.1: an explicit operator-approval gate,
     # mirroring the existing CERTIFY/PROMOTE governance shape — a real,
     # decidedBy-carrying event with its own CertificationRecord, not a
     # bare state check. Self-loops (TRAINED->TRAINED / VALIDATED->
@@ -78,13 +78,13 @@ class ModelLifecycleEvent(StrEnum):
 
 # Governance events a CertificationRecord is written for (main.py's
 # advance_model_lifecycle) — Approval/Certification/Promotion/Rollback
-# per AIMGF_OWNERSHIP.md's own Governance list, plus the two decisions
+# per docs/ARCHITECTURE.md's AIMgF Governance list, plus the two decisions
 # framing approval (submit/reject) so the audit trail covers the whole
 # governance conversation, not just its middle.
 GOVERNANCE_EVENTS = frozenset({
     ModelLifecycleEvent.SUBMIT_FOR_APPROVAL, ModelLifecycleEvent.APPROVE, ModelLifecycleEvent.REJECT,
     ModelLifecycleEvent.CERTIFY, ModelLifecycleEvent.PROMOTE, ModelLifecycleEvent.ROLLBACK,
-    # OPEN_ITEMS.md section 6.1
+    # HISTORY.md OI-6.1
     ModelLifecycleEvent.APPROVE_TRAINING, ModelLifecycleEvent.APPROVE_VALIDATION,
 })
 
@@ -95,11 +95,11 @@ def build_model_lifecycle_fsm() -> StateMachine[ModelLifecycleState, ModelLifecy
     fsm.add(S.REGISTERED, E.CREATE_TRAINING, S.TRAINING)
     fsm.add(S.TRAINING, E.TRAINING_COMPLETE, S.TRAINED)
     fsm.add(S.TRAINING, E.TRAINING_FAILED, S.FAILED)
-    fsm.add(S.TRAINED, E.APPROVE_TRAINING, S.TRAINED)  # OPEN_ITEMS.md 6.1 — operator gate, no state change
+    fsm.add(S.TRAINED, E.APPROVE_TRAINING, S.TRAINED)  # HISTORY.md OI-6.1 — operator gate, no state change
     fsm.add(S.TRAINED, E.CREATE_VALIDATION, S.VALIDATING)
     fsm.add(S.VALIDATING, E.VALIDATION_COMPLETE, S.VALIDATED)
     fsm.add(S.VALIDATING, E.VALIDATION_FAILED, S.FAILED)
-    fsm.add(S.VALIDATED, E.APPROVE_VALIDATION, S.VALIDATED)  # OPEN_ITEMS.md 6.1 — operator gate, no state change
+    fsm.add(S.VALIDATED, E.APPROVE_VALIDATION, S.VALIDATED)  # HISTORY.md OI-6.1 — operator gate, no state change
     fsm.add(S.VALIDATED, E.CREATE_EMULATION, S.EMULATING)
     fsm.add(S.EMULATING, E.EMULATION_COMPLETE, S.EMULATED)
     fsm.add(S.EMULATING, E.EMULATION_FAILED, S.FAILED)

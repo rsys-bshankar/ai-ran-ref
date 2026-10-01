@@ -8,7 +8,7 @@ from smo_shared.db import Base
 
 DELIVERY_METHODS = {"PULL_HTTP", "PUSH_HTTP", "STREAMING_KAFKA"}  # R1AP's exact wire values, Foundational LLD section 3.2
 
-# Wave 3 (AI Platform Service Decomposition) — docs/ownership/DME_OWNERSHIP.md.
+# Wave 3 (AI Platform Service Decomposition) — docs/ARCHITECTURE.md (DME).
 # A producer's own data domain: whether what it produces is live-RAN data
 # or Digital Twin data. Drives the one eligibility rule Phase-1 actually
 # needs — a Digital Twin may feed Training/Emulation, never Inference.
@@ -20,7 +20,7 @@ LIFECYCLE_STAGES = {"TRAINING", "TESTING", "EMULATION", "INFERENCE", "CLOSED_LOO
 
 
 class DMEProducer(Base):
-    """SPEC_AUDIT.md — DME vs. the real ICS API: ICS's own real Information
+    """HISTORY.md §7 — DME vs. the real ICS API: ICS's own real Information
     Producer entity (`producer_registration_info` — `PUT
     /data-producer/v1/info-producers/{infoProducerId}`), previously
     conflated into `DMEType` itself. `producer_id` is the caller's own
@@ -47,7 +47,7 @@ class DMEType(Base):
     type_name: Mapped[str] = mapped_column(String, nullable=False)
     data_production_schema: Mapped[dict] = mapped_column(JSON, nullable=False)
     collection_spec: Mapped[dict | None] = mapped_column(JSON)
-    # Wave 3: source provenance, docs/ownership/DME_OWNERSHIP.md's
+    # Wave 3: source provenance, docs/ARCHITECTURE.md's DME
     # multi-vendor/multi-Digital-Twin principle. source_context is a
     # flexible dict (vendor/product/release/instance/node/cell) rather
     # than eight forced columns — nothing in this build yet queries most
@@ -67,7 +67,7 @@ class DMEProducerType(Base):
     """The real many-to-many relationship ICS's own `producer_registration_info.
     supported_info_types` models — a producer supports zero or more types,
     and (`consumer_information_type.no_of_producers`) a type may be
-    supported by zero or more producers. SPEC_AUDIT.md's own closed
+    supported by zero or more producers. HISTORY.md §7's own closed
     finding: this build's `DMEType` used to conflate identity with its
     single registering producer, making a second producer for the same
     type structurally impossible.
@@ -80,7 +80,7 @@ class DMEProducerType(Base):
 
 
 class DMETypeSubscription(Base):
-    """OPEN_ITEMS.md section 5: ICS's own `/info-type-subscription`
+    """HISTORY.md §5: ICS's own `/info-type-subscription`
     (InfoTypeSubscriptions/ConsumerCallbacks) — a consumer subscribes to
     be notified when any DmeType is registered or removed. Entirely
     absent from this build until now.
@@ -130,7 +130,7 @@ class DataOffer(Base):
 
 
 class DataRecord(Base):
-    """Wave 3: DME's real data-plane store (docs/ownership/DME_OWNERSHIP.md).
+    """Wave 3: DME's real data-plane store (docs/ARCHITECTURE.md (DME)).
     A producer ingests an actual payload against its own DataJob
     (POST /data-jobs/{id}/records); a consumer — rApp or MDAF, no
     distinction at this layer — fetches it back
@@ -150,7 +150,7 @@ class DataRecord(Base):
 
 class DmeActionRecord(Base):
     """Wave 3: DME's O1 action-mediation audit trail
-    (docs/ownership/DME_OWNERSHIP.md). Records what an rApp's AI/ML
+    (docs/ARCHITECTURE.md (DME)). Records what an rApp's AI/ML
     decision asked for; the forwarded ran-nf-oam WriteConfigJob (own
     job_id stored here as forwarded_job_id) is the record of what
     NETCONF actually did — this table is deliberately not a duplicate

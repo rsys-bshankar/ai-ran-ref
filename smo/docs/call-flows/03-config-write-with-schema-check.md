@@ -1,51 +1,37 @@
 # Call Flow: Configuration Write, Fleet-Aware, Two Entry Paths
 
-Stitches together RAN NF OAM LLD sections 1-5 — the Option A endpoint registry and the
-decomposed-PATCH aggregation that makes `PARTIAL_SUCCESS` real without violating
-TS 28.532's own all-or-nothing `PATCH` semantics — plus Wave 3's DME O1 action-mediation
-route (`docs/ownership/DME_OWNERSHIP.md`), which gives an rApp's inference decision a
-second, provenance-recording way to reach the same dispatch.
+How a configuration change reaches real managed elements (RAN NF OAM LLD sections 1-5).
+Under the Option A endpoint registry, RAN NF OAM is a fleet aggregator: it decomposes one
+`WriteConfigurationChanges` call into one sub-change per managed element (ME), sends each
+to that ME's O1 Adaptor, and aggregates the outcomes — which makes `PARTIAL_SUCCESS` real
+without violating TS 28.532's all-or-nothing `PATCH` semantics. Dispatch is an RFC 6241
+`<edit-config>` XML RPC POSTed to the endpoint's `adaptor_uri` (`netconf_client.py`), not a
+REST verb.
 
-**Rewritten from this flow's first version**, which described a schema check
-(`cm_schema_cache` hit/fetch) and a REST-shaped `PATCH .../{className}={id}` dispatch —
-neither is what the real code does. `cm_schema_cache` is genuine, unused scaffolding (no
-route in this build ever writes or reads a row in it — confirmed by grep, and even the
-route's own docstring still calls it "schema check — cache hit or fetch," which is
-aspirational, not accurate); every real "schema check" is just a timestamp stamp.
-Dispatch is a real RFC 6241 `<edit-config>` XML RPC POSTed to the endpoint's `adaptor_uri`
-(`netconf_client.py`), not a REST verb. See
-`docs/architecture/O1_VENDOR_ONBOARDING_GUIDE.md` for the fuller writeup of this gap and
-a sketch of what would actually close it.
+There are two entry paths: an rApp calls RAN NF OAM directly (Path A), or calls DME's O1
+action-mediation route `POST /dme/actions` (Path B), which records the decision's
+provenance and forwards it to the same route (see "DME data path and action path" in
+`docs/ARCHITECTURE.md`).
 
-**Closed in Wave 9 (call flow 21):** the schema check is now real. Before any job is
-created, `POST /config-jobs` checks each change:
+**Schema check.** Before any job is created, `POST /config-jobs` checks each change against
+the vendor capability registry (`ran-nf-oam/app/vendors.py`, call flow 21):
 
 - the ME's vendor must implement Provisioning, else 409 `O1_SERVICE_NOT_SUPPORTED`;
 - its class, attributes and enum values must exist in the data model the vendor's
   conformance mode selects, else 422 `SCHEMA_VALIDATION_FAILED`, naming every offending attribute.
 
-`cm_schema_cache` now holds those data models.
+`cm_schema_cache` holds those data models. An ME with no vendor capability registered is
+not schema-checked.
 
-An ME with no vendor capability registered is still unchecked. That is the path the
-diagram below shows.
-
-**Why this flow exists, and how it relates to call flow 02**: this is the CM-write
-mechanism itself — the two paths (direct rApp, or DME-mediated) by which *any* caller
-gets a configuration change onto a real ME, regardless of who or what decided the change
-was needed. Call flow 02 (AI/ML inference) is one possible *decision source* that can call
-into Path B here — an rApp that just pulled a prediction via DME may, entirely on its own
-and out-of-band, decide to call DME's `/actions` (Path B) or `ran-nf-oam` directly
-(Path A) to act on it. This flow's `rApp->>DME`/`rApp->>NFOAM` entry points still have no
-caller-identity check tying them back to a specific inference job — that stays true, by
-design, for every rApp that isn't going through autonomy-mode dispatch at all. **Closed
-since this flow was first written** (`OPEN_ITEMS.md` section 6.3): an rApp instance whose
-onboarding-time `autonomyMode` is `AUTONOMOUS`/`ASSIST` now has a real, automatic,
-operator-visible bridge instead — `RequestAutonomyDispatch` (call flow 09) — which
-deliberately does *not* call into Path A/B here at all: an autonomy-driven outcome is
-enacted as a real `Intent` (Intent Service / SO-SMOS / SA-SMOS), never a raw CM write.
-Path A/B stay exactly what they always were — the manual, non-autonomous route, still the
-only path for a `SHADOW` instance (nothing is ever enforced) or any rApp that simply
-chooses to act on its own, out-of-band decision instead.
+**Relation to call flows 02 and 09.** This flow is the CM-write mechanism itself,
+regardless of who decided the change was needed. An rApp that has pulled a prediction via
+DME (call flow 02) may act on it out of band through Path A or Path B; neither entry point
+ties the call back to a specific inference job. An rApp instance whose onboarding-time
+`autonomyMode` is `AUTONOMOUS`/`ASSIST` uses `RequestAutonomyDispatch` (call flow 09)
+instead: the outcome is enacted as an `Intent`, and SA SMOS's generic O1-CM intent handler
+then writes it through Path B with itself as the caller (call flows 09 and 22). Calling
+Path A/B directly remains the manual route, and the only one for a `SHADOW` instance
+(nothing is enforced) or an rApp acting on its own decision.
 
 ```mermaid
 sequenceDiagram
@@ -62,7 +48,7 @@ sequenceDiagram
     Note over rApp,NFOAM: Path A — direct rApp -> RAN NF OAM
     rApp->>NFOAM: WriteConfigurationChanges(scope, changes: [ME#1 change, ME#2 change])
     NFOAM->>NFOAM: MSAC gate check (entire-RAN scope requires admin role)
-    NFOAM->>NFOAM: job.schemaValidatedAt = now() (a timestamp only —<br/>no schema is actually consulted — see note above)
+    NFOAM->>NFOAM: schema check against the vendor's data model<br/>(skipped for an ME with no vendor capability), job.schemaValidatedAt = now()
     NFOAM->>NFOAM: job.status: PENDING -> PROCESSING
     end
 
@@ -98,9 +84,8 @@ sequenceDiagram
 ```
 
 **Key decisions this flow depends on:**
-- Under Option A, RAN NF OAM is a fleet aggregator over *N* per-ME O1 Adaptor instances, discovered via `POST /o1-adaptor-endpoints` self-registration — not a single-endpoint client, which was v1.3's Phase 1 assumption before this LLD pass. (Real MnS Registry NRM polling is a confirmed elision — this is the same lighter self-registration substitute DME's own producer registration and SME's own provider/invoker registration both already use.)
+- Under Option A, RAN NF OAM is a fleet aggregator over *N* per-ME O1 Adaptor instances, discovered via `POST /o1-adaptor-endpoints` self-registration — not a single-endpoint client. (Real MnS Registry NRM polling is a confirmed elision — this is the same lighter self-registration substitute DME's own producer registration and SME's own provider/invoker registration both use.)
 - `PARTIAL_SUCCESS` exists in the schema but has no wire-level counterpart in TS 28.532 — it's realized entirely by decomposing one `WriteConfigurationChanges` call into independently-atomic per-ME `edit-config` RPCs and aggregating the outcomes.
-- **Path B never duplicates Path A's dispatch logic.** DME's `/actions` route is deliberately a thin forward — one HTTP call to the same `POST /config-jobs` Path A's own caller would hit directly — so a future dispatch-logic change (a new rejection reason, a new protocol) never needs touching in two places.
-- An ME provisioned for RESTCONF (`o1_protocol != "NETCONF"`) is rejected with `PROTOCOL_NOT_SUPPORTED` on either path — there is no silent fallback to "applied," and no RESTCONF dispatch implementation exists yet in this build.
-- Alarm IDs raised anywhere in this flow would be minted fresh (UUID) at ingestion, never trusting a raising ME's native ID directly — closing R1UCR's own flagged, unresolved fleet-wide collision risk.
-- **Gap this rewrite surfaces, not previously documented this way**: `cm_schema_cache` (`schema_name`/`revision`/`location`/`type`/`cached_at`) is real, migrated DDL with zero real callers anywhere in this build — not a Phase-1 stub with a documented elision, just dead scaffolding whose own route docstring still describes behavior that was never wired up. `docs/architecture/O1_VENDOR_ONBOARDING_GUIDE.md` sketches the capability-registry work that would finally give it a writer and a reader.
+- **Path B never duplicates Path A's dispatch logic.** DME's `/actions` route is deliberately a thin forward — one HTTP call to the same `POST /config-jobs` Path A's caller hits directly — so a dispatch-logic change (a new rejection reason, a new protocol) never needs touching in two places. A 4xx from RAN NF OAM (capability or schema refusal) is passed back unchanged and the action is recorded `REJECTED`.
+- An ME provisioned for RESTCONF (`o1_protocol != "NETCONF"`) is rejected with `PROTOCOL_NOT_SUPPORTED` on either path — there is no silent fallback to "applied," and no RESTCONF dispatch exists (OPEN_ITEMS.md OI-1-cm-sync-restconf).
+- Alarm IDs raised anywhere in this flow are minted fresh (UUID) at ingestion, never trusting a raising ME's native ID directly — closing R1UCR's flagged fleet-wide collision risk.

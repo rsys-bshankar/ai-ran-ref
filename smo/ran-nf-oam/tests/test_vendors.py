@@ -1,4 +1,4 @@
-"""Tests for Wave 9 (WAVES_4_TO_10_WORK_ITEMS.md W9-01..06): the vendor
+"""Tests for Wave 9 (docs/ROADMAP.md W9-01..06): the vendor
 Capability Registry, CM schema descriptors and the schema-checked write
 pre-check, vendor modes, the onboarding flow, and cell guard attributes.
 Run with: pytest smo/ran-nf-oam/tests -q
