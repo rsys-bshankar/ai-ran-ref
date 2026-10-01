@@ -9,6 +9,7 @@ import type {
   FaultReport, InferenceJob, Instance, InstanceSummary, Intent, IntentReport, MlmfReport, MlmfSubscription, Model, ModelLifecycle,
   Monitor, NfDeployment, O1Endpoint, Package, PackageUsage, PerfReport, RemedialAction, Rmih, ServiceOrder, SmeService, TrainingJob,
 } from "../api/types";
+import { CompleteJobButton } from "../components/CompleteJobButton";
 import { ActionButton, Card, Id, PageHeader, StateBadge, useHashTab } from "../components/ui";
 import {
   FLOWS, flow01, flow02, flow03, flow04, flow05, flow06, flow07, flow08, flow09, flow10, progress, type FlowStep,
@@ -161,6 +162,8 @@ function Flow02() {
     ? <ActionButton label={first.label} tone="primary" action={{ method: "POST", path: "/aimgf/validation-jobs", json: { modelId, producerId: "smo-gui" }, success: "Validation job started" }} />
     : first.kind === "emulate"
     ? <ActionButton label={first.label} tone="primary" action={{ method: "POST", path: "/aimgf/emulation-jobs", json: { modelId, producerId: "smo-gui" }, success: "Emulation job started" }} />
+    : first.kind === "complete"
+    ? <CompleteJobButton modelId={modelId!} stage={first.stage} label={first.label} trainingJobId={lifecycle.data?.trainingJobId} />
     : <ActionButton label={first.label} tone="primary" action={{ method: "POST", path: `/aimgf/models/${modelId}/advance`, query: first.governance ? { event: first.event, decided_by: "smo-gui" } : { event: first.event }, success: `${first.event} done` }} />);
   return (
     <>

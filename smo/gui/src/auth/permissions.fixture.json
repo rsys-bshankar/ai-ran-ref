@@ -221,6 +221,12 @@
   },
   {
     "method": "POST",
+    "pattern": "^/aimgf/training-jobs/[^/]+/complete$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/aimgf/validation-jobs$",
     "role": "operator",
     "queryMatch": {}

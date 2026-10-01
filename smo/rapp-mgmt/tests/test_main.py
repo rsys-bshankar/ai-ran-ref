@@ -46,6 +46,22 @@ def db_session_factory():
     return sessionmaker(bind=engine)
 
 
+@pytest.fixture(autouse=True)
+def fake_r1_delete(monkeypatch):
+    """TERMINATE now calls NFO's DELETE /nfo/deployments/{workloadRef}
+    (OI-2-terminate-workload) — every test gets a recording 204 fake for
+    R1Client.delete unless it patches its own, so no test reaches for a
+    real network."""
+    calls = []
+
+    def fake_delete(self, path, params=None, **kw):
+        calls.append((path, params))
+        return FakeR1Response(204, {})
+
+    monkeypatch.setattr("app.main.R1Client.delete", fake_delete)
+    return calls
+
+
 @pytest.fixture
 def client(db_session_factory):
     def override_get_session():
@@ -246,9 +262,11 @@ def test_terminate_instance_deregisters_dme_producer(client, monkeypatch):
 
     resp = client.post(f"/instances/{created['instanceId']}/terminate")
     assert resp.status_code == 200
-    assert len(calls) == 2
+    workload_ref = client.get(f"/instances/{created['instanceId']}").json()["workloadRef"]
+    assert len(calls) == 3
     assert calls[0] == ("/dme/production-capabilities", {"producer_id": created["oauthClientId"]})
     assert calls[1] == (f"/sme/provider-registrations/{created['oauthClientId']}", None)
+    assert calls[2] == (f"/nfo/deployments/{workload_ref}", None)  # OI-2-terminate-workload, after DME/SME
 
 
 def test_crash_via_critical_fault_deregisters_dme_producer(client, monkeypatch):
@@ -421,11 +439,14 @@ def test_terminate_instance_deregisters_sme_service_apis_too(client, monkeypatch
     resp = client.post(f"/instances/{created['instanceId']}/terminate")
     assert resp.status_code == 200
     # DME reconsideration runs first (statemachine.py's _reconsider_registrations
-    # ordering), then the SME service-api delete(s), then the provider delete.
+    # ordering), then the SME service-api delete(s), then the provider delete,
+    # then NFO Terminate for the workload (OI-2-terminate-workload).
+    workload_ref = client.get(f"/instances/{created['instanceId']}").json()["workloadRef"]
     assert calls == [
         "/dme/production-capabilities",
         f"/sme/published-apis/v1/{created['oauthClientId']}/service-apis/{service_id}",
         f"/sme/provider-registrations/{created['oauthClientId']}",
+        f"/nfo/deployments/{workload_ref}",
     ]
 
 
@@ -459,7 +480,7 @@ def test_terminate_lands_in_undeployed_and_keeps_the_row(client, db_session_fact
 
     resp = client.post(f"/instances/{created['instanceId']}/terminate")
     assert resp.status_code == 200
-    assert resp.json() == {"instanceId": created["instanceId"], "state": "UNDEPLOYED"}
+    assert (resp.json()["instanceId"], resp.json()["state"]) == (created["instanceId"], "UNDEPLOYED")
 
     with db_session_factory() as session:
         inst = session.get(RAppInstance, uuid.UUID(created["instanceId"]))
@@ -618,3 +639,264 @@ def test_create_instance_records_workload_ref_from_nfos_202(client, db_session_f
     monkeypatch.setattr("app.main.R1Client.post", post_202_from_nfo)
     instance_id = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).json()["instanceId"]
     assert client.get(f"/instances/{instance_id}").json()["workloadRef"] == nf_deployment_id
+
+
+# ---------------------------------------------------------------- OI-2-terminate-workload
+
+def _running_instance(client, monkeypatch, **create_body):
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    created = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}, **create_body}).json()
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    return created
+
+
+def test_terminate_calls_nfo_terminate_for_the_workload_and_records_it(client, monkeypatch, fake_r1_delete):
+    """OI-2-terminate-workload: TERMINATE hands workloadRef (the
+    nfDeploymentId NFO Instantiate returned) back to NFO's
+    DELETE /nfo/deployments/{id}, and records the outcome."""
+    created = _running_instance(client, monkeypatch)
+    workload_ref = client.get(f"/instances/{created['instanceId']}").json()["workloadRef"]
+    assert workload_ref
+
+    resp = client.post(f"/instances/{created['instanceId']}/terminate")
+
+    assert resp.status_code == 200
+    assert (f"/nfo/deployments/{workload_ref}", None) in fake_r1_delete
+    teardown = client.get(f"/instances/{created['instanceId']}").json()["lastTeardown"]
+    assert (teardown["reason"], teardown["nfoTerminate"], teardown["usageStop"]) == ("TERMINATE", "DONE", "DONE")
+    assert resp.json()["lastTeardown"] == teardown
+
+
+def test_terminate_records_an_nfo_failure_but_still_undeploys(client, monkeypatch):
+    created = _running_instance(client, monkeypatch)
+    monkeypatch.setattr("app.main.R1Client.delete", lambda self, path, params=None, **kw: FakeR1Response(503 if path.startswith("/nfo/") else 204, {}))
+
+    resp = client.post(f"/instances/{created['instanceId']}/terminate")
+
+    assert resp.status_code == 200 and resp.json()["state"] == "UNDEPLOYED"
+    assert resp.json()["lastTeardown"]["nfoTerminate"] == "FAILED: HTTP 503"
+
+
+# ---------------------------------------------------------------- OI-2-lcm-error-mapping
+
+@pytest.mark.parametrize("state", [InstanceState.FAULTED, InstanceState.DEPLOYING])
+def test_terminate_from_faulted_or_deploying_retires_the_instance(client, db_session_factory, fake_r1_delete, state):
+    """A crashed instance no longer has to recover before it can be retired;
+    neither does one whose container never bootstrapped."""
+    instance_id = uuid.uuid4()
+    with db_session_factory() as session:
+        session.add(RAppInstance(instance_id=instance_id, package_id=uuid.uuid4(), state=state,
+                                 oauth_client_id="cred", workload_ref="nf-1"))
+        session.commit()
+
+    resp = client.post(f"/instances/{instance_id}/terminate")
+
+    assert resp.status_code == 200 and resp.json()["state"] == "UNDEPLOYED"
+    assert ("/nfo/deployments/nf-1", None) in fake_r1_delete
+    assert client.delete(f"/instances/{instance_id}").status_code == 204
+
+
+@pytest.mark.parametrize("route,state,event", [
+    ("terminate", InstanceState.UNDEPLOYED, "TERMINATE"),
+    ("terminate", InstanceState.UPGRADING, "TERMINATE"),
+    ("recover", InstanceState.RUNNING, "RECOVER"),
+    ("bootstrap-complete", InstanceState.RUNNING, "BOOTSTRAP_OK"),
+])
+def test_illegal_transitions_are_409_naming_state_and_event(client, db_session_factory, route, state, event):
+    instance_id = _make_instance(db_session_factory, state=state)
+    resp = client.post(f"/instances/{instance_id}/{route}")
+    assert resp.status_code == 409
+    problem = resp.json()["detail"]
+    assert problem["title"] == "LIFECYCLE_ILLEGAL_TRANSITION"
+    assert f"event {event}" in problem["detail"] and f"state {state}" in problem["detail"]
+
+
+def test_critical_fault_on_a_non_running_instance_is_409(client, db_session_factory):
+    instance_id = _make_instance(db_session_factory, state=InstanceState.FAULTED)
+    resp = client.post(f"/instances/{instance_id}/fault", params={"severity": "critical"})
+    assert resp.status_code == 409
+    assert "event CRASH" in resp.json()["detail"]["detail"] and "state FAULTED" in resp.json()["detail"]["detail"]
+    assert client.get(f"/instances/{instance_id}/faults").json()["items"] == []  # refused, not recorded
+
+
+def test_upgrade_of_a_non_running_instance_is_409(client, db_session_factory, monkeypatch):
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    instance_id = _make_instance(db_session_factory, state=InstanceState.FAULTED)
+    resp = client.post(f"/instances/{instance_id}/upgrade", json={"newPackageId": str(uuid.uuid4())})
+    assert resp.status_code == 409
+    assert "event START_UPGRADE" in resp.json()["detail"]["detail"]
+
+
+@pytest.mark.parametrize("method,path,kwargs", [
+    ("post", "/instances/{id}/bootstrap-complete", {}),
+    ("post", "/instances/{id}/recover", {}),
+    ("post", "/instances/{id}/terminate", {}),
+    ("post", "/instances/{id}/upgrade", {"json": {"newPackageId": str(uuid.uuid4())}}),
+    ("post", "/instances/{id}/upgrade/resolve", {"params": {"succeeded": True}}),
+    ("post", "/instances/{id}/fault", {"params": {"severity": "critical"}}),
+    ("post", "/instances/{id}/performance", {"json": {"cpu": 1}}),
+    ("get", "/instances/{id}/config", {}),
+    ("put", "/instances/{id}/config", {"json": {}}),
+    ("delete", "/instances/{id}", {}),
+])
+def test_unknown_instance_is_404_on_every_lifecycle_route(client, method, path, kwargs):
+    resp = getattr(client, method)(path.format(id=uuid.uuid4()), **kwargs)
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["title"] == "RAPP_INSTANCE_NOT_FOUND"
+
+
+def test_resolve_with_no_pending_upgrade_is_404(client, db_session_factory):
+    instance_id = _make_instance(db_session_factory)
+    resp = client.post(f"/instances/{instance_id}/upgrade/resolve", params={"succeeded": True})
+    assert resp.status_code == 404
+    assert "no pending upgrade" in resp.json()["detail"]["detail"]
+
+
+def test_create_instance_from_an_unknown_package_is_404(client, monkeypatch):
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(404, {}))
+    resp = client.post("/instances", json={"packageId": str(uuid.uuid4())})
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["title"] == "PACKAGE_NOT_FOUND"
+
+
+# ---------------------------------------------------------------- OI-2-upgrade-completeness / OI-1-upgrade-identity
+
+def test_upgrade_route_provisions_a_complete_replacement(client, monkeypatch):
+    calls = []
+    fake_get, fake_post = _route_r1_get_post()
+
+    def recording_post(self, path, json=None, **kw):
+        calls.append(path)
+        return fake_post(self, path, json=json, **kw)
+
+    created = _running_instance(client, monkeypatch, config={"replicas": 2}, autonomyMode="AUTONOMOUS",
+                                regionScope={"nodeIds": ["ne-1"]})
+    monkeypatch.setattr("app.main.R1Client.post", recording_post)
+    new_package = str(uuid.uuid4())
+
+    resp = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": new_package})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["oldInstanceState"] == "UPGRADING"
+    assert body["oauthClientId"] and body["oauthClientId"] != created["oauthClientId"]
+    new = client.get(f"/instances/{body['newInstanceId']}").json()
+    assert (new["packageId"], new["state"]) == (new_package, "DEPLOYING")
+    assert new["configuration"] == {"replicas": 2}
+    assert (new["autonomyMode"], new["regionScope"]) == ("AUTONOMOUS", {"nodeIds": ["ne-1"]})
+    assert new["workloadRef"]
+    assert "/nfo/deployments" in calls and f"/onboarding/packages/{new_package}/usage/start" in calls
+
+
+def test_upgrade_route_refuses_a_package_that_is_not_deployable(client, monkeypatch):
+    created = _running_instance(client, monkeypatch)
+    monkeypatch.setattr("app.main.R1Client.get", _route_r1_get_post(onboarding_status="DEPRECATED")[0])
+
+    resp = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())})
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "MODEL_NOT_CERTIFIED"
+    assert client.get(f"/instances/{created['instanceId']}").json()["state"] == "RUNNING"
+    assert client.get("/instances").json()["total"] == 1  # no replacement row left behind
+
+
+def test_upgrade_commit_via_route_releases_the_old_instance(client, monkeypatch, fake_r1_delete):
+    """resolve(succeeded=true) runs the old row's TERMINATE side effects —
+    DME/SME deregistration, NFO Terminate, usage/stop — before deleting it,
+    so the old package's deprime/delete guards are released."""
+    reg_id = uuid.uuid4()
+    fake_get, fake_post = _route_r1_get_post(registration_id=reg_id)
+    posts = []
+
+    def recording_post(self, path, json=None, **kw):
+        posts.append(path)
+        return fake_post(self, path, json=json, **kw)
+
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", recording_post)
+    package_id = str(uuid.uuid4())
+    created = client.post("/instances", json={"packageId": package_id}).json()
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    old_workload = client.get(f"/instances/{created['instanceId']}").json()["workloadRef"]
+    upgrade = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())}).json()
+    posts.clear()
+    fake_r1_delete.clear()
+
+    resp = client.post(f"/instances/{created['instanceId']}/upgrade/resolve", params={"succeeded": True})
+
+    assert resp.status_code == 200
+    assert resp.json()["instanceId"] == upgrade["newInstanceId"] and resp.json()["state"] == "RUNNING"
+    assert [p for p, _ in fake_r1_delete] == [
+        "/dme/production-capabilities", f"/sme/provider-registrations/{created['oauthClientId']}",
+        f"/nfo/deployments/{old_workload}",
+    ]
+    assert f"/onboarding/packages/{package_id}/usage/{reg_id}/stop" in posts
+    assert client.get(f"/instances/{created['instanceId']}").status_code == 404
+    survivor = client.get(f"/instances/{upgrade['newInstanceId']}").json()
+    assert survivor["lastTeardown"]["instanceId"] == created["instanceId"]
+    assert survivor["lastTeardown"]["reason"] == "UPGRADE_COMMIT"
+
+
+def test_upgrade_rollback_via_route_tears_the_replacement_down(client, monkeypatch, fake_r1_delete):
+    created = _running_instance(client, monkeypatch)
+    upgrade = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())}).json()
+    new_workload = client.get(f"/instances/{upgrade['newInstanceId']}").json()["workloadRef"]
+
+    resp = client.post(f"/instances/{created['instanceId']}/upgrade/resolve", params={"succeeded": False})
+
+    assert resp.status_code == 200
+    assert resp.json()["instanceId"] == created["instanceId"] and resp.json()["state"] == "RUNNING"
+    assert (f"/nfo/deployments/{new_workload}", None) in fake_r1_delete
+    assert client.get(f"/instances/{upgrade['newInstanceId']}").status_code == 404
+
+
+def test_terminating_a_pending_upgrade_replacement_is_409(client, monkeypatch):
+    created = _running_instance(client, monkeypatch)
+    upgrade = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())}).json()
+    resp = client.post(f"/instances/{upgrade['newInstanceId']}/terminate")
+    assert resp.status_code == 409
+    assert "resolve that upgrade" in resp.json()["detail"]["detail"]
+
+
+def _expire_upgrade(db_session_factory, instance_id):
+    with db_session_factory() as session:
+        session.get(RAppInstance, uuid.UUID(instance_id)).upgrade_timeout_seconds = 0
+        session.commit()
+
+
+def test_overdue_upgrade_rolls_back_when_the_instance_is_read(client, db_session_factory, monkeypatch):
+    """upgradeTimeoutSeconds is enforced lazily: reading either row after
+    the deadline rolls the unresolved upgrade back."""
+    created = _running_instance(client, monkeypatch)
+    upgrade = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())}).json()
+    _expire_upgrade(db_session_factory, created["instanceId"])
+
+    old = client.get(f"/instances/{created['instanceId']}").json()
+    assert old["state"] == "RUNNING" and old["pendingUpgradeInstanceId"] is None
+    assert old["lastTeardown"]["reason"] == "UPGRADE_TIMEOUT"
+    assert client.get(f"/instances/{upgrade['newInstanceId']}").status_code == 404
+
+
+def test_overdue_upgrade_rolls_back_when_the_list_is_read(client, db_session_factory, monkeypatch):
+    created = _running_instance(client, monkeypatch)
+    client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())})
+    _expire_upgrade(db_session_factory, created["instanceId"])
+
+    items = client.get("/instances").json()["items"]
+    assert [(i["instanceId"], i["state"]) for i in items] == [(created["instanceId"], "RUNNING")]
+
+
+def test_resolving_an_overdue_upgrade_as_succeeded_is_409_timed_out(client, db_session_factory, monkeypatch):
+    created = _running_instance(client, monkeypatch)
+    client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())})
+    _expire_upgrade(db_session_factory, created["instanceId"])
+
+    resp = client.post(f"/instances/{created['instanceId']}/upgrade/resolve", params={"succeeded": True})
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "RAPP_UPGRADE_TIMED_OUT"
+    assert client.get(f"/instances/{created['instanceId']}").json()["state"] == "RUNNING"  # the rollback was committed

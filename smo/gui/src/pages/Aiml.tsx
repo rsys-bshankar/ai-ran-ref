@@ -4,6 +4,7 @@ import { useSmo, useSmoAction } from "../api/hooks";
 import type { CoordinationGroup, DmeType, FeatureGroup, InferenceJob, MlmfReport, MlmfSubscription, Model, ModelLifecycle, TrainingJob } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { FsmStepper, Sparkline } from "../components/charts";
+import { CompleteJobButton } from "../components/CompleteJobButton";
 import {
   ActionButton, Can, Card, DataTable, Drawer, ErrorBox, Field, Id, Json, KeyValue, Modal, PageHeader, StateBadge, Tabs,
   useHashTab,
@@ -90,6 +91,7 @@ function ModelActions({ model, lifecycle }: { model: Model; lifecycle: ModelLife
         if (a.kind === "train") return <ActionButton key="train" label={a.label} tone="primary" action={{ method: "POST", path: "/aimgf/training-jobs", json: { modelId: model.modelId, producerId: "smo-gui" }, success: `${a.label}: training job started` }} />;
         if (a.kind === "validate") return <ActionButton key="validate" label={a.label} tone="primary" action={{ method: "POST", path: "/aimgf/validation-jobs", json: { modelId: model.modelId, producerId: "smo-gui" }, success: "Validation job started" }} />;
         if (a.kind === "emulate") return <ActionButton key="emulate" label={a.label} tone="primary" action={{ method: "POST", path: "/aimgf/emulation-jobs", json: { modelId: model.modelId, producerId: "smo-gui" }, success: "Emulation job started" }} />;
+        if (a.kind === "complete") return <CompleteJobButton key={`complete-${a.stage}`} modelId={model.modelId} stage={a.stage} label={a.label} trainingJobId={lifecycle.trainingJobId} />;
         const destructive = a.event === "DEPRECATE" || a.event === "RETIRE" || a.event === "REJECT";
         return <ActionButton key={a.event} label={a.label} tone={destructive ? "danger" : "primary"}
           confirm={a.event === "DEPRECATE" || a.event === "RETIRE" ? `${a.label} this model? This is terminal.` : undefined}
@@ -254,7 +256,7 @@ function TrainingTable({ rows, loading, error }: { rows?: TrainingJob[]; loading
           <Can method="POST" path={`/aimgf/training-jobs/${j.trainingJobId}/model-metrics`}><button className="btn small" onClick={() => setWriteFor(j)}>{j.modelMetrics ? "Update" : "Write back"}</button></Can>
           {!j.modelMetrics && <span className="muted">—</span>}
         </div> },
-        { header: "", className: "actions", render: (j) => j.status === "RUNNING" && (
+        { header: "", className: "actions", render: (j) => ["IN_PROGRESS", "SUSPENDED"].includes(j.status) && (
           <ActionButton label="Cancel" confirm="Cancel this training job?" action={{ method: "DELETE", path: `/aimgf/training-jobs/${j.trainingJobId}`, success: "Training job cancelled" }} />
         ) },
       ]} />

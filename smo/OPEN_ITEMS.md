@@ -28,49 +28,6 @@ Each item: what is missing, why it matters, suggested approach.
   rApp Mgmt deletes the prior `RAppInstance` row on a successful upgrade commit, so no version
   history exists. Approach: keep the superseded instance (or a version record) in rApp Mgmt, then
   dispatch a rollback upgrade from SA SMOS.
-- **OI-1-upgrade-identity** — `start_upgrade` (`rapp-mgmt/app/upgrade.py`) creates the replacement
-  instance without an `oauth_client_id`, so it has no SME/DME identity and producer reconsideration
-  skips `UPGRADE_COMMIT`. Approach: mint an id in `start_upgrade`, re-run bootstrap registration,
-  deregister the old identity on commit.
-- **OI-2-terminate-workload** — `TerminateInstance` (`rapp-mgmt/app/main.py`) revokes the
-  credential and stops the usage registration but makes no NFO call, so the rApp's workload keeps
-  running after the instance is `UNDEPLOYED`. Approach: store the `nfDeploymentId` from
-  `CreateInstance` and call NFO's terminate (`DELETE /nfo/deployments/{id}`) on `TERMINATE`.
-- **OI-2-upgrade-completeness** — `start_upgrade` creates a bare replacement row: no
-  configuration, autonomy mode, region scope, NFO deployment or usage registration, and
-  `newPackageId` is not checked for `AVAILABLE`/`PRIMED`. `resolve_upgrade` deletes the old row
-  without usage/stop or DME/SME deregistration, so the old package's deprime and delete guards stay
-  blocked; `upgradeTimeoutSeconds` is stored but never enforced. Call flow 07. Approach: run the
-  replacement through `CreateInstance`'s path, and on commit run the old row's `TERMINATE` side
-  effects before deleting it.
-- **OI-2-lcm-error-mapping** — Lifecycle routes return 500 for an illegal transition (recover,
-  terminate, upgrade, a critical fault on a non-`RUNNING` instance; onboarding deprecate, prime,
-  cancel-delete) and for an unknown id. Onboarding's deprime/delete map every illegal transition to
-  409 `SERVICE_NAME_CONFLICT`, so DELETE on a `PRIMED` package reports "blocked by a dependent"
-  rather than "not allowed from PRIMED". `TERMINATE` is only legal from `RUNNING`, so a `FAULTED`
-  instance must recover before it can be retired. Approach: map `IllegalTransition` to a 409 naming
-  the state and event, 404 on unknown ids, and allow `TERMINATE` from `FAULTED`.
-- **OI-2-model-eol-serving** — Model state does not gate serving: `request_inference` checks only
-  that the runtime is `ACTIVE`, so a `DEPRECATED` or `RETIRED` model keeps serving, and its runtime
-  can still be activated or scaled. Retirement never terminates the runtime. Call flow 26.
-  Approach: refuse inference/activate/scale for `DEPRECATED`/`RETIRED`, and terminate the runtime on
-  `RETIRE`.
-- **OI-2-governance-bypass** — `POST /models/{id}/advance` fires any event, including
-  `CREATE_VALIDATION`/`CREATE_EMULATION`/`CREATE_TRAINING` with no job and no approval-flag check,
-  so the OI-6.1 operator gate can be skipped (the BFF lets operators call it). An unknown event is a
-  500. Approach: restrict `advance` to `GOVERNANCE_EVENTS` plus `DEPRECATE`/`RETIRE`, 422 on unknown
-  events.
-- **OI-2-training-lifecycle-edges** — Cancelling a training run (`DELETE /training-jobs/{id}`) fires no
-  model event, so the model stays `TRAINING`; that DELETE also rewrites FINISHED/FAILED jobs to
-  CANCELLED. A rolled-back (`CERTIFIED`) model cannot be retrained, and `DEPRECATED`/`RETIRED`/
-  `CERTIFIED` all report `MODEL_NOT_CERTIFIED`. PATCH-resume of a training or testing request does
-  not restart the timeout clock, the NRM GET routes skip the lazy timeout sweep, and NRM-created
-  runs take no runtime profile or timeout. Call flow 27. Approach: fire `TRAINING_FAILED` on cancel and
-  refuse it for finished jobs, allow `CREATE_TRAINING` from `CERTIFIED`, reset `started_at` on every
-  resume path.
-- **OI-2-package-redeploy** — A deleted package stays in terminal `DELETING`, and onboarding's
-  duplicate-hash check ignores state, so the same CSAR can never be onboarded again. Approach:
-  exclude `DELETING`/`FAILED` rows from the duplicate check.
 - **OI-1-cm-sync-restconf** — RESTCONF has no dispatch: an ME provisioned for RESTCONF is rejected
   `PROTOCOL_NOT_SUPPORTED`, although W9 lets vendors declare `O1_RESTCONF`. Approach: add a RESTCONF
   client beside `netconf_client.py` (PATCH/PUT/DELETE on the data resource) and a mock endpoint.

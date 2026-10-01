@@ -34,6 +34,7 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("DELETE", "/rapp-mgmt/instances/i", "admin"),
     ("POST", "/aimgf/training-jobs", "operator"),
     ("POST", "/aimgf/models/m/advance", "operator"),
+    ("POST", "/aimgf/training-jobs/j/complete", "operator"),
     ("DELETE", "/mlmr/models/m", "admin"),
     ("PATCH", "/ran-nf-oam/alarms/a/ack", "operator"),
     ("PATCH", "/ran-nf-oam/alarms/a/clear", "operator"),
@@ -113,7 +114,7 @@ def test_minimum_role_per_route(method, path, minimum):
 
 
 def test_deprecate_is_admin_only_via_query_match():
-    assert allowed("POST", "/aimgf/models/m/advance", "operator", event="ACTIVATE")
+    assert allowed("POST", "/aimgf/models/m/advance", "operator", event="APPROVE_TRAINING")
     assert not allowed("POST", "/aimgf/models/m/advance", "operator", event="DEPRECATE")
     assert allowed("POST", "/aimgf/models/m/advance", "admin", event="DEPRECATE")
 

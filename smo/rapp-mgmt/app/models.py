@@ -43,6 +43,14 @@ class RAppInstance(Base):
     # ever enforced).
     autonomy_mode: Mapped[str] = mapped_column(String, nullable=False, default="SHADOW")
     region_scope: Mapped[dict | None] = mapped_column(JSON)
+    # OI-2-terminate-workload / OI-2-upgrade-completeness: the outcome of
+    # the most recent best-effort workload teardown this row performed or
+    # inherited — its own TERMINATE, the old row's teardown on an upgrade
+    # commit (recorded on the replacement), or the replacement's teardown on
+    # a rollback/timeout (recorded on the old row). Shape:
+    # {instanceId, reason, nfoTerminate, usageStop, at}; each step is DONE,
+    # SKIPPED (nothing to release) or FAILED: <why>. None until a teardown ran.
+    last_teardown: Mapped[dict | None] = mapped_column(JSON)
 
 
 class RAppFaultReport(Base):

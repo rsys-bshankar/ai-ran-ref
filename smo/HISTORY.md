@@ -46,7 +46,7 @@ Recurring conventions referred to below:
   `ROLLBACK_HISTORY_UNAVAILABLE` (501) — see OPEN_ITEMS OI-1-sa-rollback. Call flow 04.
 - **OI-1-producer-reconsideration** — On CRASH/TERMINATE, the `RAppInstance` FSM calls DME
   `DELETE /production-capabilities` keyed by the instance's `oauth_client_id`; best-effort.
-  `UPGRADE_COMMIT` excluded (see OPEN_ITEMS OI-1-upgrade-identity).
+  `UPGRADE_COMMIT` runs the same teardown on the superseded instance (OI-2-upgrade-completeness).
 - **OI-1-coordination-group** — Retrain is the only remedial action for an
   `MLModelCoordinationGroup`. `report_performance` fires `RETRAIN` (one `TrainingJob` each) on every
   `ACTIVE` member; an SA SMOS monitor with `target_coordination_group_id` always dispatches a group
@@ -90,6 +90,34 @@ Recurring conventions referred to below:
   pattern references only; one Python/FastAPI stack, nothing vendored.
 - **OI-2-compose-config** — CI job `docker-compose-config` runs `docker compose config --quiet`.
   A full `docker compose up` run stays open (OPEN_ITEMS OI-2-compose-e2e).
+
+**Lifecycle (LCM) defects found by call flows 06, 07, 26 and 27, all fixed:**
+- **OI-2-terminate-workload** — `TERMINATE` releases the instance's resources
+  (`rapp-mgmt/app/provisioning.py:release_instance_resources`): NFO `DELETE /nfo/deployments/{workloadRef}`
+  and usage/stop, best-effort, the outcome recorded in `rapp_instance.last_teardown` (`lastTeardown`).
+- **OI-1-upgrade-identity / OI-2-upgrade-completeness** — The upgrade replacement is provisioned like
+  `CreateInstance` (`provision_instance`: deployable package state, fresh `oauth_client_id`, NFO
+  instantiate, usage/start; configuration, autonomy mode, region scope and timeout copied). Commit tears
+  the old instance down like `TERMINATE` and deletes it; rollback tears the replacement down.
+  `upgradeTimeoutSeconds` is enforced lazily: an overdue upgrade rolls back (`RAPP_UPGRADE_TIMED_OUT`).
+- **OI-2-lcm-error-mapping** — Illegal lifecycle transitions return 409 `LIFECYCLE_ILLEGAL_TRANSITION`
+  naming the state and event (rApp Management, Onboarding); `SERVICE_NAME_CONFLICT` only when a guard
+  refused. Unknown ids return 404. `TERMINATE` is legal from `FAULTED` and `DEPLOYING`.
+- **OI-2-package-redeploy** — The duplicate-hash check ignores `DELETING` and `FAILED` packages, so a
+  deleted or failed CSAR can be onboarded again.
+- **OI-5-onboarding-priming (residual)** — `CreateInstance` accepts `AVAILABLE` or `PRIMED`.
+- **OI-2-model-eol-serving** — `DEPRECATED`/`RETIRED` models refuse runtime activate and scale;
+  `RETIRED` also refuses inference, and `RETIRE` terminates the runtime (NFO teardown and runtime
+  events). A `DEPRECATED` model's active runtime keeps serving until retirement (a grace period for
+  consumers to move). Call flow 26.
+- **OI-2-governance-bypass** — `POST /models/{id}/advance` fires only governance events plus
+  `DEPRECATE`/`RETIRE`; job-driven events and unknown events return 422 naming the job route. The
+  GUI completes stages through the job routes.
+- **OI-2-training-lifecycle-edges** — Cancelling an active training run fires `TRAINING_FAILED` and
+  tears down its runtime (finished jobs: 409); a rolled-back `CERTIFIED` model can retrain; wrong-state
+  requests return 409 naming the state; every resume path restarts the timeout clock; the NRM read
+  routes run the lazy timeout sweep; NRM training/testing requests accept optional `packageId`,
+  `runtimeProfile` and `timeoutSeconds`. Call flow 27.
 
 ## 3. Call-flow gaps (former §3)
 

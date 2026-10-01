@@ -17,10 +17,26 @@ export type ModelAction =
   | { kind: "train"; label: string }           // POST /training-jobs (fires CREATE_TRAINING itself)
   | { kind: "validate"; label: string }        // POST /validation-jobs (fires CREATE_VALIDATION itself)
   | { kind: "emulate"; label: string }         // POST /emulation-jobs (fires CREATE_EMULATION itself)
+  | { kind: "complete"; stage: CompletionStage; label: string }  // POST /<stage>-jobs/{id}/complete (fires …_COMPLETE itself)
   | { kind: "advance"; event: string; label: string; governance?: boolean };  // governance: decidedBy required
 
+export type CompletionStage = "training" | "validation" | "emulation";
+
+/** Where a stage's in-flight job lives: AIMgF's `advance` refuses the
+ * job-driven events (TRAINING_COMPLETE etc.), so a run completes through
+ * its own job's `/complete` route. Training's in-flight status is
+ * IN_PROGRESS (or SUSPENDED); validation/emulation use RUNNING. */
+export function completionRoute(stage: CompletionStage): { jobsPath: string; runningStatus: string; idKey: string } {
+  switch (stage) {
+    case "training": return { jobsPath: "/aimgf/training-jobs", runningStatus: "IN_PROGRESS", idKey: "trainingJobId" };
+    case "validation": return { jobsPath: "/aimgf/validation-jobs", runningStatus: "RUNNING", idKey: "validationJobId" };
+    case "emulation": return { jobsPath: "/aimgf/emulation-jobs", runningStatus: "RUNNING", idKey: "emulationJobId" };
+  }
+}
+
 /** The operator actions legal from a ModelLifecycleState. TRAIN/VALIDATE/
- * EMULATE go through their own request routes, not a bare advance, so a
+ * EMULATE and their completions go through their own job routes, not a
+ * bare advance (AIMgF refuses job-driven events there), so a
  * TrainingJob/ValidationJob/EmulationJob row exists for each. `governance`
  * actions are the eight decisions AIMgF requires a decidedBy for
  * (SUBMIT_FOR_APPROVAL/APPROVE/REJECT/CERTIFY/PROMOTE/ROLLBACK, plus
@@ -35,17 +51,17 @@ export type ModelAction =
 export function modelActions(state: string, gate?: { trainingApproved: boolean; validationApproved: boolean }): ModelAction[] {
   switch (state) {
     case "REGISTERED": return [{ kind: "train", label: "Request training" }];
-    case "TRAINING": return [{ kind: "advance", event: "TRAINING_COMPLETE", label: "Training complete" }];
+    case "TRAINING": return [{ kind: "complete", stage: "training", label: "Training complete" }];
     case "TRAINED":
       return gate?.trainingApproved
         ? [{ kind: "validate", label: "Request validation" }]
         : [{ kind: "advance", event: "APPROVE_TRAINING", label: "Approve training", governance: true }];
-    case "VALIDATING": return [{ kind: "advance", event: "VALIDATION_COMPLETE", label: "Validation complete" }];
+    case "VALIDATING": return [{ kind: "complete", stage: "validation", label: "Validation complete" }];
     case "VALIDATED":
       return gate?.validationApproved
         ? [{ kind: "emulate", label: "Request emulation" }]
         : [{ kind: "advance", event: "APPROVE_VALIDATION", label: "Approve validation", governance: true }];
-    case "EMULATING": return [{ kind: "advance", event: "EMULATION_COMPLETE", label: "Emulation complete" }];
+    case "EMULATING": return [{ kind: "complete", stage: "emulation", label: "Emulation complete" }];
     case "EMULATED": return [{ kind: "advance", event: "SUBMIT_FOR_APPROVAL", label: "Submit for approval", governance: true }];
     case "PENDING_APPROVAL": return [
       { kind: "advance", event: "APPROVE", label: "Approve", governance: true },
@@ -54,6 +70,7 @@ export function modelActions(state: string, gate?: { trainingApproved: boolean; 
     case "APPROVED": return [{ kind: "advance", event: "CERTIFY", label: "Certify", governance: true }];
     case "CERTIFIED": return [
       { kind: "advance", event: "PROMOTE", label: "Promote", governance: true },
+      { kind: "train", label: "Retrain" },  // e.g. after a ROLLBACK
       { kind: "advance", event: "DEPRECATE", label: "Deprecate" },
     ];
     case "PROMOTED": return [

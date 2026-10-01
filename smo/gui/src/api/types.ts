@@ -37,6 +37,14 @@ export interface Instance extends InstanceSummary {
   // AUTONOMOUS's own pre-configured RAN node/cell/slice scope — opaque,
   // meaningless for ASSIST/SHADOW.
   regionScope: Record<string, unknown> | null;
+  // Outcome of the most recent best-effort teardown (NFO terminate,
+  // usage/stop) this row performed — on TERMINATE — or inherited through an
+  // upgrade commit/rollback/timeout. Each step: DONE, SKIPPED…, or FAILED: …
+  lastTeardown?: InstanceTeardown | null;
+}
+export interface InstanceTeardown {
+  instanceId: string; reason: "TERMINATE" | "UPGRADE_COMMIT" | "UPGRADE_ROLLBACK" | "UPGRADE_TIMEOUT" | string;
+  nfoTerminate: string; usageStop: string; at: string;
 }
 export interface PerfReport { reportId: string; metrics: Record<string, unknown>; reportedAt: string }
 export interface FaultReport { faultId: string; severity: string; description: string | null; reportedAt: string }

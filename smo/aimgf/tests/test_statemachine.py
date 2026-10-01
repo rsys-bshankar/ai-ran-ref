@@ -187,3 +187,28 @@ def test_weighted_triggers_is_reserved_not_implemented():
     """
     with pytest.raises(NotImplementedError):
         should_trigger_group_retrain("WEIGHTED_TRIGGERS", member_count=4, breached_count=1)
+
+
+def test_certified_model_can_be_retrained():
+    """OI-2-training-lifecycle-edges: a rolled-back model (PROMOTED -ROLLBACK->
+    CERTIFIED) re-enters training like a PROMOTED one."""
+    s = MODEL_LIFECYCLE_FSM.fire(ModelLifecycleState.PROMOTED, ModelLifecycleEvent.ROLLBACK)
+    assert MODEL_LIFECYCLE_FSM.fire(s, ModelLifecycleEvent.CREATE_TRAINING) == ModelLifecycleState.TRAINING
+
+
+def test_advanceable_events_are_governance_plus_end_of_life_only():
+    from app.statemachine import ADVANCEABLE_EVENTS
+    assert ADVANCEABLE_EVENTS == GOVERNANCE_EVENTS | {ModelLifecycleEvent.DEPRECATE, ModelLifecycleEvent.RETIRE}
+    for job_driven in ("CREATE_TRAINING", "TRAINING_COMPLETE", "TRAINING_FAILED", "CREATE_VALIDATION",
+                       "VALIDATION_COMPLETE", "VALIDATION_FAILED", "CREATE_EMULATION", "EMULATION_COMPLETE",
+                       "EMULATION_FAILED"):
+        assert ModelLifecycleEvent(job_driven) not in ADVANCEABLE_EVENTS
+
+
+def test_trainable_states_match_the_create_training_edges():
+    from app.statemachine import TRAINABLE_STATES
+    with_edge = {s for s in ModelLifecycleState if ModelLifecycleEvent.CREATE_TRAINING in MODEL_LIFECYCLE_FSM.legal_events(s)}
+    assert with_edge == {ModelLifecycleState.REGISTERED, ModelLifecycleState.CERTIFIED, ModelLifecycleState.PROMOTED,
+                         ModelLifecycleState.FAILED}
+    # plus TRAINING itself: a new request supersedes the in-flight run (main.py _start_training)
+    assert TRAINABLE_STATES == with_edge | {ModelLifecycleState.TRAINING}

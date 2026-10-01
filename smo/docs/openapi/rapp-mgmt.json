@@ -213,7 +213,7 @@
         "summary": "List Instances"
       },
       "post": {
-        "description": "CreateInstance \u2014 requires a validated package: AVAILABLE, or PRIMED\n(AVAILABLE plus pre-provisioned resources; D-SEC-RAPP-1). NFO handoff per Onboarding/rApp Mgmt LLD section 5: reads\nthe package's TOSCA service template and issues NFO.Instantiate.",
+        "description": "CreateInstance \u2014 requires a validated package: AVAILABLE, or PRIMED\n(AVAILABLE plus pre-provisioned resources; D-SEC-RAPP-1); 404 for an\nunknown package, 409 for any other state. NFO handoff per Onboarding/rApp\nMgmt LLD section 5: reads the package's TOSCA service template and issues\nNFO.Instantiate; the returned nfDeploymentId is kept as workloadRef, and\nTERMINATE hands it back to NFO. The same path provisions an upgrade's\nreplacement instance (provisioning.py).",
         "operationId": "create_instance_instances_post",
         "requestBody": {
           "content": {
@@ -282,7 +282,7 @@
         "summary": "Delete Instance"
       },
       "get": {
-        "description": "HISTORY.md \u00a75: no single-instance detail read existed at\nall \u2014 only the list route above and single-field sub-resources\n(config via get_config/set_config). The reference's own\nGET .../instance/{id} returns nested ACM/SME/DME resource records\n(composition IDs, provider-function IDs, producer/consumer type\nlists) \u2014 the ACM part stays out of scope, unchanged: CreateInstance\nnever accepts that caller-supplied deploy descriptor in the first\nplace (real ACM/Helm/K8s deployment is the declared elision), so\nechoing it back would mean inventing descriptor data, not exposing\nsomething this build already computes. What this genuinely does\nexpose: workloadRef (the real NFO nfDeploymentId CreateInstance\nreceived back), smeServiceIds (the real SME serviceId(s)\nbootstrap-complete's own SME auto-registration received back \u2014\nHISTORY.md \u00a77's Onboarding/rApp Mgmt finding 3, closed), and the\ncaller-supplied configuration, alongside the identity/state fields\nlist_instances already returns.",
+        "description": "HISTORY.md \u00a75: no single-instance detail read existed at\nall \u2014 only the list route above and single-field sub-resources\n(config via get_config/set_config). The reference's own\nGET .../instance/{id} returns nested ACM/SME/DME resource records\n(composition IDs, provider-function IDs, producer/consumer type\nlists) \u2014 the ACM part stays out of scope, unchanged: CreateInstance\nnever accepts that caller-supplied deploy descriptor in the first\nplace (real ACM/Helm/K8s deployment is the declared elision), so\nechoing it back would mean inventing descriptor data, not exposing\nsomething this build already computes. What this genuinely does\nexpose: workloadRef (the real NFO nfDeploymentId CreateInstance\nreceived back), smeServiceIds (the real SME serviceId(s)\nbootstrap-complete's own SME auto-registration received back \u2014\nHISTORY.md \u00a77's Onboarding/rApp Mgmt finding 3, closed), and the\ncaller-supplied configuration, alongside the identity/state fields\nlist_instances already returns. lastTeardown is the recorded outcome of\nthe most recent NFO Terminate / usage/stop this row performed or\ninherited through an upgrade. Reading an instance enforces its\nupgrade's upgradeTimeoutSeconds (an overdue upgrade rolls back).",
         "operationId": "get_instance_instances__instance_id__get",
         "parameters": [
           {
@@ -321,7 +321,7 @@
     },
     "/instances/{instance_id}/bootstrap-complete": {
       "post": {
-        "description": "Called once the rApp container has bootstrapped via R1 Termination\nand registered with SME/DME \u2014 closes DEPLOYING -> RUNNING.",
+        "description": "Called once the rApp container has bootstrapped via R1 Termination\nand registered with SME/DME \u2014 closes DEPLOYING -> RUNNING. 409 if the\ninstance is not DEPLOYING.",
         "operationId": "bootstrap_complete_instances__instance_id__bootstrap_complete_post",
         "parameters": [
           {
@@ -446,6 +446,7 @@
     },
     "/instances/{instance_id}/fault": {
       "post": {
+        "description": "Records every fault report; severity=critical additionally fires\nCRASH (RUNNING -> FAULTED). A critical fault on an instance that is not\nRUNNING is refused with 409 and not recorded.",
         "operationId": "report_fault_instances__instance_id__fault_post",
         "parameters": [
           {
@@ -683,7 +684,7 @@
     },
     "/instances/{instance_id}/recover": {
       "post": {
-        "description": "RECOVER \u2014 v1.3's own FAULTED exit, concretized: the FSM transition\n(FAULTED -> DEPLOYING) existed but no route ever fired it, so a\ncritically-faulted instance had no API path back to RUNNING at all.\nRe-enters at the same point CreateInstance does \u2014 the container must\nre-bootstrap and call bootstrap-complete again, matching the \"no\nlightweight update path\" principle this build applies everywhere\nelse (e.g. AI/ML Workflow's retraining re-entry).",
+        "description": "RECOVER \u2014 v1.3's own FAULTED exit, concretized: the FSM transition\n(FAULTED -> DEPLOYING) existed but no route ever fired it, so a\ncritically-faulted instance had no API path back to RUNNING at all.\nRe-enters at the same point CreateInstance does \u2014 the container must\nre-bootstrap and call bootstrap-complete again, matching the \"no\nlightweight update path\" principle this build applies everywhere\nelse (e.g. AI/ML Workflow's retraining re-entry). 409 from any state\nbut FAULTED.",
         "operationId": "recover_instance_instances__instance_id__recover_post",
         "parameters": [
           {
@@ -722,7 +723,7 @@
     },
     "/instances/{instance_id}/terminate": {
       "post": {
-        "description": "TerminateInstance \u2014 Annex A.1.2.3. Credential revocation is part of\nthis transition itself (statemachine.py's _revoke_credential action),\nnot a separate step (closes RT-3). Also stops this instance's\nPackageUsageRegistration \u2014 the actual fix for Onboarding's\ncascade-delete guard, previously unreachable from ordinary rApp\ndeployment since nothing called usage/stop.\n\nHISTORY.md \u00a75: this used to delete the instance row\noutright, in the same call \u2014 undeploy and delete collapsed into one\nirreversible step, with no way to observe an instance post-teardown\nor to delete one that was already torn down some other way (e.g.\nCRASH). The reference's own split (`RappService.undeployRappInstance`/\n`deleteRappInstance`, DEPLOYED -> UNDEPLOYING -> UNDEPLOYED, delete\nonly legal from UNDEPLOYED) is adopted here: TERMINATE now only tears\nthe workload down (this action) and lands in the terminal UNDEPLOYED\nstate with the row still present; removing the row itself is the\nseparate `delete_instance` below.",
+        "description": "TerminateInstance \u2014 Annex A.1.2.3. Legal from RUNNING, FAULTED (a\ncrashed instance is retired without recovering it first) and DEPLOYING\n(one whose container never bootstrapped); 409 otherwise, and 409 for an\nupgrade's pending replacement (resolve the upgrade instead).\n\nCredential revocation is part of this transition itself\n(statemachine.py's _revoke_credential action), not a separate step\n(closes RT-3), after the DME/SME deregistration keyed on that\ncredential. Then the workload itself: NFO Terminate for workloadRef\n(the nfDeploymentId CreateInstance received) and usage/stop for the\nPackageUsageRegistration that Onboarding's deprime and cascade-delete\nguards read. Both are best-effort \u2014 an unreachable NFO or Onboarding\nnever blocks the teardown \u2014 but their outcome is recorded in\nlastTeardown.\n\nHISTORY.md \u00a75: this used to delete the instance row\noutright, in the same call \u2014 undeploy and delete collapsed into one\nirreversible step, with no way to observe an instance post-teardown\nor to delete one that was already torn down some other way (e.g.\nCRASH). The reference's own split (`RappService.undeployRappInstance`/\n`deleteRappInstance`, DEPLOYED -> UNDEPLOYING -> UNDEPLOYED, delete\nonly legal from UNDEPLOYED) is adopted here: TERMINATE now only tears\nthe workload down (this action) and lands in the terminal UNDEPLOYED\nstate with the row still present; removing the row itself is the\nseparate `delete_instance` below.",
         "operationId": "terminate_instance_instances__instance_id__terminate_post",
         "parameters": [
           {
@@ -761,7 +762,7 @@
     },
     "/instances/{instance_id}/upgrade": {
       "post": {
-        "description": "UpgradeInstance \u2014 Annex A.1.2.2.1. Kicks off the two-row choreography\nin upgrade.py; the actual success/failure resolution happens when the\nnew instance's own bootstrap-complete (or a timeout/fault) fires\nresolve_upgrade \u2014 modeled here as immediate resolution for the Phase 1\nreference (a real deployment would poll/await bootstrap-complete\nasynchronously within upgrade_timeout_seconds).",
+        "description": "UpgradeInstance \u2014 Annex A.1.2.2.1. Kicks off the two-row choreography\nin upgrade.py: the old instance (must be RUNNING, else 409) goes\nUPGRADING and a replacement is provisioned exactly like CreateInstance\ndoes (newPackageId must be AVAILABLE or PRIMED \u2014 404 unknown, 409\notherwise; its own oauthClientId, NFO deployment and usage\nregistration), inheriting the old instance's configuration,\nautonomyMode and regionScope. The outcome is reported through\nupgrade/resolve, or the upgrade rolls back on its own once\nupgradeTimeoutSeconds have passed unresolved.",
         "operationId": "upgrade_instance_instances__instance_id__upgrade_post",
         "parameters": [
           {
@@ -810,6 +811,7 @@
     },
     "/instances/{instance_id}/upgrade/resolve": {
       "post": {
+        "description": "Resolves the upgrade pending on the OLD instance. succeeded=true\ncommits it: the replacement becomes RUNNING (registering its SME\ndeclarations if it never called bootstrap-complete itself) and the old\ninstance is retired like a TERMINATE \u2014 DME/SME deregistration,\ncredential revocation, NFO Terminate, usage/stop \u2014 then deleted.\nsucceeded=false rolls back: the replacement is torn down the same way\nand deleted, the old instance returns to RUNNING. Answers with the\nsurviving instance.\n\n404 for an unknown instance or one with no pending upgrade; 409\nLIFECYCLE_ILLEGAL_TRANSITION if the replacement can no longer be\ncommitted (e.g. it crashed); 409 RAPP_UPGRADE_TIMED_OUT for\nsucceeded=true after upgradeTimeoutSeconds \u2014 the upgrade has already\nbeen rolled back (succeeded=false after the deadline just returns the\nrolled-back survivor).",
         "operationId": "resolve_upgrade_outcome_instances__instance_id__upgrade_resolve_post",
         "parameters": [
           {

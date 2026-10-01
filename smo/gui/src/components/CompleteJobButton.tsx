@@ -1,0 +1,19 @@
+import { useSmo } from "../api/hooks";
+import { completionRoute, type CompletionStage } from "../lib/domain";
+import { ActionButton } from "./ui";
+
+/** Completes a model's in-flight training/validation/emulation run through
+ * its job's own `/complete` route — AIMgF's `advance` refuses the
+ * job-driven …_COMPLETE events. Training's job id comes from the
+ * lifecycle row; validation/emulation look up the model's RUNNING job. */
+export function CompleteJobButton({ modelId, stage, label, trainingJobId }: {
+  modelId: string; stage: CompletionStage; label: string; trainingJobId?: string | null;
+}) {
+  const { jobsPath, runningStatus, idKey } = completionRoute(stage);
+  const known = stage === "training" ? trainingJobId ?? null : null;
+  const jobs = useSmo<Record<string, unknown>[]>(known ? null : jobsPath, { model_id: modelId, status: runningStatus });
+  const jobId = known ?? (jobs.data?.[0]?.[idKey] as string | undefined);
+  if (!jobId) return null;
+  return <ActionButton label={label} tone="primary"
+    action={{ method: "POST", path: `${jobsPath}/${jobId}/complete`, json: { succeeded: true }, success: `${label}: done` }} />;
+}

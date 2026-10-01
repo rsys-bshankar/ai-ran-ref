@@ -229,16 +229,18 @@ def test_operator_cannot_terminate_but_admin_can(app, smo):
 
 
 def test_model_deprecation_is_admin_only_even_with_a_duplicated_param(app, smo):
-    """TRAINING_COMPLETE is an ordinary operator-level automatic
-    transition; DEPRECATE and the six governance decisions (Wave 2:
-    SUBMIT_FOR_APPROVAL/APPROVE/REJECT/CERTIFY/PROMOTE/ROLLBACK) are
-    admin-only, the same elevated stakes as the DELETEs elsewhere.
+    """APPROVE_TRAINING (HISTORY.md OI-6.1's operator gate) is
+    operator-level; DEPRECATE/RETIRE and the six Wave 2 governance
+    decisions (SUBMIT_FOR_APPROVAL/APPROVE/REJECT/CERTIFY/PROMOTE/ROLLBACK)
+    are admin-only, the same elevated stakes as the DELETEs elsewhere.
+    (AIMgF itself refuses job-driven events such as TRAINING_COMPLETE on
+    advance — the BFF only decides the role.)
     """
     operator = login(app, "operator")
-    assert operator.post("/api/smo/aimgf/models/m-1/advance?event=TRAINING_COMPLETE").status_code == 200
+    assert operator.post("/api/smo/aimgf/models/m-1/advance?event=APPROVE_TRAINING").status_code == 200
     assert operator.post("/api/smo/aimgf/models/m-1/advance?event=DEPRECATE").status_code == 403
     assert operator.post("/api/smo/aimgf/models/m-1/advance?event=CERTIFY").status_code == 403
-    assert operator.post("/api/smo/aimgf/models/m-1/advance?event=TRAINING_COMPLETE&event=DEPRECATE").status_code == 403
+    assert operator.post("/api/smo/aimgf/models/m-1/advance?event=APPROVE_TRAINING&event=DEPRECATE").status_code == 403
     assert login(app, "admin").post("/api/smo/aimgf/models/m-1/advance?event=DEPRECATE").status_code == 200
     assert login(app, "admin").post("/api/smo/aimgf/models/m-1/advance?event=CERTIFY").status_code == 200
 

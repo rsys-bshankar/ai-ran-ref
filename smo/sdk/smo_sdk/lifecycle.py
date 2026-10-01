@@ -62,11 +62,16 @@ class LifecycleClient(BaseClient):
 
     def advance_model_lifecycle(self, model_id: uuid.UUID | str, event: str,
                                  decided_by: str | None = None, rationale: str | None = None) -> dict:
-        """Fires any ModelLifecycle transition (Wave 2, `aimgf/app/statemachine.py`)
-        — `decided_by` is required by AIMgF itself for the eight governance
-        decisions (`GOVERNANCE_EVENTS`: SUBMIT_FOR_APPROVAL/APPROVE/REJECT/
-        CERTIFY/PROMOTE/ROLLBACK/APPROVE_TRAINING/APPROVE_VALIDATION); omitted
-        here it 422s the same way a direct call would. Call flow 26.
+        """Fires a governance or end-of-life ModelLifecycle event (Wave 2,
+        `aimgf/app/statemachine.py` `ADVANCEABLE_EVENTS`): the eight
+        governance decisions (`GOVERNANCE_EVENTS`: SUBMIT_FOR_APPROVAL/
+        APPROVE/REJECT/CERTIFY/PROMOTE/ROLLBACK/APPROVE_TRAINING/
+        APPROVE_VALIDATION), for which AIMgF requires `decided_by` (omitted,
+        it 422s the same way a direct call would), plus DEPRECATE/RETIRE.
+        Job-driven events (CREATE_*/..._COMPLETE/..._FAILED) are refused
+        with 422 — use the job routes (`request_training`/`complete_training`/
+        `cancel_training`, ...). RETIRE also terminates the model's runtime.
+        Call flow 26.
         """
         return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/advance",
                                         params={"event": event, "decided_by": decided_by, "rationale": rationale}))

@@ -58,6 +58,7 @@ def request_model_deployment(model_id: uuid.UUID, node_groups: list[str]):
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
     lifecycle = resp.json()
     if lifecycle["modelLifecycleState"] not in ("CERTIFIED", "PROMOTED"):
-        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED)
+        raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
+                               detail=f"cannot place a model in state {lifecycle['modelLifecycleState']}")
     updated = _aimgf.patch(f"/aimgf/models/{model_id}/runtime/node-groups", json={"clearedNodeGroups": node_groups}).json()
     return {"modelId": str(model_id), "clearedNodeGroups": updated["clearedNodeGroups"]}

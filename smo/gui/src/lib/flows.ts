@@ -113,7 +113,7 @@ export function flow02(model: Model | undefined, lifecycle: ModelLifecycle | und
   return settle([
     step("register", "RegisterModel(modelType, version)", "Producer → AI/ML", true, `${model.modelType} v${model.version}`),
     step("train", "RequestTraining → TRAINING", "Producer → AI/ML (MLTF)", jobs.length > 0 || reached(s, "TRAINING"), jobs.length ? `${jobs.length} training job(s)` : undefined),
-    step("tested", "advance(TRAINING_COMPLETE) → TRAINED → RequestValidation → VALIDATED", "MLVF", reached(s, "VALIDATED")),
+    step("tested", "training-jobs/{id}/complete → TRAINED → RequestValidation → VALIDATED", "MLVF", reached(s, "VALIDATED")),
     step("emulated", "RequestEmulation → EMULATING → EMULATED", "MLEF", reached(s, "EMULATED")),
     step("certified", "governance: submit → approve → certify → CERTIFIED", "AIMgF", reached(s, "CERTIFIED")),
     step("deploy", "RequestModelDeployment(nodeGroups)", "Producer → MLLF", nodeGroups.length > 0, nodeGroups.join(", ") || undefined),
@@ -237,7 +237,8 @@ export function flow07(instance: Instance | undefined, perf: PerfReport[], fault
     step("upgrade", "Upgrade (optional): UPGRADING → commit or roll back", "Operator → rApp Mgmt",
       s === "UPGRADING" ? "warn" : ["RUNNING", "UNDEPLOYED"].includes(s),
       s === "UPGRADING" ? `awaiting upgrade/resolve (replacement ${instance.pendingUpgradeInstanceId ?? "?"})` : "optional"),
-    step("terminate", "Terminate → UNDEPLOYED (usage/stop)", "Operator → rApp Mgmt", gone),
+    step("terminate", "Terminate → UNDEPLOYED (NFO terminate, usage/stop)", "Operator → rApp Mgmt → NFO, Onboarding", gone,
+      instance.lastTeardown ? `NFO ${instance.lastTeardown.nfoTerminate}, usage/stop ${instance.lastTeardown.usageStop}` : undefined),
   ]);
 }
 

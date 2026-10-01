@@ -1,18 +1,75 @@
 """Tests for RAppInstance lifecycle + upgrade auto-rollback
 (Onboarding/rApp Mgmt LLD sections 5-6). Run with: pytest smo/rapp-mgmt/tests -q
+
+The upgrade orchestration provisions and tears down real resources through
+R1 (OI-2-upgrade-completeness), so these tests fake R1Client and record
+every call it makes.
 """
 
+import datetime
 import uuid
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import Column, Table, Uuid, create_engine
 from sqlalchemy.orm import Session
 
 from smo_shared.db import Base
+from smo_shared.r1_client import R1Client
+from smo_shared.statemachine import IllegalTransition
 
-from app.models import RAppInstance
+from app.models import RAppFaultReport, RAppInstance, RAppPerformanceReport
 from app.statemachine import RAPP_INSTANCE_FSM, InstanceEvent, InstanceState
-from app.upgrade import resolve_upgrade, start_upgrade
+from app.upgrade import expire_overdue_upgrade, resolve_upgrade, start_upgrade, upgrade_deadline
+
+
+class FakeResponse:
+    def __init__(self, status_code, payload=None):
+        self.status_code = status_code
+        self._payload = payload or {}
+
+    def json(self):
+        return self._payload
+
+
+class FakeR1:
+    """Answers onboarding-status / NFO / usage / DME / SME calls; records them."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, str]] = []
+        self.package_states: dict[str, str] = {}
+        self.nfo_delete_status = 204
+
+    def get(self, _self, path, **kw):
+        self.calls.append(("GET", path))
+        package_id = path.split("/")[3]
+        state = self.package_states.get(package_id, "AVAILABLE")
+        if state == "UNKNOWN":
+            return FakeResponse(404, {})
+        return FakeResponse(200, {"state": state, "nfDeploymentDescriptorId": str(uuid.uuid4())})
+
+    def post(self, _self, path, json=None, **kw):
+        self.calls.append(("POST", path))
+        if path == "/nfo/deployments":
+            return FakeResponse(202, {"nfDeploymentId": str(uuid.uuid4())})
+        if path.endswith("/usage/start"):
+            return FakeResponse(200, {"registrationId": str(uuid.uuid4())})
+        return FakeResponse(200, {})
+
+    def delete(self, _self, path, **kw):
+        self.calls.append(("DELETE", path))
+        if path.startswith("/nfo/deployments/"):
+            return FakeResponse(self.nfo_delete_status)
+        return FakeResponse(204)
+
+
+@pytest.fixture
+def r1(monkeypatch):
+    fake = FakeR1()
+    monkeypatch.setattr(R1Client, "get", lambda self, path, **kw: fake.get(self, path, **kw))
+    monkeypatch.setattr(R1Client, "post", lambda self, path, json=None, **kw: fake.post(self, path, json=json, **kw))
+    monkeypatch.setattr(R1Client, "delete", lambda self, path, **kw: fake.delete(self, path, **kw))
+    return fake
 
 
 @pytest.fixture
@@ -23,13 +80,15 @@ def db():
     # Production runs against the full consolidated migration (001_init.sql).
     if "application_package" not in Base.metadata.tables:
         Table("application_package", Base.metadata, Column("package_id", Uuid, primary_key=True))
-    Base.metadata.create_all(engine, tables=[Base.metadata.tables["application_package"], RAppInstance.__table__])
+    Base.metadata.create_all(engine, tables=[Base.metadata.tables["application_package"], RAppInstance.__table__,
+                                             RAppFaultReport.__table__, RAppPerformanceReport.__table__])
     with Session(engine) as session:
         yield session
 
 
-def running_instance(db, package_id=None) -> RAppInstance:
-    inst = RAppInstance(package_id=package_id or uuid.uuid4(), state=InstanceState.RUNNING, oauth_client_id="cred-123")
+def running_instance(db, package_id=None, **kw) -> RAppInstance:
+    inst = RAppInstance(package_id=package_id or uuid.uuid4(), state=InstanceState.RUNNING, oauth_client_id="cred-123",
+                        workload_ref="nf-old", package_usage_registration_id=uuid.uuid4(), **kw)
     db.add(inst)
     db.flush()
     return inst
@@ -43,7 +102,7 @@ def test_create_instance_bootstrap_success(db):
     assert new_state == InstanceState.RUNNING
 
 
-def test_terminate_revokes_credential(db):
+def test_terminate_revokes_credential(db, r1):
     """Closes v1.3's red-team finding RT-3: revocation is part of the
     TerminateInstance transition itself, not a separate step.
     """
@@ -54,44 +113,185 @@ def test_terminate_revokes_credential(db):
     assert inst.oauth_client_id is None
 
 
-def test_upgrade_success_commits_and_removes_old_row(db):
-    old_package = uuid.uuid4()
+@pytest.mark.parametrize("state", [InstanceState.FAULTED, InstanceState.DEPLOYING])
+def test_terminate_is_legal_from_faulted_and_deploying(db, r1, state):
+    """OI-2-lcm-error-mapping: a crashed instance (or one that never
+    bootstrapped) can be retired without recovering it first."""
+    inst = running_instance(db)
+    assert RAPP_INSTANCE_FSM.fire(state, InstanceEvent.TERMINATE, instance=inst) == InstanceState.UNDEPLOYED
+    assert inst.oauth_client_id is None
+
+
+@pytest.mark.parametrize("state", [InstanceState.UPGRADING, InstanceState.UNDEPLOYED])
+def test_terminate_is_illegal_while_upgrading_or_once_undeployed(db, state):
+    with pytest.raises(IllegalTransition):
+        RAPP_INSTANCE_FSM.fire(state, InstanceEvent.TERMINATE, instance=running_instance(db))
+
+
+def test_start_upgrade_provisions_a_complete_replacement(db, r1):
+    """OI-2-upgrade-completeness / OI-1-upgrade-identity: the replacement
+    goes through CreateInstance's own path — package check, its own fresh
+    identity, NFO Instantiate, usage/start — and inherits configuration,
+    autonomy mode and region scope."""
     new_package = uuid.uuid4()
-    old = running_instance(db, package_id=old_package)
+    old = running_instance(db, configuration={"replicas": 2}, autonomy_mode="AUTONOMOUS",
+                           region_scope={"nodeIds": ["ne-1"]}, upgrade_timeout_seconds=120)
 
     new = start_upgrade(db, old, new_package)
-    assert old.state == InstanceState.UPGRADING
-    assert new.state == InstanceState.DEPLOYING
-    assert old.pending_upgrade_instance_id == new.instance_id
 
-    resolve_upgrade(db, old, new, new_bootstrap_succeeded=True)
+    assert old.state == InstanceState.UPGRADING
+    assert old.pending_upgrade_instance_id == new.instance_id
+    assert new.state == InstanceState.DEPLOYING
+    assert new.package_id == new_package
+    assert new.configuration == {"replicas": 2} and new.configuration is not old.configuration
+    assert (new.autonomy_mode, new.region_scope) == ("AUTONOMOUS", {"nodeIds": ["ne-1"]})
+    assert new.oauth_client_id and new.oauth_client_id != old.oauth_client_id
+    assert new.workload_ref and new.package_usage_registration_id is not None
+    assert new.upgrade_timeout_seconds == 120
+    assert ("GET", f"/onboarding/packages/{new_package}/onboarding-status") in r1.calls
+    assert ("POST", "/nfo/deployments") in r1.calls
+    assert ("POST", f"/onboarding/packages/{new_package}/usage/start") in r1.calls
+
+
+@pytest.mark.parametrize("package_state,status", [("DEPRECATED", 409), ("FAILED", 409), ("UNKNOWN", 404)])
+def test_start_upgrade_refuses_a_package_that_is_not_deployable(db, r1, package_state, status):
+    new_package = uuid.uuid4()
+    r1.package_states[str(new_package)] = package_state
+    old = running_instance(db)
+
+    with pytest.raises(HTTPException) as exc:
+        start_upgrade(db, old, new_package)
+
+    assert exc.value.status_code == status
+    assert old.state == InstanceState.RUNNING and old.pending_upgrade_instance_id is None
+    assert not any(path == "/nfo/deployments" for _, path in r1.calls)
+
+
+def test_start_upgrade_refuses_a_non_running_instance_before_provisioning(db, r1):
+    old = running_instance(db)
+    old.state = InstanceState.FAULTED
+    with pytest.raises(IllegalTransition):
+        start_upgrade(db, old, uuid.uuid4())
+    assert r1.calls == [] and old.state == InstanceState.FAULTED
+
+
+def test_upgrade_success_commits_and_retires_old_row_like_terminate(db, r1):
+    old_package = uuid.uuid4()
+    new_package = uuid.uuid4()
+    old = running_instance(db, package_id=old_package, sme_service_ids=["svc-1"])
+    old_id, old_registration = old.instance_id, old.package_usage_registration_id
+
+    new = start_upgrade(db, old, new_package)
+    new_identity = new.oauth_client_id
+    registered = []
+    r1.calls.clear()
+
+    resolve_upgrade(db, old, new, new_bootstrap_succeeded=True, register_identity=registered.append)
+    db.flush()
 
     assert new.state == InstanceState.RUNNING
     assert new.package_id == new_package
-    # old row is gone; the surviving instance is `new`, now on the new package
-    assert old not in db.new and old.state == InstanceState.UNDEPLOYED
+    assert new.oauth_client_id == new_identity  # the replacement keeps its own identity
+    assert registered == [new]  # SME declarations registered under the replacement's identity
+    # the old row is retired like a TERMINATE: DME/SME deregistration, NFO Terminate, usage/stop
+    assert r1.calls == [
+        ("DELETE", "/dme/production-capabilities"),
+        ("DELETE", "/sme/published-apis/v1/cred-123/service-apis/svc-1"),
+        ("DELETE", "/sme/provider-registrations/cred-123"),
+        ("DELETE", "/nfo/deployments/nf-old"),
+        ("POST", f"/onboarding/packages/{old_package}/usage/{old_registration}/stop"),
+    ]
+    assert new.last_teardown["instanceId"] == str(old_id)
+    assert (new.last_teardown["reason"], new.last_teardown["nfoTerminate"], new.last_teardown["usageStop"]) == (
+        "UPGRADE_COMMIT", "DONE", "DONE")
+    assert db.get(RAppInstance, old_id) is None
 
 
-def test_upgrade_failure_auto_rolls_back_old_row_untouched(db):
+def test_upgrade_commit_of_a_replacement_that_already_bootstrapped(db, r1):
+    """The replacement's container may call bootstrap-complete itself
+    before the outcome is resolved — then it is already RUNNING and already
+    registered."""
+    old = running_instance(db)
+    new = start_upgrade(db, old, uuid.uuid4())
+    new.state = InstanceState.RUNNING
+    registered = []
+
+    resolve_upgrade(db, old, new, new_bootstrap_succeeded=True, register_identity=registered.append)
+
+    assert new.state == InstanceState.RUNNING and registered == []
+
+
+def test_upgrade_commit_refused_when_the_replacement_crashed(db, r1):
+    old = running_instance(db)
+    new = start_upgrade(db, old, uuid.uuid4())
+    new.state = InstanceState.FAULTED
+    r1.calls.clear()
+
+    with pytest.raises(IllegalTransition):
+        resolve_upgrade(db, old, new, new_bootstrap_succeeded=True)
+
+    assert old.state == InstanceState.UPGRADING and old.oauth_client_id == "cred-123"
+    assert r1.calls == []
+
+
+def test_upgrade_failure_auto_rolls_back_and_tears_the_replacement_down(db, r1):
     """The auto-rollback decision v1.3 made explicit: failure never
     requires manual intervention, and the OLD instance is unaffected
     throughout — it never left RUNNING in the caller's observable sense
-    except for the UPGRADING marker during the attempt.
+    except for the UPGRADING marker during the attempt. The replacement's
+    NFO deployment and usage registration are released before its row goes.
     """
     old_package = uuid.uuid4()
+    new_package = uuid.uuid4()
     old = running_instance(db, package_id=old_package)
     original_credential = old.oauth_client_id
 
-    new = start_upgrade(db, old, uuid.uuid4())
+    new = start_upgrade(db, old, new_package)
+    new_id, new_workload, new_registration = new.instance_id, new.workload_ref, new.package_usage_registration_id
+    r1.calls.clear()
     resolve_upgrade(db, old, new, new_bootstrap_succeeded=False)
+    db.flush()
 
     assert old.state == InstanceState.RUNNING
     assert old.package_id == old_package  # never changed
     assert old.oauth_client_id == original_credential  # never revoked — this instance was never terminated
     assert old.pending_upgrade_instance_id is None
+    assert ("DELETE", f"/nfo/deployments/{new_workload}") in r1.calls
+    assert ("POST", f"/onboarding/packages/{new_package}/usage/{new_registration}/stop") in r1.calls
+    assert ("DELETE", "/nfo/deployments/nf-old") not in r1.calls
+    assert old.last_teardown["instanceId"] == str(new_id) and old.last_teardown["reason"] == "UPGRADE_ROLLBACK"
+    assert db.get(RAppInstance, new_id) is None
 
 
-def test_crash_and_manual_recovery(db):
+def test_overdue_upgrade_rolls_back_lazily(db, r1):
+    """upgradeTimeoutSeconds is enforced: an unresolved upgrade past its
+    deadline rolls back the next time it is looked at."""
+    old = running_instance(db, upgrade_timeout_seconds=60)
+    new = start_upgrade(db, old, uuid.uuid4())
+    new_id = new.instance_id
+    deadline = upgrade_deadline(old, new)
+
+    assert expire_overdue_upgrade(db, old, now=deadline - datetime.timedelta(seconds=1)) is False
+    assert old.state == InstanceState.UPGRADING
+
+    assert expire_overdue_upgrade(db, old, now=deadline) is True
+    db.flush()
+    assert old.state == InstanceState.RUNNING and old.pending_upgrade_instance_id is None
+    assert old.last_teardown["reason"] == "UPGRADE_TIMEOUT"
+    assert db.get(RAppInstance, new_id) is None
+    assert expire_overdue_upgrade(db, old) is False  # nothing pending any more
+
+
+def test_nfo_terminate_failure_is_recorded_not_raised(db, r1):
+    r1.nfo_delete_status = 503
+    old = running_instance(db)
+    new = start_upgrade(db, old, uuid.uuid4())
+    resolve_upgrade(db, old, new, new_bootstrap_succeeded=False)
+    assert old.state == InstanceState.RUNNING
+    assert old.last_teardown["nfoTerminate"] == "FAILED: HTTP 503"
+
+
+def test_crash_and_manual_recovery(db, r1):
     inst = running_instance(db)
     s = RAPP_INSTANCE_FSM.fire(InstanceState.RUNNING, InstanceEvent.CRASH, instance=inst)
     assert s == InstanceState.FAULTED

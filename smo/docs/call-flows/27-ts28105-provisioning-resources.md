@@ -31,16 +31,16 @@ sequenceDiagram
     participant MLTF as MLTF execution runtime
     participant DME as DME
 
-    Requester->>AIMgF: POST /aimgf/ml-training-requests<br/>(mLModelRef or mLModelCoordinationGroupRef, trainingRequestSource,<br/>mLTrainingFunctionRef?, mLTrainingType?, dmeDataJobIds?, notificationUri?)
+    Requester->>AIMgF: POST /aimgf/ml-training-requests<br/>(mLModelRef or mLModelCoordinationGroupRef, trainingRequestSource,<br/>mLTrainingFunctionRef?, mLTrainingType?, dmeDataJobIds?, notificationUri?,<br/>packageId?, runtimeProfile?, timeoutSeconds? — vendor extensions)
     AIMgF->>AIMgF: exactly one of mLModelRef / group ref — COORDINATION_GROUP_MISMATCH otherwise<br/>mLTrainingFunctionRef must exist — NRM_OBJECT_NOT_FOUND otherwise
     opt dmeDataJobIds given
         AIMgF->>DME: GET /dme/data-jobs/{id} per id
         DME-->>AIMgF: 200 or DME_ARTIFACT_NOT_FOUND (HISTORY.md OI-6.4)
     end
     AIMgF->>MLMR: GET /mlmr/models/{id} (model-targeted only)
-    AIMgF->>AIMgF: _start_training gate — model must be REGISTERED, PROMOTED, FAILED or TRAINING<br/>else 409 MODEL_NOT_CERTIFIED. INITIAL_TRAINING only for a REGISTERED model
-    AIMgF->>AIMgF: TrainingJob(status=IN_PROGRESS, timeoutSeconds=TRAINING default)<br/>+ MLTrainingProcess(status=RUNNING, priority, terminationConditions)
-    AIMgF->>NFO: CreateDescriptor(workloadTemplate={jobKind TRAINING, jobId}) + Instantiate
+    AIMgF->>AIMgF: _start_training gate — model must be REGISTERED, CERTIFIED, PROMOTED, FAILED or TRAINING<br/>else 409 LIFECYCLE_ILLEGAL_TRANSITION naming the state. INITIAL_TRAINING only for a REGISTERED model
+    AIMgF->>AIMgF: TrainingJob(status=IN_PROGRESS, timeoutSeconds = request value or TRAINING default,<br/>runtimeProfile = explicit, else the package's runtimeProfiles.TRAINING, else none)<br/>+ MLTrainingProcess(status=RUNNING, priority, terminationConditions)
+    AIMgF->>NFO: CreateDescriptor(workloadTemplate={jobKind TRAINING, jobId, resources?}) + Instantiate
     NFO-->>AIMgF: nfDeploymentId (stored on the job)
     AIMgF->>AIMgF: ModelLifecycle CREATE_TRAINING -> TRAINING (model-targeted)<br/>or supersede the model's open job (CANCELLED, its NFO runtime deleted)
     AIMgF-->>Requester: 201 {id, attributes: requestStatus=IN_PROGRESS, mLTrainingType, ...}
@@ -55,9 +55,8 @@ sequenceDiagram
     Requester->>AIMgF: PATCH /ml-training-requests/{id} {suspendRequest: true}<br/>(or PATCH /ml-training-processes/{id} {suspendProcess: true}, or POST /training-jobs/{id}/suspend)
     AIMgF->>AIMgF: IN_PROGRESS -> SUSPENDED, process SUSPENDED — 409 from any other status
     Note over AIMgF: a SUSPENDED run is skipped by the timeout sweep
-    Requester->>AIMgF: POST /training-jobs/{id}/resume
-    AIMgF->>AIMgF: SUSPENDED -> IN_PROGRESS, startedAt reset to now (timeout clock restarts)
-    Note over Requester,AIMgF: PATCH {suspendRequest: false} also resumes, but does not reset startedAt
+    Requester->>AIMgF: POST /training-jobs/{id}/resume<br/>(or PATCH /ml-training-requests/{id} {suspendRequest: false},<br/>or PATCH /ml-training-processes/{id} {suspendProcess: false})
+    AIMgF->>AIMgF: _resume_training_job — SUSPENDED -> IN_PROGRESS, startedAt reset to now<br/>(the timeout clock restarts on every resume surface)
     end
 
     alt run completes
@@ -66,12 +65,16 @@ sequenceDiagram
         AIMgF->>NFO: DELETE /nfo/deployments/{nfDeploymentId}
         AIMgF->>AIMgF: TRAINING_COMPLETE -> TRAINED or TRAINING_FAILED -> FAILED<br/>process FINISHED/100/SUCCEEDED (or FAILED)<br/>MLTrainingReport (lastTrainingRef chains to the previous report, mLModelGeneratedRef on success)
         AIMgF->>Requester: best-effort POST notificationUri (jobKind TRAINING, succeeded, metrics)
-    else requester cancels
-        Requester->>AIMgF: PATCH /ml-training-requests/{id} {cancelRequest: true}<br/>(or DELETE /ml-training-requests/{id}, or DELETE /training-jobs/{id})
+    else requester cancels an IN_PROGRESS or SUSPENDED run
+        Requester->>AIMgF: PATCH /ml-training-requests/{id} {cancelRequest: true}<br/>(or PATCH /ml-training-processes/{id} {cancelProcess: true},<br/>DELETE /ml-training-requests/{id}, or DELETE /training-jobs/{id})
         AIMgF->>NFO: DELETE /nfo/deployments/{nfDeploymentId}
-        AIMgF->>AIMgF: job CANCELLED, cancelRequest=true, process CANCELLED
-        Note over AIMgF: no ModelLifecycle event — the model stays TRAINING until a new<br/>training request supersedes the job or a generic advance moves it
+        AIMgF->>AIMgF: _cancel_training_job — job CANCELLED, cancelRequest=true, process CANCELLED
+        AIMgF->>AIMgF: TRAINING_FAILED -> model FAILED, when this job is the model's current run<br/>(a superseded job never fails the newer run)
         AIMgF-->>Requester: 200 / 204 — the job row stays as history
+    else cancel of a run that already ended
+        Requester->>AIMgF: DELETE /training-jobs/{id} on a FINISHED or FAILED run
+        AIMgF-->>Requester: 409 TRAINING_JOB_ILLEGAL_TRANSITION — the outcome is kept, never rewritten to CANCELLED
+        Note over Requester,AIMgF: DELETE of an unknown or already CANCELLED job is an idempotent 204.<br/>PATCH cancelRequest on any ended run is 409, DELETE /ml-training-requests/{id} on one a no-op 204
     end
 
     Requester->>AIMgF: GET /ml-training-processes/{id}, GET /ml-training-reports?model_id=
@@ -88,7 +91,7 @@ sequenceDiagram
     participant MLTF as MLTF execution runtimes
 
     Requester->>AIMgF: POST /aimgf/ml-update-requests<br/>(mLModelRefList, mLUpdateFunctionRef?, newCapabilityVersionId?, performanceGainThreshold?)
-    AIMgF->>AIMgF: mLModelRefList non-empty — SCHEMA_VALIDATION_FAILED otherwise<br/>every model REGISTERED, PROMOTED or FAILED — 409 MODEL_NOT_CERTIFIED before any run starts
+    AIMgF->>AIMgF: mLModelRefList non-empty — SCHEMA_VALIDATION_FAILED otherwise<br/>every model REGISTERED, CERTIFIED, PROMOTED or FAILED — 409 LIFECYCLE_ILLEGAL_TRANSITION before any run starts
     AIMgF->>AIMgF: MLUpdateRequest(IN_PROGRESS) + MLUpdateProcess(RUNNING)
     loop per model in mLModelRefList
         AIMgF->>NFO: CreateDescriptor + Instantiate (jobKind TRAINING)
@@ -109,7 +112,7 @@ sequenceDiagram
     else cancel
         Requester->>AIMgF: PATCH /ml-update-requests/{id} {cancelRequest: true}
         AIMgF->>NFO: DELETE /nfo/deployments/{id} per still-running run
-        AIMgF->>AIMgF: request and process CANCELLED, open runs CANCELLED, no report written
+        AIMgF->>AIMgF: request and process CANCELLED, open runs CANCELLED through _cancel_training_job<br/>(each model released to FAILED), no report written
     end
     Note over Requester,AIMgF: PATCH on a FINISHED or CANCELLED update — 409 TRAINING_JOB_ILLEGAL_TRANSITION
 ```
@@ -181,7 +184,7 @@ sequenceDiagram
 
     Note over AIMgF: timeoutSeconds is fixed at job start — request timeoutSeconds, else<br/>AIMGF_TIMEOUT_KIND_SECONDS, else Training 1800, Validation 900, Emulation 1800, Inference 5
     Scheduler->>AIMgF: POST /aimgf/execution-timeouts/sweep
-    Note over Scheduler,AIMgF: the same _expire_overdue_jobs also runs lazily on every training, validation,<br/>emulation and inference status, list, complete and resolve call (not on the NRM GET routes)
+    Note over Scheduler,AIMgF: the same _expire_overdue_jobs also runs lazily on every training, validation,<br/>emulation and inference status, list, complete, cancel and resolve call, and on the NRM<br/>training/testing request, process and report reads and the ML update reads and PATCHes
 
     loop TrainingJob IN_PROGRESS past startedAt + timeoutSeconds
         AIMgF->>NFO: DELETE /nfo/deployments/{nfDeploymentId}
@@ -206,10 +209,10 @@ sequenceDiagram
 **Key decisions this flow depends on:**
 - One start path. `POST /ml-training-requests`, `POST /training-jobs`, MLMF group retrain and `POST /ml-update-requests` all call `_start_training`, so every run gets the same lifecycle gate, NFO execution runtime, `MLTrainingProcess` and default timeout. The same holds for `POST /ml-testing-requests` and `POST /validation-jobs` through `_start_validation`, including the `APPROVE_TRAINING` gate (HISTORY.md OI-6.1, OI-6.2).
 - `mLTrainingType` is derived as `INITIAL_TRAINING` for a `REGISTERED` model and `RE_TRAINING` otherwise. A requester may name `PRE_SPECIALISED_TRAINING` or `FINE_TUNING`, and an ML update always uses `FINE_TUNING`. Naming `INITIAL_TRAINING` for a model that has already been trained returns 409 `LIFECYCLE_ILLEGAL_TRANSITION`.
-- Suspend and resume are plain job status flips. They make no NFO call, and the execution runtime stays up while the run is suspended. They do not touch `ModelLifecycle`. A suspended training run never times out, and `POST /training-jobs/{id}/resume` restarts its clock.
-- Cancelling a training run tears down its NFO runtime and marks the job and process `CANCELLED`, but fires no `ModelLifecycle` event. Cancelling a testing request (`PATCH /ml-testing-requests/{id} {cancelRequest}`) fires `VALIDATION_FAILED`, which moves the model to `FAILED`.
+- Suspend and resume are plain job status flips. They make no NFO call, and the execution runtime stays up while the run is suspended. They do not touch `ModelLifecycle`. A suspended training or testing run never times out, and every resume surface restarts its clock: `POST /training-jobs/{id}/resume`, `PATCH /ml-training-requests/{id}` or `/ml-training-processes/{id}` with the suspend flag false, an ML update resume (all through `_resume_training_job`), and `PATCH /ml-testing-requests/{id} {suspendRequest: false}`.
+- Every training cancel surface goes through `_cancel_training_job`. It tears down the NFO runtime, marks the job and process `CANCELLED`, and fires `TRAINING_FAILED` (the only exit from `TRAINING` besides completion) when the job is still the model's current run, so the model lands in `FAILED`, the same retry/retire point a timed-out run reaches. A `FINISHED`/`FAILED` run cannot be cancelled (409). Cancelling a testing request (`PATCH /ml-testing-requests/{id} {cancelRequest}`) fires `VALIDATION_FAILED`, which also moves the model to `FAILED`.
 - An ML update is all-or-nothing at start and per-run afterwards. It finishes when every run is terminal. Its process is `FINISHED` only if every run succeeded, and the `MLUpdateReport` lists only the models that succeeded.
 - Model loading checks every model up front (`CERTIFIED`/`PROMOTED`, runtime not terminating), then brings each runtime to `ACTIVE` through AIMgF's own `RuntimeLifecycle` and NFO (call flow 17). MLLF is not involved. A loading policy is stored data plus an explicit `/trigger`, and nothing in AIMgF evaluates its `thresholdList`. There is no unload operation: cancelling a loading request does not remove anything already loaded.
 - Inference through an `AIMLInferenceFunction` needs three things: a runtime in `ACTIVE`, a function in `ACTIVATED`, and the model in the function's `mLModelRefList`.
 - Execution timeouts (HISTORY.md W7, `docs/ROADMAP.md` "Runtime profiles and timeouts") fail an overdue run cleanly. The run's status becomes `FAILED`, its NFO runtime is deleted, and the model's stage is failed only when that transition is still legal (`_fire_if_legal`), so there is no lifecycle corruption. The requester is notified with `failureReason: TIMEOUT`, and a late completion or resolve returns 409. An inference timeout fails only the `InferenceJob`.
-- Runs started through the NRM surface (`MLTrainingRequest`, `MLTestingRequest`, `MLUpdateRequest`) take no `packageId`/`runtimeProfile`/`timeoutSeconds`. Their NFO runtime is unsized and they use the deployment-wide default timeout. Per-run sizing and timeout overrides are available only on the `/training-jobs`-style routes (W7-03, W7-04).
+- TS 28.105 has no attribute for runtime sizing or a run timeout, so `MLTrainingRequest` and `MLTestingRequest` take the same optional vendor extensions as `/training-jobs` and `/validation-jobs`: `packageId` (the rApp package whose manifest `runtimeProfiles` entry applies), `runtimeProfile` (an explicit profile, which wins) and `timeoutSeconds` (W7-03, W7-04). This follows the precedent of `dmeDataJobIds`/`notificationUri` on the same bodies. `MLUpdateRequest` takes none of them, so its `FINE_TUNING` runs are unsized and use the deployment-wide default timeout.

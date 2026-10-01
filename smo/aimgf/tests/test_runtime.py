@@ -168,3 +168,74 @@ def test_inference_five_second_default_and_late_resolve(client, mlmr, db_session
     monkeypatch.setenv("AIMGF_TIMEOUT_INFERENCE_SECONDS", "30")
     job_id = client.post(f"/models/{model_id}/inference-jobs").json()["inferenceJobId"]
     assert client.get(f"/inference-jobs/{job_id}/status").json()["timeoutSeconds"] == 30
+
+
+# ---------------------------------------------------------------- OI-2-training-lifecycle-edges: NRM resume, sweep, sizing
+
+def _started_at(db_session_factory, cls, job_id):
+    with db_session_factory() as session:
+        return session.get(cls, uuid.UUID(job_id)).started_at
+
+
+@pytest.mark.parametrize("via", ["request", "process"])
+def test_nrm_training_resume_restarts_the_timeout_clock(client, mlmr, db_session_factory, via):
+    model_id = mlmr.add_model()
+    request_id = client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x",
+                                                           "timeoutSeconds": 60}).json()["id"]
+    process_id = client.get("/ml-training-processes").json()["items"][0]["id"]
+    client.patch(f"/ml-training-requests/{request_id}", json={"suspendRequest": True})
+    _backdate(db_session_factory, TrainingJob, uuid.UUID(request_id), 600)
+    if via == "request":
+        client.patch(f"/ml-training-requests/{request_id}", json={"suspendRequest": False})
+    else:
+        client.patch(f"/ml-training-processes/{process_id}", json={"suspendProcess": False})
+    # resumed with a fresh clock — not instantly expired by the 600 s spent suspended
+    assert client.get(f"/training-jobs/{request_id}/status").json()["status"] == "IN_PROGRESS"
+    _backdate(db_session_factory, TrainingJob, uuid.UUID(request_id), 61)
+    assert client.get(f"/ml-training-requests/{request_id}").json()["attributes"]["requestStatus"] == "FAILED"
+
+
+def test_nrm_testing_resume_restarts_the_timeout_clock(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
+    request_id = client.post("/ml-testing-requests", json={"mLModelRef": str(model_id), "timeoutSeconds": 60}).json()["id"]
+    client.patch(f"/ml-testing-requests/{request_id}", json={"suspendRequest": True})
+    _backdate(db_session_factory, ValidationJob, uuid.UUID(request_id), 600)
+    client.patch(f"/ml-testing-requests/{request_id}", json={"suspendRequest": False})
+    assert client.get(f"/validation-jobs/{request_id}/status").json()["status"] == "RUNNING"
+    _backdate(db_session_factory, ValidationJob, uuid.UUID(request_id), 61)
+    # the NRM read itself sweeps
+    assert client.get(f"/ml-testing-requests/{request_id}").json()["attributes"]["requestStatus"] == "FINISHED"
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.FAILED
+
+
+@pytest.mark.parametrize("path", ["/ml-training-requests", "/ml-training-requests/{id}", "/ml-training-processes",
+                                  "/ml-training-processes/{pid}"])
+def test_nrm_training_reads_sweep_overdue_runs(client, mlmr, db_session_factory, path):
+    model_id = mlmr.add_model()
+    request_id = client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x",
+                                                           "timeoutSeconds": 60}).json()["id"]
+    process_id = client.get("/ml-training-processes").json()["items"][0]["id"]
+    _backdate(db_session_factory, TrainingJob, uuid.UUID(request_id), 61)
+    client.get(path.format(id=request_id, pid=process_id))
+    with db_session_factory() as session:
+        assert session.get(TrainingJob, uuid.UUID(request_id)).status == "FAILED"
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.FAILED
+
+
+def test_nrm_requests_take_a_runtime_profile_and_timeout(client, mlmr, package, db_session_factory):
+    model_id = mlmr.add_model()
+    request_id = client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x",
+                                                           "packageId": str(package), "timeoutSeconds": 120}).json()["id"]
+    status = client.get(f"/training-jobs/{request_id}/status").json()
+    assert (status["runtimeProfile"], status["timeoutSeconds"]) == (PROFILES["TRAINING"], 120)
+
+    other = mlmr.add_model()
+    _set_lifecycle(db_session_factory, other, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
+    testing_id = client.post("/ml-testing-requests", json={"mLModelRef": str(other),
+                                                          "runtimeProfile": {"cpu": 2, "memory": "2Gi"}}).json()["id"]
+    status = client.get(f"/validation-jobs/{testing_id}/status").json()
+    assert (status["runtimeProfile"], status["timeoutSeconds"]) == ({"cpu": 2, "memory": "2Gi"}, 900)
+    assert _descriptor_resources(mlmr) == [PROFILES["TRAINING"], {"cpu": 2, "memory": "2Gi"}]
+    assert client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x",
+                                                      "timeoutSeconds": 0}).status_code == 422

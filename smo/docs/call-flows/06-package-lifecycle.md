@@ -36,6 +36,16 @@ Its `DEPRECATED` and `RETIRED` states are reached through the governance `advanc
 - `PRIMING` and `DEPRIMING` are never observable: `prime` and `deprime` fire both of their
   transitions inside one request.
 
+**Errors on the lifecycle routes** (`deprecate`, `prime`, `deprime`, `cancel-delete`,
+`DELETE`): an unknown package id is 404 `PACKAGE_NOT_FOUND` (also on `onboarding-status`,
+`artifacts`, `usage` and `usage/start`). An event with no edge from the package's current state
+is 409 `LIFECYCLE_ILLEGAL_TRANSITION`, whose detail names the state and the event (for example
+`DELETE` on a `PRIMED` package). 409 `SERVICE_NAME_CONFLICT` is reserved for a refusal by a
+guard: the edge exists, but `_no_active_instances` or `_no_blocking_dependents` failed.
+`usage/{registrationId}/stop` answers 404 `PACKAGE_USAGE_REGISTRATION_NOT_FOUND` for a
+registration that is unknown or belongs to another package, and is idempotent for one already
+stopped.
+
 ## Onboard: validation success and failure
 
 ```mermaid
@@ -50,7 +60,7 @@ sequenceDiagram
     Operator->>Onb: POST /packages (location=<valid .csar>)
     Onb->>Onb: insert ApplicationPackage, state=ONBOARDING, commit
     Onb->>Onb: _validate_package — location ends in .csar, fetch it,<br/>read TOSCA-Metadata/TOSCA.meta and Entry-Definitions,<br/>read ASD identity, manifest.yaml, capabilities.yaml, Files/Sme
-    Onb->>Onb: reject a byte-identical duplicate (same integrity_hash)
+    Onb->>Onb: reject a byte-identical duplicate — same integrity_hash on a package<br/>that is not DELETING or FAILED
     Onb->>Onb: register Artifacts/ entries, signature_verified=true
     Onb->>NFO: POST /nfo/descriptors (packageId, toscaEntryDefinitions)
     NFO-->>Onb: 201 nfDeploymentDescriptorId
@@ -107,7 +117,7 @@ sequenceDiagram
     Onb-->>Operator: 409 SERVICE_NAME_CONFLICT — blocked by an active usage registration
 
     Operator->>Rapp: POST /instances/{instanceId}/terminate
-    Rapp->>Rapp: state: RUNNING -> UNDEPLOYED (call flow 07)
+    Rapp->>Rapp: state: RUNNING -> UNDEPLOYED, NFO terminate (call flow 07)
     Rapp->>Onb: POST /packages/{id}/usage/{registrationId}/stop
     Onb->>Onb: stopped_at = now()
 
@@ -152,17 +162,28 @@ sequenceDiagram
     Operator->>Onb: DELETE /packages/{id}
     Onb->>Onb: guard passes — state: DEPRECATED -> DELETING (DELETE)
     Onb-->>Operator: package view, state=DELETING
-    Note over Onb: DELETING is terminal, the row stays.<br/>DELETE from AVAILABLE runs the same guard.<br/>DELETE from PRIMED has no FSM edge and is refused with 409.
+    Note over Onb: DELETING is terminal, the row stays.<br/>DELETE from AVAILABLE runs the same guard.
+    Operator->>Onb: DELETE /packages/{primedId}
+    Onb-->>Operator: 409 LIFECYCLE_ILLEGAL_TRANSITION — event DELETE is not allowed in state PRIMED
+    end
+
+    rect rgb(255, 250, 235)
+    Note over Operator,Onb: Sub-flow 5 — the same CSAR onboarded again
+    Operator->>Onb: POST /packages (location=<the deleted package's .csar>)
+    Onb->>Onb: same integrity_hash, but the earlier package is DELETING —<br/>not a duplicate
+    Onb->>Onb: state: ONBOARDING -> AVAILABLE (VALIDATE_OK), a new packageId
+    Onb-->>Operator: 202 packageId, trackingId
     end
 ```
 
 **Key decisions this flow depends on:**
 - `FAILED` is terminal within the FSM; a failed onboard is retried as a brand-new `OnboardPackage` call, never resumed.
+- The duplicate-package check (`integrity_hash`) ignores packages in `DELETING` or `FAILED` (HISTORY.md OI-2-package-redeploy): a deleted or failed package never locks its CSAR out, while an `ONBOARDING`, `AVAILABLE`, `PRIMED` or `DEPRECATED` package with the same hash still makes a re-onboard fail.
 - `DeletePackage` from `FAILED` skips the cascade-delete guard and deletes the row directly (Onboarding/rApp Mgmt LLD section 3): a package that never reached `AVAILABLE` cannot have anything depending on it.
 - Every validation error, including an unreachable location and a failed NFO `CreateDescriptor`, routes to `FAILED` (`ONBOARD_VALIDATION_FAILURES` in `onboarding/app/main.py`). `OnboardPackage` answers 202 either way, and the caller reads the outcome from `onboarding-status`.
 - The package row is committed in `ONBOARDING` before NFO `CreateDescriptor` is called, because NFO's `NFDeploymentDescriptor` holds a real foreign key to it.
 - Priming is optional and synchronous: real ACM/DME/SME pre-provisioning is out of scope, so `prime` and `deprime` each fire both of their transitions in one request. SME registration happens per instance at `bootstrap-complete`, not at priming (call flow 07).
-- rApp Management creates instances from `AVAILABLE` or `PRIMED` packages only (`DEPLOYABLE_PACKAGE_STATES`, `rapp-mgmt/app/main.py`). `ONBOARDING`, `FAILED`, `DEPRECATED` and `DELETING` are refused with 409 `MODEL_NOT_CERTIFIED`.
-- The deprime guard and the cascade-delete guard read the same signal: a `PackageUsageRegistration` with no `stopped_at`. `CreateInstance` calls `usage/start` and stores the id, and `TerminateInstance` calls `usage/stop` (HISTORY.md OI-2-usage-registration).
+- rApp Management creates instances, and upgrade replacements, from `AVAILABLE` or `PRIMED` packages only (`DEPLOYABLE_PACKAGE_STATES`, `rapp-mgmt/app/provisioning.py`). `ONBOARDING`, `FAILED`, `DEPRECATED` and `DELETING` are refused with 409 `MODEL_NOT_CERTIFIED`, an unknown package with 404 `PACKAGE_NOT_FOUND`.
+- The deprime guard and the cascade-delete guard read the same signal: a `PackageUsageRegistration` with no `stopped_at`. `CreateInstance` (and an upgrade's replacement) calls `usage/start` and stores the id. `TerminateInstance`, an upgrade commit (for the old instance) and an upgrade rollback or timeout (for the replacement) call `usage/stop` (HISTORY.md OI-2-usage-registration, call flow 07).
 - The cascade-delete guard checks two independent conditions, a blocking `AVAILABLE`/`DEPRECATED` child package or an active usage registration. Either alone blocks deletion (Onboarding/rApp Mgmt LLD section 4).
 - `GET /packages/{id}/usage` lists the registrations with an `active` flag, so an operator can see which instance blocks a deprime or a delete.

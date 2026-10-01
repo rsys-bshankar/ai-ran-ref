@@ -20,10 +20,11 @@ approvals all still apply. The one recorded deviation from the spec is
 addressing: DN-typed references are carried as this build's resource ids.
 """
 
+import datetime
 import uuid
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -33,8 +34,9 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from . import ts28105
 from .main import (
-    _activate_runtime, _cancel_training_job, _deploy_runtime, _fire_model_event, _get_model, _get_or_create_lifecycle, _nfo_terminate_execution,
-    _start_training, _start_validation, _sync_training_process, _validate_dme_data_job_ids,
+    ACTIVE_TRAINING_STATUSES, RuntimeProfile, _activate_runtime, _cancel_training_job, _deploy_runtime, _expire_overdue_jobs,
+    _fire_model_event, _get_model, _get_or_create_lifecycle, _nfo_terminate_execution, _resolve_runtime_profile,
+    _resume_training_job, _start_training, _start_validation, _sync_training_process, _validate_dme_data_job_ids,
 )
 from .models import (
     AIMLInferenceEmulationFunction, AIMLInferenceFunction, AIMLInferenceReport, InferenceJob,
@@ -42,7 +44,7 @@ from .models import (
     MLTrainingFunction, MLTrainingProcess, MLTrainingReport, MLUpdateFunction, MLUpdateProcess, MLUpdateReport,
     MLUpdateRequest, TrainingJob, ValidationJob,
 )
-from .statemachine import ModelLifecycleEvent, ModelLifecycleState, RuntimeLifecycleState
+from .statemachine import TRAINABLE_STATES, ModelLifecycleEvent, ModelLifecycleState, RuntimeLifecycleState
 
 router = APIRouter()
 
@@ -160,6 +162,13 @@ class MLTrainingRequestBody(_Body):
     # Not spec attributes — this build's own, same as on POST /training-jobs.
     dmeDataJobIds: list[uuid.UUID] = []
     notificationUri: str | None = None
+    # Wave 7 runtime sizing (W7-03/W7-04) — TS 28.105 has no attribute for
+    # either, so these are the same vendor extensions POST /training-jobs
+    # takes: an explicit profile, or the rApp package whose manifest
+    # runtimeProfiles[TRAINING] applies, and a per-run timeout override.
+    packageId: uuid.UUID | None = None
+    runtimeProfile: RuntimeProfile | None = None
+    timeoutSeconds: int | None = Field(default=None, gt=0)
 
 
 class RequestFlagsBody(_Body):
@@ -204,6 +213,8 @@ def create_ml_training_request(body: MLTrainingRequestBody, db: Session = Depend
         ml_knowledge_name=body.mLKnowledgeName, expected_inference_scope=body.expectedInferenceScope,
         clustering_info=ts28105.dump(body.clusteringInfo), dme_data_job_ids=body.dmeDataJobIds,
         notification_uri=body.notificationUri,
+        runtime_profile=_resolve_runtime_profile("TRAINING", body.packageId, body.runtimeProfile),
+        timeout_seconds=body.timeoutSeconds,
     )
     db.commit()
     return _training_request_view(job)
@@ -212,6 +223,7 @@ def create_ml_training_request(body: MLTrainingRequestBody, db: Session = Depend
 @router.get("/ml-training-requests")
 def list_ml_training_requests(ml_training_function_id: uuid.UUID | None = None, request_status: str | None = None,
                               limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     stmt = select(TrainingJob)
     if ml_training_function_id:
         stmt = stmt.where(TrainingJob.ml_training_function_id == ml_training_function_id)
@@ -222,12 +234,17 @@ def list_ml_training_requests(ml_training_function_id: uuid.UUID | None = None, 
 
 @router.get("/ml-training-requests/{request_id}")
 def get_ml_training_request(request_id: uuid.UUID, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     return _training_request_view(_get(db, TrainingJob, request_id, "MLTrainingRequest"))
 
 
 def _apply_training_flags(db: Session, job: TrainingJob, cancel: bool | None, suspend: bool | None) -> None:
+    """Cancel and resume go through main.py's one cancel/resume path, so a
+    cancel releases the model from TRAINING and a resume restarts the
+    timeout clock exactly as DELETE /training-jobs/{id} and
+    POST /training-jobs/{id}/resume do."""
     if cancel:
-        if job.status in ("FINISHED", "FAILED", "CANCELLED"):
+        if job.status not in ACTIVE_TRAINING_STATUSES:
             raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                    detail=f"cannot cancel a training request in status {job.status}")
         _cancel_training_job(db, job)
@@ -237,13 +254,14 @@ def _apply_training_flags(db: Session, job: TrainingJob, cancel: bool | None, su
             raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                    detail=f"cannot suspend a training request in status {job.status}")
         job.status, job.suspend_request = "SUSPENDED", True
+        _sync_training_process(db, job)
     elif suspend is False and job.status == "SUSPENDED":
-        job.status, job.suspend_request = "IN_PROGRESS", False
-    _sync_training_process(db, job)
+        _resume_training_job(db, job)
 
 
 @router.patch("/ml-training-requests/{request_id}")
 def modify_ml_training_request(request_id: uuid.UUID, body: RequestFlagsBody, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     job = _get(db, TrainingJob, request_id, "MLTrainingRequest")
     _apply_training_flags(db, job, body.cancelRequest, body.suspendRequest)
     db.commit()
@@ -255,7 +273,7 @@ def delete_ml_training_request(request_id: uuid.UUID, db: Session = Depends(get_
     """Deleting an in-flight request cancels it (the job row is kept as
     history, like `DELETE /training-jobs/{id}`)."""
     job = db.get(TrainingJob, request_id)
-    if job is not None and job.status not in ("FINISHED", "FAILED", "CANCELLED"):
+    if job is not None and job.status in ACTIVE_TRAINING_STATUSES:
         _cancel_training_job(db, job)
         db.commit()
 
@@ -288,11 +306,13 @@ def _training_process_view_for(db: Session):
 
 @router.get("/ml-training-processes")
 def list_ml_training_processes(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     return _page(db, select(MLTrainingProcess), limit, offset, _training_process_view_for(db))
 
 
 @router.get("/ml-training-processes/{process_id}")
 def get_ml_training_process(process_id: uuid.UUID, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     return _training_process_view_for(db)(_get(db, MLTrainingProcess, process_id, "MLTrainingProcess"))
 
 
@@ -300,6 +320,7 @@ def get_ml_training_process(process_id: uuid.UUID, db: Session = Depends(get_ses
 def modify_ml_training_process(process_id: uuid.UUID, body: ProcessFlagsBody, db: Session = Depends(get_session)):
     """priority/terminationConditions are plain writes; cancelProcess/
     suspendProcess act on the run exactly like the request's own flags."""
+    _expire_overdue_jobs(db)
     p = _get(db, MLTrainingProcess, process_id, "MLTrainingProcess")
     if body.priority is not None:
         p.priority = body.priority
@@ -355,6 +376,7 @@ def _training_report_view_for(db: Session):
 @router.get("/ml-training-reports")
 def list_ml_training_reports(model_id: uuid.UUID | None = None, limit: int = PageLimit, offset: int = PageOffset,
                              db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     stmt = select(MLTrainingReport)
     if model_id:
         stmt = stmt.where(MLTrainingReport.ml_model_generated_ref == model_id)
@@ -418,6 +440,10 @@ class MLTestingRequestBody(_Body):
     trainingJobId: uuid.UUID | None = None
     validationCriteria: dict = {}
     notificationUri: str | None = None
+    # Wave 7 runtime sizing — vendor extensions, as on MLTrainingRequest.
+    packageId: uuid.UUID | None = None
+    runtimeProfile: RuntimeProfile | None = None
+    timeoutSeconds: int | None = Field(default=None, gt=0)
 
 
 def _testing_request_view(j: ValidationJob) -> dict:
@@ -435,7 +461,9 @@ def create_ml_testing_request(body: MLTestingRequestBody, db: Session = Depends(
     job = _start_validation(db, model_id=body.mLModelRef, group_id=body.mLModelCoordinationGroupRef,
                             producer_id=body.requestSource, training_job_id=body.trainingJobId,
                             validation_criteria=body.validationCriteria, notification_uri=body.notificationUri,
-                            ml_testing_function_id=body.mLTestingFunctionRef)
+                            ml_testing_function_id=body.mLTestingFunctionRef,
+                            runtime_profile=_resolve_runtime_profile("VALIDATION", body.packageId, body.runtimeProfile),
+                            timeout_seconds=body.timeoutSeconds)
     db.commit()
     return _testing_request_view(job)
 
@@ -443,6 +471,7 @@ def create_ml_testing_request(body: MLTestingRequestBody, db: Session = Depends(
 @router.get("/ml-testing-requests")
 def list_ml_testing_requests(ml_testing_function_id: uuid.UUID | None = None, limit: int = PageLimit,
                              offset: int = PageOffset, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     stmt = select(ValidationJob)
     if ml_testing_function_id:
         stmt = stmt.where(ValidationJob.ml_testing_function_id == ml_testing_function_id)
@@ -451,6 +480,7 @@ def list_ml_testing_requests(ml_testing_function_id: uuid.UUID | None = None, li
 
 @router.get("/ml-testing-requests/{request_id}")
 def get_ml_testing_request(request_id: uuid.UUID, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     return _testing_request_view(_get(db, ValidationJob, request_id, "MLTestingRequest"))
 
 
@@ -459,7 +489,9 @@ def modify_ml_testing_request(request_id: uuid.UUID, body: RequestFlagsBody, db:
     """cancelRequest tears the run down and, for a model-targeted run,
     fails the model's VALIDATING state (VALIDATION_FAILED — FAILED is the
     lifecycle's own retry point) rather than leaving it stuck VALIDATING.
-    suspendRequest pauses/resumes a RUNNING job."""
+    suspendRequest pauses/resumes a RUNNING job; resuming restarts its
+    timeout clock, as for a training run."""
+    _expire_overdue_jobs(db)
     job = _get(db, ValidationJob, request_id, "MLTestingRequest")
     if body.cancelRequest:
         if job.status not in ("RUNNING", "SUSPENDED"):
@@ -477,6 +509,7 @@ def modify_ml_testing_request(request_id: uuid.UUID, body: RequestFlagsBody, db:
         job.status, job.suspend_request = "SUSPENDED", True
     elif body.suspendRequest is False and job.status == "SUSPENDED":
         job.status, job.suspend_request = "RUNNING", False
+        job.started_at = datetime.datetime.now(datetime.UTC)
     db.commit()
     return _testing_request_view(job)
 
@@ -493,6 +526,7 @@ def _testing_report_view(r: MLTestingReport) -> dict:
 @router.get("/ml-testing-reports")
 def list_ml_testing_reports(testing_request_id: uuid.UUID | None = None, limit: int = PageLimit,
                             offset: int = PageOffset, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     stmt = select(MLTestingReport)
     if testing_request_id:
         stmt = stmt.where(MLTestingReport.validation_job_id == testing_request_id)
@@ -951,8 +985,9 @@ def create_ml_update_request(body: MLUpdateRequestBody, db: Session = Depends(ge
     model (one MLTrainingRequest each, through the normal training start
     path and its lifecycle gate), tracked by one MLUpdateProcess; when all
     of them have finished, the MLUpdateReport is written. Every model must
-    be trainable (REGISTERED/PROMOTED/FAILED) — checked before any run
-    starts, so the update is all-or-nothing at start."""
+    be trainable and not already training (REGISTERED/CERTIFIED/PROMOTED/
+    FAILED) — checked before any run starts, so the update is
+    all-or-nothing at start."""
     if not body.mLModelRefList:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="mLModelRefList must not be empty")
     if body.mLUpdateFunctionRef is not None:
@@ -960,8 +995,8 @@ def create_ml_update_request(body: MLUpdateRequestBody, db: Session = Depends(ge
     for model_id in body.mLModelRefList:
         _get_model(model_id)
         state = _get_or_create_lifecycle(db, model_id).model_lifecycle_state
-        if state not in (ModelLifecycleState.REGISTERED, ModelLifecycleState.PROMOTED, ModelLifecycleState.FAILED):
-            raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail=f"cannot update model {model_id} in state {state}")
+        if state not in TRAINABLE_STATES or state == ModelLifecycleState.TRAINING:
+            raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION, detail=f"cannot update model {model_id} in state {state}")
     r = MLUpdateRequest(ml_update_function_id=body.mLUpdateFunctionRef,
                         performance_gain_threshold=ts28105.dump(body.performanceGainThreshold),
                         new_capability_version_ids=body.newCapabilityVersionId, update_time_deadline=body.updateTimeDeadline,
@@ -983,11 +1018,13 @@ def create_ml_update_request(body: MLUpdateRequestBody, db: Session = Depends(ge
 
 @router.get("/ml-update-requests")
 def list_ml_update_requests(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     return _page(db, select(MLUpdateRequest), limit, offset, _update_request_view_for(db))
 
 
 @router.get("/ml-update-requests/{request_id}")
 def get_ml_update_request(request_id: uuid.UUID, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     return _update_request_view_for(db)(_get(db, MLUpdateRequest, request_id, "MLUpdateRequest"))
 
 
@@ -995,6 +1032,7 @@ def get_ml_update_request(request_id: uuid.UUID, db: Session = Depends(get_sessi
 def modify_ml_update_request(request_id: uuid.UUID, body: RequestFlagsBody, db: Session = Depends(get_session)):
     """cancelRequest cancels every still-running training run of the
     update; suspendRequest suspends/resumes them together."""
+    _expire_overdue_jobs(db)
     r = _get(db, MLUpdateRequest, request_id, "MLUpdateRequest")
     if r.request_status in ("FINISHED", "CANCELLED"):
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION, detail=f"update request already {r.request_status}")
@@ -1004,8 +1042,9 @@ def modify_ml_update_request(request_id: uuid.UUID, body: RequestFlagsBody, db: 
         r.cancel_request, r.request_status = True, "CANCELLED"
         p.cancel_process, p.status = True, "CANCELLED"
         for job in jobs:
-            if job.status in ("IN_PROGRESS", "SUSPENDED"):
-                _cancel_training_job_quiet(db, job)
+            if job.status in ACTIVE_TRAINING_STATUSES:
+                # the process's own terminal state is set above — don't re-enter advance_ml_update_process
+                _cancel_training_job(db, job, advance_update=False)
     elif body.suspendRequest is not None:
         for job in jobs:
             _apply_training_flags(db, job, None, body.suspendRequest)
@@ -1014,16 +1053,6 @@ def modify_ml_update_request(request_id: uuid.UUID, body: RequestFlagsBody, db: 
         p.status = "SUSPENDED" if body.suspendRequest else "RUNNING"
     db.commit()
     return _update_request_view_for(db)(r)
-
-
-def _cancel_training_job_quiet(db: Session, job: TrainingJob) -> None:
-    """Cancel one of an update's runs without re-entering
-    advance_ml_update_process (the caller already set the process's own
-    terminal state)."""
-    job.status, job.cancel_request = "CANCELLED", True
-    _nfo_terminate_execution(job.nf_deployment_id)
-    job.nf_deployment_id = None
-    _sync_training_process(db, job)
 
 
 def advance_ml_update_process(db: Session, process_id: uuid.UUID) -> None:
@@ -1065,11 +1094,13 @@ def advance_ml_update_process(db: Session, process_id: uuid.UUID) -> None:
 
 @router.get("/ml-update-processes")
 def list_ml_update_processes(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     return _page(db, select(MLUpdateProcess), limit, offset, _update_process_view_for(db))
 
 
 @router.get("/ml-update-processes/{process_id}")
 def get_ml_update_process(process_id: uuid.UUID, db: Session = Depends(get_session)):
+    _expire_overdue_jobs(db)
     return _update_process_view_for(db)(_get(db, MLUpdateProcess, process_id, "MLUpdateProcess"))
 
 

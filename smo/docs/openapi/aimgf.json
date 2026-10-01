@@ -1178,10 +1178,44 @@
             ],
             "title": "Notificationuri"
           },
+          "packageId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packageid"
+          },
           "requestSource": {
             "default": "nrm",
             "title": "Requestsource",
             "type": "string"
+          },
+          "runtimeProfile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeoutSeconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeoutseconds"
           },
           "trainingJobId": {
             "anyOf": [
@@ -1419,6 +1453,18 @@
             ],
             "title": "Notificationuri"
           },
+          "packageId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packageid"
+          },
           "performanceRequirements": {
             "anyOf": [
               {
@@ -1442,6 +1488,28 @@
                 "type": "null"
               }
             ]
+          },
+          "runtimeProfile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeoutSeconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeoutseconds"
           },
           "trainingDataQualityScore": {
             "anyOf": [
@@ -4460,7 +4528,7 @@
         "summary": "Get Ml Testing Request"
       },
       "patch": {
-        "description": "cancelRequest tears the run down and, for a model-targeted run,\nfails the model's VALIDATING state (VALIDATION_FAILED \u2014 FAILED is the\nlifecycle's own retry point) rather than leaving it stuck VALIDATING.\nsuspendRequest pauses/resumes a RUNNING job.",
+        "description": "cancelRequest tears the run down and, for a model-targeted run,\nfails the model's VALIDATING state (VALIDATION_FAILED \u2014 FAILED is the\nlifecycle's own retry point) rather than leaving it stuck VALIDATING.\nsuspendRequest pauses/resumes a RUNNING job; resuming restarts its\ntimeout clock, as for a training run.",
         "operationId": "modify_ml_testing_request_ml_testing_requests__request_id__patch",
         "parameters": [
           {
@@ -5647,7 +5715,7 @@
         "summary": "List Ml Update Requests"
       },
       "post": {
-        "description": "An ML update is realised as FINE_TUNING training of every named\nmodel (one MLTrainingRequest each, through the normal training start\npath and its lifecycle gate), tracked by one MLUpdateProcess; when all\nof them have finished, the MLUpdateReport is written. Every model must\nbe trainable (REGISTERED/PROMOTED/FAILED) \u2014 checked before any run\nstarts, so the update is all-or-nothing at start.",
+        "description": "An ML update is realised as FINE_TUNING training of every named\nmodel (one MLTrainingRequest each, through the normal training start\npath and its lifecycle gate), tracked by one MLUpdateProcess; when all\nof them have finished, the MLUpdateReport is written. Every model must\nbe trainable and not already training (REGISTERED/CERTIFIED/PROMOTED/\nFAILED) \u2014 checked before any run starts, so the update is\nall-or-nothing at start.",
         "operationId": "create_ml_update_request_ml_update_requests_post",
         "requestBody": {
           "content": {
@@ -6183,7 +6251,7 @@
     },
     "/models/{model_id}/advance": {
       "post": {
-        "description": "Single endpoint driving every ModelLifecycle transition that isn't\nalready its own request route above \u2014 SUBMIT_FOR_APPROVAL, APPROVE,\nREJECT, CERTIFY, PROMOTE, ROLLBACK, DEPRECATE, RETIRE \u2014 each a real\nFSM transition (statemachine.py). `decidedBy` is required for the six\ngovernance decisions (`GOVERNANCE_EVENTS`) and written onto a real\nCertificationRecord; omitted for DEPRECATE/RETIRE, which aren't\ngovernance decisions in docs/ARCHITECTURE.md's AIMgF sense.",
+        "description": "Fires the ModelLifecycle events that have no job behind them\n(`ADVANCEABLE_EVENTS`): the eight governance decisions\n(`GOVERNANCE_EVENTS` \u2014 SUBMIT_FOR_APPROVAL, APPROVE, REJECT, CERTIFY,\nPROMOTE, ROLLBACK and HISTORY.md OI-6.1's APPROVE_TRAINING/\nAPPROVE_VALIDATION), which require `decidedBy` and write a\nCertificationRecord, plus DEPRECATE/RETIRE, which aren't governance\ndecisions in docs/ARCHITECTURE.md's AIMgF sense and need no decider.\n\nJob-driven events (CREATE_*/..._COMPLETE/..._FAILED) are refused with\n422 SCHEMA_VALIDATION_FAILED naming the job route that fires them, as\nis an unknown event \u2014 so the OI-6.1 approval gates can't be bypassed\nand no stage moves without its job row (OI-2-governance-bypass).\n\nRETIRE also terminates the model's serving runtime, through the same\npath as `POST /models/{id}/runtime/terminate` (NFO teardown,\nRuntimeLifecycle REQUEST_TERMINATION/TERMINATION_COMPLETE), when one\nis deployed. DEPRECATE leaves a live runtime serving (call flow 26).",
         "operationId": "advance_model_lifecycle_models__model_id__advance_post",
         "parameters": [
           {
@@ -6328,7 +6396,7 @@
     },
     "/models/{model_id}/inference-jobs": {
       "post": {
-        "description": "RequestInference \u2014 MLEF-hosted (AI/ML Workflow LLD section 3).\nGated on RuntimeLifecycleState.ACTIVE (a serving question), not\nModelLifecycleState \u2014 a PROMOTED-but-not-yet-deployed model, or one\nwhose runtime is mid-SCALING, can't serve inference either way.",
+        "description": "RequestInference \u2014 MLEF-hosted (AI/ML Workflow LLD section 3).\nGated on RuntimeLifecycleState.ACTIVE (a serving question) \u2014 a\nPROMOTED-but-not-yet-deployed model, or one whose runtime is\nmid-SCALING, can't serve inference \u2014 and on the model not being\nRETIRED (OI-2-model-eol-serving; RETIRE also terminates the runtime).\nA DEPRECATED model's already-ACTIVE runtime keeps serving: deprecation\nstops new deploys/activation/scaling, not existing consumers (call\nflow 26).",
         "operationId": "request_inference_models__model_id__inference_jobs_post",
         "parameters": [
           {
@@ -6551,7 +6619,7 @@
     },
     "/models/{model_id}/runtime/activate": {
       "post": {
-        "description": "Marks the runtime as ready to accept inference (request_inference's\nown gate). Local-only: NFO's own deployment is already RUNNING once\n`deploy` returns (Phase 1: instantiate completes synchronously, same\nelision as elsewhere in this build) \u2014 ACTIVATE is AIMgF's own\ndecision about whether traffic should be sent yet, not a further NFO\ncall.",
+        "description": "Marks the runtime as ready to accept inference (request_inference's\nown gate). Local-only: NFO's own deployment is already RUNNING once\n`deploy` returns (Phase 1: instantiate completes synchronously, same\nelision as elsewhere in this build) \u2014 ACTIVATE is AIMgF's own\ndecision about whether traffic should be sent yet, not a further NFO\ncall. Refused (409) for a DEPRECATED/RETIRED model.",
         "operationId": "activate_model_runtime_models__model_id__runtime_activate_post",
         "parameters": [
           {
@@ -6712,6 +6780,7 @@
     },
     "/models/{model_id}/runtime/scale": {
       "post": {
+        "description": "Refused (409) for a DEPRECATED/RETIRED model.",
         "operationId": "scale_model_runtime_models__model_id__runtime_scale_post",
         "parameters": [
           {
@@ -6911,6 +6980,7 @@
     },
     "/training-jobs/{training_job_id}": {
       "delete": {
+        "description": "Cancels an in-flight (IN_PROGRESS/SUSPENDED) run: its execution\nruntime is torn down and its model released from TRAINING\n(`_cancel_training_job`). Idempotent for an unknown or already\nCANCELLED job; a FINISHED/FAILED run is history and is refused (409)\nrather than rewritten to CANCELLED.",
         "operationId": "cancel_training_training_jobs__training_job_id__delete",
         "parameters": [
           {
@@ -6944,7 +7014,7 @@
     },
     "/training-jobs/{training_job_id}/complete": {
       "post": {
-        "description": "HISTORY.md OI-6.5, closed: unlike Validation/Emulation\n(which already had their own dedicated `.../complete` routes),\nTraining's own completion only ever went through the generic\n`POST /models/{id}/advance(TRAINING_COMPLETE)` route \u2014 real for the\nmodel's own lifecycle state, but with no way to record what the run\nactually produced or notify anyone. This is additive, not a\nreplacement: that generic route still fires\nTRAINING_COMPLETE/TRAINING_FAILED directly for any caller that\ndoesn't need job-level bookkeeping. This route brings Training up to\nthe same real request/tracking-aggregate parity Validation/Emulation\nalready had \u2014 job status (TrainingJob's own FINISHED/FAILED\nvocabulary, not COMPLETED), the outcome artifact, and a best-effort\ncompletion notification, plus the same model-lifecycle transition\nthe generic route fires (skipped for a coordination-group-targeted\njob, which has no single model to advance \u2014 the same asymmetry\n`request_training` itself already has).",
+        "description": "HISTORY.md OI-6.5: Training's own completion route, at parity with\nValidation/Emulation's \u2014 job status (TrainingJob's own FINISHED/FAILED\nvocabulary, not COMPLETED), the outcome artifact, a best-effort\ncompletion notification, and the model's TRAINING_COMPLETE/\nTRAINING_FAILED transition (skipped for a coordination-group-targeted\njob, which has no single model to advance \u2014 the same asymmetry\n`request_training` itself already has). This is the only way a\ntraining run completes: `POST /models/{id}/advance` refuses the\njob-driven events (OI-2-governance-bypass).",
         "operationId": "complete_training_training_jobs__training_job_id__complete_post",
         "parameters": [
           {
@@ -7156,7 +7226,7 @@
     },
     "/training-jobs/{training_job_id}/suspend": {
       "post": {
-        "description": "HISTORY.md \u00a77's AI/ML Workflow section item 6: TrainingJob had no\nsuspend concept at all, only a hard cancel. This is deliberately a\nplain status flip, not a third state machine \u2014 the two real FSMs\nWave 2 built (ModelLifecycleState/RuntimeLifecycleState) operate one\nlevel up and are untouched by a job-level suspend/resume, the same\nway job.status's other transitions (IN_PROGRESS -> FINISHED/FAILED/\nCANCELLED) already don't reach into ModelLifecycleState either \u2014\nonly an explicit `POST /models/{id}/advance` call does that. Only\nlegal from IN_PROGRESS, matching the reference's own request-flag\nsemantics (a suspend request only makes sense against an in-flight job).",
+        "description": "HISTORY.md \u00a77's AI/ML Workflow section item 6: TrainingJob had no\nsuspend concept at all, only a hard cancel. This is deliberately a\nplain status flip, not a third state machine \u2014 the two real FSMs\nWave 2 built (ModelLifecycleState/RuntimeLifecycleState) operate one\nlevel up and are untouched by a job-level suspend/resume, the same\nway job.status's other transitions (IN_PROGRESS -> FINISHED/FAILED/\nCANCELLED) reach into ModelLifecycleState only through the job's own\ncompletion/cancel/timeout paths, never on suspend/resume. Only\nlegal from IN_PROGRESS, matching the reference's own request-flag\nsemantics (a suspend request only makes sense against an in-flight job).",
         "operationId": "suspend_training_training_jobs__training_job_id__suspend_post",
         "parameters": [
           {
