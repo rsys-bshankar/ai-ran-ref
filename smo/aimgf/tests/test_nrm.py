@@ -1,0 +1,344 @@
+"""Tests for AIMgF's TS 28.105 AI/ML NRM resources (Wave 4, app/nrm.py).
+Run with: pytest smo/aimgf/tests -q
+
+Same doubles as test_main.py (MLMR model existence, NFO runtimes); the
+NRM resources ride on the real job/lifecycle rows, so most assertions
+check both the spec-shaped view and the underlying job/lifecycle state.
+"""
+
+import uuid
+
+from test_main import _set_lifecycle, client, db_session_factory, mlmr  # noqa: F401  (pytest fixtures)
+
+from app.statemachine import ModelLifecycleState, RuntimeLifecycleState
+
+
+def _attrs(resp):
+    assert resp.status_code in (200, 201), resp.text
+    return resp.json()["attributes"]
+
+
+# ---------------------------------------------------------------- MLTrainingFunction / Request / Process / Report
+
+def test_training_request_is_a_real_training_job_with_spec_attributes(client, mlmr):
+    model_id = mlmr.add_model()
+    function = client.post("/ml-training-functions", json={
+        "userLabel": "mltf-1",
+        "supportedLearningTechnology": {"learningTechnologyName": ["DL", "FL"], "supportedFLRole": ["FL_SERVER"]},
+        "fLParticipationInfo": {"fLRole": "FL_SERVER", "isAvailableForFLTraining": True},
+        "mLKnowledge": {"mLKnowledgeName": "prb-trend", "knowledgeType": "REGRESSION"},
+    }).json()
+    resp = client.post("/ml-training-requests", json={
+        "mLModelRef": str(model_id), "mLTrainingFunctionRef": function["id"], "trainingRequestSource": "es-rapp",
+        "aIMLInferenceName": "NG_RAN_NETWORK_ENERGY_SAVING", "candidateTrainingDataSource": ["PRB_UTILIZATION"],
+        "trainingDataQualityScore": 0.9,
+        "performanceRequirements": [{"performanceMetric": "MAE", "performanceScore": 2.5}],
+        "fLRequirement": {"fLClientSelectionCriteria": {"minimumAvailableDataSamples": 1000}},
+        "rLRequirement": {"rLEnvironmentType": ["SIMULATION_ENVIRONMENTS"]},
+        "clusteringInfo": [{"performanceMetric": "MAE", "taskType": "REGRESSION"}],
+    })
+    attrs = _attrs(resp)
+    assert attrs["requestStatus"] == "IN_PROGRESS"
+    assert attrs["mLTrainingType"] == "INITIAL_TRAINING"
+    assert attrs["aIMLInferenceName"] == "NG_RAN_NETWORK_ENERGY_SAVING"
+    assert attrs["fLRequirement"] == {"fLClientSelectionCriteria": {"minimumAvailableDataSamples": 1000}}
+    request_id = resp.json()["id"]
+    # the same row is the job the original route reads
+    assert client.get(f"/training-jobs/{request_id}/status").json()["status"] == "IN_PROGRESS"
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.TRAINING
+    # the function reflects the training type it ran
+    assert _attrs(client.get(f"/ml-training-functions/{function['id']}"))["mLTrainingType"] == "INITIAL_TRAINING"
+    # a process exists for it
+    processes = client.get("/ml-training-processes").json()["items"]
+    assert [p["attributes"]["trainingRequestRef"] for p in processes] == [[request_id]]
+    assert processes[0]["attributes"]["progressStatus"]["status"] == "RUNNING"
+
+
+def test_training_request_rejects_values_outside_spec_enums(client, mlmr):
+    model_id = mlmr.add_model()
+    resp = client.post("/ml-training-requests", json={
+        "mLModelRef": str(model_id), "trainingRequestSource": "x",
+        "rLRequirement": {"rLEnvironmentType": ["MADE_UP"]},
+    })
+    assert resp.status_code == 422
+    resp = client.post("/ml-training-requests", json={
+        "mLModelRef": str(model_id), "trainingRequestSource": "x", "notASpecAttribute": 1,
+    })
+    assert resp.status_code == 422
+
+
+def test_initial_training_only_for_a_never_trained_model(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
+    resp = client.post("/ml-training-requests", json={
+        "mLModelRef": str(model_id), "trainingRequestSource": "x", "mLTrainingType": "INITIAL_TRAINING"})
+    assert resp.status_code == 409
+    resp = client.post("/ml-training-requests", json={
+        "mLModelRef": str(model_id), "trainingRequestSource": "x", "mLTrainingType": "PRE_SPECIALISED_TRAINING"})
+    assert _attrs(resp)["mLTrainingType"] == "PRE_SPECIALISED_TRAINING"
+
+
+def test_suspend_resume_cancel_flags_drive_job_and_process(client, mlmr):
+    model_id = mlmr.add_model()
+    request_id = client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x"}).json()["id"]
+    process_id = client.get("/ml-training-processes").json()["items"][0]["id"]
+
+    attrs = _attrs(client.patch(f"/ml-training-requests/{request_id}", json={"suspendRequest": True}))
+    assert (attrs["requestStatus"], attrs["suspendRequest"]) == ("SUSPENDED", True)
+    assert _attrs(client.get(f"/ml-training-processes/{process_id}"))["progressStatus"]["status"] == "SUSPENDED"
+
+    attrs = _attrs(client.patch(f"/ml-training-processes/{process_id}", json={"suspendProcess": False, "priority": 5}))
+    assert attrs["priority"] == 5 and attrs["progressStatus"]["status"] == "RUNNING"
+
+    attrs = _attrs(client.patch(f"/ml-training-requests/{request_id}", json={"cancelRequest": True}))
+    assert (attrs["requestStatus"], attrs["cancelRequest"]) == ("CANCELLED", True)
+    assert _attrs(client.get(f"/ml-training-processes/{process_id}"))["cancelProcess"] is True
+    assert client.patch(f"/ml-training-requests/{request_id}", json={"cancelRequest": True}).status_code == 409
+
+
+def test_progress_then_completion_writes_a_chained_training_report(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    request_id = client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x"}).json()["id"]
+    process_id = client.get("/ml-training-processes").json()["items"][0]["id"]
+    progress = _attrs(client.post(f"/ml-training-processes/{process_id}/progress",
+                                  json={"progressPercentage": 40, "progressStateInfo": "epoch 4/10"}))["progressStatus"]
+    assert progress["progressPercentage"] == 40 and progress["progressStateInfo"] == "epoch 4/10"
+
+    resp = client.post(f"/training-jobs/{request_id}/complete", json={
+        "succeeded": True, "metrics": {"MAE": 1.9},
+        "modelPerformanceTraining": [{"performanceMetric": "MAE", "performanceScore": 1.9}],
+        "modelConfidenceIndication": 87, "areNewTrainingDataUsed": True,
+    })
+    assert resp.status_code == 200
+    process = _attrs(client.get(f"/ml-training-processes/{process_id}"))
+    assert process["progressStatus"]["status"] == "FINISHED" and process["progressStatus"]["progressPercentage"] == 100
+    report = client.get(f"/ml-training-reports/{process['trainingReportRef']}").json()["attributes"]
+    assert report["mLModelGeneratedRef"] == str(model_id)
+    assert report["modelConfidenceIndication"] == 87
+    assert report["trainingProcessRef"] == process_id
+    assert report["lastTrainingRef"] is None
+    assert client.post(f"/ml-training-processes/{process_id}/progress", json={"progressPercentage": 10}).status_code == 409
+
+    # a retrain chains to the previous report
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
+    second = client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x"}).json()["id"]
+    client.post(f"/training-jobs/{second}/complete", json={"succeeded": True})
+    reports = client.get("/ml-training-reports", params={"model_id": str(model_id)}).json()["items"]
+    assert len(reports) == 2
+    assert reports[0]["attributes"]["lastTrainingRef"] == reports[1]["id"]
+
+
+def test_legacy_training_route_also_gets_a_process(client, mlmr):
+    model_id = mlmr.add_model()
+    job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "p"}).json()["trainingJobId"]
+    processes = client.get("/ml-training-processes").json()["items"]
+    assert processes[0]["attributes"]["trainingRequestRef"] == [job_id]
+
+
+# ---------------------------------------------------------------- MLTestingFunction / Request / Report
+
+def test_testing_request_drives_validation_and_writes_testing_report(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
+    function_id = client.post("/ml-testing-functions", json={"userLabel": "mlvf"}).json()["id"]
+    resp = client.post("/ml-testing-requests", json={"mLModelRef": str(model_id), "mLTestingFunctionRef": function_id})
+    attrs = _attrs(resp)
+    assert attrs["requestStatus"] == "IN_PROGRESS"
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.VALIDATING
+    request_id = resp.json()["id"]
+
+    client.post(f"/validation-jobs/{request_id}/complete", json={
+        "succeeded": True, "modelPerformanceTesting": [{"performanceMetric": "MAE", "performanceScore": 2.0}]})
+    assert _attrs(client.get(f"/ml-testing-requests/{request_id}"))["requestStatus"] == "FINISHED"
+    reports = client.get("/ml-testing-reports", params={"testing_request_id": request_id}).json()["items"]
+    assert reports[0]["attributes"]["mLTestingResult"] == "PASSED"
+    assert reports[0]["attributes"]["modelPerformanceTesting"][0]["performanceScore"] == 2.0
+    assert _attrs(client.get(f"/ml-testing-functions/{function_id}"))["mLModelRef"] == [str(model_id)]
+
+
+def test_testing_request_still_honours_the_operator_gate(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
+    assert client.post("/ml-testing-requests", json={"mLModelRef": str(model_id)}).status_code == 409
+
+
+def test_group_targeted_testing_request(client, mlmr):
+    group_id = uuid.uuid4()
+    attrs = _attrs(client.post("/ml-testing-requests", json={"mLModelCoordinationGroupRef": str(group_id)}))
+    assert attrs["mLModelCoordinationGroupRef"] == str(group_id) and attrs["mLModelRef"] is None
+    assert client.post("/ml-testing-requests", json={}).status_code == 422
+
+
+def test_cancelled_testing_request_fails_the_model_and_suspend_resumes(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
+    request_id = client.post("/ml-testing-requests", json={"mLModelRef": str(model_id)}).json()["id"]
+    assert _attrs(client.patch(f"/ml-testing-requests/{request_id}", json={"suspendRequest": True}))["requestStatus"] == "SUSPENDED"
+    assert _attrs(client.patch(f"/ml-testing-requests/{request_id}", json={"suspendRequest": False}))["requestStatus"] == "IN_PROGRESS"
+    assert _attrs(client.patch(f"/ml-testing-requests/{request_id}", json={"cancelRequest": True}))["requestStatus"] == "CANCELLED"
+    assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.FAILED
+    # a cancelled run can no longer be completed
+    assert client.post(f"/validation-jobs/{request_id}/complete", json={"succeeded": True}).status_code == 409
+
+
+# ---------------------------------------------------------------- AIMLInferenceFunction / loading / reports
+
+def _certified_model(mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
+    return model_id
+
+
+def test_loading_request_brings_runtime_up_and_gates_inference(client, mlmr, db_session_factory):
+    model_id = _certified_model(mlmr, db_session_factory)
+    function_id = client.post("/aiml-inference-functions", json={
+        "aIMLInferenceName": "NG_RAN_NETWORK_ENERGY_SAVING", "managedActivationScope": {"dNList": ["cell-101"]}}).json()["id"]
+
+    request = client.post("/ml-model-loading-requests", json={
+        "aIMLInferenceFunctionRef": function_id, "mLModelToLoadRef": [str(model_id)]})
+    assert _attrs(request)["requestStatus"] == "FINISHED"
+    lifecycle = client.get(f"/models/{model_id}/lifecycle").json()
+    assert lifecycle["runtimeLifecycleState"] == RuntimeLifecycleState.ACTIVE
+    process = client.get("/ml-model-loading-processes").json()["items"][0]["attributes"]
+    assert process["loadedMLModelRef"] == [str(model_id)]
+    assert process["mLModelLoadingRequestRef"] == [request.json()["id"]]
+    assert _attrs(client.get(f"/aiml-inference-functions/{function_id}"))["mLModelRefList"] == [str(model_id)]
+
+    # DEACTIVATED (the default) refuses inference on the function
+    resp = client.post(f"/models/{model_id}/inference-jobs", params={"aiml_inference_function_id": function_id})
+    assert resp.status_code == 409
+    client.patch(f"/aiml-inference-functions/{function_id}", json={"activationStatus": "ACTIVATED"})
+    job_id = client.post(f"/models/{model_id}/inference-jobs",
+                         params={"aiml_inference_function_id": function_id, "consumer_ref": "es-rapp"}).json()["inferenceJobId"]
+    resolved = client.post(f"/inference-jobs/{job_id}/resolve", params={"succeeded": True}, json={
+        "inferenceOutputs": [{"aIMLInferenceName": "NG_RAN_NETWORK_ENERGY_SAVING",
+                              "outputResult": {"recommendedState": "LOCKED"}}],
+        "potentialImpactInfo": {"impactedScope": {"dNList": ["cell-101"]}, "impactedPM": [{"pMIdentifier": "PrbUtil"}]},
+    }).json()
+    report = _attrs(client.get(f"/aiml-inference-reports/{resolved['aIMLInferenceReportId']}"))
+    assert report["inferenceOutputs"][0]["outputResult"] == {"recommendedState": "LOCKED"}
+    assert report["aIMLInferenceFunctionRef"] == function_id
+    assert _attrs(client.get(f"/aiml-inference-functions/{function_id}"))["usedByFunctionRefList"] == ["es-rapp"]
+    refs = client.get(f"/ml-models/{model_id}/nrm-refs").json()
+    assert refs["usedByFunctionRefList"] == [function_id]
+    assert refs["aIMLInferenceReportRefList"] == [resolved["aIMLInferenceReportId"]]
+
+
+def test_inference_on_a_function_without_the_model_loaded(client, mlmr, db_session_factory):
+    model_id = _certified_model(mlmr, db_session_factory)
+    _set_lifecycle(db_session_factory, model_id, runtime_lifecycle_state=RuntimeLifecycleState.ACTIVE)
+    function_id = client.post("/aiml-inference-functions", json={"activationStatus": "ACTIVATED"}).json()["id"]
+    resp = client.post(f"/models/{model_id}/inference-jobs", params={"aiml_inference_function_id": function_id})
+    assert resp.status_code == 409 and resp.json()["detail"]["title"] == "MODEL_NOT_LOADED"
+
+
+def test_loading_rejects_uncertified_model_and_supports_suspend(client, mlmr, db_session_factory):
+    function_id = client.post("/aiml-inference-functions", json={}).json()["id"]
+    trained = mlmr.add_model()
+    _set_lifecycle(db_session_factory, trained, model_lifecycle_state=ModelLifecycleState.TRAINED)
+    resp = client.post("/ml-model-loading-requests", json={"aIMLInferenceFunctionRef": function_id, "mLModelToLoadRef": [str(trained)]})
+    assert resp.status_code == 409
+
+    model_id = _certified_model(mlmr, db_session_factory)
+    request = client.post("/ml-model-loading-requests", json={
+        "aIMLInferenceFunctionRef": function_id, "mLModelToLoadRef": [str(model_id)], "suspendRequest": True})
+    assert _attrs(request)["requestStatus"] == "SUSPENDED"
+    assert client.get(f"/models/{model_id}/lifecycle").json()["runtimeLifecycleState"] == RuntimeLifecycleState.NOT_DEPLOYED
+    resumed = client.patch(f"/ml-model-loading-requests/{request.json()['id']}", json={"suspendRequest": False})
+    assert _attrs(resumed)["requestStatus"] == "FINISHED"
+    assert client.get(f"/models/{model_id}/lifecycle").json()["runtimeLifecycleState"] == RuntimeLifecycleState.ACTIVE
+
+
+def test_loading_policy_trigger(client, mlmr, db_session_factory):
+    model_id = _certified_model(mlmr, db_session_factory)
+    function_id = client.post("/aiml-inference-functions", json={}).json()["id"]
+    policy = client.post("/ml-model-loading-policies", json={
+        "aIMLInferenceFunctionRef": function_id, "mLModelRef": [str(model_id)],
+        "policyForLoading": {"thresholdList": [{"monitoredMDAOutputIE": "PrbUtil", "thresholdValue": 5}]}}).json()
+    process = _attrs(client.post(f"/ml-model-loading-policies/{policy['id']}/trigger"))
+    assert process["mLModelLoadingPolicyRef"] == [policy["id"]]
+    assert process["progressStatus"]["status"] == "FINISHED"
+
+
+def test_emulation_on_emulation_function_writes_inference_report(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED, validation_approved=True)
+    emu_fn = client.post("/aiml-inference-emulation-functions", json={"userLabel": "mlef"}).json()["id"]
+    job_id = client.post("/emulation-jobs", json={"modelId": str(model_id), "producerId": "p",
+                                                   "aIMLInferenceEmulationFunctionRef": emu_fn}).json()["emulationJobId"]
+    client.post(f"/emulation-jobs/{job_id}/complete", json={
+        "succeeded": True, "inferenceOutputs": [{"outputResult": {"energySavingPct": 18}}]})
+    reports = client.get("/aiml-inference-reports", params={"aiml_inference_emulation_function_id": emu_fn}).json()["items"]
+    assert reports[0]["attributes"]["inferenceOutputs"] == [{"outputResult": {"energySavingPct": 18}}]
+    assert reports[0]["attributes"]["emulationJobRef"] == job_id
+
+
+def test_direct_inference_report_needs_exactly_one_function(client, mlmr):
+    function_id = client.post("/aiml-inference-functions", json={}).json()["id"]
+    model_id = str(uuid.uuid4())
+    assert client.post("/aiml-inference-reports", json={"mLModelRefList": [model_id]}).status_code == 422
+    resp = client.post("/aiml-inference-reports", json={"aIMLInferenceFunctionRef": function_id, "mLModelRefList": [model_id]})
+    assert resp.status_code == 201
+    assert client.get("/aiml-inference-reports", params={"model_id": model_id}).json()["total"] == 1
+
+
+# ---------------------------------------------------------------- MLUpdateFunction / Request / Process / Report
+
+def _promoted_models(mlmr, db_session_factory, n=2):
+    ids = []
+    for _ in range(n):
+        model_id = mlmr.add_model()
+        _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
+        ids.append(model_id)
+    return ids
+
+
+def test_update_request_fine_tunes_every_model_and_reports_when_all_done(client, mlmr, db_session_factory):
+    models = _promoted_models(mlmr, db_session_factory)
+    function_id = client.post("/ml-update-functions", json={"userLabel": "mluf"}).json()["id"]
+    request = client.post("/ml-update-requests", json={
+        "mLUpdateFunctionRef": function_id, "mLModelRefList": [str(m) for m in models],
+        "newCapabilityVersionId": ["v2"]}).json()
+    process_id = request["attributes"]["mLUpdateProcessRef"]
+    process = _attrs(client.get(f"/ml-update-processes/{process_id}"))
+    jobs = process["trainingRequestRefList"]
+    assert len(jobs) == 2
+    for job_id in jobs:
+        assert _attrs(client.get(f"/ml-training-requests/{job_id}"))["mLTrainingType"] == "FINE_TUNING"
+
+    client.post(f"/training-jobs/{jobs[0]}/complete", json={"succeeded": True, "metrics": {"MAE": 1.5}})
+    process = _attrs(client.get(f"/ml-update-processes/{process_id}"))
+    assert process["progressStatus"]["progressPercentage"] == 50 and process["mLUpdateReportRef"] is None
+
+    client.post(f"/training-jobs/{jobs[1]}/complete", json={"succeeded": True, "metrics": {"MAE": 1.7}})
+    process = _attrs(client.get(f"/ml-update-processes/{process_id}"))
+    assert process["progressStatus"]["status"] == "FINISHED"
+    report = _attrs(client.get(f"/ml-update-reports/{process['mLUpdateReportRef']}"))
+    assert report["updatedMLCapability"]["mLCapabilityVersionId"] == "v2"
+    assert sorted(report["mLModelRefList"]) == sorted(str(m) for m in models)
+    assert _attrs(client.get(f"/ml-update-requests/{request['id']}"))["requestStatus"] == "FINISHED"
+    assert _attrs(client.get(f"/ml-update-functions/{function_id}"))["availMLCapabilityReport"]["mLCapabilityVersionId"] == "v2"
+
+
+def test_update_request_rejects_untrainable_model_and_cancel_stops_runs(client, mlmr, db_session_factory):
+    certified = mlmr.add_model()
+    _set_lifecycle(db_session_factory, certified, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
+    assert client.post("/ml-update-requests", json={"mLModelRefList": [str(certified)]}).status_code == 409
+
+    models = _promoted_models(mlmr, db_session_factory, n=1)
+    request = client.post("/ml-update-requests", json={"mLModelRefList": [str(models[0])]}).json()
+    cancelled = _attrs(client.patch(f"/ml-update-requests/{request['id']}", json={"cancelRequest": True}))
+    assert cancelled["requestStatus"] == "CANCELLED"
+    job_id = _attrs(client.get(f"/ml-update-processes/{cancelled['mLUpdateProcessRef']}"))["trainingRequestRefList"][0]
+    assert _attrs(client.get(f"/ml-training-requests/{job_id}"))["requestStatus"] == "CANCELLED"
+
+
+def test_unknown_nrm_object_is_a_clean_404(client):
+    for path in ("ml-training-functions", "ml-training-requests", "ml-training-processes", "ml-training-reports",
+                 "ml-testing-functions", "ml-testing-requests", "ml-testing-reports", "aiml-inference-functions",
+                 "aiml-inference-emulation-functions", "aiml-inference-reports", "ml-model-loading-policies",
+                 "ml-model-loading-requests", "ml-model-loading-processes", "ml-update-functions",
+                 "ml-update-requests", "ml-update-processes", "ml-update-reports"):
+        resp = client.get(f"/{path}/{uuid.uuid4()}")
+        assert resp.status_code == 404, path
+        assert resp.json()["detail"]["title"] == "NRM_OBJECT_NOT_FOUND"

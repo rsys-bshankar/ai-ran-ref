@@ -575,6 +575,13 @@ CREATE TABLE deployment_manager (
 -- AI/ML Content: AI/ML Workflow  (AI/ML Workflow LLD sections 4, 6)
 -- ============================================================
 
+-- Wave 4 — TS 28.105 MLModelRepository IOC (WAVES_4_TO_10_WORK_ITEMS.md D-9).
+CREATE TABLE ml_model_repository (
+  ml_model_repository_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_label               TEXT,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE ml_model_coordination_group (
   group_id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   group_type                    TEXT NOT NULL DEFAULT 'SHARED_MODEL' CHECK (group_type IN ('SHARED_MODEL','JOINT_TRAINING')),
@@ -582,7 +589,8 @@ CREATE TABLE ml_model_coordination_group (
   member_use_cases                  TEXT[],
   shared_feature_pipeline_ref         TEXT,
   retrain_propagation                   TEXT NOT NULL DEFAULT 'ANY_MEMBER_TRIGGERS'
-                                           CHECK (retrain_propagation IN ('ANY_MEMBER_TRIGGERS','MAJORITY_TRIGGERS','WEIGHTED_TRIGGERS'))
+                                           CHECK (retrain_propagation IN ('ANY_MEMBER_TRIGGERS','MAJORITY_TRIGGERS','WEIGHTED_TRIGGERS')),
+  ml_model_repository_id                  UUID REFERENCES ml_model_repository(ml_model_repository_id) ON DELETE SET NULL
 );
 
 CREATE TABLE aiml_model (
@@ -608,6 +616,18 @@ CREATE TABLE aiml_model (
   domain                                                          TEXT CHECK (domain IN ('SPEECH_RECOGNITION','IMAGE_RECOGNITION','IMAGE_PROCESSING','LOCATION_PREDICTION','CUSTOM')),  -- Wave 3: TS29482_MLR_MLModelManagement.yaml
   custom_domain                                                     TEXT,
   vendors                                                             TEXT[],
+  -- Wave 4 — TS 28.105 MLModel IOC attributes (spec-shaped JSON for
+  -- complex datatypes); read-only cross-refs are AIMgF's, joined at read.
+  aiml_inference_name               TEXT,
+  expected_run_time_context          JSONB,
+  training_context                    JSONB,
+  run_time_context                     JSONB,
+  supported_performance_indicators      JSONB,
+  ml_capabilities_info_list              JSONB,
+  inference_scope                         JSONB,
+  retraining_events_monitor_ref            TEXT,
+  source_trained_ml_model_ref               UUID,
+  ml_model_repository_id                     UUID REFERENCES ml_model_repository(ml_model_repository_id) ON DELETE SET NULL,
   UNIQUE (model_type, version)                           -- NEW section 5: the reference's own (modelName, modelVersion) uniqueness
 );
 
@@ -619,6 +639,77 @@ CREATE TABLE model_artifact (
   content           BYTEA NOT NULL,
   uploaded_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   size_bytes        INTEGER NOT NULL  -- Wave 3: TS29482_MLR_MLModelManagement.yaml's MLModel.mlModelSize
+);
+
+-- Wave 4 — TS 28.105 AI/ML NRM function/request containers that the job
+-- tables below reference (aimgf/app/models.py).
+CREATE TABLE ml_training_function (
+  ml_training_function_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_label                      TEXT,
+  supported_learning_technology    JSONB,
+  fl_participation_info             JSONB,
+  ml_knowledge                       JSONB,
+  ml_training_type                    TEXT CHECK (ml_training_type IN
+    ('INITIAL_TRAINING','PRE_SPECIALISED_TRAINING','RE_TRAINING','FINE_TUNING')),
+  ml_model_repository_ref              UUID REFERENCES ml_model_repository(ml_model_repository_id) ON DELETE SET NULL,
+  created_at                            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE ml_testing_function (
+  ml_testing_function_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_label               TEXT,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE aiml_inference_function (
+  aiml_inference_function_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_label                   TEXT,
+  aiml_inference_name            TEXT,
+  activation_status                TEXT NOT NULL DEFAULT 'DEACTIVATED' CHECK (activation_status IN ('ACTIVATED','DEACTIVATED')),
+  managed_activation_scope           JSONB,
+  ml_model_refs                        JSONB NOT NULL DEFAULT '[]',
+  created_at                             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE aiml_inference_emulation_function (
+  aiml_inference_emulation_function_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_label                             TEXT,
+  created_at                              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE ml_update_function (
+  ml_update_function_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_label                     TEXT,
+  avail_ml_capability_report      JSONB,
+  ml_model_refs                     JSONB NOT NULL DEFAULT '[]',
+  created_at                          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE ml_update_request (
+  ml_update_request_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ml_update_function_id          UUID REFERENCES ml_update_function(ml_update_function_id) ON DELETE SET NULL,
+  performance_gain_threshold      JSONB,
+  new_capability_version_ids        JSONB,
+  update_time_deadline                JSONB,
+  request_status                        TEXT NOT NULL DEFAULT 'NOT_STARTED'
+    CHECK (request_status IN ('NOT_STARTED','IN_PROGRESS','SUSPENDED','FINISHED','CANCELLED','CANCELLING')),
+  ml_update_reporting_period              JSONB,
+  cancel_request                            BOOLEAN NOT NULL DEFAULT false,
+  suspend_request                             BOOLEAN NOT NULL DEFAULT false,
+  ml_model_refs                                 JSONB NOT NULL,
+  created_at                                      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE ml_update_process (
+  ml_update_process_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ml_update_request_id      UUID NOT NULL REFERENCES ml_update_request(ml_update_request_id) ON DELETE CASCADE,
+  status                      TEXT NOT NULL DEFAULT 'RUNNING',
+  progress_percentage          INTEGER NOT NULL DEFAULT 0 CHECK (progress_percentage BETWEEN 0 AND 100),
+  progress_state_info            TEXT,
+  result_state_info                TEXT,
+  cancel_process                     BOOLEAN NOT NULL DEFAULT false,
+  suspend_process                      BOOLEAN NOT NULL DEFAULT false,
+  ml_model_refs                          JSONB NOT NULL
 );
 
 CREATE TABLE training_job (
@@ -652,6 +743,24 @@ CREATE TABLE training_job (
   -- model_lifecycle's own pair. Set on request, cleared on completion.
   nf_deployment_descriptor_id                                         UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
   nf_deployment_id                                                       UUID,
+  -- Wave 4 — TS 28.105 MLTrainingRequest: a training_job row IS the
+  -- spec's MLTrainingRequest; its remaining attributes live here.
+  ml_training_function_id               UUID REFERENCES ml_training_function(ml_training_function_id) ON DELETE SET NULL,
+  aiml_inference_name                    TEXT,
+  fl_requirement                          JSONB,
+  candidate_training_data_source           JSONB,
+  training_data_quality_score               DOUBLE PRECISION,
+  training_request_source                    TEXT,
+  performance_requirements                    JSONB,
+  rl_requirement                               JSONB,
+  cancel_request                                BOOLEAN NOT NULL DEFAULT false,
+  suspend_request                                 BOOLEAN NOT NULL DEFAULT false,
+  training_data_statistical_properties             JSONB,
+  distributed_training_expectation                  JSONB,
+  ml_knowledge_name                                  TEXT,
+  expected_inference_scope                            JSONB,
+  clustering_info                                      JSONB,
+  ml_update_process_id                                  UUID REFERENCES ml_update_process(ml_update_process_id) ON DELETE SET NULL,
   CONSTRAINT exactly_one_target CHECK (
     (model_id IS NOT NULL AND model_coordination_group_id IS NULL)
     OR (model_id IS NULL AND model_coordination_group_id IS NOT NULL)
@@ -691,7 +800,10 @@ CREATE TABLE inference_job (
   -- already-live serving deployment (model_lifecycle.nf_deployment_id,
   -- real since Wave 2) — not a new NFO deployment of this job's own; see
   -- app/models.py's InferenceJob docstring for why.
-  nf_deployment_id UUID
+  nf_deployment_id UUID,
+  -- Wave 4 — the TS 28.105 AIMLInferenceFunction it ran on, and its consumer.
+  aiml_inference_function_id UUID REFERENCES aiml_inference_function(aiml_inference_function_id) ON DELETE SET NULL,
+  consumer_ref               TEXT
 );
 
 -- Wave 2 (AI Platform Service Decomposition): the full eight-aggregate
@@ -720,18 +832,28 @@ CREATE TABLE model_lifecycle (
 
 CREATE TABLE validation_job (
   validation_job_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  model_id            UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
+  -- Wave 4 — TS 28.105 MLTestingRequest: model- or coordination-group-
+  -- targeted, exactly one (same shape as training_job's own).
+  model_id            UUID REFERENCES aiml_model(model_id) ON DELETE CASCADE,
+  model_coordination_group_id UUID REFERENCES ml_model_coordination_group(group_id),
   training_job_id       UUID REFERENCES training_job(training_job_id),
   producer_id             TEXT NOT NULL,
   validation_criteria       JSONB,
-  status                      TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','COMPLETED','FAILED','CANCELLED')),
+  status                      TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','SUSPENDED','COMPLETED','FAILED','CANCELLED')),
   metrics                       JSONB,
   -- OPEN_ITEMS.md section 6.5: same additive pair training_job gained.
   notification_uri                TEXT,
   outcome_artifact_dme_type_id       UUID,
   -- OPEN_ITEMS.md section 6.2: same pair as training_job's own.
   nf_deployment_descriptor_id          UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
-  nf_deployment_id                        UUID
+  nf_deployment_id                        UUID,
+  ml_testing_function_id                     UUID REFERENCES ml_testing_function(ml_testing_function_id) ON DELETE SET NULL,
+  cancel_request                                BOOLEAN NOT NULL DEFAULT false,
+  suspend_request                                 BOOLEAN NOT NULL DEFAULT false,
+  CONSTRAINT validation_exactly_one_target CHECK (
+    (model_id IS NOT NULL AND model_coordination_group_id IS NULL)
+    OR (model_id IS NULL AND model_coordination_group_id IS NOT NULL)
+  )
 );
 
 CREATE TABLE emulation_job (
@@ -746,7 +868,102 @@ CREATE TABLE emulation_job (
   outcome_artifact_dme_type_id    UUID,
   -- OPEN_ITEMS.md section 6.2: same pair as training_job's own.
   nf_deployment_descriptor_id        UUID REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
-  nf_deployment_id                      UUID
+  nf_deployment_id                      UUID,
+  aiml_inference_emulation_function_id     UUID REFERENCES aiml_inference_emulation_function(aiml_inference_emulation_function_id) ON DELETE SET NULL
+);
+
+-- Wave 4 — TS 28.105 process/report IOCs (aimgf/app/models.py).
+CREATE TABLE ml_training_process (
+  ml_training_process_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  training_job_id           UUID NOT NULL UNIQUE REFERENCES training_job(training_job_id) ON DELETE CASCADE,
+  priority                    INTEGER NOT NULL DEFAULT 0,
+  termination_conditions        TEXT,
+  status                          TEXT NOT NULL DEFAULT 'RUNNING',
+  progress_percentage               INTEGER NOT NULL DEFAULT 0 CHECK (progress_percentage BETWEEN 0 AND 100),
+  progress_state_info                 TEXT,
+  result_state_info                     TEXT,
+  cancel_process                          BOOLEAN NOT NULL DEFAULT false,
+  suspend_process                           BOOLEAN NOT NULL DEFAULT false,
+  participating_fl_client_refs                JSONB
+);
+
+CREATE TABLE ml_training_report (
+  ml_training_report_id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  training_job_id                       UUID NOT NULL REFERENCES training_job(training_job_id) ON DELETE CASCADE,
+  ml_training_function_id                UUID REFERENCES ml_training_function(ml_training_function_id) ON DELETE SET NULL,
+  used_consumer_training_data             JSONB,
+  model_confidence_indication              INTEGER,
+  model_performance_training                JSONB,
+  model_performance_validation               JSONB,
+  data_ratio_training_and_validation          INTEGER,
+  are_new_training_data_used                   BOOLEAN,
+  fl_report_per_client                          JSONB,
+  last_training_report_id                        UUID,
+  ml_model_generated_ref                          UUID,
+  ml_model_coordination_group_generated_ref        UUID,
+  created_at                                        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE ml_testing_report (
+  ml_testing_report_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  validation_job_id          UUID NOT NULL REFERENCES validation_job(validation_job_id) ON DELETE CASCADE,
+  ml_testing_function_id      UUID REFERENCES ml_testing_function(ml_testing_function_id) ON DELETE SET NULL,
+  model_performance_testing     JSONB,
+  ml_testing_result               TEXT NOT NULL CHECK (ml_testing_result IN ('PASSED','FAILED')),
+  created_at                        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE aiml_inference_report (
+  aiml_inference_report_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  aiml_inference_function_id             UUID REFERENCES aiml_inference_function(aiml_inference_function_id) ON DELETE CASCADE,
+  aiml_inference_emulation_function_id    UUID REFERENCES aiml_inference_emulation_function(aiml_inference_emulation_function_id) ON DELETE CASCADE,
+  inference_job_id                         UUID REFERENCES inference_job(inference_job_id) ON DELETE SET NULL,
+  emulation_job_id                          UUID REFERENCES emulation_job(emulation_job_id) ON DELETE SET NULL,
+  inference_outputs                          JSONB NOT NULL DEFAULT '[]',
+  potential_impact_info                       JSONB,
+  ml_model_refs                                JSONB NOT NULL DEFAULT '[]',
+  created_at                                     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE ml_model_loading_policy (
+  ml_model_loading_policy_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  aiml_inference_function_id    UUID NOT NULL REFERENCES aiml_inference_function(aiml_inference_function_id) ON DELETE CASCADE,
+  aiml_inference_name             TEXT,
+  policy_for_loading                JSONB,
+  ml_model_refs                       JSONB NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE ml_model_loading_request (
+  ml_model_loading_request_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  aiml_inference_function_id    UUID NOT NULL REFERENCES aiml_inference_function(aiml_inference_function_id) ON DELETE CASCADE,
+  request_status                  TEXT NOT NULL DEFAULT 'NOT_STARTED'
+    CHECK (request_status IN ('NOT_STARTED','IN_PROGRESS','SUSPENDED','FINISHED','CANCELLED','CANCELLING')),
+  cancel_request                    BOOLEAN NOT NULL DEFAULT false,
+  suspend_request                     BOOLEAN NOT NULL DEFAULT false,
+  ml_model_to_load_refs                 JSONB NOT NULL,
+  created_at                              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE ml_model_loading_process (
+  ml_model_loading_process_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  aiml_inference_function_id    UUID NOT NULL REFERENCES aiml_inference_function(aiml_inference_function_id) ON DELETE CASCADE,
+  status                          TEXT NOT NULL DEFAULT 'RUNNING',
+  progress_percentage               INTEGER NOT NULL DEFAULT 0 CHECK (progress_percentage BETWEEN 0 AND 100),
+  progress_state_info                 TEXT,
+  result_state_info                     TEXT,
+  cancel_process                          BOOLEAN NOT NULL DEFAULT false,
+  suspend_process                           BOOLEAN NOT NULL DEFAULT false,
+  loading_request_refs                        JSONB NOT NULL DEFAULT '[]',
+  loading_policy_refs                           JSONB NOT NULL DEFAULT '[]',
+  loaded_ml_model_refs                            JSONB NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE ml_update_report (
+  ml_update_report_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ml_update_process_id      UUID NOT NULL REFERENCES ml_update_process(ml_update_process_id) ON DELETE CASCADE,
+  updated_ml_capability       JSONB,
+  ml_model_refs                 JSONB NOT NULL,
+  created_at                      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE certification_record (

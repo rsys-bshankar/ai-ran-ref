@@ -14,7 +14,7 @@ is the real thing now.
 import uuid
 
 from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -24,8 +24,11 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
+from smo_shared.r1_client import R1Client
 
-from .models import MODEL_DOMAINS, MLModel, MLModelCoordinationGroup, ModelArtifact
+from .models import MODEL_DOMAINS, MLModel, MLModelCoordinationGroup, MLModelRepository, ModelArtifact
+
+_r1 = R1Client()
 
 app = FastAPI(title="MLMR")
 apply_r1_gateway_security(app)
@@ -40,7 +43,69 @@ def health_check():
     return {"status": "healthy"}
 
 
-class RegisterModelRequest(BaseModel):
+class _Spec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class MLContext(_Spec):
+    """TS 28.105 MLContext."""
+    inferenceEntityRef: list[str] | None = None
+    dataProviderRef: list[str] | None = None
+
+
+class SupportedPerfIndicator(_Spec):
+    performanceIndicatorName: str
+    isSupportedForTraining: bool = False
+    isSupportedForTesting: bool = False
+
+
+class MLCapabilityInfo(_Spec):
+    aIMLInferenceName: str | None = None
+    capabilityName: str | None = None
+    mLCapabilityParameters: dict | None = None
+
+
+class TS28105ModelAttributes(BaseModel):
+    """Wave 4 — the writable TS 28.105 MLModel attributes, accepted on
+    register and update alongside this build's own fields."""
+    aIMLInferenceName: str | None = None
+    expectedRunTimeContext: MLContext | None = None
+    trainingContext: MLContext | None = None
+    runTimeContext: MLContext | None = None
+    supportedPerformanceIndicators: list[SupportedPerfIndicator] | None = Field(default=None, min_length=1)
+    mLCapabilitiesInfoList: list[MLCapabilityInfo] | None = Field(default=None, min_length=1)
+    inferenceScope: list[str] | None = None
+    retrainingEventsMonitorRef: str | None = None
+    sourceTrainedMLModelRef: uuid.UUID | None = None
+    mLModelRepositoryRef: uuid.UUID | None = None
+
+
+def _dump(value):
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [v.model_dump(exclude_none=True) for v in value]
+    return value.model_dump(exclude_none=True)
+
+
+def _apply_ts28105(db: Session, model: MLModel, body: TS28105ModelAttributes) -> None:
+    if body.mLModelRepositoryRef is not None and db.get(MLModelRepository, body.mLModelRepositoryRef) is None:
+        raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such MLModelRepository {body.mLModelRepositoryRef}")
+    if body.sourceTrainedMLModelRef is not None and db.get(MLModel, body.sourceTrainedMLModelRef) is None:
+        raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail=f"no such sourceTrainedMLModelRef {body.sourceTrainedMLModelRef}")
+    model.aiml_inference_name = body.aIMLInferenceName
+    model.expected_run_time_context = _dump(body.expectedRunTimeContext)
+    model.training_context = _dump(body.trainingContext)
+    model.run_time_context = _dump(body.runTimeContext)
+    model.supported_performance_indicators = _dump(body.supportedPerformanceIndicators)
+    model.ml_capabilities_info_list = _dump(body.mLCapabilitiesInfoList)
+    model.inference_scope = body.inferenceScope
+    model.retraining_events_monitor_ref = body.retrainingEventsMonitorRef
+    model.source_trained_ml_model_ref = body.sourceTrainedMLModelRef
+    model.ml_model_repository_id = body.mLModelRepositoryRef
+
+
+class RegisterModelRequest(TS28105ModelAttributes):
     modelType: str
     version: str
     requiredResourceTypeId: str | None = None
@@ -60,9 +125,10 @@ class CreateCoordinationGroupRequest(BaseModel):
     memberUseCases: list[str] = []
     sharedFeaturePipelineRef: str | None = None
     retrainPropagation: str = "ANY_MEMBER_TRIGGERS"
+    mLModelRepositoryRef: uuid.UUID | None = None
 
 
-class UpdateModelRequest(BaseModel):
+class UpdateModelRequest(TS28105ModelAttributes):
     modelType: str
     version: str
     requiredResourceTypeId: str | None = None
@@ -108,6 +174,7 @@ def register_model(body: RegisterModelRequest, db: Session = Depends(get_session
                      input_data_type=body.inputDataType, output_data_type=body.outputDataType,
                      target_environments=body.targetEnvironments,
                      domain=body.domain, custom_domain=body.customDomain, vendors=body.vendors)
+    _apply_ts28105(db, model, body)
     db.add(model)
     try:
         db.commit()
@@ -172,6 +239,7 @@ def update_model(model_id: uuid.UUID, body: UpdateModelRequest, db: Session = De
     model.input_data_type, model.output_data_type = body.inputDataType, body.outputDataType
     model.target_environments = body.targetEnvironments
     model.domain, model.custom_domain, model.vendors = body.domain, body.customDomain, body.vendors
+    _apply_ts28105(db, model, body)
     db.commit()
     return _model_view(model)
 
@@ -267,9 +335,12 @@ def create_coordination_group(body: CreateCoordinationGroupRequest, db: Session 
     if len(body.memberModelIds) < 2:
         raise framework_error(FrameworkError.COORDINATION_GROUP_TOO_SMALL, detail="a coordination group needs at least 2 memberModelIds")
 
+    if body.mLModelRepositoryRef is not None and db.get(MLModelRepository, body.mLModelRepositoryRef) is None:
+        raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such MLModelRepository {body.mLModelRepositoryRef}")
     group = MLModelCoordinationGroup(member_model_ids=body.memberModelIds, member_use_cases=body.memberUseCases,
                                       shared_feature_pipeline_ref=body.sharedFeaturePipelineRef,
-                                      retrain_propagation=body.retrainPropagation)
+                                      retrain_propagation=body.retrainPropagation,
+                                      ml_model_repository_id=body.mLModelRepositoryRef)
     db.add(group)
     db.commit()
     return {"groupId": str(group.group_id)}
@@ -296,4 +367,110 @@ def _model_view(m: MLModel) -> dict:
             "description": m.description, "author": m.author, "owner": m.owner,
             "inputDataType": m.input_data_type, "outputDataType": m.output_data_type,
             "targetEnvironments": m.target_environments or [],
-            "domain": m.domain, "customDomain": m.custom_domain, "vendors": m.vendors or []}
+            "domain": m.domain, "customDomain": m.custom_domain, "vendors": m.vendors or [],
+            **_ts28105_writable_view(m)}
+
+
+def _ts28105_writable_view(m: MLModel) -> dict:
+    return {"aIMLInferenceName": m.aiml_inference_name, "expectedRunTimeContext": m.expected_run_time_context,
+            "trainingContext": m.training_context, "runTimeContext": m.run_time_context,
+            "supportedPerformanceIndicators": m.supported_performance_indicators or [],
+            "mLCapabilitiesInfoList": m.ml_capabilities_info_list or [], "inferenceScope": m.inference_scope or [],
+            "retrainingEventsMonitorRef": m.retraining_events_monitor_ref,
+            "sourceTrainedMLModelRef": str(m.source_trained_ml_model_ref) if m.source_trained_ml_model_ref else None,
+            "mLModelRepositoryRef": str(m.ml_model_repository_id) if m.ml_model_repository_id else None}
+
+
+# ---------------------------------------------------------------- Wave 4: TS 28.105 NRM views
+
+def _aimgf_refs(model_id: uuid.UUID) -> dict:
+    """The read-only MLModel attributes whose truth is AIMgF's. Best-effort:
+    an unreachable AIMgF yields empty values rather than failing the read
+    of MLMR's own model truth."""
+    try:
+        resp = _r1.get(f"/aimgf/ml-models/{model_id}/nrm-refs")
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:  # noqa: BLE001 — any transport failure degrades to "unknown"
+        pass
+    return {"mLTrainingType": None, "aIMLInferenceReportRefList": [], "usedByFunctionRefList": []}
+
+
+@app.get("/ml-models/{model_id}")
+def get_ml_model_nrm(model_id: uuid.UUID, db: Session = Depends(get_session)):
+    """TS 28.105 MLModel IOC view: the spec's own attribute names over
+    MLMR's model row, plus AIMgF's read-only cross-references."""
+    m = db.get(MLModel, model_id)
+    if m is None:
+        raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
+    refs = _aimgf_refs(model_id)
+    attrs = {"mLModelId": str(m.model_id), "mLModelVersion": m.version, **_ts28105_writable_view(m),
+             "mLTrainingType": refs.get("mLTrainingType"),
+             "aIMLInferenceReportRefList": refs.get("aIMLInferenceReportRefList", []),
+             "usedByFunctionRefList": refs.get("usedByFunctionRefList", [])}
+    return {"id": str(m.model_id), "attributes": attrs}
+
+
+def _group_nrm_view(g: MLModelCoordinationGroup) -> dict:
+    return {"id": str(g.group_id), "attributes": {
+        "memberMLModelRefList": [str(x) for x in g.member_model_ids],
+        "mLModelRepositoryRef": str(g.ml_model_repository_id) if g.ml_model_repository_id else None}}
+
+
+@app.get("/ml-model-coordination-groups/{group_id}")
+def get_ml_model_coordination_group_nrm(group_id: uuid.UUID, db: Session = Depends(get_session)):
+    """TS 28.105 MLModelCoordinationGroup IOC view (memberMLModelRefList,
+    minItems 2 — enforced at creation)."""
+    g = db.get(MLModelCoordinationGroup, group_id)
+    if g is None:
+        raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such MLModelCoordinationGroup {group_id}")
+    return _group_nrm_view(g)
+
+
+class MLModelRepositoryBody(_Spec):
+    userLabel: str | None = None
+
+
+def _repository_view(db: Session, r: MLModelRepository) -> dict:
+    model_ids = db.scalars(select(MLModel.model_id).where(MLModel.ml_model_repository_id == r.ml_model_repository_id)).all()
+    group_ids = db.scalars(select(MLModelCoordinationGroup.group_id).where(
+        MLModelCoordinationGroup.ml_model_repository_id == r.ml_model_repository_id)).all()
+    return {"id": str(r.ml_model_repository_id), "attributes": {"userLabel": r.user_label},
+            "MLModel": [str(m) for m in model_ids], "MLModelCoordinationGroup": [str(g) for g in group_ids]}
+
+
+@app.post("/ml-model-repositories", status_code=201)
+def create_ml_model_repository(body: MLModelRepositoryBody, db: Session = Depends(get_session)):
+    r = MLModelRepository(user_label=body.userLabel)
+    db.add(r)
+    db.commit()
+    return _repository_view(db, r)
+
+
+@app.get("/ml-model-repositories")
+def list_ml_model_repositories(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    page = paginate(db, select(MLModelRepository), limit, offset)
+    return {**page, "items": [_repository_view(db, r) for r in page["items"]]}
+
+
+@app.get("/ml-model-repositories/{repository_id}")
+def get_ml_model_repository(repository_id: uuid.UUID, db: Session = Depends(get_session)):
+    r = db.get(MLModelRepository, repository_id)
+    if r is None:
+        raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such MLModelRepository {repository_id}")
+    return _repository_view(db, r)
+
+
+@app.delete("/ml-model-repositories/{repository_id}", status_code=204)
+def delete_ml_model_repository(repository_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Contained models/groups are not deleted — they become uncontained
+    (ON DELETE SET NULL), since MLMR's model truth outlives a container."""
+    r = db.get(MLModelRepository, repository_id)
+    if r is None:
+        return
+    for m in db.scalars(select(MLModel).where(MLModel.ml_model_repository_id == repository_id)).all():
+        m.ml_model_repository_id = None
+    for g in db.scalars(select(MLModelCoordinationGroup).where(MLModelCoordinationGroup.ml_model_repository_id == repository_id)).all():
+        g.ml_model_repository_id = None
+    db.delete(r)
+    db.commit()

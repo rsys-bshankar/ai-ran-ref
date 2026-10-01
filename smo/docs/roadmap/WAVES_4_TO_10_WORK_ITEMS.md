@@ -79,16 +79,16 @@ All mandatory artifacts **exist**. The column on the right is what the review fo
 
 ---
 
-## 3. Wave-4 — TS 28.105 alignment (AIMgF / MLMR)
-Depends on: M1, M2, M5.
+## 3. Wave-4 — TS 28.105 alignment (AIMgF / MLMR) — ✅ DONE (PR-W4)
+Depends on: M1, M2, M5. Result: `docs/roadmap/TS28105_COMPLIANCE_MATRIX.md`. 20/20 IOCs and 125/126 attributes are compliant. The one deviation is `MLTrainingFunction.ThresholdMonitors`, a TS 28.623 containment.
 
 | ID | Work item | Done when |
 |----|-----------|-----------|
-| W4-01 | **TS 28.105 compliance matrix**: each IOC/datatype/operation (MLModel, MLTrainingRequest/Report, MLTesting, MLEmulation, AIMLInferenceFunction, MLModelCoordinationGroup, notifications) mapped to entity/field/route, with status Compliant / Partial / Gap / Out-of-scope | `docs/roadmap/TS28105_COMPLIANCE_MATRIX.md` covers every TS 28.105 IOC in the corpus |
-| W4-02 | MLMR repository-ownership review (`[W49]` M2 output): confirm MLMR owns identity/artifact/version and AIMgF owns lifecycle; no duplicated fields | Findings in the matrix; any duplicate closed or logged in SPEC_AUDIT.md |
-| W4-03 | Decide and document how `InferenceRuntime` maps (`[W49]` M1 names it; code uses RuntimeLifecycle + NFO deployment) | Mapping row in the matrix; if an entity is added, it is in the OpenAPI |
-| W4-04 | Implement **every** TS 28.105 IOC at REST level (D-9): MLTrainingFunction/Request/Process/Report, MLTestingFunction/Request/Report, MLModelLoadingRequest/Policy/Process, MLModel, MLModelRepository, MLModelCoordinationGroup, MLUpdateFunction/Request/Process/Report, AIMLInferenceFunction/Report, AIMLInferenceEmulationFunction, with spec attribute names/enums + notifications | Every matrix row is Compliant or 'Deviation: addressing only' |
-| W4-05 | Exit criteria for Wave-4 | Matrix reviewed; remaining gaps in SPEC_AUDIT.md; tests green |
+| W4-01 | ✅ **TS 28.105 compliance matrix**: each IOC/datatype/operation (MLModel, MLTrainingRequest/Report, MLTesting, MLEmulation, AIMLInferenceFunction, MLModelCoordinationGroup, notifications) mapped to entity/field/route, with status Compliant / Partial / Gap / Out-of-scope | `docs/roadmap/TS28105_COMPLIANCE_MATRIX.md` covers every TS 28.105 IOC in the corpus |
+| W4-02 | ✅ MLMR repository-ownership review (`[W49]` M2 output): confirm MLMR owns identity/artifact/version and AIMgF owns lifecycle; no duplicated fields | Findings in the matrix; any duplicate closed or logged in SPEC_AUDIT.md |
+| W4-03 | ✅ Decide and document how `InferenceRuntime` maps (`[W49]` M1 names it; code uses RuntimeLifecycle + NFO deployment) | Mapping row in the matrix; if an entity is added, it is in the OpenAPI |
+| W4-04 | ✅ Implement **every** TS 28.105 IOC at REST level (D-9): MLTrainingFunction/Request/Process/Report, MLTestingFunction/Request/Report, MLModelLoadingRequest/Policy/Process, MLModel, MLModelRepository, MLModelCoordinationGroup, MLUpdateFunction/Request/Process/Report, AIMLInferenceFunction/Report, AIMLInferenceEmulationFunction, with spec attribute names/enums + notifications | Every matrix row is Compliant or 'Deviation: addressing only' |
+| W4-05 | ✅ Exit criteria for Wave-4 | Matrix reviewed; remaining gaps in SPEC_AUDIT.md; tests green |
 
 ## 4. Wave-5 — TS 28.104 alignment (MDAF)
 Depends on: M3.
