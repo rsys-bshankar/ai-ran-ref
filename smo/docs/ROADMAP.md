@@ -139,7 +139,7 @@ Multi-vendor O1 framework; see
 | ID | Work item | Done when / evidence |
 |---|---|---|
 | W9-01 | Capability Registry: per-vendor services, conformance mode, schema ref | ✅ `ran-nf-oam/app/vendors.py` `PUT/GET/DELETE /vendor-capabilities/{vendor}`; FM/PM/SWM/PROV gate (409 `O1_SERVICE_NOT_SUPPORTED`) |
-| W9-02 | `CMSchemaCache` bound to the registry; CM writes validated against the vendor schema | ✅ `POST/GET /cm-schemas`, bundled TS 28.541 descriptor (`scripts/ingest_cm_schema.py`); 422 `SCHEMA_VALIDATION_FAILED` surfaced through DME |
+| W9-02 | `CMSchemaCache` bound to the registry; CM writes validated against the vendor schema | ✅ `POST/GET /cm-schemas`, bundled TS 28.541 descriptor (`scripts/ingest_cm_schema.py`) and, since SA-O1-4, the WG10 / WG5 YANG descriptors (`scripts/ingest_yang_schema.py`); 422 `SCHEMA_VALIDATION_FAILED` surfaced through DME |
 | W9-03 | Vendor onboarding flow (discover → load → declare) | ✅ `POST /vendor-onboarding`; call flow 21; `test_cross_service.py::test_vendor_onboarding_gates_o1_writes_by_capability_and_schema` |
 | W9-04 | `O1_NETCONF` / `O1_RESTCONF` vendor modes | ✅ `supportedVendorModes` gates endpoint registration; `GET /ran-nf-oam/capabilities` |
 | W9-06 | Cell guard attributes (D-5) | ✅ `ManagedEntity.cell_guards`; `PUT/DELETE /managed-entities/{me}/cells/{cell}/guards`, `GET /cell-guards`; SDK `query_cell_guards` |
@@ -317,14 +317,15 @@ limit below is tracked in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) §3.
 | TS 29.482 | MLMR | `MLModel`, storages / profiles, `storeDiscReqs`, discovery at REST level | `accessReqs.location` not enforced; phase written at training start / success only; the `MLModel` `anyOf` and forward-compatible enums not honoured |
 | TS 28.532 / 28.111 / 28.319 | RAN NF OAM | MSAC, `accessScope`, `PerceivedSeverity`, DN refs and file reporting closed | Streaming reporting (SA-RANOAM-8); DN containment tree (SA-RANOAM-4); MSAC guards CM writes only; Jex subset for `dataNodeSelector` |
 | O2IMS | FOCOM | Inventory sites, fault, performance, artifacts / cluster / infrastructure / provisioning at REST level | `FILE` / `STREAM` performance reporting; no real cluster behind a ProvisioningRequest; flat addressing |
-| TS 28.541 + WG10/WG5 | RAN NF OAM | Partial | SA-O1-4: WG10 O1NRM and WG5 classes not modelled |
+| TS 28.541 + WG10/WG5 | RAN NF OAM | 3GPP descriptor plus WG10 O1 NRM and WG5 O-DU / O-CU descriptors bundled | The 3GPP common YANG modules are not in `specs/`, so the attributes they contribute are missing from the YANG descriptors; WG4 M-plane not ingested |
 
 RAN Analytics is not in this table: it realises no standard (it is a producer
 registry, separate from MDAF).
 
-Spec conformance is closed module by module (16 items): RAN NF OAM (5),
-FOCOM (4), MLMR (5), Intent Service (1), O1 vendor models (1). Each closes in
-its own PR with the matching `OPEN_ITEMS.md` and matrix rows updated.
+The 16 spec-conformance items were closed module by module, each in its own PR with
+the matching `OPEN_ITEMS.md` and matrix rows updated: RAN NF OAM (5), FOCOM (4), MLMR (5),
+Intent Service (1), O1 vendor models (1). What each left open is in the table above and in
+[`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) §3.
 
 ### TS 28.105
 

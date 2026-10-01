@@ -1,0 +1,217 @@
+{
+ "classes": {
+  "CTIFunction": {
+   "CTIClient": {
+    "type": "array"
+   },
+   "CTIConnProfile": {
+    "type": "array"
+   },
+   "CTIPattern": {
+    "type": "array"
+   },
+   "CTIServer": {
+    "type": "array"
+   },
+   "ctiActivateOnOdu": {
+    "type": "boolean"
+   }
+  },
+  "SharedOruConfiguration": {
+   "oDuIdForSharedORu": {
+    "type": "string"
+   },
+   "oDuRoleOfSharedORu": {
+    "enum": [
+     "HOST_AND_SRO",
+     "HOST",
+     "SRO"
+    ],
+    "type": "string"
+   },
+   "secondaryODuInfoList": {
+    "type": "array"
+   },
+   "sharedResourceOperatorId": {
+    "type": "string"
+   }
+  },
+  "aggregated-o-ru": {
+   "aggregation": {
+    "type": "array"
+   },
+   "recovered-ru-instance-ids": {
+    "type": "array"
+   }
+  },
+  "ald-model": {},
+  "ald-port-model": {},
+  "antcal-model": {},
+  "beamforming-model": {},
+  "dhcp": {
+   "interfaces": {
+    "type": "array"
+   },
+   "m-plane-dhcp": {
+    "type": "object"
+   }
+  },
+  "dhcp-model": {},
+  "ecpri-delay-model": {},
+  "ethernet-fwd-model": {},
+  "externalio-model": {},
+  "fan-model": {},
+  "hardware-model": {},
+  "ietf-hardware-model": {},
+  "ietf-interfaces-model": {},
+  "ietf-ip-model": {},
+  "ietf-netconf-acm-model": {},
+  "interfaces-model": {},
+  "laa-model": {},
+  "laa-operations-model": {},
+  "lbm-model": {},
+  "module-cap-model": {},
+  "mplane-int-model": {},
+  "o-ran-c-plane-tnl-additional-config": {
+   "c-plane-dscp": {
+    "type": "integer"
+   },
+   "sctp-configuration": {
+    "type": "object"
+   }
+  },
+  "o-ran-configuration": {
+   "cell-configuration": {
+    "type": "object"
+   },
+   "mac-configuration": {
+    "type": "object"
+   },
+   "mib-configuration": {
+    "type": "object"
+   }
+  },
+  "o-ran-rrmpolicy": {
+   "direction": {
+    "enum": [
+     "dl",
+     "ul",
+     "both"
+    ],
+    "type": "string"
+   }
+  },
+  "o-ran-u-plane-tnl-additional-config": {
+   "c-plane-dscp": {
+    "type": "integer"
+   },
+   "gtp-configuration": {
+    "type": "object"
+   }
+  },
+  "operations-model": {},
+  "performance-management-model": {},
+  "pm-count-groups": {
+   "pm-count-list-drb": {
+    "type": "array"
+   },
+   "pm-count-list-srb": {
+    "type": "array"
+   }
+  },
+  "processing-element-model": {},
+  "shared-cell-model": {},
+  "software-management-model": {},
+  "supervision-model": {},
+  "sync": {
+   "sync-functions": {
+    "type": "object"
+   },
+   "sync-master-functions": {
+    "type": "object"
+   }
+  },
+  "transceiver-model": {},
+  "udp-echo-model": {},
+  "uplane-conf-model": {},
+  "usermgmt-model": {},
+  "wg5-delay-management": {
+   "measured-transport-delay": {
+    "type": "array"
+   },
+   "o-du-window": {
+    "type": "array"
+   },
+   "o-ru-window": {
+    "type": "array"
+   },
+   "window-determine-capability": {
+    "enum": [
+     "NOT_CONFIGURED",
+     "CONFIGURED",
+     "BOTH"
+    ],
+    "type": "string"
+   },
+   "window-determine-method": {
+    "type": "object"
+   }
+  }
+ },
+ "revision": "2023-03-17",
+ "schemaName": "o-ran-wg5-du-mp",
+ "source": [
+  "O-RAN-WG5-O-DU-MP-YANGs/Common Models/o-ran-dhcp.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Common Models/o-ran-synchronization.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Common Models/o-ran-wg5-delay-management.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Common Models/o-ran-wg5-features.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/DU Specific Models/o-ran-agg-operations.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/DU Specific Models/o-ran-agg-performance-management.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/DU Specific Models/o-ran-agg-software-management.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/DU Specific Models/o-ran-aggregation-base.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/DU Specific Models/o-ran-du-performance-management.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/DU Specific Models/o-ran-o-du-shared-o-ru.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/DU Specific Models/o-ran-o1-ctiOdu.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-ald-port.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-ald.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-antenna-calibration.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-beamforming.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-dhcp.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-ecpri-delay.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-ethernet-forwarding.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-externalio.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-fan.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-hardware.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-ietf-hardware.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-ietf-interfaces.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-ietf-ip.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-ietf-netconf-acm.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-interfaces.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-laa-operations.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-laa.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-lbm.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-module-cap.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-mplane-int.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-operations.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-processing-element.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-shared-cell.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-supervision.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-transceiver.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-udp-echo.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-uplane-conf.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/Provisioning/o-ran-agg-usermgmt.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/additional-configuration/o-ran-c-plane-tnl.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/additional-configuration/o-ran-du-f1-tnl.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/additional-configuration/o-ran-nr-u.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/additional-configuration/o-ran-qos.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/additional-configuration/o-ran-rlc.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/additional-configuration/o-ran-u-plane-tnl.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/additional-configuration/o-ran_3gpp-nr-nrm-gnbdufunction.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/additional-configuration/o-ran_3gpp-nr-nrm-nrcelldu.yang",
+  "O-RAN-WG5-O-DU-MP-YANGs/additional-configuration/o-ran_3gpp-nr-nrm-rrmpolicy.yang"
+ ],
+ "type": "YANG",
+ "unresolved": [
+  "top3gpp:Top_Grp"
+ ]
+}

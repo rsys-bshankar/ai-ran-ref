@@ -1,7 +1,7 @@
 """The CM data-model descriptors RAN NF OAM bundles (Wave 9, W9-02) are
 generated from the 3GPP NRM definitions in `specs/`, never hand-edited:
 this fails if a bundled descriptor no longer matches what
-`scripts/ingest_cm_schema.py` derives from its source — regenerate it with
+`scripts/ingest_cm_schema.py` (OpenAPI NRM) or `scripts/ingest_yang_schema.py` (YANG, `type` `YANG`) derives from its source — regenerate it with
 the command in that script's docstring.
 """
 
@@ -16,8 +16,8 @@ SPECS = SMO_ROOT.parent / "specs" / "5G_APIs"
 BUNDLED = sorted((SMO_ROOT / "ran-nf-oam" / "app" / "cm_schemas").glob("*.json"))
 
 
-def _ingest_module():
-    spec = importlib.util.spec_from_file_location("ingest_cm_schema", SMO_ROOT / "scripts" / "ingest_cm_schema.py")
+def _ingest_module(script: str = "ingest_cm_schema"):
+    spec = importlib.util.spec_from_file_location(script, SMO_ROOT / "scripts" / f"{script}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -26,6 +26,14 @@ def _ingest_module():
 @pytest.mark.parametrize("path", BUNDLED, ids=[p.name for p in BUNDLED])
 def test_bundled_descriptor_matches_its_spec_source(path):
     descriptor = json.loads(path.read_text())
+    if descriptor["type"] == "YANG":  # SA-O1-4: sources are paths below specs/
+        sources = [SMO_ROOT.parent / "specs" / name for name in descriptor["source"]]
+        if not all(s.exists() for s in sources):
+            pytest.skip("specs/ not checked out")
+        bundle = _ingest_module("ingest_yang_schema").ingest(sources)
+        assert descriptor["classes"] == {k: dict(sorted(v.items())) for k, v in sorted(bundle.classes.items())}
+        assert descriptor["unresolved"] == sorted(bundle.unresolved) and descriptor["revision"] == bundle.revision()
+        return
     sources = [SPECS / name for name in descriptor["source"]]
     if not all(s.exists() for s in sources):
         pytest.skip("specs/ not checked out")

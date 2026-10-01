@@ -1,0 +1,164 @@
+{
+ "classes": {
+  "D2Params": {
+   "cellList": {
+    "type": "array"
+   },
+   "endCRNTI": {
+    "type": "integer"
+   },
+   "startCRNTI": {
+    "type": "integer"
+   },
+   "t1": {
+    "type": "integer"
+   },
+   "t2": {
+    "type": "integer"
+   },
+   "t3": {
+    "type": "integer"
+   },
+   "tClearTB": {
+    "enum": [
+     "ONE_MS",
+     "TWO_MS",
+     "FIVE_MS",
+     "TEN_MS",
+     "TWENTY_MS",
+     "SIXTY_MS"
+    ],
+    "type": "string"
+   }
+  },
+  "EP_D2C": {
+   "localPortNumber": {
+    "type": "any"
+   },
+   "remotePortNumber": {
+    "type": "any"
+   },
+   "tRemoteT1": {
+    "type": "integer"
+   },
+   "tRemoteT2": {
+    "type": "integer"
+   },
+   "tRemoteT3": {
+    "type": "integer"
+   }
+  },
+  "EP_D2U": {
+   "localPortNumber": {
+    "type": "any"
+   },
+   "remotePortNumber": {
+    "type": "any"
+   }
+  },
+  "EP_E2": {
+   "tRICControl": {
+    "type": "integer"
+   },
+   "tRICEventCreate": {
+    "type": "integer"
+   },
+   "tRICEventDelete": {
+    "type": "integer"
+   },
+   "tRICEventModify": {
+    "type": "integer"
+   },
+   "tRICQuery": {
+    "type": "integer"
+   }
+  },
+  "NESPolicy": {
+   "antennaMask": {
+    "type": "string"
+   },
+   "applicableTimeWindows": {
+    "type": "array"
+   },
+   "policyId": {
+    "type": "string"
+   },
+   "policyType": {
+    "enum": [
+     "TRX_CONTROL",
+     "ASM"
+    ],
+    "type": "string"
+   },
+   "sleepMode": {
+    "type": "integer"
+   }
+  },
+  "NESPolicyRelation": {
+   "configuredNesPolicyList": {
+    "type": "array"
+   }
+  },
+  "NearRTRICFunction": {
+   "nearRTRICId": {
+    "type": "integer"
+   },
+   "nearRTRICPLMNID": {
+    "type": "object"
+   }
+  },
+  "ORU": {
+   "oRUControllerList": {
+    "type": "array"
+   },
+   "ruInstanceId": {
+    "type": "string"
+   }
+  },
+  "RRMPolicyRBAlloc": {
+   "direction": {
+    "enum": [
+     "BIDIRECTION",
+     "UL",
+     "DL"
+    ],
+    "type": "string"
+   },
+   "numberOfPRBs": {
+    "type": "integer"
+   },
+   "rRMPolicyMemberList": {
+    "type": "array"
+   },
+   "startCellRBAlloc": {
+    "type": "integer"
+   }
+  }
+ },
+ "revision": "2026-02-11",
+ "schemaName": "o-ran-wg10-o1nrm",
+ "source": [
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-EPD2C.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-EPD2U.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-EPE2.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-NearRTRIC.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-d2params.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-managed-application.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-odu-nespolicy.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-odu-nespolicyrelation.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-odu-rballoc.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-oru.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-subscription-control-me.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-subscription-control-subnetwork.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/O1 Data Models/o-ran-o1-subscription-control.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/Types Identites Features/o-ran-common-identity-refs.yang",
+  "O-RAN-WG10-O1NRM-YANGs/data-model/Types Identites Features/o-ran-common-yang-types.yang"
+ ],
+ "type": "YANG",
+ "unresolved": [
+  "eprp3gpp:EP_Common",
+  "eprp3gpp:EP_RPGrp",
+  "mf3gpp:ManagedFunctionGrp",
+  "top3gpp:Top_Grp"
+ ]
+}
