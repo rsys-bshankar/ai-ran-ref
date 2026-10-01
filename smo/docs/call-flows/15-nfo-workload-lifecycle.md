@@ -1,4 +1,4 @@
-# Call Flow: NFO Workload Lifecycle — Instantiate → Scale → Heal → Terminate
+# Call Flow: NFO Workload Lifecycle — Instantiate → Scale → Heal → Terminate (synchronous or DMS-completed)
 
 NFO's full workload surface — CreateDescriptor, Instantiate, Scale, Heal and Terminate —
 over its 7-state `DeploymentState` FSM (`nfo/app/statemachine.py`, following
@@ -12,6 +12,7 @@ sequenceDiagram
     actor Caller as rApp Mgmt / AIMgF
     participant NFO as NFO
     participant Focom as FOCOM
+    participant DMS as Deployment manager (O2 DMS)
 
     rect rgb(240, 255, 240)
     Note over Caller,NFO: Descriptor → instantiate
@@ -47,11 +48,26 @@ sequenceDiagram
     end
 
     rect rgb(250, 240, 255)
-    Note over Caller,NFO: Terminate — deletion is real and synchronous, not staged
-    Caller->>NFO: Terminate(nfDeploymentId)
-    NFO->>NFO: state: RUNNING -TERMINATE-> TERMINATING (transient FSM value only)
-    NFO->>NFO: real Helm-uninstall elided synchronously — NFOCloudResource and<br/>LCMOperation rows deleted, then the NFDeployment row itself
-    NFO-->>Caller: 204
+    Note over Caller,NFO: Terminate — synchronous by default, asynchronous on request
+    alt default
+        Caller->>NFO: DELETE /deployments/{id}
+        NFO->>NFO: RUNNING -TERMINATE-> TERMINATING -UNINSTALL_COMPLETE-> DELETING,<br/>then NFOCloudResource, LCMOperation and NFDeployment rows deleted
+        NFO-->>Caller: 204, the descriptor is free again
+    else async_uninstall=true
+        Caller->>NFO: DELETE /deployments/{id}?async_uninstall=true
+        NFO->>NFO: RUNNING -TERMINATE-> TERMINATING, TERMINATE operation IN_PROGRESS
+        NFO-->>Caller: 202, state=TERMINATING
+        DMS->>NFO: POST /deployments/{id}/dms-notifications (UNINSTALL_COMPLETE)
+        NFO->>NFO: TERMINATING -> DELETING
+        alt resources released
+            DMS->>NFO: dms-notifications (DELETE_COMPLETE)
+            NFO->>NFO: rows deleted, state=DELETED
+        else uninstall or deletion failed
+            DMS->>NFO: dms-notifications (UNINSTALL_FAILED or DELETE_FAILED, detail)
+            NFO->>NFO: -> ABNORMAL, abnormalReason set, TERMINATE operation FAILED
+            Caller->>NFO: DELETE again (ABNORMAL -> DELETING) or Heal (ABNORMAL -> RUNNING)
+        end
+    end
     end
 ```
 
@@ -59,4 +75,5 @@ sequenceDiagram
 - FOCOM's inventory is always queried before placement, even though Phase 1's answer is always the same degenerate cluster — the same "ask the real dependency, don't hardcode the Phase-1 answer" discipline call flow 01 establishes for FOCOM.
 - `ALREADY_DEPLOYED` and `NAME_CONFLICT` are two independent guards, checked in that order: a descriptor can only ever back one deployment, and every deployment's name is globally unique regardless of which descriptor it came from.
 - Scale and Heal both fire their FSM events within one request (`RUNNING -> UPDATING -> RUNNING`, `ABNORMAL -> RUNNING` or `RUNNING -> RUNNING`) rather than staying observably mid-transition — the same synchronous elision Instantiate and Terminate use, since no real Helm/K8s operation backs any of them.
-- `DeploymentState.DELETING` and `DeploymentState.ABNORMAL` carry real dispatch logic mirroring the reference's `dms_lcm_nfdeployment.py` (`ABNORMAL` recoverable via `Heal`; a `DELETING` deployment re-`Terminate`d flips to `ABNORMAL` as a defensive catch-all), but no sequence of API calls reaches them while Terminate is synchronous: Terminate deletes the row in the same request, so no row ever rests in `DELETING`, and nothing else sets `ABNORMAL`. The unit tests (`test_main.py`) exercise both branches by writing the state directly. They become reachable only if Terminate turns asynchronous, e.g. a real Helm uninstall (OPEN_ITEMS.md OI-3-nfo-abnormal).
+- `DELETING` and `ABNORMAL` are reached through the API (HISTORY.md OI-3-nfo-abnormal). An asynchronous Terminate rests in `TERMINATING`, then `DELETING`, until the deployment manager reports; an uninstall or deletion failure, or a `RUNTIME_FAILURE` on a running workload, leaves it `ABNORMAL` with `abnormalReason`. `Heal` recovers an `ABNORMAL` deployment; `Terminate` retires it; a `DELETING` deployment re-`Terminate`d flips to `ABNORMAL` as a defensive catch-all.
+- Terminate is synchronous by default because every SMO caller expects the deployment gone and its descriptor free when the call returns (an rApp rollback re-deploys a released descriptor). While a deployment is `TERMINATING`, `DELETING` or `ABNORMAL`, its descriptor stays deployed.

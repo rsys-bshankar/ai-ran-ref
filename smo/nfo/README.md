@@ -9,8 +9,8 @@
 | Depends on (over R1) | FOCOM (`GET /focom/inventory`, to resolve the cluster / O-Cloud id) |
 | Called by | AIMgF (runtime create / scale / terminate, per model runtime and per training / validation / emulation run), rApp Management (`POST /nfo/deployments`, `DELETE /nfo/deployments/{id}`), SO SMOS (`POST /nfo/deployments`), SA SMOS (`POST /nfo/deployments/{id}/heal`), Onboarding (`POST /nfo/descriptors`), GUI / GUI BFF |
 | Database tables | `nf_deployment_descriptor`, `nf_deployment`, `nf_ocloud_resource`, `lcm_operation` |
-| Unit tests | 29 passed (`tests/`, SQLite, standalone) |
-| Status | Done for the Phase 1 scope (synchronous, single O-Cloud). Open: `OI-3-nfo-abnormal`; scale takes no target size (see [ROADMAP](../docs/ROADMAP.md)) |
+| Unit tests | 40 passed (`tests/`, SQLite, standalone) |
+| Status | Done for the Phase 1 scope (single O-Cloud; synchronous by default, asynchronous Terminate on request). Scale takes no target size (see [ROADMAP](../docs/ROADMAP.md)) |
 
 ## 1. High-level design (HLD)
 
@@ -29,7 +29,7 @@ It provides:
 
 | Spec | What is realised | What is deliberately not |
 |---|---|---|
-| O-RAN O2-DMS (the O-RAN-SC `o2dms` NfDeployment model, used as a pattern) | NfDeployment lifecycle states and the Terminate state dispatch; duplication and dependency guards on Instantiate (no two deployments share a name; a descriptor is deployed once; the descriptor must exist); a resource-linkage object | State names keep this build's vocabulary (`INSTANTIATING` / `RUNNING`, not `Installing` / `Installed`). No real Helm or container runtime: Instantiate, Scale and Terminate complete synchronously, so `INSTANTIATING`, `UPDATING` and `TERMINATING` are not observable between requests. Heal has no counterpart in the reference and is this build's own recovery edge |
+| O-RAN O2-DMS (the O-RAN-SC `o2dms` NfDeployment model, used as a pattern) | NfDeployment lifecycle states and the Terminate state dispatch; duplication and dependency guards on Instantiate (no two deployments share a name; a descriptor is deployed once; the descriptor must exist); a resource-linkage object | State names keep this build's vocabulary (`INSTANTIATING` / `RUNNING`, not `Installing` / `Installed`). No real Helm or container runtime: Instantiate and Scale complete synchronously, and so does Terminate unless the caller asks for the asynchronous uninstall the deployment manager then completes (`TERMINATING`, `DELETING` and `ABNORMAL` are observable then). Heal has no counterpart in the reference and is this build's own recovery edge |
 | O2-IMS dependency | Placement is resolved from FOCOM's inventory (`oCloudId`), see [FOCOM](../focom/README.md) | Per-resource granularity (CPU / RAM / interface linkage) needs real pod introspection: `resource_ref` is the cluster id |
 | Internal NF descriptor model | `NFDeploymentDescriptor` with `packageId`, `requiredResourceTypeId`, `workloadTemplate` (carries `resources`, `jobKind`, `jobId`) | No TOSCA parsing here; Onboarding derives the descriptor from the package |
 
@@ -58,7 +58,7 @@ No file under [`../../specs/`](../../specs/README.md) models O2-DMS; the O2-IMS 
 
 - **Guards before side effects.** Instantiate refuses a missing descriptor (422), a duplicate name (409) and an already-deployed descriptor (409) before anything is created.
 - **FOCOM is advisory.** If the inventory call is not a 200, placement falls back to the degenerate `phase1-degenerate-cluster`; a FOCOM outage never blocks Instantiate.
-- **Synchronous lifecycle.** Each operation passes through its transient state and completes within the request (a real Helm install / upgrade / uninstall is out of scope). `ABNORMAL` and `DELETING` therefore cannot be reached through the API (`OI-3-nfo-abnormal`).
+- **Synchronous by default, asynchronous Terminate on request.** Instantiate and Scale complete within the request (a real Helm install / upgrade is out of scope). Terminate does too by default (`TERMINATING` -> `DELETING` -> removed), because every SMO caller expects the deployment gone and its descriptor free when the call returns. `DELETE ?async_uninstall=true` answers 202 and leaves the deployment `TERMINATING`; the deployment manager (O2 DMS) then reports through `POST /deployments/{id}/dms-notifications`: the uninstall completed (-> `DELETING`) or failed, the deletion completed (removed) or failed, or a running workload broke (`RUNTIME_FAILURE`). A failure leaves the deployment `ABNORMAL` with its reason; Heal recovers it and Terminate retires it (HISTORY.md OI-3-nfo-abnormal).
 - **Terminate mirrors the reference's dispatch** (see 2.3) and is idempotent: an unknown id is a no-op.
 - **Operation history is deleted with the deployment.** The `LCMOperation` and `NFOCloudResource` rows are removed (with an explicit flush between statements) before the deployment row, so the FK is respected on Postgres.
 - **Secrets by reference.** `config_secrets` holds a reference to a secrets store, never plaintext.
@@ -94,10 +94,11 @@ No file under [`../../specs/`](../../specs/README.md) models O2-DMS; the O2-IMS 
 | `cluster_id` | FOCOM `oCloudId`, or `phase1-degenerate-cluster` |
 | `state` | `INITIAL` / `INSTANTIATING` / `RUNNING` / `UPDATING` / `TERMINATING` / `ABNORMAL` / `DELETING` (CHECK in Postgres) |
 | `workload_ref`, `required_resource_type_id`, `config_secrets` | optional |
+| `abnormal_reason` | why the deployment is `ABNORMAL` (the DMS event and its detail); cleared by Heal |
 
 **`nf_ocloud_resource`** (PK `resource_link_id`): FK `nf_deployment_id`, `resource_ref` (the cluster id), `vresource_type` (default `COMPUTE`). One row per deployment, created at Instantiate.
 
-**`lcm_operation`** (PK `operation_id`): FK `nf_deployment_id`, `operation_type` (`INSTANTIATE` / `HEAL` / `SCALE` / `TERMINATE`), `status` (`PENDING` / `IN_PROGRESS` / `COMPLETED` / `FAILED`; in practice `COMPLETED`).
+**`lcm_operation`** (PK `operation_id`): FK `nf_deployment_id`, `operation_type` (`INSTANTIATE` / `HEAL` / `SCALE` / `TERMINATE`), `status` (`PENDING` / `IN_PROGRESS` / `COMPLETED` / `FAILED`): an asynchronous `TERMINATE` is `IN_PROGRESS` until the DMS reports, and `FAILED` if it reports a failure; everything else is `COMPLETED`.
 
 ### 2.3 State machines
 
@@ -111,12 +112,16 @@ Deployment lifecycle (`NFO_FSM`):
 | `UPDATING` | `UPDATE_COMPLETE` | `RUNNING` | same request |
 | `ABNORMAL` | `HEAL` | `RUNNING` | `POST .../heal` (recovery) |
 | `RUNNING` | `HEAL` | `RUNNING` | `POST .../heal` (idempotent) |
-| `INITIAL`, `ABNORMAL` | `TERMINATE` | `DELETING` | `DELETE` (rows deleted immediately, no chart was installed or it is already broken) |
-| `INSTANTIATING`, `RUNNING`, `UPDATING` | `TERMINATE` | `TERMINATING` | `DELETE` (rows deleted in the same request) |
+| `INITIAL`, `ABNORMAL` | `TERMINATE` | `DELETING` | `DELETE` (no chart was installed, or it is already broken: nothing to uninstall) |
+| `INSTANTIATING`, `RUNNING`, `UPDATING` | `TERMINATE` | `TERMINATING` | `DELETE` (uninstall starts) |
 | `TERMINATING` | `TERMINATE` | `TERMINATING` | `DELETE` again: no-op |
 | `DELETING` | `TERMINATE` | `ABNORMAL` | defensive catch-all (double-terminate race) |
+| `TERMINATING` | `UNINSTALL_COMPLETE` | `DELETING` | DMS notification, or within a synchronous `DELETE` |
+| `TERMINATING` | `UNINSTALL_FAILED` | `ABNORMAL` | DMS notification |
+| `DELETING` | `DELETE_FAILED` | `ABNORMAL` | DMS notification |
+| `INSTANTIATING`, `RUNNING`, `UPDATING` | `RUNTIME_FAILURE` | `ABNORMAL` | DMS notification |
 
-Any other combination is forbidden (`IllegalTransition`): Heal is refused outside `ABNORMAL` / `RUNNING`, Scale outside `RUNNING`, both with 409 `NFDEPLOYMENT_ILLEGAL_OPERATION`. Terminate never refuses. Because Instantiate, Scale and Terminate complete in-request, a deployment observed by a client is `RUNNING` (or gone); `ABNORMAL` is reachable only by direct data manipulation, and so is the `ABNORMAL` -> `RUNNING` Heal edge (`OI-3-nfo-abnormal`).
+`DELETING` ends with the deployment removed: within a synchronous `DELETE`, or on the DMS's `DELETE_COMPLETE`. Any other combination is forbidden (`IllegalTransition`): Heal is refused outside `ABNORMAL` / `RUNNING`, Scale outside `RUNNING`, and a DMS event the state can't take, all with 409 `NFDEPLOYMENT_ILLEGAL_OPERATION`. Terminate never refuses. While a deployment is `TERMINATING`, `DELETING` or `ABNORMAL`, its descriptor stays deployed (Instantiate refuses it).
 
 ### 2.4 API
 
@@ -127,8 +132,10 @@ All routes are under `/nfo` through R1. Lists return `{items, total, limit, offs
 | POST | `/descriptors` | Create a descriptor (201 `{nfDeploymentDescriptorId}`); body `packageId?`, `name`, `workloadTemplate` (default `{}`), `requiredResourceTypeId?` |
 | GET | `/descriptors` | List; filter `package_id` |
 | POST | `/deployments` | Instantiate (202 `{nfDeploymentId, state, clusterId}`); body `nfDeploymentDescriptorId`, `name`, `requiredResourceTypeId?`. 422 `NFDEPLOYMENT_DESCRIPTOR_NOT_FOUND`, 409 `NFDEPLOYMENT_NAME_CONFLICT`, 409 `NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED` |
-| GET | `/deployments` | List; filter `state` |
-| DELETE | `/deployments/{id}` | Terminate (204); unknown id is a no-op |
+| GET | `/deployments` | List; filter `state`. Items: `nfDeploymentId, name, state, clusterId, nfDeploymentDescriptorId, workloadRef, requiredResourceTypeId, abnormalReason` |
+| GET | `/deployments/{id}` | One deployment, same shape; 404 `NFDEPLOYMENT_NOT_FOUND` |
+| DELETE | `/deployments/{id}?async_uninstall=` | Terminate: 204 once gone (default); with `async_uninstall=true`, 202 `{nfDeploymentId, state}` and the DMS completes it. Unknown id is a no-op |
+| POST | `/deployments/{id}/dms-notifications` | The deployment manager's report, body `{event, detail?}`: `UNINSTALL_COMPLETE`, `UNINSTALL_FAILED`, `DELETE_COMPLETE` (answers `state: DELETED`), `DELETE_FAILED`, `RUNTIME_FAILURE`. 404 `NFDEPLOYMENT_NOT_FOUND`, 409 `NFDEPLOYMENT_ILLEGAL_OPERATION`, 422 unknown event |
 | POST | `/deployments/{id}/heal` | Heal; 404 `NFDEPLOYMENT_NOT_FOUND`, 409 `NFDEPLOYMENT_ILLEGAL_OPERATION` |
 | POST | `/deployments/{id}/scale` | Scale (no target size argument); same errors |
 | GET | `/deployments/{id}/placement` | `{nfDeploymentId, clusterId}`; unknown id is an unhandled 500 |
@@ -162,12 +169,12 @@ Returned as `{"detail": {"type": "about:blank", "title": <code>, "status", "deta
 | `NFDEPLOYMENT_NAME_CONFLICT` | 409 | A deployment with that name already exists |
 | `NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED` | 409 | The descriptor already has a deployment |
 | `NFDEPLOYMENT_NOT_FOUND` | 404 | Heal or scale of an unknown deployment |
-| `NFDEPLOYMENT_ILLEGAL_OPERATION` | 409 | Heal outside `ABNORMAL` / `RUNNING`, scale outside `RUNNING` |
+| `NFDEPLOYMENT_ILLEGAL_OPERATION` | 409 | Heal outside `ABNORMAL` / `RUNNING`, scale outside `RUNNING`, a DMS event the deployment's state can't take |
 
 ### 2.8 Limits and open items
 
-- **No real runtime.** No Helm, Kubernetes or `docker run`: every lifecycle step is synchronous. `workload_ref` is never set. Real pod-health remediation behind Heal is out of scope.
-- **`ABNORMAL` / `DELETING` unreachable** through the API (`OI-3-nfo-abnormal`).
+- **No real runtime.** No Helm, Kubernetes or `docker run`, and no real DMS: the asynchronous Terminate's completion and the runtime failure report are whatever calls `dms-notifications`. `workload_ref` is never set. Real pod-health remediation behind Heal is out of scope.
+- `INSTANTIATING` and `UPDATING` still complete within their request; an asynchronous Instantiate or Scale is not modelled.
 - **Scale has no target size** (replicas or resources); it only drives `RUNNING` -> `UPDATING` -> `RUNNING` (see ROADMAP backlog).
 - **No asynchronous completion** notification to callers; they observe the synchronous response.
 - **Single O-Cloud.** Placement is whatever FOCOM reports (`oCloudId`); there is no multi-cluster scheduling.
@@ -186,6 +193,7 @@ cd smo/nfo && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_main.py` | Descriptor create (with and without a package) and list; Instantiate (FOCOM cluster resolution, fallback when FOCOM is unreachable, resource link, unknown descriptor, duplicate name, descriptor already deployed); Terminate (removal, resource link and operation history deleted, after scale, repeat on `TERMINATING`, `DELETING` -> `ABNORMAL`, unknown id idempotent); Heal (from `ABNORMAL`, idempotent when `RUNNING`, refused mid-instantiate, unknown 404); Scale (`RUNNING` round trip, refused when not running, unknown 404); operation status, placement, resources, list filters, `/health` | 29 |
+| `tests/test_dms_lifecycle.py` | Asynchronous Terminate through `DELETING` to removal; the descriptor held until then; uninstall / delete failure -> `ABNORMAL` with its reason, then Terminate retries; runtime failure -> `ABNORMAL`, Heal recovers; repeat Terminate while uninstalling; events a state can't take; unknown event / deployment; default Terminate still synchronous | 11 |
 
 FOCOM is replaced by a monkeypatched `R1Client.get`.
 

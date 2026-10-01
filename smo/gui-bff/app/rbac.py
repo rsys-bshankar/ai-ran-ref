@@ -226,6 +226,7 @@ RULES: list[Rule] = [
     # --- NFO
     _rule("POST", "/nfo/deployments/{id}/(heal|scale)", O),
     _rule("DELETE", "/nfo/deployments/{id}", A),
+    _rule("POST", "/nfo/deployments/{id}/dms-notifications", A),   # the DMS's report; no real DMS runs (OI-3-nfo-abnormal)
 
     # --- FOCOM
     _rule("POST", "/focom/resources/provision", A),

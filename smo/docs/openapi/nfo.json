@@ -43,6 +43,38 @@
         "title": "CreateDescriptorRequest",
         "type": "object"
       },
+      "DmsNotification": {
+        "description": "OI-3-nfo-abnormal: the deployment manager's (O2 DMS) report on a\ndeployment. `detail` says why, for a failure.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "event": {
+            "enum": [
+              "UNINSTALL_COMPLETE",
+              "UNINSTALL_FAILED",
+              "DELETE_COMPLETE",
+              "DELETE_FAILED",
+              "RUNTIME_FAILURE"
+            ],
+            "title": "Event",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event"
+        ],
+        "title": "DmsNotification",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -250,7 +282,7 @@
     },
     "/deployments/{nf_deployment_id}": {
       "delete": {
-        "description": "Terminate \u2014 mirrors the reference's own state dispatch\n(lcm_nfdeployment_uninstall, dms_lcm_nfdeployment.py): INITIAL/\nABNORMAL delete immediately (no chart was ever installed, or it's\nalready broken); every in-flight/running state passes through\nTERMINATING first (Phase 1 elision: real Helm uninstall completes\nsynchronously, same pattern as Instantiate's own elision); calling\nTerminate again on an already-TERMINATING deployment is a no-op\n(matches the reference's own `elif ... Uninstalling: pass`); calling\nit on one already DELETING flips it to ABNORMAL instead of deleting\ntwice \u2014 the reference's own defensive catch-all for a Terminate\nlanding on a state its dispatch chain doesn't otherwise expect.",
+        "description": "Terminate \u2014 mirrors the reference's own state dispatch\n(lcm_nfdeployment_uninstall, dms_lcm_nfdeployment.py): INITIAL/\nABNORMAL go straight to DELETING (no chart was ever installed, or it's\nalready broken); every in-flight/running state is uninstalled first\n(TERMINATING); calling Terminate again on an already-TERMINATING\ndeployment is a no-op (the reference's own `elif ... Uninstalling:\npass`); calling it on one already DELETING flips it to ABNORMAL instead\nof deleting twice \u2014 the reference's own defensive catch-all.\n\nOI-3-nfo-abnormal: by default the Phase 1 elision completes the\nuninstall and the deletion at once \u2014 TERMINATING -> DELETING -> the\nrecord removed \u2014 as every SMO caller (rApp Management, AIMgF, SO SMOS)\nexpects: 204, and the descriptor is free to deploy again.\n`async_uninstall=true` instead leaves the deployment TERMINATING (or\nDELETING) with its TERMINATE operation IN_PROGRESS and answers 202: the\ndeployment manager reports how it ends through\n`POST /deployments/{id}/dms-notifications`, which is how DELETING and\nABNORMAL are reached and observed.",
         "operationId": "terminate_deployments__nf_deployment_id__delete",
         "parameters": [
           {
@@ -261,6 +293,16 @@
               "format": "uuid",
               "title": "Nf Deployment Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "async_uninstall",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Async Uninstall",
+              "type": "boolean"
             }
           }
         ],
@@ -280,6 +322,91 @@
           }
         },
         "summary": "Terminate"
+      },
+      "get": {
+        "operationId": "get_deployment_deployments__nf_deployment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nf_deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Nf Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Deployment"
+      }
+    },
+    "/deployments/{nf_deployment_id}/dms-notifications": {
+      "post": {
+        "description": "OI-3-nfo-abnormal \u2014 how an asynchronous Terminate ends, and how a\nbroken workload is reported:\n\n- `UNINSTALL_COMPLETE`: TERMINATING -> DELETING (resources being released);\n- `DELETE_COMPLETE`: DELETING -> the deployment is removed (answers `state: DELETED`);\n- `UNINSTALL_FAILED` / `DELETE_FAILED`: -> ABNORMAL, the TERMINATE operation FAILED;\n- `RUNTIME_FAILURE`: INSTANTIATING / RUNNING / UPDATING -> ABNORMAL.\n\nAn ABNORMAL deployment keeps the reason in `abnormalReason`; Heal\nrecovers it (-> RUNNING) and Terminate retires it (-> DELETING).\n404 for an unknown deployment, 409 NFDEPLOYMENT_ILLEGAL_OPERATION for an\nevent its state can't take.",
+        "operationId": "receive_dms_notification_deployments__nf_deployment_id__dms_notifications_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nf_deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Nf Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DmsNotification"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Receive Dms Notification"
       }
     },
     "/deployments/{nf_deployment_id}/heal": {

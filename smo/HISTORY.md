@@ -189,8 +189,24 @@ Recurring conventions referred to below:
   `MLMF_SUBSCRIPTION_NOT_FOUND` (404) instead of a 500. (#128)
 - **OI-3-pm-unsubscribe** — `DELETE /pm-subscriptions/{id}` (idempotent) plus a GUI Unsubscribe
   action. (#128)
-- **OI-3-nfo-abnormal** — NFO `DELETING`/`ABNORMAL` dispatch is correct but unreachable while
-  Terminate is synchronous; not a gap. Revisit if Terminate becomes asynchronous.
+- **OI-3-nfo-abnormal** — NFO's `DELETING` and `ABNORMAL` states are reachable through the API,
+  by an asynchronous Terminate that the deployment manager (O2 DMS) completes.
+  - **Default:** `DELETE /deployments/{id}` stays synchronous (`TERMINATING` -> `DELETING` ->
+    removed, 204). rApp Management, AIMgF and SO SMOS expect the deployment gone and its
+    descriptor free when the call returns: rApp rollback re-deploys a released descriptor.
+  - **Asynchronous:** `?async_uninstall=true` answers 202 and leaves the deployment `TERMINATING`,
+    with its `TERMINATE` operation `IN_PROGRESS`.
+  - **DMS reports:** the DMS reports through `POST /deployments/{id}/dms-notifications`:
+    - `UNINSTALL_COMPLETE` -> `DELETING`, then `DELETE_COMPLETE` removes the deployment;
+    - `UNINSTALL_FAILED` / `DELETE_FAILED` -> `ABNORMAL`, with the operation `FAILED`;
+    - `RUNTIME_FAILURE` takes an `INSTANTIATING` / `RUNNING` / `UPDATING` workload to `ABNORMAL`.
+  - **ABNORMAL:** the deployment keeps the reason (`nf_deployment.abnormal_reason`). Heal recovers
+    it and clears the reason; Terminate retires it. Its descriptor stays deployed until the
+    deployment is really gone.
+  - New `GET /deployments/{id}`. The GUI BFF lets admins post DMS notifications (no real DMS runs).
+  - **Not taken:** making Terminate asynchronous by default, which would break every caller that
+    re-deploys a descriptor. An asynchronous Instantiate or Scale is not taken either: neither has
+    a state that only an asynchronous completion reaches.
 - **OI-3-mermaid** — Bare `;` broke GitHub's sequence-diagram parser (#129);
   `gui/scripts/validate-call-flow-diagrams.mjs` runs in CI (#139).
 

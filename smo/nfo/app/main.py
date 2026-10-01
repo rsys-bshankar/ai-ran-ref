@@ -13,8 +13,10 @@ now actually drive state transitions instead of being pure stubs.
 """
 
 import uuid
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -131,50 +133,133 @@ def instantiate(body: InstantiateRequest, db: Session = Depends(get_session)):
 
 
 @app.delete("/deployments/{nf_deployment_id}", status_code=204)
-def terminate(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
+def terminate(nf_deployment_id: uuid.UUID, async_uninstall: bool = False, db: Session = Depends(get_session)):
     """Terminate — mirrors the reference's own state dispatch
     (lcm_nfdeployment_uninstall, dms_lcm_nfdeployment.py): INITIAL/
-    ABNORMAL delete immediately (no chart was ever installed, or it's
-    already broken); every in-flight/running state passes through
-    TERMINATING first (Phase 1 elision: real Helm uninstall completes
-    synchronously, same pattern as Instantiate's own elision); calling
-    Terminate again on an already-TERMINATING deployment is a no-op
-    (matches the reference's own `elif ... Uninstalling: pass`); calling
-    it on one already DELETING flips it to ABNORMAL instead of deleting
-    twice — the reference's own defensive catch-all for a Terminate
-    landing on a state its dispatch chain doesn't otherwise expect.
+    ABNORMAL go straight to DELETING (no chart was ever installed, or it's
+    already broken); every in-flight/running state is uninstalled first
+    (TERMINATING); calling Terminate again on an already-TERMINATING
+    deployment is a no-op (the reference's own `elif ... Uninstalling:
+    pass`); calling it on one already DELETING flips it to ABNORMAL instead
+    of deleting twice — the reference's own defensive catch-all.
+
+    OI-3-nfo-abnormal: by default the Phase 1 elision completes the
+    uninstall and the deletion at once — TERMINATING -> DELETING -> the
+    record removed — as every SMO caller (rApp Management, AIMgF, SO SMOS)
+    expects: 204, and the descriptor is free to deploy again.
+    `async_uninstall=true` instead leaves the deployment TERMINATING (or
+    DELETING) with its TERMINATE operation IN_PROGRESS and answers 202: the
+    deployment manager reports how it ends through
+    `POST /deployments/{id}/dms-notifications`, which is how DELETING and
+    ABNORMAL are reached and observed.
     """
     d = db.get(NFDeployment, nf_deployment_id)
     if d is None:
         return
     was_terminating = d.state == DeploymentState.TERMINATING
     new_state = NFO_FSM.fire(DeploymentState(d.state), DeploymentEvent.TERMINATE)
-    db.add(LCMOperation(nf_deployment_id=nf_deployment_id, operation_type="TERMINATE", status="COMPLETED"))
     if new_state == DeploymentState.ABNORMAL:
+        db.add(LCMOperation(nf_deployment_id=nf_deployment_id, operation_type="TERMINATE", status="FAILED"))
         d.state = new_state
+        d.abnormal_reason = "TERMINATE while DELETING"
         db.commit()
-        return
+        return _accepted(d) if async_uninstall else None
     if was_terminating:
+        return _accepted(d) if async_uninstall else None
+    d.state = new_state
+    if async_uninstall:
+        db.add(LCMOperation(nf_deployment_id=nf_deployment_id, operation_type="TERMINATE", status="IN_PROGRESS"))
         db.commit()
-        return
-    db.query(NFOCloudResource).filter_by(nf_deployment_id=nf_deployment_id).delete()
+        return _accepted(d)
+    # Phase 1 elision: the uninstall (Helm) and the resource release both
+    # complete synchronously.
+    if d.state == DeploymentState.TERMINATING:
+        d.state = NFO_FSM.fire(DeploymentState(d.state), DeploymentEvent.UNINSTALL_COMPLETE)
+    db.add(LCMOperation(nf_deployment_id=nf_deployment_id, operation_type="TERMINATE", status="COMPLETED"))
+    _remove_deployment(db, d)
+    db.commit()
+
+
+def _accepted(d: NFDeployment) -> JSONResponse:
+    return JSONResponse(status_code=202, content={"nfDeploymentId": str(d.nf_deployment_id), "state": d.state})
+
+
+def _remove_deployment(db: Session, d: NFDeployment) -> None:
+    """The deployment is gone: its resource links, its operation history and
+    the record itself (the descriptor may be deployed again)."""
+    db.query(NFOCloudResource).filter_by(nf_deployment_id=d.nf_deployment_id).delete()
     # LCMOperation.nf_deployment_id has a real FK, same as NFOCloudResource
     # above — deleting the deployment without clearing its own operation
-    # history (including the TERMINATE row just added above) violates it.
-    # A real, separate bug from the one this comment used to describe:
+    # history (including a TERMINATE row just added) violates it.
     # `Query.delete()` issues its DELETE immediately against the database,
     # and this session is `autoflush=False` (smo_shared/db.py), so it
-    # never sees that pending, unflushed TERMINATE row — only a `flush()`
+    # never sees a pending, unflushed TERMINATE row — only a `flush()`
     # first makes it visible to the very next statement. Caught running
-    # a genuine deploy -> terminate sequence (Wave 2's own RuntimeLifecycle
-    # verification) against real Postgres — SQLite's test harness doesn't
-    # enforce FK constraints by default, so no unit test had ever caught
-    # this either, on any deployment with any LCMOperation row at all
-    # (every deployment always has at least one, from Instantiate).
+    # a genuine deploy -> terminate sequence against real Postgres —
+    # SQLite's test harness doesn't enforce FK constraints by default.
     db.flush()
-    db.query(LCMOperation).filter_by(nf_deployment_id=nf_deployment_id).delete()
+    db.query(LCMOperation).filter_by(nf_deployment_id=d.nf_deployment_id).delete()
     db.delete(d)
+
+
+class DmsNotification(BaseModel):
+    """OI-3-nfo-abnormal: the deployment manager's (O2 DMS) report on a
+    deployment. `detail` says why, for a failure."""
+    event: Literal["UNINSTALL_COMPLETE", "UNINSTALL_FAILED", "DELETE_COMPLETE", "DELETE_FAILED", "RUNTIME_FAILURE"]
+    detail: str | None = None
+
+
+@app.post("/deployments/{nf_deployment_id}/dms-notifications")
+def receive_dms_notification(nf_deployment_id: uuid.UUID, body: DmsNotification, db: Session = Depends(get_session)):
+    """OI-3-nfo-abnormal — how an asynchronous Terminate ends, and how a
+    broken workload is reported:
+
+    - `UNINSTALL_COMPLETE`: TERMINATING -> DELETING (resources being released);
+    - `DELETE_COMPLETE`: DELETING -> the deployment is removed (answers `state: DELETED`);
+    - `UNINSTALL_FAILED` / `DELETE_FAILED`: -> ABNORMAL, the TERMINATE operation FAILED;
+    - `RUNTIME_FAILURE`: INSTANTIATING / RUNNING / UPDATING -> ABNORMAL.
+
+    An ABNORMAL deployment keeps the reason in `abnormalReason`; Heal
+    recovers it (-> RUNNING) and Terminate retires it (-> DELETING).
+    404 for an unknown deployment, 409 NFDEPLOYMENT_ILLEGAL_OPERATION for an
+    event its state can't take.
+    """
+    d = db.get(NFDeployment, nf_deployment_id)
+    if d is None:
+        raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")
+    if body.event == "DELETE_COMPLETE":
+        if d.state != DeploymentState.DELETING:
+            raise framework_error(FrameworkError.NFDEPLOYMENT_ILLEGAL_OPERATION,
+                                  detail=f"DELETE_COMPLETE for a deployment in state {d.state}, not DELETING")
+        _remove_deployment(db, d)
+        db.commit()
+        return {"nfDeploymentId": str(nf_deployment_id), "state": "DELETED"}
+    try:
+        d.state = NFO_FSM.fire(DeploymentState(d.state), DeploymentEvent(body.event))
+    except IllegalTransition:
+        raise framework_error(FrameworkError.NFDEPLOYMENT_ILLEGAL_OPERATION,
+                              detail=f"{body.event} for a deployment in state {d.state}")
+    if d.state == DeploymentState.ABNORMAL:
+        d.abnormal_reason = f"{body.event}: {body.detail}" if body.detail else body.event
+        op = _open_terminate(db, nf_deployment_id)
+        if op is not None:
+            op.status = "FAILED"
     db.commit()
+    return {"nfDeploymentId": str(nf_deployment_id), "state": d.state, "abnormalReason": d.abnormal_reason}
+
+
+def _open_terminate(db: Session, nf_deployment_id: uuid.UUID) -> LCMOperation | None:
+    return db.scalar(select(LCMOperation).where(LCMOperation.nf_deployment_id == nf_deployment_id,
+                                                LCMOperation.operation_type == "TERMINATE",
+                                                LCMOperation.status == "IN_PROGRESS"))
+
+
+@app.get("/deployments/{nf_deployment_id}")
+def get_deployment(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
+    d = db.get(NFDeployment, nf_deployment_id)
+    if d is None:
+        raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")
+    return _deployment_view(d)
 
 
 @app.post("/deployments/{nf_deployment_id}/heal")
@@ -195,6 +280,7 @@ def heal(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
     except IllegalTransition:
         raise framework_error(FrameworkError.NFDEPLOYMENT_ILLEGAL_OPERATION,
                                detail=f"cannot heal a deployment in state {d.state}")
+    d.abnormal_reason = None
     db.add(LCMOperation(nf_deployment_id=nf_deployment_id, operation_type="HEAL", status="COMPLETED"))
     db.commit()
     return {"nfDeploymentId": str(nf_deployment_id), "state": d.state}
@@ -258,9 +344,13 @@ def list_deployments(state: str | None = None, limit: int = PageLimit, offset: i
     if state:
         stmt = stmt.where(NFDeployment.state == state)
     page = paginate(db, stmt, limit, offset)
-    return {**page, "items": [{"nfDeploymentId": str(d.nf_deployment_id), "name": d.name, "state": d.state, "clusterId": d.cluster_id,
-             "nfDeploymentDescriptorId": str(d.nf_deployment_descriptor_id), "workloadRef": d.workload_ref,
-             "requiredResourceTypeId": d.required_resource_type_id} for d in page["items"]]}
+    return {**page, "items": [_deployment_view(d) for d in page["items"]]}
+
+
+def _deployment_view(d: NFDeployment) -> dict:
+    return {"nfDeploymentId": str(d.nf_deployment_id), "name": d.name, "state": d.state, "clusterId": d.cluster_id,
+            "nfDeploymentDescriptorId": str(d.nf_deployment_descriptor_id), "workloadRef": d.workload_ref,
+            "requiredResourceTypeId": d.required_resource_type_id, "abnormalReason": d.abnormal_reason}
 
 
 @app.get("/descriptors")

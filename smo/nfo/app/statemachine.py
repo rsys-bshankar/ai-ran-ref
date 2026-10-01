@@ -35,6 +35,13 @@ class DeploymentEvent(StrEnum):
     UPDATE_COMPLETE = "UPDATE_COMPLETE"
     HEAL = "HEAL"
     TERMINATE = "TERMINATE"
+    # OI-3-nfo-abnormal: what the deployment manager (O2 DMS) reports back —
+    # the end of an asynchronous uninstall and of the resource deletion after
+    # it, or a workload that broke at runtime.
+    UNINSTALL_COMPLETE = "UNINSTALL_COMPLETE"
+    UNINSTALL_FAILED = "UNINSTALL_FAILED"
+    DELETE_FAILED = "DELETE_FAILED"
+    RUNTIME_FAILURE = "RUNTIME_FAILURE"
 
 
 def build_nfo_fsm() -> StateMachine[DeploymentState, DeploymentEvent]:
@@ -75,6 +82,16 @@ def build_nfo_fsm() -> StateMachine[DeploymentState, DeploymentEvent]:
     # otherwise handle — reachable here from DELETING, e.g. a
     # double-terminate race.
     fsm.add(DeploymentState.DELETING, DeploymentEvent.TERMINATE, DeploymentState.ABNORMAL)
+
+    # OI-3-nfo-abnormal: uninstalled -> DELETING (its O-Cloud resources are
+    # released, then the record goes: DELETE_COMPLETE, main.py), or a failure
+    # at either stage -> ABNORMAL, from where Terminate retries and Heal
+    # recovers. A running workload that breaks is ABNORMAL too.
+    fsm.add(DeploymentState.TERMINATING, DeploymentEvent.UNINSTALL_COMPLETE, DeploymentState.DELETING)
+    fsm.add(DeploymentState.TERMINATING, DeploymentEvent.UNINSTALL_FAILED, DeploymentState.ABNORMAL)
+    fsm.add(DeploymentState.DELETING, DeploymentEvent.DELETE_FAILED, DeploymentState.ABNORMAL)
+    for state in (DeploymentState.INSTANTIATING, DeploymentState.RUNNING, DeploymentState.UPDATING):
+        fsm.add(state, DeploymentEvent.RUNTIME_FAILURE, DeploymentState.ABNORMAL)
     return fsm
 
 

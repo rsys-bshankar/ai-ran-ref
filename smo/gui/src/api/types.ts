@@ -136,7 +136,11 @@ export interface AutonomyDispatch {
 }
 
 // ---- NFO / FOCOM / SO / SA / Analytics / DME
-export interface NfDeployment { nfDeploymentId: string; name: string; state: string; clusterId: string; nfDeploymentDescriptorId: string; workloadRef: string | null; requiredResourceTypeId: string | null }
+export interface NfDeployment {
+  nfDeploymentId: string; name: string; state: string; clusterId: string; nfDeploymentDescriptorId: string;
+  workloadRef: string | null; requiredResourceTypeId: string | null;
+  abnormalReason: string | null;  // OI-3-nfo-abnormal: why it is ABNORMAL
+}
 export interface NfResource { resourceLinkId: string; resourceRef: string; vresourceType: string }
 export interface ResourcePool { resourcePoolId: string; name: string; description: string | null; oCloudId: string }
 export interface ResourceType { resourceTypeId: string; name: string; description: string | null; vendor: string | null; model: string | null; version: string | null; resourceKind: string | null; resourceClass: string | null }

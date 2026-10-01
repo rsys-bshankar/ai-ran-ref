@@ -575,6 +575,12 @@
   },
   {
     "method": "POST",
+    "pattern": "^/nfo/deployments/[^/]+/dms-notifications$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/focom/resources/provision$",
     "role": "admin",
     "queryMatch": {}
