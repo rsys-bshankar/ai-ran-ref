@@ -38,7 +38,7 @@ that realises a standard and adds its own behaviour on top says so.
 | [DME](dme/README.md) | O-RAN (R1 DME, ICS-derived) + Internal (O1 action mediation) | `dme/` | Data management and exposure: producers, types, data jobs, offers, type subscriptions | `/dme`, `/dme-push`, `/dme-pull` |
 | [Onboarding](onboarding/README.md) | O-RAN (rApp package, ASD / TOSCA CSAR) + Internal (`manifest.yaml`, `capabilities.yaml`) | `onboarding/` | CSAR package validation, `ApplicationPackage` FSM, priming, usage registrations | `/onboarding` |
 | [rApp Management](rapp-mgmt/README.md) | O-RAN (rApp Manager) + Internal (autonomy mode, region scope) | `rapp-mgmt/` | `RAppInstance` FSM, deploy/bootstrap/upgrade/terminate, perf/fault reports | `/rapp-mgmt` |
-| [RAN NF OAM](ran-nf-oam/README.md) | O-RAN (O1) + 3GPP (MnS: TS 28.532 / 28.541 / 28.111) + Internal (vendor capability registry) | `ran-nf-oam/` | O1: adaptor endpoints, NETCONF CM writes, alarms, PM subscriptions, software management, vendor capability registry | `/ran-nf-oam` |
+| [RAN NF OAM](ran-nf-oam/README.md) | O-RAN (O1) + 3GPP (MnS: TS 28.532 / 28.541 / 28.111) + Internal (vendor capability registry) | `ran-nf-oam/` | O1: adaptor endpoints, NETCONF and RESTCONF CM writes, alarms, PM subscriptions, software management, vendor capability registry | `/ran-nf-oam` |
 | [A1 Related](a1-related/README.md) | O-RAN (A1-P, A1-EI) | `a1-related/` | A1 policy mapping store, service supervision, EI types; southbound to the mock Near-RT RIC | `/a1-related` |
 | [NFO](nfo/README.md) | O-RAN (O2-DMS-style deployment) + Internal (descriptor model) | `nfo/` | NF descriptors and deployments (`NFDeployment` FSM, heal/scale/terminate) | `/nfo` |
 | [FOCOM](focom/README.md) | O-RAN (O2-IMS) | `focom/` | O-Cloud inventory, provisioning, inventory subscriptions, FCAPS, TEIV topology export | `/focom` |
@@ -57,7 +57,7 @@ that realises a standard and adds its own behaviour on top says so.
 | Module | Standards basis | Directory | Role | Port / R1 route |
 |---|---|---|---|---|
 | [Mock Near-RT RIC](mock-near-rt-ric/README.md) | Test double of an O-RAN A1-P endpoint | `mock-near-rt-ric/` | A1-P test double, reachable only from `a1-related` on the internal `a1_mock_net` network | none |
-| [Mock O1 Adaptor](mock-o1-adaptor/README.md) | Test double of an O1 NETCONF adaptor | `mock-o1-adaptor/` | NETCONF-shaped O1 test double that answers RAN NF OAM's NETCONF RPCs | none (`mock-o1-adaptor:8000`) |
+| [Mock O1 Adaptor](mock-o1-adaptor/README.md) | Test double of an O1 adaptor (NETCONF and RESTCONF) | `mock-o1-adaptor/` | O1 test double that answers RAN NF OAM's NETCONF RPCs (`/edit-config`) and RESTCONF requests (`/restconf`) | none (`mock-o1-adaptor:8000`) |
 | [AI Runtime SDK](sdk/README.md) | Internal (thin client over R1) | `sdk/smo_sdk/` | Python clients for the six rApp-facing namespaces: data, analytics, models, lifecycle, intent, platform | library |
 | [Shared library](shared/README.md) | Internal (implements the RFC 7807 / RFC 7662 conventions) | `shared/smo_shared/` | DB session, FSM base, errors, pagination, correlation ids, webhook helper, `R1Client` | library |
 | [GUI BFF](gui-bff/README.md) | Internal | `gui-bff/` | GUI users, roles, sessions, audit log; forwards allowed calls to R1 | none (reached via `gui` at `/api`) |
@@ -144,7 +144,7 @@ smo/
   <module>/app/             one directory per SMO module (models.py, statemachine.py, main.py)
   <module>/tests/           that module's unit tests (standalone, SQLite)
   mock-near-rt-ric/         A1-P test double (A1 Related's southbound)
-  mock-o1-adaptor/          NETCONF-shaped O1 test double (RAN NF OAM's southbound)
+  mock-o1-adaptor/          NETCONF / RESTCONF O1 test double (RAN NF OAM's southbound)
   sdk/smo_sdk/              AI Runtime SDK: data, analytics, models, lifecycle, intent, platform clients
   gui/                      React + TypeScript operator console (nginx)
   gui-bff/                  GUI backend-for-frontend: auth, RBAC (app/rbac.py), audit, R1 proxy

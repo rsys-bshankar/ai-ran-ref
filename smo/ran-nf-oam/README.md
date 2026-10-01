@@ -1,6 +1,6 @@
 # RAN NF OAM (`ran-nf-oam/`)
 
-> The one platform service that speaks O1 to RAN functions: it keeps the O1 adaptor / managed-entity registry and the per-vendor capability registry, dispatches schema-checked CM writes as NETCONF `edit-config`, and carries alarms, PM, FM and software-management jobs.
+> The one platform service that speaks O1 to RAN functions: it keeps the O1 adaptor / managed-entity registry and the per-vendor capability registry, dispatches schema-checked CM writes as NETCONF `edit-config` or RFC 8040 RESTCONF requests (by the ME's provisioned protocol), and carries alarms, PM, FM and software-management jobs.
 
 | | |
 |---|---|
@@ -9,8 +9,8 @@
 | Depends on (over R1) | DME (`/dme/production-capabilities`, `/dme/dme-types`, `/dme/data-jobs`, `/dme/data-jobs/{id}/records`); southbound (not R1): each ME's O1 adaptor over HTTP |
 | Called by | DME (`POST /config-jobs`, O1 action mediation), SO SMOS (`POST /config-jobs`), SA SMOS (`POST /config-jobs`), SDK `sdk.data` (`cell-guards`, `managed-entities`, `vendor-capabilities`, `capabilities`, `…/config`), reference rApps (`GET /alarms`, `POST /pm-reports`), GUI / GUI BFF |
 | Database tables | `o1_adaptor_endpoint`, `managed_entity`, `alarm`, `cm_schema_cache`, `vendor_capability`, `write_config_job`, `write_config_sub_change`, `pm_subscription`, `fm_subscription`, `software_management_job` |
-| Unit tests | 75 passed (`tests/`, SQLite, standalone) |
-| Status | Done for NETCONF-shaped O1. Open: RESTCONF dispatch (`OI-1-cm-sync-restconf`), alarm-storm correlation (`OI-1-alarm-storm`), alarm cell reference (`W10-alarm-cellref`), TS 28.319 MSAC (`SA-RANOAM-1`), TS 28.532 file/streaming reporting (`SA-RANOAM-8`); see [section 2.8](#28-limits-and-open-items) |
+| Unit tests | 101 passed (`tests/`, SQLite, standalone) |
+| Status | Done for NETCONF-shaped and RESTCONF O1 CM dispatch. Open: alarm-storm correlation (`OI-1-alarm-storm`), alarm cell reference (`W10-alarm-cellref`), TS 28.319 MSAC (`SA-RANOAM-1`), TS 28.532 file/streaming reporting (`SA-RANOAM-8`); see [section 2.8](#28-limits-and-open-items) |
 
 ## 1. High-level design (HLD)
 
@@ -34,7 +34,7 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 
 | Spec | What is realised | What is deliberately not |
 |---|---|---|
-| O-RAN O1 / 3GPP TS 28.532 ProvMnS ([`TS28532_ProvMnS.yaml`](../../specs/5G_APIs/TS28532_ProvMnS.yaml)) | Write path as RFC 6241 `<edit-config>` with a per-`<managed-object>` `operation` (`merge` / `replace` / `create` / `delete` / `remove`); `<get-config>` read-back | No SSH/NETCONF session (XML over plain HTTP to the adaptor); no HTTP-verb ProvMnS; RESTCONF is declarable but not dispatched |
+| O-RAN O1 / 3GPP TS 28.532 ProvMnS ([`TS28532_ProvMnS.yaml`](../../specs/5G_APIs/TS28532_ProvMnS.yaml)) | Write path as RFC 6241 `<edit-config>` with a per-`<managed-object>` `operation` (`merge` / `replace` / `create` / `delete` / `remove`); `<get-config>` read-back. For an ME provisioned `RESTCONF`, the same operations as RFC 8040 requests on the `managed-element={ref}[/managed-function={fref}]` data resource (`merge` PATCH, `replace` PUT, `create` POST on the parent, `delete` / `remove` DELETE; `application/yang-data+json`, RFC 7951); read-back is a GET | No SSH/NETCONF session (XML over plain HTTP to the adaptor); no TLS or auth on RESTCONF; no HTTP-verb ProvMnS; no RESTCONF notifications, YANG-patch or query parameters |
 | TS 28.541 NR NRM ([`TS28541_NrNrm.yaml`](../../specs/5G_APIs/TS28541_NrNrm.yaml)) | Bundled CM descriptor `3gpp-ts28541-nrnrm@19.6.0` (54 IOC classes) as the default spec data model | WG10 O1NRM / WG5 IOCs are not bundled (`SA-O1-4`) |
 | TS 28.532 FaultMnS / TS 28.111 ([`TS28111_FaultNrm.yaml`](../../specs/5G_APIs/TS28111_FaultNrm.yaml)) | `AlarmRecord` fields: `alarmType`, `probableCause`, `specificProblem`, `rootCauseIndicator`, `correlatedNotifications`, `proposedRepairActions`, `ackUserId`, `alarmChangedTime`; clear = `severity` `cleared` (as NotifyClearedAlarm reuses `perceivedSeverity`) | `severity` is this build's lowercase vocabulary, not the six TS 28.111 values (`SA-RANOAM-6-severity`); flat ME/MF reference strings, not DNs (`SA-RANOAM-4`) |
 | TS 28.550 PerfMeasJobCtrlMnS ([`TS28550_PerfMeasJobCtrlMnS.yaml`](../../specs/5G_APIs/TS28550_PerfMeasJobCtrlMnS.yaml)) | `granularityPeriod` on a PM subscription | The clause-8 job-control surface (schedule, priority, reportingPeriod) is out; SubscribePM is a DME-producer registration, not a clause-8 call |
@@ -57,10 +57,10 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 ```
 
 - It calls DME over R1 only to register itself as a producer (`RAN.PMCounters.<counter>`, `RAN.FaultRecords`) and to fan PM measurements out as DME records. Consumers never read RAN NF OAM for PM; they read DME.
-- It talks to adaptors directly (southbound, outside R1) using `netconf_client.py`. The adaptor address is `adaptor_uri` from its own registry, never a URL taken from a request body, except where noted in [onboarding discovery](#operator-steps).
+- It talks to adaptors directly (southbound, outside R1) using `netconf_client.py` or `restconf_client.py`. The adaptor address is `adaptor_uri` from its own registry, never a URL taken from a request body, except where noted in [onboarding discovery](#operator-steps).
 - It never calls AIMgF, MLMR, MLLF, MDAF, Intent Service, NFO or FOCOM. MDAF is never on the action path.
 - Test vendor: [`mock-o1-adaptor`](../mock-o1-adaptor/README.md).
-- DME / RAN NF OAM boundary: [DME](../dme/README.md) owns the type / producer registry, data jobs, `DataRecord` and `DmeActionRecord` + `POST /actions` (O1 action mediation); RAN NF OAM owns the O1 protocol dispatch, endpoint registry, ME/MF addressing, alarms and PM/CM/SWM jobs. DME's record is the audit of what the AI/ML decision asked for; RAN NF OAM's `WriteConfigJob` is the record of what NETCONF did. A 4xx from RAN NF OAM (capability or schema refusal) is passed back by DME unchanged and DME records the action `REJECTED`.
+- DME / RAN NF OAM boundary: [DME](../dme/README.md) owns the type / producer registry, data jobs, `DataRecord` and `DmeActionRecord` + `POST /actions` (O1 action mediation); RAN NF OAM owns the O1 protocol dispatch, endpoint registry, ME/MF addressing, alarms and PM/CM/SWM jobs. DME's record is the audit of what the AI/ML decision asked for; RAN NF OAM's `WriteConfigJob` is the record of what NETCONF or RESTCONF did. A 4xx from RAN NF OAM (capability or schema refusal) is passed back by DME unchanged and DME records the action `REJECTED`.
 
 ### 1.4 Ownership
 
@@ -69,7 +69,7 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 | O1 adaptor endpoint registry and health (`O1AdaptorEndpoint`) | The decision to change a cell → rApp / Intent Service / SA SMOS |
 | `ManagedEntity` (ME / MF addressing, vendor, protocol, cell guards) | Action audit and idempotency (`DmeActionRecord`) → DME |
 | Vendor capability registry, CM schema descriptors | Data records, data jobs, type registry → DME |
-| CM write jobs and sub-changes, NETCONF dispatch, retry, read-after-write | Analytics on PM / alarms → MDAF |
+| CM write jobs and sub-changes, NETCONF / RESTCONF dispatch, retry, read-after-write | Analytics on PM / alarms → MDAF |
 | Alarms (ingest, ack, clear) and FM / PM subscriptions | Infrastructure (O-Cloud) alarms → FOCOM (`OCloudAlarm`) |
 | SWM job lifecycle | RAN-function placement and runtimes → NFO |
 | PM data path into DME | A1 policy → A1 Related |
@@ -94,9 +94,10 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 
 | File | Responsibility |
 |---|---|
-| `app/main.py` | App, endpoint registry, `POST /config-jobs` (pre-check, dispatch loop, aggregation), alarms, PM / FM subscriptions and PM report fan-out, SWM jobs, health aging, list reads, DME callback stubs (`/health`, `/dme-jobs`) |
+| `app/main.py` | App, endpoint registry, `POST /config-jobs` (pre-check, dispatch loop, aggregation; `_o1_client` picks the NETCONF or RESTCONF client by `o1_protocol`), alarms, PM / FM subscriptions and PM report fan-out, SWM jobs, health aging, list reads, DME callback stubs (`/health`, `/dme-jobs`) |
 | `app/vendors.py` | Capability registry, CM schemas, onboarding flow, managed entities, cell guards, and the two request-time checks (`require_service`, `schema_problems`); mounted as a router |
 | `app/netconf_client.py` | RFC 6241 `edit-config` / `get-config` RPC builders, HTTP transport, `EditResult` (reason, retryable) |
+| `app/restconf_client.py` | RFC 8040 client: data-resource URL (percent-encoded keys), `yang-data+json` body, edit `operation` -> PATCH / PUT / POST / DELETE, GET read-back, `RestconfResult` (reason, retryable, `error_tag`); reuses `EditResult` and the 30 s timeout |
 | `app/statemachine.py` | Three FSMs: `WriteConfigJob`, `SoftwareManagementJob`, endpoint health; `aggregate_event` |
 | `app/models.py` | SQLAlchemy models |
 | `app/cm_schemas/3gpp-ts28541-nrnrm.json` | Bundled TS 28.541 NR NRM descriptor (default `specSchemaRef`) |
@@ -264,8 +265,8 @@ PM report body: `managedElementRef`, `counterType`, `measurements[]` each with `
 1. `scope == "entire-RAN"` without `msacRole` -> 403 `MSAC_ACCESS_DENIED`.
 2. For every change: `require_service(PROV)`, then `schema_problems`. Any problem -> 422, nothing is created.
 3. A `WriteConfigJob` is created; `schema_validated_at` set; `PENDING` -> `PROCESSING`.
-4. Per change, in order: ME missing or without endpoint -> sub-change `REJECTED` `ENDPOINT_UNREACHABLE`; endpoint aged, then `DEGRADED` / `UNREACHABLE` -> `REJECTED` `ENDPOINT_UNREACHABLE`; `o1_protocol != "NETCONF"` -> `REJECTED` `PROTOCOL_NOT_SUPPORTED`; otherwise dispatch.
-5. Dispatch POSTs an `edit-config` XML RPC to `adaptor_uri` (timeout 30 s per exchange). Reasons: `NETCONF_TIMEOUT` (client timeout, 408, 504), `NETCONF_UNREACHABLE` (connection error, 5xx), `NETCONF_RPC_FAILED` (other 3xx/4xx, unparseable reply, or no `<ok/>`). Only the first two are retried.
+4. Per change, in order: ME missing or without endpoint -> sub-change `REJECTED` `ENDPOINT_UNREACHABLE`; endpoint aged, then `DEGRADED` / `UNREACHABLE` -> `REJECTED` `ENDPOINT_UNREACHABLE`; `o1_protocol` neither `NETCONF` nor `RESTCONF` (`_o1_client` finds no client) -> `REJECTED` `PROTOCOL_NOT_SUPPORTED`; otherwise dispatch.
+5. Dispatch follows the ME's `o1_protocol` (timeout 30 s per exchange). NETCONF: POSTs an `edit-config` XML RPC to `adaptor_uri`; reasons `NETCONF_TIMEOUT` (client timeout, 408, 504), `NETCONF_UNREACHABLE` (connection error, 5xx), `NETCONF_RPC_FAILED` (other 3xx/4xx, unparseable reply, or no `<ok/>`). RESTCONF: `adaptor_uri` is the RESTCONF root; the `operation` maps to `merge` PATCH, `replace` PUT, `create` POST on the parent, `delete` / `remove` DELETE (`remove` tolerates `data-missing`) on `{root}/data/managed-element={ref}[/managed-function={fref}]`; reasons `RESTCONF_TIMEOUT` (client timeout, 408, 504), `RESTCONF_UNREACHABLE` (connection error, 502, 503, or a 5xx without an `ietf-restconf:errors` body), `RESTCONF_REQUEST_FAILED` (any other non-2xx, including any `ietf-restconf:errors` reply, or an unknown operation). Only the timeout and unreachable reasons are retried; an error reply is never retried.
 6. Attempts are made after delays `0, 5, 10, 20` s (`RAN_NF_OAM_NETCONF_RETRY_DELAYS`); `attempts` is stored per sub-change. A change that failed after more than one attempt raises an alarm on the ME (`severity=major`, `alarm_type=COMMUNICATIONS_ALARM`, `probable_cause` = the last reason, `source_alarm_id=o1-config:<jobId>:<target>`).
 7. Aggregate: all applied -> `COMPLETED`; all rejected -> `FAILED`; mixed -> `PARTIAL_SUCCESS`.
 
@@ -281,12 +282,12 @@ RPC shape: an `<rpc>` whose `message-id` is the job id, containing `<edit-config
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `RAN_NF_OAM_NETCONF_RETRY_DELAYS` | `0,5,10,20` | Seconds before each dispatch attempt (4 attempts) |
+| `RAN_NF_OAM_NETCONF_RETRY_DELAYS` | `0,5,10,20` | Seconds before each dispatch attempt (4 attempts); applies to NETCONF and RESTCONF alike |
 | `SMO_DATABASE_URL` | `postgresql+psycopg://smo:smo@postgres:5432/smo` | Database (shared lib) |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | R1 gateway for DME calls (shared lib) |
 | `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset | R1Client credentials (shared lib) |
 
-Constants in code: `MISSED_HEARTBEAT_THRESHOLD` = 90 s; `NETCONF_TIMEOUT_SECONDS` = 30; default spec schema `3gpp-ts28541-nrnrm@19.6.0`; producer callback host `http://ran-nf-oam:8000`.
+Constants in code: `MISSED_HEARTBEAT_THRESHOLD` = 90 s; `NETCONF_TIMEOUT_SECONDS` = `RESTCONF_TIMEOUT_SECONDS` = 30; default spec schema `3gpp-ts28541-nrnrm@19.6.0`; producer callback host `http://ran-nf-oam:8000`.
 
 ### 2.7 Error codes
 
@@ -296,18 +297,18 @@ ProblemDetails are returned as `{"detail": {"type": "about:blank", "title": <cod
 |---|---|---|
 | `MSAC_ACCESS_DENIED` | 403 | `scope` `entire-RAN` without `msacRole` |
 | `O1_SERVICE_NOT_SUPPORTED` | 409 | The ME's effective services lack the required MnS service (see [checks](#checks-at-request-time)) |
-| `PROTOCOL_NOT_SUPPORTED` | 409 | Endpoint registration or capability declaration with an `o1Protocol` the vendor has not declared; also the sub-change `rejectionReason` for an RESTCONF ME at dispatch |
+| `PROTOCOL_NOT_SUPPORTED` | 409 | Endpoint registration or capability declaration with an `o1Protocol` the vendor has not declared; also the sub-change `rejectionReason` for an ME whose provisioned protocol is neither NETCONF nor RESTCONF at dispatch, and the error of `GET .../config` for such an ME |
 | `CM_SCHEMA_CONFLICT` | 409 | A different descriptor at an existing `schemaName` + `revision`, or `POST /cm-schemas` of one already loaded |
 | `SCHEMA_VALIDATION_FAILED` | 422 | CM write refused by the schema check; bad descriptor shape; `OWN` / `COMBINED` without `schemaRef`; endpoint `supportedServices` wider than the vendor's; onboarding with no discoverable services or a vendor mismatch; PM report without a subscription |
 | `CM_SCHEMA_NOT_FOUND` | 404 | Unknown `schemaRef` / `specSchemaRef`, or `GET /cm-schemas/{name}` |
 | `VENDOR_CAPABILITY_NOT_FOUND` | 404 | `GET /vendor-capabilities/{vendor}` |
 | `MANAGED_ENTITY_NOT_FOUND` | 404 | ME lookups (`GET /managed-entities/{me}`, cell guards, onboarding `discoverFrom`) |
-| `ENDPOINT_UNREACHABLE` | 503 | `get-config` failed or ME has no adaptor; onboarding discovery failed or ME has no adaptor. As a sub-change `rejectionReason` it also means the endpoint was missing / `DEGRADED` / `UNREACHABLE` |
-| `NETCONF_TIMEOUT`, `NETCONF_UNREACHABLE`, `NETCONF_RPC_FAILED` | n/a | Sub-change `rejectionReason` values only |
+| `ENDPOINT_UNREACHABLE` | 503 | the configuration read (`get-config` or RESTCONF GET) failed or ME has no adaptor; onboarding discovery failed or ME has no adaptor. As a sub-change `rejectionReason` it also means the endpoint was missing / `DEGRADED` / `UNREACHABLE` |
+| `NETCONF_TIMEOUT`, `NETCONF_UNREACHABLE`, `NETCONF_RPC_FAILED`, `RESTCONF_TIMEOUT`, `RESTCONF_UNREACHABLE`, `RESTCONF_REQUEST_FAILED` | n/a | Sub-change `rejectionReason` values only |
 
 ### 2.8 Limits and open items
 
-- **Transport.** Only RFC 6241-shaped `edit-config` over HTTP is dispatched. `O1_RESTCONF` can be declared as a vendor mode, but an ME provisioned for RESTCONF is rejected at dispatch with `PROTOCOL_NOT_SUPPORTED`. `OI-1-cm-sync-restconf`. A new transport needs one client module per transport family, selected by `ManagedEntity.o1_protocol`.
+- **Transport.** RFC 6241-shaped `edit-config` and RFC 8040 RESTCONF requests, both over plain HTTP (no TLS, auth, notifications or YANG-patch), are dispatched; an ME provisioned for any other protocol is rejected at dispatch with `PROTOCOL_NOT_SUPPORTED`. A new transport needs one client module per transport family, selected by `ManagedEntity.o1_protocol`.
 - **YANG.** The ingestion script reads NRM OpenAPI only; a YANG bundle needs a YANG front end (`pyang`) emitting the same descriptor shape. Only the TS 28.541 descriptor ships (`SA-O1-4`).
 - **Semantics.** A descriptor documents shape, not runtime behaviour; a vendor that silently ignores an accepted attribute is found only by integration testing against that vendor (`GET .../config` read-back exists for this).
 - **Alarms.** `correlation_group` is a coarse string; no storm correlation (`OI-1-alarm-storm`). Alarms carry no cell reference (`W10-alarm-cellref`). `severity` / `alarm_type` / `ack_state` are not validated in code; out-of-vocabulary values fail the Postgres CHECK as a 500 (`SA-RANOAM-6-severity`).
@@ -328,7 +329,7 @@ A vendor's O1 termination differs on three independent axes:
 
 | Axis | Question | Realized by |
 |---|---|---|
-| 1. MnS transport | Which wire protocol? | `ManagedEntity.o1_protocol`; vendor modes `O1_NETCONF` / `O1_RESTCONF`. Only RFC 6241-shaped `edit-config` over HTTP is dispatched. |
+| 1. MnS transport | Which wire protocol? | `ManagedEntity.o1_protocol`; vendor modes `O1_NETCONF` / `O1_RESTCONF`. RFC 6241-shaped `edit-config` and RFC 8040 RESTCONF, both over HTTP, are dispatched. |
 | 2. MnS services | Does the vendor implement this operation category at all? (presence) | `supportedServices` ⊆ `PROV`, `FM`, `PM`, `FILE`, `STREAM`, `SWM`, `SUBSCRIPTION`, `HEARTBEAT` |
 | 3. IOC data model | Whose class / attribute names and value ranges? (shape) | `conformanceMode` `SPEC` / `OWN` / `COMBINED` + CM schema descriptors |
 
@@ -409,7 +410,7 @@ For a test vendor, `mock-o1-adaptor` serves a configurable `GET /capabilities` (
 
 ### Limits
 
-- **Transport.** Only RFC 6241-shaped `edit-config` over HTTP is dispatched. `O1_RESTCONF` can be declared as a vendor mode, but an ME provisioned for RESTCONF is rejected at dispatch with `PROTOCOL_NOT_SUPPORTED`. A new transport needs one client module per transport family, selected by `ManagedEntity.o1_protocol`.
+- **Transport.** RFC 6241-shaped `edit-config` and RFC 8040 RESTCONF requests, both over plain HTTP (no TLS, auth, notifications or YANG-patch), are dispatched; an ME provisioned for any other protocol is rejected at dispatch with `PROTOCOL_NOT_SUPPORTED`. A new transport needs one client module per transport family, selected by `ManagedEntity.o1_protocol`.
 - **YANG.** The ingestion script reads NRM OpenAPI only; a YANG bundle needs a YANG front end (`pyang`) emitting the same descriptor shape.
 - **Semantics.** A descriptor documents shape, not runtime behaviour; a vendor that silently ignores an accepted attribute is found only by integration testing against that vendor.
 
@@ -425,18 +426,19 @@ cd smo/ran-nf-oam && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 | Test file | Covers | Count |
 |---|---|---|
-| `tests/test_main.py` | Config dispatch (apply, reject, `operation` threading, RESTCONF refusal, unreachable / stale / fresh endpoint), `discover` aging, endpoint registration and heartbeat, PM / FM subscription create / list / delete and DME producer registration, `/health` and `/dme-jobs` callbacks, alarm ingest / filter / ack / clear, list reads | 36 |
+| `tests/test_main.py` | Config dispatch (apply, reject, `operation` threading, RESTCONF dispatch, refusal of a protocol with no client, unreachable / stale / fresh endpoint), `discover` aging, endpoint registration and heartbeat, PM / FM subscription create / list / delete and DME producer registration, `/health` and `/dme-jobs` callbacks, alarm ingest / filter / ack / clear, list reads | 37 |
 | `tests/test_vendors.py` | Bundled spec descriptor and custom schema load, capability CRUD and defaults, vendor-mode gating, `SPEC` / `OWN` / `COMBINED` schema checks, unregistered vendor unchecked, service-presence guards, onboarding with discovery and its failures, cell guards | 10 |
-| `tests/test_dispatch_reliability.py` | `function-ref` dispatch, retry with backoff, retry exhaustion -> failed change + alarm, no retry on `<rpc-error>`, read-after-write, PM report fan-out to every data job, multi-counter per-relation measurements | 7 |
+| `tests/test_dispatch_reliability.py` | `function-ref` dispatch, retry with backoff, retry exhaustion -> failed change + alarm, no retry on `<rpc-error>`, read-after-write, PM report fan-out to every data job, multi-counter per-relation measurements; RESTCONF retry and alarm, no retry on an `ietf-restconf:errors` reply, RESTCONF read-after-write | 10 |
 | `tests/test_netconf_client.py` | RPC builders (`operation`, `function-ref`), `<ok/>` handling, failure reasons, `get-config` parsing | 12 |
+| `tests/test_restconf_client.py` | Data-resource URL and key encoding, `yang-data+json` bodies, `operation` -> method mapping (PATCH / PUT / POST on the parent / DELETE), `remove` tolerating `data-missing`, error-reply vs transient failure reasons, GET read-back parsing | 22 |
 | `tests/test_statemachine.py` | The three FSMs, aggregation, forbidden transitions (e.g. `ACTIVE` -> `UNREACHABLE`) | 10 |
-| **Total** | | **75** |
+| **Total** | | **101** |
 
 ### 3.3 What is not covered here
 
 - The real DME and mock adaptor round trip (config write end to end, PM -> DME -> rApp, vendor onboarding against `mock-o1-adaptor`): `tests_integration/`.
 - Postgres CHECK constraints and FK behaviour (SQLite does not enforce them): `scripts/check_migration_matches_models.py`.
-- RESTCONF dispatch (not implemented), MSAC role evaluation (not implemented).
+- MSAC role evaluation (not implemented).
 - Unknown-id 500 paths on job / alarm lookups are not asserted.
 
 ## 4. References

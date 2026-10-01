@@ -39,8 +39,27 @@ Recurring conventions referred to below:
   See SA-INTENT-arch and W3. (#110)
 - **OI-1-cm-sync** — RAN NF OAM CM sync method is NETCONF. `WriteConfigurationChanges` sends an
   RFC 6241 `<edit-config>` RPC over HTTP (`ran-nf-oam/app/netconf_client.py`) to the ME's
-  `O1AdaptorEndpoint.adaptor_uri`. A RESTCONF-provisioned ME is rejected `PROTOCOL_NOT_SUPPORTED`.
-  `cm_schema_cache` holds real descriptors since W9.
+  `O1AdaptorEndpoint.adaptor_uri`. A RESTCONF-provisioned ME is dispatched over RFC 8040 since
+  OI-1-cm-sync-restconf. `cm_schema_cache` holds real descriptors since W9.
+- **OI-1-cm-sync-restconf** — RESTCONF dispatch for an ME provisioned with `o1Protocol=RESTCONF`.
+  - **Client:** `ran-nf-oam/app/restconf_client.py`. The ME's `adaptor_uri` is the RESTCONF root, and
+    a managed object is the data resource `{root}/data/managed-element={ref}[/managed-function={functionRef}]`
+    with percent-encoded keys. Bodies are `application/yang-data+json` RFC 7951 list entries.
+  - **Operations:** `merge` is PATCH, `replace` is PUT, `create` is POST on the parent (409
+    `data-exists`), `delete` is DELETE (`data-missing` is an error) and `remove` is DELETE with a
+    missing target accepted. Read-after-write (`GET /managed-entities/{ref}/config`) is a GET.
+  - **Retries:** the same policy and alarm as NETCONF. A timeout, 502/503, or a 5xx without an error
+    body is transient (`RESTCONF_TIMEOUT`, `RESTCONF_UNREACHABLE`). An `ietf-restconf:errors` reply is
+    a definite answer and is never retried (`RESTCONF_REQUEST_FAILED`).
+  - **Dispatch:** RAN NF OAM picks the client by `ManagedEntity.o1_protocol`. Any protocol other than
+    NETCONF or RESTCONF is still rejected `PROTOCOL_NOT_SUPPORTED` (the read route answers 409).
+  - **Mock:** `mock-o1-adaptor` answers RFC 8040 at `/restconf` (plus `/.well-known/host-meta`) over
+    the same running configuration and fault injection as its NETCONF route. It now declares both
+    vendor modes by default.
+  - **Not taken:** TLS, HTTP authentication, and the YANG library (`ietf-yang-library`). They match
+    this build's plain-HTTP transport everywhere else, and there are no YANG modules to list.
+  - **Not taken:** YANG Patch (RFC 8072). One plain PATCH per managed object is enough, because the
+    write path already sends one atomic request per sub-change.
 - **OI-1-sa-reconnect** — SA SMOS `RECONNECT` reads the monitor's `target_order_id` back from SO SMOS,
   finds the completed `DEPLOY` step's `nfDeploymentId` and dispatches NFO Heal. For a
   rApp-instance-scoped monitor it heals the current instance's `workloadRef`. Call flow 04.

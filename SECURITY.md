@@ -95,9 +95,10 @@ declined, but a way to exploit one in a surprising way is welcome.
   [`smo/OPEN_ITEMS.md`](smo/OPEN_ITEMS.md)).
 - Onboarding's package signature check is an internal-consistency check, not
   verification against a trust anchor.
-- The real O1 NETCONF transport is not hardened: RAN NF OAM speaks
-  RFC 6241-shaped `edit-config` over HTTP to the adaptor, and the stack has not
-  been run against a real RAN.
+- The O1 transports are not hardened: RAN NF OAM speaks RFC 6241-shaped
+  NETCONF `edit-config` and RFC 8040 RESTCONF over plain HTTP, without TLS or
+  authentication, to the adaptor, and the stack has not been run against a real
+  RAN.
 - Backend RBAC exists only in `gui-bff`; R1 service APIs authenticate callers
   but do not authorise per resource.
 

@@ -170,10 +170,10 @@ hello-world. Onboarding ignores all of them:
 
 - **(f)** ES does not list `inputs`; its manifest names the dataset only
   (`datasets: PRB_UTILIZATION`). The other three enumerate the counters.
-- `supportedVendorModes` lists `O1_RESTCONF` although RAN NF OAM dispatches
-  only RFC 6241-shaped `edit-config` over HTTP; an ME provisioned for RESTCONF
-  is refused at dispatch (see [`../ran-nf-oam/README.md`](../ran-nf-oam/README.md)).
-  Treat the declaration as intent, not a tested capability.
+- `supportedVendorModes` names the O1 transports the rApp's writes may travel
+  over: RAN NF OAM dispatches RFC 6241 `edit-config` (NETCONF) and RFC 8040
+  RESTCONF, both over plain HTTP (see
+  [`../ran-nf-oam/README.md`](../ran-nf-oam/README.md)).
 
 ## 5. Files under `Files/`
 

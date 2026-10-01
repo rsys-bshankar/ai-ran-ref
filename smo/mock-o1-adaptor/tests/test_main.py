@@ -132,7 +132,7 @@ def test_edit_config_rejects_entity_expansion_instead_of_parsing_it():
 def test_capability_declaration_is_configurable(monkeypatch):
     client = TestClient(app)
     assert client.get("/capabilities").json() == {
-        "vendorName": "mock-vendor", "supportedVendorModes": ["O1_NETCONF"],
+        "vendorName": "mock-vendor", "supportedVendorModes": ["O1_NETCONF", "O1_RESTCONF"],
         "supportedServices": ["PROV", "FM", "PM", "FILE", "STREAM", "SWM", "SUBSCRIPTION", "HEARTBEAT"]}
     monkeypatch.setenv("MOCK_O1_VENDOR_NAME", "acme")
     monkeypatch.setenv("MOCK_O1_SUPPORTED_SERVICES", "PROV,FM")
@@ -212,3 +212,85 @@ def test_frequency_relation_defaults_and_writes():
     _edit("gnb-1", "NRFreqRelation=401-F2100", {"cellReselectionPriority": "6"})
     assert _get("gnb-1", "NRFreqRelation=401-F2100")["cellReselectionPriority"] == "6"
     assert _get("gnb-1", "NRFreqRelation=402-F2100")["cellReselectionPriority"] == "5"
+
+
+# ---------------------------------------------------------------- RESTCONF (OI-1-cm-sync-restconf)
+
+CELL = "/restconf/data/managed-element=gnb-du-01/managed-function=NRCellDU%3D101"
+YANG = {"Content-Type": "application/yang-data+json"}
+
+
+def _cell(**attrs):
+    return {"managed-function": [{"function-ref": "NRCellDU=101", **attrs}]}
+
+
+def _tag(resp):
+    return resp.json()["ietf-restconf:errors"]["error"][0]["error-tag"]
+
+
+def test_restconf_root_is_discoverable():
+    assert 'href="/restconf"' in client.get("/.well-known/host-meta").text
+
+
+def test_restconf_get_of_an_unwritten_cell_answers_its_ioc_defaults():
+    resp = client.get(CELL)
+    assert resp.status_code == 200 and resp.headers["content-type"].startswith("application/yang-data+json")
+    assert resp.json() == _cell(administrativeState="UNLOCKED", operationalState="ENABLED")
+
+
+def test_restconf_patch_merges_and_is_read_back_by_both_protocols():
+    assert client.patch(CELL, json=_cell(administrativeState="LOCKED"), headers=YANG).status_code == 204
+    assert client.get(CELL).json() == _cell(administrativeState="LOCKED", operationalState="ENABLED")
+    # the same running configuration the NETCONF route serves
+    assert client.get("/objects/gnb-du-01", params={"function_ref": "NRCellDU=101"}).json()["attributes"]["administrativeState"] == "LOCKED"
+
+
+def test_restconf_put_replaces_and_reports_creation():
+    assert client.put(CELL, json=_cell(administrativeState="LOCKED", operationalState="DISABLED"), headers=YANG).status_code == 201
+    assert client.put(CELL, json=_cell(administrativeState="UNLOCKED"), headers=YANG).status_code == 204
+    # replaced, not merged: operationalState falls back to its default
+    assert client.get(CELL).json() == _cell(administrativeState="UNLOCKED", operationalState="ENABLED")
+
+
+def test_restconf_post_creates_a_child_once():
+    parent = "/restconf/data/managed-element=gnb-du-01"
+    assert client.post(parent, json=_cell(administrativeState="LOCKED"), headers=YANG).status_code == 201
+    again = client.post(parent, json=_cell(administrativeState="LOCKED"), headers=YANG)
+    assert again.status_code == 409 and _tag(again) == "data-exists"
+    element = client.post("/restconf/data", json={"managed-element": [{"ref": "ME-9", "userLabel": "x"}]}, headers=YANG)
+    assert element.status_code == 201
+    assert client.get("/restconf/data/managed-element=ME-9").json() == {"managed-element": [{"ref": "ME-9", "userLabel": "x"}]}
+
+
+def test_restconf_delete_of_a_missing_object_is_data_missing():
+    missing = client.delete(CELL)
+    assert missing.status_code == 404 and _tag(missing) == "data-missing"
+    client.patch(CELL, json=_cell(administrativeState="LOCKED"), headers=YANG)
+    assert client.delete(CELL).status_code == 204
+    assert client.get(CELL).json()["managed-function"][0]["administrativeState"] == "UNLOCKED"
+
+
+@pytest.mark.parametrize("body, tag", [
+    ({"managed-function": [{"function-ref": "NRCellDU=999", "administrativeState": "LOCKED"}]}, "invalid-value"),
+    ({"managed-function": [{"function-ref": "NRCellDU=101"}]}, "invalid-value"),   # an empty merge
+    ({"something-else": []}, "malformed-message"),
+])
+def test_restconf_rejects_bodies_that_do_not_match_the_target(body, tag):
+    resp = client.patch(CELL, json=body, headers=YANG)
+    assert resp.status_code == 400 and _tag(resp) == tag
+
+
+def test_restconf_rejects_a_path_it_does_not_model():
+    resp = client.get("/restconf/data/ietf-interfaces:interfaces")
+    assert resp.status_code == 400 and _tag(resp) == "invalid-value"
+
+
+def test_restconf_shares_the_injected_faults():
+    client.post("/faults", json={"mode": "TIMEOUT", "managedObjectRef": "gnb-du-01/NRCellDU=101"})
+    client.post("/faults", json={"mode": "RPC_ERROR"})
+    client.post("/faults", json={"mode": "IGNORE_WRITE"})
+    assert client.patch(CELL, json=_cell(administrativeState="LOCKED"), headers=YANG).status_code == 504
+    failed = client.patch(CELL, json=_cell(administrativeState="LOCKED"), headers=YANG)
+    assert failed.status_code == 500 and _tag(failed) == "operation-failed"
+    assert client.patch(CELL, json=_cell(administrativeState="LOCKED"), headers=YANG).status_code == 204
+    assert client.get(CELL).json()["managed-function"][0]["administrativeState"] == "UNLOCKED"  # ignored

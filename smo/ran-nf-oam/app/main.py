@@ -6,9 +6,10 @@ writes with decomposed-PATCH aggregation, fleet-unique alarm IDs, and the
 explicit clarification that SubscribePM is a DME-producer registration,
 never a clause-8 call (no such API exists).
 
-CM writes dispatch as NETCONF-shaped <edit-config> RPCs (netconf_client.py)
-— the confirmed protocol per HISTORY.md's "CM cache sync method" item.
-An ME provisioned for RESTCONF has no dispatch implementation yet and is
+CM writes dispatch over the ME's provisioned O1 protocol: NETCONF-shaped
+<edit-config> RPCs (netconf_client.py, HISTORY.md's "CM cache sync method"
+item) or RFC 8040 RESTCONF requests on the data resource
+(restconf_client.py, OI-1-cm-sync-restconf). Any other protocol is
 rejected with PROTOCOL_NOT_SUPPORTED rather than silently applied.
 """
 
@@ -31,6 +32,7 @@ from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import Alarm, CMSchemaCache, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from . import restconf_client
 from .netconf_client import send_edit_config, send_get_config
 from .vendors import MnsService, check_vendor_mode, require_service, router as vendors_router, schema_problems
 from .statemachine import (
@@ -63,19 +65,32 @@ NETCONF_RETRY_DELAYS = [float(d) for d in os.environ.get("RAN_NF_OAM_NETCONF_RET
 _sleep = time.sleep
 
 
+# OI-1-cm-sync-restconf: the O1 protocols this module dispatches CM over —
+# o1_protocol -> (edit, read, reason for an unexplained failure). Resolved
+# at call time so tests can patch either client function.
+def _o1_client(protocol: str):
+    if protocol == "NETCONF":
+        return send_edit_config, send_get_config, "NETCONF_RPC_FAILED"
+    if protocol == "RESTCONF":
+        return restconf_client.send_edit, restconf_client.send_get, "RESTCONF_REQUEST_FAILED"
+    return None
+
+
 def _dispatch_with_retries(adaptor_uri: str, change: dict, attribute_changes: dict, message_id: str,
-                           operation: str) -> tuple[bool, str | None, int]:
-    """(applied, rejection reason, attempts) for one sub-change."""
+                           operation: str, protocol: str = "NETCONF") -> tuple[bool, str | None, int]:
+    """(applied, rejection reason, attempts) for one sub-change. The same
+    retry policy for both protocols: only a transient failure is retried."""
+    send_edit, _, default_reason = _o1_client(protocol)
     reason, attempts = None, 0
     for delay in NETCONF_RETRY_DELAYS:
         if delay:
             _sleep(delay)
         attempts += 1
-        result = send_edit_config(adaptor_uri, change["managedElementRef"], attribute_changes, message_id=message_id,
-                                  operation=operation, managed_function_ref=change.get("managedFunctionRef"))
+        result = send_edit(adaptor_uri, change["managedElementRef"], attribute_changes, message_id=message_id,
+                           operation=operation, managed_function_ref=change.get("managedFunctionRef"))
         if result:
             return True, None, attempts
-        reason = getattr(result, "reason", None) or "NETCONF_RPC_FAILED"
+        reason = getattr(result, "reason", None) or default_reason
         if not getattr(result, "retryable", False):
             break
     return False, reason, attempts
@@ -210,17 +225,16 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
                                          attribute_changes=attribute_changes, operation=operation, status="REJECTED",
                                          rejection_reason="ENDPOINT_UNREACHABLE"))
             continue
-        if me.o1_protocol != "NETCONF":
-            # Confirmed protocol choice (HISTORY.md) is NETCONF — an ME
-            # provisioned for RESTCONF has no dispatch implementation yet,
-            # rejected honestly rather than silently treated as applied.
+        if _o1_client(me.o1_protocol) is None:
+            # NETCONF and RESTCONF are dispatched; any other provisioned
+            # protocol is rejected rather than silently treated as applied.
             db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
                                          managed_function_ref=change.get("managedFunctionRef"),
                                          attribute_changes=attribute_changes, operation=operation, status="REJECTED",
                                          rejection_reason="PROTOCOL_NOT_SUPPORTED"))
             continue
         applied, reason, attempts = _dispatch_with_retries(endpoint.adaptor_uri, change, attribute_changes,
-                                                           str(job.job_id), operation)
+                                                           str(job.job_id), operation, me.o1_protocol)
         if not applied and attempts > 1:
             _raise_dispatch_alarm(db, job.job_id, change, reason, attempts)
         db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
@@ -239,18 +253,23 @@ def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(
 @app.get("/managed-entities/{managed_element_ref}/config")
 def read_configuration(managed_element_ref: str, managed_function_ref: str | None = None, db: Session = Depends(get_session)):
     """Wave 10.1 (W10-20): read-after-write. Reads the managed object's
-    running configuration from its O1 adaptor (NETCONF <get-config>) — the
-    live value on the NF, not what this module last asked for — so a
-    caller can verify that a write actually took effect."""
+    running configuration from its O1 adaptor (NETCONF <get-config>, or a
+    RESTCONF GET of the data resource) — the live value on the NF, not what
+    this module last asked for — so a caller can verify that a write
+    actually took effect."""
     require_service(db, managed_element_ref, "PROV")
     me = db.get(ManagedEntity, managed_element_ref)
     endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id) if me and me.o1_adaptor_endpoint_id else None
     if endpoint is None:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"{managed_element_ref} has no registered O1 adaptor")
-    attributes = send_get_config(endpoint.adaptor_uri, managed_element_ref, message_id=str(uuid.uuid4()),
-                                 managed_function_ref=managed_function_ref)
+    client = _o1_client(me.o1_protocol)
+    if client is None:
+        raise framework_error(FrameworkError.PROTOCOL_NOT_SUPPORTED,
+                              detail=f"{managed_element_ref} is provisioned for {me.o1_protocol}, which has no client")
+    attributes = client[1](endpoint.adaptor_uri, managed_element_ref, message_id=str(uuid.uuid4()),
+                           managed_function_ref=managed_function_ref)
     if attributes is None:
-        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"get-config on {managed_element_ref} failed")
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"configuration read on {managed_element_ref} failed")
     return {"managedElementRef": managed_element_ref, "managedFunctionRef": managed_function_ref, "attributes": attributes}
 
 

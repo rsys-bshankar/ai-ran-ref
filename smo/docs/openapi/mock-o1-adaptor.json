@@ -86,11 +86,28 @@
     }
   },
   "info": {
-    "title": "Mock O1 Adaptor (NETCONF test double)",
+    "title": "Mock O1 Adaptor (NETCONF and RESTCONF test double)",
     "version": "0.1.0"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/.well-known/host-meta": {
+      "get": {
+        "description": "RFC 8040 section 3.1: where the RESTCONF root is.",
+        "operationId": "restconf_root_discovery__well_known_host_meta_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Restconf Root Discovery"
+      }
+    },
     "/capabilities": {
       "get": {
         "description": "The vendor capability declaration RAN NF OAM's vendor onboarding\nflow discovers (Wave 9 W9-03, `POST /ran-nf-oam/vendor-onboarding`\nwith `discoverFrom`, read at this fixed path on the adaptor's registered\norigin): which vendor this adaptor fronts, which MnS\nservices it implements and which O1 transports it speaks. Configurable\nper deployment so one image can stand in for several vendors.",
@@ -252,6 +269,223 @@
           }
         },
         "summary": "Query Object"
+      }
+    },
+    "/restconf/data": {
+      "post": {
+        "description": "POST creates a child of the target (RFC 8040 section 4.4.1): a\nmanaged element under the datastore, or a managed function under its\nelement. 409 data-exists if the child is already there.",
+        "operationId": "restconf_create_restconf_data_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restconf Create"
+      }
+    },
+    "/restconf/data/{path}": {
+      "delete": {
+        "operationId": "restconf_data_restconf_data__path__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restconf Data"
+      },
+      "get": {
+        "operationId": "restconf_data_restconf_data__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restconf Data"
+      },
+      "patch": {
+        "operationId": "restconf_data_restconf_data__path__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restconf Data"
+      },
+      "post": {
+        "description": "POST creates a child of the target (RFC 8040 section 4.4.1): a\nmanaged element under the datastore, or a managed function under its\nelement. 409 data-exists if the child is already there.",
+        "operationId": "restconf_create_restconf_data__path__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restconf Create"
+      },
+      "put": {
+        "operationId": "restconf_data_restconf_data__path__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restconf Data"
       }
     },
     "/state": {
