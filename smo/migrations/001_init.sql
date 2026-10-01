@@ -257,7 +257,12 @@ CREATE TABLE rapp_instance (
   -- directly, never from this file, so the gap went uncaught.
   pending_upgrade_instance_id             UUID REFERENCES rapp_instance(instance_id),
   package_usage_registration_id             UUID REFERENCES package_usage_registration(id),
-  sme_service_ids                              JSONB      -- SME serviceId(s) this instance registered at bootstrap-complete; deregistered on TERMINATE/CRASH
+  sme_service_ids                              JSONB,     -- SME serviceId(s) this instance registered at bootstrap-complete; deregistered on TERMINATE/CRASH
+  -- OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes: fixed at onboarding,
+  -- defaults to SHADOW (no enforcement) for every existing caller.
+  autonomy_mode                                   TEXT NOT NULL DEFAULT 'SHADOW'
+                                                     CHECK (autonomy_mode IN ('AUTONOMOUS','ASSIST','SHADOW')),
+  region_scope                                        JSONB      -- AUTONOMOUS's own pre-configured RAN node/cell/slice scope
 );
 
 CREATE TABLE rapp_fault_report (
@@ -865,6 +870,26 @@ CREATE TABLE intent_report (
   intent_fulfilment_report JSONB,
   intent_conflict_reports    JSONB,
   last_updated_time            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- OPEN_ITEMS.md section 6.3 — rApp Autonomy Modes: a real, queryable
+-- record of each inference-driven dispatch decision, distinct from
+-- intent itself since not every mode actually produces one.
+CREATE TABLE autonomy_dispatch (
+  dispatch_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  instance_id           UUID NOT NULL,   -- -> rapp_instance (rApp Mgmt) — bare UUID, cross-module reference
+  model_id                UUID,          -- -> aiml_model (MLMR) — the triggering inference, if any
+  autonomy_mode              TEXT NOT NULL CHECK (autonomy_mode IN ('AUTONOMOUS','ASSIST','SHADOW')),
+  expectations                  JSONB NOT NULL,
+  priority                        INTEGER NOT NULL DEFAULT 1 CHECK (priority BETWEEN 1 AND 100),
+  rmih_id                            TEXT NOT NULL REFERENCES intent_handling_function(rmih_id) ON DELETE CASCADE,
+  intent_mgmt_purpose                   TEXT CHECK (intent_mgmt_purpose IN ('FEASIBILITYCHECK','FEASIBILITYCHECK_WITH_RECOMMENDATIONS','FULFILMENT_WITHOUT_NEGOTIATION','EXPLORATION','FULFILMENT_WITH_NEGOTIATION')),
+  intent_handling_scope                    TEXT,
+  region_scope                                JSONB,
+  status                                          TEXT NOT NULL CHECK (status IN ('AWAITING_SCOPE','DISPATCHED','SHADOWED')),
+  intent_id                                          UUID REFERENCES intent(intent_id) ON DELETE SET NULL,
+  notification_destination                              TEXT,
+  created_at                                               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ============================================================

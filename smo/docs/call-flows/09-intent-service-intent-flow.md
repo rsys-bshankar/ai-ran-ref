@@ -16,24 +16,28 @@ as open until this pass, even though its top summary already correctly called it
 fixed there too.
 
 **Who creates an Intent, and when, and why**: `CreateIntent`'s only real caller identity
-is `rmioId` — any rApp acting as the Intent's owner (RMIO) may call it, for whatever reason
-that rApp has. Nothing in this build's code ties Intent creation to an AI/ML model's
-inference result or to an operator's own decision — this flow is deliberately generic
-about *why* an Intent exists, the same way call flow 03 is deliberately generic about *why*
-a CM change is being written. Today, an inference-driven rApp that wants to express its
-decision as an Intent (rather than a direct CM write, call flow 03 Path A/B) does so as its
-own private choice — there's no automated hand-off from "inference completed" (call flow
-02) to "Intent created" (here). Closing that gap with a real, spec-shaped linkage —
-`AUTONOMOUS` rApps enacting their outcome "as part of the Intent" via SO/SA-SMOS, with
-`ASSIST`/`SHADOW` variants — is the rApp Autonomy-Mode design tracked in `OPEN_ITEMS.md`;
-not built yet.
+is `rmioId` — any rApp acting as the Intent's owner (RMIO) may call it directly, for
+whatever reason that rApp has; this flow stays deliberately generic about *why* that
+direct path is used, the same way call flow 03 is deliberately generic about *why* a CM
+change is being written. **Closed since this flow was first written** (`OPEN_ITEMS.md`
+section 6.3): a second, real, automated path now exists alongside it —
+`RequestAutonomyDispatch`, closing the gap where an inference-driven rApp had no hand-off
+from "inference completed" (call flow 02) to "Intent created" beyond its own private,
+unaudited choice. An rApp instance's `autonomyMode` (rApp Mgmt's own `RAppInstance`, fixed
+at onboarding — call flow 01) now decides what happens to an inference outcome it wants
+enacted: `AUTONOMOUS` creates a real Intent immediately at a pre-configured region scope;
+`ASSIST` holds it for an operator to scope first; `SHADOW` computes it but never dispatches
+— see the new block below. The direct `CreateIntent` path above is unchanged and still
+exists for any caller that isn't going through autonomy-mode dispatch at all.
 
 ```mermaid
 sequenceDiagram
     actor SO as SO SMOS (framework-internal RMIH)
     participant R1 as R1 Termination
     participant Policy as Intent Service
+    participant RappMgmt as rApp Mgmt
     actor RMIO as Intent-owning rApp (RMIO)
+    actor Operator as Operator
 
     SO->>R1: POST /intent-service/intent-handling-functions<br/>(rmihId, smeServiceId, capabilities, notificationDestination, intentHandlingScope?)
     R1->>Policy: (proxied) RegisterIntentHandlingFunction
@@ -60,6 +64,34 @@ sequenceDiagram
         Note over Policy,SO: unreachable RMIH never fails CreateIntent itself —<br/>same best-effort-push pattern as every other<br/>subscription-shaped notification in this build
         Policy-->>RMIO: intentId
     end
+    end
+
+    rect rgb(255, 250, 230)
+    Note over RMIO,RappMgmt: OPEN_ITEMS.md 6.3, closed — rApp Autonomy Modes: the real,<br/>automated hand-off from an AI/ML inference outcome (call flow 02) to<br/>an Intent, instead of RMIO's own direct CreateIntent above
+    RMIO->>R1: POST /intent-service/autonomy-dispatches<br/>(instanceId, modelId?, expectations, rmihId, notificationDestination?)
+    R1->>Policy: (proxied) RequestAutonomyDispatch
+    Policy->>RappMgmt: GET /rapp-mgmt/instances/{instanceId}
+    RappMgmt-->>Policy: autonomyMode, regionScope
+    Policy->>Policy: fn = get(IntentHandlingFunction, rmihId) — validate capability/scope — same check CreateIntent itself runs, for all three modes
+    alt autonomyMode == AUTONOMOUS
+        Policy->>Policy: create Intent now (rmioId=instanceId), status=DISPATCHED<br/>regionScope = the instance's own pre-configured scope
+    else autonomyMode == ASSIST
+        Policy->>Policy: status=AWAITING_SCOPE — no Intent yet
+    else autonomyMode == SHADOW
+        Policy->>Policy: status=SHADOWED — observe-only, never dispatched
+    end
+    Policy->>Operator: best-effort POST notificationDestination<br/>(dispatchId, autonomyMode, status, intentId?)
+    Note over Policy,Operator: all three modes always notify the operator — not mode-gated,<br/>only enforcement (AUTONOMOUS/ASSIST) and scoping vary
+    Policy-->>RMIO: dispatchId, status, intentId?
+    end
+
+    opt ASSIST dispatch left AWAITING_SCOPE
+    Operator->>R1: POST /intent-service/autonomy-dispatches/{id}/resolve (regionScope)
+    R1->>Policy: (proxied) ResolveAutonomyDispatch
+    Policy->>Policy: create Intent now, status=DISPATCHED
+    Policy->>Operator: best-effort POST notificationDestination — again, dispatch resolved
+    Policy-->>Operator: dispatchId, status=DISPATCHED, intentId
+    Note over Policy: 409 AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE if called on a<br/>dispatch that isn't AWAITING_SCOPE — AUTONOMOUS's own scope was<br/>already fixed at onboarding, SHADOW is never resolvable at all
     end
 
     loop RMIH's own fulfilment cycle
@@ -93,3 +125,6 @@ sequenceDiagram
 - `UpdateIntentAdminState` is RMIO-only, checked against the `Intent`'s own `rmioId` at creation time — an RMIH that fulfils an Intent can report on it (`PublishIntentReport`) but cannot deactivate it; only the Intent's creator can.
 - **Closed since this flow was first written**: `CreateIntent` used to be an unaddressed call with no dispatch to any RMIH at all. It's now consumer-side selection, matching TS28312_IntentNrm.yaml's own containment model: `rmihId` is required, `_validate_rmih_can_handle` checks the named function's `intentHandlingCapabilityList` (`supportedExpectationObjectType`) against the Intent's own requested expectation object types, and its `intentHandlingScope` (now actually read, not just modeled and ignored) against the Intent's own requested scope — either mismatch is a real `RMIH_CAPABILITY_MISMATCH` (422) at creation time, not a silent accept. A scope-less RMIH matches any scope; an Intent with no expectation object types skips that half of the check.
 - `intentExpectations` stays an opaque `JSON` blob throughout — TS 28.312's own expectation grammar isn't in this build's source corpus, so it's carried, never interpreted (matches the model's own inline comment). Only one field is read out of it directly: `expectationObject.objectType`, the one TS28312 field this build's capability matching actually needs.
+- **Closed since this flow was first written** (`OPEN_ITEMS.md` section 6.3): `RequestAutonomyDispatch` validates the same way for all three modes, up front — even `SHADOW` "computes" the Intent it would have produced, so a dispatch addressed to a non-existent or incapable RMIH is rejected the same way `AUTONOMOUS`/`ASSIST` already are, not silently accepted just because nothing real ends up dispatched. A real `AutonomyDispatch` row is created regardless of mode — distinct from `Intent` itself since not every mode actually produces one.
+- **Design choice, not an oversight**: an `AUTONOMOUS`/`ASSIST` dispatch does *not* route through SO SMOS's own `DISPATCH_TABLE` (call flow 10, `OPEN_ITEMS.md` section 6.6) — that table composes explicit, operator-driven multi-step `ServiceOrder`s; an autonomy dispatch is a different actor's own real-time decision (an rApp instance, reacting to its own inference outcome), so it calls `Intent Service` directly, the module that already owns Intent creation, rather than indirecting through infrastructure built for a different caller and a different trigger.
+- `AutonomyDispatch.rmioId` on the Intent it creates is the dispatching `instanceId` itself (stringified) — the real identity behind an autonomy-driven Intent is the rApp instance that triggered it, the same role a direct `CreateIntent` caller's own `rmioId` already plays.

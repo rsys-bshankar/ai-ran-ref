@@ -2726,14 +2726,12 @@ Call flow 02 updated to show both shapes (create+terminate for the three batch e
 a stamp-only reference for Inference) and `OPEN_ITEMS.md`/call flow 20's own forward
 references to this item updated to reflect it's built.
 
-### 6.3 DECIDED: rApp Autonomy Modes — AUTONOMOUS / ASSIST / SHADOW
+### 6.3 DECIDED: rApp Autonomy Modes — AUTONOMOUS / ASSIST / SHADOW — CLOSED
 
 New concept, the user's own design (preserved verbatim below), meant to close call flow
 02's own dangling tail (an inference result pulled via DME with no automated path to a CM
 action, call flow 03) and call flow 09's own "Intent just hangs there, unlinked to any
-AI/ML or operator decision" gap. **Not built at all yet** — no `autonomy_mode` field, no
-onboarding-time flag, no SO/SA-SMOS Intent dispatch for it exists anywhere in this build
-today. This is the single largest new item from this review.
+AI/ML or operator decision" gap. This was the single largest new item from this review.
 
 **The design, as specified:**
 
@@ -2762,16 +2760,50 @@ today. This is the single largest new item from this review.
   SHADOW doesn't) and *scoping* (AUTONOMOUS is pre-configured, ASSIST is operator-assisted,
   SHADOW is moot since nothing is enforced) vary by mode.
 
-**When picked up, needs its own design pass on**: where `autonomy_mode` and AUTONOMOUS's
-region-scope config live (a new field on `RAppInstance`? A new onboarding-time resource?);
-the exact SO/SA-SMOS dispatch shape an AUTONOMOUS outcome takes (a new `DISPATCH_TABLE`
-entry, tying into 6.6 below?); how ASSIST's human-in-the-loop scoping step is exposed as
-an API (a new intermediate state on the Intent, awaiting operator scope input before
-dispatch?); and what "notify the operator" means concretely for SHADOW (a new
-notification type, or reuse of an existing best-effort push pattern already used
-throughout this build). This also directly informs call flow 02/03's own linkage gap and
-call flow 09's own "who creates an Intent and why" gap — once built, both flows should be
-updated to show the real, automated hand-off this section describes.
+**Closed.** `autonomyMode` (`AUTONOMOUS`/`ASSIST`/`SHADOW`, default `SHADOW` — the
+safest, no-enforcement mode, for every existing caller that doesn't declare one) and
+`regionScope` (opaque JSON, AUTONOMOUS's own pre-configured scope) both landed on
+`RAppInstance` (rApp Mgmt), set once at `CreateInstance` and fixed for the instance's
+whole lifetime, exactly as specified — not a new onboarding-time resource, since an
+instance already *is* the per-rApp identity every other onboarding-time property
+(`workloadRef`, `smeServiceIds`) already lives on.
+
+The dispatch mechanism itself is a new Intent Service concept, `AutonomyDispatch` — a
+real, queryable record of each inference-driven dispatch decision, distinct from `Intent`
+itself since not every mode actually produces one. `POST /intent-service/autonomy-dispatches`
+(`RequestAutonomyDispatch`) is the real hand-off call flow 02/03 lacked: it reads the
+named `instanceId`'s own `autonomyMode`/`regionScope` (a new cross-module `R1Client` call
+to rApp Mgmt — Intent Service's first), validates the named `rmihId` can actually handle
+the declared expectations (the same `_validate_rmih_can_handle` check `CreateIntent`
+itself already runs, factored into a shared `_create_intent_row` helper both paths call),
+then branches: **AUTONOMOUS** creates a real `Intent` immediately — `rmioId` set to the
+dispatching instance's own id, the same role a direct `CreateIntent` caller's `rmioId`
+already plays — scoped to the instance's pre-configured `regionScope`, status
+`DISPATCHED`. **ASSIST** creates no `Intent` yet — status `AWAITING_SCOPE` — until an
+operator calls the new `POST /autonomy-dispatches/{id}/resolve` with a `regionScope`,
+which only then creates the real `Intent` (409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` on
+any dispatch not in that state). **SHADOW** never creates an `Intent` at all — status
+`SHADOWED` — but still runs the identical up-front validation as the other two modes
+(an addressed-but-incapable or non-existent RMIH is rejected even for a dispatch that
+will never actually be enacted, so a SHADOW record stays a meaningful "this is what would
+have happened," not silently-accepted garbage). All three modes always best-effort
+notify an operator-supplied `notificationDestination` — not mode-gated, the same
+unreachable-destination-never-fails pattern used throughout this build — with the
+dispatch's own id, mode, status, and (once one exists) `intentId`.
+
+**Design choice, not left open**: an `AUTONOMOUS`/`ASSIST` dispatch does *not* route
+through SO-SMOS's own `DISPATCH_TABLE` (section 6.6 above) — that table composes
+explicit, operator-driven multi-step `ServiceOrder`s; an autonomy dispatch is a
+different actor's own real-time reaction to its own inference outcome, so it calls
+Intent Service directly, the module that already owns Intent creation, rather than
+indirecting through infrastructure built for a different caller and a different trigger.
+
+Call flow 09 updated with the full `RequestAutonomyDispatch`/`ResolveAutonomyDispatch`
+sequence; call flows 01 (`CreateInstance` now carries `autonomyMode`/`regionScope`), 02,
+and 03 (both CM-write paths now explicitly scoped to the *manual*, non-autonomous route)
+updated to reflect the real, automated hand-off this section used to say wasn't built.
+GUI: `RAppInstance`'s deploy form gained an autonomy-mode picker and region-scope field;
+Policy & Intents gained a new "Autonomy dispatches" tab (create + list + resolve).
 
 ### 6.4 GAP: training data never validated against real DME DataJobs — CLOSED
 
@@ -2872,14 +2904,15 @@ source NF or an operator, unaffected by FM's DME registration.
 
 ## Suggested next pass (priority order)
 
-0. **§6's seven AI/ML-pipeline items are the current front of the queue** — pick these up
-   one at a time, per the user's own stated preference, rather than in a batch.
-   ~~6.7 (FM→DME registration)~~, ~~6.6 (SO-SMOS dispatch entries)~~, ~~6.4
-   (training-data-DME validation)~~, ~~6.5 (training-outcome artifact/notification)~~,
-   ~~6.1 (operator gate on Training/Validation/Emulation)~~, and ~~6.2 (real NFO-backed
-   execution runtimes for MLTF/MLVF/MLEF/MLIF)~~ — **six closed**, the first six items off
-   this list (see each one's own entry above). Remaining: 6.3 (rApp Autonomy Modes — the
-   largest *design* change of the seven, and the only one left).
+0. **§6's seven AI/ML-pipeline items — all closed.** Picked up one at a time, per the
+   user's own stated preference, rather than in a batch: ~~6.7 (FM→DME registration)~~,
+   ~~6.6 (SO-SMOS dispatch entries)~~, ~~6.4 (training-data-DME validation)~~, ~~6.5
+   (training-outcome artifact/notification)~~, ~~6.1 (operator gate on
+   Training/Validation/Emulation)~~, ~~6.2 (real NFO-backed execution runtimes for
+   MLTF/MLVF/MLEF/MLIF)~~, and ~~6.3 (rApp Autonomy Modes — AUTONOMOUS/ASSIST/SHADOW,
+   the largest design change of the seven)~~ — see each one's own entry above for the
+   full closure detail. No further items queued here; the next architectural review pass
+   starts fresh, not from this list.
 1. **§5 is now fully closed — confirmed, not assumed** (see the
    "§5 audit" entry above). Every module's repo-audited completeness
    gap has been read end to end and is struck through. Do not

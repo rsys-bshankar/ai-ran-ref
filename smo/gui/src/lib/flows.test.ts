@@ -12,6 +12,7 @@ const pkg = (state: string, extra: Partial<Package> = {}): Package => ({
 });
 const instance = (state: string): Instance => ({
   instanceId: "i1", packageId: "p1", state, workloadRef: "nf1", configuration: {}, pendingUpgradeInstanceId: null, smeServiceIds: null,
+  autonomyMode: "SHADOW", regionScope: null,
 });
 const model = (): Model => ({
   modelId: "m1", modelType: "ts", version: "1", artifactLocation: null, description: null,

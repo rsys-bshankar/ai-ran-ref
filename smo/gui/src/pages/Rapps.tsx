@@ -158,13 +158,18 @@ function OnboardForm() {
 
 function CreateInstance({ pkg, onClose }: { pkg: Package; onClose: () => void }) {
   const [config, setConfig] = useState("{}");
+  const [autonomyMode, setAutonomyMode] = useState("SHADOW");
+  const [regionScope, setRegionScope] = useState("{}");
   const action = useSmoAction();
   const parsed = parseJsonObject(config);
+  const parsedScope = parseJsonObject(regionScope);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!parsed.ok) return;
-    action.mutate({ method: "POST", path: "/rapp-mgmt/instances", json: { packageId: pkg.packageId, config: parsed.value }, success: "Instance created (DEPLOYING)" },
-      { onSuccess: onClose });
+    if (!parsed.ok || !parsedScope.ok) return;
+    action.mutate({ method: "POST", path: "/rapp-mgmt/instances", json: {
+      packageId: pkg.packageId, config: parsed.value, autonomyMode,
+      regionScope: autonomyMode === "AUTONOMOUS" ? parsedScope.value : null,
+    }, success: "Instance created (DEPLOYING)" }, { onSuccess: onClose });
   };
   return (
     <Modal title={`Deploy ${pkg.name} ${pkg.version}`} onClose={onClose}>
@@ -173,7 +178,19 @@ function CreateInstance({ pkg, onClose }: { pkg: Package; onClose: () => void })
         <Field label="Instance configuration (JSON)" hint={parsed.ok ? "Optional. requiredResourceTypeId is passed to NFO for placement." : <span className="text-bad">{parsed.error}</span>}>
           <textarea rows={6} value={config} onChange={(e) => setConfig(e.target.value)} spellCheck={false} />
         </Field>
-        <div className="row gap end"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!parsed.ok || action.isPending}>Deploy</button></div>
+        <Field label="Autonomy mode" hint="Fixed for this instance's lifetime — how it may act on its own AI/ML inference outcomes (OPEN_ITEMS.md section 6.3).">
+          <select value={autonomyMode} onChange={(e) => setAutonomyMode(e.target.value)}>
+            <option value="SHADOW">SHADOW — observe-only, never dispatched</option>
+            <option value="ASSIST">ASSIST — operator scopes before dispatch</option>
+            <option value="AUTONOMOUS">AUTONOMOUS — dispatched at a pre-configured scope</option>
+          </select>
+        </Field>
+        {autonomyMode === "AUTONOMOUS" && (
+          <Field label="Region scope (JSON)" hint={parsedScope.ok ? "Which RAN nodes/cells/slices AUTONOMOUS dispatches are addressed to." : <span className="text-bad">{parsedScope.error}</span>}>
+            <textarea rows={3} value={regionScope} onChange={(e) => setRegionScope(e.target.value)} spellCheck={false} />
+          </Field>
+        )}
+        <div className="row gap end"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!parsed.ok || !parsedScope.ok || action.isPending}>Deploy</button></div>
       </form>
     </Modal>
   );
@@ -203,6 +220,7 @@ function Instances() {
             { header: "Instance", render: (i) => <Id value={i.instanceId} /> },
             { header: "Package", render: (i) => <>{pkgName(i.packageId) ?? <Id value={i.packageId} />}</> },
             { header: "State", render: (i) => <StateBadge state={i.state} /> },
+            { header: "Autonomy", render: (i) => <StateBadge state={i.autonomyMode} /> },
             { header: "", className: "actions", render: (i) => <InstanceActions inst={i} /> },
           ]} />
       </Card>
@@ -247,6 +265,8 @@ function InstanceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
           ["SME service API(s)", inst.data.smeServiceIds?.length
             ? <code className="small">{inst.data.smeServiceIds.join(", ")}</code>
             : <span className="muted">none registered</span>],
+          ["Autonomy mode", <StateBadge state={inst.data.autonomyMode} />],
+          ["Region scope", inst.data.regionScope ? <Json value={inst.data.regionScope} /> : <span className="muted">—</span>],
         ]} />
         <ConfigEditor id={id} config={inst.data.configuration ?? {}} />
       </>}
