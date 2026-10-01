@@ -189,7 +189,7 @@ def test_cco18_coordination_with_the_energy_saving_rapp(mesh, loaded_apps, monke
     # EnergySaving sleeps 101 (101's neighbours: 102, 103)
     es_clock = es.Clock(mesh)
     es_clock.feed(65, c101=2, c102=40, c103=40, c104=40)
-    assert es.decision(es.evaluate(mesh, es_iid), "101")["outcome"] == "EXECUTED"
+    es.executed(mesh, es.evaluate(mesh, es_iid), "101")
 
     clock = Clock(mesh, loaded_apps, me=es.ME, cells=cells).hour({"102": "WEAK_COVERAGE"})
     result = evaluate(mesh, iid)

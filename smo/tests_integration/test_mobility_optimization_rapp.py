@@ -154,7 +154,7 @@ def test_mro17_coordination_with_the_energy_saving_rapp(mesh, loaded_apps, monke
     # EnergySaving sleeps 101 and has 103 in PRE_SLEEP
     es_clock = es.Clock(mesh)
     es_clock.feed(65, c101=2, c102=40, c103=40, c104=40)
-    assert es.decision(es.evaluate(mesh, es_iid), "101")["outcome"] == "EXECUTED"
+    es.executed(mesh, es.evaluate(mesh, es_iid), "101")
     es_clock.feed(5, c101=2, c102=40, c103=2, c104=40)
     es.evaluate(mesh, es_iid)
     assert es.cell_state(mesh, es_iid, "103")["state"] == "PRE_SLEEP"
