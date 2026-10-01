@@ -531,7 +531,7 @@
         "summary": "List Emulation Jobs"
       },
       "post": {
-        "description": "CreateEmulation \u2014 new this wave, split out from Wave 1's flat\nVALIDATION_COMPLETE -> EMULATED transition the same way ValidationJob\nis. Requires the model to have passed validation (VALIDATED).",
+        "description": "CreateEmulation \u2014 new this wave, split out from Wave 1's flat\nVALIDATION_COMPLETE -> EMULATED transition the same way ValidationJob\nis. Requires the model to have passed validation (VALIDATED) AND an\noperator to have already fired APPROVE_VALIDATION (OPEN_ITEMS.md\nsection 6.1) \u2014 the same gate shape as request_validation's own.",
         "operationId": "request_emulation_emulation_jobs_post",
         "requestBody": {
           "content": {
@@ -2363,7 +2363,7 @@
         "summary": "List Validation Jobs"
       },
       "post": {
-        "description": "CreateValidation (AIMGF_OWNERSHIP.md's own request list) \u2014 new this\nwave: Wave 1's flat FSM folded validation silently into\nTRAINING_COMPLETE -> TESTED with no request/tracking of its own.\nRequires the model to have finished training (TRAINED).",
+        "description": "CreateValidation (AIMGF_OWNERSHIP.md's own request list) \u2014 new this\nwave: Wave 1's flat FSM folded validation silently into\nTRAINING_COMPLETE -> TESTED with no request/tracking of its own.\nRequires the model to have finished training (TRAINED) AND an\noperator to have already fired APPROVE_TRAINING (OPEN_ITEMS.md\nsection 6.1) \u2014 the state check alone isn't the gate.",
         "operationId": "request_validation_validation_jobs_post",
         "requestBody": {
           "content": {

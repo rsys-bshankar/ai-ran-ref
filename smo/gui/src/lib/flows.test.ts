@@ -20,6 +20,7 @@ const model = (): Model => ({
 const lifecycle = (modelLifecycleState: string, runtimeLifecycleState = "NOT_DEPLOYED", nodeGroups: string[] = []): ModelLifecycle => ({
   modelId: "m1", modelLifecycleState, runtimeLifecycleState, trainingJobId: null,
   clearedNodeGroups: nodeGroups, nfDeploymentDescriptorId: null, nfDeploymentId: null,
+  trainingApproved: false, validationApproved: false,
 });
 
 describe("the ten documented flows", () => {

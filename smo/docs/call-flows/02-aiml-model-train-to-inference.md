@@ -52,16 +52,30 @@ sequenceDiagram
     end
     Note over Producer,AIMgF: the generic /models/{id}/advance(TRAINING_COMPLETE) route still<br/>exists unchanged for any caller that doesn't need job-level<br/>bookkeeping — this is additive, not a replacement
 
+    rect rgb(255, 240, 240)
+    Note over Operator,AIMgF: operator gate (OPEN_ITEMS.md 6.1, closed) — mirrors the<br/>CERTIFY/PROMOTE governance shape — TRAINED/VALIDATED don't change,<br/>only ModelLifecycle.trainingApproved/validationApproved
+    Producer->>AIMgF: RequestValidation(modelId, trainingJobId, notificationUri?)
+    AIMgF-->>Producer: 409 TRAINING_NOT_APPROVED
+    Operator->>AIMgF: advance(APPROVE_TRAINING, decidedBy) -> TRAINED (self-loop)
+    Note over AIMgF: writes a real CertificationRecord, same as CERTIFY/PROMOTE —<br/>sets trainingApproved=true, the actual gate request_validation checks
+    end
+
     Producer->>AIMgF: RequestValidation(modelId, trainingJobId, notificationUri?) -> VALIDATING
     Note over AIMgF: MLVF validates (Phase 1: elided) — same elisions as Training above
     Producer->>AIMgF: complete(validationJobId, succeeded=true, outcomeArtifactDmeTypeId?) -> VALIDATED
     Note over AIMgF: same outcome-artifact + best-effort notification shape as Training above
 
+    rect rgb(255, 240, 240)
+    Note over Operator,AIMgF: same operator gate, for Validation -> Emulation
+    Operator->>AIMgF: advance(APPROVE_VALIDATION, decidedBy) -> VALIDATED (self-loop)
+    Note over AIMgF: sets validationApproved=true — RequestEmulation would<br/>otherwise 409 VALIDATION_NOT_APPROVED, same shape as above
+    end
+
     Producer->>AIMgF: RequestEmulation(modelId, notificationUri?) -> EMULATING
     Note over AIMgF: MLEF emulates (Phase 1: elided) — same elisions as Training above
     Producer->>AIMgF: complete(emulationJobId, succeeded=true, outcomeArtifactDmeTypeId?) -> EMULATED
     Note over AIMgF: same outcome-artifact + best-effort notification shape as Training above
-    Note over Producer,AIMgF: all three transitions above are producer/caller-driven —<br/>no operator step exists between them today (OPEN_ITEMS.md DECISION:<br/>gate Training->Validation->Emulation behind explicit operator<br/>approval, mirroring the CERTIFY/PROMOTE gate below — not yet built)
+    Note over Producer,AIMgF: Training->Validation and Validation->Emulation are now both<br/>operator-gated (above, OPEN_ITEMS.md 6.1, closed) — Emulation->SUBMIT_FOR_APPROVAL<br/>itself needs no separate gate, since the governance sequence right below<br/>already starts with an explicit operator action
 
     Note over Operator,AIMgF: governance — the certification gate, still the<br/>framework's own contribution, no O-RAN equivalent
     Operator->>AIMgF: advance(SUBMIT_FOR_APPROVAL, decidedBy) -> PENDING_APPROVAL

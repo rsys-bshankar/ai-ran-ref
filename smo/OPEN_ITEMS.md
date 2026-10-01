@@ -2639,7 +2639,7 @@ Two items below are **decided** (the user chose a direction; not yet built). The
 **confirmed gaps** (real, verified against code) or **open sub-questions** the decisions
 above raise but don't yet answer.
 
-### 6.1 DECIDED: operator gate on Training → Validation → Emulation
+### 6.1 DECIDED: operator gate on Training → Validation → Emulation — CLOSED
 
 Today (`aimgf/app/main.py`'s `request_training`/`request_validation`/`request_emulation`
 and their `advance`/`complete` counterparts), `TRAINING_COMPLETE`/`VALIDATED`/`EMULATED`
@@ -2649,16 +2649,28 @@ entire pre-certification pipeline with zero operator involvement. Only the later
 through the real governance `advance(event, decidedBy)` route with a `CertificationRecord`
 audit trail (call flow 02).
 
-**Decision** (user, this pass): add an explicit operator-approval gate to
-Training→Validation→Emulation as well, mirroring the existing CERTIFY/PROMOTE shape —
-likely a `decidedBy`-carrying approval step between each stage transition, with its own
-`CertificationRecord`-style entry, rather than a bare caller-pushed `advance()`. Not yet
-built. When picked up, needs its own design pass on exactly which events gain the gate
-(e.g. does `RequestValidation` itself require prior operator sign-off on the training
-result, or just `TRAINING_COMPLETE`?) and whether the gate blocks the request outright or
-introduces a new intermediate "awaiting approval" sub-state per stage.
+**Closed.** Added two new `ModelLifecycleEvent`s, `APPROVE_TRAINING` and
+`APPROVE_VALIDATION`, registered as self-loop FSM edges (`TRAINED -> TRAINED`,
+`VALIDATED -> VALIDATED` — `aimgf/app/statemachine.py`'s `build_model_lifecycle_fsm`) rather
+than new `ModelLifecycleState` values, so both fire through the *existing* generic
+`POST /models/{id}/advance(event, decidedBy)` route with zero new endpoints — exactly the
+CERTIFY/PROMOTE governance shape the decision called for. Both events joined
+`GOVERNANCE_EVENTS`, so each requires a non-null `decidedBy` and writes a real
+`CertificationRecord`, same as every other governance decision. The actual gate state lives
+in two new plain booleans on `ModelLifecycle` — `training_approved`/`validation_approved`
+(not in the FSM's own state enum) — set `True` by the matching `APPROVE_*` event and reset
+`False` whenever `CREATE_TRAINING` fires again (so retraining a `PROMOTED` model re-closes
+both gates). `request_validation`/`request_emulation` each gained one additive precondition
+check on top of their existing state guard: `TRAINING_NOT_APPROVED`/`VALIDATION_NOT_APPROVED`
+(409) if the matching flag isn't set yet. Existing non-governance tests needed only a
+one-line fixture change (`training_approved=True`/`validation_approved=True`) to keep
+passing — no route's existing contract changed for a caller that already clears the gate.
+GUI's `modelActions(state, gate?)` (`gui/src/lib/domain.ts`) now takes the lifecycle's two
+flags and shows either "Approve training"/"Approve validation" (when ungated) or the next
+request action (once approved). Call flow 02 updated to show both new gate checks and the
+operator's `advance(APPROVE_TRAINING/APPROVE_VALIDATION, decidedBy)` calls.
 
-**Open sub-question this decision raises, not yet answered**: `RuntimeLifecycle` (call
+**Open sub-question this decision raised, not yet answered**: `RuntimeLifecycle` (call
 flow 17 — Deploy/Activate/Scale/Terminate) is also entirely producer-driven today, with no
 operator step beyond the `MODEL_NOT_CERTIFIED` guard it inherits from `ModelLifecycle`.
 Whether the same operator-gate treatment should extend to Runtime transitions wasn't part
@@ -2837,10 +2849,10 @@ source NF or an operator, unaffected by FM's DME registration.
 0. **§6's seven AI/ML-pipeline items are the current front of the queue** — pick these up
    one at a time, per the user's own stated preference, rather than in a batch.
    ~~6.7 (FM→DME registration)~~, ~~6.6 (SO-SMOS dispatch entries)~~, ~~6.4
-   (training-data-DME validation)~~, and ~~6.5 (training-outcome artifact/notification)~~ —
-   **four closed**, the first four items off this list (see each one's own entry above).
-   Remaining suggested order, easiest/most self-contained first: 6.1 (operator gate on
-   Training/Validation/Emulation) → 6.2
+   (training-data-DME validation)~~, ~~6.5 (training-outcome artifact/notification)~~, and
+   ~~6.1 (operator gate on Training/Validation/Emulation)~~ — **five closed**, the first
+   five items off this list (see each one's own entry above). Remaining suggested order,
+   easiest/most self-contained first: 6.2
    (real NFO-backed execution runtimes — the largest code change of the seven) → 6.3 (rApp
    Autonomy Modes — the largest *design* change of the seven, and the one the other six
    don't block on, so it can move independently of where the rest land).

@@ -13,6 +13,7 @@ import { DEPLOYABLE_MODEL_STATES, formatTime, metricSeries, modelActions, numeri
 const REGISTERED_LIFECYCLE: ModelLifecycle = {
   modelId: "", modelLifecycleState: "REGISTERED", runtimeLifecycleState: "NOT_DEPLOYED",
   trainingJobId: null, clearedNodeGroups: [], nfDeploymentDescriptorId: null, nfDeploymentId: null,
+  trainingApproved: false, validationApproved: false,
 };
 
 const TABS = ["models", "training", "inference", "groups", "mlmf", "features"] as const;
@@ -85,7 +86,7 @@ function ModelActions({ model, lifecycle }: { model: Model; lifecycle: ModelLife
   const aimgfBase = `/aimgf/models/${model.modelId}`;
   return (
     <div className="row gap end">
-      {modelActions(lifecycle.modelLifecycleState).map((a) => {
+      {modelActions(lifecycle.modelLifecycleState, { trainingApproved: lifecycle.trainingApproved, validationApproved: lifecycle.validationApproved }).map((a) => {
         if (a.kind === "train") return <ActionButton key="train" label={a.label} tone="primary" action={{ method: "POST", path: "/aimgf/training-jobs", json: { modelId: model.modelId, producerId: "smo-gui" }, success: `${a.label}: training job started` }} />;
         if (a.kind === "validate") return <ActionButton key="validate" label={a.label} tone="primary" action={{ method: "POST", path: "/aimgf/validation-jobs", json: { modelId: model.modelId, producerId: "smo-gui" }, success: "Validation job started" }} />;
         if (a.kind === "emulate") return <ActionButton key="emulate" label={a.label} tone="primary" action={{ method: "POST", path: "/aimgf/emulation-jobs", json: { modelId: model.modelId, producerId: "smo-gui" }, success: "Emulation job started" }} />;

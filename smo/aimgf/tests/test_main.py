@@ -143,11 +143,16 @@ def client(db_session_factory):
     app.dependency_overrides.clear()
 
 
-def _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=None, runtime_lifecycle_state=None) -> None:
+def _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=None, runtime_lifecycle_state=None,
+                    training_approved=None, validation_approved=None) -> None:
     """Test-only shortcut: writes AIMgF's own ModelLifecycle row directly,
     the same role mlmr/tests' own `_make_model(..., state)` played before
     Wave 2 — most tests care about "a model already at CERTIFIED", not
     about walking every intermediate FSM transition to get there.
+    training_approved/validation_approved (OPEN_ITEMS.md section 6.1):
+    same shortcut role for the operator-gate flags a test doesn't care
+    about exercising via the real advance(APPROVE_TRAINING/
+    APPROVE_VALIDATION) route.
     """
     with db_session_factory() as session:
         lifecycle = session.get(ModelLifecycle, model_id)
@@ -158,6 +163,10 @@ def _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=None, run
             lifecycle.model_lifecycle_state = model_lifecycle_state
         if runtime_lifecycle_state is not None:
             lifecycle.runtime_lifecycle_state = runtime_lifecycle_state
+        if training_approved is not None:
+            lifecycle.training_approved = training_approved
+        if validation_approved is not None:
+            lifecycle.validation_approved = validation_approved
         session.commit()
 
 
@@ -364,7 +373,7 @@ def test_complete_validation_records_outcome_artifact_and_notifies(client, mlmr,
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     model_id = mlmr.add_model()
-    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
     job_id = client.post("/validation-jobs", json={
         "modelId": str(model_id), "producerId": "rapp-1", "notificationUri": "http://consumer/validation-cb",
     }).json()["validationJobId"]
@@ -382,7 +391,7 @@ def test_complete_emulation_records_outcome_artifact_and_notifies(client, mlmr, 
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     model_id = mlmr.add_model()
-    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED)
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED, validation_approved=True)
     job_id = client.post("/emulation-jobs", json={
         "modelId": str(model_id), "producerId": "rapp-1", "notificationUri": "http://consumer/emulation-cb",
     }).json()["emulationJobId"]
@@ -490,6 +499,24 @@ def test_request_training_on_promoted_model_fires_create_training_not_a_shortcut
     resp = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
     assert resp.status_code == 201
     assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.TRAINING
+
+
+def test_retraining_a_promoted_model_resets_the_operator_gate_flags(client, mlmr, db_session_factory):
+    """OPEN_ITEMS.md section 6.1: a stale approval from a prior pipeline
+    cycle must never silently carry forward into a new one — retraining
+    a PROMOTED model (which necessarily passed both gates once already)
+    resets training_approved/validation_approved back to False.
+    """
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED,
+                    training_approved=True, validation_approved=True)
+
+    client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
+
+    lifecycle = client.get(f"/models/{model_id}/lifecycle").json()
+    assert lifecycle["modelLifecycleState"] == ModelLifecycleState.TRAINING
+    assert lifecycle["trainingApproved"] is False
+    assert lifecycle["validationApproved"] is False
 
 
 def test_request_training_while_already_training_cancels_the_orphaned_job(client, mlmr):
@@ -607,9 +634,29 @@ def test_request_validation_requires_trained_model(client, mlmr, db_session_fact
     assert resp.json()["detail"]["title"] == "MODEL_NOT_CERTIFIED"
 
 
-def test_request_validation_advances_to_validating_then_complete_to_validated(client, mlmr, db_session_factory):
+def test_request_validation_requires_operator_approval_of_training(client, mlmr, db_session_factory):
+    """OPEN_ITEMS.md section 6.1: the state check alone isn't the gate —
+    an operator must also fire APPROVE_TRAINING first.
+    """
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
+
+    resp = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "TRAINING_NOT_APPROVED"
+
+    approve = client.post(f"/models/{model_id}/advance", params={"event": "APPROVE_TRAINING", "decided_by": "operator-1"})
+    assert approve.status_code == 200
+    assert approve.json()["trainingApproved"] is True
+    assert approve.json()["modelLifecycleState"] == ModelLifecycleState.TRAINED  # self-loop, no state change
+
+    resp = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
+    assert resp.status_code == 201
+
+
+def test_request_validation_advances_to_validating_then_complete_to_validated(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
 
     resp = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1", "validationCriteria": {"minAccuracy": 0.8}})
     assert resp.status_code == 201
@@ -624,7 +671,7 @@ def test_request_validation_advances_to_validating_then_complete_to_validated(cl
 
 def test_validation_failure_routes_the_model_to_failed(client, mlmr, db_session_factory):
     model_id = mlmr.add_model()
-    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
     job_id = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["validationJobId"]
 
     complete = client.post(f"/validation-jobs/{job_id}/complete", json={"succeeded": False})
@@ -634,7 +681,7 @@ def test_validation_failure_routes_the_model_to_failed(client, mlmr, db_session_
 
 def test_list_validation_jobs_filters_by_model(client, mlmr, db_session_factory):
     model_id = mlmr.add_model()
-    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
     job_id = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["validationJobId"]
 
     listed = client.get("/validation-jobs", params={"model_id": str(model_id)}).json()
@@ -642,13 +689,30 @@ def test_list_validation_jobs_filters_by_model(client, mlmr, db_session_factory)
     assert listed["total"] == 1
 
 
+def test_request_emulation_requires_operator_approval_of_validation(client, mlmr, db_session_factory):
+    """OPEN_ITEMS.md section 6.1: same gate shape as request_validation's own."""
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED)
+
+    resp = client.post("/emulation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "VALIDATION_NOT_APPROVED"
+
+    approve = client.post(f"/models/{model_id}/advance", params={"event": "APPROVE_VALIDATION", "decided_by": "operator-1"})
+    assert approve.status_code == 200
+    assert approve.json()["validationApproved"] is True
+
+    resp = client.post("/emulation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
+    assert resp.status_code == 201
+
+
 def test_request_emulation_requires_validated_model_and_completes_to_emulated(client, mlmr, db_session_factory):
     model_id = mlmr.add_model()
-    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
     rejected = client.post("/emulation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
     assert rejected.status_code == 409
 
-    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED)
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED, validation_approved=True)
     job_id = client.post("/emulation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["emulationJobId"]
     assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.EMULATING
 
@@ -659,7 +723,7 @@ def test_request_emulation_requires_validated_model_and_completes_to_emulated(cl
 
 def test_list_emulation_jobs_filters_by_model(client, mlmr, db_session_factory):
     model_id = mlmr.add_model()
-    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED)
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED, validation_approved=True)
     job_id = client.post("/emulation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["emulationJobId"]
 
     listed = client.get("/emulation-jobs", params={"model_id": str(model_id)}).json()

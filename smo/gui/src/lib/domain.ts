@@ -22,16 +22,29 @@ export type ModelAction =
 /** The operator actions legal from a ModelLifecycleState. TRAIN/VALIDATE/
  * EMULATE go through their own request routes, not a bare advance, so a
  * TrainingJob/ValidationJob/EmulationJob row exists for each. `governance`
- * actions are the six decisions AIMgF requires a decidedBy for
- * (SUBMIT_FOR_APPROVAL/APPROVE/REJECT/CERTIFY/PROMOTE/ROLLBACK) —
- * DEPRECATE/RETIRE aren't governance in AIMGF_OWNERSHIP.md's own sense. */
-export function modelActions(state: string): ModelAction[] {
+ * actions are the eight decisions AIMgF requires a decidedBy for
+ * (SUBMIT_FOR_APPROVAL/APPROVE/REJECT/CERTIFY/PROMOTE/ROLLBACK, plus
+ * OPEN_ITEMS.md section 6.1's own APPROVE_TRAINING/APPROVE_VALIDATION
+ * operator gate) — DEPRECATE/RETIRE aren't governance in
+ * AIMGF_OWNERSHIP.md's own sense.
+ *
+ * `gate` reflects ModelLifecycle.trainingApproved/validationApproved —
+ * TRAINED/VALIDATED only offer the next request route once an operator
+ * has already approved the stage that just finished; omitting it (e.g. a
+ * caller with no lifecycle row yet) defaults to "not yet approved". */
+export function modelActions(state: string, gate?: { trainingApproved: boolean; validationApproved: boolean }): ModelAction[] {
   switch (state) {
     case "REGISTERED": return [{ kind: "train", label: "Request training" }];
     case "TRAINING": return [{ kind: "advance", event: "TRAINING_COMPLETE", label: "Training complete" }];
-    case "TRAINED": return [{ kind: "validate", label: "Request validation" }];
+    case "TRAINED":
+      return gate?.trainingApproved
+        ? [{ kind: "validate", label: "Request validation" }]
+        : [{ kind: "advance", event: "APPROVE_TRAINING", label: "Approve training", governance: true }];
     case "VALIDATING": return [{ kind: "advance", event: "VALIDATION_COMPLETE", label: "Validation complete" }];
-    case "VALIDATED": return [{ kind: "emulate", label: "Request emulation" }];
+    case "VALIDATED":
+      return gate?.validationApproved
+        ? [{ kind: "emulate", label: "Request emulation" }]
+        : [{ kind: "advance", event: "APPROVE_VALIDATION", label: "Approve validation", governance: true }];
     case "EMULATING": return [{ kind: "advance", event: "EMULATION_COMPLETE", label: "Emulation complete" }];
     case "EMULATED": return [{ kind: "advance", event: "SUBMIT_FOR_APPROVAL", label: "Submit for approval", governance: true }];
     case "PENDING_APPROVAL": return [

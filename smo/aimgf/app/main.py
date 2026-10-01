@@ -120,6 +120,17 @@ def _fire_model_event(db: Session, model_id: uuid.UUID, event: ModelLifecycleEve
     db.add(LifecycleTransition(model_id=model_id, fsm="MODEL", from_state=from_state, to_state=new_state, event=event))
     if event in GOVERNANCE_EVENTS:
         db.add(CertificationRecord(model_id=model_id, decision=event, decided_by=decided_by, rationale=rationale))
+    # OPEN_ITEMS.md section 6.1: the operator gate's own two flags.
+    # APPROVE_TRAINING/APPROVE_VALIDATION set them; a fresh CREATE_TRAINING
+    # (first cycle or retrain) resets both — a stale approval from a prior
+    # pipeline run must never silently carry forward into a new one.
+    if event == ModelLifecycleEvent.APPROVE_TRAINING:
+        lifecycle.training_approved = True
+    elif event == ModelLifecycleEvent.APPROVE_VALIDATION:
+        lifecycle.validation_approved = True
+    elif event == ModelLifecycleEvent.CREATE_TRAINING:
+        lifecycle.training_approved = False
+        lifecycle.validation_approved = False
     db.flush()
     return lifecycle
 
@@ -439,13 +450,18 @@ def request_validation(body: RequestValidationRequest, db: Session = Depends(get
     """CreateValidation (AIMGF_OWNERSHIP.md's own request list) — new this
     wave: Wave 1's flat FSM folded validation silently into
     TRAINING_COMPLETE -> TESTED with no request/tracking of its own.
-    Requires the model to have finished training (TRAINED).
+    Requires the model to have finished training (TRAINED) AND an
+    operator to have already fired APPROVE_TRAINING (OPEN_ITEMS.md
+    section 6.1) — the state check alone isn't the gate.
     """
     _get_model(body.modelId)
     lifecycle = _get_or_create_lifecycle(db, body.modelId)
     if lifecycle.model_lifecycle_state != ModelLifecycleState.TRAINED:
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
                                detail=f"cannot request validation for a model in state {lifecycle.model_lifecycle_state}")
+    if not lifecycle.training_approved:
+        raise framework_error(FrameworkError.TRAINING_NOT_APPROVED,
+                               detail="an operator must advance(APPROVE_TRAINING, decidedBy) before validation can start")
     job = ValidationJob(model_id=body.modelId, training_job_id=body.trainingJobId, producer_id=body.producerId,
                          validation_criteria=body.validationCriteria, status="RUNNING",
                          notification_uri=body.notificationUri)
@@ -498,13 +514,18 @@ def list_validation_jobs(model_id: uuid.UUID | None = None, status: str | None =
 def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_session)):
     """CreateEmulation — new this wave, split out from Wave 1's flat
     VALIDATION_COMPLETE -> EMULATED transition the same way ValidationJob
-    is. Requires the model to have passed validation (VALIDATED).
+    is. Requires the model to have passed validation (VALIDATED) AND an
+    operator to have already fired APPROVE_VALIDATION (OPEN_ITEMS.md
+    section 6.1) — the same gate shape as request_validation's own.
     """
     _get_model(body.modelId)
     lifecycle = _get_or_create_lifecycle(db, body.modelId)
     if lifecycle.model_lifecycle_state != ModelLifecycleState.VALIDATED:
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED,
                                detail=f"cannot request emulation for a model in state {lifecycle.model_lifecycle_state}")
+    if not lifecycle.validation_approved:
+        raise framework_error(FrameworkError.VALIDATION_NOT_APPROVED,
+                               detail="an operator must advance(APPROVE_VALIDATION, decidedBy) before emulation can start")
     job = EmulationJob(model_id=body.modelId, producer_id=body.producerId, emulation_criteria=body.emulationCriteria,
                         status="RUNNING", notification_uri=body.notificationUri)
     db.add(job)
@@ -940,6 +961,7 @@ def _lifecycle_view(l: ModelLifecycle) -> dict:
         "clearedNodeGroups": l.cleared_node_groups or [],
         "nfDeploymentDescriptorId": str(l.nf_deployment_descriptor_id) if l.nf_deployment_descriptor_id else None,
         "nfDeploymentId": str(l.nf_deployment_id) if l.nf_deployment_id else None,
+        "trainingApproved": l.training_approved, "validationApproved": l.validation_approved,
     }
 
 
