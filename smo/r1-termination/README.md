@@ -66,7 +66,7 @@ It calls only SME (introspection) and the chosen backend. It never reads a datab
 | `/bootstrap` and `/health` are unauthenticated | Bootstrap must work before a token exists; both are assumed network-isolated. `/health` is declared ahead of the catch-all, so it is answered locally and not treated as an unknown prefix. |
 | Unknown prefix is `404 NO_ROUTE` before any token check | Nothing is forwarded, nothing is learned about backends. |
 | Prefix is stripped before forwarding | No backend carries its own prefix in its routes. |
-| `X-Correlation-ID` is overridden with the request's own id (the caller's, or the one the middleware just assigned); all other headers except `Host` are forwarded verbatim | One id threads the whole downstream fan-out of an inbound call (call flow 14). |
+| `X-Correlation-ID` is overridden with the request's own id (the caller's, or the one the middleware just assigned); `X-R1-Invoker-Id` is set to the introspected token's `client_id` (any inbound value is dropped; omitted when the token carries none); all other headers except `Host` are forwarded verbatim | One id threads the whole downstream fan-out of an inbound call (call flow 14). |
 | `/dme-push` and `/dme-pull` both route to DME | Reserved aliases for the push and pull delivery transports; DME has no routes of its own under those names, so after prefix stripping they are the same as `/dme`. |
 | `/a1-related` is routed but marked reserved | Inert until a Near-RT RIC exists. |
 | Explicit `operation_id="proxy"` on the catch-all | FastAPI's auto id depended on set iteration order of the five methods and made the committed OpenAPI spec check flaky. |
@@ -81,6 +81,7 @@ Failure behaviour: the proxy does not catch transport errors from the backend. A
 |---|---|
 | `app/main.py` | The whole module: `ROUTES`, `/health`, `/bootstrap`, the catch-all `proxy`, `_authorized` (introspection call). |
 | `../shared/smo_shared/openapi_security.py` | `apply_r1_gateway_security(app, public_paths={"/health", "/bootstrap"})`: adds the `r1BearerAuth` scheme to the OpenAPI document and marks those two paths as unauthenticated. |
+| `../shared/smo_shared/invoker.py` | `INVOKER_ID_HEADER` and `invoker_id(request)`: the caller id a backend reads (MLMR's `storeDiscReqs`). |
 | `../shared/smo_shared/correlation.py` | `apply_correlation_id(app)`: middleware assigning `X-Correlation-ID` when absent; `get_correlation_id()`. |
 
 ### 2.2 Data model

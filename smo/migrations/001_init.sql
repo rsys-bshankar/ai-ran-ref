@@ -813,7 +813,32 @@ CREATE TABLE aiml_model (
   retraining_events_monitor_ref            TEXT,
   source_trained_ml_model_ref               UUID,
   ml_model_repository_id                     UUID REFERENCES ml_model_repository(ml_model_repository_id) ON DELETE SET NULL,
+  -- TS 29.482 MLModel: the rest of the spec's attributes (SA-MLMR-6 / 7 / 8)
+  registered_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ml_model_src_id     TEXT,
+  interop_info        TEXT,
+  val_service_ids     JSONB,
+  adae_analytics_id   TEXT,
+  usage_reqs          JSONB,
+  phase_info          JSONB,
+  store_disc_reqs     JSONB,
   UNIQUE (model_type, version)                           -- NEW section 5: the reference's own (modelName, modelVersion) uniqueness
+);
+
+-- SA-MLMR-1: TS 29.482 MLModelsStorage / MLModelProfile
+CREATE TABLE ml_models_storage (
+  storage_id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ml_models_addresses  JSONB,
+  supp_feat            TEXT
+);
+
+CREATE TABLE ml_model_profile (
+  profile_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  storage_id      UUID NOT NULL REFERENCES ml_models_storage(storage_id) ON DELETE CASCADE,
+  model_id        UUID NOT NULL REFERENCES aiml_model(model_id) ON DELETE CASCADE,
+  aimle_serv_id   TEXT,
+  aimle_rep_id    TEXT,
+  ml_model_uri    JSONB
 );
 
 CREATE TABLE model_artifact (

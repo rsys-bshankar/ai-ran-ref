@@ -92,6 +92,20 @@ def _get_model(model_id: uuid.UUID) -> dict:
     return model
 
 
+def _record_phase(model_id: uuid.UUID, phase: str, *, training_info: dict | None = None) -> None:
+    """SA-MLMR-7: write the model's TS 29.482 `phaseInfo` back to MLMR (its
+    `phase`, and the training lineage: `trainingInfo.baseModelId`, `dataSources`).
+    Best-effort, like every notification here: MLMR being unreachable never
+    fails a training run."""
+    body: dict = {"phase": phase}
+    if training_info:
+        body["trainingInfo"] = training_info
+    try:
+        _r1.patch(f"/mlmr/models/{model_id}/phase-info", json=body)
+    except Exception:  # noqa: BLE001 — a transport failure only loses the lineage record
+        pass
+
+
 def _get_or_create_lifecycle(db: Session, model_id: uuid.UUID) -> ModelLifecycle:
     """Every model has a ModelLifecycle row lazily: MLMR's own
     `register_model` has no hook into AIMgF (a real cross-service call for
@@ -571,7 +585,22 @@ def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.U
             _fire_model_event(db, model_id, ModelLifecycleEvent.CREATE_TRAINING)
         lifecycle.training_job_id = job.training_job_id
     db.flush()
+    if model_id is not None:
+        _record_training_start(model_id, ml_training_type, job)
     return job
+
+
+def _record_training_start(model_id: uuid.UUID, ml_training_type: str, job: TrainingJob) -> None:
+    """The model enters IN_TRAINING (its first cycle) or IN_RETRAINING; a run
+    that starts from an earlier model records it as `baseModelId`: the model it
+    was derived from (`sourceTrainedMLModelRef`), else the model itself."""
+    info: dict = {}
+    if job.training_dataset:
+        info["dataSources"] = str(job.training_dataset)
+    if ml_training_type != "INITIAL_TRAINING":
+        model = _get_model_or_none(model_id) or {}
+        info["baseModelId"] = model.get("sourceTrainedMLModelRef") or str(model_id)
+    _record_phase(model_id, "IN_TRAINING" if ml_training_type == "INITIAL_TRAINING" else "IN_RETRAINING", training_info=info)
 
 
 @app.post("/training-jobs", status_code=201)
@@ -645,6 +674,8 @@ def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: 
     if job.model_id is not None:
         event = ModelLifecycleEvent.TRAINING_COMPLETE if body.succeeded else ModelLifecycleEvent.TRAINING_FAILED
         _fire_model_event(db, job.model_id, event)
+        if body.succeeded:
+            _record_phase(job.model_id, "TRAINED")
     _sync_training_process(db, job)
     _write_training_report(db, job, body)
     if job.ml_update_process_id is not None:
