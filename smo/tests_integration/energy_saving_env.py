@@ -192,3 +192,11 @@ def minutes(n):
 
 def new_id():
     return str(uuid.uuid4())
+
+
+def heartbeat(mesh, me):
+    """The NF stays alive: RAN NF OAM marks an endpoint unreachable after 90 s
+    of wall-clock silence, and a long scenario set-up can take that long."""
+    for ep in ok(mesh["ran-nf-oam"].get("/o1-adaptor-endpoints", params={"limit": 500}))["items"]:
+        if ep["managedElementRef"] == me:
+            ok(mesh["ran-nf-oam"].post(f"/o1-adaptor-endpoints/{ep['endpointId']}/heartbeat"))

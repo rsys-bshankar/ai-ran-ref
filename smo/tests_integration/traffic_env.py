@@ -12,7 +12,7 @@ import datetime
 import json
 from pathlib import Path
 
-from energy_saving_env import OPERATOR, governance, ok  # noqa: F401 (OPERATOR re-exported for the tests)
+from energy_saving_env import OPERATOR, governance, heartbeat, ok  # noqa: F401 (OPERATOR re-exported for the tests)
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
 CSAR = SMO_ROOT / "samples" / "traffic-steering-rapp.csar"
@@ -152,6 +152,7 @@ class Clock:
                 for c, nbrs in self.neighbours.items()}
 
     def hour(self, faults=None, hours=1, overrides=None):
+        heartbeat(self.mesh, self.me)
         gen = producer(self.apps)
         for _ in range(hours):
             report(self.mesh, gen.measurements(self.neighbours, self.layers, self.settings(), faults or {}, self.now,

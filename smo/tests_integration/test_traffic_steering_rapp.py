@@ -246,8 +246,7 @@ def test_ts19_shadow_recommends_and_assist_needs_approval(mesh, loaded_apps, mon
     ok(mesh["intent-service"].post(f"/autonomy-dispatches/{d['intent']['dispatchId']}/resolve",
                                    json={"regionScope": {"objectInstance": ME, "cells": ["401-402"]}}))
     settled = ok(mesh[RAPP].post(f"/instances/{ids['assist']}/reconcile"))["settled"]
-    assert settled[0]["outcomes"] == {"401": "EXECUTED"} and cio(mesh, "401", "402") == 2, \
-        _decisions(mesh, ids["assist"], cell_id="401")[0]
+    assert settled[0]["outcomes"] == {"401": "EXECUTED"} and cio(mesh, "401", "402") == 2
 
 
 def test_ts19_a_failed_or_unverified_write_is_rolled_back(mesh, loaded_apps, monkeypatch):
@@ -264,7 +263,7 @@ def test_ts19_a_failed_or_unverified_write_is_rolled_back(mesh, loaded_apps, mon
     # a second instance on the same cluster: the write is accepted but never takes
     fault(mesh, "NRCellRelation=401-402", "IGNORE_WRITE")
     d = decision(evaluate(mesh, ids["second"]), "401")
-    assert d["verification"] and d["verification"]["result"] == "VERIFY_FAILED" and d["outcome"] == "VERIFY_FAILED_ROLLED_BACK", (d["action"], d["reason"], d["decision"])
+    assert d["verification"]["result"] == "VERIFY_FAILED" and d["outcome"] == "VERIFY_FAILED_ROLLED_BACK"
     assert cio(mesh, "401", "402") == 0
 
 
