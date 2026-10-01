@@ -40,6 +40,7 @@ class Receiver:
         self._lock = threading.Lock()
         self._received: list[tuple[str, object]] = []
         receiver = self
+        csars = {f.name: f.read_bytes() for f in SAMPLES.glob("*.csar")}
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args):  # quiet
@@ -58,15 +59,14 @@ class Receiver:
                 self.end_headers()
 
             def do_GET(self):
-                if self.path.startswith("/csar/"):
-                    f = SAMPLES / Path(self.path).name
-                    if f.is_file():
-                        data = f.read_bytes()
-                        self.send_response(200)
-                        self.send_header("Content-Length", str(len(data)))
-                        self.end_headers()
-                        self.wfile.write(data)
-                        return
+                # a fixed table of the built packages: the request only selects a key
+                data = csars.get(self.path.removeprefix("/csar/")) if self.path.startswith("/csar/") else None
+                if data is not None:
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
                 self.send_response(404)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
