@@ -86,6 +86,10 @@ jobs:
           npm test
           npx vite build
 
+      - name: Validate every call-flow doc's mermaid diagram parses clean
+        working-directory: smo/gui
+        run: npm run validate:diagrams
+
   docker-compose-config:
     name: docker-compose.yml is structurally valid
     runs-on: ubuntu-latest
