@@ -8,9 +8,9 @@
 | R1 route / port | `/mlmr` via R1 Termination (container :8000) |
 | Depends on (over R1) | AIMgF (`GET /aimgf/ml-models/{id}/nrm-refs`, best-effort) |
 | Called by | AIMgF (`/mlmr/models/{id}`, `/mlmr/coordination-groups`), rApps through the SDK (`/mlmr/coordination-groups`), GUI via the BFF (`/mlmr/models`, artifact upload, coordination groups) |
-| Database tables | `aiml_model`, `model_artifact`, `ml_model_coordination_group`, `ml_model_repository`, `model_change_subscription` (declared, unused) |
-| Unit tests | 34 passed (`tests/`, SQLite, standalone) |
-| Status | Done for Phase 1. Open TS 29.482 gaps: `SA-MLMR-1`, `SA-MLMR-6`, `SA-MLMR-7`, `SA-MLMR-8`, `SA-MLMR-9`. Object storage (S3) is out of scope |
+| Database tables | `aiml_model`, `model_artifact`, `ml_model_coordination_group`, `ml_model_repository`, `ml_models_storage`, `ml_model_profile`, `model_change_subscription` (declared, unused) |
+| Unit tests | 54 passed (`tests/`, SQLite, standalone) |
+| Status | Done for Phase 1. TS 29.482 `MLModel`, storages / profiles, store / discovery requirements and discovery are built (`SA-MLMR-1`, `-6`, `-7`, `-8`, `-9`); limits in [section 2.8](#28-limits-and-open-items). Object storage (S3) is out of scope |
 
 ## 1. High-level design (HLD)
 
@@ -25,7 +25,9 @@ It does not know whether a model is trained, certified or deployed.
 | Spec | Realised | Deliberately not |
 |---|---|---|
 | TS 28.105 ([`TS28105_AiMlNrm.yaml`](../../specs/5G_APIs/TS28105_AiMlNrm.yaml)) | `MLModel` (writable attributes stored on `aiml_model`; read-only `mLTrainingType`, `aIMLInferenceReportRefList`, `usedByFunctionRefList` joined from AIMgF), `MLModelRepository`, `MLModelCoordinationGroup` (`memberMLModelRefList`, minItems 2) as `{"id", "attributes"}` views | DN containment (ids instead of DNs; flat REST, see [`../docs/ROADMAP.md#ts-28105`](../docs/ROADMAP.md#ts-28105)) |
-| TS 29.482 MLR ([`TS29482_MLR_MLModelManagement.yaml`](../../specs/5G_APIs/TS29482_MLR_MLModelManagement.yaml)) | `MLModel` `domain` (closed enum incl. `CUSTOM`), `customDomain`, `vendors`, `mlModelSize` (as artifact `sizeBytes`, computed from the uploaded bytes) | `MLModelsStorage` / `MLModelProfile` layer (`SA-MLMR-1`), `storeDiscReqs` (`SA-MLMR-6`), most of `trainingInfo` incl. `baseModelId` (`SA-MLMR-7`), `MLModelUsage` (`SA-MLMR-8`), whole-object `filt-criteria` in discovery (`SA-MLMR-9`; discovery filters by `model_type` only). [`TS29482_MLR_ModelInformationDiscovery.yaml`](../../specs/5G_APIs/TS29482_MLR_ModelInformationDiscovery.yaml) is therefore only loosely followed |
+| TS 29.482 MLR ([`TS29482_MLR_MLModelManagement.yaml`](../../specs/5G_APIs/TS29482_MLR_MLModelManagement.yaml)) | `MLModel` (`mlr.py`): `domain`, `customDomain`, `vendors`, `mlModelSize` (the latest artifact's size), `mlModelSrcId`, `interopInfo`, `valServiceIds`, `adaeAnalyticsId`, `usageReqs` (`SA-MLMR-8`), `phaseInfo` with `trainingInfo.baseModelId` (`SA-MLMR-7`) and `storeDiscReqs` (`SA-MLMR-6`), all validated against the spec enums. `MLModelsStorage` / `MLModelProfile` as `/storages` (`SA-MLMR-1`) with the `storage-ids` / `profile-ids` filters, PUT, PATCH (`MLModelsStoragePatch`) and DELETE | The spec's `anyOf` on `MLModel` (one of `vendors`, `interopInfo`, `phaseInfo`, `storeDiscReqs`) is not enforced, and enum fields do not accept the forward-compatible free string. A profile names a registered model: `mlModelInfo` carries no model type or version, so MLMR cannot create a model from a profile. `mlModelProfId` must be a UUID. `suppFeat` is stored, no feature is negotiated |
+| TS 29.482 `storeDiscReqs` | Enforced for discovery and artifact download (see 2.4): `duration` expires a model (410 `MODEL_EXPIRED`), `accessReqs.accessReq` `PUBLICLY_AVAILABLE` / `RESTRICTED` / `PRIVATE_USE_ONLY` judged on the caller id R1 Termination forwards, `timePeriod` closes access | `accessReqs.location` is stored, not enforced (no requester location exists). `GET /models` and `GET /models/{id}` serve the platform and are not filtered. An expired model's registry record stays |
+| TS 29.482 ModelInformationDiscovery ([`TS29482_MLR_ModelInformationDiscovery.yaml`](../../specs/5G_APIs/TS29482_MLR_ModelInformationDiscovery.yaml)) | `GET /models?filt-criteria=<MLModel JSON>`: whole-object match, a `DiscoveryResp` (`profiles`, or the files in `mlModels` with `include-models=true`, our extension), `indicator`, 404 when nothing matches | `supported-features` is accepted and ignored. A numeric criterion such as `mlModelSize` is an equality match |
 | Internal | `(model_type, version)` as the model identity; auto-incrementing artifact version separate from the model version; zip-only artifacts | |
 
 ### 1.3 Position in the platform
@@ -58,7 +60,8 @@ The cross-module AI/ML responsibility matrix (lifecycle state, model metadata, a
 - **Cascade is the database's job.** `DELETE /models/{id}` deletes MLMR's own artifacts explicitly and relies on `ON DELETE CASCADE` foreign keys in the migration for rows in AIMgF-owned tables. That cascade is verified against Postgres, not by the SQLite unit tests.
 - **Degradation.** The AIMgF join in `GET /ml-models/{id}` is best-effort: an unreachable or erroring AIMgF yields empty read-only attributes instead of failing the read of MLMR's own truth.
 - **Idempotency.** `DELETE` of an unknown model or repository returns 204 silently. Registration is not idempotent (duplicates are 409).
-- **Security.** Authentication is R1 Termination's bearer introspection. Roles are enforced by the GUI BFF (`gui-bff/app/rbac.py`): register, update, artifact upload and coordination-group creation need operator; model delete needs admin. Artifacts are downloadable by any authenticated caller (`storeDiscReqs`, `SA-MLMR-6`, is the gap).
+- **Caller identity.** R1 Termination forwards the introspected token's client id in `X-R1-Invoker-Id` (any inbound value is dropped); MLMR's `storeDiscReqs` enforcement reads it (`smo_shared/invoker.py`). A call that did not come through R1 has none and is refused by a `RESTRICTED` or `PRIVATE_USE_ONLY` model.
+- **Security.** Authentication is R1 Termination's bearer introspection. Roles are enforced by the GUI BFF (`gui-bff/app/rbac.py`): register, update, artifact upload and coordination-group creation need operator; model delete needs admin. Artifacts are downloadable by any authenticated caller unless the model sets `storeDiscReqs` (`SA-MLMR-6`, enforced; see 1.2).
 
 ## 2. Low-level design (LLD)
 
@@ -108,12 +111,14 @@ Paths relative to `/mlmr`. Lists are `{items, total, limit, offset}`.
 | Method | Path | Purpose / notable errors |
 |---|---|---|
 | POST | `/models` | Register. Required `modelType`, `version`. Optional metadata, `domain` / `customDomain` / `vendors`, TS 28.105 attributes incl. `mLModelRepositoryRef`. 409 `MODEL_ALREADY_REGISTERED`; 422 `SCHEMA_VALIDATION_FAILED` (unknown domain); 404 `NRM_OBJECT_NOT_FOUND` (unknown repository), `MODEL_NOT_FOUND` (unknown `sourceTrainedMLModelRef`). Returns `{modelId}` |
-| GET | `/models` | Discover; filter `model_type` only |
+| GET | `/models` | Paginated list, filter `model_type`; with `filt-criteria` (an MLModel JSON), `supported-features`, `include-models`: TS 29.482 discovery (`DiscoveryResp`; 404 `MODEL_NOT_FOUND` when nothing matches, 422 for criteria that are not an MLModel) |
+| PATCH | `/models/{id}/phase-info` | AIMgF's write-back of `phaseInfo` (merged; the first write needs a `phase`) |
+| POST / GET / PUT / PATCH / DELETE | `/storages`, `/storages/{id}` | TS 29.482 `MLModelsStorage` with its `mlModels` profiles; GET filters `storage-ids`, `profile-ids`. 404 `NRM_OBJECT_NOT_FOUND` / `MODEL_NOT_FOUND`, 422 on a bad body |
 | GET | `/models/{id}` | Model view (also the read AIMgF uses). 404 `MODEL_NOT_FOUND` |
 | PUT | `/models/{id}` | Replaces the metadata fields; `modelType` / `version` must match (400 `MODEL_IDENTITY_IMMUTABLE`). Also takes `trainingDataLineage`, `integrityHash` |
 | DELETE | `/models/{id}` | 204; deletes artifacts, then the model; unknown id is a no-op |
 | POST | `/models/{id}/artifact` | Multipart `file`, must end `.zip` (415 `ARTIFACT_FORMAT_INVALID`). Returns `artifactId`, `artifactVersion`, `sizeBytes`. 404 `MODEL_NOT_FOUND` |
-| GET | `/models/{id}/artifact/{artifactVersion}` | Zip bytes with `Content-Disposition`. 404 `ARTIFACT_VERSION_NOT_FOUND` |
+| GET | `/models/{id}/artifact/{artifactVersion}` | Zip bytes with `Content-Disposition`. 404 `ARTIFACT_VERSION_NOT_FOUND`, 410 `MODEL_EXPIRED`, 403 `MODEL_ACCESS_DENIED` (`storeDiscReqs`) |
 
 **Coordination groups**
 
@@ -156,6 +161,8 @@ RFC 7807 ProblemDetails; the code is in `title`. Conventions: [`../docs/ARCHITEC
 |---|---|---|
 | `MODEL_NOT_FOUND` | 404 | unknown model (get, put, upload, NRM view, unknown `sourceTrainedMLModelRef`) |
 | `ARTIFACT_VERSION_NOT_FOUND` | 404 | no such artifact version |
+| `MODEL_ACCESS_DENIED` | 403 | the caller is excluded by the model's `storeDiscReqs.accessReqs` |
+| `MODEL_EXPIRED` | 410 | the model passed its `storeDiscReqs.duration` |
 | `NRM_OBJECT_NOT_FOUND` | 404 | unknown repository (get, or as `mLModelRepositoryRef`) or coordination group |
 | `MODEL_ALREADY_REGISTERED` | 409 | duplicate `(modelType, version)` |
 | `MODEL_IDENTITY_IMMUTABLE` | 400 | `PUT` with a different `modelType` / `version` |
@@ -167,7 +174,7 @@ RFC 7807 ProblemDetails; the code is in `title`. Conventions: [`../docs/ARCHITEC
 ### 2.8 Limits and open items
 
 - Real object storage (S3) is out of scope: artifacts are database rows.
-- TS 29.482 gaps `SA-MLMR-1`, `-6`, `-7`, `-8`, `-9` ([`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)).
+- TS 29.482 limits (1.2): no `anyOf` / forward-compatible enum handling, `accessReqs.location` not enforced, `phaseInfo.phase` is written by AIMgF at training start / success only (not on validation or deployment), no model is created from a profile.
 - Coordination-group member ids are not validated against registered models, and `retrainPropagation` is not validated here (AIMgF raises on unknown values when a breach is reported).
 - `DELETE /models/{id}` does not check lifecycle state or running deployments; the database cascade removes AIMgF's rows for that model.
 - `model_change_subscription` is an unused table.
@@ -185,6 +192,7 @@ cd smo/mlmr && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 | Test file | Covers | Count |
 |---|---|---|
+| `tests/test_mlr_conformance.py` | `usageReqs` and `phaseInfo` validation, the phase-info patch, `storeDiscReqs` (validation, owner / restricted / public access, duration expiry, access period), whole-object discovery (subset rules, access filtering, model files), storages and profiles (create, validation, filters, replace, patch, delete, cascade) | 20 |
 | `tests/test_main.py` | register / get / update / delete, metadata and domain / vendors round-trip, duplicate and per-type versioning, identity immutability, artifact upload (`.zip` only, size, version increments, location), download round-trip, cascade of own artifacts, coordination groups (list, too small), TS 28.105 attributes and validation, NRM view with AIMgF stubbed and unreachable, repository delete un-containing, health | 34 |
 
 ### 3.3 What is not covered here

@@ -68,6 +68,68 @@
         "title": "CreateCoordinationGroupRequest",
         "type": "object"
       },
+      "EndPoint": {
+        "additionalProperties": false,
+        "description": "TS 29.558 EndPoint: exactly one of uri, fqdn, ipv4Addrs, ipv6Addrs.",
+        "properties": {
+          "fqdn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fqdn"
+          },
+          "ipv4Addrs": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ipv4Addrs"
+          },
+          "ipv6Addrs": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ipv6Addrs"
+          },
+          "uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uri"
+          }
+        },
+        "title": "EndPoint",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -158,6 +220,317 @@
         "title": "MLContext",
         "type": "object"
       },
+      "MLModelAccessReqs": {
+        "additionalProperties": false,
+        "properties": {
+          "accessReq": {
+            "enum": [
+              "PUBLICLY_AVAILABLE",
+              "RESTRICTED",
+              "PRIVATE_USE_ONLY"
+            ],
+            "title": "Accessreq",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "timePeriod": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeperiod"
+          },
+          "valClientIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valclientids"
+          },
+          "valServerIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valserverids"
+          }
+        },
+        "required": [
+          "accessReq"
+        ],
+        "title": "MLModelAccessReqs",
+        "type": "object"
+      },
+      "MLModelInfo": {
+        "additionalProperties": false,
+        "description": "TS 29.482 MLModel as it appears in a profile or in discovery criteria.",
+        "properties": {
+          "adaeAnalyticsId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adaeanalyticsid"
+          },
+          "customDomain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customdomain"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "interopInfo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interopinfo"
+          },
+          "mlModelId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelid"
+          },
+          "mlModelSize": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelsize"
+          },
+          "mlModelSrcId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelsrcid"
+          },
+          "phaseInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelPhaseInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "storeDiscReqs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelStoreDiscReqs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "usageReqs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelUsageReqs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "valServiceIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valserviceids"
+          },
+          "vendors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendors"
+          }
+        },
+        "title": "MLModelInfo",
+        "type": "object"
+      },
+      "MLModelPerf": {
+        "additionalProperties": false,
+        "properties": {
+          "appSpecPerfData": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appspecperfdata"
+          },
+          "resourceAddr": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resourceaddr"
+          }
+        },
+        "title": "MLModelPerf",
+        "type": "object"
+      },
+      "MLModelPhaseInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "contTrainInd": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conttrainind"
+          },
+          "contTrainParams": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conttrainparams"
+          },
+          "observedPerf": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelPerf"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phase": {
+            "enum": [
+              "NOT_TRAINED",
+              "IN_TRAINING",
+              "TRAINED",
+              "IN_RETRAINING",
+              "DEPLOYED"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "trainingInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelTrainingInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "phase"
+        ],
+        "title": "MLModelPhaseInfo",
+        "type": "object"
+      },
       "MLModelRepositoryBody": {
         "additionalProperties": false,
         "properties": {
@@ -176,6 +549,241 @@
         "title": "MLModelRepositoryBody",
         "type": "object"
       },
+      "MLModelStoreDiscReqs": {
+        "additionalProperties": false,
+        "properties": {
+          "accessReqs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelAccessReqs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          }
+        },
+        "title": "MLModelStoreDiscReqs",
+        "type": "object"
+      },
+      "MLModelTrainingInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "baseModelId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basemodelid"
+          },
+          "dataSources": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datasources"
+          },
+          "dataVolume": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datavolume"
+          },
+          "freshness": {
+            "anyOf": [
+              {
+                "enum": [
+                  "REAL_TIME",
+                  "NEAR_REAL_TIME",
+                  "HOURLY",
+                  "DAILY",
+                  "WEEKLY",
+                  "MONTHLY"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness"
+          }
+        },
+        "title": "MLModelTrainingInfo",
+        "type": "object"
+      },
+      "MLModelUsageReqs": {
+        "additionalProperties": false,
+        "properties": {
+          "usages": {
+            "items": {
+              "enum": [
+                "TRAINING",
+                "INFERENCE"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Usages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "usages"
+        ],
+        "title": "MLModelUsageReqs",
+        "type": "object"
+      },
+      "PhaseInfoPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "contTrainInd": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conttrainind"
+          },
+          "contTrainParams": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conttrainparams"
+          },
+          "observedPerf": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelPerf"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "enum": [
+                  "NOT_TRAINED",
+                  "IN_TRAINING",
+                  "TRAINED",
+                  "IN_RETRAINING",
+                  "DEPLOYED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "trainingInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelTrainingInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "PhaseInfoPatch",
+        "type": "object"
+      },
+      "ProfileBody": {
+        "additionalProperties": false,
+        "properties": {
+          "aimleRepId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aimlerepid"
+          },
+          "aimleServId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aimleservid"
+          },
+          "mlModelInfo": {
+            "$ref": "#/components/schemas/MLModelInfo"
+          },
+          "mlModelProfId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelprofid"
+          },
+          "mlModelUri": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EndPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mlModelInfo"
+        ],
+        "title": "ProfileBody",
+        "type": "object"
+      },
       "RegisterModelRequest": {
         "properties": {
           "aIMLInferenceName": {
@@ -188,6 +796,17 @@
               }
             ],
             "title": "Aimlinferencename"
+          },
+          "adaeAnalyticsId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adaeanalyticsid"
           },
           "author": {
             "anyOf": [
@@ -268,6 +887,17 @@
             ],
             "title": "Inputdatatype"
           },
+          "interopInfo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interopinfo"
+          },
           "mLCapabilitiesInfoList": {
             "anyOf": [
               {
@@ -295,6 +925,17 @@
             ],
             "title": "Mlmodelrepositoryref"
           },
+          "mlModelSrcId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelsrcid"
+          },
           "modelType": {
             "title": "Modeltype",
             "type": "string"
@@ -320,6 +961,16 @@
               }
             ],
             "title": "Owner"
+          },
+          "phaseInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelPhaseInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "requiredResourceTypeId": {
             "anyOf": [
@@ -365,6 +1016,16 @@
             ],
             "title": "Sourcetrainedmlmodelref"
           },
+          "storeDiscReqs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelStoreDiscReqs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "supportedPerformanceIndicators": {
             "anyOf": [
               {
@@ -399,6 +1060,31 @@
               }
             ]
           },
+          "usageReqs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelUsageReqs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "valServiceIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valserviceids"
+          },
           "vendors": {
             "anyOf": [
               {
@@ -423,6 +1109,91 @@
           "version"
         ],
         "title": "RegisterModelRequest",
+        "type": "object"
+      },
+      "StorageBody": {
+        "additionalProperties": false,
+        "properties": {
+          "mlModels": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProfileBody"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodels"
+          },
+          "mlModelsAddresses": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EndPoint"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelsaddresses"
+          },
+          "suppFeat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suppfeat"
+          }
+        },
+        "title": "StorageBody",
+        "type": "object"
+      },
+      "StoragePatch": {
+        "additionalProperties": false,
+        "properties": {
+          "mlModels": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProfileBody"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodels"
+          },
+          "mlModelsAddresses": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EndPoint"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelsaddresses"
+          }
+        },
+        "title": "StoragePatch",
         "type": "object"
       },
       "SupportedPerfIndicator": {
@@ -461,6 +1232,17 @@
               }
             ],
             "title": "Aimlinferencename"
+          },
+          "adaeAnalyticsId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adaeanalyticsid"
           },
           "author": {
             "anyOf": [
@@ -552,6 +1334,17 @@
             ],
             "title": "Integrityhash"
           },
+          "interopInfo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interopinfo"
+          },
           "mLCapabilitiesInfoList": {
             "anyOf": [
               {
@@ -579,6 +1372,17 @@
             ],
             "title": "Mlmodelrepositoryref"
           },
+          "mlModelSrcId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlmodelsrcid"
+          },
           "modelType": {
             "title": "Modeltype",
             "type": "string"
@@ -604,6 +1408,16 @@
               }
             ],
             "title": "Owner"
+          },
+          "phaseInfo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelPhaseInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "requiredResourceTypeId": {
             "anyOf": [
@@ -648,6 +1462,16 @@
               }
             ],
             "title": "Sourcetrainedmlmodelref"
+          },
+          "storeDiscReqs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelStoreDiscReqs"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "supportedPerformanceIndicators": {
             "anyOf": [
@@ -700,6 +1524,31 @@
               }
             ],
             "title": "Trainingdatalineage"
+          },
+          "usageReqs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MLModelUsageReqs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "valServiceIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valserviceids"
           },
           "vendors": {
             "anyOf": [
@@ -1129,6 +1978,7 @@
     },
     "/models": {
       "get": {
+        "description": "Without `filt-criteria`: MLMR's own paginated list (filter `model_type`).\nWith it: TS 29.482 ModelInformationDiscovery (SA-MLMR-9): the whole-object\nMLModel criteria are matched (see `mlr.py`) and a `DiscoveryResp` returns\n(`profiles`, or with `include-models=true`, an extension of ours, the model\nfiles in `mlModels`); 404 when nothing matches. `supported-features` is\naccepted and ignored (no optional feature is negotiated).",
         "operationId": "discover_models_models_get",
         "parameters": [
           {
@@ -1145,6 +1995,48 @@
                 }
               ],
               "title": "Model Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filt-criteria",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filt-Criteria"
+            }
+          },
+          {
+            "in": "query",
+            "name": "supported-features",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Supported-Features"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include-models",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include-Models",
+              "type": "boolean"
             }
           },
           {
@@ -1402,7 +2294,7 @@
     },
     "/models/{model_id}/artifact/{artifact_version}": {
       "get": {
-        "description": "DownloadModel \u2014 same modelId+artifactVersion lookup as the reference's\nmodelName+modelVersion+artifactVersion modelKey.",
+        "description": "DownloadModel \u2014 same modelId+artifactVersion lookup as the reference's\nmodelName+modelVersion+artifactVersion modelKey. A model's `storeDiscReqs`\nare enforced here (SA-MLMR-6): 410 `MODEL_EXPIRED` past its `duration`,\n403 `MODEL_ACCESS_DENIED` for a caller its `accessReqs` exclude.",
         "operationId": "download_model_artifact_models__model_id__artifact__artifact_version__get",
         "parameters": [
           {
@@ -1446,6 +2338,345 @@
           }
         },
         "summary": "Download Model Artifact"
+      }
+    },
+    "/models/{model_id}/phase-info": {
+      "patch": {
+        "description": "AIMgF's write-back (SA-MLMR-7): the model's phase and training lineage\n(`trainingInfo.baseModelId`, `dataSources`). The sent attributes are merged\ninto `phaseInfo`; the first write must carry a `phase`.",
+        "operationId": "patch_phase_info_models__model_id__phase_info_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhaseInfoPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Phase Info"
+      }
+    },
+    "/storages": {
+      "get": {
+        "operationId": "list_storages_storages_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "storage-ids",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Storage-Ids"
+            }
+          },
+          {
+            "in": "query",
+            "name": "profile-ids",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Profile-Ids"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Storages"
+      },
+      "post": {
+        "operationId": "create_storage_storages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Storage"
+      }
+    },
+    "/storages/{storage_id}": {
+      "delete": {
+        "description": "Profiles go with the storage; the models they named stay registered.",
+        "operationId": "delete_storage_storages__storage_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "storage_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Storage Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Storage"
+      },
+      "get": {
+        "operationId": "get_storage_storages__storage_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "storage_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Storage Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Storage"
+      },
+      "patch": {
+        "description": "MLModelsStoragePatch: a list that is sent replaces that list; the other is kept.",
+        "operationId": "modify_storage_storages__storage_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "storage_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Storage Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoragePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Modify Storage"
+      },
+      "put": {
+        "operationId": "replace_storage_storages__storage_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "storage_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Storage Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Storage"
       }
     }
   },

@@ -275,3 +275,26 @@ def test_own_health_check_is_answered_locally_without_authorization(monkeypatch)
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}
+
+
+def test_proxy_forwards_the_introspected_client_id_and_drops_a_spoofed_one(monkeypatch):
+    """MLMR's access control trusts X-R1-Invoker-Id: it is the token's own client id."""
+    seen = {}
+
+    class FakeAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kwargs):
+            if url == INTROSPECT_URL:
+                return FakeResponse(content=b'{"active": true, "client_id": "invoker-7"}')
+            seen["headers"] = kwargs["headers"]
+            return FakeResponse()
+
+    monkeypatch.setattr("app.main.httpx.AsyncClient", FakeAsyncClient)
+    resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers={**AUTH_HEADERS, "X-R1-Invoker-Id": "someone-else"})
+    assert resp.status_code == 200
+    assert seen["headers"]["X-R1-Invoker-Id"] == "invoker-7"

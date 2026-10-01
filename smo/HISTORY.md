@@ -513,7 +513,12 @@ Large-structural items are confirmed Phase 1 scope cuts unless noted; open ones 
 ### MLMR vs TS 29.482 MLR (`SA-MLMR-n`) — Wave 3 slice (#107)
 - **SA-MLMR-2/3/4** `domain`/`custom_domain` (validated), `vendors`, `ModelArtifact.size_bytes`.
 - **SA-MLMR-5** `MLModelPhase` belongs to AIMgF lifecycle — not a gap.
-- **SA-MLMR-1/6/7/8/9** open — see OPEN_ITEMS.
+- **SA-MLMR-1** `MLModelsStorage` / `MLModelProfile` as `/storages`; a profile names a registered model. Closed.
+- **SA-MLMR-6** `storeDiscReqs` (`duration`, `accessReqs`) enforced for discovery and download on the caller id R1
+  Termination now forwards (`X-R1-Invoker-Id`). Closed (`location` not enforced).
+- **SA-MLMR-7** `phaseInfo` with `trainingInfo.baseModelId`; AIMgF writes it at training start and success. Closed.
+- **SA-MLMR-8** `usageReqs` (TRAINING / INFERENCE). Closed.
+- **SA-MLMR-9** `GET /models?filt-criteria=` whole-object discovery with a `DiscoveryResp`. Closed.
 
 ### MDAF / RAN Analytics vs TS 28.104 (`SA-MDA-n`)
 - **SA-MDA-1** MDAFunction/MDARequest/MDAReport — closed at REST level in W5.

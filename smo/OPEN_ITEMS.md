@@ -62,16 +62,18 @@ Closed in this wave: SA-FOCOM-2 (Location, OCloudSite, pool links, inline resour
 `POST /resource-types`, auto-registration behind `FOCOM_AUTO_REGISTER_RESOURCE_TYPES`).
 
 ### MLMR (TS 29.482)
-- **SA-MLMR-1** — No `MLModelsStorage`/`MLModelProfile` layer (accepted flat shape).
-- **SA-MLMR-6** — No `storeDiscReqs` (retention, access requirements). Storing without enforcing
-  would mislead. Approach: add with enforcement in `download_model_artifact` once a backend authz
-  model exists (RBAC is only in `gui-bff/` today).
-- **SA-MLMR-7** — `trainingInfo` mostly absent, notably `baseModelId` lineage. Approach: set
-  `baseModelId` from AIMgF retrain/coordination-group paths.
-- **SA-MLMR-8** — No `MLModelUsage` (TRAINING/INFERENCE). Small: a validated list column on
-  `MLModel`.
-- **SA-MLMR-9** — `ModelInformationDiscovery` whole-object `filt-criteria` not supported;
-  `discover_models` filters by `model_type` only.
+- **SA-MLMR-6 (location)** — `accessReqs.location` is stored, not enforced: no requester location exists.
+  Approach: take a location from the invoker's registration if the platform ever models one.
+- **SA-MLMR-7 (phases)** — AIMgF writes `phaseInfo.phase` at training start (`IN_TRAINING` /
+  `IN_RETRAINING`) and success (`TRAINED`) only; validation and deployment do not write `VALIDATED` /
+  `DEPLOYED`. Approach: write the phase from the lifecycle FSM transitions in `_fire_model_event`.
+- **SA-MLMR-1 (spec edges)** — the `MLModel` `anyOf` and the forward-compatible free-string enum
+  values are not honoured; a model cannot be created from a profile (no type / version in
+  `mlModelInfo`).
+
+Closed in this wave: SA-MLMR-1 (`/storages`, profiles), SA-MLMR-6 (`storeDiscReqs` enforced for
+discovery and download), SA-MLMR-7 (`phaseInfo.trainingInfo.baseModelId` lineage from AIMgF),
+SA-MLMR-8 (`usageReqs`), SA-MLMR-9 (whole-object `filt-criteria` discovery).
 
 ### Intent Service (TS 28.312)
 - **SA-INTENT-partial** — 8 value datatypes are accepted without enforcing their inner structure

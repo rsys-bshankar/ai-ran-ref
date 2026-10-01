@@ -314,7 +314,7 @@ limit below is tracked in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) §3.
 | TS 28.104 | MDAF | 48/48 rows | `STREAMING` is recorded, not streamed (SA-MDA-5, no TS 28.532 streaming transport); `recommendationFilter`, `performanceThresholdInfo`, `analysisRequirements`, `thresholdMonitorRefList` stored not enforced; `areaScope` stored not matched; backing-model refs set by the caller; flat addressing |
 | TS 28.312 | Intent Service | 83/91 rows, 8 partial | SA-INTENT-partial: 8 value datatypes without inner structure; flat addressing |
 | TS 28.105 | AIMgF, MLMR, MLLF, runtime | 125/126 attributes | `ThresholdMonitors` (TS 28.623 containment, MLMF equivalent); FL/RL stored, no training engine; runtime scale has no target size; flat addressing |
-| TS 29.482 | MLMR | Partial | SA-MLMR-1, 6, 7, 8, 9 |
+| TS 29.482 | MLMR | `MLModel`, storages / profiles, `storeDiscReqs`, discovery at REST level | `accessReqs.location` not enforced; phase written at training start / success only; the `MLModel` `anyOf` and forward-compatible enums not honoured |
 | TS 28.532 / 28.111 / 28.319 | RAN NF OAM | MSAC, `accessScope`, `PerceivedSeverity`, DN refs and file reporting closed | Streaming reporting (SA-RANOAM-8); DN containment tree (SA-RANOAM-4); MSAC guards CM writes only; Jex subset for `dataNodeSelector` |
 | O2IMS | FOCOM | Inventory sites, fault, performance, artifacts / cluster / infrastructure / provisioning at REST level | `FILE` / `STREAM` performance reporting; no real cluster behind a ProvisioningRequest; flat addressing |
 | TS 28.541 + WG10/WG5 | RAN NF OAM | Partial | SA-O1-4: WG10 O1NRM and WG5 classes not modelled |
