@@ -16,7 +16,7 @@ from sqlalchemy.pool import StaticPool
 from smo_shared.db import Base, get_session
 
 from app.main import app
-from app.models import RAppFaultReport, RAppInstance, RAppPerformanceReport
+from app.models import RAppFaultReport, RAppInstance, RAppInstanceVersion, RAppPerformanceReport
 from app.statemachine import InstanceState
 
 
@@ -42,6 +42,7 @@ def db_session_factory():
     Base.metadata.create_all(engine, tables=[
         Base.metadata.tables["application_package"], Base.metadata.tables["package_usage_registration"],
         RAppInstance.__table__, RAppFaultReport.__table__, RAppPerformanceReport.__table__,
+        RAppInstanceVersion.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -900,3 +901,149 @@ def test_resolving_an_overdue_upgrade_as_succeeded_is_409_timed_out(client, db_s
     assert resp.status_code == 409
     assert resp.json()["detail"]["title"] == "RAPP_UPGRADE_TIMED_OUT"
     assert client.get(f"/instances/{created['instanceId']}").json()["state"] == "RUNNING"  # the rollback was committed
+
+
+# ---------------------------------------------------------------- OI-1-sa-rollback: version history and RollbackInstance
+
+def _commit_upgrade(client, instance_id, new_package):
+    """Upgrade `instance_id` to `new_package` and commit it; returns the replacement's id."""
+    new_id = client.post(f"/instances/{instance_id}/upgrade", json={"newPackageId": new_package}).json()["newInstanceId"]
+    client.post(f"/instances/{new_id}/bootstrap-complete")
+    assert client.post(f"/instances/{instance_id}/upgrade/resolve", params={"succeeded": True}).status_code == 200
+    return new_id
+
+
+def _commit_rollback(client, instance_id):
+    started = client.post(f"/instances/{instance_id}/rollback")
+    assert started.status_code == 200, started.json()
+    body = started.json()
+    client.post(f"/instances/{body['newInstanceId']}/bootstrap-complete")
+    assert client.post(f"/instances/{body['instanceId']}/upgrade/resolve", params={"succeeded": True}).status_code == 200
+    return body
+
+
+def test_upgrade_commit_records_a_version_with_what_the_old_instance_ran(client, monkeypatch):
+    v1 = str(uuid.uuid4())
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    created = client.post("/instances", json={"packageId": v1, "config": {"threshold": 1}}).json()
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    v2 = str(uuid.uuid4())
+
+    new_id = _commit_upgrade(client, created["instanceId"], v2)
+
+    history = client.get(f"/instances/{new_id}/versions").json()
+    assert history["instanceId"] == new_id and history["packageId"] == v2
+    [version] = history["versions"]
+    assert (version["kind"], version["previousInstanceId"], version["previousPackageId"]) == ("UPGRADE", created["instanceId"], v1)
+    assert version["previousConfiguration"] == {"threshold": 1}
+    assert history["rollbackTarget"]["versionId"] == version["versionId"]
+
+
+def test_rollback_restores_the_previous_package_and_configuration(client, monkeypatch):
+    created = _running_instance(client, monkeypatch, config={"threshold": 1}, autonomyMode="AUTONOMOUS",
+                                regionScope={"nodeIds": ["ne-1"]})
+    v1 = client.get(f"/instances/{created['instanceId']}").json()["packageId"]
+    v2_id = _commit_upgrade(client, created["instanceId"], str(uuid.uuid4()))
+    client.put(f"/instances/{v2_id}/config", json={"threshold": 9})  # retuned after the upgrade
+
+    started = client.post(f"/instances/{v2_id}/rollback")
+
+    assert started.status_code == 200
+    body = started.json()
+    assert (body["instanceId"], body["oldInstanceState"], body["toPackageId"]) == (v2_id, "UPGRADING", v1)
+    replacement = client.get(f"/instances/{body['newInstanceId']}").json()
+    assert replacement["packageId"] == v1 and replacement["configuration"] == {"threshold": 1}
+    assert (replacement["autonomyMode"], replacement["regionScope"]) == ("AUTONOMOUS", {"nodeIds": ["ne-1"]})
+
+
+def test_rollback_resolves_a_superseded_instance_id_to_the_current_one(client, monkeypatch):
+    """An SA SMOS monitor registered before the upgrade holds the old id."""
+    created = _running_instance(client, monkeypatch)
+    v2_id = _commit_upgrade(client, created["instanceId"], str(uuid.uuid4()))
+    assert client.get(f"/instances/{created['instanceId']}").status_code == 404
+
+    started = client.post(f"/instances/{created['instanceId']}/rollback")
+
+    assert started.status_code == 200 and started.json()["instanceId"] == v2_id
+    assert client.get(f"/instances/{created['instanceId']}/versions").json()["instanceId"] == v2_id
+
+
+def test_repeated_rollbacks_walk_back_instead_of_flip_flopping(client, monkeypatch):
+    created = _running_instance(client, monkeypatch)
+    v1 = client.get(f"/instances/{created['instanceId']}").json()["packageId"]
+    v2, v3 = str(uuid.uuid4()), str(uuid.uuid4())
+    v2_id = _commit_upgrade(client, created["instanceId"], v2)
+    v3_id = _commit_upgrade(client, v2_id, v3)
+
+    first = _commit_rollback(client, v3_id)
+    assert first["toPackageId"] == v2
+    second = _commit_rollback(client, first["newInstanceId"])
+    assert second["toPackageId"] == v1
+
+    third = client.post(f"/instances/{second['newInstanceId']}/rollback")
+    assert third.status_code == 409 and third.json()["detail"]["title"] == "ROLLBACK_HISTORY_UNAVAILABLE"
+    history = client.get(f"/instances/{created['instanceId']}/versions").json()  # the original id still resolves
+    assert history["packageId"] == v1 and history["rollbackTarget"] is None
+    assert [v["kind"] for v in history["versions"]] == ["ROLLBACK", "ROLLBACK", "UPGRADE", "UPGRADE"]
+    assert all(v["rolledBackByVersionId"] for v in history["versions"] if v["kind"] == "UPGRADE")
+
+
+def test_an_upgrade_after_a_rollback_can_itself_be_rolled_back(client, monkeypatch):
+    created = _running_instance(client, monkeypatch)
+    v1 = client.get(f"/instances/{created['instanceId']}").json()["packageId"]
+    v2_id = _commit_upgrade(client, created["instanceId"], str(uuid.uuid4()))
+    back = _commit_rollback(client, v2_id)
+    v3 = str(uuid.uuid4())
+    v3_id = _commit_upgrade(client, back["newInstanceId"], v3)
+
+    assert client.post(f"/instances/{v3_id}/rollback").json()["toPackageId"] == v1
+
+
+def test_rollback_with_no_history_is_409(client, monkeypatch):
+    created = _running_instance(client, monkeypatch)
+    resp = client.post(f"/instances/{created['instanceId']}/rollback")
+    assert resp.status_code == 409 and resp.json()["detail"]["title"] == "ROLLBACK_HISTORY_UNAVAILABLE"
+    assert client.get(f"/instances/{created['instanceId']}").json()["state"] == "RUNNING"
+
+
+def test_rollback_of_an_unknown_instance_is_404(client):
+    resp = client.post(f"/instances/{uuid.uuid4()}/rollback")
+    assert resp.status_code == 404 and resp.json()["detail"]["title"] == "RAPP_INSTANCE_NOT_FOUND"
+
+
+def test_failed_rollback_leaves_the_current_version_running_and_rollable(client, monkeypatch, fake_r1_delete):
+    created = _running_instance(client, monkeypatch)
+    v2 = str(uuid.uuid4())
+    v2_id = _commit_upgrade(client, created["instanceId"], v2)
+    started = client.post(f"/instances/{v2_id}/rollback").json()
+
+    resp = client.post(f"/instances/{v2_id}/upgrade/resolve", params={"succeeded": False})
+
+    assert resp.json()["instanceId"] == v2_id and resp.json()["state"] == "RUNNING"
+    assert client.get(f"/instances/{started['newInstanceId']}").status_code == 404
+    history = client.get(f"/instances/{v2_id}/versions").json()
+    assert history["packageId"] == v2 and history["rollbackTarget"] is not None
+    assert [v["kind"] for v in history["versions"]] == ["UPGRADE"]
+
+
+def test_rollback_of_an_instance_that_is_not_running_is_409(client, monkeypatch):
+    created = _running_instance(client, monkeypatch)
+    v2_id = _commit_upgrade(client, created["instanceId"], str(uuid.uuid4()))
+    client.post(f"/instances/{v2_id}/fault", params={"severity": "critical"})
+
+    resp = client.post(f"/instances/{v2_id}/rollback")
+
+    assert resp.status_code == 409 and resp.json()["detail"]["title"] == "LIFECYCLE_ILLEGAL_TRANSITION"
+
+
+def test_rollback_to_a_package_no_longer_deployable_is_refused(client, monkeypatch):
+    created = _running_instance(client, monkeypatch)
+    v2_id = _commit_upgrade(client, created["instanceId"], str(uuid.uuid4()))
+    monkeypatch.setattr("app.main.R1Client.get", _route_r1_get_post(onboarding_status="DELETING")[0])
+
+    resp = client.post(f"/instances/{v2_id}/rollback")
+
+    assert resp.status_code == 409 and resp.json()["detail"]["title"] == "MODEL_NOT_CERTIFIED"
+    assert client.get(f"/instances/{v2_id}").json()["state"] == "RUNNING"

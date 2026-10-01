@@ -138,8 +138,7 @@ call often changes another module's state.
   `correlatedNotifications`, but the GUI doesn't compute storms).
 - Live KPI file collection: PM subscriptions register DME producer types,
   and the counters themselves aren't collected (as in RAN NF OAM).
-- A1-ML (dormant in A1 Related), and SA SMOS `ROLLBACK` (the module returns
-  `ROLLBACK_HISTORY_UNAVAILABLE`, which the GUI shows as-is).
+- A1-ML (dormant in A1 Related).
 - Southbound Docker/NETCONF beyond what the modules already stub; results
   of inference jobs (pulled through DME, not shown here).
 - R1 Termination's own OAuth is unchanged. The GUI's users and roles live in

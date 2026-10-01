@@ -13,7 +13,9 @@ class AssuranceMonitor(Base):
         # Portable boolean form — "::int" cast syntax is Postgres-only and
         # fails on SQLite.
         CheckConstraint(
-            "NOT (target_order_id IS NOT NULL AND target_coordination_group_id IS NOT NULL)",
+            "(CASE WHEN target_order_id IS NULL THEN 0 ELSE 1 END"
+            " + CASE WHEN target_coordination_group_id IS NULL THEN 0 ELSE 1 END"
+            " + CASE WHEN target_rapp_instance_id IS NULL THEN 0 ELSE 1 END) <= 1",
             name="one_target_only",
         ),
     )
@@ -21,6 +23,10 @@ class AssuranceMonitor(Base):
     monitor_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     target_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     target_coordination_group_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)  # NEW, SO/SA SMOS LLD section 2.2
+    # OI-1-sa-rollback: a monitor on one rApp instance, so ROLLBACK has a target
+    # with a version history (rApp Management's). A bare cross-module ref: the
+    # instance id may be superseded by an upgrade; rApp Management resolves it.
+    target_rapp_instance_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     analytics_subscription_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     requirement_thresholds: Mapped[dict] = mapped_column(JSON, nullable=False)
 

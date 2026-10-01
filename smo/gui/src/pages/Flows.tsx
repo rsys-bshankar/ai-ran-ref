@@ -228,7 +228,7 @@ function Flow04() {
   return (
     <>
       <Pick label="Assurance monitor" items={monitors.data} value={monitorId} onChange={setMonitor} id={(m) => m.monitorId}
-        render={(m) => `${m.monitorId.slice(0, 8)} · ${m.targetOrderId ? "order" : m.targetCoordinationGroupId ? "model group" : "unscoped"}`}
+        render={(m) => `${m.monitorId.slice(0, 8)} · ${m.targetOrderId ? "order" : m.targetCoordinationGroupId ? "model group" : m.targetRappInstanceId ? "rApp instance" : "unscoped"}`}
         empty={<>No monitors. {go("/infrastructure#orders", "Submit an order")} then {go("/kpis#assurance", "register a monitor")}</>} />
       <Timeline steps={steps} actions={{
         order: go("/infrastructure#orders", "Service orders"),

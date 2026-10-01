@@ -42,8 +42,32 @@ Recurring conventions referred to below:
   `O1AdaptorEndpoint.adaptor_uri`. A RESTCONF-provisioned ME is rejected `PROTOCOL_NOT_SUPPORTED`.
   `cm_schema_cache` holds real descriptors since W9.
 - **OI-1-sa-reconnect** — SA SMOS `RECONNECT` reads the monitor's `target_order_id` back from SO SMOS,
-  finds the completed `DEPLOY` step's `nfDeploymentId` and dispatches NFO Heal. `ROLLBACK` returns
-  `ROLLBACK_HISTORY_UNAVAILABLE` (501) — see OPEN_ITEMS OI-1-sa-rollback. Call flow 04.
+  finds the completed `DEPLOY` step's `nfDeploymentId` and dispatches NFO Heal. For a
+  rApp-instance-scoped monitor it heals the current instance's `workloadRef`. Call flow 04.
+- **OI-1-sa-rollback** — SA SMOS `ROLLBACK` returns a rApp to its previous version.
+  - **Version history:** rApp Management records every committed upgrade in `rapp_instance_version`.
+    Each row holds what the retired instance ran (package, configuration, `autonomyMode`,
+    `regionScope`) and the lineage link from the retired instance id to its successor.
+  - **Rollback:** `POST /rapp-mgmt/instances/{id}/rollback` is an upgrade back to the newest
+    `UPGRADE` version not already rolled back, restoring that snapshot. It is the same two-row
+    choreography, with the same timeout and auto-rollback, so a failed rollback leaves the current
+    version running. A commit records a `ROLLBACK` version and marks the upgrade it undid, so repeated
+    rollbacks walk back (v3 → v2 → v1) instead of flip-flopping.
+  - **Superseded ids:** an upgrade replaces the instance row, so a superseded id resolves through the
+    lineage to the current instance (`rollback`, `GET /instances/{id}/versions`).
+  - **SA SMOS:** `AssuranceMonitor` gains a third, exclusive target, `target_rapp_instance_id`.
+    `ROLLBACK` on it dispatches the rollback: `RESOLVED` with the started rollback in `result`, or
+    `ESCALATED` with rApp Management's reason in `detail` (nothing left to roll back, not `RUNNING`,
+    earlier package no longer deployable). An order-scoped or unscoped monitor answers 409
+    `ROLLBACK_HISTORY_UNAVAILABLE` (formerly 501): NFO keeps no version history for a bare NF deployment.
+  - **Not taken:** keeping the retired `RAppInstance` row instead of a version record. It would
+    leave an `UNDEPLOYED` row per upgrade in every instance list, and its revoked credential and
+    released NFO deployment would have to be re-provisioned anyway.
+  - **Not taken:** rolling back an order-scoped NF deployment through NFO, which has no
+    descriptor or version history to return to.
+  - **GUI:** the rApp instance drawer shows the version history and a Roll back button. The KPIs
+    page registers rApp-scoped monitors.
+  - Call flows 04 and 07.
 - **OI-1-producer-reconsideration** — On CRASH/TERMINATE, the `RAppInstance` FSM calls DME
   `DELETE /production-capabilities` keyed by the instance's `oauth_client_id`; best-effort.
   `UPGRADE_COMMIT` runs the same teardown on the superseded instance (OI-2-upgrade-completeness).
@@ -267,7 +291,8 @@ closed partially; residuals are in OPEN_ITEMS.
   feature groups (#91).
 - **OI-C-demo-ranalytics** — Producer, subscription, report notification.
 - **OI-C-demo-so-smos** — Three-step order with fail-fast halt and cancel.
-- **OI-C-demo-sa-smos** — `RECONNECT` (Heal, `RESOLVED`) and `ROLLBACK` (501). Fixed: Onboarding
+- **OI-C-demo-sa-smos** — `RECONNECT` (Heal, `RESOLVED`) and `ROLLBACK` refused for an order-scoped
+  monitor (409 since OI-1-sa-rollback). Fixed: Onboarding
   committed the package before calling NFO; NFO Terminate clears `LCMOperation` rows; integration
   harness uses SAVEPOINT-joined sessions (`smo_shared/testing.py`) and `expire_on_commit=False`.
   Coordination-group remedial action (#92): `COORDINATION_GROUP_TOO_SMALL` (422) pre-check.

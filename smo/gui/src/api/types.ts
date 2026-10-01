@@ -46,6 +46,17 @@ export interface InstanceTeardown {
   instanceId: string; reason: "TERMINATE" | "UPGRADE_COMMIT" | "UPGRADE_ROLLBACK" | "UPGRADE_TIMEOUT" | string;
   nfoTerminate: string; usageStop: string; at: string;
 }
+// OI-1-sa-rollback: rApp Management's version history — one entry per
+// committed upgrade or rollback, with what the retired instance ran.
+export interface InstanceVersion {
+  versionId: string; kind: "UPGRADE" | "ROLLBACK"; instanceId: string; packageId: string;
+  previousInstanceId: string; previousPackageId: string; previousConfiguration: Record<string, unknown> | null;
+  rolledBackByVersionId: string | null; committedAt: string;
+}
+export interface InstanceVersions {
+  instanceId: string; packageId: string; state: string; workloadRef: string | null;
+  rollbackTarget: InstanceVersion | null; versions: InstanceVersion[];
+}
 export interface PerfReport { reportId: string; metrics: Record<string, unknown>; reportedAt: string }
 export interface FaultReport { faultId: string; severity: string; description: string | null; reportedAt: string }
 
@@ -132,7 +143,7 @@ export interface OCloudMetric { resourceRef: string; metricName: string; value: 
 export interface Topology { entities: Record<string, { id: string; attributes: Record<string, unknown> }[]>[]; relationships: Record<string, { id: string; aSide: string; bSide: string }[]>[] }
 export interface OrderStep { stepType: string; targetModule: string; status: string; error?: string; result?: Record<string, unknown>; [k: string]: unknown }
 export interface ServiceOrder { orderId: string; scope: string; steps: OrderStep[]; homingDecision: Record<string, unknown> | null; rmihRegistration: string }
-export interface Monitor { monitorId: string; targetOrderId: string | null; targetCoordinationGroupId: string | null; analyticsSubscriptionId: string | null; thresholds: Record<string, number> }
+export interface Monitor { monitorId: string; targetOrderId: string | null; targetCoordinationGroupId: string | null; targetRappInstanceId: string | null; analyticsSubscriptionId: string | null; thresholds: Record<string, number> }
 export interface RemedialAction { actionId: string; monitorId: string; actionType: string; autoExecuted: boolean; outcome: string | null }
 export interface AnalyticsReport { reportId: string; analyticsType: string; output: Record<string, unknown> }
 export interface AnalyticsProducer { producerId: string; analyticsType: string; mdaType: string | null; dmeInputTypes: string[]; outputSchema: Record<string, unknown> }

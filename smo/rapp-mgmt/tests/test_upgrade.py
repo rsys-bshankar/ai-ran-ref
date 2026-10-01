@@ -18,7 +18,7 @@ from smo_shared.db import Base
 from smo_shared.r1_client import R1Client
 from smo_shared.statemachine import IllegalTransition
 
-from app.models import RAppFaultReport, RAppInstance, RAppPerformanceReport
+from app.models import RAppFaultReport, RAppInstance, RAppInstanceVersion, RAppPerformanceReport
 from app.statemachine import RAPP_INSTANCE_FSM, InstanceEvent, InstanceState
 from app.upgrade import expire_overdue_upgrade, resolve_upgrade, start_upgrade, upgrade_deadline
 
@@ -81,7 +81,8 @@ def db():
     if "application_package" not in Base.metadata.tables:
         Table("application_package", Base.metadata, Column("package_id", Uuid, primary_key=True))
     Base.metadata.create_all(engine, tables=[Base.metadata.tables["application_package"], RAppInstance.__table__,
-                                             RAppFaultReport.__table__, RAppPerformanceReport.__table__])
+                                             RAppFaultReport.__table__, RAppPerformanceReport.__table__,
+                                             RAppInstanceVersion.__table__])
     with Session(engine) as session:
         yield session
 

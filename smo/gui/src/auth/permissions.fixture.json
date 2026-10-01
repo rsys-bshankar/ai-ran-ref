@@ -49,7 +49,7 @@
   },
   {
     "method": "POST",
-    "pattern": "^/rapp-mgmt/instances/[^/]+/(upgrade|upgrade/resolve|recover|bootstrap-complete)$",
+    "pattern": "^/rapp-mgmt/instances/[^/]+/(upgrade|upgrade/resolve|rollback|recover|bootstrap-complete)$",
     "role": "operator",
     "queryMatch": {}
   },
