@@ -312,7 +312,7 @@
     },
     "/restconf/data/{path}": {
       "delete": {
-        "operationId": "restconf_data_restconf_data__path__patch",
+        "operationId": "restconf_data_restconf_data__path__delete",
         "parameters": [
           {
             "in": "path",
@@ -347,7 +347,7 @@
         "summary": "Restconf Data"
       },
       "get": {
-        "operationId": "restconf_data_restconf_data__path__patch",
+        "operationId": "restconf_data_restconf_data__path__get",
         "parameters": [
           {
             "in": "path",
@@ -453,7 +453,7 @@
         "summary": "Restconf Create"
       },
       "put": {
-        "operationId": "restconf_data_restconf_data__path__patch",
+        "operationId": "restconf_data_restconf_data__path__put",
         "parameters": [
           {
             "in": "path",

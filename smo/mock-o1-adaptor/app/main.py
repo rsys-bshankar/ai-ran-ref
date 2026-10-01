@@ -240,7 +240,13 @@ def _restconf_apply(ref: str, function_ref: str | None, attributes: dict, replac
     _object_state[(ref, function_ref)] = state
 
 
-@app.api_route("/restconf/data/{path:path}", methods=["GET", "PATCH", "PUT", "DELETE"])
+# One registration per method, not api_route(methods=[...]): its methods are
+# a set, so the generated operation ids (and the committed OpenAPI spec)
+# would depend on the process's hash seed.
+@app.get("/restconf/data/{path:path}")
+@app.patch("/restconf/data/{path:path}")
+@app.put("/restconf/data/{path:path}")
+@app.delete("/restconf/data/{path:path}")
 async def restconf_data(path: str, request: Request) -> Response:
     target = _restconf_target(request)
     if target is None or target[0] is None:
