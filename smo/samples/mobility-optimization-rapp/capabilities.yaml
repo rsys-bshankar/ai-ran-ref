@@ -1,0 +1,56 @@
+# MobilityOptimization_rApp capabilities (Wave 10.2, W10.2-01).
+capabilities:
+  consumes:
+    - namespace: data
+      description: >-
+        HO_PERFORMANCE (per-relation handover counters, O1 PM via RAN NF OAM →
+        DME) for training, validation and live inference; HO_PERFORMANCE_SIM
+        (Digital Twin, injected faults) for emulation; cell guards and O1
+        config read-back from RAN NF OAM.
+    - namespace: models
+      description: Registers MobilityRobustnessPredictor in MLMR and stores its artifact, via sdk.models.
+    - namespace: lifecycle
+      description: AIMgF training/validation/emulation jobs, MLLF + MLIF runtime deployment, inference jobs.
+    - namespace: intent
+      description: AutonomyDispatch of CIO changes (SHADOW / ASSIST / AUTONOMOUS), via sdk.intent.
+    - namespace: platform
+      description: Direct DME O1 actions for KPI reverts, rollbacks and the DMRO bounds, via sdk.platform.
+  provides:
+    - namespace: data
+      description: The HO_PERFORMANCE_SIM Digital Twin dataset (sample producer).
+
+datasets:
+  - HO_PERFORMANCE
+  - HO_PERFORMANCE_SIM
+supportedStages:
+  - TRAINING
+  - VALIDATION
+  - EMULATION
+  - INFERENCE
+producedModel:
+  name: MobilityRobustnessPredictor
+  type: CLASSIFICATION_REGRESSION
+inputs:
+  - MM.HoExeAtt
+  - MM.HoFailTooLate
+  - MM.HoFailTooEarly
+  - MM.HoFailWrongCell
+  - MM.HoPingPong
+outputs:
+  - cellIndividualOffset
+supportedActions:
+  - RAISE_CIO
+  - LOWER_CIO
+  - REVERT_CIO
+o1Targets:
+  - NRCellRelation
+  - DMROFunction
+o1Attributes:
+  - cellIndividualOffset
+  - maximumDeviationHoTriggerLow
+  - maximumDeviationHoTriggerHigh
+  - minimumTimeBetweenHoTriggerChange
+  - dmroControl
+supportedVendorModes:
+  - O1_NETCONF
+  - O1_RESTCONF

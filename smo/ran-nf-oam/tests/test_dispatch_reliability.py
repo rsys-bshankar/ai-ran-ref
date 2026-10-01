@@ -111,3 +111,29 @@ def test_pm_reports_are_delivered_to_every_data_job_of_the_counter_type(client, 
     assert posted[0] == ("/dme/data-jobs/j-1/records", {"payload": {
         "managedElementRef": "ME-1", "cellId": "101", "counter": "PRB_UTILIZATION", "value": 3.2,
         "timestamp": "2026-01-01T00:00:00+00:00"}})
+
+
+def test_pm_reports_carry_multi_counter_per_relation_measurements(client, db_session_factory, monkeypatch):
+    """Wave 10.2 (W10.2-03): handover counters per neighbour relation."""
+    _make_me(db_session_factory)
+    posted = []
+
+    class Resp:
+        def __init__(self, body):
+            self.body = body
+
+        def json(self):
+            return self.body
+
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: Resp(
+        [{"dmeTypeId": "t-1", "typeName": "RAN.PMCounters.HO_PERFORMANCE"}] if path == "/dme/dme-types"
+        else {"items": [{"dataJobId": "j-1"}]}))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: posted.append(json) or Resp({}))
+    client.post("/pm-subscriptions", params={"managed_element_ref": "ME-1", "counter_type": "HO_PERFORMANCE", "delivery_method": "pull"})
+    posted.clear()
+    counters = {"MM.HoExeAtt": 120, "MM.HoFailTooLate": 9}
+    assert client.post("/pm-reports", json={"managedElementRef": "ME-1", "counterType": "HO_PERFORMANCE", "measurements": [
+        {"cellId": "201", "relation": "201-202", "values": counters, "timestamp": "2026-01-01T00:00:00Z"}]}).status_code == 201
+    assert posted[0]["payload"]["values"] == counters and posted[0]["payload"]["relation"] == "201-202"
+    assert client.post("/pm-reports", json={"managedElementRef": "ME-1", "counterType": "HO_PERFORMANCE", "measurements": [
+        {"cellId": "201", "timestamp": "2026-01-01T00:00:00Z"}]}).status_code == 422

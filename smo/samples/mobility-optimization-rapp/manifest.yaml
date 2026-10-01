@@ -1,0 +1,52 @@
+# MobilityOptimization_rApp package manifest (Wave 10.2, W10.2-01)
+rappManifest:
+  manifestVersion: "1.0"
+  aiRuntimeSdkVersion: "1.0"
+
+name: MobilityOptimization_rApp
+version: 1.0.0
+vendor: Radisys
+ownerTeam: AI-RAN-SMO
+description: >
+  AI-driven Mobility Robustness Optimization using handover failure
+  classification to tune each neighbour relation's Cell Individual Offset
+  through O1.
+useCase: Mobility Optimization
+domain: RAN
+deploymentModel: NonRT-RIC
+
+executionModes:
+  - TRAINING
+  - VALIDATION
+  - EMULATION
+  - INFERENCE
+
+autonomyModes:
+  - SHADOW
+  - ASSIST
+  - AUTONOMOUS
+
+requiredServices:
+  - DME
+  - AIMgF
+  - MLMR
+  - MLLF
+  - RAN-NF-OAM
+
+runtimeProfiles:
+  TRAINING:
+    cpu: 4
+    memory: 8Gi
+    gpu: 0
+  VALIDATION:
+    cpu: 2
+    memory: 4Gi
+    gpu: 0
+  EMULATION:
+    cpu: 2
+    memory: 4Gi
+    gpu: 0
+  INFERENCE:
+    cpu: 1
+    memory: 2Gi
+    gpu: 0

@@ -108,19 +108,50 @@
             "title": "Cellid",
             "type": "string"
           },
+          "relation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relation"
+          },
           "timestamp": {
             "format": "date-time",
             "title": "Timestamp",
             "type": "string"
           },
           "value": {
-            "title": "Value",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Values"
           }
         },
         "required": [
           "cellId",
-          "value",
           "timestamp"
         ],
         "title": "PmMeasurement",

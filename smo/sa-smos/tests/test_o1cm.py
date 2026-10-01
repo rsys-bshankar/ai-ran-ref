@@ -58,7 +58,8 @@ def test_registration_declares_the_cm_targets(client, platform):
     path, body = platform["posts"][0]
     assert path == "/intent-service/intent-handling-functions" and body["rmihId"] == "sa-smos"
     names = [t["supportedTargetName"] for t in body["intentHandlingCapabilityList"][0]["supportedExpectationTargetInfoList"]]
-    assert names == ["NRCellDU.administrativeState", "CESManagementFunction.energySavingControl"]
+    assert names == ["NRCellDU.administrativeState", "CESManagementFunction.energySavingControl",
+                     "NRCellRelation.cellIndividualOffset"]
     assert platform["deletes"] == ["/intent-service/intent-handling-functions/sa-smos"]  # idempotent re-register
     assert client.post("/o1-cm-handler/registration", json={"cmTargets": {"noDot": []}}).status_code == 422
 
@@ -135,3 +136,15 @@ def test_a_re_pushed_intent_replays_the_same_action_id(client, platform, monkeyp
     ids = [body["actionId"] for path, body in platform["posts"] if path == "/dme/actions"]
     assert len(ids) == 2 and ids[0] == ids[1] == str(uuid.uuid5(app.o1cm.ACTION_ID_NAMESPACE, f"{intent_id}:e1"))
     assert enactment["status"] == "FULFILLED" and enactment["actions"][0]["replayed"] is True
+
+
+def test_a_cio_target_writes_the_offset_on_each_named_relation(client, platform):
+    """Wave 10.2: Cell-context values name the relations (NRCellRelation=<id>)."""
+    intent_id = uuid.uuid4()
+    cio = {"targetName": "NRCellRelation.cellIndividualOffset", "targetCondition": "IS_EQUAL_TO",
+           "targetValueRange": [2, 2, 2, 2, 2, 2]}
+    platform["intents"][str(intent_id)] = _intent(intent_id, [cio], cells=("201-202",))
+    assert client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)}).json()["status"] == "FULFILLED"
+    action = next(body for path, body in platform["posts"] if path == "/dme/actions")
+    assert action["changes"][0]["managedFunctionRef"] == "NRCellRelation=201-202"
+    assert action["changes"][0]["attributeChanges"] == {"cellIndividualOffset": [2, 2, 2, 2, 2, 2]}

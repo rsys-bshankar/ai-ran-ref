@@ -1847,6 +1847,70 @@ try afterwards:
 The integration suite covers every Wave 10 test case (TC01–TC33) the same
 way: `tests_integration/test_energy_saving_rapp.py`.
 
+## 25. Wave 10.2 — the Mobility Optimization rApp (Demo 00–11)
+
+This section is independent of §24. The Mobility Optimization reference
+rApp (`samples/mobility-optimization-rapp/`) is deployed beside the
+platform as the `mobility-optimization-rapp` service. Using only O1
+handover PM data, it:
+
+* classifies handover failures per neighbour relation (too late, too
+  early, wrong cell, ping-pong);
+* predicts the next hour's failure rate;
+* moves `NRCellRelation.cellIndividualOffset` in 2 dB steps, within ± 6 dB
+  of the baseline and inside the gNB's DMRO bounds;
+* verifies every write, and reverts a change that made the KPI worse.
+
+It never tunes towards a cell that is asleep, about to sleep or just woken
+(it reads the EnergySaving rApp's cell states when given its instance id),
+and it leaves alone relations with `isHOAllowed=false` and EMERGENCY or
+incident-zone cells. There is no A1, Near-RT RIC, xApp or E2. Design:
+`docs/call-flows/23-mobility-optimization-closed-loop.md`; scope and tests:
+`docs/roadmap/WAVES_4_TO_10_WORK_ITEMS.md` §10.
+
+The demo is a script, `samples/mobility-optimization-rapp/demo.py`, one step
+per Demo number. `tests_integration/test_demo_runbook.py` runs it through the
+in-process mesh on every CI run. Timestamps are simulation time (handover
+history 2026-09-01..03, live PM from midnight on the 4th).
+
+```bash
+python3 samples/build_csar.py mobility-optimization-rapp      # only after editing the sample
+docker compose cp samples/mobility-optimization-rapp.csar r1-termination:/tmp/mobility-optimization-rapp.csar
+docker compose cp samples/mobility-optimization-rapp r1-termination:/tmp/mobility-optimization-rapp
+docker compose exec -d r1-termination python3 -m http.server 8899 --directory /tmp   # if not already serving
+```
+
+Then run one step at a time:
+
+| Step | Command (`docker compose exec r1-termination …`) | What to observe |
+|------|------|------|
+| Demo 00 — prepare the RAN | `python3 /tmp/mobility-optimization-rapp/demo.py 00` | `gnb-du-mro-demo-01` registered behind `mock-o1-adaptor`, HO_PERFORMANCE PM subscribed, cell 204 marked EMERGENCY, the Digital Twin dataset and the O1-CM intent handler registered |
+| Demo 01 — onboard | `… demo.py 01` | package `AVAILABLE`; an AUTONOMOUS instance over four relations started |
+| Demo 02 — dataset | `… demo.py 02` | 288 hourly per-relation counter sets → DME; datasets TRAINING/INFERENCE = `HO_PERFORMANCE`, EMULATION = `HO_PERFORMANCE_SIM` |
+| Demo 03 — train | `… demo.py 03` | `TRAINING → TRAINED`; the regression's weights and RMSE; artifact stored in MLMR |
+| Demo 04 — validate | `… demo.py 04` | `VALIDATING → VALIDATED`, held-out band score |
+| Demo 05 — emulate | `… demo.py 05` | the Digital Twin injects one fault per relation; direction accuracy and false actions |
+| Demo 06 — promote | `… demo.py 06` | `CERTIFIED → PROMOTED` (operator governance decisions) |
+| Demo 07 — deploy | `… demo.py 07` | RuntimeLifecycle `ACTIVE`; `DMROFunction` bounds −6/+6 dB written and read back `VERIFIED` |
+| Demo 08 — live inference | `… demo.py 08` | 201→203 `RAISE_CIO` 0 → 2 dB (too late), 202→203 `LOWER_CIO` 0 → −2 dB (too early), 203→204 blocked `PROTECTED_CELL` |
+| Demo 09 — DME action and O1 | `… demo.py 09` | the action record and the execution → dispatch → intent → action chain; `NRCellRelation=201-203` read back as `[2, 2, 2, 2, 2, 2]` |
+| Demo 10 — KPI check | `… demo.py 10` | an hour later the failure rate has dropped: `CONFIRMED` |
+| Demo 11 — dashboard | `… demo.py 11` | per relation: state, CIO, failure rate, prediction, decision, outcome. In the GUI: **Mobility** |
+
+Things to try afterwards:
+
+* **A change that backfires.** Report worse ping-pong after a LOWER and
+  evaluate: the rApp reverts the CIO straight through DME (`REVERTED`).
+* **Coordinate with EnergySaving.** Start the instance with
+  `energySavingInstanceId` set to a §24 instance: relations towards a SLEEP
+  or PRE_SLEEP cell are blocked `TARGET_ASLEEP`, and for 30 minutes after a
+  wake `TARGET_RECENTLY_WOKEN`.
+* **ASSIST mode.** A CIO change waits in **Policy & Intents → Autonomy
+  dispatches**; Resolve or Reject it, then press **Reconcile approvals**.
+
+The integration suite covers MRO-01..MRO-20 the same way:
+`tests_integration/test_mobility_optimization_rapp.py`.
+
 ## Known rough edges for a live walkthrough
 
 - `smo/docs/call-flows/01-rapp-onboarding-to-deployment.md`'s own

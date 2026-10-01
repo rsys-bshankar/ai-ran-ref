@@ -70,6 +70,8 @@ ROUTES = {
     # operator dashboard, override and loop controls) — reached by the GUI
     # through the same gateway as the SMO modules.
     "/energy-saving-rapp": os.environ.get("ENERGY_SAVING_RAPP_URL", "http://energy-saving-rapp:8000"),
+    # Wave 10.2: the Mobility Optimization reference rApp
+    "/mobility-optimization-rapp": os.environ.get("MOBILITY_OPTIMIZATION_RAPP_URL", "http://mobility-optimization-rapp:8000"),
 }
 
 
