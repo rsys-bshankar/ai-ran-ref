@@ -36,7 +36,7 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
-from smo_shared.webhook import post_webhook
+from smo_shared.outbox import enqueue
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import MDAFReport, MDASubscription
@@ -82,9 +82,10 @@ def publish_report(analytics_type: str, output: dict, input_sources: list[uuid.U
     _validate_input_sources_are_real_dme_artifacts(input_sources)
     report = MDAFReport(analytics_type=analytics_type, output=output, input_sources=input_sources, scope=scope)
     db.add(report)
-    db.commit()
+    db.flush()
     _notify_report_subscribers(db, report)
-    # Wave 5: a producer-push report also satisfies matching open MDARequests.
+    # Wave 5: a producer-push report also satisfies matching open MDARequests. This commits: the report, its subscriber
+    # notifications, the threshold state and the request deliveries are one transaction (PR-MSG-1.8).
     _deliver_legacy_report(db, report)
     return {"reportId": str(report.report_id)}
 
@@ -146,11 +147,12 @@ def _notify_report_subscribers(db: Session, report: MDAFReport) -> None:
         crossed = _threshold_crossed(sub, report.output)
         if sub.threshold_info and not crossed:
             continue
-        post_webhook(sub.notification_destination, json={
+        enqueue(db, sub.notification_destination, {
             "reportId": str(report.report_id), "analyticsType": report.analytics_type,
             "output": report.output, "inputSources": [str(s) for s in report.input_sources],
-        }, timeout=2.0)
-    db.commit()  # persists threshold_state even for subscriptions that didn't cross (or have no destination)
+        })
+    # No commit here (PR-MSG-1.8): the caller's commit (`_deliver`'s) persists the report, these outbox rows and
+    # threshold_state, including for subscriptions that didn't cross (or have no destination), in one transaction.
 
 
 class SubscribeAnalyticsRequest(BaseModel):

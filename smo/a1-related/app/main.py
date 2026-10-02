@@ -27,7 +27,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.timeutil import as_utc
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
-from smo_shared.webhook import post_webhook
+from smo_shared.outbox import enqueue
 
 from .a1_termination_client import A1TerminationClient
 from .models import A1EIType, A1Policy, A1ServiceRegistration, PolicyStatusSubscription
@@ -158,9 +158,9 @@ def update_policy(policy_id: uuid.UUID, policy_object: dict, db: Session = Depen
     result = a1t.update_policy(p.near_rt_ric_policy_id, policy_object)
     p.policy_object = policy_object
     p.enforcement_status = result["enforcementStatus"]
-    db.commit()
     if p.enforcement_status != old_status:
-        _notify_policy_status_subscribers(db, p)
+        _notify_policy_status_subscribers(db, p)  # enqueued in this transaction (PR-MSG-1.8)
+    db.commit()
     return _policy_view(p)
 
 
@@ -185,9 +185,9 @@ def query_policy_status(policy_id: uuid.UUID, db: Session = Depends(get_session)
     old_status = p.enforcement_status
     result = a1t.query_policy_status(p.near_rt_ric_policy_id)
     p.enforcement_status = result["enforcementStatus"]
-    db.commit()
     if p.enforcement_status != old_status:
         _notify_policy_status_subscribers(db, p)
+    db.commit()
     return {"policyId": str(p.policy_id), "enforcementStatus": p.enforcement_status}
 
 
@@ -211,10 +211,10 @@ def _notify_policy_status_subscribers(db: Session, policy: A1Policy) -> None:
             continue
         if sub.near_rt_ric_id_list is not None and policy.near_rt_ric_id not in sub.near_rt_ric_id_list:
             continue
-        post_webhook(sub.notification_destination, json={
+        enqueue(db, sub.notification_destination, {
             "policyId": str(policy.policy_id), "policyTypeId": policy.policy_type_id,
             "nearRtRicId": policy.near_rt_ric_id, "enforcementStatus": policy.enforcement_status,
-        }, timeout=2.0)
+        })
 
 
 @app.post("/policies/subscriptions", status_code=201)

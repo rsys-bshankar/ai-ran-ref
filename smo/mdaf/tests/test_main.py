@@ -8,7 +8,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
+from smo_shared import outbox
 from smo_shared.db import Base, get_session
+from smo_shared.outbox import NotificationOutbox
 from smo_shared.testing import make_test_engine
 
 from app.main import app
@@ -23,6 +25,7 @@ def db_session_factory():
         cls.__table__ for cls in vars(mdaf_models).values()
         if isinstance(cls, type) and issubclass(cls, Base) and cls is not Base and cls.__module__ == mdaf_models.__name__
     ])
+    NotificationOutbox.__table__.create(engine)
     return sessionmaker(bind=engine)
 
 
@@ -342,3 +345,61 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}
+
+
+# ---------------------------------------------------------------- notifications through the outbox (PR-MSG-1.8)
+
+def _outbox_rows(db_session_factory):
+    with db_session_factory() as db:
+        return db.query(NotificationOutbox).order_by(NotificationOutbox.created_at).all()
+
+
+def test_a_report_notification_survives_a_crash_between_commit_and_send(client, db_session_factory, monkeypatch):
+    """The crash test of MSG-1.8 for MDAF: the report and its subscriber notification are one committed transaction; with the
+    inline send off (the process died after the commit) nothing went out, and a later drain delivers it."""
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    monkeypatch.setenv("MODULE", "mdaf")
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or FakeDmeResponse(200))
+    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"},
+                json={"notificationDestination": "http://sa-smos:8000/analytics-reports"})
+
+    report_id = client.post("/reports", params={"analytics_type": "coverage-issue-analysis"},
+                            json={"output": {"issue": "cellA"}, "input_sources": []}).json()["reportId"]
+
+    assert calls == []
+    rows = _outbox_rows(db_session_factory)
+    assert [(r.module, r.status, r.destination) for r in rows] == [("mdaf", "PENDING", "http://sa-smos:8000/analytics-reports")]
+    assert rows[0].payload["reportId"] == report_id
+    with db_session_factory() as db:
+        assert db.get(MDAFReport, uuid.UUID(report_id)) is not None   # committed in the same transaction
+
+    monkeypatch.delenv("SMO_OUTBOX_INLINE_DRAIN")
+    assert outbox.drain(db_session_factory().get_bind())["sent"] == 1
+    assert [u for u, _ in calls] == ["http://sa-smos:8000/analytics-reports"]
+
+
+def test_nothing_is_announced_and_no_report_is_stored_when_the_publish_does_not_commit(client, db_session_factory, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"},
+                json={"notificationDestination": "http://sa-smos:8000/analytics-reports"})
+
+    from sqlalchemy.orm import Session as OrmSession
+    real_commit = OrmSession.commit
+
+    def failing_commit(self):
+        if self.info.get("outbox_pending_ids"):
+            self.rollback()
+            raise RuntimeError("the database refused the commit")
+        return real_commit(self)
+
+    monkeypatch.setattr(OrmSession, "commit", failing_commit)
+    resp = TestClient(app, raise_server_exceptions=False).post("/reports", params={"analytics_type": "coverage-issue-analysis"},
+                                                               json={"output": {"issue": "cellA"}, "input_sources": []})
+    monkeypatch.setattr(OrmSession, "commit", real_commit)
+
+    assert resp.status_code == 500
+    assert calls == [] and _outbox_rows(db_session_factory) == []
+    with db_session_factory() as db:
+        assert db.query(MDAFReport).count() == 0

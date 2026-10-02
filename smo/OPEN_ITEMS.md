@@ -236,13 +236,12 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 Webhooks go out best-effort and inline through `smo_shared/webhook.py` (0 retries for notifications, 3 for others per
 `STANDARDS.md`). A restart or an unreachable subscriber loses events.
 
-#### PR-MSG-1 — Transactional outbox (open: adoption, MSG-1.8 onwards)
+#### PR-MSG-1 — Transactional outbox (open: adoption, MSG-1.9)
 
-`smo_shared/outbox.py` (table, `enqueue`, `drain`, inline drain after commit) and the call-site inventory `docs/NOTIFICATIONS.md` exist; DME, SME and AIMgF use the outbox, the other modules do not yet (`HISTORY.md` §10).
+`smo_shared/outbox.py` (table, `enqueue`, `drain`, inline drain after commit) and the call-site inventory `docs/NOTIFICATIONS.md` exist; DME, SME, AIMgF, A1 Related, FOCOM and MDAF use the outbox, Intent Service and RAN NF OAM do not yet (`HISTORY.md` §10).
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MSG-1.8 | Convert A1 Related, FOCOM and MDAF subscription callbacks | Same | MSG-1.4 |
 | MSG-1.9 | Convert Intent Service and SA SMOS notifications | Same | MSG-1.4 |
 
 #### PR-MSG-2 — Delivery worker
@@ -1426,7 +1425,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 1. **Replica-safe foundation (no new infrastructure):** done.
 2. **Safe to expose:** done except SEC-13.2 and SEC-1.6.
 3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: the rest of OBS-2, OPS-1.6, OPS-4.1b (cutting the first tag).
-4. **Durable notifications:** MSG-1.1–1.7 done; MSG-1.8 onwards one module at a time.
+4. **Durable notifications:** MSG-1.1–1.8 done; MSG-1.9 left one module at a time.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.
 6. **Safer changes:** MGT-1.1–1.4, MGT-3.1, MGT-8.1.
 7. **Later:** HA, mesh, federation, vendor profiles.

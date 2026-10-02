@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.pagination import PageLimit, PageOffset, paginate
-from smo_shared.webhook import post_webhook
+from smo_shared.outbox import enqueue
 
 from . import ts28104
 from .main import _notify_report_subscribers, _r1, _validate_input_sources_are_real_dme_artifacts
@@ -338,14 +338,14 @@ def _deliver(db: Session, report: MDAFReport, view: dict) -> None:
                                      reporting_method=request.reporting_method)
         db.add(delivery)
         if request.reporting_method == "NOTIFICATION":
-            post_webhook(request.reporting_target, json={
-                "notificationType": "notifyMDAReport", "mDARequestRef": str(request.mda_request_id), **view}, timeout=2.0)
-            delivery.notified = True
+            enqueue(db, request.reporting_target, {
+                "notificationType": "notifyMDAReport", "mDARequestRef": str(request.mda_request_id), **view})
+            delivery.notified = True  # enqueued, to be sent once this transaction commits
         elif request.reporting_method == "FILE":
-            post_webhook(request.reporting_target, json={
+            enqueue(db, request.reporting_target, {
                 "notificationType": "notifyFileReady", "mDARequestRef": str(request.mda_request_id),
                 "fileInfoList": [{"fileLocation": f"/mdaf/mda-reports/{report.report_id}/file",
-                                  "fileContent": "MDAReport", "fileDataType": "Analytics"}]}, timeout=2.0)
+                                  "fileContent": "MDAReport", "fileDataType": "Analytics"}]})
             delivery.notified = True
     db.commit()
 
@@ -395,9 +395,10 @@ def publish_mda_report(body: MDAReportBody, db: Session = Depends(get_session)):
                         report_kind=body.reportKind or _infer_kind(outputs),
                         mda_request_id=body.mDARequestRef, mda_function_id=body.mDAFunctionRef)
     db.add(report)
-    db.commit()
+    db.flush()
     # Existing analytics_type subscribers (keyed by the first mDAType) are
-    # notified exactly as for a legacy report; then MDARequest delivery.
+    # notified exactly as for a legacy report; then MDARequest delivery, whose
+    # commit makes the report and every notification one transaction (PR-MSG-1.8).
     _notify_report_subscribers(db, report)
     view = _report_view_for(db)(report)
     _deliver(db, report, view)

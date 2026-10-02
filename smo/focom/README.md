@@ -6,7 +6,7 @@
 |---|---|
 | Standards basis | O-RAN O2-IMS (FOCOM): Inventory, Fault and Performance, Artifacts, Cluster, Infrastructure, Provisioning |
 | R1 route / port | `/focom` via R1 Termination (container :8000) |
-| Depends on (over R1) | none (inventory-change callbacks go to subscriber URLs via `smo_shared.webhook`) |
+| Depends on (over R1) | none (inventory, alarm and performance callbacks go to subscriber URLs through the transactional outbox, `smo_shared.outbox`) |
 | Called by | NFO (`GET /focom/inventory`, to resolve `oCloudId`), SO SMOS (`POST /focom/resources/provision`), GUI / GUI BFF |
 | Database tables | `inventory_subscription`, `resource_type`, `resource_pool`, `resource`, `deployment_manager`, `ocloud_alarm`, `ocloud_alarm_subscription`, `ocloud_performance_metric`, `ocloud_performance_job`, `ocloud_performance_subscription`, `ocloud_location`, `ocloud_site`, `o2ims_object` |
 | Unit tests | 73 passed (`tests/`, SQLite, standalone) |
@@ -60,7 +60,7 @@ The route names (`/resource-types`, `/resource-pools`, `/deployment-managers`, `
 - **Seeded, not discovered.** `locations` / `oCloudSites` are a seeded default plus whatever an operator registers; FOCOM discovers nothing.
 - **`oCloudId` is the placement contract.** NFO reads `oCloudId` (not the filtered `resourceTypes`); `resource_type` filters `resourceTypes` only.
 - **Spec field names where a spec fixes them.** The subscription callback is `callback` (O2-IMS), not `notificationDestination`; `consumerSubscriptionId` is stored and echoed on every notification.
-- **Best-effort notification.** Delivery through `smo_shared.webhook` with a 2 s timeout; an unreachable subscriber never fails provisioning.
+- **Notifications go through the transactional outbox** (`smo_shared.outbox`, `PR-MSG-1.8`): inventory, alarm and performance callbacks are rows committed with the change that caused them and sent right after it (2 s timeout), at least once; an unreachable subscriber never fails provisioning, and a crash after the commit no longer loses the notification.
 - **Closed resource types.** `POST /resources/provision` refuses an unknown `resourceTypeId` with 404 `RESOURCE_TYPE_NOT_FOUND` (O2-IMS `ResourceType` is read-only; `SA-FOCOM-9`). `generic`, `gpu-l40` and `pserver` are seeded and `POST /resource-types` registers more; `FOCOM_AUTO_REGISTER_RESOURCE_TYPES=true` restores the old auto-registration. Deprovisioning an unknown or non-UUID id is a successful no-op and still notifies.
 - **Security.** No in-module authorization; R1 Termination introspects tokens. GUI BFF: provision, deprovision and alarm ingest are admin; inventory subscriptions are operator.
 
