@@ -992,3 +992,25 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Not taken, still open.** ST-7.4, the schema-at-head check, needs `OPS-1.2` (there is no schema version to compare to yet); it
   stays in `OPEN_ITEMS.md` as one function to add to `install_health`'s list. Gating `depends_on` on `service_healthy` for the
   modules: the start-up order is not a problem today, and a not-ready SME would stall the whole stack.
+
+### PR-ST-8 — Single-runner guard
+
+- **The helper (ST-8.1, ST-8.2).** `smo_shared/single_runner.py` `run_once_per_interval(name, interval_seconds, fn)`: across any number of
+  replicas `fn` runs at most once per interval. The claim is one atomic `UPDATE periodic_run SET last_run_at = now WHERE name = ... AND
+  last_run_at <= now - interval` on a row per task (created by the first caller, a lost insert race is harmless), so there is no leader to
+  elect, no thread inside a service (the statelessness guard forbids one) and nothing to clean up after a crash. A raising `fn` gives the
+  claim back, so a failed run does not use up the interval and the next tick retries.
+- **Overlap.** `advisory_lock(name)` is a Postgres session advisory lock on a dedicated autocommit connection, held while `fn` runs: a
+  run longer than the interval is not started a second time elsewhere (that caller gives its claim back and returns False), and the server
+  frees the lock when the holder dies, which is the lease. An ordinary pooled connection would hold an open transaction that
+  `idle_in_transaction_session_timeout` (PR-ST-6) ends, taking the lock with it, so the lock connection is autocommit. On SQLite (unit
+  tests) the lock is always held.
+- **Chosen over the plan's lease-only lock** for the interval itself: an advisory lock alone says who runs now, not whether the interval
+  already ran, and would need the last-run time kept somewhere anyway; the row answers both and works on every database.
+- **Proof.** `shared/tests/test_single_runner.py` on SQLite and real Postgres (CI `migration-postgres`): once per interval, again after it,
+  independent tasks, a failure gives the interval back, six racing replicas run once; Postgres-only: two sessions and one lock, a dead
+  holder frees it, and a long run is not started twice. Dropping the lock check or the interval condition fails the Postgres tests. The
+  `periodic_run` table is in `migrations/001_init.sql` and in the migration-vs-models check.
+- **Not taken, still open.** ST-8.3, adoption: there is still no periodic task (ST-1.4), so no caller. Who ticks (a Kubernetes CronJob, an
+  external scheduler) stays a deployment choice for the feature that needs it. Clock skew between replicas shifts a firing by the skew,
+  which is fine for intervals of seconds and up.
