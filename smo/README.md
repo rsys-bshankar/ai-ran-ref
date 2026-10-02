@@ -169,18 +169,6 @@ smo/
     openapi/                committed OpenAPI spec per service, checked against the live schema
 ```
 
-## Status
-
-| Area | Status | Detail |
-|---|---|---|
-| Phase 1 platform (17 modules, R1 gateway, schema, mocks, GUI) | Done | [`HISTORY.md`](HISTORY.md) |
-| O-RAN-SC gap closures (route-by-route audit against the reference repos) | Done | [`HISTORY.md`](HISTORY.md) |
-| Formal-spec audit (3GPP / O-RAN specs in `../specs/`) | Done where a spec file exists | [`HISTORY.md`](HISTORY.md) |
-| AI/ML pipeline review (§6 backlog, items 6.1–6.7) | Done | [`HISTORY.md`](HISTORY.md) |
-| Waves 0–3: AI Platform service decomposition, R1 contracts | Done | [`HISTORY.md`](HISTORY.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| Waves 4–10.4: TS 28.105/28.104/28.312 compliance, runtime, autonomy, multi-vendor O1, four reference rApps | Done | [`docs/STANDARDS.md`](docs/STANDARDS.md), [`HISTORY.md`](HISTORY.md) |
-| Open items and deliberate scope cuts | Open | [`OPEN_ITEMS.md`](OPEN_ITEMS.md) |
-
 ## Documentation map
 
 | Document | Contents |
