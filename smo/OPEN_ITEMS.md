@@ -115,8 +115,10 @@ and HA much later).
   only `Needs` is binding.
 - **★** marks a step that gives value on its own if you stop right after it.
 - **(verify)** marks a statement that was not confirmed against running code.
-- Where a step touches a table, it includes its migration. Until `OPS-1` lands, that means editing
-  `migrations/001_init.sql` as today.
+- Where a step touches a table, it includes its migration. The Alembic history exists (`PR-OPS-1.1`–`1.3`), but
+  the compose stack still creates the schema from `migrations/001_init.sql` alone and a rule that a schema change must be a
+  revision is `OPS-1.7`: until `OPS-1.4`/`1.5` land, keep editing `001_init.sql` as today and expect existing databases to need
+  a revision once those do.
 - When a feature is complete, move its ID to `HISTORY.md`, as for sections 1–4.
 
 ### 5.0 Feature map
@@ -513,15 +515,12 @@ HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10); no Op
 
 ### 5.6 Packaging, migrations and release (`PR-OPS`)
 
-#### PR-OPS-1 — Real migrations
+#### PR-OPS-1 — Real migrations (open: OPS-1.4 onward)
 
-`migrations/001_init.sql` is the only schema file today, so a running system cannot upgrade from it.
+Alembic is in place (`docs/adr/0001-schema-migrations.md`, `HISTORY.md` §10): baseline `0001` is `001_init.sql`, `scripts/migrate.py` upgrades or stamps. There is no second revision yet.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-1.1 | ADR: Alembic (or equivalent); one history for all modules or one per module | ADR merged | – |
-| OPS-1.2 ★ | Baseline revision equal to `001_init.sql`; existing DBs are stamped | Fresh DB and stamped DB reach the same schema | OPS-1.1 |
-| OPS-1.3 | Point the migration-vs-models check at the migration head | Check green; fails on a model change without a revision | OPS-1.2 |
 | OPS-1.4 | First real revision (a small additive change, like `PR-ST-2`'s `row_version` column, is the template) | Applies and rolls back | OPS-1.2 |
 | OPS-1.5 | Compose `migrate` one-shot service that the modules wait for | Fresh `up` is green | OPS-1.2 |
 | OPS-1.6 | CI: upgrade the previous commit's schema to head | Job green | OPS-1.4 |

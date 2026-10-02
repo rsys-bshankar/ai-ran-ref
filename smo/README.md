@@ -96,7 +96,7 @@ docker compose ps
 
 The schema is created once, from `migrations/001_init.sql`, when the Postgres volume is first made. After
 pulling a change that edits that file, recreate the volume (`docker compose down -v`, which discards demo data):
-there is no migration tooling yet (`OPEN_ITEMS.md`, `PR-OPS-1`). A volume made when the database password was still `smo` (or any other earlier password) keeps it, and the new random one will not match: recreate the volume as well. The same goes for the `gui_bff_data` and `smo_packages`
+a database that is kept is upgraded with `python scripts/migrate.py` (Alembic; it stamps a database that was created from the file, `docs/adr/0001-schema-migrations.md`), but the compose stack does not run it yet (`OPEN_ITEMS.md`, `PR-OPS-1.5`). A volume made when the database password was still `smo` (or any other earlier password) keeps it, and the new random one will not match: recreate the volume as well. The same goes for the `gui_bff_data` and `smo_packages`
 volumes of a stack started before the services ran as a non-root user: they are root-owned, so recreate them too.
 
 - R1 Termination: `curl -s http://localhost:8080/bootstrap`
@@ -168,7 +168,8 @@ smo/
   HISTORY.md                audit trail: closed items, spec audit, wave exit reviews (cited by code comments)
   docker-compose.yml        deployment topology, incl. the isolated a1_mock_net network
   Dockerfile                one image, parameterised by the MODULE build arg
-  migrations/001_init.sql   the consolidated Postgres schema
+  migrations/001_init.sql   the consolidated Postgres schema (the Alembic baseline revision 0001)
+  migrations/versions/      Alembic revisions on top of it; scripts/migrate.py applies them (docs/adr/0001-schema-migrations.md)
   shared/smo_shared/        DB session, FSM base, RFC 7807 errors, R1Client, webhook helpers,
                             correlation ids, SQLite test engine (testing.py), time helpers
   <module>/README.md        the module's HLD + LLD + unit-test document: design, data model, API, tests, status
