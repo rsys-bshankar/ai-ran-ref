@@ -101,317 +101,1457 @@ SA-MLMR-8 (`usageReqs`), SA-MLMR-9 (whole-object `filt-criteria` discovery).
 ## 5. Production readiness (tier-1 operator deployment)
 
 Sections 1–4 are about the reference build's own completeness. This section is the gap between that
-build and a tier-1 operator deployment. It is split into small blocks that can be **picked
-independently**, so a team can take the first slice of an area (for example stateless services) without
-committing to the whole area (for example HA).
+build and a tier-1 operator deployment. It is written as **features made of small steps**, so a team can take
+the first steps of a feature without committing to the whole feature (for example, stateless services from day 1
+and HA much later).
 
-**How to read an item**
+**How to read it**
 
-`PR-<area>-<n> — title` `[size]` then *What*, *Done when* (testable), *Needs* (hard prerequisites only; `none`
-means it can start today) and, where useful, *Standalone value* (what you gain even if you stop there).
+- A **feature** (`PR-ST-2`) is a capability. Its **steps** (`ST-2.1`, `ST-2.2`, …) are the pickable units. Cite a
+  step as `PR-ST-2.3`.
+- Every step is sized **≤ 2 days** and has a testable **Done when**. A step that cannot be said in one line of
+  "Done when" has been split further.
+- **Needs** lists hard prerequisites only (`–` means it can start today). Steps are listed in a sensible order, but
+  only `Needs` is binding.
+- **★** marks a step that gives value on its own if you stop right after it.
+- **(verify)** marks a statement that was not confirmed against running code.
+- Where a step touches a table, it includes its migration. Until `OPS-1` lands, that means editing
+  `migrations/001_init.sql` as today.
+- When a feature is complete, move its ID to `HISTORY.md`, as for sections 1–4.
 
-- **Size**: `S` ≤ 2 days, `M` ≤ 2 weeks, `L` > 2 weeks or needs external infrastructure or vendor access.
-- **Needs** lists hard dependencies only. Nothing is implied by item order within an area.
-- Findings below were checked against the code at the time of writing (a grep for background tasks, module
-  state, locking, pooling). Items marked **(verify)** rest on something not yet confirmed.
-- When an item is picked up, move its ID into `HISTORY.md` when closed, as for sections 1–4.
+### 5.0 Feature map
 
-### 5.0 Area map and suggested first slices
+| Area | Prefix | Features |
+|---|---|---|
+| Stateless / scale-out | `PR-ST` | ST-1 audit and guard · ST-2 FSM concurrency · ST-3 idempotency · ST-4 module identity · ST-5 BFF session state · ST-6 pool/timeouts/shutdown · ST-7 readiness · ST-8 single-runner · ST-9 inline retry |
+| Database | `PR-DB` | DB-1 credentials · DB-2 per-module schemas · DB-3 retention · DB-4 indexes/pagination · DB-5 pooler · DB-6 backup · DB-7 Postgres HA |
+| Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
+| Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
+| Observability | `PR-OBS` | OBS-1 logs · OBS-2 metrics · OBS-3 traces · OBS-4 business metrics · OBS-5 alerts/SLOs · OBS-6 log shipping · OBS-7 runbooks · OBS-8 self-monitoring |
+| Packaging / ops | `PR-OPS` | OPS-1 migrations · OPS-2 Helm · OPS-3 migrate hook · OPS-4 releases · OPS-5 rolling upgrade · OPS-6 GitOps · OPS-7 config reference · OPS-8 flags · OPS-9 sizing |
+| High availability | `PR-HA` | HA-1 replicas · HA-2 rolling restart · HA-3 DB failover · HA-4 worker failover · HA-5 placement · HA-6 DR · HA-7 geo |
+| Southbound | `PR-SB` | SB-1 NETCONF/SSH · SB-2 adaptor credentials · SB-3 3GPP YANG · SB-4 WG4 YANG · SB-5 YANG validation · SB-6 containment · SB-7 VES · SB-8 streaming · SB-9 conformance kit · SB-10 vendor profile · SB-11 RIC inventory · SB-12 A1 scope · SB-13 RIC simulator lane · SB-14 O2-IMS client · SB-15 async provisioning · SB-16 K8s driver · SB-17 NFO scale size · SB-18 FOCOM PM collector |
+| Management functions | `PR-MGT` | MGT-1 CM history/rollback · MGT-2 MSAC reach · MGT-3 dry-run · MGT-4 change windows · MGT-5 canary · MGT-6 drift · MGT-7 plan mgmt · MGT-8 alarm lifecycle · MGT-9 correlation · MGT-10 topology RCA · MGT-11 KPI engine · MGT-12 PM at scale · MGT-13 trace/QoE · MGT-14 zero-touch · MGT-15 SW campaigns · MGT-16 intent conflicts · MGT-17 SO saga · MGT-18 SLA assurance |
+| Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
+| AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
+| rApp ecosystem | `PR-RAPP` | RAPP-1 signing · RAPP-2 sandbox · RAPP-3 conformance pack · RAPP-4 Java/Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
+| GUI | `PR-GUI` | GUI-1 live updates · GUI-2 alarm console · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n · GUI-7 approval inbox |
+| Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
+| Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
-| Area | Prefix | Theme | Earliest useful slice |
-|---|---|---|---|
-| Stateless / scale-out | `PR-ST` | Any replica can serve any request | ST-1 … ST-6 (all `S`/`M`, no infra) |
-| Database | `PR-DB` | Pooling, per-module isolation, retention | DB-1, DB-2, DB-3 |
-| Async messaging | `PR-MSG` | Durable notifications and jobs | MSG-1, MSG-2 (no broker needed) |
-| Security | `PR-SEC` | Transport, secrets, identity, hardening | SEC-1, SEC-4, SEC-8 |
-| Observability | `PR-OBS` | Health, metrics, traces, logs | OBS-1 … OBS-4 |
-| Packaging / ops | `PR-OPS` | Migrations, Helm, releases | OPS-1, OPS-2 |
-| High availability | `PR-HA` | Redundancy and DR | after ST + DB + MSG |
-| Southbound | `PR-SB` | Real O1 / A1 / O2 | SB-1, SB-5, SB-9 |
-| Management functions | `PR-MGT` | CM / FM / PM depth | MGT-1 … MGT-4 |
-| Northbound / OSS | `PR-NB` | OSS/BSS, slicing, federation | NB-1, NB-2 |
-| AI/ML platform | `PR-AI` | Engines, MLOps, safety | AI-1, AI-2, AI-7 |
-| rApp ecosystem | `PR-RAPP` | Signing, sandboxing, certification | RAPP-1, RAPP-2 |
-| GUI | `PR-GUI` | NOC-grade console | GUI-1, GUI-2 |
-| Standards / compliance | `PR-STD` | Conformance and privacy | STD-1 |
-| Quality engineering | `PR-QA` | Load, chaos, upgrade tests | QA-1, QA-2 |
-
-**Dependency spine** (everything else is independent of it): `ST` → `DB-2` → `HA-*`, and `MSG-1/2` → `MSG-3/4` →
-`HA-4`. Security, observability and packaging items do not depend on `ST`, `DB` or `MSG`.
+**Dependency spine** (everything else is independent of it): `ST-2` → `HA-1`; `DB-2` → `HA-3`; `MSG-1` → `MSG-2` →
+`MSG-4`/`HA-4`; `OPS-1` → `OPS-3`/`OPS-5`; `OBS-2` → `OBS-4`/`OBS-5`.
 
 ### 5.1 Stateless / scale-out (`PR-ST`)
 
-Current state, checked: no `create_task`, `BackgroundTasks`, `Thread` or scheduler in any `*/app` module, so
-services are request-driven. The only process state is `R1Client`'s per-process token cache and invoker
-identity (`shared/smo_shared/r1_client.py`), an `lru_cache` of the vendor registry (`ran-nf-oam/app/vendors.py`),
-the GUI BFF's per-process login lockout, and the module-level dicts in the two mocks (test doubles, out of scope).
-What is missing is proof, guardrails and the replica-safety items below.
+State today, checked in the code: no `create_task`, `BackgroundTasks`, `Thread` or scheduler in any `*/app`
+module. Process state is limited to `R1Client`'s token cache and invoker identity
+(`shared/smo_shared/r1_client.py`), an `lru_cache` of the vendor registry (`ran-nf-oam/app/vendors.py`), the
+GUI BFF's per-process login lockout, and module-level dicts in the two mocks (test doubles, out of scope).
 
-- **PR-ST-1 — Statelessness audit and CI guard** `[S]`
-  *What*: confirm and record that no module keeps request-visible state in-process; add a CI check (ruff rule or
-  a small AST test) that fails on new module-level mutable containers or background threads in `*/app`, with an
-  allowlist for the cases below. Also confirm how periodic or time-driven behaviour is triggered today
-  (SA SMOS monitors, MDAF delivery, rApp Management supervision, `heartbeatInterval`) **(verify)**: if any needs a
-  periodic tick, list it, because it will need `PR-ST-8`.
-  *Done when*: audit table in the module READMEs or `docs/ARCHITECTURE.md`; guard runs in `smo-tests.yml`. *Needs*: none.
-- **PR-ST-2 — Optimistic concurrency on FSM transitions** `[M]`
-  *What*: no `with_for_update` or version column exists (checked), so two replicas can both move the same
-  `ApplicationPackage`, `RAppInstance`, `NFDeployment` or model through one transition. Add a `row_version`
-  column (or `SELECT … FOR UPDATE`) in `smo_shared/statemachine.py` and return 409 on conflict.
-  *Done when*: a two-session test on Postgres shows exactly one winner per transition; migration included. *Needs*: none.
-  *Standalone value*: removes lost-update bugs even with one replica and concurrent clients.
-- **PR-ST-3 — Idempotency keys on create/command POSTs** `[M]`
-  *What*: accept an `Idempotency-Key` header on creates and command routes (deploy, scale, advance, job start);
-  store key + response hash for a TTL; replay returns the original result. Start with `rapp-mgmt`, `nfo`, `aimgf`, `intent-service`.
-  *Done when*: retry of the same key creates one row; different payload under the same key is 422. *Needs*: none.
-- **PR-ST-4 — Shared module identity across replicas** `[S]`
-  *What*: each process self-onboards an SME invoker with a random label when `SMO_INVOKER_ID` is unset
-  (checked), so N replicas and every restart create N more invoker registrations. Provision one identity per
-  module (init job or secret), reuse it, and make onboarding idempotent per `MODULE`.
-  *Done when*: scaling a module to 3 replicas adds zero registrations; SME shows one invoker per module. *Needs*: none.
-- **PR-ST-5 — Shared session secrets and lockout for the GUI BFF** `[S]`
-  *What*: session JWT signing key and login-lockout counters must not be per-process (BFF README §2.8). Load the key
-  from config shared by all replicas; move lockout counters to the DB.
-  *Done when*: a token minted by replica A verifies on B; failed logins on A count toward B's lockout. *Needs*: none (`PR-SEC-4` improves key handling).
-- **PR-ST-6 — Pool, timeout and shutdown settings** `[S]`
-  *What*: `create_engine` sets only `pool_pre_ping` (checked). Add env-driven `pool_size`, `max_overflow`,
-  `pool_recycle`, `statement_timeout`, request timeouts, uvicorn graceful shutdown (`--timeout-graceful-shutdown`)
-  and SIGTERM draining; keep `workers` configurable in the `Dockerfile`.
-  *Done when*: defaults documented, load test shows no pool exhaustion at 3 replicas. *Needs*: none.
-- **PR-ST-7 — Readiness vs liveness endpoints** `[S]`
-  *What*: `/health` exists per module; add `/ready` (DB reachable, migrations at expected head, SME token obtainable) and keep
-  `/health` as pure liveness.
-  *Done when*: compose healthchecks and K8s probes use them. *Needs*: none. (Same item as `PR-OBS-1`; do once.)
-- **PR-ST-8 — Single-runner guard for periodic work** `[M]` *(only if ST-1 finds periodic work)*
-  *What*: a Postgres advisory-lock or lease helper in `smo_shared` so a timed task runs on one replica at a time.
-  *Done when*: with 3 replicas a periodic task fires once per interval. *Needs*: `PR-ST-1`.
-- **PR-ST-9 — Move the O1 retry sleep out of the request thread** `[S]`
-  *What*: `ran-nf-oam` retries inline with `time.sleep` (`ran-nf-oam/app/main.py:72,94`), pinning a worker for the
-  whole back-off. Bound the total retry budget and return `202` + status for slow writes, or hand the retry to `PR-MSG-2`.
-  *Done when*: worst-case request time is bounded and documented. *Needs*: none (cleaner with `PR-MSG-2`).
+#### PR-ST-1 — Statelessness audit and guard
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| ST-1.1 ★ | Table of every in-process state holder per module (the four above, plus anything the audit finds) in `docs/ARCHITECTURE.md` | Table merged; each row says safe / needs fix and the item that fixes it | – |
+| ST-1.2 | AST test: fail on new module-level mutable containers, threads or `create_task` in `*/app`, with an allowlist file | Test fails on a seeded violation, passes on `main` | ST-1.1 |
+| ST-1.3 | Run ST-1.2 in `smo-tests.yml` | Job is required on PRs touching `smo/` | ST-1.2 |
+| ST-1.4 ★ | Find how time-driven behaviour starts today: SA SMOS monitors, MDAF delivery, rApp Management supervision, `heartbeatInterval` **(verify)** | One line per behaviour in its module README: "on request" or "needs a tick" | – |
+
+#### PR-ST-2 — Optimistic concurrency on FSM transitions
+
+No `with_for_update` or version column exists today, so two replicas can both fire the same transition on one row.
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| ST-2.1 | `row_version` integer mixin in `smo_shared`; add the column and migration to `rapp_instance` only | Column present; migration-vs-models check green | – |
+| ST-2.2 | Helper in `smo_shared/statemachine.py`: fire, then `UPDATE … WHERE row_version = :v`; on 0 rows raise a conflict error mapped to 409 (RFC 7807) | Unit test: stale version → 409, no state change | ST-2.1 |
+| ST-2.3 ★ | Two-session test on real Postgres: both sessions fire the same event | Exactly one succeeds | ST-2.2 |
+| ST-2.4 | Roll out to `application_package` | Same two-session test passes | ST-2.2 |
+| ST-2.5 | Roll out to `nf_deployment` | Same | ST-2.2 |
+| ST-2.6 | Roll out to AIMgF model and runtime lifecycle rows | Same | ST-2.2 |
+| ST-2.7 | Roll out to RAN NF OAM `write_config_job` and `software_management_job` | Same | ST-2.2 |
+| ST-2.8 | SDK retry rule: re-read and retry once on 409 for idempotent transitions; document it | SDK test covers it | ST-2.2 |
+
+#### PR-ST-3 — Idempotency keys on commands
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| ST-3.1 | `idempotency_key` table: module, key, request hash, response status and body, created_at | Migration applied | – |
+| ST-3.2 | `smo_shared` helper: begin (replay or reserve), complete | Unit tests: replay returns stored response; same key with different body is 422; concurrent same key blocks or 409 | ST-3.1 |
+| ST-3.3 ★ | Apply to `rapp-mgmt` deploy | Retry with the same key creates one instance | ST-3.2 |
+| ST-3.4 | Apply to `nfo` instantiate and scale | Same | ST-3.2 |
+| ST-3.5 | Apply to AIMgF job start routes | Same | ST-3.2 |
+| ST-3.6 | Apply to RAN NF OAM `POST /config-jobs` | Retry does not create a second job or second southbound write | ST-3.2 |
+| ST-3.7 | Purge expired keys (TTL env, default 24 h) | Purge test | ST-3.1 |
+| ST-3.8 | SDK sends a generated key and reuses it on retry | SDK test | ST-3.3 |
+
+#### PR-ST-4 — One module identity across replicas
+
+Each process self-onboards an SME invoker with a random label when `SMO_INVOKER_ID` is unset, so every replica and every
+restart adds a registration.
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| ST-4.1 ★ | Count registrations after restarting every module once; record the number | Number in the PR description | – |
+| ST-4.2 | Compose/Helm: one init step registers one invoker per `MODULE` and hands `SMO_INVOKER_ID`/`SECRET` to the service | Restarts add zero registrations | ST-4.1 |
+| ST-4.3 | SME: make registration idempotent on a stable label (`smo-module:<MODULE>`) | Second registration with the same label returns the existing invoker | – |
+| ST-4.4 | Housekeeping: admin route or script to delete invokers unused for N days | Test deletes only the stale ones | – |
+
+#### PR-ST-5 — GUI BFF without per-process state
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| ST-5.1 ★ | Confirm where the session signing key comes from (`gui-bff/app/config.py`); require an explicit shared value, no per-process random | Two instances accept each other's cookies | – |
+| ST-5.2 | `failed_login_count` and `locked_until` columns on `gui_user` with migration | Migration green | – |
+| ST-5.3 | Lockout logic reads and writes those columns | Failures on instance A count toward instance B | ST-5.2 |
+
+#### PR-ST-6 — Pool, timeouts and shutdown
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| ST-6.1 ★ | Env-driven `pool_size`, `max_overflow`, `pool_recycle` in `smo_shared/db.py` (only `pool_pre_ping` today) | Defaults documented; test reads env | – |
+| ST-6.2 | `statement_timeout` and `idle_in_transaction_session_timeout` via `connect_args` | A deliberately slow query is cancelled | – |
+| ST-6.3 | Central default timeouts for all outbound `httpx` calls (`R1Client`, webhook already 5 s) | One constant, no call without a timeout (grep test) | – |
+| ST-6.4 | `Dockerfile`: `UVICORN_WORKERS` env and `--timeout-graceful-shutdown` | Container stops cleanly under load in a manual check | – |
+| ST-6.5 | SIGTERM drain: stop accepting, finish in-flight, exit | In-flight request completes during `docker stop` | ST-6.4 |
+
+#### PR-ST-7 — Readiness vs liveness (also the base for `OBS-8`)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| ST-7.1 ★ | `smo_shared` router factory: `/live` always 200; `/ready` runs registered checks | Unit test with a failing check → 503 | – |
+| ST-7.2 | Check: DB reachable (`SELECT 1`) | Down DB → `/ready` 503, `/live` 200 | ST-7.1 |
+| ST-7.3 | Check: SME token obtainable (modules that call R1) | SME down → not ready | ST-7.1 |
+| ST-7.4 | Check: schema at expected head | Mismatch → not ready | ST-7.1, OPS-1.2 |
+| ST-7.5 | Adopt in all modules (keep `/health` as alias of `/live`) | Integration suite green | ST-7.2 |
+| ST-7.6 | Compose healthchecks use `/ready` | `docker compose ps` shows healthy | ST-7.5 |
+
+#### PR-ST-8 — Single-runner guard (only if ST-1.4 finds a periodic task)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| ST-8.1 | `smo_shared` helper: Postgres advisory lock with a lease | Two sessions: one acquires | ST-1.4 |
+| ST-8.2 | `run_once_per_interval(name, interval, fn)` using it | Three replicas fire once per interval | ST-8.1 |
+| ST-8.3 | Adopt for each periodic task found | Per task: one firing per interval | ST-8.2 |
+
+#### PR-ST-9 — Inline retry in the request thread
+
+RAN NF OAM retries southbound writes with `time.sleep` inside the request (`ran-nf-oam/app/main.py:72,94`).
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| ST-9.1 ★ | Constant and doc for the maximum total retry time per sub-change | Worst-case request time stated in the module README | – |
+| ST-9.2 | Make the retry schedule an env setting with a low default for synchronous callers | Test with a fake clock shows the bound | ST-9.1 |
+| ST-9.3 | Hand retries to the job runner so no `sleep` remains in a request path | Grep test: no `sleep` in `*/app` request code | MSG-4.5 |
+
 
 ### 5.2 Database (`PR-DB`)
 
-- **PR-DB-1 — Remove default credentials** `[S]` — `smo/smo` Postgres user is in `docker-compose.yml` and the
-  `SMO_DATABASE_URL` default (`shared/smo_shared/db.py`). Require the URL from the environment; fail fast if unset
-  outside tests. *Done when*: no password literal in the repo outside tests/samples. *Needs*: none.
-- **PR-DB-2 — Per-module schemas and roles** `[M]` — one shared schema today. Create a schema and a least-privilege role per
-  module (`moduleScope` already partitions logically); cross-module reads only via R1. *Done when*: each module connects with a
-  role that cannot read another module's tables; migration check still passes against Postgres. *Needs*: `PR-OPS-1` is helpful.
-- **PR-DB-3 — Retention and partitioning for high-volume tables** `[M]` — PM records, alarms, audit log, webhook deliveries, MDAF
-  reports. Add time partitioning and a retention job/config per table. *Done when*: documented retention default per table and a purge that is tested.
-  *Needs*: none.
-- **PR-DB-4 — Indexes and query plans for list endpoints** `[S]` — every list uses `LIMIT/OFFSET` + `COUNT(*)`. Add
-  keyset pagination option and indexes for the top filters; record `EXPLAIN` for each. *Done when*: no seq-scan on the top 10 list routes at 1M rows. *Needs*: `PR-QA-1` data set.
-- **PR-DB-5 — Connection pooling proxy** `[S]` — PgBouncer in compose/Helm for many replicas. *Needs*: `PR-ST-6`.
-- **PR-DB-6 — Backup and restore drill** `[S]` — `pg_dump`/WAL archiving scripts, restore test in CI. *Done when*: restore of the demo data is verified by the runbook replay. *Needs*: none.
-- **PR-DB-7 — Postgres HA** `[L]` — Patroni or a Postgres operator, synchronous replica, failover test. *Needs*: `PR-DB-5`, `PR-OPS-2`.
+#### PR-DB-1 — No default credentials
 
-### 5.3 Async messaging and jobs (`PR-MSG`)
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| DB-1.1 ★ | `SMO_DATABASE_URL` has no default outside tests (`shared/smo_shared/db.py`); fail fast with a clear message | Service refuses to start without it | – |
+| DB-1.2 | Test harness sets it (`testing.py`, integration mesh) | Full unit and integration suites green | DB-1.1 |
+| DB-1.3 | Compose reads `${POSTGRES_PASSWORD:?}` and the URL from an `.env.example` | `docker compose config` fails with no `.env` | DB-1.1 |
+| DB-1.4 | Runbook and README quickstart updated | Quickstart works from a clean clone | DB-1.3 |
 
-Webhooks go out best-effort and in-request through `smo_shared/webhook.py` (retry per `STANDARDS.md`: 0 retries for
-notifications, 3 for others). A restart or a down subscriber loses events.
+#### PR-DB-2 — Per-module schemas and roles
 
-- **PR-MSG-1 — Transactional outbox for webhooks** `[M]` — write the notification row in the same DB transaction as the state change;
-  a delivery step reads the outbox. Delivery can still be in-process at first. *Done when*: a crash between commit and send does not lose the
-  notification. *Needs*: none. *Standalone value*: durability without any broker.
-- **PR-MSG-2 — Delivery worker with retry/back-off and dead-letter** `[M]` — separate worker process (or the same image with a
-  `ROLE=worker` flag) that drains the outbox, `SKIP LOCKED` for multi-replica safety, exponential back-off, DLQ table, metrics. *Needs*: `PR-MSG-1`.
-- **PR-MSG-3 — Event bus adapter** `[M]` — an interface in `smo_shared` with Postgres (default) and Kafka/NATS implementations for internal events (alarm, PM, FSM state). *Needs*: `PR-MSG-1`.
-- **PR-MSG-4 — Durable job runner for long operations** `[M]` — training, deploy, heal, scale, bulk CM as jobs with status, cancel and resume; reuse the worker from MSG-2. *Needs*: `PR-MSG-2`.
-- **PR-MSG-5 — Webhook signing and delivery log API** `[S]` — HMAC signature header, per-subscription delivery history for operators. *Needs*: `PR-MSG-1`.
-- **PR-MSG-6 — DNS-aware SSRF check at send time** `[S]` — webhook module accepts DNS rebinding as a residual risk today (module docstring); resolve and
-  re-check the address at connect time, behind a flag that keeps unit tests working. *Needs*: none.
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| DB-2.1 ★ | Table → owning-module map for all tables (≈120) in a checked-in file | File merged | – |
+| DB-2.2 | CI test: every table in `001_init.sql` is declared by exactly one module's models | Test fails on an orphan table | DB-2.1 |
+| DB-2.3 | List foreign keys that cross modules; each is a break of "modules talk only through R1" | List with a decision per FK (keep as ID reference without FK, or move) | DB-2.1 |
+| DB-2.4 | Replace cross-module FKs by plain ID columns, one module pair per PR | Per PR: tests and migration check green | DB-2.3 |
+| DB-2.5 | Pilot: `onboarding` tables in schema `onboarding`; `search_path` set by the service | Module works; other modules unaffected | DB-2.2 |
+| DB-2.6 | Pilot role `smo_onboarding` with rights only on its schema | Role cannot read another schema (test) | DB-2.5 |
+| DB-2.7 | Repeat DB-2.5/2.6 for each remaining module (one PR each) | Per module: runbook replay green | DB-2.6 |
+
+#### PR-DB-3 — Retention
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| DB-3.1 ★ | Table of high-volume tables with proposed retention (alarm, PM records and files, audit, webhook/outbox, idempotency, MDAF reports) | Table in the module READMEs | – |
+| DB-3.2 | Env-driven retention setting per table | Defaults documented | DB-3.1 |
+| DB-3.3 | Purge command (script or admin route) for cleared alarms older than N days | Test deletes only eligible rows | DB-3.2 |
+| DB-3.4 | Same for PM records and PM files (also remove the file on disk) | Same | DB-3.2 |
+| DB-3.5 | Same for MDAF reports | Same | DB-3.2 |
+| DB-3.6 | Same for GUI audit log, with an optional export-before-delete | Same | DB-3.2 |
+| DB-3.7 | Schedule the purges (cron, K8s CronJob or `ST-8`) | Documented schedule | DB-3.3 |
+| DB-3.8 | Time partitioning for the PM table | Old partition drops in one statement | OPS-1.4 |
+
+#### PR-DB-4 — Indexes and pagination
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| DB-4.1 ★ | Slow-query logging switch (`log_min_duration_statement`) in compose | Slow query appears in the log | – |
+| DB-4.2 | Script: `EXPLAIN` the ten most used list routes against a seeded large table | Plans recorded | QA-1.2 |
+| DB-4.3 | Add the missing indexes | No sequential scan on those routes at 1M rows | DB-4.2 |
+| DB-4.4 | Keyset (cursor) pagination option in `pagination.py` (`?after=`), `LIMIT/OFFSET` stays default | Unit tests; one route adopts it | – |
+| DB-4.5 | Adopt keyset on alarms, PM records, audit | Same | DB-4.4 |
+
+#### PR-DB-5 — Connection pooler
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| DB-5.1 | PgBouncer service in a compose profile | Runbook replay green through it | – |
+| DB-5.2 | Check psycopg 3 prepared statements with transaction pooling; set the needed flag | No "prepared statement does not exist" errors | DB-5.1 |
+| DB-5.3 | Document pool sizing across replicas | Section in README | ST-6.1 |
+
+#### PR-DB-6 — Backup and restore
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| DB-6.1 ★ | `scripts/db_backup.sh` and `db_restore.sh` (`pg_dump`/`pg_restore`) | Round trip on demo data | – |
+| DB-6.2 | CI job: backup, wipe, restore, run a runbook smoke | Job green | DB-6.1 |
+| DB-6.3 | Document WAL archiving and point-in-time recovery | Doc reviewed | – |
+| DB-6.4 | Restore drill checklist with timings | Checklist filled once | DB-6.1 |
+
+#### PR-DB-7 — Postgres HA
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| DB-7.1 | ADR: Patroni vs Postgres operator vs managed service | ADR merged | – |
+| DB-7.2 | Three-node lab deployment | `pg_isready` on the primary; two replicas streaming | DB-7.1, OPS-2.1 |
+| DB-7.3 | Connection string with multiple hosts and `target_session_attrs=read-write` | Services reconnect after a switchover | DB-7.2 |
+| DB-7.4 | Failover test during the runbook replay | Data intact; recovery time recorded | DB-7.3, ST-6.1 |
+
+### 5.3 Messaging and jobs (`PR-MSG`)
+
+Webhooks go out best-effort and inline through `smo_shared/webhook.py` (0 retries for notifications, 3 for others per
+`STANDARDS.md`). A restart or an unreachable subscriber loses events.
+
+#### PR-MSG-1 — Transactional outbox
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MSG-1.1 ★ | Classify every `post_webhook` call site: fire-and-forget vs needs the response (an RMIH callback may) | Table committed; only the first class moves | – |
+| MSG-1.2 | `notification_outbox` table: id, module, destination, payload, status, attempts, next_attempt_at, created_at | Migration applied | – |
+| MSG-1.3 | `enqueue(db, destination, payload)` inserts in the caller's transaction | Rollback of the caller removes the row (test) | MSG-1.2 |
+| MSG-1.4 | `drain(db)` sends pending rows right after commit, keeping today's behaviour | A crash between commit and send leaves a pending row that a later drain sends | MSG-1.3 |
+| MSG-1.5 | Convert DME callbacks | Existing DME tests green; new crash test | MSG-1.4 |
+| MSG-1.6 | Convert SME event subscriptions | Same | MSG-1.4 |
+| MSG-1.7 | Convert AIMgF job-completion and guard notifications | Same | MSG-1.4 |
+| MSG-1.8 | Convert A1 Related, FOCOM and MDAF subscription callbacks | Same | MSG-1.4 |
+| MSG-1.9 | Convert Intent Service and SA SMOS notifications | Same | MSG-1.4 |
+
+#### PR-MSG-2 — Delivery worker
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MSG-2.1 | `ROLE=worker` entrypoint (same image) and a compose service | Worker starts and idles | MSG-1.2 |
+| MSG-2.2 ★ | Claim rows with `FOR UPDATE SKIP LOCKED` | Two workers never send the same row (test) | MSG-2.1 |
+| MSG-2.3 | Back-off schedule 0 / 5 / 10 / 20 s as in `STANDARDS.md`, then `DEAD` | Fake-clock test | MSG-2.2 |
+| MSG-2.4 | Admin routes: list by status, requeue a `DEAD` row | Route tests | MSG-2.3 |
+| MSG-2.5 | Turn off inline `drain` when a worker is configured | Runbook replay green with worker only | MSG-2.3 |
+| MSG-2.6 | Counters: sent, failed, dead, queue depth | Visible on `/metrics` | OBS-2.3 |
+
+#### PR-MSG-3 — Event bus
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MSG-3.1 | CloudEvents-shaped envelope schema (type, source, id, time, data) | Schema and examples in `docs/` | – |
+| MSG-3.2 | `EventPublisher` interface in `smo_shared` | Unit test with an in-memory publisher | MSG-3.1 |
+| MSG-3.3 | Postgres implementation (outbox rows plus `LISTEN/NOTIFY` wake-up) | Subscriber receives within a second | MSG-3.2, MSG-1.2 |
+| MSG-3.4 | Kafka implementation behind an optional extra | Round trip against a Kafka container in a compose profile | MSG-3.2 |
+| MSG-3.5 | Publish FSM state-change events from one hook in `smo_shared/statemachine.py` | Event seen for `rapp_instance` transitions | MSG-3.2 |
+| MSG-3.6 | Publish alarm raised / cleared events | Event seen | MSG-3.2 |
+
+#### PR-MSG-4 — Durable job runner
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MSG-4.1 | Generic `job` table: type, payload, status, progress, result, cancel_requested, lease_until | Migration applied | – |
+| MSG-4.2 | Worker claims and runs a registered handler | Handler runs once across two workers | MSG-4.1, MSG-2.1 |
+| MSG-4.3 | Cancel flag checked between handler steps | Cancel stops a running job | MSG-4.2 |
+| MSG-4.4 | Lease expiry: another worker resumes an abandoned job | Kill-the-worker test | MSG-4.2 |
+| MSG-4.5 | First user: RAN NF OAM southbound config sub-changes | `ST-9.3` done; same API behaviour | MSG-4.2 |
+| MSG-4.6 | Second user: software-management jobs | Same | MSG-4.2 |
+
+#### PR-MSG-5 — Signing and delivery log
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MSG-5.1 | Optional per-subscription secret field | Migration on one subscription model | – |
+| MSG-5.2 | HMAC-SHA256 header over the body | Receiver-side example verifies | MSG-5.1 |
+| MSG-5.3 | `GET` delivery history per subscription from the outbox | Route test | MSG-1.4 |
+
+#### PR-MSG-6 — SSRF check at send time
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MSG-6.1 | Resolve the hostname at send and apply the existing blocked-address rules to every result | Test with a hostname that resolves to loopback is refused | – |
+| MSG-6.2 | Connect to the checked address (pinned transport), keep the original `Host` | Rebinding test cannot switch addresses | MSG-6.1 |
+| MSG-6.3 | Flag so fictional hostnames in unit tests keep working | Existing tests green | MSG-6.1 |
 
 ### 5.4 Security (`PR-SEC`)
 
-`SECURITY.md` states the build is not hardened; `/bootstrap` and `/health` are unauthenticated; inter-service calls are plain HTTP.
+`SECURITY.md` says the build is not hardened. `/bootstrap` and `/health` are unauthenticated and service-to-service calls
+are plain HTTP.
 
-- **PR-SEC-1 — TLS on the R1 gateway and the GUI** `[S]` — terminate TLS at R1 Termination / nginx with configurable certs. *Done when*: compose profile `tls` runs the runbook over HTTPS. *Needs*: none.
-- **PR-SEC-2 — mTLS between services** `[M]` — client certs for module-to-module and module-to-Postgres. Either per-service or via a mesh (`PR-SEC-3`). *Needs*: `PR-SEC-1`.
-- **PR-SEC-3 — Service mesh option** `[M]` — document and test Istio/Linkerd injection as an alternative to SEC-2. *Needs*: `PR-OPS-2`.
-- **PR-SEC-4 — Secret management** `[M]` — all secrets (DB, JWT key, invoker secrets, adaptor credentials) read from files/Vault/KMS, never env literals in compose; rotation procedure. *Needs*: none.
-- **PR-SEC-5 — Asymmetric token signing and JWKS** `[M]` — SME tokens and GUI sessions signed with RS256/ES256, key rotation, `kid`. GUI sessions are HS256 today. *Needs*: `PR-SEC-4`.
-- **PR-SEC-6 — OIDC / SAML / LDAP login for the GUI** `[M]` — external IdP, group-to-role mapping onto `rbac.py`; keep local admin as break-glass. *Needs*: none.
-- **PR-SEC-7 — MFA and server-side session revocation** `[M]` — TOTP or IdP-delegated; revocation list or short-lived tokens + refresh (BFF README §2.8 lists the gap). *Needs*: none.
-- **PR-SEC-8 — Rate limiting and request size limits** `[S]` — per-invoker and per-IP limits at R1 Termination, body-size caps, 429 with `Retry-After`. *Needs*: none.
-- **PR-SEC-9 — Authenticate `/bootstrap` consumers or restrict by network policy** `[S]` — today unauthenticated by design; at least document and provide NetworkPolicy/ingress rules. *Needs*: none.
-- **PR-SEC-10 — Fine-grained authorization (policy engine)** `[L]` — per-tenant / per-region / per-object ABAC (OPA or equivalent) beyond route-level RBAC and rApp scopes. *Needs*: `PR-SEC-6` helpful.
-- **PR-SEC-11 — Tamper-evident audit log and SIEM export** `[M]` — hash-chained audit rows, syslog/CEF/JSON export; extend audit to every module, not only the BFF. *Needs*: none.
-- **PR-SEC-12 — Supply-chain evidence** `[S]` — SBOM per image, image signing (cosign), vulnerability scan gate in CI. Pinning by digest and hashed Python locks exist already. *Needs*: none.
-- **PR-SEC-13 — Run as non-root, read-only filesystem, drop capabilities** `[S]` — container hardening in `Dockerfile`/compose; seccomp profile. *Needs*: none.
-- **PR-SEC-14 — Pen-test and threat-model pass** `[M]` — STRIDE per interface (R1, O1, A1, O2, GUI). Output is a tracked finding list. *Needs*: at least SEC-1, SEC-4.
-- **PR-SEC-15 — CSAR signature verification** `[M]` — see `PR-RAPP-1`; listed here for the security view.
+#### PR-SEC-1 — TLS at the edge
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-1.1 ★ | Script that makes a dev CA and a server certificate | Files produced | – |
+| SEC-1.2 | nginx (GUI) TLS server block using mounted certs | `https://localhost:3000` works | SEC-1.1 |
+| SEC-1.3 | R1 Termination served over TLS (uvicorn flags or documented ingress) | `https://localhost:8080/bootstrap` works | SEC-1.1 |
+| SEC-1.4 | `Secure` cookie and HSTS when TLS is on | Header test | SEC-1.2 |
+| SEC-1.5 | Compose profile `tls` that wires 1.2 to 1.4 | Profile starts clean | SEC-1.3 |
+| SEC-1.6 | `/bootstrap` advertises `https` URLs under the profile | rApp demo works over HTTPS | SEC-1.5 |
+
+#### PR-SEC-2 — mTLS between services
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-2.1 | Per-service certificates from the dev CA | Script output | SEC-1.1 |
+| SEC-2.2 | Uvicorn option to require client certs, by env | Call without a cert is refused | SEC-2.1 |
+| SEC-2.3 | `R1Client` and every internal `httpx` call present a client cert and verify the CA | Runbook replay green | SEC-2.2 |
+| SEC-2.4 | `sslmode=verify-full` for Postgres | Connection fails with a wrong CA | SEC-2.1 |
+| SEC-2.5 | Rotation procedure (documented, tested once) | Rotation with no downtime | SEC-2.3 |
+
+#### PR-SEC-3 — Service mesh option
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-3.1 | Doc: sidecar injection for Istio or Linkerd | Doc reviewed | OPS-2.1 |
+| SEC-3.2 | Strict mTLS policy manifests | Plain-HTTP call between pods fails | SEC-3.1 |
+| SEC-3.3 | Per-module caller allowlist (who may call whom) from `ARCHITECTURE.md` | Denied call proves the rule | SEC-3.2 |
+
+#### PR-SEC-4 — Secret management
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-4.1 ★ | Inventory of every secret: DB password, GUI admin password, session key, invoker secrets, adaptor credentials | Table in `docs/` with owner and rotation note | – |
+| SEC-4.2 | `*_FILE` convention helper in `smo_shared` (read the value from a file if `VAR_FILE` is set) | Unit test | – |
+| SEC-4.3 | Compose secrets for the DB password | No password literal in compose | SEC-4.2, DB-1.3 |
+| SEC-4.4 | Same for GUI admin password and session key | Same | SEC-4.2 |
+| SEC-4.5 | Same for module invoker secrets | Same | SEC-4.2, ST-4.2 |
+| SEC-4.6 | Adaptor credentials stored as a secret reference, never a value, in `o1_adaptor_endpoint` | Route accepts a reference only | SEC-4.2 |
+| SEC-4.7 | External Secrets or Vault example manifest | Example applies on a lab cluster | OPS-2.3 |
+| SEC-4.8 | Rotation runbook for each secret | Each rotation tried once | SEC-4.3 |
+
+#### PR-SEC-5 — Signing keys and token caching
+
+SME access tokens are opaque and introspected (RFC 7662); the signed tokens are the GUI session JWTs (HS256 today).
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-5.1 | BFF option for RS256/ES256 with a key file | Login works with each algorithm | SEC-4.2 |
+| SEC-5.2 | `kid` header and a key set (current and previous) for rotation | Token signed with the old key still verifies | SEC-5.1 |
+| SEC-5.3 | `/.well-known/jwks.json` on the BFF | Route test | SEC-5.1 |
+| SEC-5.4 ★ | Short TTL cache of introspection results at R1 Termination, dropped on revocation | Load test shows fewer SME calls; revoked token rejected within the TTL | – |
+
+#### PR-SEC-6 — OIDC login for the GUI
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-6.1 | Config: issuer, client id and secret, redirect URL, scopes | Startup validates config | SEC-4.2 |
+| SEC-6.2 | Authorization-code with PKCE routes (`/api/oidc/login`, `/callback`) | Works against a local Keycloak container | SEC-6.1 |
+| SEC-6.3 | ID token validation via the issuer's JWKS | Bad signature and wrong audience refused | SEC-6.2 |
+| SEC-6.4 | Group claim → `rbac.py` role mapping from config | Mapped user gets the right role | SEC-6.3 |
+| SEC-6.5 | Create the user on first login | Row appears; no password stored | SEC-6.3 |
+| SEC-6.6 | Logout and end-session redirect | Session cookie cleared | SEC-6.2 |
+| SEC-6.7 | Local admin kept as break-glass behind a flag | Flag off disables local login | SEC-6.2 |
+| SEC-6.8 | LDAP bind as an alternative provider (optional) | Login works against an OpenLDAP container | SEC-6.1 |
+
+#### PR-SEC-7 — MFA and logout revocation
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-7.1 | `gui_user_totp` table and enrol route | QR secret generated and verified | – |
+| SEC-7.2 | Login second step | Wrong code refused | SEC-7.1 |
+| SEC-7.3 | Recovery codes (hashed) | One-time use | SEC-7.1 |
+| SEC-7.4 | Server-side session row so logout revokes a session (today only `token_version` bumps do) | Token refused after logout | – |
+| SEC-7.5 | Admin action: revoke a user's sessions | Route test | SEC-7.4 |
+
+#### PR-SEC-8 — Rate and size limits
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-8.1 | Body-size cap middleware (config, default 1 MiB; CSAR upload route higher) | 413 on oversize | – |
+| SEC-8.2 ★ | Token-bucket limiter at R1 Termination keyed by invoker id; 429 with `Retry-After` | Burst test | – |
+| SEC-8.3 | Separate stricter limit for the unauthenticated paths | Test | SEC-8.2 |
+| SEC-8.4 | Limits per route class (read, write, upload) from config | Config test | SEC-8.2 |
+| SEC-8.5 | Shared limiter state (Postgres) so replicas share a budget | Two replicas share one bucket | SEC-8.2, ST-6.1 |
+| SEC-8.6 | Same limiter on the BFF login route | Brute-force test | SEC-8.2 |
+
+#### PR-SEC-9 — Bootstrap exposure
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-9.1 | Document why `/bootstrap` is open and what it reveals | Paragraph in `r1-termination/README.md` | – |
+| SEC-9.2 | NetworkPolicy / ingress rule limiting `/bootstrap` to rApp networks | Manifest and test | OPS-2.6 |
+| SEC-9.3 | Optional shared bootstrap key header, off by default | Test both modes | – |
+
+#### PR-SEC-10 — Tenant / region authorization
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-10.1 | ADR: where scope is enforced (R1 Termination vs each module) | ADR merged | – |
+| SEC-10.2 | `region` and `tenant` columns on `managed_entity` | Migration; set by registration | – |
+| SEC-10.3 | Scope claim on the invoker (registration field, returned by introspection) | Introspection returns it | – |
+| SEC-10.4 ★ | Pilot: `POST /config-jobs` refuses a target outside the caller's scope | 403 test | SEC-10.2, SEC-10.3 |
+| SEC-10.5 | Same on `GET .../config` | 403 test | SEC-10.4 |
+| SEC-10.6 | Same on alarms and PM reads | 403 test | SEC-10.4 |
+| SEC-10.7 | Same on rApp-facing DME and MLMR reads | 403 test | SEC-10.3 |
+| SEC-10.8 | OPA sidecar as an alternative decision point (optional) | Same tests pass with it | SEC-10.1 |
+
+#### PR-SEC-11 — Tamper-evident audit
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-11.1 | Audit table in `smo_shared`: actor, action, target, result, correlation id, prev_hash, hash | Migration | – |
+| SEC-11.2 | `audit(...)` helper that chains hashes | Unit test detects an edited row | SEC-11.1 |
+| SEC-11.3 ★ | R1 Termination audits every proxied mutating call | One row per POST/PUT/PATCH/DELETE | SEC-11.2 |
+| SEC-11.4 | `verify_audit` command | Reports the first broken link | SEC-11.2 |
+| SEC-11.5 | Export as JSON lines and syslog | Output sample | SEC-11.2 |
+| SEC-11.6 | BFF audit view merges platform audit | GUI test | SEC-11.3 |
+
+#### PR-SEC-12 — Supply-chain evidence
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-12.1 | SBOM generation per image in CI | Artifact attached | – |
+| SEC-12.2 | Image vulnerability scan with a severity gate | Gate fails on a seeded finding | – |
+| SEC-12.3 | Sign release images (cosign) | Verification command documented | OPS-4.2 |
+| SEC-12.4 | Build provenance attestation | Attestation present | OPS-4.2 |
+
+#### PR-SEC-13 — Container hardening
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-13.1 | Non-root `USER` in `Dockerfile` (check current state first) | `docker exec id` shows non-root | – |
+| SEC-13.2 | `read_only: true` with `tmpfs` for scratch paths | Runbook replay green | SEC-13.1 |
+| SEC-13.3 | `cap_drop: [ALL]`, `no-new-privileges` | Same | SEC-13.1 |
+| SEC-13.4 | Same settings in the Helm chart | `kubectl` shows them | OPS-2.2 |
+
+#### PR-SEC-14 — Threat model
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SEC-14.1 | Data-flow diagram of R1, O1, A1, O2, GUI, DB | Diagram in `docs/` | – |
+| SEC-14.2 | STRIDE table per flow | Table with a mitigation or an item ID per row | SEC-14.1 |
+| SEC-14.3 | Findings imported as items in this file | Each has an ID | SEC-14.2 |
+| SEC-14.4 | Scope for an external penetration test | One-page scope | SEC-1.5, SEC-4.5 |
+
 
 ### 5.5 Observability (`PR-OBS`)
 
-No Prometheus, OpenTelemetry or `/metrics` usage exists in the code (checked). Correlation ids exist (`smo_shared/correlation.py`).
+No Prometheus, OpenTelemetry or `/metrics` usage exists in the code (checked). A correlation id exists in
+`smo_shared/correlation.py`. Liveness and readiness are `PR-ST-7`.
 
-- **PR-OBS-1 — `/live` and `/ready`** `[S]` — same as `PR-ST-7`.
-- **PR-OBS-2 — Structured JSON logging with correlation id** `[S]` — one logging config in `smo_shared`, fields: module, level, correlation id, route, status, duration. Redact tokens/secrets. *Needs*: none.
-- **PR-OBS-3 — Prometheus metrics endpoint per module** `[M]` — request count/latency/error by route, DB pool, FSM transitions by type, webhook outcomes. Shared middleware. *Done when*: every module exposes `/metrics` (internal-only) and a sample dashboard JSON is committed. *Needs*: none.
-- **PR-OBS-4 — W3C trace context and OpenTelemetry traces** `[M]` — carry `traceparent` across `R1Client` and R1 Termination; export OTLP; spans for DB and outbound calls. Keep the correlation header as a fallback. *Needs*: none.
-- **PR-OBS-5 — Business metrics** `[S]` — rApp instances by state, packages by state, alarm counts, O1 write success rate, model lifecycle counts, action-approval wait time. *Needs*: `PR-OBS-3`.
-- **PR-OBS-6 — Alert rules and SLO definitions** `[S]` — Prometheus rules for availability, latency, error budget, O1 write failures, webhook DLQ depth. *Needs*: `PR-OBS-3`.
-- **PR-OBS-7 — Log shipping config** `[S]` — Loki/ELK/Fluent Bit examples. *Needs*: `PR-OBS-2`.
-- **PR-OBS-8 — Operations runbooks** `[M]` — per-alert response, failure modes per module, backup/restore, certificate renewal. *Needs*: SLOs.
-- **PR-OBS-9 — SMO self-monitoring view in the GUI** `[S]` — extend `GET /modules/status` with readiness, version and replica count. *Needs*: `PR-ST-7`.
+#### PR-OBS-1 — Structured logs
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OBS-1.1 ★ | JSON formatter and one `configure_logging()` in `smo_shared` | Unit test: one JSON object per record | – |
+| OBS-1.2 | Add module name and correlation id to every record | Field present inside a request | OBS-1.1 |
+| OBS-1.3 | Access-log middleware: route template, status, duration | One line per request | OBS-1.1 |
+| OBS-1.4 | Redaction filter for tokens, secrets, `Authorization` | Seeded secret never appears | OBS-1.1 |
+| OBS-1.5 | `LOG_LEVEL` env | Test | OBS-1.1 |
+| OBS-1.6 | Adopt in every module (one PR, mechanical) | Integration suite green | OBS-1.2 |
+
+#### PR-OBS-2 — Metrics
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OBS-2.1 | Pin `prometheus-client` in the hashed lock | Lock check green | – |
+| OBS-2.2 ★ | HTTP middleware: count and latency histogram by method, route template, status | Metric visible in a test client | OBS-2.1 |
+| OBS-2.3 | `/metrics` route; reachable from the compose network only (separate port or guard) | Not proxied by R1 Termination (test) | OBS-2.2 |
+| OBS-2.4 | DB pool gauges (in use, overflow, waiting) | Values change under load | OBS-2.2 |
+| OBS-2.5 | FSM transition counter from one hook in `statemachine.py` | Counter increments per transition | OBS-2.2 |
+| OBS-2.6 | Outbound call metrics in `R1Client` and the webhook helper | Per-destination outcome counts | OBS-2.2 |
+| OBS-2.7 | Adopt in all modules | Each exposes `/metrics` | OBS-2.3 |
+| OBS-2.8 | Committed Grafana dashboard JSON for the golden signals | Imports cleanly | OBS-2.7 |
+
+#### PR-OBS-3 — Distributed traces
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OBS-3.1 | Parse and propagate `traceparent` next to the correlation id (`correlation.py`) | Header survives R1 hop (test) | – |
+| OBS-3.2 | R1 Termination forwards it | Integration test | OBS-3.1 |
+| OBS-3.3 | OpenTelemetry SDK, off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set | No overhead when off | OBS-3.1 |
+| OBS-3.4 | FastAPI, httpx and SQLAlchemy instrumentation | A request shows 3 span kinds | OBS-3.3 |
+| OBS-3.5 | Collector plus Jaeger or Tempo in a compose profile | Trace visible for a runbook call | OBS-3.4 |
+
+#### PR-OBS-4 — Business metrics
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OBS-4.1 | Gauges: packages, rApp instances and NF deployments by state | Values match the DB | OBS-2.2 |
+| OBS-4.2 | Alarms by severity and ack state | Same | OBS-2.2 |
+| OBS-4.3 | O1 write outcome and retry counters | Counters move in an O1 test | OBS-2.2 |
+| OBS-4.4 | Model and runtime lifecycle counts | Same | OBS-2.2 |
+| OBS-4.5 | Pending approvals and their age | Same | OBS-2.2 |
+
+#### PR-OBS-5 — Alerts and SLOs
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OBS-5.1 | SLI definitions (availability, latency, correctness) in `docs/` | Doc reviewed | – |
+| OBS-5.2 | Availability and error-rate alert rules | `promtool check rules` green | OBS-2.2 |
+| OBS-5.3 | Latency alert rules | Same | OBS-2.2 |
+| OBS-5.4 | O1 write failure rate rule | Same | OBS-4.3 |
+| OBS-5.5 | Outbox DEAD-row depth rule | Same | MSG-2.6 |
+| OBS-5.6 | Each rule links to its runbook entry | Link check | OBS-7.1 |
+
+#### PR-OBS-6 — Log shipping
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OBS-6.1 | Fluent Bit config reading container JSON logs | Logs forwarded | OBS-1.6 |
+| OBS-6.2 | Loki and Grafana in a compose profile | Search by correlation id works | OBS-6.1 |
+| OBS-6.3 | Elasticsearch field mapping doc | Doc reviewed | OBS-1.2 |
+
+#### PR-OBS-7 — Runbooks
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OBS-7.1 | Runbook template and index | Template merged | – |
+| OBS-7.2 | Entries: Postgres down, SME down, R1 down | Each tried once on the compose stack | – |
+| OBS-7.3 | Entries: O1 write failures, adaptor unreachable | Same | – |
+| OBS-7.4 | Entries: webhook backlog, DEAD rows | Same | MSG-2.4 |
+| OBS-7.5 | Entry: certificate expiry and rotation | Same | SEC-2.5 |
+| OBS-7.6 | Entry: backup and restore | Same | DB-6.4 |
+
+#### PR-OBS-8 — Self-monitoring
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OBS-8.1 | `/version` per module (build SHA from an env set in the image) | Route test | – |
+| OBS-8.2 | BFF `GET /modules/status` adds readiness and version | Test | ST-7.5, OBS-8.1 |
+| OBS-8.3 | GUI shows readiness and version columns | Component test | OBS-8.2 |
 
 ### 5.6 Packaging, migrations and release (`PR-OPS`)
 
-- **PR-OPS-1 — Real migration tooling** `[M]` — `migrations/001_init.sql` is the only schema file; a live system cannot upgrade from it. Adopt Alembic (or equivalent): baseline from `001`, one migration per change, an up/down test, and the existing migration-vs-models check pointed at the migration head. *Done when*: upgrading a DB created from the previous commit passes in CI. *Needs*: none.
-- **PR-OPS-2 — Helm chart (or Kustomize) for all services** `[L]` — Deployments, Services, config, probes, resources, NetworkPolicy, PodDisruptionBudget, HPA-ready. Compose stays for the demo. *Needs*: `PR-ST-7` for probes.
-- **PR-OPS-3 — Migration job as a pre-upgrade hook** `[S]` — run migrations once per release, not per replica. *Needs*: `PR-OPS-1`, `PR-OPS-2`.
-- **PR-OPS-4 — Versioned releases and image tags** `[S]` — semver tags, changelog, image publish pipeline; `SECURITY.md` currently says there are no releases. *Needs*: none.
-- **PR-OPS-5 — Rolling upgrade and rollback test** `[M]` — N→N+1 with mixed versions running; schema changes follow expand/contract. Document the rule in `CLAUDE.md`. *Needs*: `PR-OPS-1`, `PR-OPS-2`.
-- **PR-OPS-6 — GitOps example (Argo CD / Flux)** `[S]` — environment overlays: lab, staging, prod. *Needs*: `PR-OPS-2`.
-- **PR-OPS-7 — Configuration reference** `[S]` — one table of every environment variable per module with default and whether it is secret. *Needs*: none.
-- **PR-OPS-8 — Feature flags** `[S]` — env-backed flag helper for gating incomplete items. *Needs*: none.
-- **PR-OPS-9 — Resource requests/limits and sizing guide** `[S]` — numbers from the load test. *Needs*: `PR-QA-1`.
+#### PR-OPS-1 — Real migrations
+
+`migrations/001_init.sql` is the only schema file today, so a running system cannot upgrade from it.
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-1.1 | ADR: Alembic (or equivalent); one history for all modules or one per module | ADR merged | – |
+| OPS-1.2 ★ | Baseline revision equal to `001_init.sql`; existing DBs are stamped | Fresh DB and stamped DB reach the same schema | OPS-1.1 |
+| OPS-1.3 | Point the migration-vs-models check at the migration head | Check green; fails on a model change without a revision | OPS-1.2 |
+| OPS-1.4 | First real revision (use `ST-2.1`'s column as the template) | Applies and rolls back | OPS-1.2 |
+| OPS-1.5 | Compose `migrate` one-shot service that the modules wait for | Fresh `up` is green | OPS-1.2 |
+| OPS-1.6 | CI: upgrade the previous commit's schema to head | Job green | OPS-1.4 |
+| OPS-1.7 | Contributor rule in `CLAUDE.md`: schema change = revision | Rule merged | OPS-1.3 |
+
+#### PR-OPS-2 — Helm chart
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-2.1 ★ | Chart skeleton and `values.yaml` | `helm lint` green | – |
+| OPS-2.2 | One generic template looped over modules; `onboarding` first | Pod runs on kind | OPS-2.1 |
+| OPS-2.3 | Config and secret wiring (env, `*_FILE`) | Pod reads DB URL from a Secret | OPS-2.2, SEC-4.2 |
+| OPS-2.4 | Probes from `/live` and `/ready` | Probes pass | OPS-2.2, ST-7.5 |
+| OPS-2.5 | Services, plus Ingress for R1 Termination and the GUI | Reachable from the kind host | OPS-2.2 |
+| OPS-2.6 | NetworkPolicy equal to the compose network rules (`a1_mock_net` isolation included) | Denied-path test | OPS-2.2 |
+| OPS-2.7 | PodDisruptionBudget and HPA templates (off by default) | `helm template` renders | OPS-2.2 |
+| OPS-2.8 | CI: `helm lint` and a kind install | Job green | OPS-2.5 |
+| OPS-2.9 | Runbook replay against the kind install | Replay green | OPS-2.8 |
+
+#### PR-OPS-3 — Migration as a release hook
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-3.1 | Pre-upgrade Helm hook Job runs the migrations once | Upgrade runs it once | OPS-1.5, OPS-2.2 |
+| OPS-3.2 | Services refuse to become ready on an older schema | Test | ST-7.4 |
+
+#### PR-OPS-4 — Releases
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-4.1 | Tag scheme (semver), `CHANGELOG.md` | First tag cut | – |
+| OPS-4.2 | Workflow that builds and pushes images by tag and digest | Images published | OPS-4.1 |
+| OPS-4.3 | Generated release notes from merged PR titles | Notes appear on the tag | OPS-4.1 |
+| OPS-4.4 | `SECURITY.md` supported-versions table updated | Table matches tags | OPS-4.1 |
+
+#### PR-OPS-5 — Rolling upgrade
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-5.1 | Expand/contract rule for schema changes in `CLAUDE.md` | Rule merged | OPS-1.7 |
+| OPS-5.2 | CI: previous release's code against the new schema | Job green | OPS-1.6, OPS-4.1 |
+| OPS-5.3 | Mixed-version run (two versions side by side) through the replay | Replay green | OPS-5.2, HA-1.1 |
+
+#### PR-OPS-6 — GitOps example
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-6.1 | Kustomize overlays: lab, staging, prod | `kustomize build` green | OPS-2.2 |
+| OPS-6.2 | Argo CD `Application` example | Syncs on a lab cluster | OPS-6.1 |
+
+#### PR-OPS-7 — Configuration reference
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-7.1 | Script that lists every `os.environ` read per module | Output file | – |
+| OPS-7.2 | Table: name, default, secret or not, owner | In `docs/` | OPS-7.1 |
+| OPS-7.3 | CI check: a new env read must appear in the table | Fails on a seeded miss | OPS-7.2 |
+
+#### PR-OPS-8 — Feature flags
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-8.1 | `flag("NAME")` helper (env-backed, default off) | Unit test | – |
+| OPS-8.2 | Convention: incomplete production items ship behind a flag | Rule in `CLAUDE.md` | OPS-8.1 |
+
+#### PR-OPS-9 — Sizing
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-9.1 | Default CPU and memory requests/limits in `values.yaml` | Pods schedule on kind | OPS-2.2 |
+| OPS-9.2 | Replace guesses by measured values | Table with the load that produced each | QA-1.4 |
 
 ### 5.7 High availability and DR (`PR-HA`)
 
-Deliberately later: each item assumes the stateless and database work above.
+Later by design; each feature assumes the stateless, database and messaging steps it names.
 
-- **PR-HA-1 — Run each module with ≥2 replicas in a test** `[S]` — compose `deploy.replicas` or Helm values; replay the runbook. *Needs*: `PR-ST-2`, `PR-ST-4`, `PR-ST-5`.
-- **PR-HA-2 — Zero-downtime rolling restart test** `[S]` — kill replicas during the runbook replay. *Needs*: `PR-HA-1`, `PR-ST-6`.
-- **PR-HA-3 — Postgres failover test** `[M]` — see `PR-DB-7`. *Needs*: `PR-DB-7`.
-- **PR-HA-4 — Delivery worker failover** `[S]` — kill a worker mid-batch; no loss, no duplicate beyond at-least-once. *Needs*: `PR-MSG-2`.
-- **PR-HA-5 — Multi-zone placement rules** `[S]` — anti-affinity, topology spread. *Needs*: `PR-OPS-2`.
-- **PR-HA-6 — Disaster recovery plan with RPO/RTO targets** `[M]` — cross-site backup shipping, restore order, GUI/R1 re-pointing. *Needs*: `PR-DB-6`.
-- **PR-HA-7 — Geo-redundant active/standby** `[L]` — second site, replication, controlled failover. *Needs*: `PR-HA-6`.
+#### PR-HA-1 — Run replicas
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| HA-1.1 | Two replicas per module in compose (`deploy.replicas`) or Helm | All start | ST-2.7, ST-4.2, ST-5.3 |
+| HA-1.2 | Replay the runbook against the replicas | Green | HA-1.1 |
+| HA-1.3 | Fix list from failures in HA-1.2, one PR each | List empty | HA-1.2 |
+
+#### PR-HA-2 — Rolling restart
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| HA-2.1 | Restart one replica at a time during a replay | No failed calls beyond retries | HA-1.2, ST-6.5 |
+| HA-2.2 | Same for the gateway | Same | HA-2.1 |
+
+#### PR-HA-3 — Database failover
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| HA-3.1 | Switchover during a replay | Recovery time recorded | DB-7.4 |
+| HA-3.2 | Primary kill (unplanned) during a replay | No data loss for committed work | DB-7.4 |
+
+#### PR-HA-4 — Worker failover
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| HA-4.1 | Kill the delivery worker mid-batch | No lost notification; duplicates only where at-least-once allows | MSG-2.2 |
+| HA-4.2 | Kill the job runner mid-job | Job resumes (`MSG-4.4`) | MSG-4.4 |
+
+#### PR-HA-5 — Placement
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| HA-5.1 | Anti-affinity and topology spread in the chart | Pods land on different nodes | OPS-2.7 |
+
+#### PR-HA-6 — Disaster recovery
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| HA-6.1 | RPO and RTO targets written down | Numbers agreed | – |
+| HA-6.2 | Off-site backup shipping | Restore from the off-site copy | DB-6.1 |
+| HA-6.3 | Restore order and re-pointing steps (GUI, R1, adaptors) | One full drill with timings | HA-6.2 |
+
+#### PR-HA-7 — Geo-redundancy
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| HA-7.1 | ADR: active/standby design | ADR merged | HA-6.3 |
+| HA-7.2 | Cross-site replication | Standby lags by less than the RPO | HA-7.1, DB-7.2 |
+| HA-7.3 | Controlled failover and failback drill | Drill report | HA-7.2 |
+
 
 ### 5.8 Southbound realism (`PR-SB`)
 
-Both southbound ends are mocks today (`mock-o1-adaptor`, `mock-near-rt-ric`); FOCOM and NFO are model-level.
+Both southbound ends are mocks (`mock-o1-adaptor`, `mock-near-rt-ric`). The NETCONF path sends an RFC 6241-shaped
+`<edit-config>` as XML over plain HTTP to `O1AdaptorEndpoint.adaptor_uri` (`ran-nf-oam/app/netconf_client.py`).
+FOCOM and NFO are model-level.
 
-**O1**
-- **PR-SB-1 — Real NETCONF over SSH client** `[M]` — session management, `edit-config`/`get-config` with datastores, `lock`/`commit`/`discard`, timeouts, host-key verification. Today's client speaks to a mock's HTTP endpoint. *Done when*: runbook CM write passes against a NETCONF server (netopeer2 or vendor simulator). *Needs*: none.
-- **PR-SB-2 — NETCONF credentials and trust store** `[S]` — per-adaptor secrets, SSH key or TLS client cert, rotation. *Needs*: `PR-SEC-4`, `PR-SB-1`.
-- **PR-SB-3 — 3GPP common YANG ingest (`SA-O1-4`)** `[S]` — add the `_3gpp-common-*` modules to `specs/`, regenerate descriptors, clear the `unresolved` lists. *Needs*: none (spec files).
-- **PR-SB-4 — WG4 O-RU M-plane YANG ingest** `[M]` — descriptors and validation for O-RU. *Needs*: `PR-SB-3` pattern.
-- **PR-SB-5 — YANG-validated CM writes before send** `[M]` — use the generated descriptors to reject bad leaf types/ranges locally. *Needs*: none.
-- **PR-SB-6 — MO containment tree (`SA-RANOAM-4`)** `[L]` — DN-keyed tree instead of flat `managedElementRef`; parent/child navigation, subtree reads. *Needs*: none.
-- **PR-SB-7 — VES event receiver** `[M]` — O-RAN VES (fault, PM, heartbeat) over HTTP then Kafka; map to alarms and PM. *Needs*: none for HTTP, `PR-MSG-3` for Kafka.
-- **PR-SB-8 — Streaming PM transport (`SA-RANOAM-8`)** `[L]` — streaming data reporting shared with MDAF. *Needs*: `PR-MSG-3`.
-- **PR-SB-9 — Vendor adaptor conformance kit** `[M]` — a test pack a vendor adaptor must pass (CM, FM, PM, SW, discovery), run against the mock first. *Needs*: none.
-- **PR-SB-10 — First real-vendor adaptor profile** `[L]` — one vendor's O-DU/O-CU YANG and quirks into the capability registry. *Needs*: vendor lab access, `PR-SB-1`.
+#### O1
 
-**A1**
-- **PR-SB-11 — RIC inventory model and `GET /rics`** `[M]` — (`OI-5-a1-ric-inventory`) store RICs, their URL, auth, health; policy types fetched from each. *Needs*: none.
-- **PR-SB-12 — Subscriber identity for OWN/OTHERS scope** `[S]` — (`OI-5-a1-scope`). *Needs*: none.
-- **PR-SB-13 — Real Near-RT RIC integration (O-RAN-SC simulator then real)** `[M]` — run the A1 flows against the SC `near-rt-ric-simulator` in CI. *Needs*: `PR-SB-11`.
+#### PR-SB-1 — NETCONF over SSH
 
-**O2**
-- **PR-SB-14 — O2-IMS client against a real inventory source** `[L]` — pull inventory from an O-Cloud IMS (or a simulator), reconcile into FOCOM. *Needs*: none.
-- **PR-SB-15 — Async provisioning with real phases (`SA-FOCOM-7`)** `[L]` — `PENDING`/`PROGRESSING`/`FAILED` driven by a real cluster API. *Needs*: `PR-SB-14`, `PR-MSG-4`.
-- **PR-SB-16 — O2-DMS / Kubernetes driver for NFO** `[L]` — instantiate, heal, scale (with target size, `OI-7`) against a K8s API. *Needs*: none; `PR-MSG-4` for long operations.
-- **PR-SB-17 — FOCOM PM collector (`SA-FOCOM-6`)** `[M]` — scheduled collection, FILE/STREAM modes, retention. *Needs*: `PR-ST-8` or `PR-MSG-4`.
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-1.1 | ADR: client library (ncclient, scrapli-netconf or asyncssh) | ADR merged | – |
+| SB-1.2 | `transport` field on `o1_adaptor_endpoint` (`http-mock` default, `ssh`) | Migration; existing rows unchanged | – |
+| SB-1.3 | SSH session wrapper: connect, hello exchange, timeout, host-key check | Connects to a netopeer2 container | SB-1.1 |
+| SB-1.4 | Compose profile `netconf-lab` with a NETCONF server and a small YANG model | Server answers `get-config` | – |
+| SB-1.5 ★ | `get-config` over the wrapper, feeding `GET .../config` | Route returns data from the lab server | SB-1.3, SB-1.4 |
+| SB-1.6 | `edit-config` over the wrapper with the same `EditResult` reasons | Applied and rejected cases both tested | SB-1.5 |
+| SB-1.7 | Map `<rpc-error>` tags to `NETCONF_RPC_FAILED` details | Unit tests per tag | SB-1.6 |
+| SB-1.8 | Candidate datastore: `lock`, `commit`, `discard-changes`, `unlock` around a job | Failed sub-change discards | SB-1.6 |
+| SB-1.9 | Runbook CM write passes against the lab server | Replay step green | SB-1.8 |
+
+#### PR-SB-2 — Adaptor credentials and trust
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-2.1 | `credential_ref` on `o1_adaptor_endpoint` (a reference, never a value) | Route rejects a literal secret | SEC-4.6 |
+| SB-2.2 | Resolve the reference at connect time | Connect works from a mounted secret | SB-2.1, SB-1.3 |
+| SB-2.3 | Known-hosts store and an operator route to pin a host key | Changed key refused | SB-1.3 |
+| SB-2.4 | TLS client certificate option (NETCONF over TLS) | Connects to the lab server with a cert | SB-2.2 |
+
+#### PR-SB-3 — 3GPP common YANG (`SA-O1-4`)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-3.1 | Add `_3gpp-common-top`, `-managed-function`, `-yang-types` to `specs/` with a source note | Files merged | – |
+| SB-3.2 | Add the EP and RRM policy groupings they import | Files merged | SB-3.1 |
+| SB-3.3 | Re-run `scripts/ingest_yang_schema.py` | Descriptors regenerate | SB-3.2 |
+| SB-3.4 | Compare `unresolved` before and after; fix the leftover | `id`, `userLabel`, `EP_Common` resolved | SB-3.3 |
+| SB-3.5 | Update the descriptor tests | Suite green | SB-3.4 |
+
+#### PR-SB-4 — WG4 O-RU YANG
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-4.1 | Add the WG4 M-plane modules to `specs/` | Files merged | – |
+| SB-4.2 | Extend the ingest script for them | Descriptors generated | SB-4.1 |
+| SB-4.3 | Register the O-RU managed-function classes in the vendor capability registry | Registry test | SB-4.2 |
+| SB-4.4 | Tests for one O-RU write | Test green | SB-4.3 |
+
+#### PR-SB-5 — YANG-validated writes
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-5.1 | Leaf type and range checker driven by a descriptor | Unit tests per YANG type | – |
+| SB-5.2 ★ | Run it on every sub-change before sending | Out-of-range value is rejected with a reason | SB-5.1 |
+| SB-5.3 | Map failures to `rejection_reason` codes | Test | SB-5.2 |
+| SB-5.4 | Unknown-attribute policy flag: reject or pass | Both modes tested | SB-5.2 |
+| SB-5.5 | Enum, pattern and `must` constraint support | Tests | SB-5.1 |
+
+#### PR-SB-6 — MO containment tree (`SA-RANOAM-4`)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-6.1 | `managed_object` table: dn, parent_dn, class, element ref | Migration | – |
+| SB-6.2 | Populate it from a `get-config` walk | Tree matches the lab server | SB-6.1, SB-1.5 |
+| SB-6.3 | `GET /managed-objects/{dn}/children` | Route test | SB-6.1 |
+| SB-6.4 | Subtree read | Route test | SB-6.3 |
+| SB-6.5 | Reject a sub-change whose target DN is not in the tree (flag, off by default) | Test | SB-6.2 |
+| SB-6.6 | Migration of flat `managedElementRef` rows to root DNs | Existing tests green | SB-6.1 |
+| SB-6.7 | TEIV export built from the tree | Export includes parent links | SB-6.2 |
+
+#### PR-SB-7 — VES event receiver
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-7.1 | `POST /ves/eventListener/v7` accepting the batch and single-event schemas | Schema test | – |
+| SB-7.2 ★ | Map the fault domain to the existing `/alarms/ingest` path | Alarm row created | SB-7.1 |
+| SB-7.3 | Map `heartbeat` to the adaptor heartbeat | Health updated | SB-7.1 |
+| SB-7.4 | Map `measurement` and `stndDefined` PM to the `/pm-reports` path | PM record created | SB-7.1 |
+| SB-7.5 | Basic auth for the listener, credentials from `SEC-4.2` | 401 without it | SB-7.1 |
+| SB-7.6 | Kafka consumer variant | Same events via a topic | SB-7.1, MSG-3.4 |
+
+#### PR-SB-8 — Streaming PM (`SA-RANOAM-8`)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-8.1 | ADR: transport (Kafka, gRPC or chunked HTTP) | ADR merged | – |
+| SB-8.2 | `delivery_method=stream` subscription resolves to a topic or endpoint | Route test | SB-8.1 |
+| SB-8.3 | Producer side from the VES and PM ingest paths | Messages on the topic | SB-8.2, SB-7.4 |
+| SB-8.4 | MDAF `STREAMING` subscription consumes it (closes `SA-MDA-5`'s recorded-only gap) | End-to-end test | SB-8.3 |
+| SB-8.5 | Backpressure and drop policy | Slow consumer test | SB-8.3 |
+
+#### PR-SB-9 — Vendor adaptor conformance kit
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-9.1 | List of checks per service: CM, FM, PM, SW, discovery, heartbeat | Doc | – |
+| SB-9.2 | CM checks as a test pack | Pack passes against the mock | SB-9.1 |
+| SB-9.3 | FM checks | Same | SB-9.1 |
+| SB-9.4 | PM checks | Same | SB-9.1 |
+| SB-9.5 | SW and discovery checks | Same | SB-9.1 |
+| SB-9.6 | CLI runner and a report file | Report generated | SB-9.2 |
+| SB-9.7 | CI runs it against the mock adaptor | Job green | SB-9.6 |
+
+#### PR-SB-10 — First vendor profile
+
+Needs access to a vendor simulator or lab.
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-10.1 | Collect the vendor's YANG set | Files in a profile directory | – |
+| SB-10.2 | Add a capability registry entry | Registry test | SB-10.1 |
+| SB-10.3 | List deviations from the standard models | List in the profile README | SB-10.1 |
+| SB-10.4 | Conformance pack run against the vendor | Report attached | SB-9.6, SB-1.9 |
+
+#### A1
+
+#### PR-SB-11 — RIC inventory (`OI-5-a1-ric-inventory`)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-11.1 | `near_rt_ric` table: id, URL, auth ref, status | Migration | – |
+| SB-11.2 | `POST` and `GET /rics` | Route tests | SB-11.1 |
+| SB-11.3 | Health probe per RIC | Status changes when the mock stops | SB-11.2 |
+| SB-11.4 | Fetch policy types from `GET /policytypes` on each RIC | Types and schemas stored | SB-11.2 |
+| SB-11.5 | Map each policy to its RIC | A policy to RIC B goes to B | SB-11.4 |
+| SB-11.6 | Remove the hardcoded `KNOWN_POLICY_TYPES` fallback behind a flag | Test with the flag on | SB-11.4 |
+
+#### PR-SB-12 — A1 OWN/OTHERS scope (`OI-5-a1-scope`)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-12.1 | Record the subscriber's rApp id from the token on subscription | Column filled | – |
+| SB-12.2 | Compare with `creator_id` for OWN and OTHERS | Test for each scope | SB-12.1 |
+
+#### PR-SB-13 — RIC simulator lane
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-13.1 | Compose profile with the O-RAN-SC `near-rt-ric-simulator` | Starts | – |
+| SB-13.2 | Policy create, read, delete against it | Test green | SB-13.1, SB-11.2 |
+| SB-13.3 | Nightly CI job | Job green | SB-13.2 |
+
+#### O2
+
+#### PR-SB-14 — O2-IMS client
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-14.1 | ADR: target (an O2-IMS simulator or a real IMS) and auth | ADR merged | – |
+| SB-14.2 | HTTP client with auth and timeouts | Unit tests with a stub server | SB-14.1 |
+| SB-14.3 | Pull resource pools | Pools appear in FOCOM | SB-14.2 |
+| SB-14.4 | Pull resources and resource types | Same | SB-14.3 |
+| SB-14.5 | Reconcile: add, update, remove | Deleted upstream means removed | SB-14.4 |
+| SB-14.6 | Inventory change subscription to the IMS | Event updates FOCOM | SB-14.5 |
+
+#### PR-SB-15 — Async provisioning (`SA-FOCOM-7`)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-15.1 | Driver interface for `ProvisioningRequest` fulfilment; today's model-level fulfilment becomes the default driver | Existing tests green | – |
+| SB-15.2 | Phase fields persisted: `PENDING`, `PROGRESSING`, `FAILED` | Migration; states visible | SB-15.1 |
+| SB-15.3 | Fulfilment runs as a job | Request returns before completion | SB-15.2, MSG-4.2 |
+| SB-15.4 | Failure and timeout handling | `FAILED` with a reason | SB-15.3 |
+| SB-15.5 | Cancel | Test | SB-15.3, MSG-4.3 |
+
+#### PR-SB-16 — Kubernetes driver for NFO
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-16.1 | Driver interface in NFO; today's behaviour is the default driver | Existing tests green | – |
+| SB-16.2 | K8s client; instantiate creates a Deployment from the descriptor | Pod runs on kind | SB-16.1 |
+| SB-16.3 | Status watch drives the `NFDeployment` FSM | State follows pod readiness | SB-16.2 |
+| SB-16.4 | Heal (rollout restart) | Pod replaced | SB-16.3 |
+| SB-16.5 | Terminate | Resources removed | SB-16.3 |
+| SB-16.6 | RBAC manifest for the NFO service account | Least-privilege role documented | SB-16.2 |
+| SB-16.7 | kind-based CI test | Job green | SB-16.5 |
+
+#### PR-SB-17 — Scale target size (`OI-7`)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-17.1 ★ | `replicas` argument on `POST /nfo/deployments/{id}/scale` | Route test | – |
+| SB-17.2 | `resources` argument | Route test | SB-17.1 |
+| SB-17.3 | Validate against the manifest runtime-profile bounds | Out-of-bounds refused | SB-17.1 |
+| SB-17.4 | AIMgF `runtime/scale` request carries the size | End-to-end test | SB-17.3 |
+| SB-17.5 | K8s driver applies it | Replica count changes on kind | SB-17.4, SB-16.3 |
+
+#### PR-SB-18 — FOCOM PM collector (`SA-FOCOM-6`)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| SB-18.1 | `reportInterval` and `heartbeatInterval` stored and validated | Route tests | – |
+| SB-18.2 | Scheduled collection task | One collection per interval across replicas | ST-8.2 |
+| SB-18.3 | `PerformanceMeasurementStore` retention | Old rows purged | DB-3.2 |
+| SB-18.4 | `FILE` reporting mode | File written and listed | SB-18.2 |
+| SB-18.5 | `STREAM` reporting mode | Messages on a topic | SB-18.2, SB-8.1 |
 
 ### 5.9 Management function depth (`PR-MGT`)
 
-**Configuration management**
-- **PR-MGT-1 — CM history, diff and rollback** `[M]` — snapshot before each write, diff API, rollback as a new write through the same MSAC path. *Needs*: none.
-- **PR-MGT-2 — MSAC on reads and remaining routes (`SA-RANOAM-1` reach)** `[S]` — call `msac.authorize` per route. *Needs*: none.
-- **PR-MGT-3 — Dry-run / pre-check** `[S]` — validate and return the would-be change set without sending. *Needs*: `PR-SB-5` improves it.
-- **PR-MGT-4 — Change windows and approval workflow** `[M]` — schedule, approve, expire; reuse the governance-event pattern. *Needs*: none.
-- **PR-MGT-5 — Bulk and staged (canary) CM rollout** `[M]` — wave sizes, health gate between waves, auto-halt. *Needs*: `PR-MGT-1`, `PR-MSG-4`.
-- **PR-MGT-6 — Golden config and drift detection** `[M]` — compare desired vs actual per managed element. *Needs*: `PR-MGT-1`.
-- **PR-MGT-7 — Plan management (TS 28.572)** `[M]` — plan objects and activation; spec file is in `specs/`. *Needs*: none.
+Current state, checked: config writes run as `write_config_job` with `write_config_sub_change` rows and an MSAC check;
+`GET .../config` reads the cache; software-management jobs and `/o1-adaptor-endpoints/discover` exist; alarms have
+ack and clear routes.
 
-**Fault management**
-- **PR-MGT-8 — Alarm lifecycle** `[M]` — ack, unack, clear, comment, aging, suppression windows; per TS 28.111 notifications. *Needs*: none.
-- **PR-MGT-9 — Alarm correlation v1 (`OI-1-alarm-storm`)** `[M]` — time-window + `neighbourRefs` grouping into `correlation_group`. *Needs*: `PR-MGT-8` helpful.
-- **PR-MGT-10 — Topology-aware root cause** `[L]` — use TEIV/containment topology. *Needs*: `PR-MGT-9`, `PR-SB-6`.
+#### Configuration management
 
-**Performance management**
-- **PR-MGT-11 — KPI engine (TS 28.554 style)** `[M]` — formula definitions over PM counters, per-cell/per-region aggregation, API. *Needs*: none.
-- **PR-MGT-12 — PM file collection at scale** `[M]` — scheduled fetch, parsing, dedupe, backlog metrics. *Needs*: `PR-MSG-4`.
-- **PR-MGT-13 — Trace and QoE management (TS 28.623 models)** `[L]` — trace job control and collection. *Needs*: `PR-SB-8`.
+#### PR-MGT-1 — CM history and rollback
 
-**Network lifecycle**
-- **PR-MGT-14 — Zero-touch onboarding of a new managed element** `[L]` — PnP, initial config, SW baseline. *Needs*: `PR-SB-1`, `PR-MGT-1`.
-- **PR-MGT-15 — Software management at scale** `[M]` — staged upgrade campaigns with rollback. *Needs*: `PR-MGT-5`.
-- **PR-MGT-16 — Intent conflict detection and arbitration** `[L]` — detect two intents/rApps writing the same target; priority rules; surface in GUI. *Needs*: none.
-- **PR-MGT-17 — SO SMOS saga semantics** `[M]` — compensation and resume instead of fail-fast. *Needs*: `PR-MSG-4`.
-- **PR-MGT-18 — SA SMOS closed-loop SLA assurance** `[M]` — SLA objects, breach handling, escalation. *Needs*: `PR-MGT-11`.
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-1.1 | `cm_snapshot` table: element, function, before, after, job id, time | Migration | – |
+| MGT-1.2 ★ | Capture the before-image (a read of the current values) before each write | Row has `before` after a job | MGT-1.1 |
+| MGT-1.3 | Capture `after` on success | Row complete | MGT-1.2 |
+| MGT-1.4 | `GET` history per element | Route test | MGT-1.3 |
+| MGT-1.5 | Diff endpoint between two snapshots | Route test | MGT-1.3 |
+| MGT-1.6 | Rollback = new write job built from a snapshot, through MSAC | Values restored; audit shows the actor | MGT-1.3 |
+| MGT-1.7 | Guard: refuse if values changed since the snapshot unless forced | Test | MGT-1.6 |
+| MGT-1.8 | Snapshot retention | Purge test | DB-3.2 |
+
+#### PR-MGT-2 — MSAC beyond writes (`SA-RANOAM-1` reach)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-2.1 | `authorize(..., "read")` on `GET .../config` | Denied read is 403 | – |
+| MGT-2.2 | Same on PM and FM subscription create | Test | – |
+| MGT-2.3 | Same on alarm ack and clear | Test | – |
+| MGT-2.4 | Same on software-management jobs | Test | – |
+| MGT-2.5 | Same on file routes | Test | – |
+
+#### PR-MGT-3 — Dry run
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-3.1 ★ | `dryRun=true` on `POST /config-jobs`: run schema and MSAC checks, send nothing | No southbound call (test) | – |
+| MGT-3.2 | Per-sub-change verdict in the response | Test | MGT-3.1 |
+| MGT-3.3 | Include the YANG check when available | Test | MGT-3.1, SB-5.2 |
+
+#### PR-MGT-4 — Change windows and approvals
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-4.1 | `scheduled_at` and `window_end` on the job | Migration | – |
+| MGT-4.2 | `PENDING_APPROVAL` state in the FSM | Transition tests | – |
+| MGT-4.3 | Approve and reject routes; approver must differ from requester | Same-user approval refused | MGT-4.2 |
+| MGT-4.4 | Start at the window | Job starts once across replicas | MGT-4.1, MSG-4.2 |
+| MGT-4.5 | Expire after `window_end` | Job moves to `EXPIRED` | MGT-4.4 |
+
+#### PR-MGT-5 — Canary rollout
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-5.1 | Wave settings on a job (size, pause between waves) | Migration | – |
+| MGT-5.2 | Split sub-changes into waves | Unit test | MGT-5.1 |
+| MGT-5.3 | Health gate hook between waves (alarm count first, KPI later) | Gate failure halts | MGT-5.2 |
+| MGT-5.4 | Halt and continue routes | Test | MGT-5.3 |
+| MGT-5.5 | Automatic revert of applied waves | Values restored | MGT-5.3, MGT-1.6 |
+
+#### PR-MGT-6 — Drift detection
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-6.1 | Desired-state store per element | Migration | – |
+| MGT-6.2 | On-demand compare with the actual config | Route test | MGT-6.1 |
+| MGT-6.3 | Drift report with a count per element | Route test | MGT-6.2 |
+| MGT-6.4 | Scheduled compare | One run per interval | MGT-6.2, ST-8.2 |
+| MGT-6.5 | Remediation as a config job | Test | MGT-6.2 |
+
+#### PR-MGT-7 — Plan management (TS 28.572)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-7.1 | Plan object model from `TS28572_PlanManagement.yaml` | Migration | – |
+| MGT-7.2 | Create, read, delete routes | Route tests | MGT-7.1 |
+| MGT-7.3 | Activation creates a config job | Values written | MGT-7.2 |
+| MGT-7.4 | Conformance test against the spec file | Test green | MGT-7.2 |
+
+#### Fault management
+
+#### PR-MGT-8 — Alarm lifecycle depth
+
+Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`). The handlers shown in the code have no check for a missing
+alarm and take any `new_state` string.
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-8.1 ★ | 404 for an unknown alarm; `new_state` validated against the allowed values | Tests for both | – |
+| MGT-8.2 | `alarm_history` table: every ack, clear and severity change | Migration; row per change | – |
+| MGT-8.3 | Comments: add and list | Route tests | – |
+| MGT-8.4 | List filters: severity, state, time range, element | Route tests | – |
+| MGT-8.5 | Repeat raise of the same `source_alarm_id`: update count and time instead of a new row (confirm today's behaviour first) **(verify)** | Test | – |
+| MGT-8.6 | Aging policy: auto-clear after N hours without a repeat | One run per interval | ST-8.2 |
+| MGT-8.7 | Suppression windows per element (planned work) | Alarm in a window is flagged | MGT-8.2 |
+| MGT-8.8 | FM subscription notifications for ack and clear (confirm what is sent today) **(verify)** | Receiver gets them | MSG-1.4 |
+
+#### PR-MGT-9 — Correlation v1 (`OI-1-alarm-storm`)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-9.1 | Key function: element, probable cause, time window | Unit tests | – |
+| MGT-9.2 | Apply on ingest to set `correlation_group` | Two matching alarms share a group | MGT-9.1 |
+| MGT-9.3 | Add `neighbourRefs` grouping | Neighbouring elements group | MGT-9.2 |
+| MGT-9.4 | `root_cause_indicator` heuristic: earliest alarm in the group | Flag set on one alarm | MGT-9.2 |
+| MGT-9.5 | `GET /alarm-groups` | Route test | MGT-9.2 |
+| MGT-9.6 | Window and thresholds from env | Config test | MGT-9.2 |
+| MGT-9.7 | Evaluate on recorded alarm traces (a replay script) | Precision and recall numbers recorded | MGT-9.4 |
+
+#### PR-MGT-10 — Topology-aware root cause
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-10.1 | Parent-child suppression using the containment tree | Child alarms point at the parent's alarm | SB-6.4, MGT-9.2 |
+| MGT-10.2 | Link-type awareness from the TEIV topology | Test | SB-6.7 |
+| MGT-10.3 | Candidate scoring and the evaluation script from MGT-9.7 | Improvement shown on the traces | MGT-10.1 |
+
+#### Performance management
+
+#### PR-MGT-11 — KPI engine
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-11.1 | `kpi_definition` table: name, formula, counters, aggregation | Migration | – |
+| MGT-11.2 | Safe formula evaluator (no `eval`; arithmetic and a few functions) | Unit tests incl. hostile input | – |
+| MGT-11.3 | Compute one KPI for one cell and period | Test | MGT-11.2 |
+| MGT-11.4 | Aggregate by region | Test | MGT-11.3 |
+| MGT-11.5 | `GET /kpis/{name}` with filters | Route test | MGT-11.3 |
+| MGT-11.6 | Seed a standard KPI set | Seed test | MGT-11.5 |
+| MGT-11.7 | Expose results as a DME data type | rApp can read it | MGT-11.5 |
+
+#### PR-MGT-12 — PM collection at scale
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-12.1 | Scheduled file fetch per adaptor | One fetch per interval across replicas | ST-8.2 |
+| MGT-12.2 | Parser for the 3GPP XML PM file format | Parses sample files | – |
+| MGT-12.3 | De-duplicate by file id | Test | MGT-12.1 |
+| MGT-12.4 | Backlog gauge | Visible on `/metrics` | OBS-2.2 |
+| MGT-12.5 | Bounded parallel fetch | Test | MGT-12.1 |
+
+#### PR-MGT-13 — Trace and QoE
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-13.1 | Trace job model from `TS28623_TraceControlNrm.yaml` | Migration | – |
+| MGT-13.2 | Create, read, delete routes | Route tests | MGT-13.1 |
+| MGT-13.3 | Push the job to the adaptor | Mock receives it | MGT-13.2 |
+| MGT-13.4 | Collect the trace file | File listed | MGT-13.3 |
+| MGT-13.5 | QoE measurement collection model from `TS28623_QoEMeasurementCollectionNrm.yaml` | Migration and routes | MGT-13.1 |
+
+#### Network lifecycle
+
+#### PR-MGT-14 — Zero-touch onboarding
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-14.1 | Onboarding template store (initial config per element type) | Route tests | – |
+| MGT-14.2 | Discovery (exists) triggers template selection | Test | MGT-14.1 |
+| MGT-14.3 | Apply the template as a config job | Config applied | MGT-14.2 |
+| MGT-14.4 | Software baseline check | Mismatch flagged | MGT-14.2 |
+| MGT-14.5 | Onboarding status FSM | Transition tests | MGT-14.3 |
+
+#### PR-MGT-15 — Software campaigns
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-15.1 | Campaign object over many software-management jobs | Migration | – |
+| MGT-15.2 | Waves with a health gate | Gate failure halts | MGT-15.1, MGT-5.3 |
+| MGT-15.3 | Campaign rollback | Test | MGT-15.1 |
+| MGT-15.4 | Campaign report | Route test | MGT-15.1 |
+
+#### PR-MGT-16 — Intent and rApp conflict handling
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-16.1 | Target-overlap detection between two intents | Unit tests | – |
+| MGT-16.2 | `priority` field on intents | Migration | – |
+| MGT-16.3 | Conflict record and notification | Test | MGT-16.1 |
+| MGT-16.4 | Arbitration rule (higher priority wins; tie goes to the operator) | Test | MGT-16.2, MGT-16.3 |
+| MGT-16.5 | Same check for two rApps writing one target through config jobs | Test | MGT-16.1 |
+| MGT-16.6 | GUI list of open conflicts | Component test | MGT-16.3 |
+
+#### PR-MGT-17 — SO SMOS saga semantics
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-17.1 | Compensation action field in the dispatch table | Schema test | – |
+| MGT-17.2 | Record executed steps per order | Migration | – |
+| MGT-17.3 | Run compensations in reverse on failure | Test | MGT-17.1, MGT-17.2 |
+| MGT-17.4 | Resume from the failed step | Test | MGT-17.2 |
+
+#### PR-MGT-18 — SA SMOS SLA assurance
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| MGT-18.1 | SLA objects (KPI, threshold, window) | Migration | – |
+| MGT-18.2 | Monitor evaluates SLAs from the KPI engine | Breach detected | MGT-18.1, MGT-11.5 |
+| MGT-18.3 | Breach events | Event delivered | MGT-18.2, MSG-1.4 |
+| MGT-18.4 | Escalation steps with timers | Test | MGT-18.3, ST-8.2 |
+
 
 ### 5.10 Northbound and OSS/BSS (`PR-NB`)
 
-- **PR-NB-1 — Northbound alarm forwarding** `[M]` — SNMP trap / Kafka / REST to the operator NOC. *Needs*: `PR-MGT-8`.
-- **PR-NB-2 — Inventory / topology export** `[M]` — extend the TEIV export to a stable, versioned API and a CMDB sync job. *Needs*: none.
-- **PR-NB-3 — TS 28.532 MnS producer facade** `[L]` — expose CM/FM/PM to an external consumer using the TS 28.532 shapes already in `specs/`. *Needs*: none.
-- **PR-NB-4 — Network slice management objects** `[L]` — NSMF/NSSMF-style objects using TS 28.541/28.531 models. *Needs*: `PR-NB-3`.
-- **PR-NB-5 — TM Forum Open API adaptors (TMF 641 / 921 / 633)** `[L]` — thin mapping layer; start with one. *Needs*: none.
-- **PR-NB-6 — ONAP integration profile** `[M]` — document and test the SMO against ONAP SDN-R/DMaaP style flows. *Needs*: `PR-SB-7`.
-- **PR-NB-7 — SMO-to-SMO federation** `[L]` — multi-domain trust and delegation. *Needs*: `PR-SEC-10`.
+#### PR-NB-1 — Alarm forwarding to the NOC
+
+FM subscriptions with callbacks exist; the steps below add destinations a NOC uses.
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| NB-1.1 | Destination model: type, address, filter | Migration | – |
+| NB-1.2 | REST destination through the outbox | Receiver gets a new alarm | NB-1.1, MSG-1.4 |
+| NB-1.3 | Kafka destination | Message on a topic | NB-1.1, MSG-3.4 |
+| NB-1.4 | SNMP v2c trap | Trap seen by a test listener | NB-1.1 |
+| NB-1.5 | SNMP v3 | Same with auth and privacy | NB-1.4 |
+| NB-1.6 | Syslog destination | Message seen | NB-1.1 |
+| NB-1.7 | Filters: severity, element, region | Test | NB-1.1 |
+
+#### PR-NB-2 — Inventory and topology export
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| NB-2.1 | Versioned export schema (JSON Schema in `docs/`) | Schema merged | – |
+| NB-2.2 | `GET /inventory/export`, paged | Route test | NB-2.1 |
+| NB-2.3 | Delta export since a cursor | Test | NB-2.2 |
+| NB-2.4 | Sample CMDB sync script | Script runs against the demo data | NB-2.3 |
+
+#### PR-NB-3 — TS 28.532 MnS facade
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| NB-3.1 | ProvMnS read (`GET` MOI) over the registry and cache | Conformance test vs the spec file | – |
+| NB-3.2 | ProvMnS `PATCH` → config job | Values written | NB-3.1 |
+| NB-3.3 | FaultSupervision facade | Conformance test | – |
+| NB-3.4 | PerfMnS facade | Conformance test | – |
+| NB-3.5 | Facade auth and scope | 403 test | NB-3.1, SEC-10.4 |
+
+#### PR-NB-4 — Network slice management objects
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| NB-4.1 | Choose the object subset from TS 28.541 and 28.531 in `specs/` | One-page ADR | – |
+| NB-4.2 | Slice profile model | Migration | NB-4.1 |
+| NB-4.3 | Allocate, modify, deallocate as service orders | Test via SO SMOS | NB-4.2 |
+| NB-4.4 | Slice-level assurance hook | Breach event | NB-4.2, MGT-18.2 |
+
+#### PR-NB-5 — TM Forum adaptor
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| NB-5.1 | Choose the first API (TMF 641 service ordering) | ADR | – |
+| NB-5.2 | Mapping between TMF order items and SO SMOS orders | Mapping tests | NB-5.1 |
+| NB-5.3 | Routes and state mapping | Contract test | NB-5.2 |
+| NB-5.4 | TMF event notifications | Receiver gets events | NB-5.3, MSG-1.4 |
+
+#### PR-NB-6 — ONAP profile
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| NB-6.1 | Document which ONAP flows apply (VES, A1, O1) | Doc | – |
+| NB-6.2 | Test VES into the SMO from an ONAP-style sender | Test green | SB-7.2 |
+
+#### PR-NB-7 — SMO federation
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| NB-7.1 | ADR: trust and delegation model between two SMOs | ADR merged | SEC-10.1 |
+| NB-7.2 | Peer registry | Migration; routes | NB-7.1 |
+| NB-7.3 | Read-only cross-SMO inventory query | Test | NB-7.2, NB-2.2 |
+| NB-7.4 | Delegated intent | Test | NB-7.2 |
 
 ### 5.11 AI/ML platform depth (`PR-AI`)
 
-- **PR-AI-1 — Pluggable training/validation/emulation executor interface** `[M]` — make the runtime job executors replaceable; keep today's behaviour as the default stub. *Needs*: none. *Standalone value*: unblocks every later AI item.
-- **PR-AI-2 — Kubernetes Job executor for training** `[L]` — run a container as a training job, collect metrics/artifacts into MLMR. *Needs*: `PR-AI-1`, `PR-SB-16`.
-- **PR-AI-3 — MLflow-compatible tracking and registry bridge** `[M]` — mirror MLMR models to/from MLflow. *Needs*: `PR-AI-1`.
-- **PR-AI-4 — Inference serving adaptor (KServe / Triton)** `[L]` — `RuntimeLifecycle` deploys to a serving runtime, `OI-7` target size. *Needs*: `PR-SB-16`.
-- **PR-AI-5 — Feature store interface** `[M]` — feature groups backed by an external store; online/offline reads. *Needs*: none.
-- **PR-AI-6 — Data lake / time-series sink for PM** `[M]` — export DME/PM to Parquet/TSDB. *Needs*: `PR-MGT-12`.
-- **PR-AI-7 — Model drift and performance monitoring** `[M]` — consume `MLMFSubscription` reports, drift metrics, auto-flag a model. *Needs*: none.
-- **PR-AI-8 — Weighted retrain triggers (`OI-1-weighted-triggers`)** `[M]` — design from real breach data. *Needs*: `PR-AI-7`.
-- **PR-AI-9 — Runtime lifecycle approval gate (`OI-6.1-runtime-gate`)** `[S]` — decision then implementation using the self-loop governance pattern. *Needs*: decision.
-- **PR-AI-10 — Action safeguard layer** `[M]` — per-rApp bounds on CM writes (rate, magnitude, blast radius), kill switch, automatic revert on KPI regression. *Needs*: `PR-MGT-1`.
-- **PR-AI-11 — Human-in-the-loop approval for rApp actions** `[M]` — autonomy mode already exists; add an approval queue with timeout policy. *Needs*: none.
-- **PR-AI-12 — Simulation / digital-twin sandbox hook** `[L]` — route an rApp's writes to an emulator before production. *Needs*: `PR-AI-1`.
-- **PR-AI-13 — Model explainability and decision audit** `[M]` — store inputs, model version and rationale per action. *Needs*: none.
+Current state, checked: AIMgF training, validation, emulation and inference jobs are completed from outside through
+`CompleteJobRequest` (`succeeded`, `metrics`, and an output reference). There is no component here that runs a job.
+
+#### PR-AI-1 — Executor protocol
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-1.1 ★ | Document today's contract (start, notification, complete) as the executor protocol | Section in `aimgf/README.md` | – |
+| AI-1.2 | `executor` registry table: name, URL, kinds supported | Migration | – |
+| AI-1.3 | `executor` field on job requests (default: external, today's behaviour) | Existing tests green | AI-1.2 |
+| AI-1.4 | On job start, POST the job spec to the executor URL (through the outbox) | Executor receives it | AI-1.3, MSG-1.4 |
+| AI-1.5 | Reference executor container that completes jobs, replacing the demo scripts | Runbook uses it | AI-1.4 |
+| AI-1.6 | Stuck-job detection: no completion within a timeout fails the job | Test | AI-1.3 |
+
+#### PR-AI-2 — Kubernetes training executor
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-2.1 | Image contract: inputs as env and mounts, outputs to a path | Doc | – |
+| AI-2.2 | Job spec builder | Unit tests | AI-2.1 |
+| AI-2.3 | Submit as a K8s `Job` | Runs on kind | AI-2.2, AI-1.4 |
+| AI-2.4 | Status watch calls `complete` | Job result recorded | AI-2.3 |
+| AI-2.5 | Upload the artifact to MLMR and set the output reference | Model artifact stored | AI-2.4 |
+| AI-2.6 | Logs link stored on the job | Link works | AI-2.3 |
+| AI-2.7 | GPU requests from the runtime profile | Pod spec shows them | AI-2.2 |
+
+#### PR-AI-3 — MLflow bridge
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-3.1 | Push training metrics to MLflow | Run visible | AI-1.4 |
+| AI-3.2 | Register a model version on `CERTIFIED` | Version visible | AI-3.1 |
+| AI-3.3 | Import an MLflow model into MLMR | Model appears | AI-3.2 |
+
+#### PR-AI-4 — Serving adaptor
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-4.1 | Interface for `RuntimeLifecycle` actions; today's behaviour is the default | Existing tests green | – |
+| AI-4.2 | KServe `InferenceService` for deploy | Service ready on a cluster | AI-4.1, SB-16.2 |
+| AI-4.3 | Status mapped to the runtime FSM | State follows readiness | AI-4.2 |
+| AI-4.4 | Scale with the target size from `SB-17` | Replicas change | AI-4.2, SB-17.4 |
+| AI-4.5 | Canary traffic split | Split visible | AI-4.2 |
+
+#### PR-AI-5 — Feature store
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-5.1 | Interface behind feature groups | Existing tests green | – |
+| AI-5.2 | Feast adaptor | Group registered in Feast | AI-5.1 |
+| AI-5.3 | Online read | Value returned | AI-5.2 |
+| AI-5.4 | Materialise as a job | Offline data refreshed | AI-5.2, MSG-4.2 |
+
+#### PR-AI-6 — Data sink for PM
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-6.1 | Export a window of PM to Parquet in object storage | File readable | – |
+| AI-6.2 | Incremental export with a watermark | No duplicates | AI-6.1 |
+| AI-6.3 | Time-series DB sink | Data queryable | AI-6.2 |
+
+#### PR-AI-7 — Drift and performance monitoring
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-7.1 | Store baseline stats at training completion | Migration | – |
+| AI-7.2 | Ingest performance reports from `MLMFSubscription` into a table | Rows appear | – |
+| AI-7.3 | PSI and KS computation | Unit tests with known drift | AI-7.1 |
+| AI-7.4 | Threshold breach raises an event | Event delivered | AI-7.3, MSG-1.4 |
+| AI-7.5 | Flag the model and notify the owner | Flag visible in GUI | AI-7.4 |
+
+#### PR-AI-8 — Weighted retrain triggers (`OI-1-weighted-triggers`)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-8.1 | Table of breach events per model | Rows from AI-7.4 | AI-7.4 |
+| AI-8.2 | Analysis script over real breach data | Report | AI-8.1 |
+| AI-8.3 | ADR for the weighting | ADR merged | AI-8.2 |
+| AI-8.4 | Implement it; remove `NotImplementedError` | Test | AI-8.3 |
+
+#### PR-AI-9 — Runtime lifecycle gate (`OI-6.1-runtime-gate`)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-9.1 | Decision on scope: which runtime transitions need approval | Decision in section 1 | – |
+| AI-9.2 | Governance event and flag, same pattern as `APPROVE_DEPLOY` | Transition tests | AI-9.1 |
+| AI-9.3 | Wire through `POST /models/{id}/advance` | Route test | AI-9.2 |
+| AI-9.4 | GUI action | Component test | AI-9.3 |
+
+#### PR-AI-10 — Action safeguards
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-10.1 | Limits schema in the rApp manifest (rate, magnitude, blast radius) | Validation test in Onboarding | – |
+| AI-10.2 ★ | Enforce rate limit per rApp on config jobs | 429-style refusal in test | AI-10.1 |
+| AI-10.3 | Enforce magnitude and blast radius | Refusal tests | AI-10.1 |
+| AI-10.4 | Per-rApp kill switch (operator action) | Writes refused after use | – |
+| AI-10.5 | Revert on KPI regression | Values restored in test | AI-10.2, MGT-1.6, MGT-11.5 |
+| AI-10.6 | Events for each refusal | Event delivered | AI-10.2, MSG-1.4 |
+
+#### PR-AI-11 — Human approval of rApp actions
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-11.1 | Approval request object | Migration | – |
+| AI-11.2 | Queue routes: list, approve, reject | Route tests | AI-11.1 |
+| AI-11.3 | Timeout policy: expire or auto-reject | Test | AI-11.2 |
+| AI-11.4 | Hook into the autonomy-mode dispatch | Action waits for approval | AI-11.2 |
+| AI-11.5 | Notification to approvers | Event delivered | AI-11.4, MSG-1.4 |
+
+#### PR-AI-12 — Shadow mode
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-12.1 | `shadow` flag per rApp instance | Migration | – |
+| AI-12.2 | In shadow, route writes to an emulator endpoint, not O1 | No southbound call | AI-12.1 |
+| AI-12.3 | Compare report of intended vs actual | Route test | AI-12.2 |
+
+#### PR-AI-13 — Decision audit
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| AI-13.1 | Action record: inputs reference, model version, rationale, job id | Migration | – |
+| AI-13.2 | Write it on every rApp config job | Row per job | AI-13.1 |
+| AI-13.3 | Query route | Route test | AI-13.2 |
+| AI-13.4 | GUI detail view | Component test | AI-13.3 |
 
 ### 5.12 rApp ecosystem (`PR-RAPP`)
 
-- **PR-RAPP-1 — CSAR signing and verification** `[M]` — signed manifest, trusted publisher keys, reject unsigned in production mode. *Needs*: none.
-- **PR-RAPP-2 — rApp runtime sandboxing and resource limits** `[M]` — CPU/memory/network policy per instance from the manifest runtime profile. *Needs*: `PR-SB-16`.
-- **PR-RAPP-3 — Conformance test pack for third-party rApps** `[M]` — onboarding, lifecycle, R1 usage, heartbeat checks as an installable test tool. *Needs*: none.
-- **PR-RAPP-4 — SDK for Java and Go** `[L]` — generated from `docs/openapi/`; one language first. *Needs*: none.
-- **PR-RAPP-5 — Developer portal and API docs site** `[M]` — publish OpenAPI, call flows, packaging guide. *Needs*: none.
-- **PR-RAPP-6 — rApp usage metering** `[S]` — per-rApp call and data volume counters. *Needs*: `PR-OBS-3`.
-- **PR-RAPP-7 — Additional reference rApps** `[M each]` — anomaly detection, root cause, slice assurance. *Needs*: none.
+#### PR-RAPP-1 — CSAR signing
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| RAPP-1.1 | Digest list of every file in the package | `build_csar.py` writes it | – |
+| RAPP-1.2 | Detached signature (ed25519 or cosign) in the CSAR | Signature present | RAPP-1.1 |
+| RAPP-1.3 | Trust store: accepted publisher keys from config | Config test | – |
+| RAPP-1.4 | Verify in Onboarding validation | Tampered file rejected | RAPP-1.2, RAPP-1.3 |
+| RAPP-1.5 | Policy flag: require signed packages | Unsigned rejected when on | RAPP-1.4 |
+| RAPP-1.6 | Sign the committed sample CSARs | Integration test keeps passing | RAPP-1.2 |
+
+#### PR-RAPP-2 — Runtime sandbox
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| RAPP-2.1 | Manifest runtime profile becomes CPU and memory limits in the NFO descriptor (confirm current mapping) **(verify)** | Descriptor shows them | – |
+| RAPP-2.2 | Pod `securityContext` (non-root, no privilege escalation) | Pod spec shows it | SB-16.2 |
+| RAPP-2.3 | Egress NetworkPolicy: rApp may reach R1 only | Other egress refused | OPS-2.6 |
+
+#### PR-RAPP-3 — Conformance pack
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| RAPP-3.1 | Offline package validator CLI reusing Onboarding validation | Passes on samples | – |
+| RAPP-3.2 | Runtime checks: register, heartbeat, R1 usage, terminate | Pass on a sample rApp | RAPP-3.1 |
+| RAPP-3.3 | Report file | Generated | RAPP-3.2 |
+
+#### PR-RAPP-4 — Java or Go SDK
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| RAPP-4.1 | Pick the language | Decision | – |
+| RAPP-4.2 | Generate models and clients from `docs/openapi/` | Builds | RAPP-4.1 |
+| RAPP-4.3 | Token acquisition and refresh | Test against the stack | RAPP-4.2 |
+| RAPP-4.4 | One example rApp using it | Runs | RAPP-4.3 |
+| RAPP-4.5 | CI build | Job green | RAPP-4.2 |
+
+#### PR-RAPP-5 — Developer portal
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| RAPP-5.1 | Static site from the markdown docs and OpenAPI | Builds locally | – |
+| RAPP-5.2 | Publish from CI | Site reachable | RAPP-5.1 |
+
+#### PR-RAPP-6 — Usage metering
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| RAPP-6.1 | Per-invoker request and byte counters at R1 Termination | Visible on `/metrics` | OBS-2.2 |
+| RAPP-6.2 | Daily roll-up table | Rows | RAPP-6.1 |
+| RAPP-6.3 | Report route | Route test | RAPP-6.2 |
+
+#### PR-RAPP-7 — New-rApp recipe
+
+Repeat for each new rApp (anomaly detection, root cause, slice assurance, ...): copy `hello-world`; model;
+decision engine; `demo.py`; manifest and capabilities; CSAR build; unit tests; runbook section; call flow; entry in
+the README tables. Each rApp is one piece of work per bullet, in that order.
 
 ### 5.13 GUI (`PR-GUI`)
 
-- **PR-GUI-1 — Live updates (SSE/WebSocket) for alarms and states** `[M]` — replace polling. *Needs*: `PR-MSG-3` optional.
-- **PR-GUI-2 — Alarm console** `[M]` — filter, ack, clear, comment, export. *Needs*: `PR-MGT-8`.
-- **PR-GUI-3 — Topology and map view** `[L]` — containment and neighbour graph. *Needs*: `PR-SB-6`.
-- **PR-GUI-4 — KPI dashboards** `[M]` — from the KPI engine. *Needs*: `PR-MGT-11`.
-- **PR-GUI-5 — Region/tenant-scoped views** `[M]` — filter by assigned scope. *Needs*: `PR-SEC-10`.
-- **PR-GUI-6 — Accessibility and localization pass** `[M]` — WCAG checks in CI, i18n scaffolding. *Needs*: none.
-- **PR-GUI-7 — Approval inbox** `[S]` — central list of pending approvals (CM, models, rApp actions). *Needs*: `PR-MGT-4`, `PR-AI-11` for content.
+#### PR-GUI-1 — Live updates
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| GUI-1.1 | SSE endpoint on the BFF, polling the source server-side and sending diffs | Client receives a change | – |
+| GUI-1.2 | Client hook with reconnect | Test | GUI-1.1 |
+| GUI-1.3 | Alarms page uses it | Alarm appears without reload | GUI-1.2 |
+| GUI-1.4 | Instance and deployment state use it | Same | GUI-1.2 |
+| GUI-1.5 | Source switches to the event bus | Same behaviour | GUI-1.1, MSG-3.5 |
+
+#### PR-GUI-2 — Alarm console
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| GUI-2.1 | List with filters | Component test | MGT-8.4 |
+| GUI-2.2 | Ack and clear actions with `rbac.py` rules | Role test | – |
+| GUI-2.3 | Comments panel | Component test | MGT-8.3 |
+| GUI-2.4 | History tab | Component test | MGT-8.2 |
+| GUI-2.5 | CSV export | File content test | GUI-2.1 |
+
+#### PR-GUI-3 — Topology view
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| GUI-3.1 | Graph API from the containment tree | Route test | SB-6.3 |
+| GUI-3.2 | Viewer component | Renders demo data | GUI-3.1 |
+| GUI-3.3 | Alarm overlay | Colours by severity | GUI-3.2 |
+| GUI-3.4 | Drill-down to the element page | Test | GUI-3.2 |
+
+#### PR-GUI-4 — KPI dashboards
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| GUI-4.1 | Chart of one KPI over time | Component test | MGT-11.5 |
+| GUI-4.2 | Region filter | Test | GUI-4.1 |
+| GUI-4.3 | Saved dashboard layouts per user | Test | GUI-4.1 |
+
+#### PR-GUI-5 — Scoped views
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| GUI-5.1 | Scope claim in the session | Claim present | SEC-10.3 |
+| GUI-5.2 | BFF adds the scope filter to proxied reads | Out-of-scope data absent | GUI-5.1 |
+
+#### PR-GUI-6 — Accessibility and localization
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| GUI-6.1 | Automated accessibility check in the GUI tests | Runs in CI | – |
+| GUI-6.2 | Fix findings per page | Zero serious findings | GUI-6.1 |
+| GUI-6.3 | i18n library scaffold | One page translated | – |
+| GUI-6.4 | Extract strings page by page | Per page: no literals | GUI-6.3 |
+
+#### PR-GUI-7 — Approval inbox
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| GUI-7.1 | Inbox page listing pending change-window approvals | Component test | MGT-4.3 |
+| GUI-7.2 | Add pending rApp action approvals | Component test | AI-11.2 |
+| GUI-7.3 | Add model gate approvals | Component test | – |
 
 ### 5.14 Standards and compliance (`PR-STD`)
 
-- **PR-STD-1 — Close open conformance items** `[S–M each]` — `SA-MLMR-1/6/7`, `SA-FOCOM-6/7`, `SA-RANOAM-1/4/8`, `SA-O1-4` (listed in §3). Cross-reference only; do not duplicate.
-- **PR-STD-2 — Specification currency check** `[S]` — record the O-RAN and 3GPP release each spec in `specs/` is from; list newer releases and what changed for the SMO.
-- **PR-STD-3 — O-RAN test and certification plan (OTIC)** `[M]` — map interfaces to O-RAN test specs, plan plugfest participation. *Needs*: `PR-SB-*`.
-- **PR-STD-4 — Data privacy review (GDPR)** `[M]` — inventory personal data (GUI users, subscriber-derived PM), retention, erasure, access logging. *Needs*: `PR-DB-3`.
-- **PR-STD-5 — Security assurance mapping (NESAS/SCAS, ISO 27001 controls)** `[M]` — control matrix against what exists. *Needs*: `PR-SEC-14`.
-- **PR-STD-6 — Data residency and tenancy statement** `[S]` — where data lives, what leaves a site. *Needs*: none.
+| Feature | Step | What | Done when | Needs |
+|---|---|---|---|---|
+| STD-1 | STD-1.1 | Close the §3 items (`SA-MLMR-1/6/7`, `SA-FOCOM-6/7`, `SA-RANOAM-1/4/8`, `SA-O1-4`); do not duplicate them here | §3 empty | – |
+| STD-2 | STD-2.1 | Record the release of every spec in `specs/` | Table in `specs/README.md` | – |
+| STD-2 | STD-2.2 | List newer releases and what changes for the SMO | List with item IDs | STD-2.1 |
+| STD-3 | STD-3.1 | Map each interface to the O-RAN test specification | Table | – |
+| STD-3 | STD-3.2 | Plugfest plan | One page | STD-3.1 |
+| STD-4 | STD-4.1 | Inventory of personal data (GUI users, subscriber-derived PM) | Table | – |
+| STD-4 | STD-4.2 | Retention per item | Linked to `DB-3` | STD-4.1, DB-3.1 |
+| STD-4 | STD-4.3 | Erasure procedure for a GUI user | Tested once | STD-4.1 |
+| STD-4 | STD-4.4 | Access logging for personal data reads | Rows appear | STD-4.1, SEC-11.2 |
+| STD-5 | STD-5.1 | Control matrix (ISO 27001, NESAS/SCAS) against what exists | Matrix | SEC-14.2 |
+| STD-6 | STD-6.1 | Data residency statement: where data lives and what leaves a site | One page | – |
 
 ### 5.15 Quality engineering (`PR-QA`)
 
-- **PR-QA-1 — Load generator and baseline** `[M]` — synthetic cells/PM/alarms at 1k, 10k, 100k scale; record throughput and latency per route. *Needs*: none. Gives the numbers sizing and HA items depend on.
-- **PR-QA-2 — Contract tests from `docs/openapi/`** `[S]` — consumer-side checks for every cross-module call. *Needs*: none.
-- **PR-QA-3 — Failure injection** `[M]` — kill DB, drop a service, slow a subscriber, during the runbook replay. *Needs*: `PR-HA-1` for replica cases.
-- **PR-QA-4 — Upgrade/migration test in CI** `[S]` — previous release's DB upgraded to head. *Needs*: `PR-OPS-1`.
-- **PR-QA-5 — Soak test** `[M]` — 24–72 h at baseline load; memory and pool leak detection. *Needs*: `PR-QA-1`, `PR-OBS-3`.
-- **PR-QA-6 — Security tests in CI** `[S]` — authz matrix test across every route (no unauthenticated path except `/health`, `/bootstrap`). *Needs*: none.
-- **PR-QA-7 — Coverage floor and shallow-suite work (`OI-4`)** `[S–M]` — start with `mllf` route tests. *Needs*: none.
-- **PR-QA-8 — Real-simulator end-to-end lane** `[M]` — nightly job against the O-RAN-SC simulators and a NETCONF server. *Needs*: `PR-SB-1`, `PR-SB-13`.
+#### PR-QA-1 — Load generator and baseline
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| QA-1.1 | Synthetic managed elements, cells, PM and alarms (scale knob) | Script seeds 1k elements | – |
+| QA-1.2 | Seed script for large tables (used by `DB-4.2`) | 1M rows in under 10 minutes | QA-1.1 |
+| QA-1.3 | Load script for the top routes (k6 or locust) | Runs against compose | QA-1.1 |
+| QA-1.4 | Baseline numbers recorded at 1k, 10k and 100k elements | Table in `docs/` | QA-1.3 |
+
+#### PR-QA-2 — Contract tests
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| QA-2.1 | Pilot: schemathesis or similar over one module's `docs/openapi/` file | Runs in CI | – |
+| QA-2.2 | Consumer-side checks for cross-module calls made through `R1Client` | Break detected on a seeded change | – |
+| QA-2.3 | Roll out to every module | Job covers all | QA-2.1 |
+
+#### PR-QA-3 — Failure injection
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| QA-3.1 | Kill Postgres during a replay | Clean 503s and recovery | – |
+| QA-3.2 | Kill SME during a replay | Same | – |
+| QA-3.3 | Slow or dead webhook subscriber | Other calls unaffected | MSG-2.2 |
+| QA-3.4 | Replica kills | See `HA-2` | HA-1.2 |
+
+#### PR-QA-4 to QA-8
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| QA-4.1 | Upgrade test in CI: previous schema to head, then the replay | Job green | OPS-1.6 |
+| QA-5.1 | 24-hour soak at baseline load | No memory or pool growth | QA-1.4, OBS-2.4 |
+| QA-5.2 | 72-hour soak | Same | QA-5.1 |
+| QA-6.1 ★ | Test that walks the route table: every route needs a token except `/health` and `/bootstrap` | Fails on a seeded open route | – |
+| QA-6.2 | Role matrix test for the GUI BFF (`rbac.py`) | Every rule has a positive and a negative test | – |
+| QA-7.1 | `mllf` route tests (5 tests today, the CERTIFIED gate) | ≥ 20 route-level tests | – |
+| QA-7.2 | Same for `ran-analytics`, `mock-o1-adaptor`, `so-smos`, `mock-near-rt-ric`, `r1-termination` | Counts raised, one PR each | – |
+| QA-7.3 | Coverage floor in CI | Floor enforced | QA-7.1 |
+| QA-8.1 | Nightly lane: NETCONF server, RIC simulator | Job green | SB-1.9, SB-13.2 |
 
 ### 5.16 Suggested first slices
 
-Three example orderings. Pick one, or mix; the dependency spine in §5.0 is the only constraint.
+Pick any, or mix them. `Needs` is the only constraint.
 
-1. **Replica-safe foundation (no new infrastructure)**: ST-1, ST-2, ST-4, ST-5, ST-6, ST-7, DB-1, OBS-2, OPS-7.
-   Result: services can run N copies correctly, even if you still run one.
-2. **Safe to expose**: SEC-1, SEC-4, SEC-8, SEC-13, SEC-12, DB-1, QA-6.
-   Result: encrypted transport, no default secrets, rate-limited front door.
-3. **Operable**: OBS-1…OBS-4, OPS-1, OPS-4, DB-6.
-   Result: you can see, upgrade and restore it.
-
-Then `MSG-1/2` (durable notifications), `SB-1/3/5` (real O1), `MGT-1/8` (CM history, alarm lifecycle), and only
-afterwards `HA-*`.
+1. **Replica-safe foundation (no new infrastructure):** ST-1.1, ST-1.4, ST-2.1–2.3, ST-4.1–4.3, ST-5.1, ST-6.1,
+   ST-7.1–7.2, DB-1.1, OBS-1.1.
+2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.1–13.3, DB-1.1–1.3, QA-6.1.
+3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1, DB-6.1.
+4. **Durable notifications:** MSG-1.1–1.4, then MSG-1.5 onwards one module at a time.
+5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.
+6. **Safer changes:** MGT-1.1–1.4, MGT-3.1, MGT-8.1.
+7. **Later:** HA, mesh, federation, vendor profiles.
