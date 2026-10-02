@@ -1,0 +1,425 @@
+module _3gpp-nr-nrm-gnbcucpfunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-gnbcucpfunction";
+  prefix "gnbcucp3gpp";
+
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-yang-extensions { prefix yext3gpp; }
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5gc-nrm-configurable5qiset { prefix fiveqi3gpp; }
+  import ietf-inet-types { prefix inet; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the GNBCUCPFunction Information
+    Object Class (IOC) that is part of the NR Network Resource Model (NRM).
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2026-04-25 { reference "CR-1702" ; }
+  revision 2025-05-25 { reference "CR-1527" ; }
+  revision 2025-05-07 { reference "CR-1548"; }
+  revision 2025-03-25 { reference "CR-1509"; }
+  revision 2025-01-25 { reference "CR-1442"; }
+  revision 2024-11-07 { reference "CR-1443"; }
+  revision 2024-08-19 { reference "CR-1405"; }
+  revision 2024-08-19 { reference "CR-1337 CR-1352"; }
+  revision 2024-05-24 { reference CR-1273 ; }
+  revision 2024-04-04 { reference CR-1139; }
+  revision 2024-02-24 { reference CR-1218; }
+  revision 2024-01-12 { reference CR-1138; }
+  revision 2023-09-18 { reference CR-1043; }
+  revision 2023-04-26 { reference CR-0916; }
+  revision 2022-07-28 { reference "CR-0770"; }
+  revision 2021-11-06 { reference "CR-0611" ; }
+  revision 2021-11-05 { reference "CR-0609"; }
+  revision 2020-10-02 { reference CR-0384; }
+  revision 2020-08-06 { reference "CR-0333"; }
+  revision 2020-08-03 { reference "CR-0321"; }
+  revision 2020-06-03 { reference "CR-0286"; }
+  revision 2020-05-08 { reference S5-203316 ; }
+  revision 2020-04-28 { reference "0260"; }
+  revision 2020-02-14 { reference S5-20XXXX ; }
+  revision 2019-10-28 { reference S5-193518 ; }
+  revision 2019-06-17 { reference "Initial revision"; }
+
+  feature Configurable5QISetUnderGNBCUCPFunction {
+    description "The Configurable5QISet shall be contained under
+      GNBCUCPFunction";
+  }
+
+  feature DESManagementFunction {
+    description "Class representing Distributed SON Energy Saving feature";
+  }
+
+  feature DANRManagementFunction {
+    description "Class representing D-SON function of ANR Management feature";
+  }
+
+
+  feature DMROFunction {
+    description "Class representing D-SON function of MRO feature";
+  }
+
+  grouping BackhaulAddressGrp {
+    description "This data type represents the properties describing the
+      backhaul address of gNB. ";
+
+    leaf gNBId {
+      type uint32 ;
+      mandatory true;
+      description "It identifies a gNB within a PLMN. The gNB ID is part of
+        the NR Cell Identifier (NCI) of the gNB cells.";
+      reference "gNB Identifier (gNB ID) of subclause 8.2 of TS 38.300.
+                 Global gNB ID in subclause 9.3.1.6 of TS 38.413";
+    }
+
+    list tAI {
+      key tac;
+      min-elements 1;
+      max-elements 1;
+      description "Tracking Area Identity";
+      reference "subclause 9.3.3.11 in TS 38.413";
+      uses types3gpp:TaiGrp;
+    }
+  }
+
+  grouping MappingSetIDBackhaulAddressGrp {
+    description "This data type represents the properties describing the
+      mapping relationship between set ID and backhaul address of gNB.";
+
+    leaf setId {
+      type uint32 {
+        range 0..4194304;  // 22 bits
+      }
+      mandatory true;
+      description "This specifies the set ID of a victim Set (RIM-RS1 Set) or
+        aggressor Set (RIM-RS2 set). (See subclause 7.4.1.6 in TS 38.211).
+
+      allowedValues:
+      The bit length of the set ID is maximum 22bit.";
+    }
+
+    list backhaulAddress  {
+      description "The attribute specifies backhaulAddress which is defined as
+        a datatype.";
+      min-elements 1;
+      max-elements 1;
+      key gNBId;
+      uses BackhaulAddressGrp;
+    }
+  }
+
+  grouping TceIDMappingInfoGrp {
+    description "This data type represents the properties describing the
+      mapping relationship between TCE ID, PLMN where TCE resides and
+      IP address of TCE.";
+
+    leaf tceIPAddress {
+      type inet:ip-address;
+      mandatory true;
+      description "This attribute indicates IP address of TCE.
+        (See subclause 4.1.1.9.2 in TS 32.422)";
+    }
+
+    leaf tceID {
+      type int64;
+      mandatory true;
+      description "This attribute indicates TCE Id.
+        (See subclause 4.1.1.9.2 in TS 32.422)";
+    }
+
+    list pLMNTarget {
+      description "Indicates the PLMN where TCE resides.
+        (See subclauses 4.1.1.9.2 and 4.9.2 in TS 32.422)";
+      min-elements 1;
+      max-elements 1;
+      key mnc;
+      uses types3gpp:PLMNId;
+    }
+  }
+
+  grouping GNBCUCPFunctionGrp {
+    description "Represents the GNBCUCPFunction IOC.";
+    reference "3GPP TS 28.541";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    leaf gNBId {
+      description "Identifies a gNB within a PLMN. The gNB Identifier (gNB ID)
+        is part of the NR Cell Identifier (NCI) of the gNB cells.";
+      reference "gNB ID in 3GPP TS 38.300, Global gNB ID in 3GPP TS 38.413";
+      mandatory true;
+      type int64 { range "0..4294967295"; }
+    }
+
+    leaf gNBIdLength {
+      description "Indicates the number of bits for encoding the gNB ID.";
+      reference "gNB ID in 3GPP TS 38.300, Global gNB ID in 3GPP TS 38.413";
+      mandatory true;
+      type int32 { range "22..32"; }
+    }
+
+    leaf gNBCUName {
+      description "Identifies the Central Unit of an gNB.";
+      reference "3GPP TS 38.473";
+      mandatory true;
+      type string { length "1..150"; }
+    }
+
+    list pLMNId {
+      description "The PLMN identifier to be used as part of the global RAN
+        node identity.";
+      key "mcc mnc";
+      min-elements 1;
+      max-elements 1;
+      yext3gpp:inVariant;
+      uses types3gpp:PLMNId;
+    }
+
+    list x2BlockList {
+      description "List of nodes to which X2 connections are prohibited.";
+      key idx;
+      leaf idx {type uint32;}
+      uses GeNBIdGrp;
+    }
+
+    list x2AllowList {
+      description "List of nodes to which X2 connections are enforced.";
+      key idx;
+      leaf idx {type uint32;}
+      uses GeNBIdGrp;
+    }
+
+    list xnBlockList {
+      description "List of nodes to which Xn connections are prohibited.";
+      key idx;
+      leaf idx {type uint32;}
+      uses GgNBIdGrp;
+    }
+
+    list xnAllowList {
+      description "List of nodes to which X2 connections are enforced.";
+      key idx;
+      leaf idx {type uint32;}
+      uses GgNBIdGrp;
+    }
+
+    list x2HOBlockList {
+      description "List of nodes to which handovers over X2 are prohibited.";
+      key idx;
+      leaf idx {type uint32;}
+      uses GeNBIdGrp;
+    }
+
+    list xnHOBlockList {
+      description "List of nodes to which handovers over  Xn are prohibited.";
+      key idx;
+      leaf idx {type uint32;}
+      uses GgNBIdGrp;
+    }
+
+    list mappingSetIDBackhaulAddressList {
+      description "The attribute specifies a list of mappingSetIDBackhaulAddress
+        which is defined as a datatype. Which is used to
+        retrieve the backhaul address of the victim set.";
+      min-elements 1;
+      key idx;
+      leaf idx {type uint32; }
+      uses MappingSetIDBackhaulAddressGrp;
+    }
+
+    list tceIDMappingInfoList {
+      description "This attribute includes a list of TCE ID, PLMN where TCE
+        resides and the corresponding TCE IP address. It is used in Logged MDT
+        case to provide the information to the gNodeB or GNBCUCPFunction to
+        get the corresponding TCE IP address when there is an MDT log
+        received from the UE.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses TceIDMappingInfoGrp;
+    }
+
+    leaf dDAPSHOControl {
+      type boolean;
+      description "This attribute determines whether the DAPS handover function
+                   is enabled or disabled.";
+    }
+
+    leaf dCHOControl {
+      type boolean;
+      description "This attribute determines whether the CHO function is
+        enabled or disabled.";
+    }
+
+    leaf dLTMControl {                                                        
+      type boolean;                                                           
+      default false;                                                          
+      description "Determines whether the LTM cell switch function is enabled 
+        or disabled.";                                                        
+    }                                                                             
+    
+    list qceIdMappingInfoList {
+      description "List of the mapping relationship between QoE collection entity
+        identity, PLMN where QoE collection entity resides, and the IP address of
+        the QoE collection entity.";
+      key idx;
+      min-elements 1;
+      uses QceIdMappingInfoGrp;
+      leaf idx { type string; }
+    }
+
+    leaf-list mdtUserConsentReqList {
+      type enumeration {
+        enum M1;
+        enum M2;
+        enum M3;
+        enum M4;
+        enum M5;
+        enum M6;
+        enum M7;
+        enum M8;
+        enum M9;
+        enum MDT_UE_LOCATION;
+      }
+      description "represents a list of MDT measurement names that are
+        subject to user consent at MDT activation.
+        Any MDT measurement, whose name is not specified in this list, is not
+        subject to user consent at MDT activation.";
+    }
+
+    list mappedCellIdInfoList  {
+      description "This attribute provides the list of mapping between
+        geographical location and Mapped Cell ID.";
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:MappedCellIdInfoGrp;
+    }
+
+    leaf isOnboardSatellite {
+      type boolean;
+      default false;
+      description "This attribute indicates whether the function is
+       on board the satellite.";
+    }
+
+    leaf onboardSatelliteId {
+      type string;
+      config false;
+      description "This attribute indicates the onboard satellite Id.
+      It shall be formatted as a fixed 5-digit string, padding with
+      leading digits '0' to complete a 5-digit length.";
+    }
+
+    leaf configurable5QISetRef {
+      type types3gpp:DistinguishedName;
+      description "DN of the Configurable5QISet that the GNBCUCPFunction
+        supports (is associated to).";
+    }
+    
+    leaf dynamic5QISetRef {
+      type types3gpp:DistinguishedName;
+      description "DN of the Dynamic5QISet that the GNBCUCPFunction supports
+        (is associated to).";
+    }
+
+    leaf ephemerisInfoSetRef {
+      type types3gpp:DistinguishedName;
+      description "This is the DN of EphemerisInfoSet.";
+    }
+
+    leaf nRECMappingRuleRef {
+      type types3gpp:DistinguishedName;
+      description "DN of a NRECMappingRule.  An empty value indicates the
+        NRECMappingRule contained by parent, e.g. ManagedElement or
+        SubNetwork, applies.";
+    }
+
+    leaf mWABRef {
+      type types3gpp:DistinguishedName;
+      description "This attribute represents the MWAB functionality
+      (See sub clause 5.49 [11]). This attribute contains the DN of the
+      referenced MWAB.";
+    }
+  }
+
+  grouping QceIdMappingInfoGrp {
+    leaf qoECollectionEntityAddress {
+      type inet:ip-address;
+      description "Specifies the address to which the QMC reports shall be
+        transferred.  Ipv4 or Ipv6 address may be used.";
+    }
+
+    leaf qoECollectionEntityIdentity {
+      type string;
+      description "Specifies the unique identity to which the QMC reports
+        shall be transferred.";
+    }
+
+    list pLMNTarget {
+      description "The PLMN identifier where QoE collection entity
+         resides. ";
+      key "mcc mnc";
+      min-elements 1;
+      max-elements 1;
+      yext3gpp:inVariant;
+      uses types3gpp:PLMNId;
+    }
+  }
+
+  grouping GgNBIdGrp {
+    description "Represents the properties of a global gNB ID (GgNBId).";
+
+    uses types3gpp:PLMNId;
+
+    leaf gnbIdLength {
+      type int32 {range "22..32";}
+      mandatory true;
+      description "This indicates the number of bits for encoding the gNB ID.
+      See 'Global gNB ID' in subclause 9.3.1.6 of TS 38.413";
+    }
+
+    leaf gnbId {
+      description "Identifies a gNB within a PLMN. The gNB Identifier (gNB ID)
+        is part of the NR Cell Identifier (NCI) of the gNB cells.";
+      reference "gNB ID in 3GPP TS 38.300, Global gNB ID in 3GPP TS 38.413";
+      mandatory true;
+      type int64 { range "0..4294967295"; }
+    }
+  }
+
+  grouping GeNBIdGrp {
+    description "Represents the properties of a global eNB ID (GeNBId).";
+    uses types3gpp:PLMNId;  // missing list wrapper, omitted due to BC
+
+    leaf enbId {
+      description "It identifies an eNB within a PLMN. The eNB ID is part of
+      the E-UTRAN Cell Global Identifier (ECGI) of the eNB cells.";
+      reference "eNB ID in 3GPP TS 36.300. Global eNB ID in 3GPP TS 36.413.";
+      mandatory true;
+      type int32 {range "0..4194303";}
+    }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+
+    list GNBCUCPFunction {
+      description "Represents the logical function CU-CP of gNB and en-gNB.";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses GNBCUCPFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+
+      uses fiveqi3gpp:Configurable5QISetSubtree {
+        if-feature Configurable5QISetUnderGNBCUCPFunction;
+      }
+    }
+  }
+}

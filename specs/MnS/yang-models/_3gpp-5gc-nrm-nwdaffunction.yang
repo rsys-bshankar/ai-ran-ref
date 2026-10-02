@@ -1,0 +1,400 @@
+module _3gpp-5gc-nrm-nwdaffunction {
+  yang-version 1.1;
+
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-nwdaffunction;
+  prefix nwdaf3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import ietf-inet-types { prefix inet; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-yang-extensions { prefix yext3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp;}
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the NWDAF function in 5GC. For more
+    information about the NWDAF, see 3GPP TS 23.501.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2026-05-20 { reference CR-1702 ; }
+  revision 2025-07-25 { reference CR-1558 ; }
+  revision 2025-03-25 { reference CR-1489 ; }
+  revision 2024-08-07 { reference CR-1329; }
+  revision 2024-04-12 { reference CR-1218; }
+  revision 2023-09-18 { reference CR-1043; }
+  revision 2023-04-26 { reference CR-0916; }
+  revision 2020-11-08 { reference CR-0412; }
+  revision 2019-10-25 { reference "S5-194457 S5-195427 S5-193518"; }
+
+  revision 2019-05-15 {reference "initial revision"; }
+
+  grouping NwdafCapabilityGrp {
+    description "This data type represents the capability supported by the
+      NWDAF.";
+      reference "TS 29.510";
+
+      leaf analyticsAggregation {
+        type boolean ;
+        default false;
+        description "It indicates whether the NWDAF supports analytics
+          aggregation";
+      }
+
+      leaf analyticsMetadataProvisioning {
+        type boolean ;
+        default false;
+        description "It indicate whether the NWDAF supports analytics metadata
+          provisioning:";
+      }
+
+      leaf roamingExchange {
+        type boolean ;
+        default false;
+        description "It indicates whether the NWDAF
+         supports roaming exchange capability";
+      }
+
+  }
+
+  grouping MlAnalyticsInfoGrp {
+    description "This data type represents ML Analytics Filter information
+      supported by the Nnwdaf_MLModelProvision service.";
+    reference "TS 29.510";
+
+    leaf-list mlAnalyticsIds {
+      type types5g3gpp:NwdafEvent;
+      ordered-by user;
+      description "This attribute represents the Analytic functionalities
+        (identified by nwdafEvent defined in TS 29.520 [85]) of the NWDAF
+        instance. MnS consumer can configure this attribute to specify
+        which Analytic functionalities (identified by nwdafEvent) can be
+        performed the NWDAF instance. If the value of this attribute is not
+        present, the NWDAF instance can perform any NWDAFEvents
+
+        Analytics Id(s) supported by the Nnwdaf_MLModelProvision service,
+        if none are provided the NWDAF can serve any mlAnalyticsId.";
+    }
+
+    list sNSSAIList {
+      min-elements 1;
+      description "List of S-NSSAIs the managed object is capable of
+        supporting.";
+      reference "3GPP TS 23.003";
+      key "sd sst";
+      uses types5g3gpp:SNssai;
+    }
+
+    list trackingAreaList {
+      description "This attribute represents area of Interest of the ML model,
+        if none are provided the ML model for the analytics can apply to any
+        TAIs.
+
+        If present, it represents the list of TAIs, it may contain one or
+        more non-3GPP access TAIs.";
+      key idx ;
+      leaf idx { type uint32; }
+      uses types3gpp:TaiGrp;
+    }
+
+    leaf-list mlModelInterInfo {
+      type string {
+        pattern "[0-9]{6}";
+      }
+      description "This attribute defines the list of NWDAF vendors that are
+        allowed to retrieve ML models from the NWDAF containing MTLF. The
+        absence of this attribute indicates that none of the NWDAF vendors
+        can retrieve the ML models.
+
+        allowedValues: 6 decimal digits; if the SMI code has less than
+        6 digits, it shall be padded with leading digits '0' to complete a
+        6-digit string value.";
+    }
+
+    leaf flCapabilityType {
+      type enumeration {
+        enum FL_SERVER {
+          description "NWDAF containing MTLF as Federated Learning Server";
+        }
+        enum FL_CLIENT {
+          description "NWDAF containing MTLF as Federated Learning Client";
+        }
+        enum FL_SERVER_AND_CLIENT {
+          description "NWDAF containing MTLF as Federated Learning Server and
+            Client.";
+        }
+      }
+      description "This attribute defines the federated learning capability
+        type supported by NWDAF containing MTLF.";
+    }
+
+    list flTimeInterval {
+      key idx ;
+      leaf idx { type uint32; }
+      description "This attribute defines the time window at which the
+        indicated flCapabilityType supported by NWDAF MTLF is available.
+        This attribute shall be present only if flCapabilityType attribute
+        is present.";
+      uses types3gpp:TimeWindowGrp;
+    }
+  }
+
+  grouping NwdafInfoGrp {
+    description "This data type represents specific data for the NWDAF.";
+    reference "TS 29.510";
+
+    leaf-list nwdafEvents {
+      type types5g3gpp:NwdafEvent;
+      ordered-by user;
+      description "This attribute represents the Analytic functionalities
+        (identified by nwdafEvent defined in TS 29.520) of the NWDAF instance.
+        MnS consumer can configure this attribute to specify which Analytic
+        functionalities (identified by nwdafEvent) can be performed the NWDAF
+        instance. If the value of this attribute is not present, the NWDAF
+        instance can perform any NWDAFEvents.
+        The detailed ENUM value for NwdafEvent see the Table 5.1.6.3.4-1
+        in TS 29.520";
+    }
+
+    leaf-list eventIds {
+      type string ;
+      min-elements 1;
+      description "It represents the EventId(s) supported by the
+        Nnwdaf_AnalyticsInfo service, if none are provided the NWDAF can serve
+        any eventId. (see clause TS 29.520)";
+    }
+
+    list taiList {
+      description "The list of TAIs. ";
+      min-elements 1;
+      key idx ;
+      leaf idx { type uint32; }
+      uses types3gpp:TaiGrp;
+    }
+
+    list taiRangeList {
+      min-elements 1;
+      key idx ;
+      leaf idx { type uint32; }
+      description "The range of TAIs.";
+      uses types5g3gpp:TaiRangeGrp;
+    }
+
+    list nwdafCapability {
+      max-elements 1;
+      key idx ;
+      leaf idx { type uint32; }
+      description "This attribute indicates the capability of the NWDAF.
+        If not present, the NWDAF shall be regarded with no capability.";
+      uses NwdafCapabilityGrp;
+    }
+
+    leaf analyticsDelay {
+      type int32 ;
+      units seconds;
+      description "It represents the supported Analytics Delay related to the
+        eventIds and nwdafEvents.
+        It is an unsigned integer identifying a period of time in units of
+        seconds.(see clause 5.2.2 TS 29.571).";
+    }
+
+    leaf-list servingNfTypeList {
+      type types3gpp:NfType;
+      min-elements 1;
+      description "It contains the list of NF type(s) from which the NWDAF NF
+        can collect data. The absence of this attribute indicates that the
+        NWDAF can collect data from any NF type.";
+    }
+
+    leaf-list servingNfSetIdList {
+      type string ;
+      min-elements 1;
+      description "It contains the list of NF type(s) from which the NWDAF NF
+        can collect data. The absence of this attribute indicates that the
+        NWDAF can collect data from any NF type. (see clause 5.4.2 NfSetId
+        in TS 29.571)";
+    }
+
+    list mlAnalyticsList {
+      min-elements 1;
+      key idx ;
+      leaf idx { type uint32; }
+      description "It represents ML Analytics Filter information supported by
+        the Nnwdaf_MLModelProvision service.";
+      uses MlAnalyticsInfoGrp;
+    }
+  }
+
+  grouping NetworkSliceInfoGrp {
+    description "Represents information of network slice when the NWDAF is
+      authorized to collect the management data of the network slice. ";
+
+    list sNSSAI {
+      description "It represents the S-NSSAI the NetworkSlice managed object
+        is supporting. The S-NSSAI is defined in TS 23.003 ";
+      key idx;
+      min-elements 1;
+      max-elements 1;
+
+      leaf idx {
+        type string;
+      }
+      uses types5g3gpp:SNssai;
+    }
+
+    leaf-list cNSIId {
+      type string;
+      description "It represents NSI ID which is an identifier for identifying
+        the Core Network part of a Network Slice instance when multiple
+        Network Slice instances of the same Network Slice are deployed,
+        and there is a need to differentiate between them in the 5GC.
+        See NSI ID definition in clause 3.1 of TS 23.501 and
+        subclause 6.1.6.2.7 of TS 29.531.";
+    }
+
+    leaf networkSliceRef {
+      type types3gpp:DistinguishedName;
+      mandatory true;
+      description "This holds a DN of the NetworkSlice managed object relating
+        to the NetworkSlice instance differentiated by sNSSAI and optional
+        cNSIId.";
+    }
+  }
+
+  grouping NWDAFFunctionGrp {
+    description "The NWDAFFunction IOC includes attributes inherited from
+    ManagedFunction IOC(defined in TS 28.622)and the following attributes:";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    list pLMNInfoList {
+      description "It defines the PLMN(s) of a Network Function.";
+
+      min-elements 1;
+      key "idx";
+      leaf idx { type uint32; }
+      uses types3gpp:PLMNId;
+      uses types5g3gpp:SNssai;
+    }
+
+    leaf sBIFQDN {
+      description "The FQDN of the registered NF instance in the service-based
+        interface.";
+      type inet:domain-name;
+    }
+
+    list managedNFProfile {
+      key idx;
+      leaf idx { type uint32;}
+      min-elements 1;
+      max-elements 1;
+      description "Profile definition of a Managed NF (See TS 23.501)";
+      uses mnfp3gpp:ManagedNFProfileGrp;
+    }
+
+    list commModelList {
+      min-elements 1;
+      key "groupId";
+      description "Specifies a list of commModel. It can be used by NF and
+        NF services to interact with each other in 5G Core network ";
+      reference "3GPP TS 23.501";
+      uses types5g3gpp:CommModel;
+    }
+
+    list networkSliceInfoList {
+      key idx;
+      min-elements 1;
+      description "The attribute specifies a list of NetworkSliceInfo which
+        is defined as a datatype (see clause 5.3.95). It is used by an
+        authorized consumer, e.g. NWDAF, to facilitate the data collection
+        from OAM.";
+       leaf idx {
+        type string;
+      }
+      uses NetworkSliceInfoGrp;
+      yext3gpp:inVariant;
+    }
+
+    list nwdafInfo {
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      description "It represents specific data for the NWDAF.";
+      uses NwdafInfoGrp;
+    }
+
+    leaf administrativeState {
+      type types3gpp:BasicAdministrativeState ;
+      mandatory true;
+      description "This attribute determines whether the NWDAF is enabled or
+        disabled. MnS consumer can configure this attribute to activate or
+        de-activate the analytic functionalities (identified by nwdafEvent
+        defined in TS 29.520) of the NWDAF instance.";
+    }
+
+    leaf nwdafLogicalFuncSupported {
+      type enumeration {
+        enum NWDAF_WITH_ANLF {
+          description "Indicates the NWDAF containing Analytics logical
+            function (AnLF)";
+          }
+        enum NWDAF_WITH_MTLF {
+          description "Indicates the NWDAF containing Model Training logical
+            function (MTLF).";
+          }
+        enum NWDAF_WITH_ANLF_MTLF {
+          description "Indicates the NWDAF containing both Analytics logical
+            function (AnLF) and Model Training logical function (MTLF).";
+        }
+      }
+      config false;
+      description "It represents the logical functions supported by the NWDAF.
+        If not present, the NWDAF shall be regarded with no logical
+        decomposition, in that case the NWDAF only supports the analytics
+        services.";
+    }
+
+    leaf roamingAnalytics {
+      type boolean ;
+      config false;
+      description "It indicates whether the NWDAF supports
+         Nnwdaf_RoamingAnalytics service";
+      }
+
+    leaf roamingData {
+      type boolean ;
+      config false;
+      description "It indicates whether the NWDAF supports
+      Nnwdaf_RoamingData service";
+      }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list NWDAFFunction {
+      description "5G Core NWDAF Function.
+        For more information about the NWDAF, see TS 23.501. Several
+        attributes (including 'nwdafInfo', 'administrativeState' and
+        'ManagedNFProfile.servingScope') are used to control the functionalities
+        (identified by nwdafEvent defined in TS 29.520) of the NWDAF instance.
+
+        The attribute 'ManagedNFProfile.servingScope' is used to represent
+        specified certain geographical area(s) can be served by the NWDAF
+        instance.
+
+        The attribute 'NwdafInfo.taiList' and 'NwdafInfo.taiRangeList' is used
+        to represent specified certain tracking area(s) can be served by the
+        NWDAF instance.";
+      reference "3GPP TS 28.541 3GPP TS 23.501";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses NWDAFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

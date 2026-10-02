@@ -1,0 +1,37 @@
+module _3gpp-nr-nrm-eutranetwork {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-eutranetwork";
+  prefix "eutranet3gpp";
+
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-nr-nrm-gnbcucpfunction { prefix gnbcucp3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the EUtraNetwork Information Object
+    Class (IOC) that is part of the NR Network Resource Model (NRM).
+    Copyright 2023, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2025-04-25 { reference "CR-1526 CR-1527" ; } // common for r18, r19
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2019-06-17 {reference "Initial revision"; }
+
+  grouping EUtraNetworkGrp {
+    description "Represents the EUtraNetwork IOC.
+      Contains no additiona attributes.";
+  }
+
+  augment /me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction {  
+    list EUtraNetwork {
+      description "A subnetwork containing gNB external E-UTRAN entities.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EUtraNetworkGrp;
+      }  
+    }
+  }
+}

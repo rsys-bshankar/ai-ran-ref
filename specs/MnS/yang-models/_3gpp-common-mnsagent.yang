@@ -1,0 +1,92 @@
+module _3gpp-common-mnsagent {
+  yang-version 1.1;  
+  namespace urn:3gpp:sa5:_3gpp-common-mnsagent;
+  prefix "magent3gpp";
+  
+  import _3gpp-common-top { prefix top3gpp; }  
+  import _3gpp-common-yang-types { prefix types3gpp ; }
+  import _3gpp-common-managed-element { prefix me3gpp ; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp ; }
+  import _3gpp-common-management-node { prefix mmgmtnode3gpp ; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+
+  description "Defines MnsAgent IOCs
+    Copyright 2023, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.623
+      Generic Network Resource Model (NRM)
+      Integration Reference Point (IRP);
+      Solution Set (SS) definitions
+      
+      3GPP TS 28.622
+      Generic Network Resource Model (NRM)
+      Integration Reference Point (IRP);
+      Information Service (IS)
+      
+      3GPP TS 28.620 
+      Umbrella Information Model (UIM)";
+
+  revision 2023-09-18 { reference CR-0271 ; } 
+  revision 2023-02-14 { reference "CR-0234"; }
+  
+  feature MnsAgentUnderManagedElement {
+    description "MnsAgent shall be contained under ManagedElement.";
+  }  
+
+  feature MnsAgentUnderSubNetwork {
+    description "MnsAgent shall be contained under SubNetwork.";
+  }  
+
+  feature MnsAgentUnderManagementNode {
+    description "MnsAgent shall be contained under ManagementNode.";
+  }  
+
+  grouping MnsAgentGrp {
+    description "Represents the MnsAgentGrp IOC.";
+    
+    leaf systemDN {
+      type types3gpp:DistinguishedName;
+      config false;
+      description "Distinguished Name (DN) of a IRPAgent or a MnSAgent.";
+    }
+  }
+  
+  grouping MnsAgentSubtree {
+    list MnsAgent {
+      description "The MnsAgent represents the MnS producers, incl. the 
+        supporting hardware and software, available for a certain management 
+        scope that is related to the object name-containing the MnS Agent.
+        The MnSAgent can be name-contained under an IOC as follows:
+        1) ManagementNode;
+        2) SubNetwork, if the SubNetwork does not contain a ManagementNode;
+        3) ManagedElement, if it is the root element.
+        In case the MnsAgent is name-contained under a ManagementNode, the 
+        management scope is the complete management scope of the 
+        ManagementNode or a subset thereof.
+        In case the MnsAgent is name-contained under a SubNetwork, the 
+        management scope is the complete SubNetwork or a subset thereof.
+        In case the MnsAgent is name-contained under a ManagedElement, the 
+        management scope is the complete ManagedElement or a subset thereof.";
+      key id;   
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses MnsAgentGrp;
+      }      
+    }
+  }
+
+  augment /me3gpp:ManagedElement {
+    if-feature MnsAgentUnderManagedElement;
+    uses MnsAgentSubtree;
+  }
+  augment /subnet3gpp:SubNetwork {
+    if-feature MnsAgentUnderSubNetwork;
+    uses MnsAgentSubtree;
+  }
+  augment /subnet3gpp:SubNetwork/mmgmtnode3gpp:ManagementNode {
+    if-feature MnsAgentUnderManagementNode;
+    uses MnsAgentSubtree;
+  }
+}

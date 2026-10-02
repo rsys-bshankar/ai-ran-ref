@@ -1,0 +1,83 @@
+module _3gpp-nr-nrm-nrfrequency {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-nrfrequency";
+  prefix "nrfreq3gpp";
+
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-nr-nrm-gnbcucpfunction { prefix gnbcucp3gpp; }
+  import _3gpp-nr-nrm-nrnetwork { prefix nrnet3gpp; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the NRFrequency Information Object
+    Class (IOC) that is part of the NR Network Resource Model (NRM).
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2026-05-19 { reference "CR-1702 CR-1703"; } // common for r19, r20
+  revision 2025-04-25 { reference "CR-1526 CR-1527"; } 
+  revision 2023-09-18 { reference CR-1043 ; }
+  revision 2019-10-28 { reference S5-193518 ; }
+  revision 2019-06-17 { reference "Initial version"; }
+
+  grouping NRFrequencyGrp {
+    description "Represents the NRFrequency IOC.";
+
+    leaf absoluteFrequencySSB {
+      description "The absolute frequency applicable for a downlink NR carrier
+        frequency associated with the SSB, in terms of NR-ARFCN.";
+      mandatory true;
+      type uint32 { range "0.. 3279165"; }
+    }
+
+    leaf ssbSubCarrierSpacing {
+      description "Sub-carrier spacing of the SSB.
+        Note that the allowed values of SSB used for representing data,
+        by e.g. a BWP, are: 15, 30, 60 and 120 in units of kHz.";
+      mandatory true;
+      type uint8 { range "15 | 30 | 60 | 120 | 240"; }
+      units "kHz";
+    }
+
+    leaf multiFrequencyBandListNR {
+      description "List of additional frequency bands the frequency belongs to.
+        The list is automatically set by the gNB.";
+      mandatory true;
+      config false;
+      type uint16 { range "1..256"; }
+    }
+  }
+
+  grouping NRFrequencyWrapper {
+    list NRFrequency {
+      description "Represents certain NR frequency properties.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses NRFrequencyGrp;
+      }
+    }
+  }
+
+  feature NRFrequencyUnderNRNetwork {
+    description "NRFrequency shall be contained under NRNetwork";
+  }
+
+  augment "/me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction/"
+      + "nrnet3gpp:NRNetwork" {
+    if-feature NRFrequencyUnderNRNetwork;
+    uses NRFrequencyWrapper;
+  }
+
+  feature NRFrequencyUnderSubNetwork {
+    description "NRFrequency shall be contained under SubNetwork";
+  }
+
+  augment "/subnet3gpp:SubNetwork" {
+    if-feature NRFrequencyUnderSubNetwork;
+    uses NRFrequencyWrapper;
+  }
+}

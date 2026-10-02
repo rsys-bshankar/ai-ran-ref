@@ -1,0 +1,223 @@
+module _3gpp-common-util {
+  yang-version 1.1;  
+  namespace urn:3gpp:sa5:_3gpp-common-util;
+  prefix "util3gpp";
+  
+  import ietf-yang-types { prefix yang ; }
+  import _3gpp-common-top { prefix top3gpp; }  
+  import _3gpp-common-yang-types { prefix types3gpp ; }
+  import _3gpp-common-managed-element { prefix me3gpp ; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp ; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+
+  description "Defines Utility IOCs: ConditionMonitor, Scheduler
+    Copyright 2024, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.623";
+
+  revision 2024-08-13 { reference CR-0387; }
+  revision 2024-07-30 { reference "CR-0392 CR-0393"; }  
+  revision 2024-05-06 { reference CR-0359; }
+
+  feature SchedulerUnderManagedElement {
+    description "Scheduler shall be contained under ManagedElement.";
+  }  
+
+  feature SchedulerUnderSubNetwork {
+    description "Scheduler shall be contained under SubNetwork.";
+  }  
+  
+  grouping TimeIntervalGrp {
+    description "This data type defines a time interval within one day. 
+      If the whole day shall be selected, intervalStart shall be set to 
+      00:00:00 and intervalEnd shall be set to 23:59:59.";
+      
+      leaf intervalStart {
+        type types3gpp:FullTime;
+        mandatory true;
+        description "It indicates the time (in 'full-time' format) when the 
+          service shall be started.
+          Data type 'FullTime' defines the time as specified by 'full-time' 
+          in RFC3339.";
+      }
+      
+      leaf intervalEnd {
+        type types3gpp:FullTime;
+        mandatory true;
+        description "It indicates the time (in 'full-time' format) when the 
+          service shall be stopped.
+          'FullTime' defines the time as specified by 'full-time' in RFC3339.
+          intervalEnd should use the same timezone as intervalStart and shall 
+          be later then intervalStart";
+      }
+  }
+  
+  grouping SchedulingTimeGrp {
+    description "This <<choice>> defines the scheduling time and allows to 
+      configure one of four possible scheduling methods: 
+
+      - One time interval: The attribute timeWindow presents the active 
+      scheduling time. A duration more than one day may be configured.
+      - Daily periodicity: Several active intervals per day can be configured 
+      in attribute timeIntervals. The active scheduling times recur each day.
+      - Weekly periodicity: Several active intervals for one day can be 
+      configured in attribute timeIntervals. The active scheduling times recur 
+      on the days of the weeks configured by attribute daysOfWeek 
+      - Monthly periodicity: Several active intervals for one day can be 
+      configured in attribute timeIntervals. The active scheduling times 
+      recur on the days of the months configured by attribute daysOfMonth.";
+    choice SchedulingTime {
+      mandatory true;
+      case One-time-interval {
+        uses types3gpp:TimeWindowGrp;
+      }
+      case periodic {
+        list timeIntervals {
+          description "List of intervals within one day for which the service 
+            shall be active.";
+            key "intervalStart intervalEnd";
+            min-elements 1;
+          uses TimeIntervalGrp;
+        }
+        leaf daysOfWeek {
+          must 'not(../daysOfMonth)';
+          description "Shall be present in case of Weekly periodicity, 
+            otherwise not";
+          type types3gpp:DayOfWeek;
+        }
+        leaf daysOfMonth {
+          must 'not(../daysOfWeek)';
+          description "Shall be present in case of Monthly periodicity, 
+            otherwise not";
+          type types3gpp:DateMonthDay;
+        }
+      }
+    }
+  }
+    
+  grouping SchedulerGrp {
+    description "Represents the Scheduler IOC.";
+    
+    list schedulingTimes {
+      description "It defines the active scheduling times.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses SchedulingTimeGrp;
+    }
+    
+    leaf schedulerStatus {
+      type boolean;
+      mandatory true;
+      config false;
+      description "Switches between TRUE and FALSE depending upon whether the 
+        configured time constraints are fulfilled or not.";
+    }
+  }
+  
+  grouping SchedulerSubtree {
+    list Scheduler {
+      description "This IOC defines a time scheduler. 
+        It can be name-contained by SubNetwork or ManagedElement.
+        
+        The attribute schedulingTimes allows to configure one or several 
+        active time intervals. The active intervals can be configured to occur 
+        once or recurring periodically.
+        
+        The boolean attribute schedulerStatus switches between TRUE and FALSE 
+        depending upon whether the configured time constraints are fulfilled 
+        or not. This attribute makes the internal Scheduler status observable.";
+      key id;   
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses SchedulerGrp;
+      }      
+    }
+  }
+  
+  augment /me3gpp:ManagedElement {
+    if-feature SchedulerUnderManagedElement;
+    uses SchedulerSubtree;
+  }
+  augment /subnet3gpp:SubNetwork {
+    if-feature SchedulerUnderSubNetwork;
+    uses SchedulerSubtree;
+  }
+  
+///////////////////////////////////////////////////////////////////////////////
+
+  feature ConditionMonitorUnderManagedElement {
+    description "ConditionMonitor shall be contained under ManagedElement.";
+  }  
+
+  feature ConditionMonitorUnderSubNetwork {
+    description "ConditionMonitor shall be contained under SubNetwork.";
+  }  
+
+  grouping ConditionMonitorGrp {
+    description "Represents the Scheduler IOC.";
+    
+    leaf condition {
+      type yang:xpath1.0 {
+        length 1..max;
+      }
+      mandatory true;
+      description "A logical condition containing an XPath expression. 
+        The leaf contains an XPath 1.0 string with the following restrictions 
+        - The accessible tree is the full Network Resource Model 
+        - The root node is the list representing the top level MOI 
+        (E.g. ManagedElement)
+        - In the accessible tree, all leafs and leaf-lists with default values
+        in use exist
+        - The data tree has no concept of document order except when 'ordered-by 
+        user' is declared.
+        - The set of variable bindings is empty.
+        - The function library is the core function library defined in XPATH
+        - Namespaces should be ignored when evaluating the expression 
+
+        An empty string is not allowed.";
+    }
+    
+    leaf conditionStatus {
+      type boolean;
+      mandatory true;
+      config false;
+      description "The boolean result of the condition.
+        Switches between TRUE and FALSE depending upon whether the 
+        configured constraints are fulfilled or not.";
+    }
+  }
+  
+  grouping ConditionMonitorSubtree {
+    list ConditionMonitor {
+      description "This IOC defines one or several conditions and monitors 
+        whether these conditions are satisfied. It can be name-contained by 
+        SubNetwork or ManagedElement.
+        
+        The attribute condition allows to configure one or several conditions. 
+        Possible conditions include but are not limited to scheduling 
+        requirements or parameter settings e.g. evaluation if a configuration 
+        parameter is above a certain threshold or has a certain values. 
+        
+        The boolean attribute conditionStatus switches between TRUE and FALSE 
+        depending upon whether the configured conditions are fulfilled or not. 
+        This attribute makes the internal ConditionMonitor status observable.";
+      key id;   
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses ConditionMonitorGrp;
+      }      
+    }
+  }
+  
+  augment /me3gpp:ManagedElement {
+    if-feature ConditionMonitorUnderManagedElement;
+    uses ConditionMonitorSubtree;
+  }
+  augment /subnet3gpp:SubNetwork {
+    if-feature ConditionMonitorUnderSubNetwork;
+    uses ConditionMonitorSubtree;
+  }  
+}

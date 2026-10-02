@@ -1,0 +1,720 @@
+module _3gpp-5gc-nrm-nfservice {
+  yang-version 1.1;
+  
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-nfservice;
+  prefix nfs3gpp;
+  
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import ietf-yang-types { prefix yang; }
+  import ietf-inet-types { prefix inet; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+
+  
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "NF service dataType.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 29.510";
+  
+  revision 2026-05-25 { reference CR-1702 ; }
+  revision 2026-03-25 { reference CR-1694 ; }
+  revision 2025-01-25 { reference CR-1442; } 
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2021-01-25 { reference CR-0454 ; }
+  revision 2020-11-05 { reference CR-0412 ; }
+  revision 2019-06-17 { reference "initial revision"; }
+  
+  grouping NFServiceGrp {
+    description "This data type represents the NF Service
+     defined in TS 29.510 [23].";
+    leaf serviceInstanceId {
+      description 
+        "Unique ID of the service instance within a given NF Instance.";
+      mandatory true;
+      type string;
+    }
+    
+    leaf serviceName {
+      description "Name of the service instance (e.g. 'nudm-sdm').";
+      mandatory true;
+      type ServiceName;
+      config false;
+    }
+    
+    list versions {
+      description "API versions supported by the NF Service and if available, 
+        the corresponding retirement date of the NF Service.";
+      min-elements 1;
+      key "apiVersionInUri apiFullVersion";
+      config false;
+      uses NFServiceVersion;
+    }
+    
+    leaf schema {
+      description "URI scheme (e.g. 'http', 'https').";
+      mandatory true;
+      type UriSchema;
+    }
+    
+    leaf nfServiceStatus {
+      description "Status of the NF Service Instance.";
+      mandatory true;
+      type NFServiceStatus;
+    }
+    
+    leaf fqdn {
+      description "FQDN of the NF Service Instance.";
+      //optional support
+      type inet:domain-name;
+    }
+    
+    leaf interPlmnFqdn {
+      description "If the NF service needs to be discoverable by other NFs in a 
+        different PLMN, then an FQDN that is used for inter PLMN routing.";
+      //optional support
+      type inet:domain-name;
+    }
+    
+    list ipEndPoints {
+      description "IP address(es) and port information of the Network Function 
+        (including IPv4 and/or IPv6 address)where the service is listening 
+        for incoming service requests.";
+      //optional support
+      
+      key idx;
+      leaf idx {
+        type string;
+      }
+      min-elements 1;
+      uses ipEndPoint;
+    }
+    
+    leaf apiPrefix {
+      description "Optional path segment(s) used to construct the {apiRoot} 
+        variable of the different API URIs.";
+      //optional support
+      type string;
+    }
+    
+    list defaultNotificationSubscriptions {
+      description "Notification endpoints for different notification types.";
+      key notificationType;
+      //optional support
+      min-elements 1;
+      uses types3gpp:DefaultNotificationSubscription;
+    }
+    
+    list allowedPLMNs {
+      description "PLMNs allowed to access the service instance.
+        The absence of this attribute indicates that any PLMN is allowed to 
+        access the service instance.";
+      
+      min-elements 1;
+      //optional support
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+    list allowedSnpns {
+      description "PLMNs allowed to access the service instance.
+        The absence of this attribute indicates that any PLMN is allowed to 
+        access the service instance.";
+      
+      min-elements 1;
+      //optional support
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }    
+    leaf-list allowedNfTypes {
+      description "SNPNs allowed to access the NF instance";   
+      min-elements 1;
+      //optional support
+      type  types3gpp:NfType;
+    }
+    
+    leaf-list allowedNfDomains {
+      description "Pattern representing the NF domain names allowed to
+      access the service instance.";
+      //optional support
+      min-elements 1;
+      type string;
+    }
+    
+    list allowedNSSAIs {
+      description "S-NSSAI of the allowed slices to access the service
+      instance. The absence of this attribute indicates that any slice
+      is allowed to access the service instance.";
+      min-elements 1;
+      //optional support
+      key "sd sst";
+      uses types5g3gpp:SNssai;
+    }
+
+    list allowedScopesRuleSet {
+      description "It represents map of rules specifying scopes allowed or
+        denied for NF-Consumers. This attribute may be present when the
+        NF-Producer and the NRF support Allowed-ruleset feature as specified
+        in clause 6.1.9 in TS 29.510.";
+      //optional support
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:RuleSetGrp;
+    }
+
+    leaf-list allowedOperationsPerNfType {
+      description "It indicates the allowed operations on resources for
+      each type of NF; the key of the map is the NF Type, and the value
+      is an array of scopes";
+      //optional support
+      type string;
+      min-elements 1;
+    }    
+    leaf-list allowedOperationsPerNfInstance {
+      description "It indicates the allowed operations on resources for
+      a given NF Instance; the key of the map is the NF Instance Id, and
+      the value is an array of scopes";
+      //optional support
+      type string;
+      min-elements 1;
+    }
+    leaf allowedOperationsPerNfInstanceOverrides {
+      type boolean;
+      default false;
+      //optional support
+      description "When it is present and set to true, indicates that
+      the scopes defined in attribute allowedOperationsPerNfInstance 
+      for a given NF Instance ID take precedence over the scopes defined
+      in attribute allowedOperationsPerNfType for the corresponding 
+      NF type of the NF Instance associated to such NF Instance ID..";
+    } 
+    list sNssais {
+      description "S-NSSAIs of the Network Function. If not
+       provided, the NF can serve any S-NSSAI. When present
+        this IE represents the list of S-NSSAIs supported in
+         all the PLMNs listed in the plmnList IE.";
+      //optional support
+      min-elements 1;
+      key "sst sd";
+      uses types5g3gpp:SNssai;
+    }    
+
+    leaf oauth2Required {
+      type boolean;
+      //optional support
+      description "It indicates whether the NF Service Instance requires 
+        Oauth2-based authorization.";
+    } 
+
+    leaf sharedServiceDataId {
+      type string;
+      //optional support
+      description "String uniquely identifying SharedServiceData. The format
+        of the sharedServiceDataId shall be a Universally Unique Identifier 
+        (UUID) version 4, as described in IETF RFC 4122 [44]. The hexadecimal
+        letters should be formatted as lower-case characters by the sender,
+        and they shall be handled as case-insensitive by the receiver.";
+    } 
+
+    leaf priority {
+      description "Priority (relative to other services of the same type) 
+        in the range of 0-65535, to be used for NF Service selection; lower 
+        values indicate a higher priority.";
+      //optional support
+      type uint16 { range "0..65535"; }
+    }
+    
+    leaf capacity {
+      description "Static capacity information in the range of 0-65535, 
+        expressed as a weight relative to other services of the same type.";
+      //optional support
+      type uint16;
+    }
+    
+  
+    leaf recoveryTime {
+      description "Timestamp when the NF was (re)started.";
+      //optional support
+      type yang:date-and-time;
+    }
+
+    leaf vendorId {
+      description "Vendor ID of the NF instance";
+      //optional support
+      type string;
+    }
+    list callbackUriPrefixList {
+      description "It indicates the optional path segment(s) used to construct
+        the prefix of the Callback URIs during the reselection of an NF
+        service consumer.";
+      //optional support
+      reference "3GPP TS 29.501 [23], clause 4.4.3.";
+      key callbackUriPrefix;
+      min-elements 1;
+      uses CallbackUriPrefixItemGrp;
+    }
+    leaf supportedFeatures {
+      description "It is a string, which indicates the features of the service
+      corresponding to the subscribed default notification, which are supported
+      by the NF (Service) instance acting as NF service consumer.";
+      reference "3GPP TS 29.571 table 5.2.2-3";
+      //optional
+      type types3gpp:SupportedFeatures;
+    }
+    uses types5g3gpp:SupportedVendorSpecificFeaturesGrp;    
+    leaf load {
+      description "Latest known load information of the NF, percentage.";
+      type types3gpp:Load;
+      config false;
+    }
+    leaf loadTimeStamp {
+      description "Timestamp of the reported load information.";
+      type yang:date-and-time;
+      config false;
+    }
+    leaf-list nfServiceSetIdList {
+      description "This attribute represents a list of NF Service Set ID.
+        At most one NF Service Set ID shall be indicated per PLMN-ID or
+        SNPN of the NF.";
+      type string;
+      min-elements 1;
+    }
+    list perPlmnSnssaiList {
+      description "It includes the S-NSSAIs supported by the Network Function
+        for each PLMN supported by the Network Function. When present, it
+        shall override sNssais IE.";
+      key idx;
+      leaf idx { type uint32; }
+      uses PlmnSnssai;
+    }
+
+    leaf canaryRelease {
+      description "This attribute indicates whether an NF instance whose
+        nfStatus is set to REGISTERED is in Canary Release condition, i.e.
+        it should only be selected by NF Service Consumers under the
+        conditions indicated by the selectionConditions attribute.
+        True: the NF is under Canary Release condition, even if the
+        nfStatus is set to REGISTERED.
+        False: the NF instance indicates its Canary Release condition
+        via the nfStatus attribute.";
+      //optional support
+      type boolean;
+      default false;
+    }
+
+    leaf exclusiveCanaryReleaseSelection {
+      description "This attribute indicates whether an NF Service Consumer
+        should only select an NF Service Producer in Canary Release condition.
+        True: the consumer shall only select producers in Canary Release
+        condition.
+        False: the consumer may select producers not in Canary Release
+        condition.";
+      //optional support
+      type boolean;
+      default false;
+    }
+
+    leaf shutdownTime {
+      description "This attribute may be present if the nfStatus is set to
+        UNDISCOVERABLE due to scheduled shutdown. When present, it shall
+        indicate the timestamp when the NF Instance is planned to be
+        shut down.";
+      //optional support
+      type yang:date-and-time;
+      config false;
+    }
+
+    leaf canaryPrecedenceOverPreferred {
+      description "This attribute indicates whether the NRF shall prioritize
+        the NF Service Producer in Canary Release condition over the
+        preferences (preferred-xxx, ext-preferred-xxx) present in NF
+        discovery requests.
+        True: NRF shall prioritize NF Service Producers in Canary Release
+        condition at NF discovery requests.
+        False: NRF shall prioritize the NF Service Producers according to
+        preferred-xxx and/or ext-preferred-xxx.";
+      //optional support
+      type boolean;
+      default false;
+    }
+
+    list perPlmnOauth2ReqList {
+      description "This attribute includes the Oauth2-based authorization
+        requirement supported by the NF Service Instance per PLMN of the
+        NF Service Consumer. This attribute may be included when the
+        Oauth2.0 authorization requirement supported by the NF Service
+        Instance for different PLMN is different. When the requester
+        PLMN Id is available in perPlmnOauth2ReqList IE, this IE shall
+        override the oauth2Required IE. If the requester PLMN ID is not
+        present in perPlmnOauth2ReqList IE, then the value of
+        oauth2Required IE shall be applicable if available.";
+      //optional support
+      key idx;
+      leaf idx { type uint32; }
+      max-elements 1;
+      uses PlmnOauth2Grp;
+    }
+
+    list selectionConditions {
+      description "This attribute includes the conditions under which an NF
+        Instance with an NFStatus value set to CANARY_RELEASE, or with a
+        canaryRelease attribute set to true, shall be selected by an NF
+        Service Consumer.";
+      //optional support
+      key idx;
+      leaf idx { type uint32; }
+      max-elements 1;
+      uses SelectionConditionsGrp;
+    }
+  }
+  
+
+
+  grouping CallbackUriPrefixItemGrp {
+    description "This <<dataType>> represents Callback URI prefix value to
+      be used for specific notification types.";
+    reference "3GPP TS 29.510 clause 6.1.6.2.127";
+
+    leaf callbackUriPrefix {
+      description "It indicates the optional path segment(s) used to
+        construct the prefix of the Callback URIs during the reselection
+        of an NF service consumer.";
+      mandatory true;
+      type inet:uri;
+      reference "3GPP TS 29.501 clause 4.4.3";
+    }
+
+    leaf-list notificationTypes {
+      description "List of notification type values using the callback
+        URI prefix of the callbackUriPrefix.";
+      type string;
+    }
+  }
+
+  grouping PlmnOauth2Grp {
+    description "This <<dataType>> represents the per PLMN Oauth2.0
+      indication.";
+    reference "3GPP TS 29.510 clause 6.1.6.2.102";
+
+    list oauth2RequiredPlmnIdList {
+      description "List of PLMN IDs for which Oauth2.0 authorization is
+        required.";
+      //optional support
+      min-elements 1;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+
+    list oauth2NotRequiredPlmnIdList {
+      description "List of PLMN IDs for which Oauth2.0 authorization is
+        not required.";
+        //optional support
+      min-elements 1;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+  }
+
+  grouping PlmnSnssai {
+    description "This data type represents the list of S-NSSAIs supported
+      per PLMN.";
+    list plmnId {
+      description "PLMN ID for which list of supported S-NSSAI(s)
+        is provided.";
+      min-elements 1;
+      max-elements 1;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+    list sNssaiList {
+      description "The specific list of S-NSSAIs supported
+        by the given PLMN.";
+      min-elements 1;
+      max-elements 1;
+      key "sst sd";
+      uses types5g3gpp:SNssai;
+    }
+    leaf nid {
+      description "Network Identity; Shall be present if PlmnIdNid
+        identifies an SNPN.";
+      reference "see clauses 5.30.2.3, 5.30.2.9, 6.3.4,
+        and 6.3.8 in 3GPP TS 23.501";
+      type string;
+    }
+  }
+
+  grouping ConditionItemGrp {
+    description "This <<dataType>> represents a single condition item that
+      shall be evaluated to determine whether a discovered NF (Service)
+      Instance shall be selected.";
+    reference "3GPP TS 29.510 clause 6.1.6.2.124";
+
+    leaf-list consumerNfTypes {
+      description "It represents the NF types of the consumers for which
+        the conditions included in this ConditionItem apply. If this
+        attribute is absent, the conditions are applicable to all NF
+        consumer types.";
+      min-elements 1;
+      type types3gpp:NfType;
+    }
+    leaf serviceFeature {
+      description "It represents a feature number of that NF Service
+        Instance, under CANARY_RELEASE status.";
+      type uint32;
+    }
+    leaf vsServiceFeature {
+      description "It represents a Vendor-Specific feature number of that
+        NF Service Instance, under CANARY_RELEASE status.";
+      type uint32;
+    }
+    list supiRangeList {
+      description "It represents a set of SUPIs for which the NF (Service)
+        instance under CANARY_RELEASE status shall be selected.";
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      uses types5g3gpp:SupiRangeGrp;
+    }
+    list gpsiRangeList {
+      description "It represents a set of GPSIs for which the NF (Service)
+        instance under CANARY_RELEASE status shall be selected.";
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      uses types5g3gpp:IdentityRangeGrp;
+    }
+    list impuRangeList {
+      description "It represents a set of IMS Public Identities for which
+        the NF (Service) instance under CANARY_RELEASE status shall be
+        selected.";
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      uses types5g3gpp:IdentityRangeGrp;
+    }
+    list impiRangeList {
+      description "It represents a set of IMS Private Identities for which
+        the NF (Service) instance under CANARY_RELEASE status shall be
+        selected.";
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      uses types5g3gpp:IdentityRangeGrp;
+    }
+    leaf-list peiList {
+      description "It represents a set of PEIs of the UEs for which the
+        NF (Service) instance under CANARY_RELEASE status shall be
+        selected.";
+      min-elements 1;
+      type string;
+    }
+    list taiRangeList {
+      description "It represents a set of TAIs where the NF (Service)
+        instance under CANARY_RELEASE status shall be selected for a
+        certain UE.";
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      uses types5g3gpp:TaiRangeGrp;
+    }
+    leaf-list dnnList {
+      description "It represents a set of DNNs where the NF (Service)
+        instance under CANARY_RELEASE status shall be selected.";
+      min-elements 1;
+      type string;
+    }
+  }
+
+  grouping SelectionConditionsGrp {
+    description "This <<dataType>> represents the list of conditions that
+      shall be selected by an NF Service Consumer.";
+    reference "3GPP TS 29.510 clause 6.1.6.2.123";
+
+    list conditionItem {
+      key "id";
+      description "It represent a single condition item that shall be
+        evaluated to determine whether a discovered NF (Service) Instance
+        shall be selected.";
+      leaf id { type string; }
+      uses ConditionItemGrp;
+    }
+
+    list conditionGroup {
+      description "It represents a group of conditions that shall be
+        evaluated.";
+      key idx;
+      leaf idx { type uint32; }
+      max-elements 1;
+      // Note: ConditionGroup references SelectionConditions creating a
+      // circular dependency. Inlined one level to avoid it.
+      choice LogicalOperator {
+        case and {
+          list and {
+            description "It represents a list of conditions where the
+              overall evaluation is true only if all the conditions in
+              the list are evaluated as true.";
+            key idx;
+            leaf idx { type uint32; }
+            list conditionItem {
+              key "id";
+              description "Condition item to be evaluated.";
+              leaf id { type string; }
+              uses ConditionItemGrp;
+            }
+          }
+        }
+        case or {
+          list or {
+            description "It represents a list of conditions where the
+              overall evaluation is true if at least one of the conditions
+              in the list is evaluated as true.";
+            key idx;
+            leaf idx { type uint32; }
+            list conditionItem {
+              key "id";
+              description "Condition item to be evaluated.";
+              leaf id { type string; }
+              uses ConditionItemGrp;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  grouping ipEndPoint {
+    choice address {
+      leaf ipv4Address {
+        type inet:ipv4-address;
+      }
+      
+      leaf ipv6Address {
+        type inet:ipv6-address;
+      }
+      
+      leaf ipv6Prefix {
+        type inet:ipv6-prefix;
+      }
+    }
+
+    leaf transport {
+      type TransportProtocol;
+    }
+
+    leaf port {
+      type uint16;
+    }
+  }
+  
+  typedef TransportProtocol {
+    type enumeration {
+      enum TCP;
+      enum STCP;
+      enum UDP;
+    }
+  }
+  
+  grouping NFServiceVersion {
+    leaf apiVersionInUri {
+      mandatory true;
+      type string;
+    }
+    
+    leaf apiFullVersion {
+      mandatory true;
+      type string;
+    }
+    
+    leaf expiry {
+      //optional to support
+      type yang:date-and-time;
+    }
+  }
+  
+  typedef ServiceName {
+    type enumeration {
+      enum NNRF_NFM;
+      enum NNRF_DISC;
+      enum NUDM_SDM;
+      enum NUDM_UECM;
+      enum NUDM_UEAU;
+      enum NUDM_EE;
+      enum NUDM_PP;
+      enum NAMF_COMM;
+      enum NAMF_EVTS;
+      enum NAMF_MT;
+      enum NAMF_LOC;
+      enum NSMF_PDUSESSION;
+      enum NSMF_EVENT-EXPOSURE;
+      enum NAUSF_AUTH;
+      enum NAUSF_SORPROTECTION;
+      enum NNEF_PFDMANAGEMENT;
+      enum NPCF_AM-POLICY-CONTROL;
+      enum NPCF_SMPOLICYCONTROL;
+      enum NPCF_POLICYAUTHORIZATION;
+      enum NPCF_BDTPOLICYCONTROL;
+      enum NPCF_EVENTEXPOSURE;
+      enum NPCF_UE_POLICY_CONTROL;
+      enum NSMSF_SMS;
+      enum NNSSF_NSSELECTION;
+      enum NNSSF_NSSAIAVAILABILITY;
+      enum NUDR_DR;
+      enum NLMF_LOC;
+      enum N5G_EIR_EIC;
+      enum NBSF_MANAGEMENT;
+      enum NCHF_SPENDINGLIMITCONTROL;
+      enum NCHF_CONVERGEDCHARGING;
+      enum NNWDAF_EVENTSSUBSCRIPTION;
+      enum NNWDAF_ANALYTICSINFO;
+    }
+  }
+  
+  typedef UriSchema {
+    type enumeration {
+      enum HTTP;
+      enum HTTPS;
+    }
+  }
+  
+  typedef NFServiceStatus {
+    type enumeration {
+      enum REGISTERED;
+      enum SUSPENDED;
+      enum UNDISCOVERABLE;
+    }
+  }
+  
+  grouping ChfServiceInfo {
+    leaf primaryChfServiceInstance {
+      description "Shall be present if the CHF service instance serves as a 
+        secondary CHF instance of another primary CHF service instance.";
+      //conditional to support
+      type string;
+    }
+    
+    leaf secondaryChfServiceInstance {
+      description "Shall be present if the CHF service instance serves as a 
+        primary CHF instance of another secondary CHF service instance.";
+      //conditional to support
+      type string;
+    }
+  }
+  grouping SNPNIdGrp {
+    description "This <<dataType>> represents the information of a SNPN
+     identification";
+    leaf mCC {
+      description "This is the Mobile Country Code (MCC) of the PLMN 
+      identifier. See TS 23.003 [13] subclause 2.2 and 12.1";
+      type string;
+    }
+     leaf mNC {
+      description "This is the Mobile Network Code (MNC) of the PLMN 
+      identifier. See TS 23.003 [13] subclause 2.2 and 12.1.";
+      type string;
+    }
+    leaf nId {
+      description "Network Identity; Shall be present if PlmnIdNid 
+      identifies an SNPN";
+      type string;
+    }       
+  }
+}

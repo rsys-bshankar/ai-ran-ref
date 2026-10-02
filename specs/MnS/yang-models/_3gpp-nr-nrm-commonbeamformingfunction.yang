@@ -1,0 +1,74 @@
+module _3gpp-nr-nrm-commonbeamformingfunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-commonbeamformingfunction";
+  prefix "cbeamform3gpp";
+
+  import _3gpp-nr-nrm-nrsectorcarrier { prefix nrsectcarr3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-nr-nrm-gnbdufunction { prefix gnbdu3gpp; }
+
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the CommonBeamformingFuntion IOC 
+    that is part of the NR Network Resource Model (NRM).
+    Copyright 2023, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2023-04-26 { reference CR-0916 ; }
+  revision 2019-11-22 { reference "S5-197643"; }
+
+  grouping CommonBeamformingFunctionGrp {
+    description "Represents the CommonBeamformingFunction IOC.";
+    reference "3GPP TS 28.541";
+
+    leaf coverageShape {
+      description "Identifies the sector carrier coverage shape described by 
+        the envelope of the contained SSB beams. The coverage shape is 
+        implementation dependent.";
+      mandatory true;
+      type int32 { range "0..65535"; }
+    }
+
+    leaf digitalAzimuth {
+      description "Digitally-controlled azimuth through beamforming. 
+        It represents the horizontal pointing direction of the antenna 
+        relative to the antenna bore sight, representing the total 
+        non-mechanical horizontal pan of the selected coverageShape. 
+        Positive value gives azimuth to the right and negative value gives 
+        an azimuth to the left.";
+
+      reference "3GPP TS 38.104, TS 38.901, TS 28.662";
+      type int32 { range "-1800..1800"; }
+      units "0.1";
+    }
+
+    leaf digitalTilt {
+      description "Digitally-controlled tilt through beamforming. 
+        It represents the vertical pointing direction of the antenna relative 
+        to the antenna bore sight, representing the total non-mechanical 
+        vertical tilt of the selected coverageShape. Positive value gives 
+        downwards tilt and negative value gives upwards tilt.";
+      reference "3GPP TS 38.104, TS 38.901, TS 28.662";
+      type int32 { range "-900..900"; }
+      units "0.1";
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gnbdu3gpp:GNBDUFunction/"
+      + "nrsectcarr3gpp:NRSectorCarrier" {
+
+    list CommonBeamformingFunction {
+      description "Represents common beamforming functionality (eg: SSB beams) 
+        for the NRSectorCarrier.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses CommonBeamformingFunctionGrp;
+      }
+    }
+  }
+}

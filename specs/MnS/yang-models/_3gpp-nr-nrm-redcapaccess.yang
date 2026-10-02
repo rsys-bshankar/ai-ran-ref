@@ -1,0 +1,136 @@
+module _3gpp-nr-nrm-redcapaccess {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-redcapaccess";
+  prefix "redcap3gpp";
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the NRCellDU Information Object
+  Class (IOC) that is part of the NR Network Resource Model (NRM).
+  Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+  TTA, TTC). All rights reserved.";
+
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2025-11-07 { reference CR-1640; }
+  revision 2025-07-07 { reference CR-; }
+
+  feature redcapaccesscriteriasubnertwork {
+    description "The RedCap acsess criterea shall be contained under
+    SubNetwork";
+  }
+
+
+  grouping RedCapAccessCriteriaGrp {
+    description "Represents the RedCapAccessCriteria <<IOC>> ";
+
+    leaf nRCellDURef {
+        type types3gpp:DistinguishedName;
+        mandatory true;
+        description "This attribute contains the DN of a NR Cell (NRCellDU) ";
+      }
+
+    leaf criteriaConditionRef {
+        type types3gpp:DistinguishedName;
+        mandatory true;
+        description "This specifies the DN of the ConditionMonitor MOI.The
+        attribute condition will contain information on the condition to be
+        satisfied to restrict Redcap UE access. This means that the value of
+        attribute uECellBarredAccess of NRCellDU IOC will be set to
+        REDCAP_1RX and REDCAP_2RX if this condition is met.The condition
+        will be created providing following information:
+          The performance metrics (KPIs and performance measurements) that are
+          to be considered in the criteria for deciding whether the cell in a
+          RAN node is barred or allowed for (e)RedCap UEs
+          The direction (up and down) that is to be considered for crossing
+          the threshold value of the given performance metrics for taking a
+          decision whether the RAN node is barred or allowed for
+          (e)RedCap UEs.
+          The threshold level of performance metrics value which when crossed
+          the RAN node is barred or allowed for (e)RedCap UEs";
+      }
+
+
+    }
+  grouping CellReselectionRedcapGrp {
+    description "This data type defines configuration parameters
+     to allow relaxation of RRM measurement requirements for (e)RedCap UE 
+     cell reselection. ";
+     reference "TS 38.331 , clasue 6.3.1 and TS 38.304 , clause 5.2.4.9"; 
+
+    leaf sSearchDeltaPStationary {
+        type uint8 {
+          range "2 | 3 | 6 | 9 | 12 | 15";
+        }
+        mandatory true;
+        description "This specifies the threshold (in dB) on Srxlev variation
+        to evaluate stationary criterion for relaxed measurement. It 
+         corresponds to the SSearchDeltaP-Stationary in TS 38.304 [49].
+        Its unit is 1 dB. Where Srxlev is the cell selection received 
+        signal level value. ";
+        // optional 
+      }
+    leaf tSearchDeltaPStationary {
+        type uint16 {
+          range "5 | 10 | 20 | 30 | 60 | 120 | 180 | 240 | 300";
+        }
+        mandatory true;
+        description "TThis specifies the time period over which the Srxlev
+         variation is evaluated for stationary criterion for relaxed measurement.
+          It corresponds to the TSearchDeltaP-Stationary in TS 38.304 [49]. Its 
+          unit is seconds. Where Srxlev is the cell selection received signal 
+          level value. ";
+          //optional
+      }
+    leaf sSearchThresholdP2 {
+        type uint16 {
+          range "0..31";
+        }        
+        mandatory true;
+        description "This specifies the Srxlev threshold (in dB) to evaluate
+         not at cell edge criterion for relaxed measurement. It corresponds
+          to the SSearchThresholdP2 in TS 38.304 [49]. Its unit is 1 dB. 
+          Where Srxlev is the cell selection received signal level value.  ";
+          //optional
+      }
+    leaf sSearchThresholdQ2 {
+        type uint16 {
+          range "0..31";
+        }       
+        mandatory true;
+        description "This specifies the Squal threshold (in dB) to 
+        evaluate not at cell edge criterion for relaxed measurement. It 
+        corresponds to the SSearchThresholdQ2 in TS 38.304 [49]. Its unit
+         is 1 dB. Where Srxlev is the cell selection quality level value. ";
+        //optional
+      }
+
+    }
+    augment "/subnet3gpp:SubNetwork" {
+        if-feature redcapaccesscriteriasubnertwork;
+        list RedCapAccessCriteria {
+            description "The RedCapAccessCriteria <<IOC>> contains attributes
+            to support the controlling of RedCap access in a NR Cell.
+            It provides information of a condition (for example, KPIs such as
+            Total DRB accessibility, DRB Retainability , Utilization KPI,
+            NG-RAN data Energy Efficiency, Downlink/Uplink delay in gNB-DU etc.
+            and  Performance measurements such as DL/UL Total PRB Usage,
+            Average DL/UL UE throughput in gNB etc.) which can be used to
+            control decision of barring or allowing access of RedCap/eRedCap
+            UEs to a NR Cell. This information can be used to decide whether
+            RedCap/eRedCap UEs are barred or allowed at the time of new UE
+            access attempt in NR cell during applicable RAN procedures.";
+
+            key id;
+            max-elements 1;
+            uses top3gpp:Top_Grp;
+            container attributes {
+                uses RedCapAccessCriteriaGrp;
+                }
+        }
+    }
+
+}

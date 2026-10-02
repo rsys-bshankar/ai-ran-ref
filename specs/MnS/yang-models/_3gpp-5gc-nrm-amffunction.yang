@@ -1,0 +1,622 @@
+module _3gpp-5gc-nrm-amffunction {
+  yang-version 1.1;
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-amffunction;
+  prefix amf3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import ietf-inet-types { prefix inet; }
+  import ietf-yang-types { prefix yang; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-nr-nrm-ntnfunction { prefix ntn3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp;}
+
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "AMFFunction derived from basic ManagedFunction.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2026-05-25 { reference CR-1702 ; }
+  revision 2025-07-25 { reference CR-1558 ; }
+  revision 2025-03-25 { reference "CR-1489 CR-1512" ; }
+  revision 2024-11-01 { reference CR-1405; }
+  revision 2024-10-06 { reference CR-1389; }
+  revision 2024-04-04 { reference CR-1139; }
+  revision 2023-09-18 { reference CR-1043 ; }
+  revision 2022-01-07 { reference CR-0643; }
+  revision 2020-11-06 { reference CR-0412 ; }
+  revision 2019-10-25 { reference "S5-194457 S5-193518"; }
+  revision 2019-05-31 { reference "Ericsson refactoring."; }
+  revision 2018-08-07 { reference "Initial revision"; }
+
+  grouping NTNGlobalRanNodeIDGrp{
+
+    list pLMNId {
+      description "The PLMN Identifier is composed of
+       a Mobile Country Code (MCC) and
+       a Mobile Network Code (MNC).";
+      min-elements 1;
+      max-elements 1;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+
+    choice GlobalRanNodeID{
+      description "Unique identifier of an NG-RAN node.";
+      reference "3GPP TS 38.413";
+      mandatory true;
+      case gNB {
+        leaf GlobalgNBID{
+          description "Unique identifier of a gNB.";
+          reference "3GPP TS 38.413";
+          type int64;
+          mandatory true;
+        }
+      }
+
+      case ng-eNB{
+        leaf Globalng-eNBID{
+          type string{
+            pattern '^(MacroNGeNB-[A-Fa-f0-9]{5}|LMacroNGeNB-
+            [A-Fa-f0-9]{6}|SMacroNGeNB
+            -[A-Fa-f0-9]{5})$';
+          }
+          description "This represents the identifier of
+           the ng-eNB ID as specified in
+          clause 9.3.1.8 of 3GPP TS 38.413.";
+          mandatory true;
+        }
+      }
+
+      case N3IWF{
+        leaf N3IWFID{
+          type string{
+            pattern '^[A-Fa-f0-9]+$';
+          }
+          description "This IE shall contain the N3IWF
+          identifier received over NGAP and
+           shall be encoded as a string of
+           hexadecimal characters.";
+          mandatory true;
+        }
+      }
+
+      case TNGF{
+        leaf TNGFID{
+          type string{
+            pattern '^[A-Fa-f0-9]+$';
+          }
+          description "This represents the identifier of
+           the TNGF ID as specified in clause
+           9.3.1.161 of 3GPP TS 38.413 in hexadecimal
+            representation.";
+          mandatory true;
+        }
+      }
+
+      case TWIF{
+        leaf TWIFID{
+          type string;
+          description "This represents the TWIF identification
+           as specified in clause
+           9.3.1.163 of TS 38.413";
+          mandatory true;
+        }
+      }
+
+      case W-AGF{
+        leaf W-AGFID{
+          type string{
+            pattern '^[A-Fa-f0-9]+$';
+          }
+          description "This represents the identifier of
+           the W-AGF ID as specified in
+           clause 9.3.1.162 of 3GPP TS 38.413
+           in hexadecimal representation.";
+          mandatory true;
+        }
+      }
+    }
+  }
+
+  grouping SatelliteBackhaulInfoGrp{
+    description "Defines information related to satellite backhaul category
+     and corresponding information of gNB.";
+    reference "3GPP TS 23.501";
+
+    list nTNGlobalRanNodeID{
+      description "Unique identifier of an NG-RAN node.";
+      min-elements 1;
+      max-elements 1;
+      leaf GlobalRanNodeIDValue{
+        type string;
+        description "this relies on the choice of GlobalRanNodeID";
+      }
+      key "GlobalRanNodeIDValue";
+      uses NTNGlobalRanNodeIDGrp;
+    }
+
+    leaf satelliteBackhaulCategory{
+      description "Satellite backhaul category refers to the type of the
+       satellite used in the backhaul. Only a single backhaul category
+        can be indicated.";
+      reference "3GPP TS 29.571";
+      type enumeration{
+        enum GEO;
+        enum MEO;
+        enum LEO;
+        enum OTHER_SAT;
+        enum DYNAMIC_GEO;
+        enum DYNAMIC_MEO;
+        enum DYNAMIC_LEO;
+        enum DYNAMIC_OTHER_SAT;
+        enum NON_SATELLITE;
+      }
+      mandatory true;
+    }
+
+    leaf geoSatelliteId{
+      description "Unique identifier of a GEO satellite.";
+      reference "3GPP TS 29.571";
+      type string;
+      //condition present only if the UPF is deployed on the satellite.
+    }
+  }
+
+  grouping GUAMInfoGrp {
+    description "Represents the GUAMInfo datatype.";
+
+    list pLMNId {
+      description "This attribute represents a PLMN Identity.";
+      min-elements 1;
+      max-elements 1;
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses types3gpp:PLMNId ;
+    }
+
+    leaf aMFIdentifier  {
+      type int64;
+      description "The AMFI is constructed from an AMF Region ID, an
+        AMF Set ID and an AMF Pointer. The AMF Region ID identifies the region,
+        the AMF Set ID uniquely identifies the AMF Set within the AMF Region,
+        and the AMF Pointer uniquely identifies the AMF within the AMF Set.
+        (Ref. 3GPP TS 23.003)";
+    }
+  }
+
+  grouping N2InterfaceAmfInfoGrp {
+    description "Represents the N2InterfaceAmfInfo datatype.";
+
+    leaf-list ipv4EndpointAddress {
+      type inet:ipv4-address;
+      min-elements 1;
+      description "This attribute represents available AMF endpoint
+        IPv4 address(es) for N2.";
+    }
+
+    leaf-list ipv6EndpointAddress {
+      type inet:ipv6-address;
+      min-elements 1;
+      description "This attribute represents available AMF endpoint
+        IPv6 address(es) for N2.";
+    }
+
+    leaf amfName {
+      type inet:host-name;
+      description "This attribute represents AMF Name FQDN as defined in
+        clause 28.3.2.5 of TS 23.003.";
+    }
+  }
+
+  grouping BlockedLocationInfoGrp {
+    description "Repreasents the datatype BlockedLocationInfo";
+
+    list blockedLocation {
+      description "This provides the geographical location at which the PLMN
+        are not allowed in case of NTN.";
+      min-elements 1;
+      max-elements 1;
+      key "mnc mcc";
+      uses types3gpp:PLMNId ;
+    }
+
+    list blockedDurWindow {
+      description "This provides the time durations for which the PLMN are
+        not allowed at a given location in case of NTN";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types3gpp:TimeWindowGrp;
+    }
+
+    list blockedSlice {
+      description "This provides the slice for which the access is
+        not allowed at a given location in case of NTN. ";
+      max-elements 1;
+      key idx;
+      unique "sst sd";
+      leaf idx { type uint32; }
+      uses types5g3gpp:SNssai;
+    }
+  }
+
+  grouping NTNPLMNRestrictionsInfoGrp {
+    description "Represents the datatype NTNPLMNRestrictionsInfo";
+
+    list pLMNId {
+      description "This attribute represents a PLMN Identity.";
+      min-elements 1;
+      max-elements 1;
+      key "mnc mcc";
+      uses types3gpp:PLMNId ;
+    }
+
+    list blockedLocationInfoList {
+      description "This defines the information related with the location
+        for which the access restrictions are to be applied in case of NTN.";
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses BlockedLocationInfoGrp;
+    }
+  }
+
+  grouping NtnLocationInfoGrp {
+    description  "Represents the NtnLocationInfo datatype.";
+
+    list location {
+      description "This defines the Location (geographical area) under
+        consideration to which the satellite coverage info belongs";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types3gpp:GeoAreaGrp;
+    }
+
+    list availabilityWindows  {
+      description "This attribute defines the list of time windows at which
+        the satellite coverage will be available for this location.
+        Either availabilityWindows or nonAvailabilityWindows shall be present.";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types3gpp:TimeWindowGrp;
+    }
+
+    list nonAvailabilityWindows {
+      description "This attribute defines the list of time windows at which
+        the satellite coverage will not be available for this location.
+        Either availabilityWindows or nonAvailabilityWindows shall be present.";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types3gpp:TimeWindowGrp;
+    }
+  }
+
+  grouping SatelliteCoverageInfoGrp {
+    description "Represents the datatype SatelliteCoverageInfo";
+
+    leaf nRSatelliteRATtype {
+      type enumeration {
+        enum NRLEO;
+        enum NRMEO;
+        enum NRGEO;
+        enum NROTHERSAT;
+      }
+      description "This attribute defines the RAT Type for NR satellite
+        access.";
+    }
+
+    list locationInfo {
+      description "This attribute defines the information about location and
+        corresponding time windows for which the satellite coverage will be
+        available or unavailable.";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses NtnLocationInfoGrp;
+    }
+  }
+
+  grouping SliceExpiryInfoGrp {
+    description "Represents the datatype SliceExpiryInfo";
+
+    list pLMNInfo {
+      min-elements 1;  // ???
+      config false;
+      description "It defines the PLMN(s) of a Network Function. ";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types5g3gpp:PLMNInfo;
+    }
+
+    leaf expiryTime {
+      type yang:date-and-time;
+      config false;
+      description "This attribute provides information about the time at
+        which the slice is scheduled to be expired as it is not required
+        anymore.
+        This attribute will be set based on the sliceAvailability coming as
+        part of ServiceProfile.";
+    }
+  }
+
+  grouping MappedCellIdInfoGrp {
+    description "Represents the datatype MappedCellIdInfo";
+
+    list ntnGeoArea {
+      description "This attribute indicates a specific geographical location
+        mapped to Mapped Cell ID(s).";
+      min-elements 1;
+      max-elements 1;
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses types3gpp:GeoAreaGrp;
+    }
+
+    list mappedCellId {
+      description "This attribute is in format of NCGI to indicate a fixed
+        geographical area (See subclause 16.14.5 in TS 38.300";
+      min-elements 1;
+      max-elements 1;
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses types5g3gpp:NcgiGrp;
+    }
+  }
+
+  grouping AmfInfoGrp {
+    description "Represents the data type AmfInfo.";
+
+    leaf aMFRegionId {
+      type int64;
+      mandatory true;
+      description "It represents the AMF Region ID, which identifies the
+        region. AllowedValues: defined in subclause 2.10.1 of 3GPP TS 23.003 ";
+    }
+
+    leaf aMFSetId {
+      type int64;
+      mandatory true;
+      description "It represents the AMF Set ID, which is uniquely identifies
+        the AMF Set within the AMF Region.
+        allowedValues: defined in subclause 2.10.1 of 3GPP TS 23.003";
+    }
+
+    list taiList {
+      min-elements 1;
+      description "The list of TAIs.";
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses types3gpp:TaiGrp;
+    }
+
+    list taiRangeList {
+      min-elements 1;
+      description "The range of TAIs.";
+      key "idx";
+      leaf idx { type uint32 ; }
+       uses types5g3gpp:TaiRangeGrp;
+    }
+
+    list gUAMIdList {
+      description "List of supported Globally Unique AMF Ids (GUAMIs).";
+      config false;
+      min-elements 1;
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses GUAMInfoGrp;
+    }
+
+    list backupInfoAmfFailure {
+      description "List of GUAMIs for which the AMF acts as a backup for AMF
+        failure.";
+      min-elements 1;
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses GUAMInfoGrp;
+    }
+
+    list backupInfoAmfRemoval {
+      description "List of GUAMIs for which the AMF acts as a backup for
+        planned AMF removal.";
+      min-elements 1;
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses GUAMInfoGrp;
+    }
+
+    list n2InterfaceAmfInfo {
+      description "This attribute represents the N2 interface information of
+        the AMF. ";
+      max-elements 1;
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses N2InterfaceAmfInfoGrp;
+    }
+
+    leaf amfOnboardingCapability {
+      type boolean;
+      default false;
+      description "This attribute indicates the AMF supports SNPN Onboarding
+        capability. This is used for the case of Onboarding of UEs for SNPNs
+        (see TS 23.501, clause 5.30.2.10).
+        - FALSE: AMF does not support SNPN Onboarding;
+        - TRUE: AMF supports SNPN Onboarding.";
+    }
+
+    leaf highLatencyCom {
+      type boolean;
+      description "This attribute indicates whether the AMF supports High
+        Latency communication (e.g. for NR RedCap UE). This is used for CP NF
+        to discover AMF supporting High Latency communication (see TS 23.501,
+        clause 6.3.5).
+        - FALSE: AMF does not support High Latency communication e.g. for
+        NR RedCap UE;
+        - TRUE: AMF supports High Latency communication e.g. for NR RedCap UE;";
+    }
+  }
+
+  grouping AMFFunctionGrp {
+    description "Represents the AMFFunction IOC.
+    This IOC contains instances of NTNTimeBasedConfig to support
+    time-based configuration of the following NTN related entities:
+    AMFFunction and EP_N2.";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    list pLMNInfoList {
+      min-elements 1;
+      description "It defines the PLMN(s) of a Network Function. ";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types5g3gpp:PLMNInfo;
+    }
+
+    list aMFIdentifier {
+      description "An AMF identifier, comprising an AMF Region ID, an
+        AMF Set ID and an AMF Pointer.";
+        key idx;
+        leaf idx { type uint32; }
+      uses types3gpp:AmfIdentifier;
+    }
+
+    leaf sBIFQDN {
+      description "The FQDN of the registered NF instance in the
+        service-based interface.";
+      type inet:domain-name;
+    }
+
+    leaf-list cNSIIdList {
+      type string;
+      description "It is a set of NSI ID. NSI ID is an identifier for
+        identifying the Core Network part of a Network Slice instance when
+        multiple Network Slice instances of the same Network Slice are deployed,
+        and there is a need to differentiate between them in the 5GC.
+        See NSI ID definition in clause 3.1 of TS 23.501 and
+        subclause 6.1.6.2.7 of  TS 29.531";
+    }
+
+    list managedNFProfile {
+      key idx;
+      leaf idx{ type uint32;}
+      min-elements 1;
+      max-elements 1;
+      uses mnfp3gpp:ManagedNFProfileGrp;
+      description "";
+    }
+
+    list commModelList {
+      min-elements 1;
+      key "groupId";
+      description "Specifies a list of commModel. It can be used by NF and
+        NF services to interact with each other in 5G Core network ";
+      reference "3GPP TS 23.501";
+      uses types5g3gpp:CommModel;
+    }
+
+    list amfInfo {
+      max-elements 1;
+      description "This attribute represents information of an AMF
+        NF Instance.";
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses AmfInfoGrp;
+    }
+
+    list nTNPLMNRestrictionsList {
+      description "This attribute defines the location restrictions per PLMN
+        that relates to non-terrestrial network access.";
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses NTNPLMNRestrictionsInfoGrp;
+    }
+
+    list satelliteCoverageInfoList {
+      description "This attribute defines the information related to NR
+        Satellite RAT type and corresponding information of satellite coverage";
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses SatelliteCoverageInfoGrp;
+    }
+
+    list sliceExpiryInfo {
+      description "This provides information related to a network slice
+        validity.";
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses SliceExpiryInfoGrp;
+    }
+
+    list satelliteBackhaulInfoList{
+      description "Specifies a list of satellite backhaul information. It can be
+       used by NF and NF services.";
+      leaf GlobalRanNodeIDValue{
+        type string;
+        description "this relies on the choice of GlobalRanNodeID";
+      }
+      key "GlobalRanNodeIDValue";
+      min-elements 1;
+      uses SatelliteBackhaulInfoGrp;
+    }
+
+    leaf-list mdtUserConsentReqList {
+      type enumeration {
+        enum M1;
+        enum M2;
+        enum M3;
+        enum M4;
+        enum M5;
+        enum M6;
+        enum M7;
+        enum M8;
+        enum M9;
+        enum MDT_UE_LOCATION;
+      }
+      description "represents a list of MDT measurement names that are
+        subject to user consent at MDT activation.
+        Any MDT measurement, whose name is not specified in this list, is not
+        subject to user consent at MDT activation.";
+    }
+
+    list mappedCellIdInfoList {
+      description "It provides the list of mapping between GEO area and
+        Mapped Cell ID.";
+      key "idx";
+      leaf idx { type uint32 ; }
+      uses MappedCellIdInfoGrp;
+    }
+
+    leaf aMFSetRef {
+      type types3gpp:DistinguishedName;
+      description "This is the DN of AMFSet";
+    }
+
+    list NTNTimeBasedConfig {
+        description "This is the NTN time-based configuration.";
+        key id;
+        uses top3gpp:Top_Grp;
+        container attributes {
+          uses ntn3gpp:NTNTimeBasedConfigGrp;
+        }
+      }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list AMFFunction {
+      description "This IOC represents the AMF functionality in 5GC.
+        For more information about the AMF, see 3GPP TS 23.501.
+
+        The attribute sliceExpiryInfo is used when the validity information of
+        a network slice need to be configured. The attribute
+        sliceExpiryInfo.pLMNInfo indicates the network slice to which the
+        validity information applies.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses AMFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

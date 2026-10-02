@@ -1,0 +1,99 @@
+module _3gpp-eqp-sectorequipmentfunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-eqp-sectorequipmentfunction";
+  prefix "scteqp3gpp";
+
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the Sector Equipment Function 
+    Information Object Class (IOC) that is part of the Generic Network Resource 
+    Model (NRM).
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+    reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2025-11-07 { reference "CR1660"; }
+  revision 2025-08-13 { reference "CR1581"; }
+  revision 2025-05-01 { reference "Initial revision"; }
+  
+  grouping SectorEquipmentFunctionGrp {
+    description "Represents the SectorEquipmentFunction.";
+    uses mf3gpp:ManagedFunctionGrp;
+    
+    leaf confOutputPower {
+      description "It defines the allowed total power to use for all
+        cells together in this sector. 
+        It may be set by the operator and/or limited by HW limitation 
+        or licensed power, e.g.: 20, 40, 60, 80,120 watts";
+      type uint32;
+      }
+      
+    leaf-list fqBandList {
+      description "The list of frequency bands/ranges supported by the
+      hardware associated with the SectorEquipmentFunction. The 
+      earfcnDl and earfcnUl or earfcn of cells associated with the 
+      SectorEquipmentFunction must be assigned one of the specified
+      frequency range values within the supported range.
+      
+      Valid frequency bands/ranges may be found in 3GPP TS 25.104 (UTRA), 
+      36.104 (E-UTRA) and 38.104 (NR).
+      
+      AllowedValues:
+      Operating band id or supported frequency tuple 
+      <UL,DL,mode> expressed as a string.
+      
+      Examples for NR:
+      Bands:  {'n1', 'n12'}
+      Frequencies: {'1920–1980, 2110–2170, FDD', '699–716, 729–746, FDD'}";
+      config false;
+      type string;
+    }
+    
+    leaf-list referenceFrom {
+      description "This attribute contains the DNs of one or more objects 
+        that refer to this object.
+        
+        In the case of SectorEquipmentFunction , these referring objects
+        may include e.g. Cells, NRSectorCarriers if associations from them
+        and the SectorEquipmentFunction exist.
+        
+        Note: referencedBy is a DN datatype and so can reference an MOI
+        under a different ME";
+      config false;
+      type types3gpp:DistinguishedName;
+    }
+
+    leaf-list referenceTo {
+      description "This attribute contains the DNs of one or more objects 
+        referred to by this object.
+        
+        In the case of SectorEquipmentFunction , these referred to objects
+        may include e.g. TMAFunction if associations to them
+        and the SectorEquipmentFunction exist.
+        
+        Note: referencedBy is a DN datatype and so can reference an MOI
+        under a different ME";
+      config false;
+      type types3gpp:DistinguishedName;
+    }
+  }
+  
+  augment "/me3gpp:ManagedElement" {
+    list SectorEquipmentFunction {
+      key id;
+      uses top3gpp:Top_Grp;
+      description "This IOC represents a set of cells within a geographical
+        area that has common functions relating to AntennaFunction, TMAFunction
+        and supporting equipment, such as power amplifier.";
+      container attributes {
+        uses SectorEquipmentFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

@@ -1,0 +1,192 @@
+module _3gpp-stm-nrm-stmfunction {
+  yang-version 1.1;
+  
+  namespace urn:3gpp:sa5:_3gpp-stm-nrm-stmfunction;
+  prefix stm3gpp;
+  
+  import _3gpp-common-top { prefix top3gpp; }
+  import ietf-inet-types { prefix inet; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the STM function defined in 3GPP TS 28.560.
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.560
+    Signalling traffic monitoring management";
+  
+  revision 2025-08-07 { reference "CR-0011"; }
+  revision 2025-05-07 { reference "CR-0009"; } 
+  revision 2025-04-19 { reference "CR-0010"; } 
+  revision 2024-11-07 { reference "S5-247077"; } 
+  
+  grouping NetworkInterfaceGrp {
+    description "Represents the network interfaces for which signalling 
+      traffic messages are to be copied and sent to the external entity.  
+      The attribute networkInterfaceType specifies the network interface type  
+      to be monitored. The optional attribute networkInterfaceInstanceList 
+      specifies the network interface instances to be monitored. It is a list  
+      of applicable network interface instances of the network interface type 
+      specified by networkInterfaceType. The optional attribute 
+      serviceOperationList specifies the service operations to be monitored. 
+      It is a list of applicable service operations exchanged over the network 
+      interface instances specified by networkInterfaceInstanceList, or, if 
+      networkInterfaceInstanceList is not present, it is list of applicable 
+      service operations exchanged over the network interface type specified 
+      by networkInterfaceType.";
+
+     leaf networkInterfaceType {
+      type enumeration {
+        enum ALL;
+        enum N2;
+        enum N4;
+        enum N5;
+        enum N7;
+        enum N8;
+        enum N10;
+        enum N11;
+        enum N12;
+        enum N13;
+        enum N14;
+        enum N15;
+        enum N16;
+        enum N17;
+        enum N18;
+        enum N20;
+        enum N21;
+        enum N22;
+        enum N23;
+        enum N26;
+        enum N28;
+        enum N29;
+        enum N30;
+        enum N33;
+        enum N34;
+        enum N35;
+        enum N36;
+        enum N37;
+        enum N40;
+        enum N41;
+        enum N42;
+        enum N51;
+        enum N52;
+        enum N58;
+        enum N59;
+        enum N60;
+        enum N61;
+        enum N62;
+        enum N63;
+        enum N80;
+        enum N81;
+        enum N82;
+        enum N83;
+        enum N84;
+        enum N85;
+        enum N86;
+        enum N87;
+        enum N88;
+        enum N89;
+        enum N96;
+        enum NL1;
+        enum NL2;
+        enum NL5;
+        enum NL6;
+        enum NL8;
+        enum NL9;
+      }
+      description "List of network interface type to be monitored. The 
+        applicable network interface type names are specified based on 
+        subclause 4.2.3 of 3GPP TS 23.501 and clause 4.2.1 of 3GPP 
+        TS 23.273.
+        The value ALL is specified for the case if all the applicable
+        interface type of the network function shall be monitored.";
+      reference "Clause 4.2.3 of 3GPP TS 23.501 and clause 4.2.1 of  
+        3GPP TS 23.273 for details on the allowed values.";
+    }
+
+    leaf-list networkInterfaceInstanceList {
+      type types3gpp:DistinguishedName;
+      description "The list of applicable network interface instances, for 
+        which the monitoring is to be performed, of the network interface 
+        type specified by networkInterfaceType.";
+      reference "allowedValues: DN of the following MOIs as specified
+        in subclause 5.2.1 of 3GPP TS 28.541";
+    }
+    
+    leaf-list serviceOperationList {
+      type string;
+      description "The list of applicable service operations exchanged
+        over the network interface instances specified by 
+        networkInterfaceInstanceList, that needs to be monitored. Or,
+        If networkInterfaceInstanceList is not present, the list of 
+        applicable service operations exchanged over the network 
+        interface type specified by networkInterfaceType.";
+      reference "allowedValues: refer to subclause 5.2 of 3GPP 
+        TS 23.502";
+    }
+  }
+
+  grouping StmCtrlGrp {
+    description "Represents the StmCtrl IOC.";
+
+    leaf-list reportingNFList {
+      type types3gpp:DistinguishedName;
+      description "List of Network Function Distinguished Name, which 
+        specifies the target network interface type to be monitored. If 
+        this parameter is not present or it is empty, then all applicable 
+        interface types from the target NF shall be monitored";   
+    }
+    
+    list targetInterfaceInfoList {
+      uses NetworkInterfaceGrp; 
+      key "networkInterfaceType";
+      description "List of network interface to be monitored. If this 
+        parameter is not present or it is empty, then all Network Functions 
+        within the SubNetwork or ManagedElement shall be monitored. This 
+        parameter shall be omitted if the STM control object is specified 
+        under a ManagedFunction. ";
+    }
+
+    leaf stmTargetUri {
+      type inet:uri;
+      mandatory true;
+      description "It specifies the Uniform Resource Identifier (URI) of the STM
+        consumer that shall receive the monitored signalling message copies ";
+      reference "Clause 4.4 of 3GPP TS 32.158";
+    }
+    
+    leaf administrativeState {
+      default LOCKED;
+      type types3gpp:BasicAdministrativeState ;
+      description "It is used by the STM consumer to lock or unlock the 
+        StmCtrl instance in order to stop or start the signalling traffic 
+        monitoring";
+    }
+
+    leaf operationalState {
+      config false;
+      mandatory true;
+      type types3gpp:OperationalState ;
+      description "It is used by STM consumer to report its working state";
+    }
+  }
+
+  grouping StmCtrlSubTree {
+    description "Contains classes that manage Signalling traffic monitoring 
+      management";
+
+    list StmCtrl  {
+      description "This IOC represents the STM Control and Configuration 
+        parameters of a particular STM controlling. It can be 
+        name-contained by SubNetwork, ManagedElement, or ManagedFunction.";
+
+      key id;
+      uses top3gpp:Top_Grp ;
+      container attributes {
+        uses StmCtrlGrp ;
+      }
+      
+    }
+  }
+}

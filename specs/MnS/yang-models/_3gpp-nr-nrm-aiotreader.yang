@@ -1,0 +1,98 @@
+module _3gpp-nr-nrm-aiotreader {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-aiotreader";
+  prefix "aiotread3gpp";
+
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-5gc-nrm-aiot { prefix aiot3gpp; }
+  import _3gpp-nr-nrm-gnbdufunction { prefix gnbdu3gpp; }
+  
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping the AIoT Reader.
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2025-11-07 { reference CR-1640; }
+
+  grouping AIOTReaderGrp {
+    description "Attributes of the IOC AIOTReader";
+
+    leaf readerId {
+      type int32;
+      mandatory true;
+      description "It defines the reader identifier to uniquely identify a 
+        reader within a gNB.";
+    }
+    
+    leaf administrativeState {
+      type types3gpp:BasicAdministrativeState;
+      default LOCKED;
+      description "It indicates the administrative state of the AIOTReader. 
+        It describes the permission to use or prohibition against using the 
+        AIOT reader, imposed through the OAM services.";
+    }
+
+    leaf-list supportedAIOTServices {
+      type enumeration {
+        enum INVENTORY;
+        enum COMMAND;
+      }
+      min-elements 1;
+      description "It indicates the supported AIOT service type for an 
+        AIOT reader.";
+    }
+
+    list pLMNId {
+      description "Defines which PLMN that can be served by the AIOT reader.";
+
+      min-elements 1;
+      max-elements 1;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+
+    list servedAIOTAreas {
+      description "This attribute is used to specify the A-IoT areas supported 
+        by the A-IoT reader. It contains one or multiple A-IoT Area ID, which 
+        is used to uniquely identify an A-IoT Area.
+
+        A-IoT Area ID = PLMN ID +NID (optional) + A-IoT Area Code 
+        (OCTET STRING (SIZE(3))), which is defined in TS 38.413.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses aiot3gpp:ServedAIOTAreaIDGrp;
+    }
+    
+    leaf readerLocation {
+      type string;
+      mandatory true;
+      description "This specifies the geographical location of a A-IoT reader. 
+        Reader Location may represent any of latitude/longitude, or any 
+        geographical location/coordinate/area polygon.";
+    }
+    
+    leaf-list nRSectorCarrierRef {
+      type types3gpp:DistinguishedName;
+      description "This attribute contains the DN of the referenced 
+        NRSectorCarrier.";
+    }
+  }
+
+  augment /me3gpp:ManagedElement/gnbdu3gpp:GNBDUFunction  {
+    list AIOTReader {
+      description "This IOC represents AIoT Reader which supports AIOT 
+        services.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses AIOTReaderGrp;
+      }
+    }
+  }
+}

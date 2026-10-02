@@ -1,0 +1,92 @@
+module _3gpp-nr-nrm-externalnrcellcu {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-externalnrcellcu";
+  prefix "extnrcellcu3gpp";
+
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the ExternalNRCellCU Information
+    Object Class (IOC), that is part of the NR Network Resource Model (NRM).
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2025-04-25 { reference "CR-1526 CR-1527" ; } // common for r18, r19
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2019-10-28 { reference S5-193518 ; }
+  revision 2019-06-17 { reference "Initial revision"; }
+
+  grouping ExternalNRCellCUGrp {
+    description "Represents the ExternalNRCellCU IOC."; 
+    uses mf3gpp:ManagedFunctionGrp;
+        
+    leaf cellLocalId {       
+      description "It identifies a NR cell of a gNB. 
+
+      It, together with the gNB Identifier (using gNBId of the parent 
+      GNBCUCPFunction or GNBDUFunction or OperatorDU (for MOCN network 
+      sharing scenario) or ExternalCUCPFunction), identifies a NR cell within 
+      a PLMN. This is the NR Cell Identity(NCI). See subclause 8.2 of TS38.300.  
+
+      The NCI can be constructed by encoding the gNB Identifier using gNBId 
+      (of the parent GNBCUCPFunction or GNBDUFunction or OperatorDU 
+      (for MOCN network sharing scenario) or ExternalCUCPFunction) and 
+      cellLocalId where the gNB Identifier field is of length specified by
+      gNBIdLength (of the parent GNBCUCPFunction or GNBDUFunction or 
+      ExternalCUCPFunction). See 'Global gNB ID' in subclause 9.3.1.6 of 
+      TS 38.413.
+
+      The NR Cell Global identifier (NCGI) is constructed from the 
+      PLMN identity the cell belongs to and the NR Cell Identifier (NCI) of 
+      the cell.
+
+      See relation between NCI and NCGI subclause 8.2 of TS 38.300 ";
+      mandatory true;
+      type int32;     
+    }
+
+    leaf nRPCI {
+      description "This holds the Physical Cell Identity (PCI) of the NR cell.
+
+      allowedValues: 
+      See 3GPP TS 36.211 subclause 6.11 for legal values of pci.";
+      mandatory true;
+      type int64;
+    }
+
+    list pLMNIdList {
+      description "Defines which PLMNs that are assumed to be served by the
+        NR cell in another gNB CU-CP. This list is either updated by the
+        managed element itself (e.g. due to ANR, signalling over Xn, etc.) or
+        by consumer over the standard interface.";
+      key "mcc mnc";
+      min-elements 1;
+      max-elements 12;
+      uses types3gpp:PLMNId;
+    }
+
+    leaf nRFrequencyRef {
+      description "Reference to corresponding NRFrequency instance.";
+      mandatory true;
+      type types3gpp:DistinguishedName;
+    }
+  }
+
+  grouping ExternalNRCellCUSubtree {
+    list ExternalNRCellCU {
+      description "This IOC contains necessary attributes for inter-system 
+        and intra-system handover. It also contains a subset of the attributes 
+        of related IOCs controlled by Management Service Provider.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses ExternalNRCellCUGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  } 
+}

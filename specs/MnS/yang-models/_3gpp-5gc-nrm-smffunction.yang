@@ -1,0 +1,237 @@
+module _3gpp-5gc-nrm-smffunction {
+  yang-version 1.1;
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-smffunction;
+  prefix smf3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import ietf-inet-types { prefix inet; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp; }
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "SMFFunction derived from basic ManagedFunction.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2026-05-25 { reference CR-1702 ; }
+  revision 2024-05-24 { reference CR-1273 ; }
+  revision 2023-09-18 { reference CR-1043 ; }
+  revision 2023-04-26 { reference CR-0916; }
+  revision 2020-11-08 { reference CR-0412 ; }
+  revision 2020-08-06 { reference "CR-0333"; }
+  revision 2020-06-03 { reference "CR-0286"; }
+  revision 2019-10-25 { reference "S5-194457 S5-193518"; }
+  revision 2019-05-31 {reference "Ericsson refactoring."; }
+  revision 2018-08-07 { reference "Initial revision";}
+
+
+    grouping SmfInfoGrp {
+
+      list sNssaiSmfInfoList {
+        description "List of parameters supported by the SMF per S-NSSAI.";
+        min-elements 1;
+        key idx;
+        leaf idx { type uint32; }
+        uses types5g3gpp:sNssaiSmfInfoItem;
+      }
+
+      list taiList {
+        description "The list of TAIs the SMF can serve.
+        It may contain the non-3GPP access TAI.
+                     The absence of this attribute and the taiRangeList
+                     attribute indicate that
+                     the SMF can be selected for any TAI
+                     in the serving network.";
+
+        key idx;
+        leaf idx { type uint32; }
+
+        min-elements 1;
+        uses types3gpp:TaiGrp;
+      }
+
+      list taiRangeList {
+        description "The range of TAIs the SMF can serve.
+        The absence of this attribute and the taiList
+                     attribute indicate that the SMF can be selected
+                     for any TAI in the serving network.";
+        min-elements 1;
+        key idx;
+        leaf idx { type uint32; }
+        uses types5g3gpp:TaiRangeGrp;
+      }
+
+      leaf pgwFqdn {
+        description "The FQDN of the PGW if the SMF is a combined SMF/PGW-C.";
+        type inet:domain-name;
+      }
+      leaf-list accessType {
+        description "If included, this IE shall contain the access type
+        (3GPP_ACCESS and/or NON_3GPP_ACCESS) supported by the SMF.
+                     If not included, it shall be assumed the both
+                      access types are supported.";
+
+        min-elements 1;
+        max-elements 2;
+        type AccessType;
+      }
+      leaf priority {
+        description "This parameter defines Priority (relative to other
+         NFs of the same type) in the range of 0-65535, to be used for
+         NF selection; lower values indicate a higher priority. If
+         priority is also present in the nfServiceList parameters,
+         those will have precedence over this value ";
+         type uint16;
+      }
+      leaf vsmfSupportInd {
+        description "Used by an SMF to explicitly indicate the support of
+         V-SMF capability and its preference to be selected as V-SMF.
+         When present it indicate whether the V-SMF capability is supported
+         by the SMF:
+         - true: V-SMF capability supported by the SMF
+         - false: V-SMF capability not supported by the SMF.
+         When absent the V-SMF capability support of the SMF is not specified.";
+         type boolean;
+      }
+      leaf pgwFqdnList {
+        description "When present, this attribute provides additional FQDNs
+        to the FQDN indicated in the pgwFqdn attribute.
+        The pgwFqdnList attribute may be present if the pgwFqdn attribute
+        is present.";
+        type string;
+      }
+      leaf ismfSupportInd {
+        description "This attribute may be used by an SMF to explicitly
+        indicate the support of I-SMF capability and its preference to be
+        selected as I-SMF. When present, this attribute shall indicate
+        whether the I-SMF capability are supported by the SMF:
+        - TRUE: I-SMF capability supported by the SMF
+        - FALSE: I-SMF capability not supported by the SMF. Absence of this
+        attribute indicates the I-SMF capability support of the SMF is not
+        specified.";
+        type boolean;
+      }
+      leaf-list smfOnboardingCapability {
+        description "This attribute indicates the SMF supports SNPN
+        Onboarding capability and User Plane Remote Provisioning. This
+        is used for the case of Onboarding of UEs for SNPNs
+        (see TS 23.501 [2], clauses 5.30.2.10 and 6.2.6.2).
+        -  FALSE: SMF does not support SNPN Onboarding;
+        -  TRUE: SMF supports SNPN Onboarding.";
+        type boolean;
+        max-elements 1;
+      }
+      leaf smfUPRPCapability {
+        description "This attribute IE indicates the SMF supports User
+        Plane Remote Provisioning (UPRP) capability. This is used for
+        the case of Onboarding of UEs for SNPNs ,
+        clauses 5.30.2.10 and 6.2.6.2).
+        -  FALSE: SMF does not support UPRP;
+        -   TRUE: SMF supports UPRP.";
+        reference "see TS 23.501 [2]";
+        type boolean;
+      }
+    }
+
+  grouping SMFFunctionGrp {
+    description "Represents the SMFFuntion IOC";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    list pLMNIdList {
+      min-elements 1;
+      description "A list of PLMN identifiers (Mobile Country Code and Mobile
+        Network Code).";
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+
+    leaf nRTACList {
+      description "List of Tracking Area Codes (legacy TAC or extended TAC)
+      where the represented management function is serving.";
+      reference "TS 38.413 clause 9.3.3.10";
+      config false;
+      type types5g3gpp:NRTAC;
+    }
+
+    leaf sBIFQDN {
+      description "The FQDN of the registered NF instance in the service-based
+        interface.";
+      type inet:domain-name;
+    }
+
+    list managedNFProfile {
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      max-elements 1;
+      description "Profile definition of a Managed NF (See TS 23.501)";
+      uses mnfp3gpp:ManagedNFProfileGrp;
+    }
+
+    list commModelList {
+      min-elements 1;
+      key "groupId";
+      description "Specifies a list of commModel. It can be used by NF and
+        NF services to interact with each other in 5G Core network ";
+      reference "3GPP TS 23.501";
+      uses types5g3gpp:CommModel;
+    }
+
+    leaf configurable5QISetRef {
+      type types3gpp:DistinguishedName;
+      description "DN of the Configurable5QISet that the SMFFunction supports
+        (is associated to).";
+         }
+
+    leaf dynamic5QISetRef {
+      type types3gpp:DistinguishedName;
+      description "DN of the Dynamic5QISet that the SMFFunction supports
+        (is associated to).";
+    }
+
+    list dnaiSatelliteMappingList {
+      description "List of the mapping relationship between
+       satellite ID and at least one DNAI.";
+      min-elements 1;
+      key "satelliteid";
+      uses dnaiSatelliteMapping;
+    }
+  }
+
+  grouping dnaiSatelliteMapping {
+    leaf-list dnaiList {
+      description "List of Data network access identifiers.";
+      min-elements 1;
+      type string;
+    }
+
+    leaf satelliteid {
+      description "Unique identifier of a GEO satellite.";
+      type string;
+    }
+  }
+
+    typedef AccessType {
+    type enumeration {
+      enum 3GPP_ACCESS;
+      enum NON_3GPP_ACCESS;
+    }
+  }
+  augment "/me3gpp:ManagedElement" {
+    list SMFFunction {
+      description "5G Core SMF Function";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses SMFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

@@ -1,0 +1,51 @@
+module _3gpp-nr-nrm-danrmanagementfunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-danrmanagementfunction";
+  prefix "danrmanagementfunction3gpp";
+
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-nr-nrm-gnbcucpfunction { prefix gnbcucp3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the DANRManagementFunction IOC
+    that is part of the NR Network Resource Model (NRM).
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2025-05-06 { reference "CR-1526 CR-1527" ; }  // common for R18, R19
+  revision 2024-08-19 { reference CR-1314 ; } 
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2020-05-08 { reference S5-203316; }
+
+  grouping DANRManagementFunctionGrp {
+    description "Represents the DANRManagementFunction IOC.";
+
+    leaf intrasystemANRManagementSwitch {
+      description "This attribute determines whether the intra-system ANR 
+        function is activated or deactivated.";
+        type boolean;
+    }
+
+    leaf intersystemANRManagementSwitch {
+      description "This attribute determines whether the inter-system ANR 
+        function is activated or deactivated.";
+      type boolean;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction" {
+    list DANRManagementFunction {
+      description "This IOC contains attributes to support the D-SON function 
+        of ANR Management (See clause 6.4.1.3 in TS 28.313 .";
+      key id;   
+      max-elements 1;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses DANRManagementFunctionGrp;
+      }
+    }
+  }
+}

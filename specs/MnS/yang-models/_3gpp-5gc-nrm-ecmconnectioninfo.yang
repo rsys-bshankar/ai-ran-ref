@@ -1,0 +1,254 @@
+module _3gpp-5gc-nrm-ecmconnectioninfo {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-5gc-nrm-ecmconnectioninfo";
+  prefix "econn3gpp";
+
+  import ietf-inet-types { prefix inet; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the EcmConnectionInfo Information 
+    Object Class (IOC) that is part of the NR Network Resource Model (NRM).
+    Copyright 2024, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2024-01-29 { reference CR-1166 ; } 
+  revision 2023-11-05 { reference CR-1131 ; } 
+  
+  grouping GeoLocGrp {
+    description "This datatype represent the geographical location.";
+    reference "3GPP 28.538 clause 6.3.4";
+    
+    list geographicalCoordinates {
+      description "This refers to the Topological Service Area, 
+        (see clause 7.3.3.2 in TS 23.558) that is defined as a datatype 
+        (see clause 6.3.8).";
+      key latitude;
+      max-elements 1;
+      uses types3gpp:GeographicalCoordinates;
+    }
+    
+    leaf civicLocations {
+      type string;
+    }
+  }
+
+  grouping TopologicalServiceAreaGrp {
+    description "This datatype represents the topological service area.";
+    reference "3GPP TS 28.538 clause 6.3.7";
+    
+    leaf-list cellIDList {
+      description "It represents the list of NR cells. 
+
+        The cell ID, together with the gNB Identifier (using gNBId of the 
+        parent GNBCUCPFunction or GNBDUFunction or ExternalCUCPFunction), 
+        identifies a NR cell within a PLMN. This is the NR Cell Identity(NCI). 
+        See subclause 8.2 of TS 38.300";
+      type int32;
+    }
+    
+    list trackingAreaIdList {
+      description "It represents the list of tracking areas within a PLMN.";
+      min-elements 1;
+      key idx;
+      
+      leaf idx { type uint32; }
+      uses types3gpp:TaiGrp;
+    }
+    
+    list servingPLMN {
+      description "It specifies the PLMN to be served.";
+      max-elements 1;
+      key idx;
+      
+      leaf idx { type uint32; }
+      uses types3gpp:PLMNId;
+    }
+  }
+  
+  grouping ServingLocationGrp {
+    description "This datatype represents the location which is to be served 
+      by the node.";
+    reference "3GPP TS 28.536 clause 6.3.3";
+      
+    list geographicalLocation {
+      description "This refers to the Geographical Service Area, 
+        (see clause 7.3.3.3 in TS 23.558 that is defined as a datatype 
+        (see clause 6.3.4).";
+      max-elements 1;
+      key idx;
+      
+      leaf idx { type uint32; }
+      uses GeoLocGrp;
+    }
+    
+    list topologicalLocation { 
+      description "This refers to the Topological Service Area, 
+        (see clause 7.3.3.2 in TS 23.558) that is defined as a datatype 
+        (see clause 6.3.7). ";
+      max-elements 1;
+      key idx;
+      
+      leaf idx { type uint32; }
+      uses TopologicalServiceAreaGrp;
+    }
+  }
+  
+  grouping _5GCNfConnEcmInfoGrp {
+    description "This data type specifies the 5GC NF connection information.";
+    
+    leaf _5GCNFType {
+      type enumeration {
+        enum PCF;
+        enum NEF;
+        enum SCEF;
+      }
+      description "It indicates the type of a NF instance.";
+    }
+    
+    leaf _5GCNFIpAddress {
+      type inet:host;
+      mandatory true;
+      description "This parameter defines address of a NF instance, 
+      It can be IP address (either IPv4 address (See RFC 791) or 
+      IPv6 address (See RFC 2373) or FQDN (See TS 23.003). ";
+    }
+    
+
+    leaf _5GCNFRef {
+      type types3gpp:DistinguishedName;
+      description "This attribute holds the DN of a NF instance.";
+    }
+  }
+
+  grouping UPFConnInfoGrp {
+    description "This data type specifies the UPF connection information.";
+    
+    leaf uPFIpAddress {
+      type inet:host;
+      description "This parameter defines address of an UPF instance, 
+        It can be IP address (either IPv4 address (See RFC 791) or 
+        IPv6 address (See RFC 2373) or FQDN (See TS 23.003). ";
+    }
+    
+    leaf uPFRef {
+      type types3gpp:DistinguishedName;
+      description "This attribute holds the DN of an UPF instance.";
+    }
+  }
+  
+  grouping EcmConnectionInfoGrp {
+    description "Represents the EcmConnectionInfo IOC.";
+
+    list eASServiceArea { 
+      description "This parameter defines the EAS service area 
+        (see clause 7.3.3.6 in TS 23.558).";
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses ServingLocationGrp;
+    }
+    
+    list eESServiceArea {
+      description "This parameter defines the EES service area 
+        (see clause 7.3.3.5 in TS 23.558).";
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses ServingLocationGrp;
+    }
+    
+    list eDNServiceArea {
+      description "This parameter defines the EDN service area 
+        (see clause 7.3.3.4 in TS 23.558)";
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses ServingLocationGrp;
+    }
+    
+    leaf eASIpAddress {
+      type inet:ip-address;
+      mandatory true;
+      description "This parameter defines address of an EAS instance. 
+        It can be IP address (either IPv4 address (See RFC 791) or IPv6 
+        address (See RFC 2373).";
+    }
+    
+    leaf eESIpAddress {
+      type inet:ip-address;
+      mandatory true;
+      description "This parameter defines address of an EES instance. 
+        It can be IP address (either IPv4 address (See RFC 791) or IPv6 
+        address (See RFC 2373). ";
+    }
+    
+    leaf eCSIpAddress {
+      type inet:ip-address;
+      mandatory true;
+      description "This parameter defines address of an ECS instance. 
+        It can be IP address (either IPv4 address (See RFC 791) or IPv6 
+        address (See RFC 2373).";
+    }
+    
+    leaf ednIdentifier {
+      type string; 
+      description "The identifier of the edge data network (See TS 23.558).";
+    }
+    
+    leaf ecmConnectionType {
+      type enumeration {
+        enum USERPLANE;
+        enum CONTROLPLANE;
+        enum BOTH;
+      }
+      description "It indicates the type of ECM connection (i.e., user plane 
+        connection via UPF, control plane connection via PCF or NEF.";
+    }
+    
+    list _5GCNfConnEcmInfoList {
+      description "The attribute specifies a list of 5GCNfConnInfo which is 
+        defined as a datatype (see clause 5.3.120). It is used to 
+        provide 5GC NFs, such as PCF, NEF, SCEF, that are connected EDN NFs, 
+        such as EAS, EES, and ECS.";
+      config false;
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses _5GCNfConnEcmInfoGrp;
+    }
+    
+    list uPFConnectionInfo {
+      description "The attribute is defined as a datatype UPFConnInfo 
+        (see clause 5.3.121). It is used to provide the UPF IP address and 
+        UPF DN. ";
+      config false;
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses UPFConnInfoGrp;
+    }    
+  }
+
+  grouping EcmConnectionInfoSubtree {
+    description "Subtree containing EcmConnectionInfo.";
+    
+    list EcmConnectionInfo {
+      description "This IOC contains attributes to enable ECSP management 
+        system to connect EDN NFs (i.e., EAS, ECS, and EES) to 5GC NFs 
+        (i.e. UPF, PCF, NEF, SCEF) (See clause 7.4.3 and 7.4.4 in TS 28.538). ";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EcmConnectionInfoGrp;
+      }
+    }
+  }
+}

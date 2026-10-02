@@ -1,0 +1,83 @@
+module _3gpp-nr-nrm-iabfunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-iabfunction";
+  prefix "iab3gpp";
+
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the IAB function defined in 3GPP TS 28.541.
+  Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+  TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541; 3GPP TS 28.314; 3GPP TS 28.315; 3GPP TS 33.310,
+    IETF RFC 9811";
+
+  revision 2025-11-01 { reference "CR-1657" ; }
+  revision 2025-10-01 { reference "CR-1616" ; }
+  revision 2025-08-15 { reference "CR-1598"; }
+
+  
+
+  grouping IABGrp {
+    description "IAB-node architecture is specified in TS 38.401. This IOC
+     defines the configuration information for the IAB management, it is name 
+     contained by SubNetwork or ManagedElement";
+
+    list mnrOamIPConfig  {
+      description "It is IP configutation for OAM connectivity used 
+      by a mobile NR node (e.g., IAB-node, MWAB-node)
+      to establish connection with management system as specified
+       in TS 28.314[x] clause 6.1.2";
+
+      key id;
+      leaf id { type uint32; }
+      uses types5g3gpp:MnrOamIPConfigGrp ;
+    }
+
+    list currentLocation {
+      description "This parameter specifies the current location
+        of mobile NR node (e.g., IAB-node, MWAB-node).";
+
+      key id;
+      leaf id { type uint32; }
+      uses types5g3gpp:LocationInfoGrp;
+    }
+  }
+  
+  grouping IABSubTree {
+    description "Contains classes that manage IAB function management";
+
+    list IAB {
+      description "IAB-node architecture is specified in TS 38.401. 
+      This IOC defines the configuration information for the IAB management";
+
+      key id;
+      uses top3gpp:Top_Grp ;
+      container attributes {
+        uses IABGrp ;
+      }
+    }
+  }
+
+  feature IABUnderManagedElement {
+    description "The IAB shall be available under ManagedElement";
+  }
+
+  augment /me3gpp:ManagedElement {
+    if-feature IABUnderManagedElement;
+    uses IABSubTree;
+  }
+  
+  feature IABUnderSubNetwork {
+    description "The IAB shall be available under SubNetwork";
+  }
+
+  augment /subnet3gpp:SubNetwork {
+    if-feature IABUnderSubNetwork;
+    uses IABSubTree;
+  } 
+}

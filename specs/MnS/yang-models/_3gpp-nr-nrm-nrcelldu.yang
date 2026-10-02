@@ -1,0 +1,453 @@
+module _3gpp-nr-nrm-nrcelldu {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-nrcelldu";
+  prefix "nrcelldu3gpp";
+
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-nr-nrm-gnbdufunction { prefix gnbdu3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import ietf-yang-types { prefix yang; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the NRCellDU Information Object
+    Class (IOC) that is part of the NR Network Resource Model (NRM).
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2026-05-19 { reference CR-1702 ; }
+  revision 2025-11-07 { reference "CR-1640 CR-1643"; }
+  revision 2025-07-25 { reference CR-1558 ; }
+  revision 2025-02-07 { reference CR-1442; }
+  revision 2024-05-25 { reference CR-1412 ; }
+  revision 2024-05-24 { reference CR-1273 ; }
+  revision 2023-09-18 { reference CR-1043 ; }
+  revision 2022-07-28 { reference "CR-0770"; }
+  revision 2022-06-29 { reference CR-0756 ; }
+  revision 2021-10-28 { reference CR-0607 ; }
+  revision 2021-01-25 { reference CR-0454 ; }
+  revision 2020-11-25 { reference CR-0386 ; }
+  revision 2020-11-05 { reference CR-0412 ; }
+  revision 2020-10-02 { reference CR-0384 ; }
+  revision 2020-05-08 { reference S5-203316 ; }
+  revision 2020-02-14 { reference S5-20XXXX ; }
+  revision 2019-10-28 { reference S5-193518 ; }
+  revision 2019-09-03 { reference "Initial revision"; }
+
+  feature DRACHOptimizationFunction {
+    description "Class representing D-SON function of RACH optimization
+      feature";
+  }
+
+  feature CPCIConfigurationFunction {
+    description "Class representing Centralized SON function of
+      PCI configuration feature";
+  }
+
+  grouping NRCellDUGrp {
+    description "Represents the NRCellDU IOC.";
+    reference "3GPP TS 28.541";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    leaf cellLocalId {
+      description "Identifies an NR cell of a gNB. Together with the
+        corresponding gNB identifier in forms the NR Cell Identity (NCI).";
+      reference "NCI in 3GPP TS 38.300";
+      mandatory true;
+      type int32 { range "0..16383"; }
+    }
+
+    leaf operationalState  {
+      description "Operational state of the NRCellDU instance. Indicates
+        whether the resource is installed and partially or fully operable
+        (ENABLED) or the resource is not installed or not operable
+        (DISABLED).";
+      config false;
+      type types3gpp:OperationalState;
+    }
+
+    leaf administrativeState  {
+      description "Administrative state of the NRCellDU. Indicates the
+        permission to use or prohibition against using the cell, imposed
+        through the OAM services.";
+      type types3gpp:AdministrativeState;
+      default LOCKED;
+    }
+
+    leaf cellState  {
+      description "Cell state of the NRCellDU instance. Indicates whether the
+        cell is not currently in use (IDLE), or currently in use but not
+        configured to carry traffic (INACTIVE), or currently in use and is
+        configured to carry traffic (ACTIVE).";
+      config false;
+      type types3gpp:CellState;
+    }
+
+    list pLMNInfoList {
+      description "The PLMNInfoList is a list of PLMNInfo data type. It
+        defines which PLMNs that can be served by the NR cell, and which
+        S-NSSAIs that can be supported by the NR cell for corresponding PLMN
+        in case of network slicing feature is supported. The plMNId of the
+        first entry of the list is the PLMNId used to construct the nCGI for
+        the NR cell.";
+      key "mcc mnc sd sst";
+      min-elements 1;
+      ordered-by user;
+      uses types5g3gpp:PLMNInfo;
+    }
+
+    list nPNIdentityList {
+      key idx ;
+      min-elements 1;
+      ordered-by user;
+      description "It defines which NPNs that can be served by the NR cell,
+        and which CAG IDs or NIDs can be supported by the NR cell for
+        corresponding PNI-NPN or SNPN in case of the cell is NPN-only cell.";
+      reference "3GPP TS 38.331";
+      leaf idx { type uint32 ; }
+      uses types3gpp:NpnIdGrp;
+    }
+
+    leaf nRPCI {
+      description "The Physical Cell Identity (PCI) of the NR cell.";
+      reference "3GPP TS 36.211";
+      mandatory true;
+      type int32 { range "0..1007"; }
+    }
+
+    leaf nRTAC {
+      description "The common 5GS Tracking Area Code for the PLMNs.";
+      reference "3GPP TS 23.003, 3GPP TS 38.473";
+      type types5g3gpp:NRTAC;
+    }
+
+    leaf-list nTNTAClist {
+      type string;
+      min-elements 1;
+      max-elements 12;
+      description "It is the list of Tracking Area Codes which is only present
+        in an NTN cell. If this field is present, network does not configure
+        trackingAreaCode, see TS 38.331).";
+    }
+
+    leaf arfcnDL {
+      description "NR Absolute Radio Frequency Channel Number (NR-ARFCN) for
+        downlink.";
+      reference "3GPP TS 38.104";
+      mandatory true;
+      type int32;
+    }
+
+    leaf arfcnUL {
+      description "NR Absolute Radio Frequency Channel Number (NR-ARFCN) for
+        uplink.";
+      reference "3GPP TS 38.104";
+      type int32;
+    }
+
+    leaf arfcnSUL {
+      description "NR Absolute Radio Frequency Channel Number (NR-ARFCN) for
+        supplementary uplink.";
+      reference "3GPP TS 38.104";
+      type int32;
+    }
+
+    leaf bSChannelBwDL {
+      description "Base station channel bandwidth for downlink.";
+      reference "3GPP TS 38.104";
+      type int32;
+      units MHz;
+    }
+
+    leaf rimRSMonitoringStartTime {
+      type yang:date-and-time ;
+      mandatory true;
+      description "Configures the UTC time when the gNB attempts to start
+        RIM-RS monitoring.";
+     }
+
+    leaf rimRSMonitoringStopTime {
+      type yang:date-and-time ;
+      mandatory true;
+      description "Configures the UTC time when the gNB stops RIM-RS
+        monitoring.";
+     }
+
+    leaf rimRSMonitoringWindowDuration {
+      type uint32 {
+        range 1..16384 ;
+      }
+      mandatory true;
+      description "Configures a duration of the monitoring window  in which
+        gNB monitors the RIM-RS, in unit of P_t, where P_t is the RIM-RS
+        transmission periodicity in units of uplink-downlink switching period (
+        see 38.211 subclause 7.4.1.6).
+
+          This field is configured together with rimRSMonitoringInterval,
+          rimRSMonitoringWindowStartingOffset, rimRSMonitoringOccasionInterval
+          and rimRSMonitoringOccasionStartingOffset.
+          The duration of the monitoring window is expected to be larger than
+          or equal to M*P_t, where M is the interval between adjacent monitoring
+          occasions within the monitoring window
+          (configured by rimRSMonitoringInterval).
+          The absolute duration of the monitoring window is not expected to be
+          larger than the periodicity of the monitoring window (configured by
+          rimRSMonitoringWindowPeriodicity).
+
+          See 3GPP TS 28.541 attribute descrition rimRSMonitoringWindowDuration
+          for the exact math formulas.
+
+          Only the earliest N_T consecutive detection durations in each RIM-RS
+          transmission periodicity (P_t) in the monitoring window are taken as
+          valid time for monitoring potential interference, and they are
+          consecutively monitored in the monitoring window, while the residual
+          part of each RIM-RS transmission periodicity is not used for
+          discovering potential interference, where, a consecutive detection
+          duration spans P1*R1 (if only P1 is configured) or ((P1+P2))/2*R1 (
+          if both P1 and P2 are configured), where,
+            R1 is the number of consecutive uplink-downlinkswitching periods
+              for RS-1 (configured by nrofConsecutiveRIMRS1),
+            P1 is the first uplink-downlinkswitching period (configured by
+              dlULSwitchingPeriod1),
+            P2 is the second uplink-downlink switching period (configured by
+              dlULSwitchingPeriod2), and
+            N_T=
+            ((N_setID # RIM,1)/(N_f # RI N_s # RIM,1)
+                if enableEnoughNotEnoughIndication is 'disable'
+
+            (2N_setID # RIM,1)/(N_f # RIM N_s # RIM,1)
+                if enableEnoughNotEnoughIndication is 'enable'
+
+          N_setID # 'RIM,1'  is the total number of set IDs for RIM RS-1
+            (configured by totalnrofSetIdofRS1),
+          N_f # RIM  is the number of candidate frequency resources in the whole
+            network (configured by nrofGlobalRIMRSFrequencyCandidates), and
+          N_s # 'RIM,1'  is the number of candidate sequences assigned for
+            RIM RS-1 (configured by nrofRIMRSSequenceCandidatesofRS1).";
+     }
+
+    leaf rimRSMonitoringWindowStartingOffset {
+      type uint8 {
+        range 0..23 ;
+      }
+      mandatory true;
+      units hours;
+      description "Configures the start offset of the first monitoring window
+        within one day, in unit of hours.";
+     }
+
+    leaf rimRSMonitoringWindowPeriodicity {
+      type uint8 {
+        range 1|2|3|4|6|8|12|24 ;
+      }
+      units hours;
+      mandatory true;
+      description "Configures the periodicity of the monitoring window, in
+        unit of hours";
+     }
+
+    leaf rimRSMonitoringOccasionInterval {
+      type uint32 {
+        range 1..max ;
+      }
+      mandatory true;
+      description "Configures the interval between adjacent monitoring
+        occasions (M) within the monitoring window, in unit of consecutive
+        detection duration.
+        M is expected to be prime to N_T, where N_T is given in above
+        attribute rimRSMonitoringWindowDuration.
+        allowedValues: 1,2..N_T-1";
+     }
+
+    leaf rimRSMonitoringOccasionStartingOffset {
+      type  uint32 ;
+      mandatory true;
+      description "Configures the start offset of the first monitoring occasions
+        within the monitoring window (S_M), in unit of consecutive detection
+        duration.
+        gNB starts monitoring potential interference from the S_M-th consecutive
+        detection duration in the first complete RIM-RS transmission
+        periodicity (P_t) within the monitoring window.
+
+        allowedValues: 0,1,2..M-1
+
+        where M is the the interval between adjacent monitoring occasions
+        within the monitoring window
+        (configured by rimRSMonitoringOccasionInterval)";
+     }
+
+    leaf ssbFrequency {
+      description "Indicates cell defining SSB frequency domain position.
+        Frequency (in terms of NR-ARFCN) of the cell defining SSB transmission.
+        The frequency identifies the position of resource element RE=#0
+        (subcarrier #0) of resource block RB#10 of the SS block. The frequency
+        must be positioned on the NR global frequency raster, as defined in
+        3GPP TS 38.101-1, and within bSChannelBwDL.";
+      mandatory true;
+      type int32 { range "0..3279165"; }
+    }
+
+    leaf ssbPeriodicity {
+      description "Indicates cell defined SSB periodicity. The SSB periodicity
+      is used for the rate matching purpose.";
+      mandatory true;
+      type int32 { range "5 | 10 | 20 | 40 | 80 | 160"; }
+      units "subframes (ms)";
+    }
+
+    leaf ssbSubCarrierSpacing {
+      description "Subcarrier spacing of SSB. Only the values 15 kHz or 30 kHz
+        (< 6 GHz), 120 kHz or 240 kHz (> 6 GHz) are applicable.";
+      reference "3GPP TS 38.211";
+      mandatory true;
+      type int32 { range "15 | 30 | 120 | 240"; }
+      units kHz;
+    }
+
+    leaf ssbOffset {
+      description "Indicates cell defining SSB time domain position. Defined
+        as the offset of the measurement window, in which to receive SS/PBCH
+        blocks, where allowed values depend on the ssbPeriodicity
+        (ssbOffset < ssbPeriodicity).";
+      mandatory true;
+      type int32 { range "0..159"; }
+      units "subframes (ms)";
+    }
+
+    leaf ssbDuration {
+      description "Duration of the measurement window in which to receive
+        SS/PBCH blocks.";
+      reference "3GPP TS 38.213";
+      mandatory true;
+      type int32 { range "1..5"; }
+      units "subframes (ms)";
+    }
+
+    leaf bSChannelBwUL {
+      description "Base station channel bandwidth for uplink.";
+      reference "3GPP TS 38.104";
+      type int32;
+      units MHz;
+    }
+
+    leaf bSChannelBwSUL {
+      description "Base station channel bandwidth for supplementary uplink.";
+      reference "3GPP TS 38.104";
+      type int32;
+      units MHz;
+    }
+
+    leaf-list uECellBarredAccess {
+      type enumeration {
+        enum REDCAP_1RX;
+        enum REDCAP_2RX;
+        enum EREDCAP_1RX;
+        enum EREDCAP_2RX;
+      }
+      description "Represents whether the NR Cell bars access to a UE type 
+        (e.g. RedCap UE).
+        If present, a value indicates the UE type is not allowed access to 
+        the cell.
+        allowedValues: 
+        - REDCAP_1RX and REDCAP_2RX for RedCap UE(s),
+        - EREDCAP_1RX and EREDCAP_2RX for eRedCap UE(s).";
+      reference "TS 38.331";
+    }
+    
+    leaf-list nRSectorCarrierRef {
+      description "This attribute contains the DN of the referenced 
+        NRSectorCarrier.";
+      type types3gpp:DistinguishedName;
+    }
+
+    leaf-list bWPRef {
+      description "Reference to corresponding BWP instance.";
+      type types3gpp:DistinguishedName;
+    }
+
+    leaf-list bWPSetRef {
+      description "Reference to corresponding BWPSet instance.";
+      type types3gpp:DistinguishedName;
+    }
+
+    leaf nRFrequencyRef {
+      description "Reference to corresponding NRFrequency instance.";
+      type types3gpp:DistinguishedName;
+    }
+
+    leaf victimSetRef {
+      type types3gpp:DistinguishedName;
+      mandatory true;
+      description "DN of a victim Set (RimRSSet)
+        Implemented if RIM feature is supported";
+    }
+
+    leaf aggressorSetRef {
+      type types3gpp:DistinguishedName;
+      mandatory true;
+      description "DN of an aggressor Set (RimRSSet)";
+    }
+
+    leaf redCapAccessCriteriaRef {
+      type types3gpp:DistinguishedName;
+      mandatory true;
+      description "This attribute contains the DN of the redCapAccessCriteria
+        MOI ";
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gnbdu3gpp:GNBDUFunction" {
+
+    list NRCellDU {
+      description "This IOC represents the part of NR cell information that
+        describes the specific resources instances.
+
+        An NR cell transmits SS/PBCH block and always requires downlink
+        transmission at a certain carrier frequency with a certain channel
+        bandwidth. Transmission may be performed from multiple sector-carriers
+        using different transmission points, and these may be configured with
+        different carrier frequencies and channel bandwidths, as long as they
+        are aligned to the cell's downlink resource grids as defined in
+        subclause 4.4 in TS 38.211. The values of arfcnDL and bSChannelBwDL
+        attributes define the resource grids which each sector-carrier needs to
+        be aligned to. See subclauses 5.3 and 5.4.2 of TS 38.104 for definitions
+        of BS channel bandwidth and NR-ARFCN, respectively.
+
+        An NR cell requires an uplink in order to provide initial access. In
+        case of TDD, the values of arfcnUL and bSChannelBwUL have to always be
+        set to the same values as for the corresponding DL attributes. For both
+        FDD and TDD, the arfcnUL and bSChannelBwUL define uplink resource grids
+        to which each sector-carrier needs to align to.
+
+        An NR cell can in addition be configured with a supplementary uplink,
+        which has its own arfcnSUL and bSChannelBwSUL, which define resource
+        grids for supplementary uplink sector-carriers.
+
+        Each of downlink, uplink and supplementary uplink (if configured) need
+        an initial bandwidth part (BWP), which defines resources to be used by
+        UEs during and immediately after initial access. Additional BWPs can be
+        either configured or calculated by gNB internally and be applied to UEs
+        dynamically by gNB based on e.g. UE capability and bandwidth need of
+        each UE.
+
+        BWPs are configured individually (bWPRef) or via sets (bWPSetRef).
+
+        An NTN NR cell can be configured with list of Tracking Areas to support
+        broadcast multiple Tracking Area Codes per PLMN ID. Given that the
+        related TAIs broadcast may change with a foot print moving on earth,
+        which is predictable, time windows per TAList can be derived and
+        configured for NTN cell. These time windows define the specific periods
+        during which the satellite coverage will be available for the location.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses NRCellDUGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

@@ -1,0 +1,126 @@
+module _3gpp-nr-nrm-drachoptimizationfunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-drachoptimizationfunction";
+  prefix "dracho3gpp";
+
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-nr-nrm-nrcelldu { prefix nrcelldu3gpp; }
+  import _3gpp-nr-nrm-gnbdufunction { prefix gnbdu3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the DRACHOptimizationFunction 
+    Information Object Class (IOC) that is part of the NR Network Resource 
+    Model (NRM).
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2025-03-25 { reference CR-1504 ; }
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2021-08-05 { reference S5-214053/CR-0518; }
+  revision 2021-01-25 { reference CR-0454 ; }
+  revision 2020-10-02 { reference "CR-0384, CR-0382" ; }
+  revision 2020-05-08 { reference S5-203316; }
+
+  typedef TargetProbabilityT { 
+    type enumeration {
+      enum 25;
+      enum 50;
+      enum 75;
+      enum 90;
+    }
+  }
+  typedef NumberofpreamblessentT { 
+    type uint32 { 
+      range "1..200"; 
+    }
+  }
+  typedef AccessdelayT { 
+    type uint32 { 
+      range "10..560"; 
+    }
+  }
+  grouping NumPreableAccessDelayGrp {
+    description "Represents the target Access Probability (APn) for the RACH
+      optimization function.";
+
+    leaf targetProbability {
+      description "This attribute determines the target Probability.";
+      mandatory true;
+      type TargetProbabilityT;
+    }
+    leaf numberofpreamblessent {
+      description "This attribute indicates the number of preambles sent 
+        used to configure a wanted distribution of RACH preambles in a 
+        vendor implemented DRACH optimisation function.
+        Note: The DRACH optimization function may configure preambleTransMax
+        as defined in TS 38.331 [54]. The allowed values for preambleTransMax
+        are 3, 4, 5, 6, 7, 8, 10, 20, 50, 100, 200 (see 38.331 [54], 
+        subclause 6.3.2).";
+      mandatory true;
+      type NumberofpreamblessentT;
+    }
+  }
+
+  grouping DRACHOptimizationFunctionGrp {
+    description "Represents the DRACHOptimizationFunction IOC.";
+
+    list ueAccProbilityDist {
+      description "This is a list of target Access Probability (APn) for the
+        RACH optimization function.";
+      key "targetProbability numberofpreamblessent";
+      uses NumPreableAccessDelayGrp;
+    }
+    list ueAccDelayProbilityDist {
+      description "This is a list of target Access Delay probability (ADP) 
+        for the RACH optimization function.";
+      key "targetProbability numberofpreamblessent";
+      uses NumPreableAccessDelayGrp;
+    }
+    leaf drachOptimizationControl {
+      description "This attribute determines whether the RACH Optimization 
+        function is enabled or disabled.";
+      type boolean;
+    }
+  }
+
+  grouping DRACHOptimizationFunctionSubtree {
+    list DRACHOptimizationFunction {
+      description "This IOC represents the management capabilities of 
+        Centralized SON Energy Saving (ES) functions. This is provided for 
+        Energy Saving purposes.
+        
+        In the case where multiple CESManagement MOIs exist at different 
+        levels of the containment tree, the CESManagement MOI at the lower 
+        level overrides the CESManagement MOIs at higher level(s) of the 
+        same containment tree.";
+      reference "clause 6.2.2 in TS 28.310";
+      key id;   
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses DRACHOptimizationFunctionGrp;
+      }      
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gnbdu3gpp:GNBDUFunction/"+
+      "nrcelldu3gpp:NRCellDU" {
+    if-feature nrcelldu3gpp:DRACHOptimizationFunction;
+    uses DRACHOptimizationFunctionSubtree;
+  }
+  augment "/me3gpp:ManagedElement/gnbdu3gpp:GNBDUFunction" {
+    if-feature gnbdu3gpp:DRACHOptimizationFunction;
+    uses DRACHOptimizationFunctionSubtree;
+  }
+  augment "/me3gpp:ManagedElement" {
+    if-feature me3gpp:DRACHOptimizationFunction;
+    uses DRACHOptimizationFunctionSubtree;
+  }
+  augment "/subnet3gpp:SubNetwork" {
+    if-feature nrcelldu3gpp:DRACHOptimizationFunction;
+    uses DRACHOptimizationFunctionSubtree;
+  }
+}

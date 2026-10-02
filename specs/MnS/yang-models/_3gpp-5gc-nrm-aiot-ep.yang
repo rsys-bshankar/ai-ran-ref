@@ -1,0 +1,243 @@
+module _3gpp-5gc-nrm-aiot-ep {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-5gc-nrm-aiot-ep";
+  prefix "aiotep3gpp";
+
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-ep-rp { prefix eprp3gpp; }
+  import _3gpp-5gc-nrm-amffunction { prefix amf3gpp; }
+  import _3gpp-5gc-nrm-nrffunction { prefix nrf3gpp; }
+  import _3gpp-5gc-nrm-neffunction { prefix nef3gpp; }
+  import _3gpp-5gc-nrm-aiot { prefix aiot3gpp; }
+  
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines AIOT related endpoint Classes (IOCs).
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2025-11-01 { reference CR-1640; }
+
+  grouping EP_AIOT2Grp {
+    description "Represents the EP_AIOT2 IOC.";
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_AIOT3Grp {
+    description "Represents the EP_AIOT3 IOC.";
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_AIOT4Grp {
+    description "Represents the EP_AIOT4 IOC.";
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_AIOT5Grp {
+    description "Represents the EP_AIOT5 IOC.";
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_AIOT6Grp {
+    description "Represents the EP_AIOT6 IOC.";
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_AIOT7Grp {
+    description "Represents the EP_AIOT7 IOC.";
+    uses eprp3gpp:EP_Common;
+  }
+  
+  grouping EP_AIOT8Grp {
+    description "Represents the EP_AIOT8 IOC.";
+    uses eprp3gpp:EP_Common;
+  }
+
+  feature EP_AIOT2UnderAMFFunction {
+    description "EP_AIOT2 shall be contained under AMFFunction.";
+  }  
+ 
+  augment /me3gpp:ManagedElement/amf3gpp:AMFFunction {
+    if-feature EP_AIOT2UnderAMFFunction;
+    list EP_AIOT2 {
+      description "This IOC represents the AIOT2 interface between NG-RAN and 
+        AIOTF, which is defined in 3GPP TS 23.369.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EP_AIOT2Grp;
+      }
+    }
+  }  
+
+  feature EP_AIOT5UnderNRFFunction {
+    description "EP_AIOT5 shall be contained under NRFFunction.";
+  }  
+ 
+  augment /me3gpp:ManagedElement/nrf3gpp:NRFFunction {
+    if-feature EP_AIOT5UnderNRFFunction;
+    list EP_AIOT5 {
+      description "This IOC represents the AIOT5 interface between AIOTF and 
+        NRF, which is defined in 3GPP TS 23.369.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EP_AIOT5Grp;
+      }
+    }
+  }  
+
+  feature EP_AIOT4UnderNEFFunction {
+    description "EP_AIOT4 shall be contained under NEFFunction.";
+  }  
+ 
+  feature EP_AIOT8UnderNEFFunction {
+    description "EP_AIOT8 shall be contained under NEFFunction.";
+  }  
+ 
+  augment /me3gpp:ManagedElement/nef3gpp:NEFFunction {
+    if-feature EP_AIOT4UnderNEFFunction;
+    list EP_AIOT4 {
+      description "This IOC represents the AIOT4 interface between AIOTF and 
+        NEF, which is defined in 3GPP TS 23.369.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EP_AIOT4Grp;
+      }
+    }
+
+    if-feature EP_AIOT8UnderNEFFunction;
+    list EP_AIOT8 {
+      description "This IOC represents the AIOT8 interface between NEF and ADM, 
+        which is defined in 3GPP TS 23.369.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EP_AIOT8Grp;
+      }
+    }
+}  
+
+  feature EP_AIOT3UnderAIOTFFunction {
+    description "EP_AIOT3 shall be contained under AIOTFFunction.";
+  }  
+ 
+  feature EP_AIOT4UnderAIOTFFunction {
+    description "EP_AIOT4 shall be contained under AIOTFFunction.";
+  }  
+ 
+  feature EP_AIOT5UnderAIOTFFunction {
+    description "EP_AIOT5 shall be contained under AIOTFFunction.";
+  }  
+ 
+  feature EP_AIOT6UnderAIOTFFunction {
+    description "EP_AIOT6 shall be contained under AIOTFFunction.";
+  }  
+ 
+  augment /me3gpp:ManagedElement/aiot3gpp:AIOTFFunction {
+    if-feature EP_AIOT3UnderAIOTFFunction;
+    list EP_AIOT3 {
+      description "This IOC represents the AIOT3 interface between AMF and 
+        AIOTF, which is defined in 3GPP TS 23.369.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EP_AIOT3Grp;
+      }
+    }
+     
+    if-feature EP_AIOT4UnderAIOTFFunction;
+    list EP_AIOT4 {
+      description "This IOC represents the AIOT4 interface between AIOTF and 
+        NEF, which is defined in 3GPP TS 23.369.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EP_AIOT4Grp;
+      }
+    }
+     
+    if-feature EP_AIOT5UnderAIOTFFunction;
+    list EP_AIOT5 {
+      description "This IOC represents the AIOT5 interface between AIOTF and 
+        NRF, which is defined in 3GPP TS 23.369.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EP_AIOT5Grp;
+      }
+    }
+     
+    if-feature EP_AIOT6UnderAIOTFFunction;
+    list EP_AIOT6 {
+      description "This IOC represents the AIOT6 interface between AIOTF and 
+        ADM, which is defined in 3GPP TS 23.369.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EP_AIOT6Grp;
+      }
+    }
+  }  
+
+  feature EP_AIOT6UnderADMFunction {
+    description "EP_AIOT6 shall be contained under ADMFunction.";
+  }  
+ 
+  feature EP_AIOT7UnderADMFunction {
+    description "EP_AIOT7 shall be contained under ADMFunction.";
+  }  
+ 
+  feature EP_AIOT8UnderADMFunction {
+    description "EP_AIOT8 shall be contained under ADMFunction.";
+  }  
+ 
+  augment /me3gpp:ManagedElement/aiot3gpp:ADMFunction {
+    if-feature EP_AIOT6UnderADMFunction;
+    list EP_AIOT6 {
+      description "This IOC represents the AIOT6 interface between AIOTF and 
+        ADM, which is defined in 3GPP TS 23.369.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EP_AIOT6Grp;
+      }
+    }
+    
+    if-feature EP_AIOT7UnderADMFunction;
+    list EP_AIOT7 {
+      description "This IOC represents the AIOT7 interface between UDR and ADM, 
+        which is defined in 3GPP TS 23.369.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EP_AIOT7Grp;
+      }
+    }
+    
+    if-feature EP_AIOT8UnderADMFunction;
+    list EP_AIOT8 {
+      description "This IOC represents the AIOT8 interface between NEF and ADM, 
+        which is defined in 3GPP TS 23.369.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EP_AIOT8Grp;
+      }
+    }
+  }  
+}

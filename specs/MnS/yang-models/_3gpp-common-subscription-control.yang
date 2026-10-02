@@ -1,0 +1,605 @@
+module _3gpp-common-subscription-control {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-common-subscription-control";
+  prefix "subscr3gpp";
+
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-yang-extensions { prefix yext3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import ietf-yang-types { prefix yang; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+
+  description "Defines IOCs for subscription, notification list and heartbeat 
+    control.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.623
+      Generic Network Resource Model (NRM)
+      Integration Reference Point (IRP);
+      Solution Set (SS) definitions
+      3GPP TS 28.623";
+
+  revision 2026-03-19 { reference "CR-0618 CR-0619"; } //common for r19, r20
+  revision 2025-11-07 { reference "CR-0551 CR-0586"; } 
+  revision 2025-08-13 { reference "CR-0551 CR-0561"; }
+  revision 2025-05-13 { reference "CR-0548"; }
+  revision 2025-03-24 { reference "CR-0516 0518"; }
+  revision 2024-05-18 { reference CR-0359; }
+  revision 2024-01-18 { reference "CR-0309 CR-0329"; }
+  revision 2023-09-18 { reference CR-0271; }
+  revision 2023-08-10 { reference "CR0257 CR0260"; }
+  revision 2022-10-20 { reference CR-0196;   }
+  revision 2021-01-16 { reference "CR-0120"; }
+  revision 2020-08-26 { reference "CR-0106"; }
+  revision 2019-11-29 { reference "S5-197648 S5-197647 S5-197829 S5-197828"; }
+
+  feature NotificationListUnderNtfSubscriptionControl {
+    description "The NotificationList shall be contained under 
+      NtfSubscriptionControl";
+  }  
+  
+  grouping NotificationEntryGrp {
+    description "NotificationEntry datatype";
+    
+    leaf notificationEntryId {
+      type string;
+      yext3gpp:inVariant;
+      description "Identifier of an individual notificationEntry; unique within 
+        a NotificationList MOI.
+
+        allowedValues: 
+        - If the NotificationList is contained under an NtfSubscriptionControl 
+        the value is the same as the notification's sequenceNo.
+        - If the NotificationList is contained under SubNetwork or 
+        ManagedElement the value is the DN of the NtfSubscriptionControl that 
+        created the notification followed by a single '*' asterisk character 
+        and the sequenceNo.
+        e.g. 'ManagedElement=me1,NtfSubscriptionControl=Fault1*12345'";
+    }
+    
+    leaf eventTime {
+      type yang:date-and-time;
+      yext3gpp:inVariant;
+      description "eventTime from the header of the notification";
+    }
+    
+    leaf notificationContent {
+      type string;
+      yext3gpp:inVariant;
+      description "The string representation of a notification as encoded in 
+        the HTTP body (excluding the HTTP headers and the optional VES header).";
+    }
+  }
+  
+  grouping NotificationListGrp {
+    description "Attributes of NotificationList IOC.";  
+   
+    leaf firstEventTime {
+      type yang:date-and-time;
+      config false;
+      yext3gpp:notNotifyable;
+      description "eventTime of first notification available. 
+        The attribute may be missing if and only if there are no notifications 
+        in the NotificationList.";
+    }
+    
+    leaf lastEventTime {
+      type yang:date-and-time;
+      config false;
+      yext3gpp:notNotifyable;
+      description "eventTime of latest notification available. 
+        The attribute may be missing if and only if there are no notifications 
+        in the NotificationList.";
+    }
+    
+    list notificationEntries {
+      yext3gpp:notNotifyable;
+      description "Representation of the individual notifications. 
+        The entries shall be ordered based on eventTime of the notification, 
+        newest first.";
+      config false;
+      key notificationEntryId;
+      uses NotificationEntryGrp;
+    }
+    
+    leaf-list notificationTypes {
+      type NotificationTypes;
+      description "List of notification types.";
+    }
+    
+    leaf notificationFilter {
+      type string;
+      description "Filter to be applied to candidate notifications identified 
+        by the notificationTypes attribute. Only notifications that pass the 
+        filter criteria are included. All other notifications are discarded.
+        The filter can be applied to any field of a notification.
+                
+        The format of the string shall confrm to a 
+        JSON expressions (Jex) 'JexConditionsExpr'";
+      reference "3GPP TS 32.161";
+    }
+  }
+  
+  grouping NotificationListSubtree {
+    description "Contains the NotificationList IOC";
+
+    list NotificationList {
+      description "The NotificationList IOC provides an interface for the 
+        consumer that allows retrieval of notifications that have not been 
+        successfully delivered to the consumer.
+        
+        A NotificationList MOI may be contained under the root ManagedElement 
+        or SubNetwork or under an NtfSubscriptionControl MOI.
+        
+        If the NotificationList MOI is contained under a ManagedElement or 
+        SubNetwork the MOI make available all notifications for all  
+        objectInstances under that ManagedElement or SubNetwork. 
+        The producer may limit the notification set to notifications for which 
+        at least one subscription is present. 
+        
+        If the MOI is contained under an NtfSubscriptionControl MOI it makes 
+        available notifications for that subscription. The producer may limit 
+        the number of NotificationList MOIs under an NtfSubscriptionControl 
+        MOI to one.
+        
+        A NotificationList may provide a subset of all applicable notifications. 
+        If the NotificationList MOI is contained under the ManagedElement 
+        or SubNetwork the attributes notificationTypes and  notificationFilter 
+        may be used to select the notifications to be included. If the MOI is 
+        contained under an NtfSubscriptionControl MOI the attributes 
+        notificationTypes and  notificationFilter in the NotificationList 
+        are not be available for read or write, as the similar attributes 
+        in the NtfSubscriptionControl MOI already select the notifications to 
+        be included.
+
+        The notificationTypes value identifies the notification types that 
+        are candidates to be provided. If the attribute is absent, notifications 
+        of all types are candidates to be provided.   
+
+        The notificationFilter attribute defines a filter that is applied to 
+        the set of candidate notifications. The filter is applicable to all 
+        parameters of a notification. Only candidate notifications that pass 
+        the filter criteria are made available. If the attribute is absent, 
+        all candidate notifications shall be made available.  
+
+        Only notifications that were prepared are included. If the producer 
+        failed to prepare a subscribed notification it will not be available 
+        in this MOI either.
+
+        The number of notifications avaialble has a limit, so old 
+        notifications may be removed from NotificationList by the producer, 
+        while also updating  the.firstEventTime atttribute.";
+        
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses NotificationListGrp;
+      }
+    }  
+  }
+  
+  grouping ScopeGrp {
+    description "This <<dataType>> allows to select data nodes in an object
+      tree whose root is identified by the so called base managed object
+      instance. The identification of the base object instance is not part of
+      this <<dataType>> and needs to be specified by other means. The base
+      managed object instance is typically a managed object instance in an
+      object tree.
+
+      The 'scopeType' and the 'scopeLevel' attributes allow to select managed
+      object instances. Attributes, attribute fields and attribute elements
+      cannot be selected.
+
+      The 'dataNodeSelector' attribute allows to select managed object
+      instances, attributes, attribute fields, attribute elements, or
+      attribute field elements. Its value contains a solution set specific
+      expression for specifying the data nodes to be selected.";
+    choice scope {
+      description "Describes which object instances are selected with
+        respect to a base object instance.";
+
+      case type-level {
+        leaf scopeType {
+          type enumeration {
+            enum BASE_ONLY;
+            enum BASE_ALL;
+            enum BASE_NTH_LEVEL;
+            enum BASE_SUBTREE;
+          }
+          mandatory true;
+          description "If the optional scopeLevel parameter is not supported
+            or absent, allowed values of scopeType are BASE_ONLY and BASE_ALL.
+
+            The value BASE_ONLY indicates only the base object is selected.
+            The value BASE_ALL indicates the base object and all of its
+            subordinate objects (incl. the leaf objects) are selected.
+
+            If the scopeLevel parameter is supported and present, allowed
+            values of scopeType are BASE_ALL, BASE_ONLY, BASE_NTH_LEVEL
+            and BASE_SUBTREE.
+
+            The value BASE_NTH_LEVEL indicates all objects on the level,
+            which is specified by the scopeLevel parameter, below the base
+            object are selected. The base object is at scopeLevel zero.
+            The value BASE_SUBTREE indicates the base object and all of its
+            subordinate objects down to and including the objects on the level,
+            which is specified by the scopeLevel parameter, are selected.
+            The base object is at scopeLevel zero.";
+        }
+
+        leaf scopeLevel {
+          when '../scopeType = "BASE_NTH_LEVEL" or ../scopeType = "BASE_SUBTREE"';
+          type uint16;
+          mandatory true;
+          description "See description of scopeType.";
+        }
+      }
+      case dataNodeSelector {
+        container dataNodeSelector {
+          description "The value shall follow the rules of RFC 8641
+            filter-spec";
+          reference "RFC 8641 section 5. and ietf-yang-push.yang";
+          choice dataNodeSelector {
+            anydata datastore-subtree-filter {
+              description "Subtree filter";
+              reference
+                "RFC 6241: Network Configuration Protocol (NETCONF),  Section 6";
+            }
+            leaf datastore-xpath-filter {
+              type yang:xpath1.0;
+              description "XPath-filter";
+              reference
+                "XML Path Language (XPath) Version 1.0
+                 (https://www.w3.org/TR/1999/REC-xpath-19991116)
+                 RFC 7950: The YANG 1.1 Data Modeling Language,
+                           Section 10";
+            }
+          }
+        }
+      }
+    }
+  }
+
+  typedef NotificationTypes {
+    description "An extensible enumeration of notification types";
+    type union {
+      type enumeration {
+        enum notifyMOICreation;
+        enum notifyMOIDeletion;
+        enum notifyMOIAttributeValueChanges;
+        enum notifyMOIChanges;
+        enum notifyEvent;
+        enum notifyNewAlarm;
+        enum notifyAckStateChanged;
+        enum notifyComments;
+        enum notifyCorrelatedNotificationChanged;
+        enum notifyChangedAlarmGeneral;
+        enum notifyClearedAlarm;
+        enum notifyAlarmListRebuilt;
+        enum notifyPotentialFaultyAlarmList;
+        enum notifyFileReady;
+        enum notifyFilePreparationError;
+        enum notifyThresholdCrossing ;
+        enum notifyPotentialFaultyDataNodeTree;
+        enum notifyDataNodeTreeSyncRecommended;
+      }
+      type string;
+    }
+  }
+
+  grouping NtfSubscriptionControlGrp {
+    description "Attributes of a specific notification subscription";
+
+    leaf notificationRecipientAddress {
+      type string;
+      mandatory true;
+    }
+
+    leaf-list notificationTypes {
+      type NotificationTypes;
+      description "Defines the types of notifications that are candidates
+        for being forwarded to the notification recipient.
+        If the notificationTypes attribute is not supported or not present
+        all candidate notifications types are forwarded to the notification;
+        discriminated by notificationFilter attribute.";
+    }
+
+    list scope {
+      description "Scopes (selects) data nodes in an object tree.";
+      key idx;
+      max-elements 1;
+      leaf idx { type uint32; }
+      uses ScopeGrp;
+    }
+
+    leaf notificationFilter {
+      type string;
+      description "Defines a filter to be applied to candidate notifications
+        identified by the notificationTypes attribute.
+        If notificationFilter is present, only notifications that pass the
+        filter criteria are forwarded to the notification recipient; all other
+        notifications are discarded.
+        The filter can be applied to any field of a notification.
+
+        The format of the string shall confrm to a
+        JSON expressions (Jex) 'JexConditionsExpr'";
+      reference "3GPP TS 32.161";
+    }
+
+    leaf lastSequenceNo {
+      type uint64;
+      config false;
+      mandatory true;
+      yext3gpp:notNotifyable;
+      description "The sequence number of the last notification that was sent
+        by a 'NtfSubscriptionControl' instance.";
+    }
+
+    leaf operationalState {
+      type types3gpp:OperationalState;
+      config false;
+      mandatory true;
+      description "Operational state of manged object instance.
+        The operational state describes if an object instance is operable
+        ('ENABLED') or inoperable ('DISABLED').
+        This state is set by the object instance or the MnS producer and
+        is hence READ-ONLY.";
+    }
+
+    leaf-list availabilityStatus {
+      type types3gpp:AvailabilityStatus;
+      config false;
+      description "The availability status provides additional information
+        about the operational state";
+    }
+  }
+
+  grouping HeartbeatControlGrp {
+   description "Attributes of HeartbeatControl.";
+
+    leaf heartbeatNtfPeriod {
+      type uint32;
+      mandatory true;
+      units seconds;
+      description "Specifies the periodicity of heartbeat notification emission.
+        The value of zero has the special meaning of stopping the heartbeat
+        notification emission.";
+    }
+
+    leaf triggerHeartbeatNtf {
+      type boolean;
+      default false;
+      description "Setting this attribute to 'true' triggers an immediate
+        additional heartbeat notification emission. Setting the value to
+        'false' has no observable result.
+
+        The periodicity of notifyHeartbeat emission is not changed.
+
+        After triggering the heartbeat the system SHALL set the value
+        back to false.";
+      yext3gpp:notNotifyable;
+    }
+  }
+
+  grouping SubscriptionControlSubtree {
+    description "Contains notification subscription related classes.
+      Should be used in all classes (or classes inheriting from)
+      - SubNetwork
+      - ManagedElement
+
+      If some YAM wants to augment these classes/list/groupings they must
+      augment all user classes!";
+
+    list NtfSubscriptionControl {
+      description "NtfSubscriptionControl represents a notification
+        subscription of a notification recipient.
+
+        The scope attribute is used to select managed object instances included
+        in the subscription. The base object instance of the scope is the
+        object instance name-containing the NtfSubscriptionControl instance.
+        When the scope attribute is absent, all objects below and including
+        the base object are scoped. The notifications related to the selected
+        managed object instances are candidates to be sent to the address
+        specified by the notificationRecipientAddress attribute.
+
+        The notificationTypes attribute and notificationFilter attribute
+        allow MnS consumers to control which candidate notifications are
+        sent to the notificationRecipientAddress.
+
+        If the notificationTypes attribute is present, its value identifies
+        the notification types that are candidates to be sent to the
+        notificationRecipientAddress. If the notificationTypes attribute is
+        absent, notifications of all types are candidates to be sent to
+        notificationRecipientAddress. Notification types supported in the
+        NtfSubscriptionControl.notificationTypes attribute are the ones
+        listed in the attribute SupportedNotifications.notificationTypes.
+
+        If supported, the notificationFilter attribute defines a filter that
+        is applied to the set of candidate notifications. The filter is
+        applicable to all parameters of a notification. Only candidate
+        notifications that pass the filter criteria are sent to the
+        notificationRecipientAddress. If the notificationFilter attribute is
+        absent, all candidate notificatios are sent to the
+        notificationRecipientAddress.
+
+        To receive notifications, a MnS consumer has to create a
+        NtfSubscriptionControl instance on the MnS producer. A MnS consumer
+        can create a subscription for another MnS consumer since it is not
+        required the notificationRecipientAddress be his own address.
+
+        When a MnS consumer does not wish to receive notifications any more
+        the MnS consumer shall delete the corresponding NtfSubscriptionControl
+        instance.
+
+        When a subscription is created and the notification scope inludes
+        the created subscription object and the subscribed notification types
+        include notifications reporting object creation (notifyMOICreation
+        or notifyMOIChanges), the first notification sent related to the
+        new subscription shall report the creation of the
+        NtfSubscriptionControl instance. Likewise, when a subscription is
+        deleted and the notification scope includes the deleted subscription
+        object and the subscribed notification types include notifications
+        reporting object deletion (notifyMOIDeletion or notifyMOIChanges),
+        the last notification sent related to the subscription shall report
+        the deletion of the NtfSubscriptionControl instance.
+
+        If multiple NtfSubscriptionControl instances are configured to send
+        the same notification to the same notificationRecipientAddress, then
+        a separate notification message shall be sent for each such
+        NtfSubscriptionControl instance.
+
+        A 'NtfSubscriptionControl' class optionally supports adding a sequence
+        number parameter to the notification header. For each  notification
+        sent from a 'NtfSubscriptionControl' instance to the configured
+        notification recipient, the sequence number is increased by one.
+        This allows the notification recipient to detect notifications lost or
+        reordered in transit. The sequence number sent last is reflected in
+        the 'lastSequenceNo' attribute. This allows the MnS consumer to check
+        if he missed notifications in situations where he did not receive
+        any notification for some time.
+
+        The 'operationalState' attribute represents the operability of the
+        subscription. The 'availabilityStatus' further qualifies the
+        opertational state. Both attributes are set by the MnS producer.
+
+        If the 'operationalState' is set to 'ENABLED' and 'availabilityStatus'
+        has no value the subscription process is fully operational and
+        notifications are forwarded to the subscribed consumer.
+
+        If the 'operationalState' is set to 'ENABLED' and 'availabilityStatus'
+        is set to 'DEGRADED' the subscription process is degraded. There is
+        no guarantee that all notifications, that should be forwarded to the
+        notification recipient, are forwarded.
+
+        If the 'operationalState' is set to 'DISABLED' and 'availabilityStatus'
+        is set to 'FAILED' the subscription process is not operational, and
+        no notifications are sent to the notification recipient.
+
+        If the 'operationalState' is set to 'DISABLED' and 'availabilityStatus'
+        is set to 'DEPENDENCY' the subscription process itself has no problems
+        but some other process on which it depends such as downstream
+        processes in the event channel that feeds events into the subscription
+        process. As a result, events are not delivered to the subscription
+        process and no notifications are sent to the notification recipient.
+
+        When the subscription process is disabled or degraded and becomes
+        fully operational again, the MnS producer sends- the related data node
+        tree change notifications to subscribed MnS consumers. The MnS consumer
+        may use the reception of these notifications as a trigger to synchronize
+        his data node tree with the data node tree on the MnS producer.
+        However, the state change notifications contain no information about
+        which part of the data node tree should be synchronized. For this
+        purpose the 'notifyDataNodeTreeSyncRecommended' (TS 28.532 [27]) and
+        'alarmListRebuilt' (TS 28.111 [58]) notifications are provided.
+
+        Creation and deletion of NtfSubscriptionControl instances by MnS
+        consumers is optional; when not supported, the NtfSubscriptionControl
+        instances may be created and deleted by the system or be
+        pre-installed.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses NtfSubscriptionControlGrp;
+      }
+
+      list HeartbeatControl {
+        description "MnS consumers (i.e. notification recipients) use heartbeat
+          notifications to monitor the communication channels between themselves
+          and MnS producers configured to emit notifications.
+
+          A HeartbeatControl instance allows controlling the emission of
+          heartbeat notifications by MnS producers. The recipients of heartbeat
+          notifications are specified by the notificationRecipientAddress
+          attribute of the NtfSubscriptionControl instance containing the
+          HeartbeatControl instance.
+
+          Note that the MnS consumer managing the HeartbeatControl instance
+          and the MnS consumer receiving the heartbeat notifications may not be
+          the same.
+
+          As a pre-condition for the emission of heartbeat notifications, a
+          HeartbeatControl instance needs to be created. Creation of an instance
+          with an initial non-zero value of the heartbeatNtfPeriod attribute
+          triggers an immediate heartbeat notification emission. Creation of an
+          instance with an initial zero value of the heartbeatPeriod attribute
+          does not trigger an emission of a heartbeat notification. Deletion of
+          an instance does not trigger an emission of a heartbeat notification.
+
+          Once the instance is created, heartbeat notifications are emitted with
+          a periodicity defined by the value of the heartbeatNtfPeriod
+          attribute. No heartbeat notifications are emitted if the value is
+          equal to zero. Setting a zero value to a non zero value, or a non zero
+          value to a different non zero value, triggers an immediate heartbeat
+          notification, that is the base for the new heartbeat period. Setting a
+          non zero value to a zero value stops emitting heartbeats immediately;
+          no final heartbeat notification is sent.
+
+          Creation and deletion of HeartbeatControl instances by MnS Consumers
+          is optional; when not supported, the HeartbeatControl instances may be
+          created and deleted by the system or be pre-installed.
+
+          Whether and when to emit heartbeat notifications is controlled by
+          HeartbeatControl. Subscription for heartbeat is not supported via the
+          NtfSubscriptionControl.";
+
+        max-elements 1;
+        key id;
+        uses top3gpp:Top_Grp;
+
+        container attributes {
+          uses HeartbeatControlGrp;
+        }
+      }
+      
+      uses NotificationListSubtree {
+        if-feature NotificationListUnderNtfSubscriptionControl;
+      } 
+    }
+  }
+
+  grouping SupportedNotificationsGrp {
+    description "Attributes of SupportedNotifications.";
+
+    leaf-list notificationTypes {
+      type NotificationTypes;
+      config false;
+      description "List of notification types supported by the MnS producer";
+    }
+
+    leaf-list notificationProtocols {
+      type enumeration {
+        enum HTTP;
+        enum HTTP_VES_ENCAPS;
+      }
+      config false;
+      min-elements 1;
+      description "List of protocols supported for notifications.";
+      reference "3GPP TS 28.532";
+    }
+  }
+
+  grouping SupportedNotificationsSubtree {
+    description "Contains SupportedNotifications.";
+
+    list SupportedNotifications {
+      description "SupportedNotifications represents the notification related
+        capabilities of a MnS producer.
+
+        The notificationTypes attribute lists notificationTypes supported
+        by the MnSProducer. Specific IOCs can be the source of a specific
+        but not necessary every supported notificationType.
+
+        The notificationProtocols attribute identifies the notification
+        transport protocols supported by a MnS producer.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses SupportedNotificationsGrp;
+      }
+    }
+  }
+}

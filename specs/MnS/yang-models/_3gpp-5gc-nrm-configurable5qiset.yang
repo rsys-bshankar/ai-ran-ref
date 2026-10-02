@@ -1,0 +1,145 @@
+module _3gpp-5gc-nrm-configurable5qiset {
+  yang-version 1.1;
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-configurable5qiset;
+  prefix conf5QIs3gpp;
+  
+  import _3gpp-common-top { prefix top3gpp; }
+  
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the configurable 5QIs, including 
+    their QoS characteristics, that need to be pre-configured 
+    (and configurable) to the 5G NFs.
+
+    The 5QI set definition supports multiple deployment scenarios.  The sets can
+    be name contained by SubNetwork ManagedElement, GNBDUFunction,
+    GNBCUUPFunction and GNBCUCPFunction.  Sets are then referenced by attribute
+    (configurable5QISetRef) in applicable MOIs.  For consistency it is 
+    recommended that referenced 5QI sets be defined within the same subtree.
+    Copyright 2023, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2022-11-02 { reference "CR-0753" ; }
+  revision 2022-07-28 { reference "CR-0770"; }
+  revision 2022-04-29 { reference "CR-0729"; }
+  revision 2022-01-07 { reference CR-0643; }
+  revision 2020-08-04 { reference "CR-0321"; }
+  revision 2020-06-03 { reference "CR-0286"; }
+
+  grouping PacketErrorRateGrp {
+    leaf scalar {
+      type uint32 {
+        range 0..9 ;
+      }
+      mandatory true;
+      description "The Packet Error Rate of a 5QI expressed as Scalar x 10-k 
+        where k is the Exponent.";
+    }
+    leaf exponent {
+      type uint32 {
+        range 0..9 ;
+      }
+      mandatory true;
+      description "The Packet Error Rate of a 5QI expressed as Scalar x 10-k, 
+        where k is the Exponent.";
+    }
+  }
+
+  grouping FiveQICharacteristicsGrp {
+    description "Represents the FiveQICharacteristics IOC.";
+    leaf fiveQIValue {
+      type uint32 {
+        range 0..255 ;
+      }
+      mandatory true;
+      description "Identifies the 5QI value.";
+    }
+
+    leaf resourceType {
+      type enumeration {
+        enum GBR;
+        enum NON_GBR;
+      }
+      mandatory true;
+      description "It indicates the Resource Type of a 5QI, as specified 
+        in TS 23.501 ";
+    }
+    
+    leaf priorityLevel {
+      type uint32 {
+        range 0..127 ;
+      }
+      mandatory true;
+      description "It indicates the Priority Level of a 5QI, as specified
+        in TS 23.501.";
+    }
+    
+    leaf packetDelayBudget {
+      type uint32 {
+        range 0..1023 ;
+      }
+      mandatory true;
+      description "Indicates the Packet Delay Budget (in unit of 0.5ms)of a 5QI, 
+        as specified in TS 23.501 ";
+    }
+    
+    list packetErrorRate {
+      key "scalar exponent";
+      min-elements 1;
+      max-elements 1;
+      uses PacketErrorRateGrp;
+      description "It indicates the Packet Error Rate of a 5QI,
+        as specified in TS 23.501.";
+    }
+
+    leaf averagingWindow {
+      type uint32 {
+        range 0..4095 ;
+      }
+      mandatory true;
+      units ms;
+      reference "TS 23.501";
+    }
+    
+    leaf maximumDataBurstVolume {
+      type uint32{
+        range 0..4095 ;
+      }
+      mandatory true;
+      units byte;
+    }
+}
+
+  grouping Configurable5QISetGrp {
+    description "Represents the Configurable5QISet IOC.
+      No attributes defined.";
+  }
+
+  grouping FiveQICharacteristicsSubtree {
+    list FiveQICharacteristics {
+      description "This specifies the 5QI value and the corresponding
+        QoS characteristics for a 5QI.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses FiveQICharacteristicsGrp;
+      }
+    }  
+  }    
+
+  grouping Configurable5QISetSubtree {
+    list Configurable5QISet {
+      description "Specifies the non-standardized 5QIs, including their QoS 
+        characteristics, that need to be pre-configured (and configurable) to 
+        the 5G NFs, see 3GPP TS 23.501.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses Configurable5QISetGrp;
+      }
+      uses FiveQICharacteristicsSubtree;
+    }
+  }
+}

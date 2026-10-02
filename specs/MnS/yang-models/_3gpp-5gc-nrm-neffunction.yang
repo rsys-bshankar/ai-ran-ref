@@ -1,0 +1,386 @@
+module _3gpp-5gc-nrm-neffunction {
+  yang-version 1.1;
+
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-neffunction;
+  prefix nef3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import ietf-inet-types { prefix inet; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-yang-extensions { prefix yext3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp; }
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the NEF function in 5GC. For more
+    information about the NEF, see 3GPP TS 23.501.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2026-03-25 { reference CR-1694 ; }
+  revision 2025-11-07 { reference CR-1640 ; }
+  revision 2025-07-25 { reference CR-1558 ; }
+  revision 2025-03-25 { reference CR-1489 ; }
+  revision 2025-01-25 { reference CR-1442 ; }
+  revision 2024-05-18 { reference CR-1273 ; }
+  revision 2024-04-12 { reference CR-1218 ; }
+  revision 2023-09-18 { reference CR-1103 ; }
+  revision 2023-09-18 { reference CR-1043 ; }
+  revision 2023-04-26 { reference CR-0916 ; }
+  revision 2022-01-07 { reference CR-0643; }
+  revision 2020-11-06 { reference CR-0412 ; }
+  revision 2019-10-20 { reference "initial revision"; }
+
+  grouping DnnInfoItemGrp {
+    description "This data type represents set of parameters supported by NF
+      for a given S-NSSAI. (See clause 6.1.6.2.97 of TS 29.510)";
+
+    leaf dnn {
+      type string;
+      mandatory true;
+      description "String representing a Data Network as defined in clause 9A
+        of 3GPP TS 23.003; it shall contain either a DNN Network Identifier,
+        or a full DNN with both the Network Identifier and Operator Identifier,
+        as specified in 3GPP TS 23.003 clause 9.1.1 and 9.1.2. It shall be
+        coded as string in which the labels are separated by dots
+        (e.g. 'Label1.Label2.Label3').
+
+        Whether the dnn data type contains just the DNN Network Identifier, or
+        the Network Identifier plus the Operator Identifier, shall be
+        documented in each API where this data type is used.";
+    }
+  }
+
+  grouping SnssaiInfoItemGrp {
+    description "This data type represents set of parameters supported by NF
+      for a given S-NSSAI. (See clause 6.1.6.2.97 of TS 29.510)";
+
+    list sNssai {
+      description "It represents the S-NSSAI the NetworkSlice managed object
+        is supporting. The S-NSSAI is defined in TS 23.003.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types5g3gpp:SNssai;
+    }
+
+    list dnnInfoList{
+      description "It represents list of parameters supported by the
+        NF per DNN.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses DnnInfoItemGrp;
+    }
+  }
+
+  grouping AfEventExposureDataGrp {
+    description "This data type represents the AF Event Exposure data managed
+      by a given NEF Instance. (See clause 6.1.6.2.50 TS 29.510";
+
+    leaf-list afEvents {  // stage 2 double defined
+      type string;
+      min-elements 1;
+      description "It represents AF Event(s) exposed by the NEF after
+        registration of the AF(s) at the NEF.";
+    }
+
+    leaf-list afIds {
+      type string;
+      min-elements 1;
+      description "It represents list of application function identifiers of
+        the managed PFDs.";
+    }
+
+    leaf-list appIds {  // stage 2 shaky
+      type string;
+      min-elements 1;
+      description "It represents list of internal application identifiers.";
+    }
+  }
+
+  grouping PfdDataGrp {
+    description "This data type represents the list of Application IDs
+      and/or AF IDs managed by a given NEF Instance.
+      (See clause 6.1.6.2.49 TS 29.510)";
+
+    leaf-list appIds {  // stage 2 shaky
+      type string;
+      min-elements 1;
+      description "It represents list of internal application identifiers.";
+    }
+
+    leaf-list afIds {
+      type string;
+      min-elements 1;
+      description "It represents list of application function identifiers of
+        the managed PFDs.";
+    }
+  }
+
+  grouping UnTrustAfInfoGrp {
+    description "This data type represents information of an untrusted AF
+      Instance. (See clause 6.1.6.2.95 TS 29.510)";
+
+    leaf afId {
+      type string;
+      mandatory true;
+      description "It represents associated AF id.";
+    }
+
+    list sNssaiInfoList {
+      description "It represents S-NSSAIs and DNNs supported by the AF.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses SnssaiInfoItemGrp;
+    }
+
+    leaf mappingInd {
+      type boolean;
+      yext3gpp:initial-value false;
+      description "When present, this attribute indicates whether the
+        AF supports mapping between UE IP address (IPv4 address or IPv6 prefix)
+        and UE ID (i.e. GPSI).
+        True: the AF supports mapping between UE IP address and UE ID;
+        False: the AF does not support mapping between UE IP address
+        and UE ID.";
+    }
+  }
+
+  grouping NefInfoGrp {
+    description "This data type represents information of an NEF Instance.
+      (See clause 6.1.6.2.48 TS 29.510).";
+
+    list taiList {
+      config false;
+      description "List of TAIs";
+      yext3gpp:inVariant;
+      yext3gpp:notNotifyable;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types3gpp:TaiGrp;
+    }
+
+    list taiRangeList {
+      config false;
+      description "Range of TAIs";
+      yext3gpp:inVariant;
+      yext3gpp:notNotifyable;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types5g3gpp:TaiRangeGrp;
+    }
+
+    leaf nefId {
+      type string;
+      mandatory true;
+      description "It represents the NEF ID.
+        (see clause 6.1.6.3.2 of TS 29.510)";
+    }
+
+    list pfdData {
+      config false;
+      description "It represents PFD data, containing the list of internal
+        application identifiers and/or the list of application function
+        identifiers for which the PFDs can be provided.
+
+        Absence of this attribute indicates that the PFDs for any internal
+        application identifier and for any application function identifier
+        can be provided.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses PfdDataGrp;
+    }
+
+    list afEeData {
+      config false;
+      description "It represents the AF provided event exposure data. The NEF
+        registers such information in the NRF on behalf of the AF.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses AfEventExposureDataGrp;
+    }
+
+    list gpsiRanges {
+      description "It represents list of ranges of GPSIs whose profile data
+        is available.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types5g3gpp:IdentityRangeGrp;
+    }
+
+    list externalGroupIdentifiersRanges {
+      description "It represents list of ranges of external groups whose
+        profile data is available.";  // stage 2 definition is shaky
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types5g3gpp:IdentityRangeGrp;
+    }
+
+    leaf-list servedFqdnList {
+      type string;
+      min-elements 1;
+      description "It represents pattern (regular expression according to
+        the ECMA-262 dialect [75]) representing the Domain names served by
+        the NEF.";
+    }
+
+    leaf-list dnaiList {
+      type string;
+      min-elements 1;
+      description "It represents list of Data network access identifiers
+        supported by the NEF. The absence of this attribute indicates that
+        the NEF can be selected for any DNAI.";
+    }
+
+    list unTrustAfInfoList {
+      description "It represents list of information corresponding to the AFs.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses UnTrustAfInfoGrp;
+    }
+
+    leaf uasNfFunctionalityInd {
+      type boolean;
+      yext3gpp:initial-value false;
+      description "When present, this attribute shall indicate whether the ,
+        NEF supports UAS NF functionality:
+        - True: UAS NF functionality is supported by the NEF.
+        - False (default): UAS NF functionality is not supported by the NEF";
+    }
+
+    leaf multiMemAfSessQosInd {
+      type boolean;
+      default false;
+      description "This attribute indicates whether the NEF supports
+        Multi-member AF session with required QoS functionality:
+
+        - TRUE: Multi-member AF session with required QoS functionality is
+        supported by the NEF
+        - FALSE (default): Multi-member AF session with required QoS
+        functionality is not supported by the NEF.";
+    }
+
+    leaf memberUESelAssistInd {
+      type boolean;
+      default false;
+      description "This attribute indicates whether the NEF supports member
+        UE selection assistance functionality:
+
+        - TRUE: member UE selection assistance functionality is supported by
+        the NEF
+        - FALSE (default): member UE selection assistance functionality is
+        not supported by the NEF.";
+    }
+  }
+
+  grouping AIoTNEFMappingGrp {
+    description "Represents the data type AIoTNEFMapping";
+    
+    list targetAreaAF {
+      description "It represents the external target area provided by an AF 
+        to NEF for triggering A-IoT services. It could refer to a geographical 
+        location.";
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types3gpp:GeoAreaGrp;
+    }
+    
+    list internalTargetArea  {
+      description "This is the (internal) target area mapped to external 
+        target area. It is provided to NEF by NRF.
+        It could refer to any of TAC/TAI(list), PLMN or any geographical 
+        location/coordinate/area polygon";
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types5g3gpp:AreaScopeGrp;
+    }
+  }
+  
+  grouping NEFFunctionGrp {
+    description "Represents the NEFFunction IOC";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    leaf sBIFQDN {
+      description "The FQDN of the registered NF instance in the
+        service-based interface.";
+      type inet:domain-name;
+    }
+
+    list sNSSAIList {
+      description "List of S-NSSAIs the managed object is capable of supporting.
+        (Single Network Slice Selection Assistance Information)
+        An S-NSSAI has an SST (Slice/Service type) and an optional SD
+        (Slice Differentiator) field.";
+      key "sd sst";
+      uses types5g3gpp:SNssai;
+    }
+
+    list managedNFProfile {
+      description "This parameter defines profile for managed NF(See TS 23.501)";
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32;}
+      uses mnfp3gpp:ManagedNFProfileGrp;
+    }
+
+    leaf-list capabilityList {
+      description "List of supported capabilities of the NEF.";
+      reference "3GPP TS 23.003";
+      type string;
+    }
+
+    leaf isCAPIFSup {
+      type boolean;
+      yext3gpp:inVariant;
+    }
+
+    list nefInfo {
+      description "This attribute represents information of an NEF NF Instance.";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses NefInfoGrp;
+    }
+    
+    list AIoTNEFMapping {
+      description "It represents mapping information between external target 
+        area (provided by AF) and (5G core internal) target area that is to 
+        be provided to NRF";
+      config false;
+      min-elements 1;
+      yext3gpp:inVariant;
+      yext3gpp:notNotifyable;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses AIoTNEFMappingGrp;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list NEFFunction {
+      description "5G Core NEF Function";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses NEFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

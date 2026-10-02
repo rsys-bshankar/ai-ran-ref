@@ -1,0 +1,604 @@
+module _3gpp-5gc-nrm-upffunction {
+  yang-version 1.1;
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-upffunction;
+  prefix upf3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-yang-extensions { prefix yext3gpp; }
+  import ietf-inet-types { prefix inet; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp;}
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "UPFFunction derived from basic ManagedFunction.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2026-05-25 { reference CR-1702 ; }
+  revision 2025-07-25 { reference CR-1558 ; }
+  revision 2025-07-25 { reference CR-1558 ; }
+  revision 2024-05-24 { reference CR-1273 ; }
+  revision 2023-09-18 { reference CR-1043 ; }
+  revision 2023-04-26 { reference CR-0916; }
+  revision 2020-11-08 { reference CR-0412 ; }
+  revision 2019-10-25 { reference "S5-194457 S5-193518"; }
+  revision 2019-05-31 { reference "Ericsson refactoring."; }
+  revision 2018-08-07 { reference "Initial revision"; }
+
+  typedef PduSessionType {
+    type enumeration {
+      enum IPV4;
+      enum IPV6;
+      enum IPV4V6;
+      enum UNSTRUCTURED;
+      enum ETHERNET;
+    }
+  }
+
+  grouping DnnUpfInfoItemGrp {
+    leaf dnn {
+      description "String representing a Data Network.";
+      mandatory true;
+      type string;
+    }
+
+    leaf-list dnaiList {
+      description "List of Data network access identifiers supported
+       by the UPF for this DNN.
+                   The absence of this attribute indicates that the UPF
+                   can be selected for this DNN for any DNAI.";
+      min-elements 1;
+      type string; //dnai is the type but its only a string with
+      //desc: DNAI (Data network access identifier),
+      //is this needed as its own typedef or string is ok
+    }
+
+    leaf-list pduSessionTypes {
+      description "List of PDU session type(s) supported by
+       the UPF for a specific DNN.";
+      min-elements 1;
+      type PduSessionType;
+    }
+
+    list ipv4AddressRanges {
+      description "This attribute represents a list of ranges of IPv4 addresses
+        handled by UPF. ";
+      key idx;
+      leaf idx { type uint32; }
+      uses types3gpp:Ipv4AddressRange;
+    }
+
+    list ipv6PrefixRanges {
+      description "This attribute represents a list of ranges of IPv6 prefixes
+        handled by the UPF. ";
+      key idx;
+      leaf idx { type uint32; }
+      uses types3gpp:Ipv6PrefixRange;    }
+
+    list natedIpv4AddressRanges {
+      description "This attribute represents a list of ranges of NATed IPv4
+        addresses.";
+      key idx;
+      leaf idx { type uint32; }
+      uses types3gpp:Ipv4AddressRange;
+    }
+
+    list natedIpv6PrefixRanges {
+      description "This attribute represents a list of ranges of NATed IPv6
+        prefixes.";
+      key idx;
+      leaf idx { type uint32; }
+      uses types3gpp:Ipv6PrefixRange;
+    }
+
+    leaf-list ipv4IndexList {
+      type union {
+        type int32;
+        type string;
+      }
+      description "This attribute represents a list of Ipv4 Index supported by
+        the UPF.
+        This <<choice>> represents the IP Index to be sent from UDM to the SMF.
+        (See clause 6.1.6.2.77 TS 29.503)
+        It is a list of non-exclusive alternatives (Integer or String).";
+    }
+
+    leaf-list ipv6IndexList {
+      type union {
+        type int32;
+        type string;
+      }
+      description "This attribute represents a list of Ipv6 Index supported
+        by the UPF.
+        This <<choice>> represents the IP Index to be sent from UDM to the SMF.
+        (See clause 6.1.6.2.77 TS 29.503)
+        It is a list of non-exclusive alternatives (Integer or String).";
+    }
+
+    leaf networkInstance {
+      type string;
+      description "This attribute represents the N6 Network Instance
+        (See TS 29.244) associated with the S-NSSAI and DNN.";
+    }
+
+    leaf-list dnaiNwInstanceList {
+      type string;
+      description "This attribute represents a map of a network instance per
+        DNAI for the DNN, where the key of the map is the DNAI (Data network
+        access identifier), see TS 23.501.
+
+        When present, the value of each entry of the map shall contain a N6
+        network instance that is configured for the DNAI indicated by the key.";
+    }
+  }
+
+  grouping SnssaiUpfInfoItemGrp {
+    list sNssai {
+      description "Supported S-NSSAI.";
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:ExtSnssaiGrp;
+    }
+
+    list dnnUpfInfoList {
+      description "It represents list of parameters supported by the UPF
+        per DNN.";
+      min-elements 1;
+      key dnn;
+      uses DnnUpfInfoItemGrp;
+    }
+
+    leaf redundantTransport {
+      type boolean;
+      default false;
+      description "This attribute indicates whether the UPF supports redundant
+        transport path on the transport layer in the corresponding network
+        slice.
+        true: supported
+        false: not supported";
+    }
+
+    leaf dnnUpfInfoListId {
+      type uint32;
+      description "Identifier of the DNN UPF Info List.";
+    }
+  }
+
+  typedef UPInterfaceType {
+    type enumeration {
+      enum N3;
+      enum N6;
+      enum N9;
+      enum DATA_FORWARDING;
+      enum N6MB;
+      enum N19MB;
+      enum N3MB;
+      enum NMB9;
+      enum S1U;
+      enum S5U;
+      enum S8U;
+      enum S11U;
+      enum S12;
+      enum S2AU;
+      enum S2BU;
+      enum N3TRUSTEDN3GPP;
+      enum N3UNTRUSTEDN3GPP;
+      enum N9ROAMING;
+      enum SGI;
+      enum N19;
+      enum SXAU;
+      enum SXBU;
+      enum N4U;
+    }
+  }
+
+  grouping InterfaceUpfInfoItemGrp {
+    leaf interfaceType {
+      description "User Plane interface type.
+        See TS 29.510[23] clause 6.1.6.3.9";
+      mandatory true;
+      type UPInterfaceType;
+      must '../ipv4EndpointAddresses or ../ipv6EndpointAddresses or ../fqdn';
+    }
+
+    leaf-list ipv4EndpointAddresses {
+      description "Available endpoint IPv4 address(es) of
+        the User Plane interface.";
+      type inet:ipv4-address;
+    }
+
+    leaf-list ipv6EndpointAddresses {
+      description "Available endpoint IPv6 address(es) of
+        the User Plane interface.";
+      type inet:ipv6-address;
+    }
+
+    leaf fqdn {
+      description "This parameter defines FQDN of the Network Function
+        (See TS 23.003).";
+      type inet:domain-name;
+    }
+
+    leaf networkInstance {
+      description "Network Instance (See TS 29.244) associated to the User
+        Plane interface";
+      type string;
+      mandatory true;
+    }
+  }
+
+  grouping AtsssCapabilityGrp {
+    leaf atsssLL {
+      description "Indicates the ATSSS-LL capability to support procedures
+        related to Access Traffic Steering, Switching, Splitting
+        (see clauses 4.2.10, 5.32 of TS 23.501).
+        true: Supported
+        false: Not Supported";
+      type boolean;
+      default false;
+    }
+
+    leaf mptcp {
+      description "Indicates the MPTCP capability to support procedures related
+        to Access Traffic Steering, Switching, Splitting
+        (see clauses 4.2.10, 5.32 of TS 23.501).
+        true: Supported
+        false: Not Supported";
+      type boolean;
+      default false;
+    }
+
+    leaf rttWithoutPmf {
+      description "Indicates whether the UPF supports RTT measurement without
+        PMF (see clauses 5.32.2, 6.3.3.3 of TS 23.501).
+        true: Supported
+        false: Not Supported";
+      type boolean;
+      default false;
+    }
+  }
+
+  grouping UpfInfoGrp {
+    description "Represents datatype UpfInfo. This data type represents
+      information of an UPF Instance";
+
+    list sNssaiUpfInfoList {
+      description "This attribute represents a list of parameters supported by
+        the UPF per S-NSSAI.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses SnssaiUpfInfoItemGrp;
+    }
+
+    leaf-list smfServingArea {
+      type string;
+      min-elements 1;
+      description "The SMF service area(s) the UPF can serve. See TS 29.510.
+        If not provided, the UPF can serve any SMF service area.";
+    }
+
+    list interfaceUpfInfoList {
+      description "List of User Plane interfaces configured on the UPF. When
+        this parameter is provided in the NF Discovery response, the NF Service
+        Consumer (e.g., SMF) may use this information for UPF selection.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses InterfaceUpfInfoItemGrp;
+    }
+
+    leaf iwkEpsInd {
+      type boolean;
+      mandatory true;
+      config false;
+      description "Indicates whether interworking with EPS is supported by
+        the UPF.
+        True: Supported
+        False: Not Supported";
+    }
+
+    leaf-list pduSessionTypes {
+      type enumeration {
+        enum IPV4;
+        enum IPV6;
+        enum IPV4V6;
+        enum UNSTRUCTURED;
+        enum ETHERNET;
+      }
+      config false;
+      min-elements 1;
+      description "Indicates the type(s) of a PDU session.";
+    }
+
+    list atsssCapability {
+      config false;
+      description "Indicate the ATSSS capability of the UPF";
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses AtsssCapabilityGrp;
+    }
+
+    leaf ueIpAddrInd {
+      type boolean;
+      config false;
+      default false;
+      description "Indicates whether the UPF supports allocating UE IP
+        addresses/prefixes.
+        true: supported
+        false: not supported";
+    }
+
+    list taiList {
+      description "The list of TAIs.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses types3gpp:TaiGrp;
+    }
+
+    list taiRangeList {
+      description "The range of TAIs.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:TaiRangeGrp;
+    }
+
+    list wAgfInfo {
+      description "Indicate that the UPF is collocated with W-AGF. If not
+        present, the UPF is not collocated with Wireline Access Gateway
+        Function (W-AGF).";
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:IpInterfaceGrp;
+    }
+
+    list tngfInfo {
+      description "Indicate that the UPF is collocated with TNGF. If not
+        present, the UPF is not collocated with Trusted Non-3GPP Gateway
+        Function (TNGF).";
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:IpInterfaceGrp;
+    }
+
+    list twifInfo {
+      description "Indicate that the UPF is collocated with TWIF. If not
+        present, the UPF is not collocated with Trusted WLAN Interworking
+        Function (TWIF).";
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:IpInterfaceGrp;
+    }
+
+    leaf priority {
+      type uint16;
+      mandatory true;
+      description "This parameter defines Priority (relative to other NFs of
+        the same type) in the range of 0-65535, to be used for NF selection;
+        lower values indicate a higher priority. If priority is also present
+        in the nfServiceList parameters, those will have precedence over
+        this value (See TS 29.510).";
+    }
+
+    leaf redundantGtpu {
+      type boolean;
+      default false;
+      config false;
+      description "Indicates whether the UPF supports redundant GTP-U path.
+        true: supported
+        false: not supported";
+    }
+
+    leaf ipups {
+      type boolean;
+      default false;
+      description "Indicates whether the UPF is configured for Inter-PLMN User
+        Plane Security (IPUPS). Any UPF can support the IPUPS functionality.
+        In network deployments where specific UPFs are used to provide IPUPS,
+        UPFs configured for providing IPUPS services shall be selected.
+          true: The UPF is configured for IPUPS.
+          false: The UPF is not configured for IPUPS";
+    }
+
+    leaf dataForwarding {
+      type boolean;
+      default false;
+      description "Indicates whether the UPF is configured for data forwarding.
+        Based on operator policies, if dedicated UPFs are preferred to be used
+        for indirect data forwarding during handover scenarios, when setting
+        up the indirect data forwarding tunnel, the SMF should preferably
+        select a UPF configured for data forwarding and use the network
+        instance indicated in the Network Instance ID associated to the
+        DATA_FORWARDING interface type in the interfaceUpfInfoList attribute.
+          true: the UPF is configured for data forwarding
+          false: the UPF is not configured for data forwarding
+
+        If the UPF is configured for data forwarding, it shall support UP
+        network interface with type 'DATA_FORWARDING'.";
+    }
+
+    leaf supportedPfcpFeatures {
+      type string;
+      config false;
+      description "Supported Packet Forwarding Control Protocol (PFCP) Features.
+        A string used to indicate the PFCP features supported by the UPF,
+        which encodes the 'UP Function Features' as specified in
+        Table 8.2.25-1 of TS 29.244 (starting from Octet 5), in hexadecimal
+        representation.
+
+        Each character in the string shall take a value of '0' to '9', 'a'
+        to 'f' or 'A' to 'F' and each two characters shall represent one octet
+        of 'UP Function Features' (starting from Octet 5, to higher octets).
+        For each two characters representing one octet, the first character
+        representing the 4 most significant bits of the octet and the second
+        character the 4 least significant bits of the octet.
+
+        The supported PFCP features shall be provisioned in addition and be
+        consistent with the existing UPF features (atsssCapability, ueIpAddrInd,
+        redundantGtpu and ipups), e.g., if the ueIpAddrInd is set to 'true',
+        then the UEIP flag shall also be set to '1' in the supported PFCP
+        features.";
+    }
+
+    leaf sxaInd {
+      type boolean;
+      config false;
+      description "This attribute indicates whether the UPF is configured to
+        support Sxa interface.
+        true: Supported
+        false: Not Supported";
+    }
+  }
+
+  grouping UPFFunctionGrp {
+    description "Represents the UPFFunction IOC";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    list pLMNIdList {
+      description "A list of PLMN identifiers (Mobile Country Code and Mobile
+        Network Code).";
+      min-elements 1;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+
+    leaf-list nRTACList {
+      description "List of Tracking Area Codes (legacy TAC or extended TAC)
+                   where the represented management function is serving.";
+                   reference "TS 38.413 clause 9.3.3.10";
+      min-elements 1;
+      config false;
+      type types5g3gpp:NRTAC;
+    }
+
+   leaf-list cNSIIdList {
+      type string;
+      description "It is a set of NSI ID. NSI ID is an identifier for
+        identifying the Core Network part of a Network Slice instance when
+        multiple Network Slice instances of the same Network Slice are deployed,
+        and there is a need to differentiate between them in the 5GC.
+        See NSI ID definition in clause 3.1 of TS 23.501 and
+        subclause 6.1.6.2.7 of  TS 29.531. ";
+    }
+    leaf energySavingControl {
+      type enumeration {
+        enum TO_BE_ENERGYSAVING;
+        enum TO_BE_NOT_ENERGYSAVING;
+      }
+      mandatory true;
+      description "This attribute allows management system to initiate energy
+        saving activation or deactivation for the edge UPF.";
+    }
+
+    leaf energySavingState {
+      type enumeration {
+        enum IS_NOT_ENERGYSAVING;
+        enum IS_ENERGYSAVING;
+      }
+      mandatory true;
+      config false;
+      description "This attribute specifies the status regarding the energy
+        saving in the edge UPF.
+
+        If the value of energySavingControl is TO_BE_ENERGYSAVING, then it
+        shall be tried to achieve the value IS_ENERGYSAVING for the
+        energySavingState.
+
+        If the value of energySavingControl is TO_BE_NOT_ENERGYSAVING, then
+        it shall be tried to achieve the value IS_NOT_ENERGYSAVING for the
+        energySavingState. ";
+    }
+
+    /*list sNSSAIList { ??? not visible in stage 2
+      description "List of S-NSSAIs the managed object is capable of supporting.
+                   (Single Network Slice Selection Assistance Information)
+                   An S-NSSAI has an SST (Slice/Service type) and an optional SD
+                  (Slice Differentiator) field.";
+      reference "3GPP TS 23.003";
+      key "sd sst";
+      uses types5g3gpp:SNssai;
+    }*/
+
+    list managedNFProfile {
+      key idx;
+      leaf idx { type uint32;}
+      min-elements 1;
+      max-elements 1;
+      description "Profile definition of a Managed NF (See TS 23.501)";
+      uses mnfp3gpp:ManagedNFProfileGrp;
+    }
+
+    leaf-list supportedBMOList {
+      type string;
+      description "List of supported BMOs (Bridge Managed Objects) required
+        for integration with TSN system.";
+    }
+
+    list upfInfo {
+      description "This attribute represents information of an UPF NF Instance.
+        Multiple upfInfo may be allowed to define different TAI list for each
+        supported S-NSSAI";
+      key idx;
+      leaf idx { type uint32; }
+      uses UpfInfoGrp;
+    }
+
+    leaf isOnboardSatellite {
+      type boolean;
+      default false;
+      config false;
+      yext3gpp:inVariant;
+      description "This attribute indicates whether the function is
+        on board the satellite.";
+    }
+
+    leaf onboardSatelliteId {
+      type string {
+        pattern "[0-9]{5}" ;
+      }
+      config false;
+      yext3gpp:inVariant;
+      description "This attribute indicates the onboard satellite Id.
+        It shall be formatted as a fixed 5-digit string, padding with
+        leading digits '0' to complete a 5-digit length.";
+    }
+
+    leaf uPFCapabilities {
+      type string;
+      yext3gpp:inVariant;
+      description "It indicates the operator configurable capability supported
+        by the UPF.  (see clause 5.8.2.21 in TS 23.501, clause 5.4.2
+        in TS 29.571)";
+    }
+  }
+
+  augment /me3gpp:ManagedElement {
+    list UPFFunction {
+      description "5G Core UPF Function";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses UPFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

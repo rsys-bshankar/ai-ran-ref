@@ -1,0 +1,98 @@
+module _3gpp-5gc-nrm-dynamic5qiset {
+  yang-version 1.1;
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-dynamic5qiset;
+  prefix dyn5QIs3gpp;
+  
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-nr-nrm-gnbdufunction { prefix gnbdu3gpp; }
+  import _3gpp-nr-nrm-gnbcucpfunction { prefix gnbcucp3gpp; }
+  import  _3gpp-nr-nrm-gnbcuupfunction { prefix gnbcuup3gpp; }
+  import _3gpp-5gc-nrm-configurable5qiset { prefix Conf5QIs3gpp; }
+  
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the dynamic 5QIs including their QoS 
+    characteristics.
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2025-03-25 { reference CR-1489 ; } 
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2022-07-28 { reference "CR-0770"; }
+  revision 2022-01-07 { reference CR-0643; }
+  revision 2020-10-01 { reference "CR-0393"; }
+  revision 2020-08-06 { reference "CR-0333"; }
+
+  grouping Dynamic5QISetGrp {
+    description "Represents the Dynamic5QISet IOC.";
+    list dynamic5QIs {
+      description "This IOC specifies the dynamically assigned 5QIs 
+        including their QoS characteristics, see 3GPP TS 23.501. 
+        The instance of this IOC shall not be created or modified by the 
+        MnS consumer except for the instance associated to 
+        PCFFunction MOI or SMFFunction MOI when the PCF is not deployed.";
+    key id;
+    uses top3gpp:Top_Grp;
+    container attributes {
+      uses Conf5QIs3gpp:FiveQICharacteristicsGrp;
+      }
+    }
+  }    
+
+  grouping Dynamic5QISetSubtree {
+    description "Helps augmenting Dynamic5QISet into multiple places.";
+    list Dynamic5QISet {
+      description "Specifies the dynamic 5QIs including their QoS 
+        characteristics, see 3GPP TS 23.501.";
+      key "id";
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses Dynamic5QISetGrp;
+      }
+      uses Conf5QIs3gpp:FiveQICharacteristicsSubtree;
+    }  
+  }
+  
+  feature Dynamic5QISetUnderSubNetwork {
+    description "Dynamic5QISet shall be contained under SubNetwork."; 
+  }
+  augment "/subnet3gpp:SubNetwork" { 
+    if-feature Dynamic5QISetUnderSubNetwork;
+    uses Dynamic5QISetSubtree;
+  }
+
+  feature Dynamic5QISetUnderManagedElement {
+    description "Dynamic5QISet shall be contained under ManagedElement."; 
+  }
+  augment "/me3gpp:ManagedElement" {
+    if-feature Dynamic5QISetUnderManagedElement;
+    uses Dynamic5QISetSubtree;
+  }
+  
+  feature Dynamic5QISetUnderGNBDUFunction {
+    description "Dynamic5QISet shall be contained under GNBDUFunction."; 
+  }
+  augment "/me3gpp:ManagedElement/gnbdu3gpp:GNBDUFunction" {
+    if-feature Dynamic5QISetUnderGNBDUFunction;
+    uses Dynamic5QISetSubtree;
+  }
+  
+  feature Dynamic5QISetUnderGNBCUCPFunction {
+    description "Dynamic5QISet shall be contained under GNBCUCPFunction.";
+  }
+  augment "/me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction" {
+    if-feature Dynamic5QISetUnderGNBCUCPFunction;  
+    uses Dynamic5QISetSubtree;
+  }
+
+  feature Dynamic5QISetUnderGNBCUUPFunction {
+    description "Dynamic5QISet shall be contained under GNBCUUPFunction."; 
+  }
+  augment "/me3gpp:ManagedElement/gnbcuup3gpp:GNBCUUPFunction" {
+    if-feature Dynamic5QISetUnderGNBCUUPFunction;  
+    uses Dynamic5QISetSubtree;
+  }
+}

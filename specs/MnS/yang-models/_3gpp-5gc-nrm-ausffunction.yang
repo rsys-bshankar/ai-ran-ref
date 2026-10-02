@@ -1,0 +1,158 @@
+module _3gpp-5gc-nrm-ausffunction {
+  yang-version 1.1;
+
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-ausffunction;
+  prefix ausf3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import ietf-inet-types { prefix inet; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-yang-extensions { prefix yext3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp; }
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the AUSF function in 5GC. For more
+    information about the AUSF, see 3GPP TS 23.501.
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2026-03-25 { reference CR-1694 ; }
+  revision 2023-09-18 { reference CR-1043 ; }
+  revision 2022-01-07 { reference CR-0643; }
+  revision 2020-11-06 { reference CR-0412 ; }
+  revision 2019-10-25 { reference "S5-194457 S5-193518"; }
+
+  revision 2019-05-22 {reference "initial revision"; }
+
+  grouping AusfInfoGrp {
+    description "Represents the information of an AUSF NF Instance
+      (see TS 29.510).";
+
+    grouping SuciInfoGrp {
+      description "This data type represents SUCI information containing
+        Routing Indicator and Home Network Public Key ID. (See TS 29.510)";
+
+      leaf-list routingInds {
+        type string;
+        min-elements 1;
+        description "It indicates served Routing Indicator (see TS 23.003,
+          clause 2.2B). If not provided, the AUSF/UDM
+          can serve any Routing Indicator.";
+      }
+
+      leaf-list hNwPubKeyIds  {
+        type int64;
+        min-elements 1;
+        description "It indicating served Home Network Public Key
+          (see TS 23.003, clause 2.2B). If not provided, the AUSF/UDM
+          can serve any public key.";
+      }
+    }
+
+    leaf nFSrvGroupId {
+      type string;
+      config false;
+      yext3gpp:inVariant;
+      yext3gpp:notNotifyable;
+      description "This parameter defines identity of the group that is
+        served by the NF instance (See TS 29.510).";
+    }
+
+    list supiRanges {
+      description "It represents list of ranges of SUPIs that can be served
+        by the PCF instance.";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types5g3gpp:SupiRangeGrp;
+    }
+
+      leaf-list routingIndicators {
+        description "This attribute represents a list of Routing Indicator
+          information that allows to route network signalling with SUCI
+          (see TS 23.003 [13]) to the AUSF instance.
+          If not provided, the AUSF can serve any Routing Indicator.";
+        type string {
+          pattern "[0-9]{1,4}";
+        }
+      }
+
+    list suciInfos {
+      description "This attribute represents a list of SuciInfo. A SUCI
+        that matches this information can be served by the AUSF.
+        A SUCI that matches all attributes of at least one entry in this
+        array shall be considered as a match of this information.";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses SuciInfoGrp;
+    }
+  }
+
+  grouping AUSFFuntionGrp {
+    description "Represents the AUSFFuntion IOC";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    list pLMNInfoList {
+      description "List of at most six entries of PLMN Identifiers, but at
+        least one (the primary PLMN Id).
+        The PLMN Identifier is composed of a Mobile Country Code (MCC) and
+        a Mobile Network Code (MNC).";
+
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types5g3gpp:PLMNInfo;
+    }
+
+    leaf sBIFQDN {
+      description "The FQDN of the registered NF instance in the
+        service-based interface.";
+      type inet:domain-name;
+    }
+
+    list managedNFProfile {
+      description "This data type represents a Profile definition
+      of a Managed NF";
+      key idx;
+      leaf idx { type uint32 ; }
+      min-elements 1;
+      max-elements 1;
+      uses mnfp3gpp:ManagedNFProfileGrp;
+    }
+
+    list commModelList {
+      min-elements 1;
+      key "groupId";
+      description "Specifies a list of commModel. It can be used by NF and
+        NF services to interact with each other in 5G Core network ";
+      reference "3GPP TS 23.501";
+      uses types5g3gpp:CommModel;
+    }
+
+    list ausfInfo {
+      description "It represents the information of an AUSF NF Instance
+        (see TS 29.510)";
+      key idx;
+      min-elements 1;
+      max-elements 1;
+      leaf idx { type uint32 ; }
+      uses AusfInfoGrp;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list AUSFFunction {
+      description "5G Core AUSF Function";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses AUSFFuntionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

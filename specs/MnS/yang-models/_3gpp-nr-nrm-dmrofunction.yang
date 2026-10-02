@@ -1,0 +1,118 @@
+module _3gpp-nr-nrm-dmrofunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-dmrofunction";
+  prefix "dmrof3gpp";
+
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-nr-nrm-gnbcucpfunction { prefix gnbcucp3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-nr-nrm-nrcellcu { prefix nrcellcu3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the DMROFunction 
+    Information Object Class (IOC) that is part of the NR Network Resource 
+    Model (NRM).
+    Copyright 2024, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2024-08-07 { reference CR-1331; }  
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2022-01-07 { reference CR-0633; }
+  revision 2021-08-05 { reference S5-214053/CR-0518; }
+  revision 2020-05-08 { reference S5-203316; }
+
+  grouping DMROFunctionGrp {
+    description "Represents the DMROFunction IOC.";
+
+
+    leaf maximumDeviationHoTriggerLow {
+      description "This parameter defines the maximum allowed lower 
+        deviation of the Handover Trigger, from the default point of 
+        operation.";
+      type int32 {range "-20..20";}
+      units "0.5 dB";
+    }
+ 
+    leaf maximumDeviationHoTriggerHigh {
+      description "This parameter defines the maximum allowed upper 
+        deviation of the Handover Trigger, from the default point of 
+        operation.";
+      type int32 {range "-20..20";}
+      units "0.5 dB";
+    }
+
+    leaf minimumTimeBetweenHoTriggerChange {
+      description "This parameter defines the minimum allowed time interval
+        between two Handover Trigger change performed by MRO. This is used to 
+        control the stability and convergence of the algorithm.";
+      type uint32 { 
+        range 0..604800; // <= 1 week
+      }
+      units seconds;
+    }
+    leaf tstoreUEcntxt {
+      description "The timer used for detection of too early HO, too late HO 
+        and HO to wrong cell.";
+      type uint32 { 
+        range 0..1023;
+      }
+      units "100 milliseconds";
+    }
+    leaf dmroControl {
+      description "This attribute determines whether the MRO function is 
+        enabled or disabled.";
+      type boolean;
+    }
+        leaf-list mLModelRefList {
+      type types3gpp:DistinguishedName;
+      description "This attribute holds a DN list of MLModel ¨
+        (See TS 28.105).";
+      config false;
+    }
+    leaf-list aIMLInferenceFunctionRefList {
+      type types3gpp:DistinguishedName;
+      description "This attribute holds a DN list of AIMLInferenceFunction
+        (See TS 28.105) .";
+      config false;
+    }
+  }
+
+  grouping DMROFunctionSubtree {
+    list DMROFunction {
+      description "This IOC contains attributes to support the D-SON function 
+        of MRO.
+
+        In the case where multiple DMRO MOIs exist at different levels of the 
+        containment tree, the DMRO MOI at the lower level overrides the DMRO 
+        MOIs at higher level(s) of the same containment tree.";
+      reference "clause 7.1.2 in TS 28.313";
+      key id;   
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses DMROFunctionGrp;
+      }      
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction/"+
+      "nrcellcu3gpp:NRCellCU" {
+    if-feature nrcellcu3gpp:DMROFunction;
+    uses DMROFunctionSubtree;
+  }
+  augment /me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction {
+    if-feature gnbcucp3gpp:DMROFunction;
+    uses DMROFunctionSubtree;
+  }
+  augment /me3gpp:ManagedElement {
+    if-feature me3gpp:DMROFunction;
+    uses DMROFunctionSubtree;
+  }
+  augment /subnet3gpp:SubNetwork {
+    if-feature subnet3gpp:DMROFunction;
+    uses DMROFunctionSubtree;
+  }
+}

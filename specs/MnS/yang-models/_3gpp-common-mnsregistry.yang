@@ -1,0 +1,317 @@
+module _3gpp-common-mnsregistry {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-common-mnsregistry";
+  prefix "mnsregist3gpp";
+
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-yang-extensions { prefix yext3gpp; }
+  import _3gpp-common-managementdatacollection { prefix mgtdatcol3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the MNSRegistry IOC and its
+  contained classes that ares part of the Generic Network Resource Model (NRM).
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.623 Generic Network Resource Model (NRM)";
+
+  revision 2025-11-02 { reference CR-0586; }
+  revision 2025-07-19 { reference CR-0551; }
+  revision 2023-09-30 { reference CR-0278; }
+  revision 2023-09-18 { reference CR-0271 ; }
+  revision 2023-05-10 { reference CR-0243; }
+  revision 2023-02-14 { reference CR-0234; }
+  revision 2021-11-23 { reference "S5-216090"; }
+  revision 2021-10-18 { reference "S5-215263"; }
+  revision 2021-08-29 { reference "Initial revision, S5-214388"; }
+
+  grouping MgmtDataInfoGrp {
+    description "Represents the MgmtDataInfo IOC.";
+
+    uses mgtdatcol3gpp:ManagementDataGrp {
+      description "Defines the list of management data that can be supported.
+
+      The management data is a choice between:
+      - a list of data categories (attribute mgtDataCategory)
+      - a list of management data identified with their name
+      (attribute 'mgtDataName').";
+    }
+
+    leaf-list supportedGranularityPeriods {
+      type int32;
+      units seconds;
+      description "Granularity periods supported for the production of
+        associated management data. The period is defined in seconds.";
+    }
+
+    leaf-list supportedReportingPeriods {
+      type uint32;
+      units seconds;
+      description "Reporting periods supported for the associated management
+        data. The period is defined in seconds.";
+    }
+
+    leaf historicalDataPeriod {
+      type uint64;
+      units seconds;
+      description "This attribute describes the maximum period of the requested
+        historical data. The period is defined in seconds.
+        When the value of this attribute is NULL, which means the capability of
+        querying historical data is not supported.";
+    }
+
+    leaf-list supportedReportingMethod {
+      type enumeration {
+        enum FILE;
+        enum STREAM;
+      }
+      min-elements 1;
+      description "List of supported reporting methods for the associated
+        management data.";
+    }
+
+    leaf-list supportedDataScope {
+      type enumeration {
+        enum SNSSAI;
+        enum 5QI;
+        enum PLMN;
+      }
+      min-elements 1;
+      description "List of supported sub counter capabilities for the associated
+        management data";
+    }
+
+    leaf-list supportedDataRequestMnSRef {
+      type types3gpp:DistinguishedName;
+      min-elements 1;
+      description "List of DN of MnSInfo for the MnS instance(s) which can be
+        used to request the associated management data";
+    }
+
+    leaf-list supportedDataReportingMnSRef {
+      type types3gpp:DistinguishedName;
+      min-elements 1;
+      description "List of DN of MnSInfo for the MnS instance(s) which can be
+        used to report the associated management data";
+    }
+  }
+
+  grouping MnsScopeGrp {
+    description "This <<choice>> specifies the list of managed object instances
+      that can be accessed using the Management Service. These managed object
+      instances can be represented with one of the following options:
+
+      -  A list of DNs, i.e. representing managed object instances identified
+      by the DN.
+
+      -  A list of GeoAreas, i.e. representing managed object instances covered
+      by the specified geographical areas. In the present document, the
+      geoAreasList is only used for MnS consumer to retrieve MnS
+      scope of the specified MnS instance.
+
+      -  A list of TAIs, i.e. representing managed object instances covered
+      by the specified TAIs.";
+
+    choice MnsScope {
+      mandatory true;
+      leaf-list objectInstanceList {
+      type types3gpp:DistinguishedName;
+        yext3gpp:inVariant;
+        yext3gpp:notNotifyable;
+        description "This attribute describes list of DNs for the managed
+          object instances that can be accessed using the Management Service.
+          If a complete SubNetwork can be accessed using the Management Service,
+          this attribute may contain the DN of the SubNetwork instead of the
+          DNs of the individual managed entities within the SubNetwork.
+
+          If a complete ManagedElement can be accessed using the Management
+          Service, this attribute may contain the DN of the ManagedElement
+          instead of the DNs of the individual managed entities within the
+          ManagedElement.";
+      }
+
+      list geoAreasList {
+        yext3gpp:inVariant;
+        yext3gpp:notNotifyable;
+        description "This attribute describes geographical areas for the
+          managed object instances that can be accessed using the Management
+          Service.";
+        key idx;
+        leaf idx { type uint32; }
+        uses types3gpp:GeoAreaGrp;
+      }
+
+      list taiList {
+        yext3gpp:inVariant;
+        yext3gpp:notNotifyable;
+        description "This attribute describes the list of Tracking Area
+          Identities (TAI) for the managed object instances that can be accessed
+          using the Management Service.";
+        key idx;
+        leaf idx { type uint32; }
+        uses types3gpp:TaiGrp;
+      }
+    }
+  }
+
+  grouping MnsInfoGrp {
+    description "Represents the MnsInfo IOC.";
+    leaf mnsLabel {
+      description "Human-readable name of management service.";
+      mandatory true;
+      type string;
+    }
+
+    leaf mnsType {
+      description "Type of management service.";
+      type enumeration {
+         enum ProvMnS;
+         enum FaultSupervisionMnS;
+         enum StreamingDataReportingMnS;
+         enum FileDataReportingMnS;
+      }
+    }
+
+    leaf mnsVersion {
+      description "Version of management service.";
+      type string;
+    }
+
+    leaf mnsAddress {
+      description "Addressing information for Management Service operations.";
+      mandatory true;
+      type string;
+    }
+
+    leaf-list mnsCapability {
+      type union {
+        type enumeration {
+          enum NR_PROVISIONING;
+          enum 5GC_PROVISIONING;
+          enum NETWORK_SLICING_PROVISIONING;
+          enum EDGE_COMPUTING_PROVISIONING;
+          enum PERFORMANCE_METRIC_COLLECTION_CONTROL;
+          enum PERFORMANCE_METRIC_DATA_REPORT;
+          enum PERFORMANCE_METRIC_THRESHOLD_MONITOR_CONTROL;
+          enum PERFORMANCE_METRIC_THRESHOLD_NOTIFICATION;
+          enum FAULT_CONTROL;
+          enum FAULT_NOTIFICATION;
+          enum TRACE_MDT_DATA_COLLECTION_CONTROL;
+          enum TRACE_MDT_DATA_REPORT;
+          enum STM_PROVISIONING;
+          enum STM_STREAMING;
+          enum QOE_DATA_COLLECTION_CONTROL;
+          enum QOE_DATA_REPORT;
+          enum FILE_RETRIEVAL;
+          enum FILE_DOWNLOAD;
+          enum CONFIGURATION_PLAN_MGMT;
+          enum SUBSCRIPTION_CONTROL;
+          enum HEARTBEAT_CONTROL;
+          enum HEARTBEAT_NOTIFICATION;
+          enum MANAGEMENT_DATA_ANALYTIC;
+          enum RANSC_MANAGEMENT;
+          enum SON_POLICY;
+          enum COMMUNICATION_SERVICE_ASSURANCE_CONTROL;
+          enum CLOSED_CONTROL_LOOP_MANAGEMENT;
+          enum INTENT_DRIVEN_MANAGEMENT;
+          enum ML_MODEL_MANAGEMENT;
+          enum NDT_LCM;
+          enum MNS_REGISTRY_AND_DISCOVERY;
+          enum MNS_ACCESS_CONTROL_MANAGEMENT;
+          enum DSO_RAPID_RECOVERY_AND_THRESHOLD_MONITORING;
+          enum EXTERNALDATA_DISCOVERY_AND_REQUEST;
+        }
+        type string;
+      }
+      description "It describes the types of management capabilities of the
+        MnS instance provided by the MnS producer. The detailed description for
+        above enum values see Annex F in TS 28.533.
+        Note: vendor extension values are allowed for the attribute
+        'mnsCapability'";
+    }
+
+    list mnsScope {
+      description "This attribute defines the information about the
+        management scope of the Management Service. The management scope is
+        used to represent  the set of managed object instances that can be
+        accessed using the Management Service.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses MnsScopeGrp;
+    }
+
+    leaf-list mgmtDataInfoRef {
+      type types3gpp:DistinguishedName;
+      yext3gpp:notNotifyable;
+      min-elements 1;
+      description "List of DN of MgmtDataInfo instance(s) which are associated
+        the MnSInfo which represent a management service instance";
+
+    }
+  }
+
+  grouping MnsRegistryGrp {
+    description "Currently no own attributes defined.";
+  }
+
+  augment "/subnet3gpp:SubNetwork" {
+    list MnsRegistry {
+      description "This IOC is a container for MnsInfo IOC-s. It can be
+        contained only by SubNetwork IOC. A SubNetwork IOC can contain
+        only one instance of MnsRegistry.
+        The IOC is instantiated by the system.";
+      key id;
+      max-elements 1;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses MnsRegistryGrp;
+      }
+
+      list MnsInfo {
+        description "This IOC represents an available Management Service (MnS)
+          and provides the data required to support its discovery.
+          It is name-contained by MnsRegistry.
+
+          This information is used by the consumer to discover the producers
+          of specific Management Services and to derive the addresses of the
+          Management Service.
+
+          Attributes mnsLabel, mnsType, and mnsVersion are used to describe
+          the Management Service.
+
+          Attribute mnsAddress is used to provide addressing information for
+          the Management Service operations.
+
+          Attribute mnsScope is used to provide information about the
+          management scope of the Management Service. The management scope
+          is used to represent the set of managed object instances that can
+          be accessed using the Management Service.";
+
+        key id;
+        uses top3gpp:Top_Grp;
+        container attributes {
+          uses MnsInfoGrp;
+        }
+      }
+
+      list MgmtDataInfo {
+        description "Describes the management capabilities for a set of
+          management data, which can be used for management data discovery.
+          MgmtDataInfo  is contained by MnSRegistry and associated to MnSInfo.
+
+          Multiple MgmtDataInfo instances maybe created for different sets of
+          management data, it is MnS producer’s decision.";
+
+        key id;
+        uses top3gpp:Top_Grp;
+        container attributes {
+          uses MgmtDataInfoGrp;
+        }
+      }
+
+    }
+  }
+}

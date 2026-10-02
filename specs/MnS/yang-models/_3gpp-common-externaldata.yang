@@ -1,0 +1,135 @@
+module _3gpp-common-externaldata {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-common-externaldata";
+  prefix "exdata3gpp";
+
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import ietf-inet-types { prefix inet; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the external data.
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.623 Generic Network Resource Model (NRM)";
+
+  revision 2025-07-19 { reference CR-0551; }
+
+    grouping ExternalDataScopeGrp {
+      list geoAreas {
+        description "It describes the concrete geographical area(s)";
+        key idx;
+        leaf idx { type uint32; }
+        uses types3gpp:GeoAreaGrp;
+      }
+
+      leaf-list objectInstancesIncluded {
+        type types3gpp:DistinguishedName;
+        description "List of managed object instances to which the described
+          data are related. Each object instance is identified by its DN.";
+      }
+
+      leaf-list objectInstancesExcluded {
+        type types3gpp:DistinguishedName;
+        description "List of managed object instances which are not considered
+          in relation to the described data. Each object instance is identified
+          by its DN.";
+      }
+    }
+
+    grouping ExternalDataTypeGrp {
+    description "Represents the IOC ExternalDataType";
+
+    leaf externalDataType {
+      type string;
+      mandatory true;
+      description "Type of external management data as defined by the
+        implementation.
+
+        Examples: 'Electronic Map', 'Camara Data', 'UE path', 'Camera Photo',
+        'Event Schedule”";
+    }
+
+    leaf-list mediaLocation {
+      type inet:uri;
+      description "URI of the media which includes the transfer protocol.
+
+      Examples:
+      sftp://companyA.com/datastore/fileName.xml
+      https://companyA.com/ManagedElement=1/Files=1/File=1";
+    }
+
+    leaf externalDataTypeSchema {
+      type inet:uri;
+      mandatory true;
+      description "URI of the schema to parse a type of external management data.
+      The detailed schema definition for the different types of external
+      management data is out of scope of this specification.";
+    }
+
+    list externalDataScope {
+      description "It describes the concrete scope which the external management
+        data is applicable.";
+      key idx;
+      leaf idx { type uint32; }
+      uses ExternalDataScopeGrp;
+    }
+  }
+
+  augment /subnet3gpp:SubNetwork {
+    list ExternalDataType {
+      description "This IOC specifies a type of external management data and
+      the associated meta data.
+
+      External management data is data which enrich 3GPP specified management
+      data and management data specified based on 3GPP defined management data
+      definition templates and frameworks. External management data can be
+      produced by data sources of different nature (e.g. sensors) with different
+      formats. Details see clause 6.4.1 in TS 28.537.
+
+      MnS producer may use this IOC to describe external management data.
+
+      For example, MnS producer publishes all external management data which
+      are available.
+
+      MnS consumer may use this IOC to configure, discover or request external
+      management data. For example, MnS consumer discovers and requests certain
+      types of external management data.
+
+      The ExternalDataType IOC can be name-contained by SubNetwork.
+
+      Attribute externalDataType defines the type of external management data.
+
+      Attribute mediaLocation indicates the address from which the described
+      external management data can be retrieved.
+
+      The value of mediaLocation, if present, can provide one or several
+      directories or the address where the described external management data
+      can be retrieved. The different directories can be used to group the
+      external management data, e.g., one directory per geographical area or
+      per time period. For example, the value of the mediaLocation attribute
+      can be given by
+
+      sftp://companyA.com/datastore/weatherforecasts/
+
+      In this case a potential file with name 'weatherforecastMunicht0.xml'
+      needs to be retrieved using 'sftp' from
+
+      sftp://companyA.com/datastore/weatherforecasts/weatherforecastMunicht0.xml.
+
+      Attribute externalDataTypeSchema indicates the URI where the MnS consumer
+      can get the schema to parse the external management data.
+
+      Attribute externalDataScope is used to describe the concrete scope (e.g.,
+      geographical areas) which the external management data is applicable.";
+
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses ExternalDataTypeGrp;
+      }
+    }
+  }
+}

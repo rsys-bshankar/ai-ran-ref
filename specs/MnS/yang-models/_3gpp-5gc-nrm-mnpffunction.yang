@@ -1,0 +1,84 @@
+module _3gpp-5gc-nrm-mnpffunction {
+  yang-version 1.1;
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-mnpffunction;
+  prefix mnpf3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp; }
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "MNNPFFunction derived from basic ManagedFunction.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2026-04-13 { reference CR-1694 ; }  // common for rel-19,20
+
+  grouping MnpfInfoGrp {
+    description "Represents the data type MnpfInfo.";
+    
+    list msisdnRanges {
+      description "Represents the list of ranges of MSISDNs whose portability 
+        status is available in the MNPF."; 
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:IdentityRangeGrp;
+    }
+  }
+  
+  grouping MNPFFunctionGrp {
+    description "Represents the SMFFuntion IOC";
+    uses mf3gpp:ManagedFunctionGrp;
+    
+    list pLMNInfoList {
+      description "It defines the PLMN(s) of a Network Function.";
+      key "mcc mnc sd sst";
+      min-elements 1;
+      uses types5g3gpp:PLMNInfo;
+    }
+
+    list managedNFProfile {
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      max-elements 1;
+      description "Profile definition of a Managed NF (See TS 23.501)";
+      uses mnfp3gpp:ManagedNFProfileGrp;
+    }
+
+    list commModelList {
+      min-elements 1;
+      key "groupId";
+      description "Specifies a list of commModel. It can be used by NF and
+        NF services to interact with each other in 5G Core network ";
+      reference "3GPP TS 23.501";
+      uses types5g3gpp:CommModel;
+    }
+    
+    list mnpfInfo {
+      description  "This attribute represents information of an MNPF NF 
+        Instance";
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses MnpfInfoGrp;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list MNPFFunction {
+      description "MNPF NF";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses MNPFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

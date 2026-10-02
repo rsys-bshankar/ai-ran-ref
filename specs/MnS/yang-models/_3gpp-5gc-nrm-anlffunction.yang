@@ -1,0 +1,59 @@
+module _3gpp-5gc-nrm-anlffunction {
+  yang-version 1.1;
+  
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-anlffunction;
+  prefix anlf3gpp;
+  
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5gc-nrm-nwdaffunction { prefix nwdaf3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the AnLF function in 5GC.
+               For more information about the AnLF, see 3GPP TS 23.288.
+    Copyright 2024, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+  
+  revision 2024-08-07 { reference CR-1331; }
+  revision 2023-11-03 { reference "initial revision"; }
+  
+  grouping AnLFFunctionGrp {
+    description "Represents the AnLFFunction IOC";
+    uses top3gpp:Top_Grp;    
+    leaf activationStatus {
+      type enumeration {
+        enum ACTIVATED;
+        enum DEACTIVATED;
+      }
+      config false;
+      description "It indicates the activation status of the AnLF";
+    }
+     leaf-list mLModelRefList {
+      type types3gpp:DistinguishedName;
+      description "This attribute holds a DN list of MLModel ¨
+        (See TS 28.105).";
+       config false;     
+    }
+    leaf-list aIMLInferenceFunctionRefList {
+      type types3gpp:DistinguishedName;
+      description "This attribute holds a DN list of AIMLInferenceFunction
+        (See TS 28.105) .";
+      config false;      
+    }   
+  }
+    
+  augment "/me3gpp:ManagedElement/nwdaf3gpp:NWDAFFunction" {
+    list AnLFFunction {
+      description "5G Core AnLF contained by NWDAF";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses AnLFFunctionGrp;
+      }
+    }
+  }
+}

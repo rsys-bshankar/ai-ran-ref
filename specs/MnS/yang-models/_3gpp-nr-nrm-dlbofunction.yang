@@ -1,0 +1,117 @@
+module _3gpp-nr-nrm-dlbofunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-dlbofunction";
+  prefix "dlbof3gpp";
+
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-nr-nrm-gnbcucpfunction { prefix gnbcucp3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-nr-nrm-nrcellcu { prefix nrcellcu3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the DLBOFunction 
+    Information Object Class (IOC) that is part of the NR Network Resource 
+    Model (NRM).
+    Copyright 2024, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2024-08-07 { reference CR-1331; }
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2022-03-25 { reference "CR-0683"; }
+  revision 2021-10-22 { reference "CR-0577"; }  
+
+  feature DLBOUnderGNBCUCPFunction {
+    description "The DLBOFunction shall be available under
+      GNBCUCPFunction";
+  }
+
+  feature DLBOUnderManagedElement {
+    description "The DLBOFunction shall be available under
+      ManagedElement";
+  }
+
+  feature DLBOUnderSubNetwork {
+    description "The DLBOFunction shall be available under
+      SubNetwork";
+  }
+  grouping DLBOFunctionGrp {
+    description "Represents the DLBOFunction IOC.";
+
+    leaf dlboControl {
+      description "This attribute determines whether the LBO function is 
+        enabled or disabled.";
+      type boolean;
+    }
+
+    leaf maximumDeviationHoTriggerLow {
+      description "This parameter defines the maximum allowed lower 
+        deviation of the Handover Trigger, from the default point of 
+        operation.";
+        type int32 { range "-20..20"; }
+        units "0.5 dB";
+    }
+
+    leaf maximumDeviationHoTriggerHigh {
+      description "This parameter defines the maximum allowed upper 
+        deviation of the Handover Trigger, from the default point of 
+        operation.";
+        type int32 { range "-20..20"; }
+        units "0.5 dB";
+    }
+
+    leaf minimumTimeBetweenHoTriggerChange {
+      description "This parameter defines the minimum allowed time interval 
+        between two Handover Trigger change performed by MRO. This is used 
+        to control the stability and convergence of the algorithm.";
+        type int32 { range "0..604800"; }
+        units "1";
+    }
+    leaf-list mLModelRefList {
+      type types3gpp:DistinguishedName;
+      description "This attribute holds a DN list of MLModel ¨
+        (See TS 28.105).";
+      config false; 
+    }
+    leaf-list aIMLInferenceFunctionRefList {
+      type types3gpp:DistinguishedName;
+      description "This attribute holds a DN list of AIMLInferenceFunction
+        (See TS 28.105) .";
+      config false; 
+    }
+  }
+
+  grouping DLBOFunctionSubtree {
+    list DLBOFunction {
+      description "This IOC contains attributes to support the D-SON function 
+        of LBO.
+
+        In the case where multiple DLBO MOIs exist at different levels of the 
+        containment tree, the DLBO MOI at the lower level overrides the DLBO
+        MOIs at higher level(s) of the same containment tree.";
+      reference "clause 7.1.2 in TS 28.313";
+      key id;   
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses DLBOFunctionGrp;
+      }           
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction/"+
+      "nrcellcu3gpp:NRCellCU" {
+    if-feature DLBOUnderGNBCUCPFunction;
+    uses DLBOFunctionSubtree;
+  }
+  augment /me3gpp:ManagedElement {
+    if-feature DLBOUnderManagedElement;
+    uses DLBOFunctionSubtree;
+  }
+  augment /subnet3gpp:SubNetwork {
+    if-feature DLBOUnderSubNetwork;
+    uses DLBOFunctionSubtree;
+  }
+}

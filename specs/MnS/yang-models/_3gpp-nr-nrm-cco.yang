@@ -1,0 +1,210 @@
+module _3gpp-nr-nrm-cco {
+  yang-version 1.1;
+  
+  namespace urn:3gpp:sa5:_3gpp-nr-nrm-cco;
+  prefix cco3gpp;
+  
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Implements support the C-SON function of Capacity and 
+    Coverage optimization .
+    Copyright 2024, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+  
+  revision 2024-05-24 { reference CR-1273 ; } 
+  
+  grouping ParameterRangeGrp {
+    description "This data type represents the adjustment range for parameters.";
+    
+    leaf maxValue {
+      type int64;
+      mandatory true;
+      description "It indicates the maximum value of the parameter.";
+    }
+
+    leaf minValue {
+      type int64;
+      mandatory true;
+      description "It indicates the minimum value of the parameter.";
+    }
+  }
+  
+  grouping CCOParametersGrp {
+    description "Represents the CCOParameters IOC";
+    
+    list downlinkTransmitPowerRange { 
+      description "It indicates adjustment range (including maximum value, 
+        minimum value) of downlinkTransmitPower to optimize radio coverage.";
+      key minValue;
+      min-elements 1;
+      max-elements 1;
+      uses ParameterRangeGrp {
+        refine minValue {
+          must '. >= 0 and . <= 100';
+        }
+        refine maxValue {
+          must '. >= 0 and . <= 100';
+        }
+      }
+    }
+    
+    list antennaTiltRange {
+      description "It indicates adjustment range (including maximum value, 
+        minimum value) of antennaTilt to optimize radio coverage.
+         units 0.1 degree";
+      key minValue;
+      min-elements 1;
+      max-elements 1;
+      uses ParameterRangeGrp {
+        refine minValue {
+          must '. >= -900 and . <= 900';
+        }
+        refine maxValue {
+          must '. >= -900 and . <= 900';
+        }
+      }
+    }
+    
+    list antennaAzimuthRange {
+      description "It indicates adjustment range (including maximum value,
+        minimum value) of antennaAzimuth to optimize radio coverage.
+         units 0.1 degree";
+      key minValue;
+      min-elements 1;
+      max-elements 1;
+      uses ParameterRangeGrp {
+        refine minValue {
+          must '. >= -1800 and . <= 1800';
+        }
+        refine maxValue {
+          must '. >= -1800 and . <= 1800';
+        }
+      }
+    }
+    
+    list digitalTiltRange {
+      description "It indicates adjustment range (including maximum value, 
+        minimum value) of digitalTilt to optimize radio coverage.
+         units 0.1 degree";
+      key minValue;
+      min-elements 1;
+      max-elements 1;
+      uses ParameterRangeGrp {
+        refine minValue {
+          must '. >= -900 and . <= 900';
+        }
+        refine maxValue {
+          must '. >= -900 and . <= 900';
+        }
+      }
+    }
+    
+    list digitalAzimuthRange {
+      description "It indicates adjustment range (including maximum value, 
+        minimum value) of digitalAzimuth to optimize radio coverage.
+         units 0.1 degree";
+      key minValue;
+      min-elements 1;
+      max-elements 1;
+      uses ParameterRangeGrp {
+        refine minValue {
+          must '. >= -1800 and . <= 1800';
+        }
+        refine maxValue {
+          must '. >= -1800 and . <= 1800';
+        }
+      }    }
+    
+    leaf-list coverageShapeList {
+      type uint16;
+      ordered-by user;
+      description "It indicates the coverage shape of specific sites which 
+        can be selected to optimize radio coverage.";
+    }
+  }
+  
+  grouping CCOWeakCoverageParametersGrp {
+    description "Represents the CCOWeakCoverageParameters IOC";
+    uses CCOParametersGrp;
+  }
+  
+  grouping CCOPilotPollutionParametersGrp {
+    description "Represents the CCOPilotPollutionParameters IOC";
+    uses CCOParametersGrp;    
+  }
+  
+  grouping CCOOvershootCoverageParametersGrp {
+    description "Represents the CCOOvershootCoverageParameters IOC";
+    uses CCOParametersGrp;
+  }
+    
+  grouping CCOFunctionGrp {
+    description "Represents the CCOFunction IOC";
+    
+    leaf cCOControl {
+      description "This attribute determines whether the centralized 
+        SON CCO Function is enabled or disabled.";
+      mandatory true;
+      type boolean;
+    }    
+  }
+  
+  augment "/subnet3gpp:SubNetwork" {
+    list CCOFunction {
+      description "This IOC contains attributes to support the C-SON 
+        function of Capacity and Coverage optimization 
+        (See clause 7.2.3 in TS 28.313). 
+        NOTE: in the case where multiple CCOFunction MOIs exist at different 
+        levels of the containment tree, the CCOFunction MOI at the lower 
+        level overrides the CCOFunction MOIs at higher level(s) of the same 
+        containment tree.";
+
+      key id;
+      max-elements 1;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses CCOFunctionGrp;
+      }
+      
+      list CCOWeakCoverageParameters {
+        description "This IOC represents the properties of 
+          CCOWeakCoverageParameters. CCOWeakCoverageParameters is one 
+          realization of abstract CCOParameters IOC.";
+        key id;
+        max-elements 1;
+        uses top3gpp:Top_Grp;
+        container attributes {
+          uses CCOWeakCoverageParametersGrp;
+        }
+      }
+      
+      list CCOPilotPollutionParameters {
+        description "This IOC represents the properties of 
+          CCOPilotPollutionParameters. CCOPilotPollutionParameters is one 
+          realization of abstract CCOParameters IOC.";
+        key id;
+        max-elements 1;
+        uses top3gpp:Top_Grp;
+        container attributes {
+          uses CCOPilotPollutionParametersGrp;
+        }
+      }
+      
+      list CCOOvershootCoverageParameters {
+        description "This IOC represents the properties of 
+          CCOOvershootCoverageParameters. CCOOvershootCoverageParameters is 
+          one realization of abstract CCOParameters IOC.";
+        key id;
+        max-elements 1;
+        uses top3gpp:Top_Grp;
+        container attributes {
+          uses CCOOvershootCoverageParametersGrp;
+        }
+      }
+    }
+  }
+}

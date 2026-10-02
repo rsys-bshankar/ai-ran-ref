@@ -1,0 +1,1448 @@
+module _3gpp-5gc-nrm-ep {
+  yang-version 1.1;
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-ep;
+  prefix cep3gpp;
+
+  import _3gpp-common-ep-rp { prefix eprp3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-5gc-nrm-affunction { prefix af3gpp; }
+  import _3gpp-5gc-nrm-amffunction { prefix amf3gpp; }
+  import _3gpp-5gc-nrm-ausffunction { prefix ausf3gpp; }
+  import _3gpp-5gc-nrm-lmffunction { prefix lmf3gpp; }
+  import _3gpp-5gc-nrm-n3iwffunction { prefix n3iwf3gpp; }
+  import _3gpp-5gc-nrm-ngeirfunction { prefix ngeir3gpp; }
+  import _3gpp-5gc-nrm-nrffunction { prefix nrf3gpp; }
+  import _3gpp-5gc-nrm-nssffunction { prefix nssf3gpp; }
+  import _3gpp-5gc-nrm-pcffunction { prefix pcf3gpp; }
+  import _3gpp-5gc-nrm-seppfunction { prefix sepp3gpp; }
+  import _3gpp-5gc-nrm-smffunction { prefix smf3gpp; }
+  import _3gpp-5gc-nrm-smsffunction { prefix smsf3gpp; }
+  import _3gpp-5gc-nrm-udmfunction { prefix udm3gpp; }
+  import _3gpp-5gc-nrm-upffunction { prefix upf3gpp; }
+  import _3gpp-5gc-nrm-mbupffunction { prefix mbupf3gpp; }
+  import _3gpp-5gc-nrm-mbsmffunction { prefix mbsmf3gpp; }
+  import _3gpp-5gc-nrm-chffunction { prefix chf3gpp; }
+  import _3gpp-5gc-nrm-nsacffunction { prefix nsacf3gpp; }
+  import _3gpp-5gc-nrm-neffunction { prefix nef3gpp; }
+  import _3gpp-5gc-nrm-nssaaffunction { prefix nssaaf3gpp; }
+  import _3gpp-5gc-nrm-ddnmffunction { prefix ddnmf3gpp; }
+  import _3gpp-5gc-nrm-tsctsffunction { prefix tsctsf3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import ietf-inet-types { prefix inet; }
+  import _3gpp-5gc-nrm-nwdaffunction { prefix nwdaf3gpp; }
+  import _3gpp-5gc-nrm-scpfunction {prefix scp3gpp;}
+  import _3gpp-5gc-nrm-aanffunction {prefix aanf3gpp;}
+  import _3gpp-5gc-nrm-easdffunction {prefix easdf3gpp;}
+  import _3gpp-5gc-nrm-gmlcfunction {prefix gmlc3gpp;}
+
+
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the 5GC related endpoint
+  Information Object Classes (IOCs) that are part of the 5G Core
+   Network Resource Model.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+     TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2026-04-25 { reference CR-1702; }
+  revision 2025-07-25 { reference CR-1558 ; }
+  revision 2024-08-19 { reference CR-1314 ; }
+  revision 2023-09-18 { reference CR-1043 ; }
+  revision 2019-11-18 {reference "Ericsson refactoring."; }
+  revision 2018-07-31 { reference "Initial revision"; }
+
+  // === Features for EPs under 2+ functions ===
+
+  feature EP_N2UnderAMFFunction {
+    description "EP_N2 contained under AMFFunction";
+  }
+  feature EP_N2UnderN3IWFFunction {
+    description "EP_N2 contained under N3IWFFunction";
+  }
+  feature EP_N3UnderN3IWFFunction {
+    description "EP_N3 contained under N3IWFFunction";
+  }
+  feature EP_N3UnderUPFFunction {
+    description "EP_N3 contained under UPFFunction";
+  }
+  feature EP_N4UnderSMFFunction {
+    description "EP_N4 contained under SMFFunction";
+  }
+  feature EP_N4UnderUPFFunction {
+    description "EP_N4 contained under UPFFunction";
+  }
+  feature EP_N5UnderAFFunction {
+    description "EP_N5 contained under AFFunction";
+  }
+  feature EP_N5UnderPCFFunction {
+    description "EP_N5 contained under PCFFunction";
+  }
+  feature EP_N61UnderAUSFFunction {
+    description "EP_N61 contained under AUSFFunction";
+  }
+  feature EP_N61UnderAANFFunction {
+    description "EP_N61 contained under AANFFunction";
+  }
+  feature EP_N62UnderAFFunction {
+    description "EP_N62 contained under AFFunction";
+  }
+  feature EP_N62UnderAANFFunction {
+    description "EP_N62 contained under AANFFunction";
+  }
+  feature EP_N63UnderNEFFunction {
+    description "EP_N63 contained under NEFFunction";
+  }
+  feature EP_N63UnderAANFFunction {
+    description "EP_N63 contained under AANFFunction";
+  }
+  feature EP_N6UnderUPFFunction {
+    description "EP_N6 contained under UPFFunction";
+  }
+  feature EP_N7UnderPCFFunction {
+    description "EP_N7 contained under PCFFunction";
+  }
+  feature EP_N7UnderSMFFunction {
+    description "EP_N7 contained under SMFFunction";
+  }
+  feature EP_N8UnderAMFFunction {
+    description "EP_N8 contained under AMFFunction";
+  }
+  feature EP_N8UnderUDMFunction {
+    description "EP_N8 contained under UDMFunction";
+  }
+  feature EP_N10UnderSMFFunction {
+    description "EP_N10 contained under SMFFunction";
+  }
+  feature EP_N10UnderUDMFunction {
+    description "EP_N10 contained under UDMFunction";
+  }
+  feature EP_N11UnderAMFFunction {
+    description "EP_N11 contained under AMFFunction";
+  }
+  feature EP_N11UnderSMFFunction {
+    description "EP_N11 contained under SMFFunction";
+  }
+  feature EP_N12UnderAMFFunction {
+    description "EP_N12 contained under AMFFunction";
+  }
+  feature EP_N12UnderAUSFFunction {
+    description "EP_N12 contained under AUSFFunction";
+  }
+  feature EP_N13UnderAUSFFunction {
+    description "EP_N13 contained under AUSFFunction";
+  }
+  feature EP_N13UnderUDMFunction {
+    description "EP_N13 contained under UDMFunction";
+  }
+  feature EP_N15UnderAMFFunction {
+    description "EP_N15 contained under AMFFunction";
+  }
+  feature EP_N15UnderPCFFunction {
+    description "EP_N15 contained under PCFFunction";
+  }
+  feature EP_N16UnderPCFFunction {
+    description "EP_N16 contained under PCFFunction";
+  }
+  feature EP_N16UnderSMFFunction {
+    description "EP_N16 contained under SMFFunction";
+  }
+  feature EP_N17UnderAMFFunction {
+    description "EP_N17 contained under AMFFunction";
+  }
+  feature EP_N17UnderNGEIRFunction {
+    description "EP_N17 contained under NGEIRFunction";
+  }
+  feature EP_N20UnderAMFFunction {
+    description "EP_N20 contained under AMFFunction";
+  }
+  feature EP_N20UnderSMSFFunction {
+    description "EP_N20 contained under SMSFFunction";
+  }
+  feature EP_N22UnderAMFFunction {
+    description "EP_N22 contained under AMFFunction";
+  }
+  feature EP_N22UnderNSSFFunction {
+    description "EP_N22 contained under NSSFFunction";
+  }
+  feature EP_NL1UnderAMFFunction {
+    description "EP_NL1 contained under AMFFunction";
+  }
+  feature EP_NL1UnderLMFFunction {
+    description "EP_NL1 contained under LMFFunction";
+  }
+  feature EP_NL6UnderGMLCFunction {
+    description "EP_NL6 contained under GMLCFunction";
+  }
+  feature EP_NL6UnderUDMFunction {
+    description "EP_NL6 contained under UDMFunction";
+  }
+  feature EP_NL9UnderGMLCFunction {
+    description "EP_NL9 contained under GMLCFunction";
+  }
+  feature EP_NL9UnderNWDAFFunction {
+    description "EP_NL9 contained under NWDAFFunction";
+  }
+  feature EP_N34UnderNSSFFunction {
+    description "EP_N34 contained under NSSFFunction";
+  }
+  feature EP_N34UnderNWDAFFunction {
+    description "EP_N34 contained under NWDAFFunction";
+  }
+  feature EP_NL2UnderGMLCFunction {
+    description "EP_NL2 contained under GMLCFunction";
+  }
+  feature EP_NL2UnderAMFFunction {
+    description "EP_NL2 contained under AMFFunction";
+  }
+  feature EP_N26UnderAMFFunction {
+    description "EP_N26 contained under AMFFunction";
+  }
+  feature EP_N26UnderMMEFunction {
+    description "EP_N26 contained under MMEFunction";
+  }
+  feature EP_N89UnderAMFFunction {
+    description "EP_N89 contained under AMFFunction";
+  }
+  feature EP_N89UnderTSCTSFFunction {
+    description "EP_N89 contained under TSCTSFFunction";
+  }
+  feature EP_N11mbUnderAMFFunction {
+    description "EP_N11mb contained under AMFFunction";
+  }
+  feature EP_N11mbUnderMBSMFFunction {
+    description "EP_N11mb contained under MBSMFFunction";
+  }
+  feature EP_N88UnderSMFFunction {
+    description "EP_N88 contained under SMFFunction";
+  }
+  feature EP_N88UnderEASDFFunction {
+    description "EP_N88 contained under EASDFFunction";
+  }
+  feature EP_N16mbUnderSMFFunction {
+    description "EP_N16mb contained under SMFFunction";
+  }
+  feature EP_N16mbUnderMBSMFFunction {
+    description "EP_N16mb contained under MBSMFFunction";
+  }
+  feature EP_N4mbUnderMBUPFFunction {
+    description "EP_N4mb contained under MBUPFFunction";
+  }
+  feature EP_N4mbUnderMBSMFFunction {
+    description "EP_N4mb contained under MBSMFFunction";
+  }
+  feature EP_NL3UnderGMLCFunction {
+    description "EP_NL3 contained under GMLCFunction";
+  }
+  feature EP_NL5UnderGMLCFunction {
+    description "EP_NL5 contained under GMLCFunction";
+  }
+  feature EP_NL5UnderNEFFunction {
+    description "EP_NL5 contained under NEFFunction";
+  }
+  feature EP_NL10UnderGMLCFunction {
+    description "EP_NL10 contained under GMLCFunction";
+  }
+  feature EP_NL10UnderLMFFunction {
+    description "EP_NL10 contained under LMFFunction";
+  }
+  feature EP_NL8UnderLMFFunction {
+    description "EP_NL8 contained under LMFFunction";
+  }
+  feature EP_RxUnderAFFunction {
+    description "EP_Rx contained under AFFunction";
+  }
+  feature EP_RxUnderPCFFunction {
+    description "EP_Rx contained under PCFFunction";
+  }
+  feature EP_N40UnderCHFFunction {
+    description "EP_N40 contained under CHFFunction";
+  }
+  feature EP_N40UnderSMFFunction {
+    description "EP_N40 contained under SMFFunction";
+  }
+  feature EP_N28UnderCHFFunction {
+    description "EP_N28 contained under CHFFunction";
+  }
+  feature EP_N28UnderPCFFunction {
+    description "EP_N28 contained under PCFFunction";
+  }
+  feature EP_N41UnderAMFFunction {
+    description "EP_N41 contained under AMFFunction";
+  }
+  feature EP_N41UnderCHFFunction {
+    description "EP_N41 contained under CHFFunction";
+  }
+  feature EP_N60UnderAMFFunction {
+    description "EP_N60 contained under AMFFunction";
+  }
+  feature EP_N60UnderNSACFFunction {
+    description "EP_N60 contained under NSACFFunction";
+  }
+  feature EP_N19mbUnderMBUPFFunction {
+    description "EP_N19mb contained under MBUPFFunction";
+  }
+  feature EP_N19mbUnderUPFFunction {
+    description "EP_N19mb contained under UPFFunction";
+  }
+  feature EP_N84UnderTSCTSFFunction {
+    description "EP_N84 contained under TSCTSFFunction";
+  }
+  feature EP_N84UnderPCFFunction {
+    description "EP_N84 contained under PCFFunction";
+  }
+  feature EP_N85UnderTSCTSFFunction {
+    description "EP_N85 contained under TSCTSFFunction";
+  }
+  feature EP_N85UnderNEFFunction {
+    description "EP_N85 contained under NEFFunction";
+  }
+  feature EP_N86UnderTSCTSFFunction {
+    description "EP_N86 contained under TSCTSFFunction";
+  }
+  feature EP_N86UnderAFFunction {
+    description "EP_N86 contained under AFFunction";
+  }
+  feature EP_N87UnderTSCTSFFunction {
+    description "EP_N87 contained under TSCTSFFunction";
+  }
+  feature EP_N87UnderUDMFunction {
+    description "EP_N87 contained under UDMFunction";
+  }
+  feature EP_N96UnderTSCTSFFunction {
+    description "EP_N96 contained under TSCTSFFunction";
+  }
+  feature EP_N96UnderNRFFunction {
+    description "EP_N96 contained under NRFFunction";
+  }
+  // === EP Groupings ===
+
+  grouping EP_N2Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N3Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N4Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N5Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N6Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N7Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N8Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N9Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N10Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N11Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N12Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N13Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N14Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N15Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N16Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N17Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N20Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N21Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N22Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N26Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N27Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N31Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_N32Grp {
+    uses eprp3gpp:EP_Common;
+    list  remotePlmnId {
+      key idx;
+      leaf idx { type uint32;}
+      description "PLMN Identifiers of the remote sepp.
+      The PLMN Identifier is composed of a Mobile Country Code 
+      (MCC) and a Mobile Network Code (MNC).";
+      uses types3gpp:PLMNId;
+    }
+
+  leaf remoteSeppAddress {
+      description "The host address of the SEPP.";
+      type inet:host;
+    }
+
+  leaf remoteSeppId {
+      type uint16;
+    }
+
+    leaf n32cParas {
+      type string;
+    }
+
+    leaf n32fPolicy {
+      type string;
+    }
+
+    leaf withIPX {
+      type boolean;
+    }
+  }
+
+  grouping EP_S5CGrp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_S5UGrp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_RxGrp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_MAP_SMSCGrp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_NL1Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_NL2Grp {
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_SBI_IPXGrp {
+    uses eprp3gpp:EP_Common;
+    leaf-list sBIService {
+      min-elements 1;
+      config false;
+      type string;
+    }
+  }
+  grouping EP_N40Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N28Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N41Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N60Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N3mbGrp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N19mbGrp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N4mbGrp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_Nmb9Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_Nmb1Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N58Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N59Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_Npc4Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_Npc6Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_Npc7Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_NL7Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_NL10Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N96Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_SM14Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N34Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N33Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_Npc8Grp {
+    uses eprp3gpp:EP_Common;
+  }
+ 
+  grouping EP_N84Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N85Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N63Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_NL5Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_NL9Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_NL3Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_NL6Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_NL8Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_SM13Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N61Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N62Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N42Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N11mbGrp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N88Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N16mbGrp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N86Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N87Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  grouping EP_N89Grp {
+    uses eprp3gpp:EP_Common;
+  }
+  // === Subtree groupings for EPs under 2+ functions ===
+
+  grouping EP_N2Subtree {
+    list EP_N2 {
+      description "Represents the EP_N2 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N2Grp; }
+    }
+  }
+  grouping EP_N3Subtree {
+    list EP_N3 {
+      description "Represents the EP_N3 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N3Grp; }
+    }
+  }
+  grouping EP_N4Subtree {
+    list EP_N4 {
+      description "Represents the EP_N4 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N4Grp; }
+    }
+  }
+  grouping EP_N5Subtree {
+    list EP_N5 {
+      description "Represents the EP_N5 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N5Grp; }
+    }
+  }
+  grouping EP_N6Subtree {
+    list EP_N6 {
+      description "Represents the EP_N6 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N6Grp; }
+    }
+  }
+  grouping EP_N7Subtree {
+    list EP_N7 {
+      description "Represents the EP_N7 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N7Grp; }
+    }
+  }
+  grouping EP_N8Subtree {
+    list EP_N8 {
+      description "Represents the EP_N8 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N8Grp; }
+    }
+  }
+  grouping EP_N10Subtree {
+    list EP_N10 {
+      description "Represents the EP_N10 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N10Grp; }
+    }
+  }
+  grouping EP_N11Subtree {
+    list EP_N11 {
+      description "Represents the EP_N11 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N11Grp; }
+    }
+  }
+  grouping EP_N12Subtree {
+    list EP_N12 {
+      description "Represents the EP_N12 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N12Grp; }
+    }
+  }
+  grouping EP_N13Subtree {
+    list EP_N13 {
+      description "Represents the EP_N13 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N13Grp; }
+    }
+  }
+  grouping EP_N15Subtree {
+    list EP_N15 {
+      description "Represents the EP_N15 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N15Grp; }
+    }
+  }
+  grouping EP_N16Subtree {
+    list EP_N16 {
+      description "Represents the EP_N16 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N16Grp; }
+    }
+  }
+  grouping EP_N17Subtree {
+    list EP_N17 {
+      description "Represents the EP_N17 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N17Grp; }
+    }
+  }
+  grouping EP_N20Subtree {
+    list EP_N20 {
+      description "Represents the EP_N20 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N20Grp; }
+    }
+  }
+  grouping EP_N22Subtree {
+    list EP_N22 {
+      description "Represents the EP_N22 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N22Grp; }
+    }
+  }
+  grouping EP_NL1Subtree {
+    list EP_NL1 {
+      description "Represents the EP_NL1 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_NL1Grp; }
+    }
+  }
+  grouping EP_NL6Subtree {
+    list EP_NL6 {
+      description "Represents the EP_NL6 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_NL6Grp; }
+    }
+  }
+  grouping EP_NL9Subtree {
+    list EP_NL9 {
+      description "Represents the EP_NL9 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_NL9Grp; }
+    }
+  }
+  grouping EP_NL2Subtree {
+    list EP_NL2 {
+      description "Represents the EP_NL2 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_NL2Grp; }
+    }
+  }
+  grouping EP_NL3Subtree {
+    list EP_NL3 {
+      description "Represents the EP_NL3 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_NL3Grp; }
+    }
+  }
+  grouping EP_NL5Subtree {
+    list EP_NL5 {
+      description "Represents the EP_NL5 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_NL5Grp; }
+    }
+  }
+  grouping EP_NL10Subtree {
+    list EP_NL10 {
+      description "Represents the EP_NL10 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_NL10Grp; }
+    }
+  }
+  grouping EP_NL8Subtree {
+    list EP_NL8 {
+      description "Represents the EP_NL8 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_NL8Grp; }
+    }
+  }
+  grouping EP_N34Subtree {
+    list EP_N34 {
+      description "Represents the EP_N34 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N34Grp; }
+    }
+  }
+  grouping EP_N26Subtree {
+    list EP_N26 {
+      description "Represents the EP_N26 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N26Grp; }
+    }
+  }
+  grouping EP_N89Subtree {
+    list EP_N89 {
+      description "Represents the EP_N89 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N89Grp; }
+    }
+  }
+  grouping EP_N11mbSubtree {
+    list EP_N11mb {
+      description "Represents the EP_N11mb IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N11mbGrp; }
+    }
+  }
+  grouping EP_N61Subtree {
+    list EP_N61 {
+      description "Represents the EP_N61 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N61Grp; }
+    }
+  }
+  grouping EP_N62Subtree {
+    list EP_N62 {
+      description "Represents the EP_N62 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N62Grp; }
+    }
+  }
+  grouping EP_N63Subtree {
+    list EP_N63 {
+      description "Represents the EP_N63 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N63Grp; }
+    }
+  }
+  grouping EP_N88Subtree {
+    list EP_N88 {
+      description "Represents the EP_N88 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N88Grp; }
+    }
+  }
+  grouping EP_N16mbSubtree {
+    list EP_N16mb {
+      description "Represents the EP_N16mb IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N16mbGrp; }
+    }
+  }
+  grouping EP_N4mbSubtree {
+    list EP_N4mb {
+      description "Represents the EP_N4mb IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N4mbGrp; }
+    }
+  }
+  grouping EP_RxSubtree {
+    list EP_Rx {
+      description "Represents the EP_Rx IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_RxGrp; }
+    }
+  }
+  grouping EP_N40Subtree {
+    list EP_N40 {
+      description "Represents the EP_N40 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N40Grp; }
+    }
+  }
+  grouping EP_N28Subtree {
+    list EP_N28 {
+      description "Represents the EP_N28 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N28Grp; }
+    }
+  }
+  grouping EP_N41Subtree {
+    list EP_N41 {
+      description "Represents the EP_N41 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N41Grp; }
+    }
+  }
+  grouping EP_N60Subtree {
+    list EP_N60 {
+      description "Represents the EP_N60 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N60Grp; }
+    }
+  }
+  grouping EP_N19mbSubtree {
+    list EP_N19mb {
+      description "Represents the EP_N19mb IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N19mbGrp; }
+    }
+  }
+  grouping EP_N84Subtree {
+    list EP_N84 {
+      description "Represents the EP_N84 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N84Grp; }
+    }
+  }
+  grouping EP_N85Subtree {
+    list EP_N85 {
+      description "Represents the EP_N85 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N85Grp; }
+    }
+  }
+  grouping EP_N86Subtree {
+    list EP_N86 {
+      description "Represents the EP_N86 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N86Grp; }
+    }
+  }
+  grouping EP_N87Subtree {
+    list EP_N87 {
+      description "Represents the EP_N87 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N87Grp; }
+    }
+  }
+  grouping EP_N96Subtree {
+    list EP_N96 {
+      description "Represents the EP_N96 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N96Grp; }
+    }
+  }
+
+  // === Augments ===
+
+  augment "/me3gpp:ManagedElement/af3gpp:AFFunction" {
+    uses EP_N5Subtree {
+      if-feature EP_N5UnderAFFunction;
+    }
+    uses EP_RxSubtree {
+      if-feature EP_RxUnderAFFunction;
+    }
+    uses EP_N62Subtree {
+      if-feature EP_N62UnderAFFunction;
+    }
+    uses EP_N86Subtree {
+      if-feature EP_N86UnderAFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/amf3gpp:AMFFunction" {
+    uses EP_N2Subtree {
+      if-feature EP_N2UnderAMFFunction;
+    }
+    uses EP_N8Subtree {
+      if-feature EP_N8UnderAMFFunction;
+    }
+    uses EP_N11Subtree {
+      if-feature EP_N11UnderAMFFunction;
+    }
+    uses EP_N12Subtree {
+      if-feature EP_N12UnderAMFFunction;
+    }
+    list EP_N14 {
+      description "Represents the EP_N14 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N14Grp; }
+    }
+    uses EP_N15Subtree {
+      if-feature EP_N15UnderAMFFunction;
+    }
+    uses EP_N17Subtree {
+      if-feature EP_N17UnderAMFFunction;
+    }
+    uses EP_N20Subtree {
+      if-feature EP_N20UnderAMFFunction;
+    }
+    uses EP_N22Subtree {
+      if-feature EP_N22UnderAMFFunction;
+    }
+    uses EP_N26Subtree {
+      if-feature EP_N26UnderAMFFunction;
+    }
+    uses EP_NL1Subtree {
+      if-feature EP_NL1UnderAMFFunction;
+    }
+    uses EP_NL2Subtree {
+      if-feature EP_NL2UnderAMFFunction;
+    }
+    uses EP_N41Subtree {
+      if-feature EP_N41UnderAMFFunction;
+    }
+    uses EP_N60Subtree {
+      if-feature EP_N60UnderAMFFunction;
+    }
+    list EP_N42 {
+      description "Represents the EP_N42 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N42Grp; }
+    }
+    uses EP_N89Subtree {
+      if-feature EP_N89UnderAMFFunction;
+    }
+    uses EP_N11mbSubtree {
+      if-feature EP_N11mbUnderAMFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/ausf3gpp:AUSFFunction" {
+    uses EP_N12Subtree {
+      if-feature EP_N12UnderAUSFFunction;
+    }
+    uses EP_N13Subtree {
+      if-feature EP_N13UnderAUSFFunction;
+    }
+    uses EP_N61Subtree {
+      if-feature EP_N61UnderAUSFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/lmf3gpp:LMFFunction" {
+    uses EP_NL1Subtree {
+      if-feature EP_NL1UnderLMFFunction;
+    }
+    uses EP_NL8Subtree {
+      if-feature EP_NL8UnderLMFFunction;
+    }
+    list EP_NL7 {
+      description "Represents the EP_NL7 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_NL7Grp; }
+    }
+    uses EP_NL10Subtree {
+      if-feature EP_NL10UnderLMFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/n3iwf3gpp:N3IWFFunction" {
+    uses EP_N2Subtree {
+      if-feature EP_N2UnderN3IWFFunction;
+    }
+    uses EP_N3Subtree {
+      if-feature EP_N3UnderN3IWFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/ngeir3gpp:NGEIRFunction" {
+    uses EP_N17Subtree {
+      if-feature EP_N17UnderNGEIRFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/nrf3gpp:NRFFunction" {
+    list EP_N27 {
+      description "Represents the EP_N27 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N27Grp; }
+    }
+    uses EP_N96Subtree {
+      if-feature EP_N96UnderNRFFunction;
+    }
+    list EP_SM14 {
+      description "Represents the EP_SM14 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_SM14Grp; }
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/nssf3gpp:NSSFFunction" {
+    uses EP_N22Subtree {
+      if-feature EP_N22UnderNSSFFunction;
+    }
+    list EP_N31 {
+      description "Represents the EP_N31 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N31Grp; }
+    }
+    uses EP_N34Subtree {
+      if-feature EP_N34UnderNSSFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/pcf3gpp:PCFFunction" {
+    uses EP_N5Subtree {
+      if-feature EP_N5UnderPCFFunction;
+    }
+    uses EP_N7Subtree {
+      if-feature EP_N7UnderPCFFunction;
+    }
+    uses EP_N15Subtree {
+      if-feature EP_N15UnderPCFFunction;
+    }
+    uses EP_N16Subtree {
+      if-feature EP_N16UnderPCFFunction;
+    }
+    uses EP_RxSubtree {
+      if-feature EP_RxUnderPCFFunction;
+    }
+    uses EP_N28Subtree {
+      if-feature EP_N28UnderPCFFunction;
+    }
+    uses EP_N84Subtree {
+      if-feature EP_N84UnderPCFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/sepp3gpp:SEPPFunction" {
+    list EP_N32 {
+      description "Represents the EP_N32 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N32Grp; }
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/smsf3gpp:SMSFFunction" {
+    uses EP_N20Subtree {
+      if-feature EP_N20UnderSMSFFunction;
+    }
+    list EP_N21 {
+      description "Represents the EP_N21 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N21Grp; }
+    }
+    list EP_MAP_SMSC {
+      description "Represents the EP_MAP_SMSC IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_MAP_SMSCGrp; }
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/smf3gpp:SMFFunction" {
+    uses EP_N4Subtree {
+      if-feature EP_N4UnderSMFFunction;
+    }
+    uses EP_N7Subtree {
+      if-feature EP_N7UnderSMFFunction;
+    }
+    uses EP_N10Subtree {
+      if-feature EP_N10UnderSMFFunction;
+    }
+    uses EP_N11Subtree {
+      if-feature EP_N11UnderSMFFunction;
+    }
+    uses EP_N16Subtree {
+      if-feature EP_N16UnderSMFFunction;
+    }
+    list EP_S5C {
+      description "Represents the EP_S5C IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_S5CGrp; }
+    }
+    uses EP_N40Subtree {
+      if-feature EP_N40UnderSMFFunction;
+    }
+    uses EP_N88Subtree {
+      if-feature EP_N88UnderSMFFunction;
+    }
+    uses EP_N16mbSubtree {
+      if-feature EP_N16mbUnderSMFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/udm3gpp:UDMFunction" {
+    uses EP_N8Subtree {
+      if-feature EP_N8UnderUDMFunction;
+    }
+    uses EP_N10Subtree {
+      if-feature EP_N10UnderUDMFunction;
+    }
+    uses EP_N13Subtree {
+      if-feature EP_N13UnderUDMFunction;
+    }
+    uses EP_NL6Subtree {
+      if-feature EP_NL6UnderUDMFunction;
+    }
+    uses EP_N87Subtree {
+      if-feature EP_N87UnderUDMFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/upf3gpp:UPFFunction" {
+    uses EP_N4Subtree {
+      if-feature EP_N4UnderUPFFunction;
+    }
+    uses EP_N3Subtree {
+      if-feature EP_N3UnderUPFFunction;
+    }
+    list EP_N9 {
+      description "Represents the EP_N9 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N9Grp; }
+    }
+    list EP_S5U {
+      description "Represents the EP_S5U IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_S5UGrp; }
+    }
+    uses EP_N6Subtree {
+      if-feature EP_N6UnderUPFFunction;
+    }
+    uses EP_N19mbSubtree {
+      if-feature EP_N19mbUnderUPFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/mbupf3gpp:MBUPFFunction" {
+    list EP_N3mb {
+      description "Represents the EP_N3mb IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N3mbGrp; }
+    }
+    uses EP_N19mbSubtree {
+      if-feature EP_N19mbUnderMBUPFFunction;
+    }
+    uses EP_N4mbSubtree {
+      if-feature EP_N4mbUnderMBUPFFunction;
+    }
+    list EP_Nmb9 {
+      description "Represents the EP_Nmb9 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_Nmb9Grp; }
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/mbsmf3gpp:MBSMFFunction" {
+    list EP_Nmb1 {
+      description "This IOC represents the Nmb1 interface
+        between MB-SMF and MBSF, which is defined in
+        TS 23.247.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_Nmb1Grp; }
+    }
+    uses EP_N11mbSubtree {
+      if-feature EP_N11mbUnderMBSMFFunction;
+    }
+    uses EP_N16mbSubtree {
+      if-feature EP_N16mbUnderMBSMFFunction;
+    }
+    uses EP_N4mbSubtree {
+      if-feature EP_N4mbUnderMBSMFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/chf3gpp:CHFFunction" {
+    uses EP_N40Subtree {
+      if-feature EP_N40UnderCHFFunction;
+    }
+    uses EP_N28Subtree {
+      if-feature EP_N28UnderCHFFunction;
+    }
+    uses EP_N41Subtree {
+      if-feature EP_N41UnderCHFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/nsacf3gpp:NSACFFunction" {
+    uses EP_N60Subtree {
+      if-feature EP_N60UnderNSACFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/nssaaf3gpp:NSSAAFFunction" {
+    list EP_N58 {
+      description "This IOC represents an end point of N58 interface
+      between NSSAAF and AMF, which is defined in TS 23.501 [2] and
+      33.501 [52].";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N58Grp; }
+    }
+    list EP_N59 {
+      description "This IOC represents an end point of N59 interface
+      between NSSAAF and UDM, which is defined in TS 23.501 [2] and
+      33.501 [52].";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N59Grp; }
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/ddnmf3gpp:DDNMFFunction" {
+    list EP_Npc4 {
+      description "This IOC represents the Npc4 interface between the UDM
+       and 5G DDNMF, which is defined in 3GPP TS 23.304 [73].";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_Npc4Grp; }
+    }
+
+    list EP_Npc6 {
+      description "This IOC represents the Npc6 interface between the 5G DDNMF
+      in the HPLMN and the 5G DDNMF in a Local PLMN (5G ProSe Direct Discovery)
+      , which is defined in TS 23.304 [73].";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_Npc6Grp; }
+    }
+
+    list EP_Npc7 {
+      description "This IOC represents the Npc7 interface between the 5G DDNMF
+      in the HPLMN and the 5G DDNMF in the VPLMN, which is defined in 
+      TS 23.304 [73].";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_Npc7Grp; }
+    }
+
+    list EP_Npc8 {
+      description "This IOC represents the Npc8 interface between the PCF and 5
+      G DDNMF, which is defined in 3GPP TS 23.304 [73].";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_Npc8Grp; }
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/tsctsf3gpp:TSCTSFFunction" {
+    uses EP_N84Subtree {
+      if-feature EP_N84UnderTSCTSFFunction;
+    }
+    uses EP_N85Subtree {
+      if-feature EP_N85UnderTSCTSFFunction;
+    }
+    uses EP_N86Subtree {
+      if-feature EP_N86UnderTSCTSFFunction;
+    }
+    uses EP_N87Subtree {
+      if-feature EP_N87UnderTSCTSFFunction;
+    }
+    uses EP_N89Subtree {
+      if-feature EP_N89UnderTSCTSFFunction;
+    }
+    uses EP_N96Subtree {
+      if-feature EP_N96UnderTSCTSFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/nef3gpp:NEFFunction" {
+    list EP_N33 {
+      description "Represents the EP_N33 IOC.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_N33Grp; }
+    }
+    uses EP_N85Subtree {
+      if-feature EP_N85UnderNEFFunction;
+    }
+    uses EP_N63Subtree {
+      if-feature EP_N63UnderNEFFunction;
+    }
+    uses EP_NL5Subtree {
+      if-feature EP_NL5UnderNEFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/nwdaf3gpp:NWDAFFunction" {
+    uses EP_NL9Subtree {
+      if-feature EP_NL9UnderNWDAFFunction;
+    }
+    uses EP_N34Subtree {
+      if-feature EP_N34UnderNWDAFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gmlc3gpp:GMLCFunction" {
+    uses EP_NL9Subtree {
+      if-feature EP_NL9UnderGMLCFunction;
+    }
+    uses EP_NL2Subtree {
+      if-feature EP_NL2UnderGMLCFunction;
+    }
+    uses EP_NL3Subtree {
+      if-feature EP_NL3UnderGMLCFunction;
+    }
+    uses EP_NL5Subtree {
+      if-feature EP_NL5UnderGMLCFunction;
+    }
+    uses EP_NL6Subtree {
+      if-feature EP_NL6UnderGMLCFunction;
+    }
+    uses EP_NL10Subtree {
+      if-feature EP_NL10UnderGMLCFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/scp3gpp:SCPFunction" {
+    list EP_SM13 {
+      description "This IOC represents the SM13 interface between MNPF
+      and SCP, and it is defined in TS 23.540 [100].";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes { uses EP_SM13Grp; }
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/aanf3gpp:AANFFunction" {
+    uses EP_N61Subtree {
+      if-feature EP_N61UnderAANFFunction;
+    }
+    uses EP_N62Subtree {
+      if-feature EP_N62UnderAANFFunction;
+    }
+    uses EP_N63Subtree {
+      if-feature EP_N63UnderAANFFunction;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/easdf3gpp:EASDFFunction" {
+    uses EP_N88Subtree {
+      if-feature EP_N88UnderEASDFFunction;
+    }
+  }
+}

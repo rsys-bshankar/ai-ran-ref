@@ -1,0 +1,128 @@
+module _3gpp-5gc-nrm-seppfunction {
+  yang-version 1.1;
+  
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-seppfunction;
+  prefix sepp3gpp;
+  
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-yang-extensions { prefix yext3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import ietf-inet-types { prefix inet; }
+  
+  organization "3gpp SA5";
+  description "This IOC represents the SEPP function which support message filtering
+               and policing on inter-PLMN control plane interface. For more information about the SEPP, see 3GPP TS 23.501.
+    Copyright 2023, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+  
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2020-08-03 { reference "CR-0321"; }
+  revision 2019-10-28 { reference S5-193518 ; }
+    
+  typedef SEPPType {
+    reference "3GPP TS 23501";
+    type enumeration {
+      enum CSEPP {
+        value 0;
+        description "consumer SEPP";
+      }
+
+      enum PSEPP {
+        value 1;
+        description "producer SEPP";
+      }
+    }
+  }
+  
+  grouping SeppInfoGrp {
+    leaf seppPrefix {
+      type string ;
+      description "This attributes represents optional deployment specific 
+        string used to construct the apiRoot of the next hop SEPP, as described 
+        in clause 6.10 of TS 29.500";
+    }
+    
+    leaf-list seppPorts {
+      type uint16 ;
+      description "This attributes represents SEPP port number(s) for HTTP 
+        and/or HTTPS.
+        This attribute shall be present if the SEPP uses non-default HTTP 
+        and/or HTTPS ports. When present, it shall contain the HTTP and/or 
+        HTTPS ports.
+        The key of the map shall be 'http' or 'https'.
+        The value shall indicate the port number for HTTP or 
+        HTTPS respectively.";
+    }
+    
+    list remotePlmnList {
+      description "It represents a list of remote PLMNs reachable through the 
+        SEPP.
+        The absence of this attribute indicates that any PLMN is reachable 
+        through the SEPP.";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types3gpp:PLMNId;
+    }
+    
+    list remoteSnpnList {
+      description "This attributes represents list of remote SNPNs reachable 
+        through the SEPP.
+        The absence of this attribute indicates that no SNPN is reachable 
+        through the SEPP.";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types5g3gpp:PlmnIdNid;
+    }
+  }
+
+  grouping SEPPFunctionGrp {
+    uses mf3gpp:ManagedFunctionGrp;
+  
+    container pLMNId {
+      description "PLMN Identifiers of the sepp.
+                   The PLMN Identifier is composed of a Mobile Country Code (MCC) and a Mobile Network Code (MNC).";
+      yext3gpp:inVariant;
+      uses types3gpp:PLMNId;
+    }
+	
+    leaf sEPPType {
+        type sepp3gpp:SEPPType;
+        yext3gpp:inVariant;
+      }
+  
+    leaf sEPPId {
+        type uint16;
+        yext3gpp:inVariant;
+      }    
+  
+    leaf fqdn {
+      description "The domain name of the SEPP.";
+      type inet:domain-name;
+    }
+    
+    list seppInfo {
+      max-elements 1;
+      key idx;
+      description "This attributes represents information of a SEPP Instance, 
+        as described in clause 6.1.6.2.72 of TS 29.510 ";
+      leaf idx { type uint32 ; }
+      uses SeppInfoGrp;
+    }
+  }
+  
+  augment "/me3gpp:ManagedElement" {
+    list SEPPFunction {
+      description "5G Core SEPP Function";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses SEPPFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;    }
+  }
+}

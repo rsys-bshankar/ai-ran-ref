@@ -1,0 +1,310 @@
+module _3gpp-5gc-nrm-lmffunction {
+  yang-version 1.1;
+
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-lmffunction;
+  prefix lmf3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-nr-nrm-ntnfunction { prefix ntn3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp;}
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the LMF function defined in 3GPP TS 23.501.
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2025-07-25 { reference "CR-1558 CR-1585" ; }
+  revision 2025-03-25 { reference CR-1489 ; }
+  revision 2024-11-01 { reference CR-1405 ; }
+  revision 2023-09-18 { reference CR-1043 ; }
+  revision 2019-10-25 { reference "S5-194457 S5193518"; }
+  revision 2019-05-15 { reference "initial revision"; }
+
+  grouping LmfInfoGrp {
+    description "Represents the LmfInfo datatype.";
+
+    leaf-list servingClientTypes {
+      type enumeration {
+        enum EMERGENCY_SERVICES {
+          description "External client for emergency services";
+        }
+        enum VALUE_ADDED_SERVICES {
+          description "External client for value added services";
+        }
+        enum PLMN_OPERATOR_SERVICES {
+          description "External client for PLMN operator services";
+        }
+        enum LAWFUL_INTERCEPT_SERVICES {
+          description "External client for Lawful Intercept services";
+        }
+        enum PLMN_OPERATOR_BROADCAST_SERVICES {
+          description "External client for PLMN Operator Broadcast services";
+        }
+        enum PLMN_OPERATOR_OM {
+          description "External client for PLMN Operator O&M";
+        }
+        enum PLMN_OPERATOR_ANONYMOUS_STATISTICS {
+          description "External client for PLMN Operator anonymous statistics";
+        }
+        enum PLMN_OPERATOR_TARGET_MS_SERVICE_SUPPORT {
+          description "External client for PLMN Operator target MS service
+            support";
+        }
+      }
+      description "This attribute represents a list of external client type(s),
+        e.g. emergency client. The NRF should only include this LMF instance
+        to NF discovery with 'client-type' query parameter indicating one of
+        the external client types in the list.
+
+        Absence of this attribute means the LMF is not dedicated to serve
+        specific client types.";
+    }
+
+    leaf lmfId {
+      type string;
+      description "This attribute represents the LMF identification.
+        See clause 6.1.6.3.6 TS 29.572";
+    }
+
+    leaf-list servingAccessTypes {
+      type enumeration {
+        enum 3GPP_ACCESS;
+        enum NON_3GPP_ACCESS;
+      }
+      min-elements 1;
+      description "This attribute contains the access type (3GPP_ACCESS and/or
+        NON_3GPP_ACCESS) supported by the SMF.
+        If not included, it shall be assumed the both access types are
+        supported.";
+    }
+
+    leaf-list servingAnNodeTypes {
+      type enumeration {
+        enum GNB;
+        enum NG;
+        enum ENB;
+      }
+      min-elements 1;
+      description "This attribute contains the AN node type (i.e. gNB or NG-eNB)
+        supported by the LMF.
+        If not included, it shall be assumed that all AN node types are
+        supported.";
+    }
+
+    leaf-list servingRatTypes {
+      type string;
+      min-elements 1;
+      description "This attribute contains the RAT type (e.g. 5G NR, eLTE or
+        any of the RAT Types specified for NR satellite access) supported by
+        the LMF.
+        If not included, it shall be assumed that all RAT types are supported
+        allowedValues: see clause 5.4.3.2 of TS 29.571";
+    }
+
+    list taiList {
+      description "This attribute contains TAI list that the LMF can serve.
+        It may contain one or more non-3GPP access TAIs.
+        The absence of both this attribute and the taiRangeList attribute
+        indicates that the LMF can be selected for any TAI in the serving
+        network.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses types3gpp:TaiGrp;
+    }
+
+    list taiRangeList {
+      description "This attribute contains TAI range list that the LMF can
+        serve. It may contain one or more non-3GPP access TAI ranges.
+        The absence of both this attribute and the taiList attribute indicates
+        that the LMF can be selected for any TAI in the serving network.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:TaiRangeGrp;
+    }
+
+    leaf-list supportedGADShapes {
+      type enumeration {
+        enum POINT {
+          description "indicates Ellipsoid Point";
+        }
+        enum POINT_UNCERTAINTY_CIRCLE {
+          description "indicates Ellipsoid point with uncertainty circle";
+        }
+        enum POINT_UNCERTAINTY_ELLIPSE {
+          description "indicates  Ellipsoid point with uncertainty ellipse";
+        }
+        enum POLYGON {
+          description "indicates Polygon";
+        }
+        enum POINT_ALTITUDE {
+          description "indicates Ellipsoid point with altitude";
+        }
+        enum POINT_ALTITUDE_UNCERTAINTY {
+          description "indicates  Ellipsoid point with altitude and
+            uncertainty ellipsoid";
+        }
+        enum ELLIPSOID_ARC {
+          description "indicates Ellipsoid Arc";
+        }
+        enum LOCAL_2D_POINT_UNCERTAINTY_ELLIPSE {
+          description "indicates Local 2D point with uncertainty ellipse";
+        }
+        enum LOCAL_3D_POINT_UNCERTAINTY_ELLIPSOID {
+          description "indicates  Local 3D point with uncertainty ellipsoid";
+        }
+      }
+      min-elements 1;
+      description "This attribute contains the GAD shapes supported by the LMF.
+      If not included, it doesn't indicate that the LMF doesn't support any
+      GAD shapes.
+      The allowedValues are: see clause 6.1.6.3.4 of TS 29.572 ";
+    }
+  }
+
+  grouping TrpMappingInfoGrp {
+    description "This data type represents the mapping relationship between
+      satellite and TRPs.";
+
+    leaf satelliteId {
+      type string {
+        pattern  '[0-9]{5}';
+      }
+      mandatory true;
+      description "This attribute indicates satellite Id. It shall be formatted
+        as a fixed 5-digit string, padding with leading digits '0' to complete
+        a 5-digit length.";
+    }
+
+    leaf-list trpIds {
+      type uint8 {
+        range 1..max;
+      }
+      description "This attribute indicates TRPs uniquely within an NG-RAN
+        node (see TS 38.455 clause 9.2.24). A gNB may serve several TRPs.
+        For NTN, a TRP may be located on board the satellite.";
+    }
+  }
+
+  grouping TrpInfoGrp {
+    description "This data type represents the mapping relationship between
+      gNB and TRPs.";
+
+    leaf gNBId {
+      type uint32;
+      mandatory true;
+      description "It identifies a gNB within a PLMN. The gNB ID is part of
+        the NR Cell Identifier (NCI) of the gNB cells.
+        See 'gNB Identifier (gNB ID)' of subclause 8.2 of TS 38.300. See
+        'Global gNB ID' in subclause 9.3.1.6 of TS 38.413";
+    }
+
+    list trpMappingInfoList {
+      description "This is the list of TRP mapping between satellite and TRPs.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses TrpMappingInfoGrp;
+    }
+  }
+
+  grouping LMFFunctionGrp {
+    uses mf3gpp:ManagedFunctionGrp;
+
+    list pLMNIdList {
+      description "List of at most six entries of PLMN Identifiers, but at
+        least one (the primary PLMN Id).
+        The PLMN Identifier is composed of a Mobile Country Code (MCC) and a
+        Mobile Network Code (MNC).";
+
+      min-elements 1;
+      max-elements 6;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+
+    list managedNFProfile {
+      description "This parameter defines profile for managed NF. See TS 23.501";
+      key idx;
+      leaf idx { type uint32;}
+      min-elements 1;
+      uses mnfp3gpp:ManagedNFProfileGrp;
+    }
+
+    list commModelList {
+      description "The attribute specifies a list of commModel. It can be used
+        by NF and NF services to interact with each other in 5G Core network
+        (see TS 23.501)";
+      min-elements 1;
+      key "groupId";
+      uses types5g3gpp:CommModel;
+    }
+
+    list lmfInfo {
+      description "This attribute represents information of an LMF NF Instance";
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses LmfInfoGrp;
+    }
+
+    list mappedCellIdInfoList {
+      description "It provides the list of mapping between GEO area and
+        Mapped Cell ID.";
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:MappedCellIdInfoGrp;
+    }
+
+    list ephemerisInfos {
+      description "This is the list of Ephemeris related information";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses ntn3gpp:EphemerisGrp;
+    }
+
+    list trpInfoList {
+      description "This is the list of TRP (Transmission-Reception Point)
+        related information on LMF (see TS 38.305 clause 5.4.4).";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses TrpInfoGrp;
+    }
+
+    leaf-list mLModelRefList {
+      type types3gpp:DistinguishedName;
+      description "This attribute holds a DN list of MLModel.";
+      reference "3GPP TS 28.105";
+      config false;
+    }
+    
+    leaf-list aIMLInferenceFunctionRefList {
+      type types3gpp:DistinguishedName;
+      description "This attribute holds a DN list of 
+      aIMLInferenceFunction";
+      reference "3GPP TS 28.105";
+      config false;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list LMFFunction {
+      description "5G Core LMF Function defined in TS 23.501";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses LMFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

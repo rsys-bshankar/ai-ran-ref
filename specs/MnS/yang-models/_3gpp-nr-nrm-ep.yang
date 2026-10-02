@@ -1,0 +1,273 @@
+module _3gpp-nr-nrm-ep {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-ep";
+  prefix "ep3gpp";
+
+  import _3gpp-common-ep-rp { prefix eprp3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-nr-nrm-gnbcucpfunction { prefix gnbcucp3gpp; }
+  import _3gpp-nr-nrm-gnbcuupfunction { prefix gnbcuup3gpp; }
+  import _3gpp-nr-nrm-gnbdufunction { prefix gnbdu3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp ; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the NR related endpoint
+    Information Object Classes (IOCs) that are part of the NR Network
+    Resource Model (NRM).
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2025-11-07 { reference "CR-1640 CR-1643"; } // common for R19, R20
+  revision 2025-10-01 { reference "CR-1616 CR-1617" ; } 
+  revision 2025-05-06 { reference "CR-1526 CR-1527" ; }  // common for R18, R19
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2022-01-07 { reference CR-0643; }
+  revision 2021-05-01 { reference CR-0490; }
+  revision 2021-03-03 { reference CR-0435 ; }
+  revision 2021-02-17 { reference CR-0470; }
+  revision 2020-11-17 { reference CR-0410 ; }
+  revision 2020-03-02 { reference S5-201191; }
+  revision 2019-06-17 { reference "Initial revision"; }
+
+  feature EPClassesUnderGNBCUCPFunction {
+    description "Endpoint classes shall be contained under GNBCUCPFunction";
+  }
+
+  feature EPClassesUnderGNBCUUPFunction {
+    description "Endpoint classes shall be contained under GNBCUUPFunction";
+  }
+
+  feature EPClassesUnderGNBDUFunction {
+    description "Endpoint classes shall be contained under GNBDUFunction";
+  }
+  
+  grouping EP_E1Grp {
+    description "Represents the EP_E1 IOC.";
+    reference "3GPP TS 28.541, 3GPP TS 38.401";
+    uses eprp3gpp:EP_Common;
+  }
+
+  grouping EP_F1CGrp {
+    description "Attributes of IOC EP_F1U";
+    uses eprp3gpp:EP_Common;
+  }
+  
+  grouping EP_F1CSubtree {
+    list EP_F1C {
+      description "Represents the local end point of the control plane
+        interface (F1-C) between the gNB-DU and gNB-CU or gNB-CU-CP.";
+      reference "3GPP TS 28.541, 3GPP TS 38.470";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {    
+        uses EP_F1CGrp;
+      }
+    }
+  }
+
+  grouping EP_F1UGrp {
+    description "Attributes of IOC EP_F1U";
+    uses eprp3gpp:EP_Common;
+    
+    leaf-list epTransportRef {
+      type types3gpp:DistinguishedName;
+      config false;
+      description "This parameter specifies a list of transport level EPs 
+        associated with the application level EP (i.e. EP_N3 or EP_NgU or 
+        EP_F1U) or network slice subnet.";
+    }
+  }
+  
+  grouping EP_F1USubtree {
+    list EP_F1U {
+      description "Represents the local end point of the user plane
+        interface (F1-U) between the gNB-DU and gNB-CU or gNB-CU-UP.";
+      reference "3GPP TS 28.541, 3GPP TS 38.470";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {    
+        uses EP_F1UGrp;
+      }
+    }
+  }
+
+  grouping EP_XnCGrp {
+    description "Represents the EP_XnC IOC.";
+    reference "3GPP TS 28.541, 3GPP TS 38.420";
+    uses eprp3gpp:EP_Common;
+  }
+  
+  grouping EP_XnUGrp {
+    description "Represents the EP_XnU IOC.";
+    reference "3GPP TS 28.541, 3GPP TS 38.420";
+    uses eprp3gpp:EP_Common;
+  }
+  
+  grouping EP_NgCGrp {
+    description "Represents the EP_NgC IOC.";
+    reference "3GPP TS 28.541, 3GPP TS 38.470";
+    uses eprp3gpp:EP_Common;
+  }
+  
+  grouping EP_NgUGrp {
+    description "Represents the EP_NgU IOC.";
+    reference "3GPP TS 28.541, 3GPP TS 38.470";
+    uses eprp3gpp:EP_Common;
+  }
+  
+  grouping EP_X2CGrp {
+    description "Represents the EP_X2C IOC.";
+    reference "3GPP TS 28.541, 3GPP TS 36.423";
+    uses eprp3gpp:EP_Common;
+  }
+  
+  grouping EP_X2UGrp {
+    description "Represents the EP_X2U IOC.";
+    reference "3GPP TS 28.541, 3GPP TS 36.425";
+    uses eprp3gpp:EP_Common;
+  }
+  
+  grouping EP_S1UGrp {
+    description "Represents the EP_S1U IOC.";
+    reference "3GPP TS 28.541, 3GPP TS 36.410";
+    uses eprp3gpp:EP_Common;
+  }
+
+  augment "/me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction" {
+    if-feature EPClassesUnderGNBCUCPFunction;
+
+    list EP_E1 {
+      description "Represents the local end point of the logical link,
+        supporting E1 interface between gNB-CU-CP and gNB-CU-UP.";
+      reference "3GPP TS 28.541, 3GPP TS 38.401";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {    
+        uses EP_E1Grp;
+      }
+    }
+
+    uses EP_F1CSubtree;
+
+    list EP_NgC {
+      description "This IOC represents the local end point of the control 
+        plane interface (NG-C) between the gNB and AMF or the gNB and AIOTF. 
+        The transport network layer is built on IP transport. For the reliable 
+        transport of signalling messages, SCTP is added on top of IP. 
+        The application layer signalling protocol is referred to as NG-AP 
+        (NG Application Protocol).
+
+        3GPP TS 38.470 noted that 'one gNB-CU and a set of gNB-DUs are 
+        visible to other logical nodes as a gNB or an en-gNB where the gNB 
+        terminates the Xn and the NG interfaces, and the en-gNB terminates 
+        the X2 and the S1-U interfaces'.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {    
+        uses EP_NgCGrp;
+      }
+    }
+
+    list EP_XnC {
+      description "Represents the local gNB node end point of the logical
+        link, supporting Xn application protocols, to a neighbour NG-RAN node 
+        (including gNB and ng-eNB). The Xn Application PDUs are carried over 
+        SCTP/IP/Data link layer/Physical layer stack.";
+      reference "3GPP TS 28.541, 3GPP TS 38.420 subclause 7";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {    
+        uses EP_XnCGrp;
+      }
+    }
+
+    list EP_X2C {
+      description "Represents the local end point of the logical link,
+        supporting X2-C application protocols used in EN-DC, to a neighbour
+        eNB or en-gNB node.";
+      reference "3GPP TS 28.541, 3GPP TS 36.423";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {    
+        uses EP_X2CGrp;
+      }
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gnbcuup3gpp:GNBCUUPFunction" {
+    if-feature EPClassesUnderGNBCUUPFunction;
+
+    list EP_E1 {
+      description "Represents the local end point of the logical link,
+        supporting E1 interface between gNB-CU-CP and gNB-CU-UP.";
+      reference "3GPP TS 28.541, 3GPP TS 38.401";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {    
+        uses EP_E1Grp;
+      }
+    }
+
+    uses EP_F1USubtree;
+
+    list EP_NgU {
+      description "Represents the local end point of the NG user plane
+        (NG-U) interface between the gNB and UPF.";
+      reference "3GPP TS 28.541, 3GPP TS 38.470";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {    
+        uses EP_NgUGrp;
+      }
+    }
+
+    list EP_XnU {
+      description "Represents the one end-point of a logical link supporting
+        the Xn user plane (Xn-U) interface. The Xn-U interface provides
+        non-guaranteed delivery of user plane PDUs between two NG-RAN nodes.";
+      reference "3GPP TS 28.541, 3GPP TS 38.420";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {    
+        uses EP_XnUGrp;
+      }
+    }
+
+    list EP_X2U {
+      description "Represents the local end-point of a logical link supporting
+        the X2 user plane (X2-U) interface used in EN-DC.";
+      reference "3GPP TS 28.541, 3GPP TS 36.425";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {    
+        uses EP_X2UGrp;
+      }
+    }
+
+    list EP_S1U {
+      description "Represents the local end point of the logical link,
+        supporting S1-U interface towards a S-GW node.";
+      reference "3GPP TS 28.541, 3GPP TS 36.410";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {    
+        uses EP_S1UGrp;
+      }
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gnbdu3gpp:GNBDUFunction" {
+    if-feature EPClassesUnderGNBDUFunction;
+
+    uses EP_F1CSubtree {
+      refine EP_F1C {
+        max-elements 1;
+      }
+    }
+      
+    uses EP_F1USubtree;
+  }
+}

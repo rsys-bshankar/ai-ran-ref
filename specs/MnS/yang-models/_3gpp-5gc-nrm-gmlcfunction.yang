@@ -1,0 +1,132 @@
+module _3gpp-5gc-nrm-gmlcfunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-5gc-nrm-gmlcfunction";
+  prefix gmlc3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp;}
+  
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This module defines the GMLC Function IOC per 3GPP TS 28.541.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2026-05-19 { reference "CR-1702 CR-1703" ; } // rel-19, 20 common
+  revision 2025-07-25 { reference CR-1558 ; }
+  revision 2025-03-25 { reference CR-1489 ; }
+  revision 2025-03-25 {
+    description "Initial revision.";
+    reference "3GPP TS 28.541";
+  }
+
+  grouping GmlcInfoGrp {
+  description "Information of a GMLC NF Instance (see TS 29.510,
+  clause 6.1.6.2.41).";
+
+      leaf servingClientTypes {
+          description "Identity of the GMLC group that is served by
+           the GMLC instance.";
+          type enumeration {
+              enum EMERGENCY_SERVICES {
+              description "External client for emergency services";
+              }
+                  enum VALUE_ADDED_SERVICES {
+              description "External client for value added services";
+              }
+              enum PLMN_OPERATOR_SERVICES {
+              description "External client for PLMN operator services";
+              }
+              enum LAWFUL_INTERCEPT_SERVICES {
+              description "External client for Lawful Intercept services";
+              }
+              enum EXTERNAL_CLIENT_FOR_LAWFUL_INTERCEPT_SERVICES {
+              description "External client for PLMN Operator Broadcast
+              services";
+              }
+              enum PLMN_OPERATOR_OM {
+               description "External client for PLMN Operator O&M";
+              }
+              enum PLMN_OPERATOR_ANONYMOUS_STATISTICS {
+              description "External client for PLMN Operator anonymous
+              statistics";
+              }
+              enum PLMN_OPERATOR_TARGET_MS_SERVICE_SUPPORT {
+              description "External client for PLMN Operator target MS
+              service support";
+              }
+          }
+
+      }
+      leaf gmlcNumbers{
+      type string{
+      pattern "^[0-9]{5,15}$";
+      }
+      description "This attribute represents each item of the array
+      shall carry an OctetString indicating the ISDN number of the GMLC in
+      international number format as described in ITU-T Rec. E.164 [94] and
+      shall be encoded as a TBCD-string.";
+
+      }
+  }
+
+  grouping GMLCFunctionGrp {
+    description "GMLC Function IOC grouping.";
+       uses mf3gpp:ManagedFunctionGrp;
+
+      list pLMNInfoList {
+        description "It defines the PLMN(s) of a Network Function. ";
+        key "idx";
+        leaf idx { type uint32; }
+        min-elements 1;
+        uses types3gpp:PLMNId;
+      }
+      leaf sBIFQDN {
+        type string;
+        description "FQDN of the registered NF instance in the
+         service-based interface.";
+      }
+      list managedNFProfile {
+      description "This parameter defines profile for managed NF.
+       See TS 23.501";
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      uses mnfp3gpp:ManagedNFProfileGrp;
+      }
+      list commModelList {
+        description "The attribute specifies a list of commModel which is 
+        defined as a datatype (see clause 5.3.69). It can be used by NF 
+        and NF services to interact with each other in 5G Core network ";
+        reference "see TS 23.501.";
+        key "groupId";
+        min-elements 1;
+        uses types5g3gpp:CommModel;
+      }
+      list gmlcInfo {
+        description "This attribute represents information of an GMLC NF
+        Instance.";
+        key "idx";
+        leaf idx { type uint32; }
+        max-elements 1;
+        uses GmlcInfoGrp;
+      }
+  }
+    
+  augment "/me3gpp:ManagedElement" {
+    list GMLCFunction {
+      description "5G Core LMF Function defined in TS 23.501";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses GMLCFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

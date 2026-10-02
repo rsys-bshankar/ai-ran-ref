@@ -1,0 +1,171 @@
+module _3gpp-nr-nrm-nrcellrelation {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-nrcellrelation";
+  prefix "nrcellrel3gpp";
+
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-nr-nrm-gnbcucpfunction { prefix gnbcucp3gpp; }
+  import _3gpp-nr-nrm-nrcellcu { prefix nrcellcu3gpp; }
+
+  organization "3GPP SA5";
+  description "Defines the YANG mapping of the NRCellRelation Information
+    Object Class (IOC) that is part of the NR Network Resource Model (NRM).
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2026-05-19 { reference CR-1702 ; } 
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2023-04-26 { reference CR-0916; }
+  revision 2021-01-25 { reference CR-0454 ; }
+  revision 2020-06-03 { reference S5-202333 ; }
+  revision 2020-04-23 { reference CR0281 ; }
+  revision 2019-10-28 { reference S5-193518 ; }
+  revision 2019-08-30 {
+    description "Initial revision";
+  }
+
+
+  typedef EnergySavingCoverage {
+    type enumeration {
+      enum FULL;
+      enum NO; 
+      enum PARTIAL;                       
+    }
+  }
+
+  grouping NRCellRelationGrp {
+    description "Represents the NRCellRelation IOC.";
+    reference "3GPP TS 28.541";
+
+    leaf nRTCI {       	
+      description "Target NR Cell Identifier. It consists of NR Cell
+        Identifier (NCI) and Physical Cell Identifier of the target NR cell
+        (nRPCI).";
+      type uint64;    	
+    }
+
+    container cellIndividualOffset {
+      description "A set of offset values for the neighbour cell. Used when
+        UE is in connected mode. Defined for rsrpOffsetSSB, rsrqOffsetSSB, 
+        sinrOffsetSSB, rsrpOffsetCSI-RS, rsrqOffsetCSI-RS and
+        sinrOffsetCSI-RS.";
+      reference "cellIndividualOffset in MeasObjectNR in 3GPP TS 38.331";
+
+      leaf rsrpOffsetSsb {	
+        description "Offset value of rsrpOffsetSSB.";
+        default 0;
+        type types3gpp:QOffsetRange;	    
+      }
+
+      leaf rsrqOffsetSsb{	
+        description "Offset value of rsrqOffsetSSB.";
+        default 0;
+        type types3gpp:QOffsetRange;	    
+      }
+
+      leaf sinrOffsetSsb {	
+        description "Offset value of sinrOffsetSSB.";
+        default 0;
+        type types3gpp:QOffsetRange;	    
+      }
+
+      leaf rsrpOffsetCsiRs{	
+        description "Offset value of rsrpOffsetCSI-RS.";
+        default 0;
+        type types3gpp:QOffsetRange;	    
+      }
+
+      leaf rsrqOffsetCsiRs {	
+        description "Offset value of rsrqOffsetCSI-RS.";
+        default 0;
+        type types3gpp:QOffsetRange;	    
+      }
+
+      leaf sinrOffsetCsiRs {	
+        description "Offset value of sinrOffsetCSI-RS.";
+        default 0;
+        type types3gpp:QOffsetRange;	    
+      }
+    }
+
+    leaf nRFreqRelationRef {       	
+      description "Reference to a corresponding NRFreqRelation instance.";
+      mandatory true;
+      type types3gpp:DistinguishedName;
+    }
+
+    leaf adjacentNRCellRef {       	
+      description "Reference to an adjacent NR cell (NRCellCU or
+        ExternalNRCellCU).";
+      mandatory true;
+      type types3gpp:DistinguishedName;
+    }
+
+    leaf isRemoveAllowed {	
+      type boolean;	    
+      default true;
+      description "True if the ANR function in the node is allowed to remove this relation.";
+    }
+
+    leaf isHOAllowed {	
+      type boolean;	    
+      default true;
+      description "True if handovers are allowed over this relation.";
+    }
+
+    leaf isESCoveredBy {
+      description "Indicates whether the adjacent cell
+        provides no, partial or full coverage for the parent cell
+        instance. Adjacent cells with this attribute equal to FULL are
+        recommended to be considered as candidate cells to take over the
+        coverage when the original cell is about to be changed to energy
+        saving state. All adjacent cells with this property equal
+        to PARTIAL are recommended to be considered as entirety of candidate
+        cells to take over the coverage when the original cell is about to be
+        changed to energy saving state.";
+      type EnergySavingCoverage;
+    }
+    
+    leaf isENDCAllowed {
+      type boolean;
+      mandatory true;
+      description "This indicates if EN-DC is allowed or prohibited.
+        If TRUE, the target cell is allowed to be used for EN-DC. The target 
+        cell is referenced by the NRCellRelation that contains this isENDCAllowed.
+        If FALSE, EN-DC shall not be allowed.";
+    }
+    
+    leaf isMLBAllowed {
+      type boolean;
+      mandatory true;
+      description "This indicates if mobility load balancing is allowed or 
+        prohibited from source cell to target cell.
+        If TRUE, load balancing is allowed from source cell to target cell. 
+        The source cell is identified by the name-containing NRCellCU of the 
+        NRCellRelation that contains the isMLBAllowed. The target cell is 
+        referenced by the NRCellRelation that contains this isLBAllowed. In 
+        case of isHOAllowed is FALSE, mobility load balancing is prohibited by 
+        handover from source cell to target cell.
+        If FALSE, load balancing shall be prohibited from source cell to target 
+        cell.";
+    }
+  }
+
+  augment /me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction/nrcellcu3gpp:NRCellCU {
+
+    list NRCellRelation {
+      description "Represents a neighbour cell relation from a source cell
+        to a target cell, where the target cell is an NRCellCU or
+        ExternalNRCellCU instance.";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses NRCellRelationGrp;
+      }
+    }
+  }
+}

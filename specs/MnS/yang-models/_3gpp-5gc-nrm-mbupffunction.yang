@@ -1,0 +1,167 @@
+module _3gpp-5gc-nrm-mbupffunction {
+  yang-version 1.1;
+
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-mbupffunction;
+  prefix mbupf3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp; }
+  import _3gpp-5gc-nrm-upffunction { prefix upf3gpp; }
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the UDR function in 5GC. For more information
+    about the UDR, see 3GPP TS 23.501.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2026-04-26 { reference "CR-1702 CR-1703" ; }  // common in r19, r20
+
+  grouping MbUpfInfoGrp {
+    description "represents the data type MnpfInfoGrp.";
+
+    list sNssaiMbUpfInfoList {
+      description "This attribute represents the list of parameters supported
+        by the MB-UPF per S-NSSAI.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses upf3gpp:SnssaiUpfInfoItemGrp;
+    }
+
+    leaf-list mbSmfServingArea {
+      type string;
+      description "This attribute represents the MB-SMF service area(s) the
+        MB-UPF can serve.
+        If not provided, the MB-UPF can serve any MB-SMF service area.";
+    }
+
+    list interfaceMbUpfInfoList {
+      description "This attribute represents the list of User Plane interfaces
+        configured on the MB-UPF. When this IE is provided in the NF Discovery
+        response, the NF Service Consumer (e.g. MB-SMF) may use this information
+        for MB-UPF selection.";
+      key idx;
+      leaf idx { type uint32; }
+        uses upf3gpp:InterfaceUpfInfoItemGrp;
+    }
+
+    list taiList {
+      description "This attribute represents the list of TAIs the MB-UPF can
+        serve.
+
+        The absence of this attribute and the taiRangeList attribute indicates
+        that the MB-UPF can serve the whole MB-SMF service area defined by the
+        MbSmfServingArea attribute.";
+      key idx;
+      leaf idx { type uint32; }
+      uses types3gpp:TaiGrp;
+    }
+
+    list taiRangeList {
+      description "This attribute represents the range of TAIs the MB-UPF can
+        serve.
+
+        The absence of this attribute and the taiList attribute indicates that
+        the MB-UPF can serve the whole MB-SMF service area defined by the
+        MbSmfServingArea attribute.";
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:TaiRangeGrp;
+    }
+
+    leaf priority {
+      type uint16;
+      description "This attribute represents priority (relative to other NFs
+        of the same type) in the range of 0-65535, to be used for NF selection
+        for a service request matching the attributes of the MbUpfInfo; lower
+        values indicate a higher priority.
+
+        See the precedence rules in the description of the priority attribute
+        in NFProfile, if Priority is also present in NFProfile.
+
+        The NRF may overwrite the received priority value when exposing an
+        NFProfile with the Nnrf_NFDiscovery service.";
+    }
+
+    leaf supportedPfcpFeatures {
+      type string;
+      description "Supported Packet Forwarding Control Protocol (PFCP) Features.
+        A string used to indicate the PFCP features supported by the UPF,
+        which encodes the 'UP Function Features' as specified in
+        Table 8.2.25-1 of TS 29.244 (starting from Octet 5), in hexadecimal
+        representation.
+
+        Each character in the string shall take a value of '0' to '9', 'a'
+        to 'f' or 'A' to 'F' and each two characters shall represent one octet
+        of 'UP Function Features' (starting from Octet 5, to higher octets).
+        For each two characters representing one octet, the first character
+        representing the 4 most significant bits of the octet and the second
+        character the 4 least significant bits of the octet.
+
+        The supported PFCP features shall be provisioned in addition and be
+        consistent with the existing UPF features (atsssCapability, ueIpAddrInd,
+        redundantGtpu and ipups), e.g., if the ueIpAddrInd is set to 'true',
+        then the UEIP flag shall also be set to '1' in the supported PFCP
+        features.";
+    }
+  }
+
+  grouping MBUPFFunctionGrp {
+    description "Representse the MBUPFFunction IOC";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    list pLMNIdList {
+      description "List of PLMN Identifiers.
+        The PLMN Identifier is composed of a Mobile Country Code (MCC) and a
+        Mobile Network Code (MNC).";
+
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+
+    list managedNFProfile {
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      max-elements 1;
+      description "Profile definition of a Managed NF (See TS 23.501)";
+      uses mnfp3gpp:ManagedNFProfileGrp;
+    }
+
+    list commModelList {
+      min-elements 1;
+      key "groupId";
+      description "Specifies a list of commModel. It can be used by NF and
+        NF services to interact with each other in 5G Core network ";
+      reference "3GPP TS 23.501";
+      uses types5g3gpp:CommModel;
+    }
+
+    list mbUpfInfo {
+      description "Represents information of an MNPF NF Instance";
+      key idx;
+      leaf idx { type uint32; }
+      max-elements 1;
+      uses MbUpfInfoGrp;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list MBUPFFunction {
+      description "This IOC represents the MB-UPF function defined in
+        TS 23.501 and TS 23.247";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses MBUPFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

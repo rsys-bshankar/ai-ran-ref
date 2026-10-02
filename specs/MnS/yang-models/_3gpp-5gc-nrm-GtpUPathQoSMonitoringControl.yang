@@ -1,0 +1,145 @@
+module _3gpp-5gc-nrm-GtpUPathQoSMonitoringControl {
+  yang-version 1.1;
+  
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-GtpUPathQoSMonitoringControl;
+  prefix gtpUPathQMCtrl3gpp;
+  
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-5gc-nrm-smffunction { prefix smf3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the capabilities and properties for control 
+    of GTP-U path QoS monitoring defined in 3GPP TS 23.501.
+    Copyright 2023, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2020-11-05 { reference CR-0412 ; }
+  revision 2020-09-30 { reference "CR-0393"; }
+  revision 2020-08-03 { reference "CR-0321"; }
+  revision 2020-04-10 { reference "S5-202103"; }
+
+  grouping GtpUPathDelayThresholdsType {
+    description "Thresholds for reporting the packet delay for GTP-U path QoS 
+      monitoring ";
+    reference "3GPP TS 29.244";
+    leaf n3AveragePacketDelayThreshold {
+      mandatory true;
+      type uint32;
+    }
+    leaf n3MinPacketDelayThreshold {
+      mandatory true;
+      type uint32;
+     }
+    leaf n3MaxPacketDelayThreshold {
+      mandatory true;
+      type uint32;
+     }
+    leaf n9AveragePacketDelayThreshold {
+      mandatory true;
+      type uint32;
+    }
+    leaf n9MinPacketDelayThreshold {
+      mandatory true;
+      type uint32;
+     }
+    leaf n9MaxPacketDelayThreshold {
+      mandatory true;
+      type uint32;
+    }
+  }
+
+  grouping GtpUPathQoSMonitoringControlGrp {
+    description "Represents the GtpUPathQoSMonitoringControl IOC.";
+
+    leaf gtpUPathQoSMonitoringState {
+      description "The state of GTP-U path QoS monitoring.";
+      mandatory true;
+      type enumeration {
+        enum ENABLED;
+        enum DISABLED;
+      }
+     }
+     
+    list gtpUPathMonitoredSNSSAIs {
+      key "sd sst";
+      description "The S-NSSAIs for which the the GTP-U path QoS monitoring is 
+        to be performed.";
+      reference "3GPP TS 23.003";
+      uses types5g3gpp:SNssai;
+     }
+     
+    leaf-list monitoredDSCPs {
+      description "The DSCPs for which the GTP-U path QoS monitoring is to be
+        performed.";
+      reference "3GPP TS 29.244";
+      type uint32;
+     }
+     
+    leaf isEventTriggeredGtpUPathMonitoringSupported {
+      description "It indicates whether the event triggered GTP-U path QoS
+        monitoring reporting based on thresholds is supported.";
+      mandatory true;
+      reference "3GPP TS 29.244";
+      type boolean;
+     }
+     
+    leaf isPeriodicGtpUMonitoringSupported {
+      description "It indicates whether the periodic GTP-U path QoS monitoring 
+        reporting is supported.";
+      mandatory true;
+      reference "3GPP TS 29.244";
+      type boolean;
+     }
+     
+    leaf isImmediateGtpUMonitoringSupported {
+      description "It indicates whether the immediate GTP-U path QoS monitoring 
+        reporting is supported.";
+      mandatory true;
+      reference "3GPP TS 29.244";
+      type boolean;
+     }
+     
+    list gtpUPathDelayThresholds {
+      key n3AveragePacketDelayThreshold;  
+      // if max-elements is increased later, the key may need to be modified
+      min-elements 1;
+      max-elements 1;
+      description "It specifies the thresholds for reporting the packet delay 
+        for the GTO-U path QoS monitoring.";
+      uses GtpUPathDelayThresholdsType;
+     }
+     
+    leaf gtpUPathMinimumWaitTime {
+      description "It specifies the minimum waiting time (in seconds) between 
+        two consecutive reports for event triggered GTP-U path QoS monitoring 
+        reporting.";
+      type uint32;
+     }
+     
+    leaf gtpUPathMeasurementPeriod {
+      description "It specifies the period (in seconds) for reporting the packet 
+        delay for GTP-U path QoS monitoring.";
+      type uint32;
+    }
+  }    
+
+  augment "/me3gpp:ManagedElement/smf3gpp:SMFFunction" {
+
+    list GtpUPathQoSMonitoringControl {
+      description "Specifies the capabilities and properties for control of 
+        GTP-U path QoS monitoring. For more information about the GTP-U path 
+        QoS monitoring.";
+      reference "3GPP TS 23.501";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses GtpUPathQoSMonitoringControlGrp;
+      }
+    }
+  }
+}

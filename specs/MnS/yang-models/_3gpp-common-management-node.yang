@@ -1,0 +1,93 @@
+module _3gpp-common-management-node {
+  yang-version 1.1;  
+  namespace urn:3gpp:sa5:_3gpp-common-management-node;
+  prefix "mmgmtnode3gpp";
+  
+  import _3gpp-common-top { prefix top3gpp; }  
+  import _3gpp-common-yang-types { prefix types3gpp ; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp ; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+
+  description "Defines ManagementNode IOCs
+    Copyright 2023, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.623
+      Generic Network Resource Model (NRM)
+      Integration Reference Point (IRP);
+      Solution Set (SS) definitions
+      
+      3GPP TS 28.622
+      Generic Network Resource Model (NRM)
+      Integration Reference Point (IRP);
+      Information Service (IS)
+      
+      3GPP TS 28.620 
+      Umbrella Information Model (UIM)";
+
+  revision 2023-09-18 { reference CR-0271 ; } 
+  revision 2023-02-14 { reference "CR-0234"; }
+
+  grouping ManagementSystem_Grp {
+    description "Represents the ManagementSystem_ IOC.";
+
+    leaf userLabel {
+      type string;
+      description "A user-friendly (and user assignable) name of this object.";
+    }
+    
+    leaf-list managedElements {
+      type types3gpp:DistinguishedName;
+      config false;
+      description "Contains a list of the DN(s) of the related subclasses of 
+        ManagedElement_ instance(s).";
+    }
+  }
+  
+  grouping ManagementNodeGrp {
+    uses ManagementSystem_Grp;
+    
+    leaf vendorName {
+      type string;
+      config false;
+    }
+    
+    leaf userDefinedState {
+      type string;
+      description "An operator defined state for operator specific usage";
+    }
+    
+    leaf locationName {
+      type string;
+      config false;
+      description "The physical location of this entity (e.g. an address).";
+    }
+    
+    leaf swVersion {
+      type string;
+      config false;
+    }
+  }
+
+  augment /subnet3gpp:SubNetwork {  
+    list ManagementNode {
+      description "Represents a telecommunications management system (EM) within 
+        the TMN that contains functionality for managing a number of 
+        ManagedElements (MEs). The management system communicates with the MEs 
+        directly or indirectly over one or more interfaces for the purpose 
+        of monitoring and/or controlling these MEs.
+        
+        This class has similar characteristics as the ManagedElement. The 
+        main difference between these two classes is that the ManagementNode 
+        has a special association to the managed elements that it is 
+        responsible for managing.";
+      
+      key id;   
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses ManagementNodeGrp;
+      }      
+    }
+  }
+}

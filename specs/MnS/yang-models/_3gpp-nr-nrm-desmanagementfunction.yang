@@ -1,0 +1,217 @@
+module _3gpp-nr-nrm-desmanagementfunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-desmanagementfunction";
+  prefix "desmf3gpp";
+
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-nr-nrm-gnbcucpfunction { prefix gnbcucp3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-nr-nrm-nrcellcu { prefix nrcellcu3gpp; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-5g-common-yang-types { prefix type5g3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the DESManagementFunction 
+    Information Object Class (IOC) that is part of the NR Network Resource 
+    Model (NRM).
+    Copyright 2024, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2024-08-07 { reference CR-1331; }
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2021-08-05 { reference S5-214053/CR-0518; }
+  revision 2020-05-08 { reference S5-203316; }
+
+  grouping loadTimeThresholdGrp {
+    description "Represents the the traffic load threshold and the time 
+      duration.";
+
+    leaf threshold {
+      description "This attribute is used by distributed ES algorithms to allow
+        a cell to enter the energySaving state.";
+      type type5g3gpp:EnergySavingLoadThresholdT;
+    }
+    leaf timeDuration {
+      description "The time duration indicates how long the traffic load 
+        (either for UL or DL) in the cell needs to have been above the 
+        threshold to wake up one or more original cells which have been 
+        provided backup coverage by the candidate cell.";
+      type type5g3gpp:EnergySavingTimeDurationT;
+    }
+  }
+
+  grouping DESManagementFunctionGrp {
+    description "Represents the DESManagementFunction IOC.";
+
+    leaf desSwitch {
+      description "This attribute determines whether the Distributed SON 
+        energy saving function is enabled or disabled.";
+      type boolean;
+    }
+
+    list intraRatEsActivationOriginalCellLoadParameters {
+      description "This attributes is relevant, if the cell acts as an original
+        cell. This attribute indicates the traffic load threshold and the time 
+        duration, which are used by distributed ES algorithms to allow a cell 
+        to enter the energySaving state.";
+      key threshold;
+      min-elements 1;
+      max-elements 1;
+      uses loadTimeThresholdGrp;
+    }
+
+    list intraRatEsActivationCandidateCellsLoadParameters {
+      description "This attribute indicates the traffic load threshold and the
+        time duration, which are used by distributed ES algorithms level to 
+        allow an 'original' cell to enter the energySaving state.";
+      key threshold;
+      min-elements 1;
+      max-elements 1;
+      uses loadTimeThresholdGrp;
+    }
+
+    list intraRatEsDeactivationCandidateCellsLoadParameters {
+      description "This attributes is relevant, if the cell acts as a candidate
+        cell.This attribute indicates the traffic load threshold  and the time 
+        duration which is used by distributed ES algorithms to allow a cell to 
+        leave the energySaving state.";
+      key threshold;
+      min-elements 1;
+      max-elements 1;
+      uses loadTimeThresholdGrp;
+    }
+
+    list esNotAllowedTimePeriod {
+      description "This is a list of time periods during which 
+        inter-RAT energy saving is not allowed";
+      key idx;
+
+      leaf idx {
+        type uint32;
+      }
+      uses EsNotAllowedTimePeriodGrp;
+    }
+
+    list interRatEsActivationOriginalCellParameters {
+      description "This attribute indicates the traffic load threshold and the 
+        time duration, which are used by distributed inter-RAT ES algorithms to
+        allow an original cell to enter the energySaving state.";
+      key threshold;
+      min-elements 1;
+      max-elements 1;
+      uses loadTimeThresholdGrp;
+    }
+
+    list interRatEsActivationCandidateCellParameters {
+      description "This attribute indicates the traffic load threshold and the 
+        time duration, which are used by distributed inter-RAT ES algorithms to
+        allow an original cell to enter the energySaving state.";
+      key threshold;
+      min-elements 1;
+      max-elements 1;
+      uses loadTimeThresholdGrp;
+    }
+
+    list interRatEsDeactivationCandidateCellParameters {
+      description "This attribute indicates the traffic load threshold and the 
+        time duration which is used by distributed inter-RAT ES algorithms to 
+        allow an original cell to leave the energySaving state.";
+      key threshold;
+      min-elements 1;
+      max-elements 1;
+      uses loadTimeThresholdGrp;
+    }
+
+    leaf energySavingState {
+      description "Specifies the status regarding the energy saving in the 
+        cell.";
+      type enumeration {
+        enum isNotEnergySaving;
+        enum isEnergySaving;
+      }
+    }
+
+    leaf isProbingCapable {
+      description "This attribute indicates whether this cell is capable of 
+        performing the ES probing procedure.";
+      type enumeration{
+        enum yes;
+        enum no;
+      }  
+    }
+    leaf-list mLModelRefList {
+      type types3gpp:DistinguishedName;
+      description "This attribute holds a DN list of MLModel ¨
+        (See TS 28.105]).";
+      config false; 
+    }
+    leaf-list aIMLInferenceFunctionRefList {
+      type types3gpp:DistinguishedName;
+      description "This attribute holds a DN list of AIMLInferenceFunction
+        (See TS 28.105) .";
+      config false; 
+    }
+  }
+
+  grouping EsNotAllowedTimePeriodGrp {
+    leaf startTime {
+      description "Start of not allowed time period in UTC time zone.
+        If set, the endTime must also be set. If not set, this is 
+        interpreted as around the clock.";
+      must ../endTime;
+      type type5g3gpp:UTC24TimeOfDayT;
+    }
+    leaf endTime {
+      description "If endTime has a lower value than startTime, it will 
+        be interpreted as referring to the following day.";
+      type type5g3gpp:UTC24TimeOfDayT;
+      must ../startTime;
+    }
+    leaf-list daysOfWeek {
+      description "Specifies that the not allowed periods are only 
+        applicable to the specified days in UTC timezone. Every day if 
+        not set.";
+      type type5g3gpp:DayOfWeekT;
+    }
+  }
+
+  grouping DESManagementFunctionSubtree {
+    list DESManagementFunction {
+      description "This IOC represents the management capabilities of 
+        Distributed SON Energy Saving (ES) functions. This is provided for 
+        Energy Saving purposes.
+
+        In the case where multiple DESManagement MOIs exist at different 
+        levels of the containment tree, the DESManagement MOI at the lower 
+        level overrides the DESManagement MOIs at higher level(s) of the same 
+        containment tree.";
+      reference "clause 6.2.3.0 in TS 28.310";
+      key id;   
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses DESManagementFunctionGrp;
+      }      
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction/"+
+      "nrcellcu3gpp:NRCellCU" {
+    if-feature nrcellcu3gpp:DESManagementFunction;
+    uses DESManagementFunctionSubtree;
+  }
+  augment /me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction {
+    if-feature gnbcucp3gpp:DESManagementFunction;
+    uses DESManagementFunctionSubtree;
+  }
+  augment /me3gpp:ManagedElement {
+    if-feature me3gpp:DESManagementFunction;
+    uses DESManagementFunctionSubtree;
+  }
+  augment /subnet3gpp:SubNetwork {
+    if-feature subnet3gpp:DESManagementFunction;
+    uses DESManagementFunctionSubtree;
+  }
+}

@@ -1,0 +1,505 @@
+module _3gpp-nr-nrm-rimrsset {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-rimrsset";
+  prefix "rrsset3gpp";
+
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the RimRSSet Information Object
+    Class (IOC) that is part of the NR Network Resource Model (NRM).
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2026-05-19 { reference "CR-1702 CR-1703"; } // rel-19, 20 common
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2021-10-28 { reference CR-0607 ; }
+  
+  grouping FrequencyDomainParaGrp {
+    description "Configuration parameters of frequency domain resource to 
+      support RIM RS. ";
+      
+    leaf rimRSSubcarrierSpacing {
+      type  uint8 {
+        range 0|1 ;
+      }
+      mandatory true;
+      description 
+        "It is the subcarrier spacing configuration (u) for the RIM-RS. 
+        Subcarrier spacing delta-f=2^u*15 kHz. (see 38.211 subclause 5.3.3).";
+    }
+    
+    leaf rIMRSBandwidth {
+      type  uint8 {
+        range 1..96 ;
+      }
+      mandatory true;
+      description "It is the bandwidth of the RIM-RS in resource blocks 
+        (see 38.211 subclause 5.3.3).
+        For carrier bandwidth larger than 20MHz, this attribute should be
+          96 if subcarrier spacing is15kHz
+          48 or 96 if subcarrier spacing is 30kHz
+        For carrier bandwidth smaller than or equal to 20MHz, this attribute 
+          should be
+          Minimum of {96 , bandwidth of downlink carrier in number of PRBs} if 
+            subcarrier spacing is15kHz
+          Minimum of {48, bandwidth of downlink carrier in number of PRBs } if 
+            subcarrier spacing is 30kHz";
+    }
+    
+    leaf nrofGlobalRIMRSFrequencyCandidates {
+      type  uint8 {
+        range 1|2|4 ;
+      }
+      mandatory true;
+      description "The number of candidate frequency resources in the whole 
+        network (N_f^RIM ) (see 38.211 subclause 7.4.1.6).";
+    }
+
+    leaf rimRSCommonCarrierReferencePoint {
+      type  int32 { range 0..3279165 ; }
+      mandatory true;
+      description "This attribute is used to configure the common reference 
+        point for RIM RS. Where represents the frequency-location of point A 
+        expressed as in ARFCN. See 3GPP TS 38.211 subclause 4.4.4.2";
+    }
+
+    leaf-list rimRSStartingFrequencyOffsetIdList {
+      type  uint32 {
+        range 0..550;
+      }
+      must 'count(.) = ../nrofGlobalRIMRSFrequencyCandidates' {
+        error-message 
+          "The multiplicity must be equal to nrofGlobalRIMRSFrequencyCandidates";
+      }
+      description "List of configured frequency offsets in units of resource 
+        blocks, where each element is the frequency offset relative to a 
+        configured reference point for RIM-RS. The size of the list is 
+        nrofGlobalRIMRSFrequencyCandidates and the resulting frequency resource 
+        blocks of RIM-RS corresponding to different configured frequency offset 
+        have no overlapping bandwidth.  (see 38.211 subclause 7.4.1.6).
+
+        allowedValues: 0..maxNrofPhysicalResourceBlocks-1 where 
+        maxNrofPhysicalResourceBlocks = 550";
+    }
+  }
+  
+  grouping SequenceDomainParaGrp {
+    description "Configuration parameters of sequence domain resource to 
+      support RIM RS. ";
+      
+    leaf nrofRIMRSSequenceCandidatesofRS1 {
+      type  uint8 {
+        range 1..8 ;
+      }
+      mandatory true;
+      description "The number of candidate sequences assigned for RIM RS-1 
+      (N_s^RIM,1) (see 38.211 [subclause 7.4.1.6). It should be even when 
+      enableEnoughNotEnoughIndication for RS-1 is ON";
+    }
+
+    leaf-list rimRSScrambleIdListofRS1 {
+      type uint32 {
+        range 0..1023 ;
+      }
+      must 'count(.) = ../nrofRIMRSSequenceCandidatesofRS1' {
+        error-message 
+          "The multiplicity must be equal to nrofRIMRSSequenceCandidatesofRS1";
+      }
+      description "List of configured scrambling identities for RIM RS-1 (
+        see 38.211 [subclause 7.4.1.6). The size of the list is 
+        nrofRIMRSSequenceCandidatesofRS1.";
+    }
+
+    leaf nrofRIMRSSequenceCandidatesofRS2 {
+      type  uint8 {
+        range 1..8 ;
+      }
+      mandatory true;
+      description "The number of candidate sequences assigned for RIM RS-2 
+        (N_s^RIM,2) (see 38.211 subclause 7.4.1.6).";
+    }
+
+    leaf rimRSScrambleIdListofRS2 {
+      type uint32 {
+        range 0..1023 ;
+      }
+      must 'count(.) = ../nrofRIMRSSequenceCandidatesofRS2' {
+        error-message 
+          "The multiplicity must be equal to nrofRIMRSSequenceCandidatesofRS2";
+      }
+      description "List of configured scrambling identities for RIM RS-2 (
+        see 38.211 subclause 7.4.1.6). 
+        The size of the list is nrofRIMRSSequenceCandidatesofRS2.";
+    }
+
+    leaf enableEnoughNotEnoughIndication {
+      type types3gpp:EnabledDisabled;
+      default DISABLED;
+      description "It is indication of whether 'Enough'/'Not enough' indication 
+        functionality is enabled for RIM RS-1 (see 38.211 subclause 7.4.1.6).
+
+        If the indication is 'ENABLED', the first half of 
+        nrofRIMRSSequenceCandidatesofRS1  sequences indicates 'Not enough 
+        mitigation', and the second half indicates 'Enough mitigation', where,
+        'Enough mitigation' indicates that IoT going back to certain level at 
+        victim side and/or no further interference mitigation actions are 
+        needed at aggressor side
+        'Not enough mitigation' indicates that IoT exceeding certain level at 
+        victim side and/or further interference mitigation actions are needed 
+        at aggressor side
+
+        enableEnoughNotEnoughIndication is equivalent to EnoughIndication 
+        (see 38.211 subclause 7.4.1.6)";
+    }
+
+    leaf rIMRSScrambleTimerMultiplier {
+      type uint32  {
+        range 0..2147483647;
+      }
+      mandatory true;
+      description "It is parameter multiplier factor gamma for initialization 
+        seed of the pseudo-random sequence c~(i) 
+        (see 38.211 subclause 7.4.1.6.2).
+        allowedValues:  0,1...2^31-1";
+    }
+
+    leaf rIMRSScrambleTimerOffset {
+      type uint32  {
+        range 0..2147483647;
+      }
+      mandatory true;
+      description "It is parameter offset delta for initialization seed of 
+        the pseudo-random sequence c~(i) (see 38.211 subclause 7.4.1.6.2).
+        allowedValues: 0,1...2^31-1";
+    }
+  }
+  
+  grouping TimeDomainParaGrp {
+    description "Configuration parameters of time domain resource to 
+      support RIM RS. ";
+      
+    leaf dlULSwitchingPeriod1 {
+      type enumeration {
+        enum  MS0P5;
+        enum  MS0P625;
+        enum  MS1;
+        enum  MS1P25;
+        enum  MS2;
+        enum  MS2P5;
+        enum  MS3;
+        enum  MS4;
+        enum  MS5;
+        enum  MS10;
+        enum  MS20;
+      }
+      mandatory true;
+      description "This attribute is used to configure the first uplink-downlink 
+        switching period (P1) for RIM RS transmission in the network, where one 
+        RIM RS is configured in one uplink-downlink switching period. 
+        (see 38.211 subclause 7.4.1.6). 
+
+        When only one TDD-UL-DL-Pattern is configured, only 
+        dl-UL-SwitchingPeriod1 is configured, where P1 equals to the 
+        transmission periodicity of the TDD-UL-DL-Pattern.
+        When two concatenated TDD-UL-DL-Patterns are configured, and RIM-RS 
+        resources is configured only in one of the TDD patterns, only 
+        dl-UL-SwitchingPeriod1 is configured, where P1 equals to the addition 
+        of the concatenated transmission periodicity of the two 
+        TDD-UL-DL-Patterns.
+        When two concatenated TDD-UL-DL-Patterns are configured, and RIM-RS 
+        resources are configured in both TDD patterns, both 
+        dl-UL-SwitchingPeriod1 and dl-UL-SwitchingPeriod2 are configured, 
+        where P1 equals to the transmission periodicity of the first 
+        TDD-UL-DL-Pattern.
+
+        P1 is equivalent to T_(per,1)^RIM  (see 38.211, subclause 7.4.1.6).
+
+        allowedValues: 
+        MS0P5, MS0P625, MS1, MS1P25, MS2, MS2P5, MS4, MS5, MS10, MS20,  
+          if a single uplink-downlink period is configured for RIM-RS purposes;
+        MS0P5, MS0P625, MS1, MS1P25, MS2, MS2P5, MS3, MS4, MS5, MS10, MS20,  
+          if two uplink-downlink periods are configured for RIM-RS purposes.";
+    }
+
+    leaf symbolOffsetOfReferencePoint1 {
+      type uint32  {
+        range 2..327679 ;
+      }
+      mandatory true;
+      description "This attribute is used to configure the reference point in 
+        the first uplink-downlink switching period, which is the symbols offset 
+        of the reference point after the starting boundary of the first 
+        uplink-downlink switching period. It's Configured together with 
+        dl-UL-SwitchingPeriod1 (see 38.211 subclause 7.4.1.6).
+
+        When only one TDD-UL-DL-Pattern is configured, the reference point 
+        configured for the first uplink-downlink switching period is the DL 
+        transmission boundary of the TDD-UL-DL-Pattern.
+        When two concatenated TDD-UL-DL-Patterns are configured, and RIM-RS 
+        resources is configured only in one of the TDD patterns, the reference 
+        point configured for the first uplink-downlink switching period is the 
+        DL transmission boundary of the TDD-UL-DL-Pattern where the RIM-RS 
+        resource is configured.
+        When two concatenated TDD-UL-DL-Patterns are configured, and RIM-RS 
+        resources are configured in both TDD patterns, the reference points 
+        configured for first uplink-downlink switching period is the DL 
+        transmission boundary of the first TDD-UL-DL-Pattern.
+
+        allowedValues: 2, 3..20*2*maxNrofSymbols-1, where maxNrofSymbols=14";
+    }
+
+    leaf dlULSwitchingPeriod2 {
+      type enumeration {
+        enum  MS0P5;
+        enum  MS0P625;
+        enum  MS1;
+        enum  MS1P25;
+        enum  MS2;
+        enum  MS2P5;
+        enum  MS3;
+        enum  MS4;
+        enum  MS5;
+        enum  MS10;
+      }
+      mandatory true;
+      description "Used to configure the second uplink-downlink switching 
+        period (P2) for RIM RS transmission in the network, where one RIM RS is 
+        configured in one uplink-downlink switching period 
+        (see 38.211 subclause 7.4.1.6).
+
+        When two concatenated TDD-UL-DL-Patterns are configured, and RIM-RS 
+        resources are configured in both TDD patterns, both 
+        dl-UL-SwitchingPeriod1 and dl-UL-SwitchingPeriod2 are configured, 
+        where P2 equals to the transmission periodicity of the second 
+        TDD-UL-DL-Pattern, and where (P1 + P2) divides 20 ms.
+
+        allowedValues: MS0P5, MS0P625, MS1, MS1P25, MS2, MS2P5, MS3, MS4, MS5, 
+          MS10
+  
+        P2 is equivalent to T_(per,2)^RIM  (see 38.211 subclause 7.4.1.6)";
+    }
+
+    leaf symbolOffsetOfReferencePoint2 {
+      type uint32  {
+        range 2..327679 ;
+      }
+      mandatory true;
+      description "This attribute is used to configure the reference point in 
+        the second uplink-downlink switching period, which is the symbol offset 
+        of the reference point after starting boundary of the second 
+        uplink-downlink switching period. Configured together with 
+        dl-UL-SwitchingPeriod2 (see 38.211 subclause 7.4.1.6).
+        When two concatenated TDD-UL-DL-Patterns are configured, and RIM-RS 
+        resources are configured in both TDD patterns, the reference points 
+        configured for second uplink-downlink switching period is the 
+        DL transmission boundary of the second TDD-UL-DL-Pattern.
+
+        allowedValues: 2, 3..20*2*maxNrofSymbols-1, where maxNrofSymbols=14";
+    }
+
+    leaf totalnrofSetIdofRS1 {
+      type uint32  {
+        range 0..4194303 ;
+      }
+      mandatory true;
+      description "It is the total number of set IDs for RIM RS-1 
+        (N_setID ^RIM,1) (see 38.211 subclause 7.4.1.6).
+
+        allowedValues: 0,1...2^22-1";
+    }
+
+    leaf totalnrofSetIdofRS2 {
+      type uint32  {
+        range 0..4194304 ;
+      }
+      mandatory true;
+      description "It is the total number of set IDs for RIM RS-2 
+        (N_setID^RIM,2) (see 38.211 subclause 7.4.1.6).
+
+        allowedValues: 0,1...2^22";
+    }
+
+    leaf nrofConsecutiveRIMRS1 {
+      type uint8 {
+        range 1|2|4|8 ;
+      }
+      mandatory true;
+      description "It is the number of consecutive uplink-downlink switching 
+        periods for RS-1 (R1) for repetition/near-far indication:. 
+        (see 38.211 subclause 7.4.1.6).
+
+        allowedValues: 1,2,4,8";
+    }
+
+    leaf nrofConsecutiveRIMRS2 {
+      type uint8 {
+        range 1|2|4|8 ;
+      }
+      mandatory true;
+      description "It is the number of consecutive uplink-downlink switching 
+        periods for RS-2 (R2) for repetition/near-far indication. 
+        (see 38.211 subclause 7.4.1.6).
+
+        allowedValues: 1,2,4,8";
+    }
+
+    leaf-list consecutiveRIMRS1List {
+      type  uint32 {
+        range 2..327679 ;
+      }
+      description "It is used to configure the OFDM symbol position(s) of RIM 
+        RS-1 within the uplink-downlink switching period. It is a list of symbol 
+        offset of RIM RS-1 (N_symb,ref^(RIM,1)) before the reference point. 
+        The size of the list is nrofConsecutiveRIMRS1 
+        (see 38.211 subclause 7.4.1.6).
+        The resulting RIM RS-1 symbols and its reference point shall belong to 
+        the same 10ms frame.
+
+        allowedValues: 2,3..20*2**maxNrofSymbols-1, where maxNrofSymbols=14";
+    }
+
+    leaf-list consecutiveRIMRS2List {
+      type  uint32 {
+        range 2..327679 ;                                         
+      }
+      description "It is used to configure the OFDM symbol position(s) of 
+        RIM RS-2 within the uplink-downlink switching period. It is a list of 
+        symbol offset of RIM RS-2 (N_symb,ref^(RIM,2)) before the reference 
+        point. The size of the list is nrofConsecutiveRIMRS2 
+        (see 38.211 subclause 7.4.1.6).
+        The resulting RIM RS-2 symbols and its reference point shall belong to 
+        the same 10ms frame.
+
+        allowedValues: 2,3..20*2**maxNrofSymbols-1, where maxNrofSymbols=14";
+    }
+
+    leaf enablenearfarIndicationRS1 {
+      type types3gpp:EnabledDisabled;
+      default DISABLED;
+      description "It is indication of whether near-far functionality is enabled 
+        for RIM RS1.
+
+        If the indication is 'ENABLED', 
+        the first half of nrofConsecutiveRIMRS1 (R1) consecutive uplink-downlink 
+        switching period is for 'Near' indication with R1/2 repetitions,
+        the second half of R1 consecutive uplink-downlink switching period is 
+        for 'Far' indication with R1/2 repetitions.";
+    }
+
+    leaf enablenearfarIndicationRS2 {
+      type types3gpp:EnabledDisabled;
+      default DISABLED;
+      description "It is indication of whether near-far functionality is enabled 
+        for RIM RS2.
+
+        If the indication is 'enable', 
+        the first half of nrofConsecutiveRIMRS2 (R2) consecutive uplink-downlink 
+        switching period is for 'Near' indication with R2/2  repetitions,
+        the second half of R2 consecutive uplink-downlink switching period is 
+        for 'Far' indication with R2/2 repetitions.";
+    }
+  }  
+
+  grouping RimRSGlobalGrp {
+    description "Represents the RimRSGlobal IOC.";
+    
+    list frequencyDomainPara {
+      key  rimRSSubcarrierSpacing;
+      min-elements 1;
+      max-elements 1;
+      description "Configuration parameters of frequency domain resource to 
+        support RIM RS. ";
+        uses FrequencyDomainParaGrp;
+    }
+    
+    list sequenceDomainPara {
+      key  nrofRIMRSSequenceCandidatesofRS1;
+      min-elements 1;
+      max-elements 1;
+      description "Configuration parameters of sequence domain resource to 
+        support RIM RS. ";
+        uses SequenceDomainParaGrp;
+    }
+    
+    list timeDomainPara {
+      key  dlULSwitchingPeriod1;
+      min-elements 1;
+      max-elements 1;
+      description "Configuration parameters of time domain resource to 
+        support RIM RS. ";
+        uses TimeDomainParaGrp;
+    }
+  }
+  
+  grouping RimRSSetGrp {
+    description "Represents the RimRSSet IOC.";
+    
+    leaf setId {
+      type uint32 {
+        range 0..4194303 ;
+      }
+      mandatory true;
+      description "This specifies the set ID of a victim Set (RIM-RS1 Set) or 
+        aggressor Set (RIM-RS2 set). (See subclause 7.4.1.6 in TS 38.211). 
+
+        allowedValues: The bit length of the set ID is maximum 22bit.";
+    }
+    
+    leaf setType {
+      type enumeration {
+        enum RS1;
+        enum RS2;
+      }
+      mandatory true;
+      description "The attribute specifies type of a RIM-RS Set .  
+        RIM RS1 is generated and transmitted by victim to indicate its suffering 
+        remote interference, and RIM RS2 is generated and transmitted by 
+        aggressor to measure if Remote Interference still exist
+
+        If the attribute value is 'RS1', the RIM-RS Set is victim set.
+        If the attribute value is 'RS2', the RIM-RS Set is aggressor set.";
+    }
+    
+    leaf-list nRCellDURef {
+      type types3gpp:DistinguishedName;
+      config false;
+      description "This attribute contains the DN of a NR Cell (NRCellDU)";
+    }
+  }
+  
+  augment "/subnet3gpp:SubNetwork" {
+    list RimRSGlobal {
+      description "Represents global/common Remote Interference Management (RIM) 
+        Reference Signal (RS) resource allocated for the whole network. 
+        Resource for RIM-RS transmission is defined by Sequence domain resource, 
+        Time domain resource and Frequency resource. The configure parameters 
+        of the RIM RS resource are applied to all Sets of RIM RS Resource 
+        across gNBs/cells in the network.";
+      key id;
+      max-elements 1;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses RimRSGlobalGrp;
+      }
+
+      list RimRSSet {
+        description "Represents aggressor or victim Set organized by OAM. 
+          The RIM RS Resource is assigned to each Set, which is identified by 
+          triple indices set of 
+          <Time domain index, Frequency domain index, and  Sequence index >. 
+          The triple indices set can be derived by setId attribute 
+          (See subclause 7.4.1.6 in TS 38.211 ).";
+        key id;
+        uses top3gpp:Top_Grp;
+        container attributes {
+          uses RimRSSetGrp;
+        }
+      }
+    }
+  }  
+}

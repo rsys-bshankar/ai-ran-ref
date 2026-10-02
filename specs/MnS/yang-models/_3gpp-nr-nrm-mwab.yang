@@ -1,0 +1,96 @@
+module _3gpp-nr-nrm-mwab {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-mwab";
+  prefix "mwab3gpp";
+
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the ExternalGNBCUCPFunction
+    Information Object Class (IOC), that is part of the NR Network Resource
+    Model (NRM).
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2025-11-01 { reference CR-1656 ; }
+  revision 2025-04-25 { reference CR-1527 ; }
+
+  grouping MWABGrp {
+    description "Represents the MWAB IOC.";
+    
+    list mnrOamIPConfig  {
+      description "It is IP configutation for OAM connectivity used 
+      by a mobile NR node (e.g., IAB-node, MWAB-node)
+      to establish connection with management system as specified
+       in TS 28.314[x] clause 6.1.2";
+      key id;
+      leaf id { type uint32; }
+      uses types5g3gpp:MnrOamIPConfigGrp ;
+    }
+
+    leaf operationalState {
+      description "It indicates the operational state of the MWAB instance.
+        It describes whether the resource is installed and partially or fully
+        operable (Enabled) or the resource is not installed or not
+        operable (Disabled).";
+      mandatory true;
+      config false;
+      type types3gpp:OperationalState;
+    }
+
+    leaf administrativeState {
+      description "It indicates the administrative state of the MWAB instance.
+        It describes the permission to use or prohibition against using the
+        MWAB functionalities, imposed through the OAM services.";
+      default LOCKED;
+      type types3gpp:AdministrativeState;
+    }
+
+    list allowedArea {
+      description "This specifies the area where the MWAB can act as MWAB-gNB.
+        If the OAM indicates that the MWAB can act as MWAB-gNB is allowed areas,
+        it acts as MWAB-gNB only on the allowed area only.
+        (See sub clause 5.49 TS 28.662).";
+      key idx;
+      leaf idx { type uint32; }
+      uses types3gpp:GeoAreaGrp;
+    }
+
+    list allowedTime {
+      description "This specifies the time window for which the MWAB can act
+      as MWAB-gNB. If the allowed time window/ validity indicates 20th June,
+      10 am to 5 pm of the day, the MWAB acts as an MWAB g-NB only during 20th
+      June, 10 am to 5 pm of the day, and does not act as MWAB-gNB for any
+      other time. (See sub clause 5.49 [11]).";
+      key idx;
+      leaf idx { type uint32 ; }
+      uses types3gpp:TimeWindowGrp;
+    }
+    list currentLocation {
+      description "This parameter specifies the current location
+        of mobile NR node (e.g., IAB-node, MWAB-node).";
+      key id;
+      leaf id { type uint32; }
+      uses types5g3gpp:LocationInfoGrp;
+    }
+  }
+
+  grouping MWABSubTree {
+    list MWAB {
+      description "MWAB provides an NR access link to UEs in proximity and
+        connects to the 5GC serving the UE through an IP connectivity provided
+        by a Backhaul PDU session(s). The MWAB consists of a gNB component
+        (MWAB-gNB) and a UE component (MWAB-UE). This IOC defines the
+        configuration information for the MWAB-gNB.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses MWABGrp;
+      }
+    }
+  }
+}

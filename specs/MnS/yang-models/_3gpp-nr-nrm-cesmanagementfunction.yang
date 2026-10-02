@@ -1,0 +1,272 @@
+module _3gpp-nr-nrm-cesmanagementfunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-cesmanagementfunction";
+  prefix "cesmf3gpp";
+
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-nr-nrm-nrcellcu { prefix nrcellcu3gpp; }
+  import _3gpp-nr-nrm-gnbcucpfunction { prefix gnbcucp3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-5g-common-yang-types { prefix type5g3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the CESManagementFunction 
+    Information Object Class (IOC) that is part of the NR Network Resource Model
+    (NRM).
+    Copyright 2023, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2021-08-05 { reference S5-214053/CR-0518; }
+  revision 2020-05-08 { reference S5-203316; }
+
+  grouping loadTimeThresholdGrp {
+    description "Represents the the traffic load threshold and the time 
+      duration.";
+
+    leaf loadThreshold {
+      description "This attribute is used by distributed ES algorithms to allow
+        a cell to enter the energySaving state.";
+      type type5g3gpp:EnergySavingLoadThresholdT;
+    }
+    leaf timeDuration {
+      description "The time duration indicates how long the traffic load 
+        (either for UL or DL) in the cell needs to have been above the 
+        threshold to wake up one or more original cells which have been 
+        provided backup coverage by the candidate cell.";
+      type type5g3gpp:EnergySavingLoadThresholdT;
+    }
+  }
+  grouping CESManagementFunctionGrp {
+    description "Represents the CESManagementFunction IOC.";
+
+    leaf cesSwitch {
+      description "This attribute determines whether the Centralized SON energy
+        saving function is enabled or disabled.";
+      type boolean;
+      default true;
+    }
+    list intraRatEsActivationOriginalCellLoadParameters {
+      description "This attributes is relevant, if the cell acts as an original
+        cell.This attribute indicates the traffic load threshold and the time 
+        duration, which are used by distributed ES algorithms to allow a cell 
+        to enter the energySaving state. The time duration indicates how long 
+        the load needs to have been below the threshold.";
+      key loadThreshold;
+      min-elements 1;
+      max-elements 1;
+      uses loadTimeThresholdGrp;
+    }
+
+    list intraRatEsActivationCandidateCellsLoadParameters {
+      description "This attributes is relevant, if the cell acts as a candidate
+        cell. This attribute indicates the traffic load threshold and the time 
+        duration, which are used by distributed ES algorithms level to allow an 
+        'original' cell to enter the energySaving state. Threshold and duration
+        are applied to the candidate cell(s) which will provides coverage 
+        backup of an original cell when it is in the energySaving state. The 
+        threshold applies in the same way for a candidate cell, no matter for 
+        which original cell it will provide backup coverage.
+        The time duration indicates how long the traffic in the candidate cell 
+        needs to have been below the threshold before any original cells which 
+        will be provided backup coverage by the candidate cell enters energy 
+        saving state.";
+      key loadThreshold;
+      min-elements 1;
+      max-elements 1;
+      uses loadTimeThresholdGrp;
+    }
+
+    list intraRatEsDeactivationCandidateCellsLoadParameters {
+      description "This attributes is relevant, if the cell acts as a candidate
+        cell. This attribute indicates the traffic load threshold and the time 
+        duration which is used by distributed ES algorithms to allow a cell to 
+        leave the energySaving state. Threshold and time duration are applied 
+        to the candidate cell when it which provides coverage backup for the 
+        cell in energySaving state. The threshold applies in the same way for a
+        candidate cell, no matter for which original cell it provides backup 
+        coverage.
+        The time duration indicates how long the traffic in the candidate cell 
+        needs to have been above the threshold to wake up one or more original 
+        cells which have been provided backup coverage by the candidate cell.";
+      key loadThreshold;
+      min-elements 1;
+      max-elements 1;
+      uses loadTimeThresholdGrp;
+    }
+
+    list esNotAllowedTimePeriod {
+      description "This is a list of time periods during which 
+        inter-RAT energy saving is not allowed";
+      key idx;
+
+      leaf idx {
+        type uint32;
+      }
+      uses EsNotAllowedTimePeriodGrp;
+    }
+
+    list interRatEsActivationOriginalCellParameters {
+      description "This attribute is relevant, if the cell acts as an original 
+        cell. This attribute indicates the traffic load threshold and the time 
+        duration, which are used by distributed inter-RAT ES algorithms to 
+        allow an original cell to enter the energySaving state. The time 
+        duration indicates how long the traffic load (both for UL and DL) needs
+        to have been below the threshold.
+
+        In case the original cell is an EUTRAN cell,  the load information 
+        refers to Composite Available Capacity Group IE (see 3GPP TS 36.413 
+        [12] Annex B.1.5) and the following applies:
+        Load = (100 - 'Capacity Value' ) * 'Cell Capacity Class Value', 
+        where 'Capacity Value' and 'Cell Capacity Class Value' are defined in 
+        3GPP TS 36.423 [7].
+
+        In case the original cell is a UTRAN cell, the load information refers 
+        to Cell Load Information Group IE (see 3GPP TS 36.413 [12] Annex B.1.5)
+        and the following applies:
+        Load= 'Load Value'  * 'Cell Capacity Class Value', where 'Load Value' 
+        and 'Cell Capacity Class Value' are defined in 3GPP TS 25.413 [19].
+
+        If the 'Cell Capacity Class Value' is not known, then 'Cell Capacity 
+        Class Value' should be set to 1 when calculating the load, and the load
+        threshold should be set in range of 0..100.";
+      key loadThreshold;
+      min-elements 1;
+      max-elements 1;
+      uses loadTimeThresholdGrp;
+    }
+
+    list interRatEsActivationCandidateCellParameters {
+      description "This attribute is relevant, if the cell acts as a candidate 
+        cell. This attribute indicates the traffic load threshold and the time 
+        duration, which are used by distributed inter-RAT ES algorithms to 
+        allow an original cell to enter the energySaving state. Threshold and 
+        time duration are applied to the candidate cell(s) which will provides 
+        coverage backup of an original cell when it is in the energySaving 
+        state. The time duration indicates how long the traffic load (both for 
+        UL and DL) in the candidate cell needs to have been below the threshold
+        before any original cells which will be provided backup coverage by the
+        candidate cell enters energySaving state.
+
+        In case the candidate cell is a UTRAN or GERAN cell, the load 
+        information refers to Cell Load Information Group IE (see 3GPP TS 
+        36.413 [12] Annex B.1.5) and the following applies:
+        Load= 'Load Value'  * 'Cell Capacity Class Value', where 'Load Value' 
+        and 'Cell Capacity Class Value' are defined in 3GPP TS 25.413 [19] 
+        (for UTRAN) / TS 48.008 [20] (for GERAN).
+
+        If the 'Cell Capacity Class Value' is not known, then 'Cell Capacity 
+        Class Value' should be set to 1 when calculating the load, and the load 
+        threshold should be set in range of 0..100.";
+      min-elements 1;
+      max-elements 1;
+      key loadThreshold;
+      uses loadTimeThresholdGrp;
+    }
+
+    list interRatEsDeactivationCandidateCellParameters {
+      description "This attribute is relevant, if the cell acts as a candidate 
+        cell. This attribute indicates the traffic load threshold and the time 
+        duration which is used by distributed inter-RAT ES algorithms to allow 
+        an original cell to leave the energySaving state. Threshold and time 
+        duration are applied to the candidate cell which provides coverage 
+        backup for the cell in energySaving state. 
+        The time duration indicates how long the traffic load (either for UL or
+        DL) in the candidate cell needs to have been above the threshold to 
+        wake up one or more original cells which have been provided backup 
+        coverage by the candidate cell.
+
+        For the load see the definition of 
+        interRatEsActivationCandidateCellParameters.
+
+        This attribute indicates the traffic load threshold and the time 
+        duration which is used by distributed inter-RAT ES algorithms to allow 
+        an original cell to leave the energySaving state.";
+      key loadThreshold;
+      min-elements 1;
+      max-elements 1;
+      uses loadTimeThresholdGrp;
+    }
+
+    leaf energySavingState {
+      description "Specifies the status regarding the energy saving in the 
+        cell. If the value of energySavingControl is toBeEnergySaving, then it
+        shall be tried to achieve the value isEnergySaving for the 
+        energySavingState. If the value of energySavingControl is 
+        toBeNotEnergySaving, then it shall be tried to achieve the value 
+        isNotEnergySaving for the energySavingState. ";
+      type enumeration{
+        enum isNotEnergySaving;
+        enum isEnergySaving;
+      }
+    }
+
+    leaf energySavingControl {
+      description "This attribute allows the Cross Domain-Centralized SON 
+        energy saving function to initiate energy saving activation or 
+        deactivation.";
+      type enumeration{
+        enum toBeEnergySaving;
+        enum toBeNotEnergySaving;
+      }
+    }
+  }
+
+  grouping EsNotAllowedTimePeriodGrp {
+    leaf startTime {
+      description "Start of not allowed time period in UTC time zone.
+        If set, the endTime must also be set. If not set, this is 
+        interpreted as around the clock.";
+      must ../endTime;
+      type type5g3gpp:UTC24TimeOfDayT;
+    }
+    leaf endTime {
+      description "If endTime has a lower value than startTime, it will 
+        be interpreted as referring to the following day.";
+      must ../startTime;
+      type type5g3gpp:UTC24TimeOfDayT;
+    }
+    leaf-list daysOfWeek {
+      description "Specifies that the not allowed periods are only 
+        applicable to the specified days in UTC timezone. Every day if 
+        not set.";
+      type type5g3gpp:DayOfWeekT;
+    }
+  }
+
+  grouping CESManagementFunctionSubtree {
+    list CESManagementFunction {
+      description "This IOC represents the management capabilities of 
+        Centralized SON Energy Saving (ES) functions. This is provided for 
+        Energy Saving purposes.
+        
+        In the case where multiple CESManagement MOIs exist at different 
+        levels of the containment tree, the CESManagement MOI at the lower 
+        level overrides the CESManagement MOIs at higher level(s) of the 
+        same containment tree.";
+      reference "clause 6.2.2 in TS 28.310";
+      key id;   
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses CESManagementFunctionGrp;
+      }      
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction/"+
+      "nrcellcu3gpp:NRCellCU" {
+    if-feature nrcellcu3gpp:CESManagementFunction;
+    uses CESManagementFunctionSubtree;
+  }
+  augment /me3gpp:ManagedElement {
+    if-feature me3gpp:CESManagementFunction;
+    uses CESManagementFunctionSubtree;
+  }
+  augment /subnet3gpp:SubNetwork {
+    if-feature subnet3gpp:CESManagementFunction;
+    uses CESManagementFunctionSubtree;
+  }
+}

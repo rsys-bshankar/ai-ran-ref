@@ -1,0 +1,139 @@
+module _3gpp-5gc-nrm-QFQoSMonitoringControl {
+  yang-version 1.1;
+  
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-QFQoSMonitoringControl;
+  prefix qFQMCtrl3gpp;
+  
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-5gc-nrm-smffunction { prefix smf3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+
+  organization "3gpp SA5";  
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the capabilities and properties for control 
+    of QoS monitoring per QoS flow per UE for URLLC service defined 
+    
+in 3GPP TS 23.501.
+    Copyright 2023, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2023-04-26 { reference CR-0916; }
+  revision 2020-11-08 { reference CR-0412 ; }
+  revision 2020-08-03 { reference "CR-0321"; }
+  revision 2020-04-10 { reference "S5-202101";   }
+
+  grouping QFPacketDelayThresholdsTypeGrp {
+    description "Represents the QFPacketDelayThresholdsType";
+    leaf thresholdDl {
+      type uint32;
+      units milliseconds;
+      description "Downlink threshold";
+    }
+
+    leaf thresholdUl {
+      type uint32;
+      units milliseconds;
+      description "Uplink threshold";
+     }
+
+    leaf thresholdRtt {
+      type uint32;
+      units milliseconds;
+      description "Round trip threshold";
+    }
+  }
+
+  grouping QFQoSMonitoringControlGrp {
+    description "Represents the QFQoSMonitoringControl IOC.";
+    reference "3GPP TS 28.541";
+
+    leaf qFQoSMonitoringState {
+      description "The state of QoS monitoring per QoS flow per UE.";
+      mandatory true;
+      type enumeration {
+        enum ENABLED;
+        enum DISABLED;
+      }
+     }
+     
+    list qFMonitoredSNSSAIs {
+      description "The S-NSSAIs for which the QoS monitoring per QoS flow
+       per UE is to be performed.";
+      reference "3GPP TS 23.003";
+      key "sd sst";
+           uses types5g3gpp:SNssai;}
+     
+    leaf-list qFMonitored5QIs {
+      description "The 5QIs for which the QoS monitoring per QoS flow 
+       per UE is to be performed.";
+      reference "3GPP TS 23.501";
+      type uint32 {
+        range "0..255";
+      }
+     }
+     
+    leaf isEventTriggeredQFMonitoringSupported {
+      description "It indicates whether the event based QoS monitoring 
+       reporting per QoS flow per UE is supported.";
+      mandatory true;
+      reference "3GPP TS 29.244";
+      type boolean;
+     }
+     
+    leaf isPeriodicQFMonitoringSupported {
+      description "It indicates whether the periodic QoS monitoring reporting 
+       per QoS flow per UE is supported.";
+      mandatory true;
+      reference "3GPP TS 29.244";
+      type boolean;
+     }
+     
+    leaf isSessionReleasedQFMonitoringSupported {
+      description "It indicates whether the session release based QoS monitoring 
+       reporting  per QoS flow per UE is supported.";
+      mandatory true;
+      reference "3GPP TS 29.244";
+      type boolean;
+     }
+
+    list qFPacketDelayThresholds {
+      key "idx";
+      min-elements 1;
+      max-elements 1;
+      description "It specifies the thresholds for reporting the packet delay 
+        between PSA and UE for QoS monitoring per QoS flow per UE.";
+
+      leaf idx { type uint32 ; }
+      uses QFPacketDelayThresholdsTypeGrp;
+    }
+
+    leaf qFMinimumWaitTime {
+      description "It specifies the minimum waiting time (in seconds) between
+       two consecutive reports for event triggered QoS monitoring reporting 
+       per QoS flow per UE.";
+      type uint32;
+     }
+     
+    leaf qFMeasurementPeriod {
+      description "It specifies the period (in seconds) for reporting the 
+        packet delay for QoS monitoring per QoS flow per UE.";
+      type uint32;
+    }
+  }    
+
+  augment "/me3gpp:ManagedElement/smf3gpp:SMFFunction" {
+
+    list QFQoSMonitoringControl {
+      description "Represents the QFQoSMonitoringControl IOC.";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses QFQoSMonitoringControlGrp;
+      }
+    }
+  }
+}

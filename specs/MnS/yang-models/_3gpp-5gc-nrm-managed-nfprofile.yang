@@ -1,0 +1,471 @@
+module _3gpp-5gc-nrm-managed-nfprofile {
+  yang-version 1.1;
+
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-managed-nfprofile;
+  prefix mnfp3gpp;
+
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import ietf-inet-types { prefix inet; }
+  import ietf-yang-types { prefix yang; }
+  import _3gpp-5gc-nrm-nfservice { prefix nfs3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "NF profile dataType.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 29.510";
+
+  revision 2026-05-25 { reference CR-1702 ; }
+  revision 2026-03-25 { reference CR-1694 ; }
+  revision 2025-07-25 { reference CR-1558 ; }
+  revision 2025-07-25 { reference "initial revision"; }
+
+    grouping SPNInfoIdGrp {
+        description "This data type represents the SNPN identification
+        consisting of MCC, MNC, and optionally NID.";
+        leaf mcc {
+            type string;
+            description "Mobile Country Code (MCC) of the SNPN.";
+        }
+
+        leaf mnc {
+            type string;
+            description "Mobile Network Code (MNC) of the SNPN.";
+        }
+
+        leaf nId {
+            type string;
+            description "Network Identifier (NID) of the SNPN.";
+        }
+    }
+    grouping CollocatedNfInstanceGrp {
+        description "This data type represents the SNPN identification
+        consisting of MCC, MNC, and optionally NID.";
+        leaf nfInstanceId {
+            description "String uniquely identifying a NF instance.";
+            mandatory true;
+            type string;
+        }
+
+        leaf nfType {
+            description "Type of Network Function.";
+            mandatory true;
+            type types3gpp:NfType;
+        }
+    }
+
+grouping ManagedNFProfileGrp {
+    description "Represents the ManagedNFProfile <<dataType>> as defined in
+      clause 5.3.54 of 3GPP TS 28.541.";
+
+    leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        mandatory true;
+        type string;
+    }
+
+    leaf nfType {
+        description "Type of Network Function.";
+        mandatory true;
+        type types3gpp:NfType;
+    }
+
+    leaf nfStatus {
+        description "Status of the NF Instance.";
+        mandatory true;
+        type NFStatus;
+    }
+    list collocatedNfInstances {
+        description "It represents information related to collocated NF
+         type(s) and corresponding NF Instances when the NF is collocated
+         with NFs supporting other NF types.";
+         key "nfInstanceId";
+        uses  CollocatedNfInstanceGrp;
+    }
+    leaf nfInstanceName {
+        description "It represents human readable name of the NF Instance";
+        type string;
+    }
+
+    leaf heartBeatTimer {
+        description "Time in seconds expected between 2 consecutive
+       heart-beat messages from an NF Instance to the NRF.
+       It may be included in the registration request.
+       When present in the request it shall contain the
+       heartbeat time proposed by the NF service consumer.";
+       type uint16;
+    }
+
+    list plmnList {
+      description "PLMN(s) of the Network Function.
+        This IE shall be present if this information
+        is available for the NF. If not provided, PLMN ID(s)
+        of the PLMN of the NRF are assumed for the NF.";
+        min-elements 1;
+        key "mcc mnc";
+        uses types3gpp:PLMNId;
+    }
+
+    list sNssais {
+      description "S-NSSAIs of the Network Function. If not
+       provided, the NF can serve any S-NSSAI. When present
+        this IE represents the list of S-NSSAIs supported in
+         all the PLMNs listed in the plmnList IE.";
+      min-elements 1;
+      key "sst sd";
+      uses types5g3gpp:SNssai;
+    }
+
+    leaf fqdn {
+      description "FQDN of the Network Function. For AMF, the
+       FQDN registered with the NRF shall be that of the AMF Name.";
+       type inet:domain-name;
+    }
+
+    leaf hostAddr {
+      mandatory true;
+      type inet:host ;
+      description "Host address of a NF";
+    }
+
+    leaf authzInfo {
+      description "This parameter defines NF Specific Service authorization
+       information. It shall include the NF type (s) and NF realms/origins
+      allowed to consume NF Service(s) of NF Service Producer ";
+      reference "TS 23.501";
+      type string;
+    }
+
+    list allowedPlmns {
+      description "PLMNs allowed to access the NF instance.
+      If not provided, any PLMN is allowed to access the NF.";
+      min-elements 1;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+
+    list sNPNList {
+      key "mcc mnc nId";
+      description "SNPN(s) of the Network Function. This attributeIE shall be
+      present if the NF pertains to one or more SNPNs.";
+      reference "TS 29.510";
+      uses SPNInfoIdGrp;
+    }
+
+    list perPlmnSnssaiList {
+      description "It includes the S-NSSAIs supported by the Network Function
+       for each PLMN supported by the Network Function. When present, it shall
+       override sNssais IE.If the perPlmnSnssaiList attribute is provided in
+       at least one NF Service, the S-NSSAIs supported per PLMN in the
+       NF Profile shall be the set or a superset of the perPlmnSnssaiList
+       of the NFService(s).";
+      key idx;
+      leaf idx { type uint32; }
+      uses nfs3gpp:PlmnSnssai;
+    }
+    leaf priority {
+      description "Priority (relative weight) of the NF instance, in the
+       range of 0-65535, compared to other NF instances of the same type,
+       to be used for NF selection; if capacity is also present in the
+       nfServiceList parameters, those will have precedence over this value.";
+      type uint16;
+    }
+    list allowedSNPNs {
+      description "SNPNs allowed to access the NF instance.
+      The absence of this attribute in the NF profile indicates that no SNPN,
+      other than the SNPN(s) registered in the snpnList attribute of the
+      NF Profile, is allowed to access the service instance";
+      key "mCC mNC";
+      uses nfs3gpp:SNPNIdGrp;
+    }
+
+    leaf-list allowedNfTypes {
+      description "Type of the NFs allowed to access the NF instance.
+                   If not provided, any NF type is allowed to access the NF.";
+      min-elements 1;
+      type types3gpp:NfType;
+    }
+
+    leaf-list allowedNfDomains {
+      description "Pattern (regular expression according to the ECMA-262
+      dialect [75]) representing the NF domain names within the PLMN of
+      the NRF allowed to access the NF instance If not provided,
+      any NF domain is allowed to access the NF.";
+      type string;
+    }
+
+    list allowedNSSAIs {
+        description "S-NSSAI of the allowed slices to access the NF instance.
+        If not provided, any slice is allowed to access the NF.";
+      key "sst sd";
+      uses types5g3gpp:SNssai;
+    }
+
+    list allowedRuleSet {
+      description "It represents map of rules specifying NF-Consumers
+        allowed or denied to access the NF-Producer. It may be present
+        when the NF-Producer and the NRF support Allowed-ruleset feature
+        as specified in clause 6.1.9.";
+      reference "3GPP TS 29.510";
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:RuleSetGrp;
+    }
+    leaf locality {
+      description "Operator defined information about the location
+       of the NF instance (e.g. geographic location, data center).";
+      type string;
+    }
+    leaf extLocality {
+      description "It indicates the operator defined information about the
+       location of the NF instance. The key of the map shall be a (unique)
+       valid JSON string per clause 7 of IETF RFC 8259 [92], with a maximum
+       of 32 characters, representing a type of locality as defined in
+       clause 6.1.6.3.18.";
+      type string;
+    }
+
+    leaf capacity {
+      description "Static capacity information in the range of 0-65535,
+       expressed as a weight relative to other NF instances of
+        the same type; if capacity is also present in the nfServiceList
+         parameters, those will have precedence over this value.";
+      type uint16;
+    }
+
+    leaf load {
+      description "Dynamic load information, ranged from 0 to 100,
+        indicates the current load percentage of the NF.";
+      type types3gpp:Load;
+      config false;
+    }
+    leaf loadTimeStamp {
+      description "It indicates the point in time in which the latest load
+        information (sent by the NF in the load attribute of the NF Profile)
+        was generated at the NF Instance. If the NF did not provide a
+        timestamp, the NRF should set it to the instant when the NRF received
+        the message where the NF provided the latest load information.";
+      type yang:date-and-time;
+      config false;
+    }
+
+    leaf recoveryTime {
+      description "Timestamp when the NF was (re)started. The NRF shall
+        notify NFs subscribed to receiving notifications of changes of the
+        NF profile, if the NF recoveryTime is changed.";
+      type yang:date-and-time;
+      config false;
+    }
+    leaf nfServicePersistence {
+      description "This parameter indicates whether the different service
+        instances of a same NF Service in the NF instance, supporting a same
+        API version, are capable to persist their resource state in shared
+        storage and therefore these resources are available after a new NF
+        service instance supporting the same API version is selected by a NF
+        Service Consumer.";
+      reference "TS 29.510";
+      type boolean;
+      config false;
+    }
+    leaf-list nfSetIdList {
+      type string ;
+      min-elements 1;
+      description "A NF Set Identifier is a globally unique identifier of
+      a set of equivalent and interchangeable CP NFs from a given network
+      that provide distribution, redundancy and scalability
+      (see clause 5.21.3 of 3GPP TS 23.501 [2]).An NF Set Identifier shall
+      be constructed from the MCC, MNC, NID (for SNPN), NF type and a Set ID.
+      A NF Set Identifier shall be formatted as the following string:
+      set<Set ID>.<nftype>set.5gc.mnc<MNC>.mcc<MCC> for a NF Set in a PLMN, or
+      set<Set ID>.<nftype>set.5gc.nid<NID>.mnc<MNC>.mcc<MCC> for a NF Set
+      in a SNPN.At most one NF Set ID shall be indicated per PLMN-ID or SNPN
+       of the NF.";
+    }
+    leaf nfProfileChangesSupportInd {
+      description "This parameter indicates if the NF Service Consumer
+        supports or does not support receiving NF Profile Changes. It may
+        be present in the NFRegister or NFUpdate (NF Profile Complete
+        Replacement) request and shall be absent in the response.";
+      reference "Annex B 3GPP TS 29.510 [23]";
+      type boolean;
+      config false;
+    }
+    leaf nfProfilePartialUpdateChangesSupportInd {
+      description "It represents NF Profile Partial Update Changes Support
+        Indicator. TRUE: the NF Service Consumer supports receiving NF
+        Profile Changes in the response to an NF Profile Partial Update
+        operation. FALSE (default): the NF Service Consumer does not
+        support receiving NF Profile Changes in the response to an NF
+        Profile Partial Update operation.";
+      type boolean;
+    }
+    leaf nfProfileChangesInd {
+      description "NF Profile Changes Indicator. This IE shall be absent
+        in the request to the NRF and may be included by the NRF in
+        NFRegister or NFUpdate (NF Profile Complete Replacement) response.
+        true: the NF Profile contains NF Profile changes.
+        false (default): complete NF Profile.";
+      type boolean;
+      config false;
+    }
+    list defaultNotificationSubscriptions {
+      description "Notification endpoints for different notification types.
+        This attribute may contain multiple default subscriptions for a same
+        notification type; in that case, those default subscriptions are used
+        as alternative notification endpoints.";
+      key notificationType;
+      min-elements 1;
+      config false;
+      uses types3gpp:DefaultNotificationSubscription;
+    }
+    leaf servingScope {
+      description "This parameter indicates the served geographical areas
+      of a NF instance.";
+      type string;
+    }
+    leaf lcHSupportInd {
+      description "This parameter indicates whether the NF supports or does
+      not support Load Control based on LCI Header.";
+      reference "clause 6.3 of 3gpp TS 29.500";
+      type boolean;
+    }
+    leaf olcHSupportInd {
+      description "This parameter indicates whether the NF supports or does
+      not support Overload Control based on OCI Header .";
+      reference "clause 6.4 of 3gpp TS 29.500";
+      type boolean;
+    }
+    leaf-list nfSetRecoveryTimeList {
+      description "This parameter contains the recovery time of NF Set(s)
+      indicated by the NfSetId, where the NF instance belongs.";
+      type yang:date-and-time ;
+      max-elements 1;
+    }
+    leaf-list serviceSetRecoveryTimeList {
+      description "This parameter contains the recovery time of NF Service
+      Set(s) configured in the NF instance, which are indicated by the
+      NfServiceSetId";
+      type yang:date-and-time ;
+      max-elements 1;
+    }
+    leaf scpDomains {
+      description "This parameter shall carry the list of SCP domains the
+      SCP belongs to, or the SCP domain the NF (other than SCP) or the SEPP
+      belongs to..";
+      type string;
+    }
+    leaf vendorId {
+      description "Vendor ID of the NF instance, according to the
+      IANA-assigned SMI Network Management Private Enterprise Codes [77].
+      allowedValues: 6 decimal digits; if the SMI code has less than
+      6 digits, it shall be padded with leading digits 0 to complete
+      a 6-digit string value.";
+      type string;
+    }
+    leaf hniList {
+      description "Identifications of Credentials Holder or Default Credentials
+      Server. It is an array of FQDN.";
+      type string;
+    }
+    leaf interPlmnFqdn {
+      description "If the NF needs to be discoverable by other
+       NFs in a different PLMN, then an FQDN that is used
+        for inter-PLMN routing is specified.";
+      type inet:domain-name;
+    }
+    list nfServiceList {
+      description "List of NF Service Instances. It shall include
+        the services produced by the NF that can be discovered by
+        other NFs.";
+      key serviceInstanceId;
+      min-elements 1;
+      uses nfs3gpp:NFServiceGrp;
+    }
+    uses types5g3gpp:SupportedVendorSpecificFeaturesGrp;
+
+    list selectionConditions {
+      description "This attribute includes the conditions under which an NF
+        Instance with an NFStatus value set to CANARY_RELEASE, or with a
+        canaryRelease attribute set to true, shall be selected by an NF
+        Service Consumer.";
+      leaf idx { type uint32; }
+      key "idx";
+      max-elements 1;
+      uses nfs3gpp:SelectionConditionsGrp;
+    }
+    leaf canaryRelease {
+      description "This attribute indicates whether an NF instance whose
+        nfStatus is set to REGISTERED is in Canary Release condition,
+        i.e. it should only be selected by NF Service Consumers under the
+        conditions indicated by the selectionConditions attribute.
+        True: the NF is under Canary Release condition, even if the
+        nfStatus is set to REGISTERED.
+        False: the NF instance indicates its Canary Release condition
+        via the nfStatus attribute.";
+      type boolean;
+      default false;
+    }
+    leaf exclusiveCanaryReleaseSelection {
+      description "This attribute indicates whether an NF Service Consumer
+        should only select an NF Service Producer in Canary Release
+        condition.
+        True: the consumer shall only select producers in Canary Release
+        condition.
+        False: the consumer may select producers not in Canary Release
+        condition.";
+      type boolean;
+      default false;
+    }
+    leaf sharedProfileDataId {
+        description "This attribute indicates a string uniquely identifying
+        Shared Profile Data. The format of the sharedProfileDataId shall be
+        a Universally Unique Identifier (UUID) version 4, as described in
+        IETF RFC 4122 [44]. The hexadecimal letters should be formatted as
+        lower-case characters by the sender, and they shall be handled as
+        case-insensitive by the receiver.
+        Example: 4ace9d34-2c69-4f99-92d5-a73a3fe8e23b";
+       type string;
+    }
+    leaf shutdownTime {
+      description "It indicates the timestamp when the NF Instance is
+        planned to be shut down. This attribute may be present if the
+        nfStatus is set to UNDISCOVERABLE due to scheduled shutdown.";
+      type yang:date-and-time;
+      config false;
+    }
+    leaf-list supportedRcfs {
+      description "It represents a list of Resource Content Filter IDs.";
+      type string;
+      min-elements 1;
+      config false;
+    }
+    leaf canaryPrecedenceOverPreferred {
+      description "ManagedNFProfile.canaryPrecedenceOverPreferred  This
+        attribute indicates whether the NRF shall prioritize the NF Service
+        Producer in Canary Release condition over the preferences
+        (preferred-xxx, ext-preferred-xxx) present in NF discovery requests.
+        allowedValues:
+        True NRF shall prioritize NF Service Producers in Canary Release
+         condition at NF discovery requests, i.e. NF Service Producers
+         determined according to preferred-xxx and/or ext-preferred-xxx
+         shall be prioritized after the NF Service Producers in Canary
+         Release condition. The associated NF (service) priorities for Service
+         Producers in Canary Release condition shall not be modified by NRF.
+        False NRF shall prioritize the NF Service Producers according to
+        preferred-xxx and/or ext-preferred-xxx (i.e. Canary Release condition
+        in NF Service Producers shall not be prioritized over NF Service
+        Consumer preferences at NF discovery requests)";
+        type boolean;
+        default false;
+    }
+  }
+
+  typedef NFStatus {
+    type enumeration {
+      enum REGISTERED;
+      enum SUSPENDED;
+    }
+  }
+}

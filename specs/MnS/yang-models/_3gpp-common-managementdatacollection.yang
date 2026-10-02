@@ -1,0 +1,455 @@
+module _3gpp-common-managementdatacollection {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-common-managementdatacollection";
+  prefix "mgtdatcol3gpp";
+
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-yang-types {prefix types3gpp; }
+  import _3gpp-common-yang-extensions {prefix yext3gpp; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+
+  description "Handling management data collection
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.623
+      Generic Network Resource Model (NRM)
+      Integration Reference Point (IRP);
+      Solution Set (SS) definitions
+
+      3GPP TS 28.622
+      Generic Network Resource Model (NRM)
+      Integration Reference Point (IRP);
+      Information Service (IS)";
+
+  revision 2025-07-19 { reference CR-0551; }
+  revision 2025-02-07 { reference "CR-0461 CR-0505"; }
+  revision 2024-04-12 { reference CR-0346; }
+  revision 2023-11-18 { reference CR-0299 ; }
+  revision 2023-11-06 { reference "CR-0305"; }
+  revision 2023-09-18 { reference CR-0271 ; }
+  revision 2023-02-14 { reference "CR-0234"; }
+  revision 2022-11-04 { reference "CR-0194"; }
+
+  grouping ManagementDataGrp {
+    description "This <<choice>> defines the management data which is
+      requested. It is a choice between
+      -   a list of data categories (attribute mgtDataCategory) This may include
+      'COVERAGE', 'CAPACITY', 'MOBILITY', 'ENERGY_EFFICIENCY', 'ACCESSIBILITY'
+      etc. The mapping of exact measurement with the requested category will be
+      done at the producer and is implementation specific.
+      -   a list of management data identified with their name (attribute
+      'mgtDataName'). The management data name presents a specific single
+      measurement (e.g. by selecting 'RRU.PrbTotDl', see TS 28.552 or
+      'immediateMdt.nr.m1', see TS 32.422) or a set of measurements (e.g.
+      measurement families such as RRU (radio resource utilization) or
+      MM (mobility management) in case of PM, see TS 28.552 [20], or group of
+      measurements such as 'immediateMdt.nr' in case of MDT, see TS 32.422).";
+    choice managementData {
+      case mgtDataCategory {
+        leaf-list category  {
+          type mgtDataCategoryType;
+          min-elements 1;
+          max-elements 5; // The ENUM contains 5 possible values
+          description "This attributes defines the type of management data that
+            are requested.
+
+            Allowed values for data category are COVERAGE, CAPACITY,
+            ENERGY_EFFICIENCY, MOBILITY, ACCESSIBILITY. The data categories
+            will map to certain measurement families defined in TS 28.552, see
+            below. In addition to the below mappings, MnS producer may map the
+            provided categories to any additional proprietary management data,
+            as appropriate.
+
+            - The COVERAGE category will map to measurement families of MR
+            (measurements related to Measurement Report) and L1M (measurements
+            related to Layer 1 Measurement).
+
+            - The CAPACITY category will map to measurement family RRU
+            (measurements related to Radio Resource Utilization).
+
+            - The ENERGY_EFFICIENCY category will map to measurement family PEE
+            (measurements related to Power, Energy and Environment).
+
+            - The MOBILITY category will map to measurement family MM
+            (measurements related to Mobility Management).
+
+            - The ACCESSIBILITY category will map to measurement family CE
+            (measurements related to Connection Establishment).";
+        }
+      }
+      case mgtDataName {
+        leaf-list name {
+          type string;
+          min-elements 1;
+          description "List of management data identified by name.
+
+          The list may include metrics or set of metrics defined
+            in TS 28.552, TS 28.554 and TS 32.422.
+
+            The metrics are identified with their names/identifiers.
+            For performance measurements defined in TS 28.552 the name is
+            constructed as the bullet e) of the measurement definition.
+
+            For KPIs defined in TS 28.554 the name is defined according to the
+            KPI definitions template as the component designated with a).
+
+            For trace metrics (including trace messages, MDT measurements
+            (Immediate MDT, Logged MDT, Logged MBSFN MDT), RRC, RLF and RCEF
+            reports) defined in TS 32.422, the name (metric identifier) is
+            defined in clause 10 of TS 32.422.
+
+            For non-3GPP specified managment data the name is defined
+            elsewhere.";
+          }
+      }
+      mandatory true;
+    }
+  }
+
+  grouping GeoAreaToCellMappingGrp {
+    description "Represents the GeoAreaToCellMapping data type.
+
+      The mapping of the geographical area to cells is performed at
+      instantiation of the IOC.";
+
+    list geoArea {
+      description "It specifies the geographical area using the cordinates of
+        the corners of a convex polygon.";
+      key idx;
+      max-elements 1;
+      leaf idx {
+        type string;
+      }
+      uses types3gpp:GeoAreaGrp;
+    }
+
+    leaf associationThreshold {
+      type uint8 {
+        range 1..100;
+      }
+      yext3gpp:inVariant;
+      description "It specifies the threshold of coverage area in
+        percentage whether a cell belongs to the geographical area or not.
+
+        If this attribute is absent, the location of the base station
+        antenna determines whether a cell belongs to the geographical
+        area or not.";
+    }
+  }
+
+  grouping AreaOfInterestGrp {
+    description "It specifies a location(s) from where the management data
+      shall be collected.";
+
+    list geoAreaToCellMapping {
+      description "Contains a geographical area and an association threshold.
+        The geo-area is defined as a convex polygon using the attribute
+        'geoArea'.
+
+        The MnS producer shall map the geographical area to cells. There are
+        two evaluation criteria whether a cell belongs to a geographical area
+        or not. If attribute 'associationThreshold' is absent, the location
+        of the base station antenna determines the belonging. If attribute
+        'associationThreshold' is configured, the coverage area is considered.
+        The attribute 'associationThreshold' determines the lower boundary of
+        the coverage ratio. For example, if the 'associationThreshold' is
+        configured to 60%, a cell shall be considered as included in the
+        geographical area if at least 60% of the coverage area of that
+        cell overlaps with the specified geographical area.
+
+        The mapping of the geographical area to cells is performed at
+        instantiation of the IOC.";
+      key idx;
+      leaf idx { type string; }
+      uses GeoAreaToCellMappingGrp;
+    }
+
+    list taiList {
+      description "Tracking Area Identity list";
+      key idx;
+      min-elements 1;
+      max-elements 8;
+      leaf idx { type string; }
+      uses types3gpp:TaiGrp;
+    }
+
+    leaf-list nrCellIdList {
+      type string;
+      description "List of NR cells identified by NG-RAN CGI";
+    }
+
+    leaf-list eutraCellIdList {
+      type string;
+      description "List of E-UTRAN cells identified by E-UTRAN-CGI";
+    }
+
+    leaf-list utraCellIdList {
+      type string;
+      description "List of UTRAN cells identified by UTRAN CGI";
+    }
+  }
+
+  grouping NodeFilterGrp {
+
+    list areaOfInterest {
+      key idx;
+      leaf idx {
+        type string;
+      }
+      uses AreaOfInterestGrp;
+      description "It specifies a location(s) from where the management data
+        shall be collected. It is defined in terms of TAI(s).";
+    }
+
+    leaf networkDomain {
+      type enumeration {
+        enum CN;
+        enum RAN;
+      }
+      // mandatory false
+      description "It specifies the network domain of the target node. This
+        will also result in collecting appropriate management data from the
+        nodes belonging to the specified domain.";
+    }
+
+    leaf cpUpType {
+      type enumeration {
+        enum CP;
+        enum UP;
+      }
+      // mandatory false
+     description "It specifies the traffic type of the target node. This will
+       also result in collecting appropriate management data from the nodes
+       handling the specified traffic (e.g AMF for CP and UPF for UP).";
+    }
+
+    leaf sst {
+      type uint8;  // TS 28.003 clause 28.4.
+      description "It specifies the slice service type (SST) of which the slice
+        subnet should be targeted. Please refer to 3GPP TS 23.501: 'System
+        Architecture for the 5G System'";
+    }
+
+    leaf-list objectInstances {
+      type types3gpp:DistinguishedName;
+      yext3gpp:inVariant;
+      description "List of managed object instances. Each object instance is
+        identified by its DN.";
+    }
+  }
+
+  typedef mgtDataCategoryType {
+    type enumeration {
+      enum COVERAGE;
+      enum CAPACITY;
+      enum ENERGY_EFFICIENCY;
+      enum MOBILITY;
+      enum ACCESSIBILITY;
+    }
+    description "";
+  }
+
+  grouping ManagementDataCollectionGrp {
+
+    uses ManagementDataGrp {
+      description "This attribute defines the list of management data that are
+        requested.";
+    }
+
+    list targetNodeFilter {
+      key idx;
+      leaf idx {
+        type string;
+      }
+      min-elements 1;
+      description "Set of information to target the Object Instance to collect
+        the measurements from.";
+      uses NodeFilterGrp;
+    }
+
+    list collectionTimeWindow {
+        key "startTime endTime";
+        max-elements 1;
+        description "Collection time window for which the management data
+          should be reported.";
+        uses types3gpp:TimeWindowGrp;
+   }
+
+    list reportingCtrl {
+      key idx;
+      leaf idx {
+        type string;
+      }
+       min-elements 1;
+       max-elements 1;
+       uses types3gpp:ReportingCtrl;
+       description "Selecting the reporting method and defining associated
+         control parameters.";
+    }
+
+    leaf dataScope {
+        type enumeration {
+          enum SNSSAI;
+          enum 5QI;
+        }
+        // mandatory false; [Implicit]
+        description "It specifies whether the required data is reported per
+          S-NSSAI or per 5QI.";
+    }
+
+    leaf condition {
+      type string;
+      mandatory true;
+      yext3gpp:inVariant;
+      description "Logical expression of one or several condition(s).
+
+      The actual syntax and capabilities of condition is SS specific. However,
+      each SS should support condition consisting of one or several assertions
+      that may be grouped using the logical operators AND, OR and NOT. Only if
+      the whole expression of condition evaluates TRUE, the attribute
+      conditionStatus will be TRUE.
+
+      Each assertion is a pointer to a Boolean parameter or a logical
+      expression of attribute existence or attribute value comparison
+      ('equal to X, less than Y' etc.).
+
+      An empty string is not allowed.";
+    }
+
+    list processMonitor {
+      config false;
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type string; }
+      description "Indicates the process of the ManagementDataCollection MOI.";
+    }
+
+    leaf consolidateOutput {
+      type boolean;
+      mandatory true;
+      yext3gpp:inVariant;
+      description "Indicates whether the management data collection output will
+        be consolidated into a single file per reporting period.";
+    }
+
+    leaf jobId {
+      type string;
+      yext3gpp:inVariant;
+      description "Identifier of a PerfMetricJob, a TraceJob or a QMCJob.";
+    }
+  }
+
+  augment /subnet3gpp:SubNetwork {
+
+    list ManagementDataCollection {
+      key id;
+      uses top3gpp:Top_Grp ;
+      container attributes {
+          uses ManagementDataCollectionGrp;
+      }
+      description "This IOC represents a management data collection request
+        job. The requested data is of kind Trace, MDT (Minimization
+        of Drive Test), RLF (Radio Link Failure) report, RCEF (RRC Connection
+        Establishment Failure) report, RRC report,
+        PM (performance measurements), KPI
+        (end-to-end key performance indicators) or a combination of these.
+
+        The attribute managementData defines the management data which shall
+        be reported. This may either include a list of data categories or a
+        list of management data identified with their name. For further details
+        see TS 28.622 clause 4.3.50.
+
+        The targetNodeFilter attribute can be
+        used to target object instance(s) producing the required management
+        data. It is assumed that the consumer may not have detailed knowledge
+        of the network and hence may not identify the exact object instance
+        producing the required management data. In this case consumer can
+        request management data, specified by 3GPP, produced by certain network
+        function(s) based on a particular location, the domain (CN or RAN) of
+        the network function, and the handled traffic (CP or UP) of the network
+        function.
+
+        To activate the production of the requested data, a MnS consumer has to
+        create a ManagementDataCollection object instance on the MnS producer.
+
+        The attribute jobId is used to identify a management data collection
+        request.
+
+        The production and reporting of the management data can be constrained
+        by conditions such that only when the conditions are satisfied shall
+        management data collection be enabled. For example, a MnS consumer can
+        request to create two ManagementDataCollection instances. One can be
+        configured with high data producing and reporting period on a set of
+        conditions (e.g, to reduce transmission cost when network performance
+        metric is in normal range). Another can be configured with low data
+        producing and reporting period on another set of conditions (e.g. to
+        enable network optimization when network performance metric is in
+        abnormal range).
+
+        The MnS producer may derive multiple jobs (PerfMetricJob, TraceJob)
+        from a single ManagementDataCollection job for collecting the required
+        management data. The jobId of the request is used to identify the
+        output.  The value is also used to correlate the derived jobs which
+        will have the same jobId value as the ManagementDataCollection.
+
+        If the MnS producer receives the collected data from multiple sources,
+        it will consolidate the data into a set of management data for
+        reporting based on the value of the attribute consolidateOutput.
+
+        For consolidation of file-based management data the attribute
+        consolidateOutput controls:
+        -   True: the MnS Producer will combine the file output from jobs used
+        to collect the required management data into a single output file as
+        follows:
+          - File is in compressed format, i.e. zip.
+          -  File shall contain individual output files from each configured job
+          - Each file retains its original filename
+          -  Each file retains it original content
+        -  Consolidated filename uses naming convention defined in,
+        TS 28.532 clause 11.3.2.1.4 with the following:
+          -  <Type> is a combination of the management data types included in
+          the consolidated output
+          -  <UniqueIdList> is omitted
+        -  False: the MnS Producer will not combine the output from jobs used to collect the required management data.  The MnS Consumer will receive separate output from the derived jobs.
+
+        Subject to the reporting method, the MnS Consumer may receive file
+        related notifications.  When consolidated output is selected the
+        MnS Producer will create file notifications for the consolidated files.
+        When consolidated output is not selected, the MnS Producer will create
+        the notification subscriptions on behalf of the MnS Consumer and the
+        MnS Consumer will receive notifications directly from the derived jobs.
+
+        The attribute collectionTimeWindow specifies the time window for which
+        the management data should be reported. The attributes startTime and
+        the endTime can be in the past, present or in the future.
+
+        The attribute reportingCtrl specifies the method and associated control
+        parameters for reporting the produced management data to MnS consumers.
+        Three methods are available: file-based reporting with selection of the
+        file location by the MnS producer, file-based reporting with selection
+        of the file location by the MnS consumer and stream-based reporting.
+
+        The attribute dataScope configures, whether the management data should
+        be reported per S-NSSAI or per 5QI or per PLMN, if applicable.
+
+        The attribute processMonitor allows the MnS consumer to monitor the
+        status of the management data collection represented by the object
+        ManagementDataCollection.
+
+        The MnS producer indicates in the attribute progressStateInfo the
+        state of the management data collection:
+        -  NOT_STARTED
+        - RUNNING
+        - CANCELING
+        and indicates in the attribute resultStateInfo:
+        -  FINISHED
+        -  FAILED
+        -  PARTIALLY_FAILED
+        -  CANCELLED";
+    }
+  }
+}

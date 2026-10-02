@@ -1,0 +1,77 @@
+module _3gpp-nr-nrm-cpciconfigurationfunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-cpciconfigurationfunction";
+  prefix "cpcicf3gpp";
+
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-nr-nrm-nrcelldu { prefix nrcelldu3gpp; }
+  import _3gpp-nr-nrm-gnbdufunction { prefix gnbdu3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Represents the CPCIConfigurationFunction Information Object 
+    Class(IOC) that is part of the NR Network Resource Model.
+    Copyright 2023, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2021-08-05 { reference S5-214053/CR-0518; }
+  revision 2020-05-08 { reference S5-203316; }
+
+  grouping CPCIConfigurationFunctionGrp {
+    description "Represents the CPCIConfigurationFunction IOC.";
+
+    leaf cPciConfigurationControl {
+        description "This attribute determines whether the Centralized SON 
+          PCI configuration function is enabled or disabled.";
+        type boolean;
+        mandatory true;
+    }
+
+    leaf-list cSonPciList {
+      type int32 { range "0..1007"; }
+      min-elements 1;
+      description "Holds a list of physical cell identities that can be 
+        assigned to the pci attribute by gNB. The assignment algorithm is not 
+        specified. 
+        See TS 38.211 clause 7.4.2.1 for legal values of pci.
+        This attribute shall be supported if and only if the C-SON PCI 
+        configuration is supported.";
+      reference "See TS 38.211 clause 7.4.2.1";
+    }
+  }
+
+  grouping CPCIConfigurationFunctionSubtree {
+    list CPCIConfigurationFunction {
+      description "This IOC contains attributes to support the Cross 
+        Domain-Centralized SON function of PCI configuration
+        
+        In the case where multiple CPCIConfiguration MOIs exist at different 
+        levels of the containment tree, the CPCIConfiguration MOI at the lower 
+        level overrides the CPCIConfiguration MOIs at higher level(s) of the 
+        same containment tree.";
+      reference "clause 7.2.1 in TS 28.313";
+      key id;   
+      uses top3gpp:Top_Grp ;      
+      container attributes {
+        uses CPCIConfigurationFunctionGrp ;
+      }      
+    }
+  }
+
+  augment /me3gpp:ManagedElement/gnbdu3gpp:GNBDUFunction/nrcelldu3gpp:NRCellDU {
+    if-feature nrcelldu3gpp:CPCIConfigurationFunction;
+    uses CPCIConfigurationFunctionSubtree;
+  }
+  augment /me3gpp:ManagedElement {
+    if-feature me3gpp:CPCIConfigurationFunction;
+    uses CPCIConfigurationFunctionSubtree;
+  }
+  augment /subnet3gpp:SubNetwork {
+    if-feature subnet3gpp:CPCIConfigurationFunction;
+    uses CPCIConfigurationFunctionSubtree;
+  }
+}

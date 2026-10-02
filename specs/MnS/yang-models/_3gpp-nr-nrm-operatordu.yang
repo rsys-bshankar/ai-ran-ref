@@ -1,0 +1,91 @@
+module _3gpp-nr-nrm-operatordu {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-operatordu";
+  prefix "operdu3gpp";
+
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-nr-nrm-gnbdufunction {prefix gnbdu3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-nr-nrm-ep { prefix ep3gpp; }
+  
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the OperatorDU Information Object
+    Class (IOC) that is part of the NR Network Resource Model (NRM).
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2025-05-06 { reference "CR-1526 CR-1527" ; }  // common for R18, R19
+  revision 2024-02-24 { reference CR-1218; } 
+  revision 2023-11-14 { reference "CR1136"; }
+  revision 2023-09-30 { reference "CR1048"; }
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2021-10-01 { reference "Initial revision"; }
+
+  grouping OperatorDUGrp {
+    description "Represents the OperatorDU IOC.";
+    reference "3GPP TS 28.541";
+    
+    leaf gNBId {
+      type int64 { range "0..4294967295"; }
+      mandatory true;
+      description "Identifies a gNB within a PLMN. The gNB Identifier (gNB ID)
+        is part of the NR Cell Identifier (NCI) of the gNB cells.";
+      reference "gNB ID in 3GPP TS 38.300, Global gNB ID in 3GPP TS 38.413";
+    }
+
+    leaf gNBIdLength {
+      type int32 { range "22..32"; }
+      mandatory true;
+      description "Indicates the number of bits for encoding the gNB ID.";
+      reference "gNB ID in 3GPP TS 38.300, Global gNB ID in 3GPP TS 38.413";
+    }
+    
+    leaf configurable5QISetRef {
+      type types3gpp:DistinguishedName;
+      description "DN of the Configurable5QISet that the OperatorDU
+      supports (is associated to).";
+    }
+
+    leaf dynamic5QISetRef {
+      type types3gpp:DistinguishedName;
+      description "DN of the Dynamic5QISet that the OperatorDU 
+      supports (is associated to).";
+    }    
+  }
+
+  augment "/me3gpp:ManagedElement/gnbdu3gpp:GNBDUFunction" {
+
+    list OperatorDU {
+      description "This IOC contains attributes to support operator specific 
+        gNB-DU level information to support the NG-RAN Multi-Operator Core 
+        Network (NG-RAN MOCN) network sharing with multiple Cell Identity 
+        broadcast feature. An instance of OperatorDU <<IOC>> should be created 
+        and configured for each POP. When configured the attributes override 
+        those in parent GNBDUFunction instance.
+        
+        The OperatorDU <<IOC>> is only used to support NG-RAN MOCN with 
+        multiple cell identity broadcast feature. If NG-RAN MOCN with multiple 
+        cell identity broadcast feature is not supported, is not used. 
+        For scenarios with an F1 interface supporting multiple PLMN broadcast, 
+        the values of the EP_F1C and EP_F1U attributes contained by different 
+        OperatorDU of the same GNBDUFunction should be same.";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses OperatorDUGrp;
+      }
+      
+      uses ep3gpp:EP_F1CSubtree {
+        refine EP_F1C {
+          max-elements 1;
+        }
+      }
+        
+      uses ep3gpp:EP_F1USubtree;
+    }
+  }
+}

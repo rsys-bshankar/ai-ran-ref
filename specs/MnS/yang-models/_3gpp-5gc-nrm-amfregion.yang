@@ -1,0 +1,88 @@
+module _3gpp-5gc-nrm-amfregion {
+  yang-version 1.1;
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-amfregion;
+  prefix amfr3gpp;
+  
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the AMF Region which consists one or
+    multiple AMF Sets.
+    Copyright 2024, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM)";
+
+  revision 2024-05-24 { reference CR-1273 ; } 
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2022-01-07 { reference CR-0643; }
+  revision 2020-11-06 { reference CR-0412 ; }
+  revision 2019-10-28 { reference S5-193518 ; }
+  revision 2019-06-11 { reference ""; }
+  
+  grouping AMFRegionGrp {
+    description "Represents the AMFRegion IOC";
+    uses mf3gpp:ManagedFunctionGrp;
+    
+    list pLMNIdList {
+      description "List of at most six entries of PLMN Identifiers, but at 
+        least one (the primary PLMN Id).
+        The PLMN Identifier is composed of a Mobile Country Code (MCC) 
+        and a Mobile Network Code (MNC).";
+
+      min-elements 1;
+      max-elements 6;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+    
+    leaf-list nRTACList {
+      description "List of Tracking Area Codes (legacy TAC or extended TAC) 
+                   where the represented management function is serving.";
+                   reference "TS 38.413 clause 9.3.3.10";
+      min-elements 1;
+      config false;
+      type types5g3gpp:NRTAC;
+    }
+    
+    list sNSSAIList {
+      description "List of S-NSSAIs the managed object is capable of supporting.
+                   (Single Network Slice Selection Assistance Information)
+                   An S-NSSAI has an SST (Slice/Service type) and an optional SD 
+                  (Slice Differentiator) field.";
+      //conditional support only if the network slicing feature is supported.
+      reference "3GPP TS 23.003";
+      key "sd sst";
+      uses types5g3gpp:SNssai;
+    }
+    
+    leaf aMFRegionId {
+      description "Represents the AMF Region ID, which identifies the region.";
+      mandatory true;
+      type types3gpp:AmfRegionId;
+    }
+    
+    leaf-list aMFSet {
+      description "The AMFSet that the AFMRegion is associated with.";
+      min-elements 1;
+      type instance-identifier;
+    }
+  }
+  
+  augment "/subnet3gpp:SubNetwork" {
+    list AMFRegion {
+      description "5G Core AMFRegion IOC";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses AMFRegionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

@@ -1,0 +1,196 @@
+module _3gpp-engy-nrm-energyinformation {
+  yang-version 1.1;
+  
+  namespace urn:3gpp:sa5:_3gpp-engy-nrm-energyinformation;
+  prefix engyinfo3gpp;
+  
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the Energy Information NRM.
+  Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, 
+  TSDSI, TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.310";
+  
+  revision 2025-05-07 { reference CR-0082 ; }
+
+  
+  feature energyinformationUnderSubNetwork {
+    description "The energyinformation shall be contained under SubNetwork";
+  }
+
+  feature energyinformationUnderManagedElement {
+    description "The energyrelatedinformation shall be contained under 
+    ManagedElement";
+  }
+  
+  grouping EnergySourceInfoGrp {
+    description "This data type defines the information related to a type
+    of energy source. This information is configured by the operator with 
+    the information obtained from sources external to 3GPP. The attribute 
+    energySourceType is used to indicate the type of energy source used by 
+    an energy supply mode to produce the energy. The attribute energySourceCef
+    is used to indicate the carbon emission factor of the energy source. 
+    The attribute renewableEnergy is used to indicate if the energy source
+    is renewable or non-renewable. The attribute energyCompositionPercentage
+    is used to indicate the percentage of energy source used to produce the 
+    energy.";
+      
+    leaf energySourceType {
+      type string;
+      mandatory true;
+      description "The attribute is used to indicate the type of energy source
+      used by an energy supply mode to produce the energy.";
+    }
+    
+    leaf energySourceCef {
+      type decimal64 {
+        fraction-digits 2;
+      }
+      mandatory true;
+      units "kg CO2eq/kWh";
+      description "The attribute is used to indicate the Carbon Emission Factor
+      of a type of energy source. Its unit is kg CO2eq / kWh.";
+    }
+    
+    leaf renewableEnergy {
+      description "This attribute represents if the energy source is renewable
+      or non-renewable. This information is configured by the operator with the
+      information obtained from external sources.";
+      type boolean;
+      mandatory true;
+    }
+    
+    leaf energyCompositionPercentage {
+      type uint8 {
+        range 0..100;
+      }
+      default 100;
+      description "The attribute is used to indicate the percentage of energy
+      source type used by the energy supply mode.";
+    }
+    
+  }
+    
+  grouping EnergyInfoGroupGrp {
+
+    leaf energySupplyModeRefList {
+      description "The list of energy supply modes for the Network Elements
+      of the group. This information is configured by the operator with the 
+      information obtained from external sources.";
+      type types3gpp:DistinguishedName;
+    }
+    
+    leaf memberDNList {
+      description "This attribute contains the DNs of managed entities
+      that are members of the energy info group.";
+      type types3gpp:DistinguishedName;
+    }
+      
+  }
+    
+  grouping EnergySupplyInfoGrp {
+      
+    leaf energySupplyMode {
+      description "The mode by which energy is supplied to a Network Element.
+      This information is configured by the operator with the information 
+      obtained from external sources.The mode can be one of the following:
+      GRID_ELECTRICITY: Energy from local grid electricity 
+      (See Grid electricity in clause 6 of ITU-T Recommendation L.1333 [D])
+      BACKUP_ENERGY: Energy from backup diesel or other types (from battery 
+      banks/UPS), or from generators such as solar panels. (See Backup energy
+      in clause 6 of ITU-T Recommendation L.1333[D]) LOCALLY_GENERATED_ENERGY:
+      Energy provided by local generators not used for backup functionality, 
+      e.g., solar panels, wind generator etc. (See Locally generated energy
+      in clause 6 of ITU-T Recommendation L.1333[D])";
+      mandatory true;
+      type enumeration {
+        enum GRID_ELECTRICITY;
+        enum BACKUP_ENERGY;
+        enum LOCALLY_GENERATED_ENERGY;
+      }      
+    }
+    
+    list energySourceList {
+      description "This attribute represents the list of sources used to
+      produce the energy by the supplier. This includes energy related
+      information i.e., carbon emission and renewable energy related 
+      information, and the percentage of the energy produced using the
+      source.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses EnergySourceInfoGrp;
+    }   
+  }
+   
+  augment "/subnet3gpp:SubNetwork" {
+    if-feature energyinformationUnderSubNetwork;
+    list EnergyInfoGroup {
+    description "This IOC represents a group of Network Elements, represented
+     by ManagedElement IOC and information related to the energy supply modes
+     that are used to power them. This information is configured by the 
+     operator. Attribute memberDNList can be configured with the DNs of 
+     ManagedElement or DNs of SubNetwork. This attribute provides the list 
+     of Network Elements in the group, represented using ManagedElement MOIs 
+     or represented using SubNetwork MOIs. In the case, memberDNList is 
+     configured by DN of SubNetwork, then all the ManagedElement MOIs that
+     are name-contained by the SubNetwork MOI are part of the group. Attribute
+     energySupplyModeRefList is used to indicate the mode of energy supply 
+     for powering the Network Elements of the group.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EnergyInfoGroupGrp;
+      }
+    }
+    list EnergySupplyInfo {
+     description "This IOC defines the information related to energy supply
+     and the sources used to produce the energy. This information is configured
+     by the operator with the information obtained from sources external to 
+     3GPP e.g an energy supplier. ";
+     key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EnergyInfoGroupGrp;
+      }
+    }
+  }
+  
+  augment "/me3gpp:ManagedElement" {
+    if-feature energyinformationUnderManagedElement;
+    list EnergyInfoGroup {
+    description "This IOC represents a group of Network Elements, represented
+     by ManagedElement IOC and information related to the energy supply modes
+     that are used to power them. This information is configured by the 
+     operator. Attribute memberDNList can be configured with the DNs of 
+     ManagedElement or DNs of SubNetwork. This attribute provides the list 
+     of Network Elements in the group, represented using ManagedElement MOIs 
+     or represented using SubNetwork MOIs. In the case, memberDNList is 
+     configured by DN of SubNetwork, then all the ManagedElement MOIs that
+     are name-contained by the SubNetwork MOI are part of the group. Attribute
+     energySupplyModeRefList is used to indicate the mode of energy supply 
+     for powering the Network Elements of the group.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EnergyInfoGroupGrp;
+      }
+    }
+    list EnergySupplyInfo {
+     description "This IOC defines the information related to energy supply
+     and the sources used to produce the energy. This information is configured
+     by the operator with the information obtained from sources external to 
+     3GPP e.g an energy supplier. ";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EnergyInfoGroupGrp;
+      }
+    }
+  }
+}

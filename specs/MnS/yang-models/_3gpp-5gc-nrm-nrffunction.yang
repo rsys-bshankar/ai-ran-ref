@@ -1,0 +1,682 @@
+module _3gpp-5gc-nrm-nrffunction {
+  yang-version 1.1;
+
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-nrffunction;
+  prefix nrf3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import ietf-inet-types { prefix inet; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-yang-extensions { prefix yext3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp; }
+  import _3gpp-5gc-nrm-udrfunction { prefix udr3gpp; }
+  import _3gpp-5gc-nrm-udmfunction { prefix udm3gpp; }
+  import _3gpp-5gc-nrm-ausffunction { prefix ausf3gpp; }
+  import _3gpp-5gc-nrm-amffunction { prefix amf3gpp;}
+  import _3gpp-5gc-nrm-smffunction { prefix smf3gpp;}
+  import _3gpp-5gc-nrm-upffunction { prefix upf3gpp;}
+  import _3gpp-5gc-nrm-pcffunction { prefix pcf3gpp;}
+  import _3gpp-5gc-nrm-nwdaffunction { prefix nwdaf3gpp;}
+  import _3gpp-5gc-nrm-gmlcfunction { prefix gmlc3gpp;}
+  import _3gpp-5gc-nrm-lmffunction { prefix lmf3gpp;}
+  import _3gpp-5gc-nrm-aiot { prefix aiot3gpp;}
+  import _3gpp-5gc-nrm-chffunction { prefix chf3gpp;}
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the NRF function in 5GC.
+               For more information about the NRF, see 3GPP TS 23.501 [2].
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2026-05-25 { reference CR-1702 ; }
+  revision 2026-03-25 { reference CR-1694 ; }
+  revision 2025-11-01 { reference CR-1640 ; }
+  revision 2025-07-25 { reference CR-1558 ; }
+  revision 2025-01-25 { reference CR-1442 ; }
+  revision 2023-09-18 { reference CR-1043 ; }
+  revision 2023-04-26 { reference CR-0916; }
+  revision 2020-11-08 { reference CR-0412 ; }
+  revision 2020-08-03 { reference "CR-0321"; }
+  revision 2019-10-28 { reference S5-193518 ; }
+  revision 2019-05-15 { reference "initial revision"; }
+
+  grouping bsfInfo {
+    list ipv4AddressRanges {
+      description "List of ranges of IPv4 addresses handled by BSF.
+                   If not provided, the BSF can serve any IPv4 address.";
+      key "start end";
+      uses types3gpp:Ipv4AddressRange;
+    }
+
+    leaf-list dnnList {
+      description "List of DNNs handled by the BSF
+                   If not provided, the BSF can serve any DNN.";
+      min-elements 1;
+      type string;
+    }
+
+    leaf-list ipDomainList {
+      description "List of IPv4 address domains, as described in
+      subclause 6.2 of 3GPP TS 29.513, handled by the BSF.
+                   If not provided, the BSF can serve any IP domain.";
+      min-elements 1;
+      type string;
+    }
+
+    list ipv6PrefixRanges {
+      description "List of ranges of IPv6 prefixes handled by the BSF.
+                   If not provided, the BSF can serve any IPv6 prefix.";
+      key "start end";
+      uses types3gpp:Ipv6PrefixRange;
+    }
+  }
+  grouping pcscfInfo  {
+    description "This data type represents the information of a P-CSCF 
+      NF Instance.
+   For more information, see clause 6.1.6.2.53 of TS 29.510.";
+
+    leaf-list accessType {
+      description "It provides the condition of access type of the UE when
+      the session AMBR shall be enforced, see TS 29.512 [60].If this
+      attribute is included in SmfInfo, it shall contain the access type
+      (3GPP_ACCESS and/or NON_3GPP_ACCESS) supported by the SMF.If not
+      included, it shall be assumed the both access types are supported.";
+      type enumeration {
+      enum 3GPP_ACCESS;
+      enum NON_3GPP_ACCESS;
+     }
+      min-elements 1;
+      max-elements 2;
+    }
+    leaf-list dnnList {
+      description "It represents the DNNs supported by the PCF. The DNN,
+      as defined in clause 9A of TS 23.003 [13], shall contain the Network
+      Identifier and it may additionally contain an Operator Identifier,
+      as specified in TS 23.003 [13] clause 9.1.1 and 9.1.2. If the Operator
+      Identifier is not included, the DNN is supported for all the PLMNs in
+      the plmnList of the NF Profile.If not provided, the PCF can serve any
+      DNN.";
+      min-elements 1;
+      type string;
+    }
+    leaf-list gmFqdn {
+      description "This attribute represents FQDN of the P-CSCF for the Gm
+        interface.";
+      max-elements 1;
+      type string;
+    }
+    leaf-list gmIpv4Addresses {
+      description "This attribute represents list of IPv4 addresses of of
+      the P-CSCF for the Gm interface.";
+      type inet:ipv4-address;
+    }
+    leaf-list gmIpv6Addresses {
+      description "This attribute represents list of IPv6 addresses of of the
+      P-CSCF for the Gm interface.";
+      type inet:ipv6-address;
+    }
+    leaf mwFqdn {
+      description "This attribute represents FQDN of the P-CSCF for the Mw
+      interface.";
+      type string;
+    }
+    leaf-list mwIpv4Addresses {
+      description "List of ranges of PLMNs (including the PLMN
+      IDs of the CHF instance) that can be served by the CHF instance.
+      If not provided, the CHF can serve any PLMN.";
+      type inet:ipv4-address;
+    }
+    leaf-list mwIpv6Addresses {
+      description "This attribute represents list of IPv4 addresses of
+      the P-CSCF for the Mw interface.";
+      type inet:ipv6-address;
+    }
+    list servedIpv4AddressRanges {
+      description "List of ranges of PLMNs (including the PLMN
+      IDs of the CHF instance) that can be served by the CHF instance.
+                   If not provided, the CHF can serve any PLMN.";
+
+      min-elements 1;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+  }
+  grouping HssInfoGrp {
+    description " Information of an HSS NF Instance";
+    leaf groupId{
+      description "This attribute defines the identity of the HSS group
+      that is served by the HSS instance.If not provided, the HSS instance
+      does not pertain to any HSS group.";
+      type string;
+    }
+    list imsiRanges {
+      description "This attribute defines the list of ranges of IMSIs whose
+      profile data is available in the HSS instance.";
+      min-elements 1;
+      key "id";
+      leaf id {
+      description "Unique identifier for the IMSI range.";
+      type string;
+      }
+      uses ImsiRange;
+    }
+    list imsPrivateIdentityRanges{
+      description "This attribute defines the list of ranges of IMS Private
+      Identities whose profile data is available in the HSS instance.";
+      min-elements 1;
+      key "id";
+      leaf id {
+      description "Unique identifier for the IMSI range.";
+      type string;
+      }
+      uses types5g3gpp:IdentityRangeGrp;
+    }
+    list imsPublicIdentityRanges{
+      description "This attribute defines the list of ranges of MSISDNs whose
+      profile data is available in the HSS instance. ";
+      min-elements 1;
+      key "id";
+      leaf id {
+      description "Unique identifier for the IMSI range.";
+      type string;
+      }
+      uses types5g3gpp:IdentityRangeGrp;
+    }
+    list msisdnRanges{
+      description "This attribute defines the list of ranges of IMS Public
+      Identities whose profile data is available in the HSS instance ";
+      min-elements 1;
+      key "id";
+      leaf id {
+      description "Unique identifier for the IMSI range.";
+      type string;
+      }
+      uses types5g3gpp:IdentityRangeGrp;
+    }
+    list externalGroupIdentifiersRanges{
+      description "This attribute defines the list of ranges of external
+      group IDs that can be served by this HSS instance.If not provided,
+      the HSS instance does not serve any external groups. ";
+      min-elements 1;
+      key "id";
+      leaf id {
+      description "Unique identifier for the IMSI range.";
+      type string;
+      }
+      uses types5g3gpp:IdentityRangeGrp;
+    }
+    list hssDiameterAddress{
+      description "This attribute defines the Diameter Address of the HSS ";
+      max-elements 1;
+      key "id";
+      leaf id {
+      description "Unique identifier for the IMSI range.";
+      type string;
+      }
+      uses NetworkNodeDiameterAddress;
+    }
+    list additionalDiamAddresses{
+      description "This attribute defines the Additional Diameter Addresses
+      of the HSS;may be present if hssDiameterAddress is present ";
+      min-elements 1;
+      key "id";
+      leaf id {
+      description "Unique identifier for the IMSI range.";
+      type string;
+      }
+      uses NetworkNodeDiameterAddress;
+    }
+  }
+  grouping NrfInfoGrp {
+
+    list servedUdrInfo {
+      description "This attribute contains all the udrInfo
+      attributes
+      locally configured in the NRF or the NRF received
+      during NF registration.";
+
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses udr3gpp:UdrInfoGrp;
+    }
+
+    list servedUdmInfo {
+      description "This attribute contains all the udmInfo
+       attributes
+       locally configured in the NRF or the NRF
+       received during NF registration.";
+
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses udm3gpp:UdmInfoGrp;
+    }
+
+    list servedAusfInfo {
+      description "This attribute contains all the
+       ausfInfo attributes
+       locally configured in the NRF or the NRF
+        received during NF registration.";
+
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses ausf3gpp:AusfInfoGrp;
+    }
+
+    list servedAmfInfo {
+      description "This attribute contains all the amfInfo
+       attributes
+       locally configured in the NRF or the NRF received
+        during NF registration.";
+
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses amf3gpp:AmfInfoGrp;
+    }
+
+    list servedSmfInfo {
+      description "This attribute contains all the smfInfo
+       attributes
+       locally configured in the NRF or the NRF received
+        during NF registration.";
+
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses smf3gpp:SmfInfoGrp;
+    }
+
+    list servedUpfInfo {
+      description "This attribute contains all the upfInfo
+       attributes
+       locally configured in the NRF or the NRF received
+        during NF registration.";
+
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses upf3gpp:UpfInfoGrp;
+    }
+
+    list servedPcfInfo {
+     description "This attribute contains all the pcfInfo
+      attributes
+      locally configured in the NRF or the NRF received
+       during NF registration.";
+
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses pcf3gpp:pcfInfoGrp;
+    }
+
+    list servedBsfInfo {
+     description "This attribute contains all the bsfInfo
+      attributes
+      locally configured in the NRF or the NRF received
+       during NF registration.";
+
+      key nfInstanceId;
+      leaf nfInstanceId{
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses bsfInfo;
+    }
+
+    list servedChfInfo {
+      description "This attribute contains all the bsfInfo
+       attributes
+       locally configured in the NRF or the NRF received
+        during NF registration.";
+
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses chf3gpp:ChfInfoGrp;
+    }
+
+    list servedNwdafInfo {
+      description "This attribute contains all the nwdafInfo attributes
+       locally configured in the NRF or the NRF received during NF
+       registration. The key of the map is the nfInstanceId of which
+       the nwdafInfo belongs to.";
+
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses nwdaf3gpp:NwdafInfoGrp;
+    }
+    list servedPcscfInfoList {
+      description "This attribute contains all the pcscfInfo attributes
+       locally configured in the NRF or the NRF received during NF
+       registration. The key of the map is the nfInstanceId to which
+       the map entry belongs to.";
+
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses pcscfInfo;
+    }
+    list servedGmlcInfo {
+      description "This attribute contains all the gmlcInfo attributes
+      locally configured in the NRF or the NRF received during NF
+      registration. The key of the map is the nfInstanceId of which
+      the nefInfo belongs to.";
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses gmlc3gpp:GmlcInfoGrp;
+    }
+    list servedLmfInfo {
+      description "This attribute contains all the lmfInfo attributes
+      locally configured in the NRF or the NRF received during NF
+      registration. The key of the map is the nfInstanceId of which
+      the lmfInfo belongs to.";
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses lmf3gpp:LmfInfoGrp;
+    }
+    list servedNfInfo {
+      description "This attribute contains information of other NFs
+      without corresponding NF type specific Info extensions locally
+      configured in the NRF or the NRF received during NF registration.
+      The key of the map is the nfInstanceId of the NF. The map entry
+      is the NfInfo as defined in clause 5.3.229 representing the
+      information of a generic NF instance.";
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+
+      min-elements 1;
+      uses nfInfoGrp;
+    }
+    list servedHssInfoList {
+      description "This attribute contains list of HssInfo attribute
+      locally configured in the NRF or that the NRF received during NF
+      registration. The key of the map is the nfInstanceId to which the
+      map entry belongs to.";
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+      min-elements 1;
+      uses HssInfoGrp;
+    }
+   list served5gDdnmfInfo {
+      description "This attribute contains all the 5gDdnmfInfo
+      attribute locally configured in the NRF or that the NRF
+      received during NF registration. The key of the map is
+      the nfInstanceId to which the map entry belongs to.";
+      key nfInstanceId;
+      leaf nfInstanceId {
+        description "String uniquely identifying a NF instance.";
+        type string;
+      }
+      min-elements 1;
+      uses FiveGDdnmfInfo ;
+    }
+  }
+  grouping ImsiRange{
+    leaf start{
+      description "This attribute indicates the first value identifying
+      the start of a IMSI range. ";
+      type string{
+        pattern "^[0-9]+$";
+      }
+    }
+    leaf end{
+      description "This attribute indicates the last value identifying
+       the end of a IMSI range.";
+      type string{
+        pattern "^[0-9]+$";
+      }
+    }
+    leaf pattern{
+      description "This attribute indicates pattern (regular expression
+      according to the ECMA-262 dialect [75]) representing the set of
+      IMSIs belonging to this range. An IMSI value is considered part
+      of the range if and only if the IMSI string fully matches the
+      regular expression.Either the start and end attributes, or the
+      pattern attribute, shall be present.";
+      type string;
+    }
+  }
+  grouping NetworkNodeDiameterAddress {
+    leaf-list name{
+      description "This attribute indicates the Diameter
+      name of the network node diameter address.";
+      reference " See TS 29.571 [61]. String contains a Diameter Identity
+       (FQDN).";
+       type string;
+       min-elements 1;
+       max-elements 1;
+    }
+    leaf-list realm{
+      description "This attribute indicates the Diameter realm of the
+       network node diameter addres. See TS 29.571 [61]. String contains
+       a Diameter Identity (FQDN).";
+      type string;
+      min-elements 1;
+      max-elements 1;
+    }
+  }
+  typedef PduSessionType {
+  type enumeration {
+    enum IPV4;
+    enum IPV6;
+    enum IPV4V6;
+    enum UNSTRUCTURED;
+    enum ETHERNET;
+    }
+  }
+  grouping DnnUpfInfoItem {
+    leaf dnn {
+      description "String representing a Data Network.";
+      mandatory true;
+      type string;
+    }
+
+    leaf-list dnaiList {
+      description "List of Data network access identifiers supported
+       by the UPF for this DNN.
+                   The absence of this attribute indicates that the UPF
+                   can be selected for this DNN for any DNAI.";
+      min-elements 1;
+      type string; //dnai is the type but its only a string with
+      //desc: DNAI (Data network access identifier),
+      //is this needed as its own typedef or string is ok
+    }
+
+    leaf-list pduSessionTypes {
+      description "List of PDU session type(s) supported by
+       the UPF for a specific DNN.";
+      min-elements 1;
+      type PduSessionType;
+    }
+  }
+  grouping nfInfoGrp {
+      description "This data type represents the information of a
+      generic NF Instance. (See clause 6.1.6.2.56 TS 29.510 [23]).";
+    leaf nfType {
+      description "This parameter defines type of Network Function";
+      type uint16;
+    }
+  }
+  grouping FiveGDdnmfInfo {
+    description "This data type represents the specific data for the 5G DDMF NF.
+    See clause 6.1.6.2.74 of TS 29.510.";
+    list plmnId {
+      description "PLMN ID for which list of supported S-NSSAI(s)
+       is provided.";
+      min-elements 1;
+      max-elements 1;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+  }
+  grouping AIoTNRFMappingGrp {
+    description "Data type AIoTNRFMapping";
+    
+    leaf aIOTFdN {
+      type types3gpp:DistinguishedName;
+      mandatory true;
+      description "Represents the distinguished name (DN) identifier of the 
+        AIOTF that serves the (internal) target area provided by NEF to NRF";
+    } 
+    
+    list internalTargetArea {
+      description "It is the (internal) target area used by NRF (as provided
+        by NEF) to accurately locate the AIOTF instance.
+        It is mapped to aIOTFdN. 
+        It could refer to a list of AIoT Areas.";
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      uses aiot3gpp:ServedAIOTAreaIDGrp;
+    } 
+  }
+  grouping NRFFunctionGrp {
+    description "Represents the NRFFunction IOC";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    list pLMNInfoList {
+      description "It defines the PLMN(s) of a Network Function.";
+
+      min-elements 1;
+      key "mcc mnc sd sst";
+      uses types5g3gpp:PLMNInfo;
+    }
+
+    leaf sBIFQDN {
+      description "It is used to indicate the FQDN of the registered NF instance 
+        in service-based interface, for example, NF instance FQDN structure is:
+        nftype<nfnum>.slicetype<sliceid>.mnc<MNC>.mcc<MCC>.3gppnetwork.org";
+      type inet:domain-name;
+      mandatory true;
+    }
+
+    list nFProfileList {
+      description "It is a set of NFProfile(s) to be registered in the NRF
+      instance. NFProfile is defined in 3GPP TS 29.510 ";
+      key idx;
+      leaf idx { type uint32; }
+      uses mnfp3gpp:ManagedNFProfileGrp;
+    }
+    
+    leaf-list cNSIIdList {
+      description "NSI ID. NSI ID is an identifier for identifying the Core
+        Network part of a Network Slice instance when multiple Network Slice
+        instances of the same Network Slice are deployed, and there is a need
+        to differentiate between them in the 5GC, see clause 3.1 of TS 23.501
+        and subclause 6.1.6.2.7 of 3GPP TS 29.531";
+      type string;
+    }
+
+    list nrfInfo {
+      description "Represents information of an NRF NF Instance.";
+      max-elements 1;
+      key idx;
+      leaf idx {type uint32;}
+      uses NrfInfoGrp;
+    }
+
+    list managedNFProfile {
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      max-elements 1;
+      uses mnfp3gpp:ManagedNFProfileGrp;
+      description "This parameter defines profile for managed NF";
+      reference "3gpp TS 23.501";
+    }
+    
+    list aIoTNRFMapping {
+      config false;
+      yext3gpp:inVariant;
+      yext3gpp:notNotifyable;
+      description "Represents mapping information between (Internal) target 
+        area (provided by NEF) and AIOTF DN.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      
+      uses AIoTNRFMappingGrp;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list NRFFunction {
+      description "5G Core NRF Function";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses NRFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

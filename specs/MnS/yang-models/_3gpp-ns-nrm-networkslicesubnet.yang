@@ -1,0 +1,251 @@
+module _3gpp-ns-nrm-networkslicesubnet {
+  yang-version 1.1;
+  
+  namespace urn:3gpp:sa5:_3gpp-ns-nrm-networkslicesubnet;
+  prefix nss3gpp;
+  
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+
+  include _3gpp-ns-nrm-sliceprofile;
+  
+  organization "3GPP SA5";
+  contact 
+    "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the properties of a network slice subnet 
+    instance in a 5G network.
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541
+    Management and orchestration; 
+    5G Network Resource Model (NRM);
+    Information model definitions for network slice NRM (chapter 6)
+    ";
+
+  revision 2025-01-25 { reference CR-1442 ; } 
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2022-07-26 { reference CR-0770 ; }
+  revision 2021-05-05 { 
+    reference "CR-0485";
+    description "replace perfReq with 3 new datatypes xxxSliceSubnetProfile";
+      }
+
+  revision 2020-02-19 {
+    description "Introduction of YANG definitions for network slice NRM";
+    reference "CR-0458";
+  }
+  
+  revision 2019-06-07 {
+    description "initial revision";
+    reference "Based on
+      3GPP TS 28.541 V15.X.XX";
+  }
+  
+  typedef ETSI-GS-NFV-Identifier {
+    type string;
+    reference "ETSI GS NFV-IFA 013";
+  }
+  grouping ConnectionPointInfoGrp {
+    description "TThis datatype contains information required to identify a 
+    connection point outside of scope of 3GPP MIB (e.g. transport domain), ";
+    reference "FC 8345 [89] and YANG Data Models for 'Attachment
+    Circuits'-as-a-Service (ACaaS) [90]";
+    leaf connectionPointId {
+      description "This parameter specifies the identifier of a TN object";
+      type string;
+    }
+    leaf connectionPointIdType {
+      description "This parameter specifies the type of the connection point
+      identifier";
+      type enumeration {
+        enum VLAN;
+        enum MPLS;
+        enum SEGMENT;
+        enum IPV4;
+        enum IPV6;
+        enum ATTACHMENT_CIRCUIT;
+      }
+    }
+  }
+  grouping EPTransportGrp {
+    leaf ipAddress {
+      description "This parameter specifies the IP address assigned to a 
+        logical transport interface/endpoint. It can be an IPv4 address 
+        (See RFC 791) or an IPv6 address (See RFC 2373).";
+      mandatory true;
+      type string;
+    }
+    leaf logicInterfaceId {
+      description "This parameter specifies the identify of a logical 
+        transport interface. It could be VLAN ID (See IEEE 802.1Q), 
+        MPLS Tag or Segment ID.";
+      mandatory true;
+      type string;
+    }
+    leaf-list qosProfile {
+      description "This parameter specifies reference to QoS Profile for 
+      a logical transport interface. A QoS profile includes a set of 
+      parameters which are locally provisioned on both sides of a logical 
+      transport interface.";
+      type string;
+    }
+    leaf-list epApplicationRef {
+      description "This parameter specifies a list of application level 
+        EPs associated with the logical transport interface.";
+      min-elements 1;
+      type types3gpp:DistinguishedName;
+    }
+    list externalEndPointRefList {
+      description "This parameter is used to identify a list of connection
+      point info(s)";
+      uses ConnectionPointInfoGrp;
+    }    
+    uses top3gpp:Top_Grp;
+   }
+
+  grouping NsInfoGrp {
+    description "The NsInfo of the NS instance corresponding to the network 
+      slice subnet instance.";
+    //suport condition: It shall be supported if the NSS instance is 
+    //realized in the virtualized environment. 
+    // Otherwise this attribute shall be absent.
+    reference "ETSI GS NFV-IFA 013 clause 8.3.3.2.2, which can be found at
+      https://www.etsi.org/deliver/etsi_gs/NFV-IFA/001_099/013
+      /03.04.01_60/gs_NFV-IFA013v030401p.pdf page 123-124";
+    leaf nSInstanceId {
+      description "Uniquely identifies the NS instance.";
+      config false;
+      type ETSI-GS-NFV-Identifier;
+    }
+    leaf nsName {
+      description "Human readable name of the NS instance.";
+      type string;
+      config false;
+    }
+    leaf description {
+      description "Human readable description of the NS instance.";
+      config false;
+      type string;
+    }
+  }
+
+  grouping NetworkSliceSubnetGrp {
+    description "Represents the NetworkSliceSubnet IOC.";
+    
+    leaf operationalState {
+      description "The operational state of the resouce. 
+        It describes whether or not the resource is installed 
+        and working.";
+      mandatory true;
+      config false;
+      type types3gpp:OperationalState;
+    }
+    
+    leaf administrativeState {
+      description "The administrative state of the network slice instance.
+        It describes the permission to use or prohibition against
+        using the instance, imposed through the OAM services.";
+      default LOCKED;
+      type types3gpp:AdministrativeState;
+    }
+    
+    list nsInfo {
+      description "This list represents the properties of network service 
+        information corresponding to the network slice subnet instance.";
+      reference "ETSI GS NFV-IFA 013 clause 8.3.3.2.2";
+      config false;
+      key nSInstanceId;
+      max-elements 1;
+      uses NsInfoGrp;
+    }
+
+    list sliceProfileList {
+      description "List of SliceProfiles supported by the network slice 
+        subnet instance. All members of the list, instances of SliceProfile, 
+        shall contain the same datatype representing slice profile requirements: 
+        TopSliceSubnetProfile, RANSliceSubnetProfile or CNSliceSubnetProfile.  
+        Members of the list may contain TopSliceSubnetProfile datatype 
+        only when this attribute (sliceProfileList) belongs to 
+        a NetworkSliceSubnet that is directly referenced by a NetworkSlice";
+      key sliceProfileId;
+      uses SliceProfileGrp;
+    }
+    
+    leaf priorityLabel {
+      type int32 ;
+      mandatory true ;
+      description "Specifies a label that consumer would assign a value on 
+        an instance of network slice subnet. The management system takes 
+        the value of this attribute into account. The effect of this 
+        attribute value to the subject managed entity is not standardized";
+    }
+    
+    leaf networkSliceSubnetType {
+      type enumeration {
+        enum TOP_SLICESUBNET;
+        enum RAN_SLICESUBNET;
+        enum CN_SLICESUBNET;
+      }
+      mandatory true;
+      description "Indicates the type of network slice subnet, including:
+        - Top network slice subnet
+        - RAN network slice subnet
+        - CN network slice subnet";
+    }
+    
+    leaf-list managedFunctionRef {
+      type types3gpp:DistinguishedName; 
+      config false;
+      description "This holds a list of DN of ManagedFunction instances 
+        supporting the NetworkSliceSubnet instance.";
+    }
+
+    leaf-list networkSliceSubnetRef {
+      type types3gpp:DistinguishedName; 
+      config false;
+      description "List of DNs of constituent NetworkSliceSubnet supporting 
+        NetworkSliceSubnet instance .";
+    }
+    
+    leaf-list epTransportRef {
+      type types3gpp:DistinguishedName; 
+      description "List of transport level EPs associated with the 
+        application level EP (i.e. EP_N3 or EP_NgU) or network slice subnet.";
+    }
+  }
+  
+  augment /subnet3gpp:SubNetwork {
+    list NetworkSliceSubnet {
+      description "Represents the properties of a network slice subnet 
+        instance in a 5G network.
+        
+        The NetworkSliceSubnet can be categorized by following types:
+        - RANSliceSubne represent the RAN network slice subnet in a 5G network, 
+        which is associated to one or multiple 'RANSliceSubnetProfile'.
+        - CNSliceSubnet represent the CN network slice subnet in a 5G network, 
+        which is associated to one or multiple 'CNSliceSubnetProfile'.
+        - TopSliceSubnet represent the top network slice subnet in a 5G network, 
+        which is associated to one or multiple 'TopSliceSubnetProfile'.
+        
+        The attribute epTransportRef is used to specify a list of EP_Transport 
+        instance as transport resources to be aggregated to a NetworkSliceSubnet 
+        instance. The MnS consumer determines the EP_Transport instance(s) to 
+        support EP_Application instances as part of the NetworkSliceSubnet 
+        instance and request the MnS producer to configure the attribute 
+        epTransportRef of the NetworkSliceSubnet. 
+        
+        The EP_Transport is name contained by SubNetwork, and an EP_Transport 
+        instance can be a new instance created for the EP_Application instances 
+        as part of NetworkSliceSubnet instance or an existing instance reused 
+        for EP_Application instance.";
+      key id;
+  
+      container attributes {
+        uses NetworkSliceSubnetGrp;
+      }
+  
+      uses top3gpp:Top_Grp;
+    }    
+  }
+}

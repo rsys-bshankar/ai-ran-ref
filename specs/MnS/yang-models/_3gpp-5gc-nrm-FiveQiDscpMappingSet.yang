@@ -1,0 +1,65 @@
+module _3gpp-5gc-nrm-FiveQiDscpMappingSet {
+  yang-version 1.1;
+
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-FiveQiDscpMappingSet;
+  prefix FiveQiDscpM3gpp;
+
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-5gc-nrm-smffunction { prefix smf3gpp; }
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description " This IOC represents the set of mapping between 5QIs and DSCP.
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+
+  revision 2025-07-25 { reference CR-1558 ; }
+  revision 2025-01-25 { reference CR-1442 ; }
+  revision 2023-09-18 { reference CR-1043 ; }
+  revision 2020-08-03 { reference "CR-0321"; }
+  revision 2020-05-27 { reference "CR-0287"; }
+
+  grouping FiveQiDscpMapping {
+    leaf-list fiveQIValues {
+      type uint32 {
+        range 0..255 ;
+      }
+      min-elements 1;
+      description " Identifies the 5QI values that are mapped to a same DSCP";
+     }
+
+    leaf dscp {
+      type uint32 {
+        range 0..255 ;
+      }
+      mandatory true;
+     }
+  }
+
+  grouping FiveQiDscpMappingSetGrp {
+    description "Represents the FiveQiDscpMappingSet IOC.";
+    list fiveQiDscpMappingList {
+      description "It provides the list of mapping between 5QIs and DSCP.";
+      key "dscp";
+      uses FiveQiDscpMapping;
+    }
+  }
+
+  grouping FiveQiDscpMappingSetSubtree {
+    list FiveQiDscpMappingSet {
+      description "Specifies the mapping between 5QIs and DSCPs.";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses FiveQiDscpMappingSetGrp;
+      }
+    }
+  }
+
+  augment "/me3gpp:ManagedElement/smf3gpp:SMFFunction" {
+    uses FiveQiDscpMappingSetSubtree;
+  }
+}

@@ -1,0 +1,79 @@
+module _3gpp-nr-nrm-externalenbfunction {
+  yang-version 1.1;
+  namespace "urn:3gpp:sa5:_3gpp-nr-nrm-externalenbfunction";
+  prefix "extenb3gpp";
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-subnetwork { prefix subnet3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-nr-nrm-gnbcucpfunction { prefix gnbcucp3gpp; }
+  import _3gpp-nr-nrm-eutranetwork { prefix eutranet3gpp; }
+  import _3gpp-nr-nrm-externaleutrancell { prefix exteutrancell3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+
+  organization "3GPP SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "Defines the YANG mapping of the ExternalENBFunction
+    Information Object Class (IOC) that is part of the NR Network Resource
+    Model (NRM).
+    Copyright 2025, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541 5G Network Resource Model (NRM),
+    3GPP TS 28.658 (E-UTRAN) Network Resource Model (NRM)";
+
+  revision 2025-04-25 { reference "CR-1526 CR-1527" ; } // common for r18, r19
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2019-10-28 { reference S5-193518 ; }
+  revision 2019-06-17 { reference "Initial revision"; }
+
+  grouping ExternalENBFunctionGrp {
+    description "Represets the ExternalENBFunction IOC.";
+    reference "3GPP TS 28.658";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    leaf eNBId {
+      description "Unambiguously identifies an eNodeB within a PLMN.";
+      reference "3GPP TS 36.413, 3GPP TS 36.300";
+      mandatory true;
+      type int32 { range "0..268435455"; } // Representing 28 bit eNB ID.
+                                           // 18, 20 and 21 bit eNB IDs also
+                                           // allowed.
+    }
+  }
+
+  grouping ExternalENBFunctionWrapper {
+    list ExternalENBFunction {
+      description "Represents an external eNB functionality.";
+      reference "3GPP TS 28.658";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses ExternalENBFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+      uses exteutrancell3gpp:ExternalEUtranCellFDDSubtree;
+      uses exteutrancell3gpp:ExternalEUtranCellTDDSubtree;
+    }
+  } 
+  
+  feature ExternalENBFunctionUnderSubNetwork {
+    description "The ExternalENBFunction shall be contained under
+      SubNetwork";
+  }
+  
+  augment "/subnet3gpp:SubNetwork" {
+    if-feature ExternalENBFunctionUnderSubNetwork ;
+    uses ExternalENBFunctionWrapper;
+  }
+
+  feature ExternalENBFunctionUnderEUtraNetwork {
+    description "The ExternalENBFunction shall be contained under
+      EUtraNetwork";
+  }
+  
+  augment "/me3gpp:ManagedElement/gnbcucp3gpp:GNBCUCPFunction/"
+        + "eutranet3gpp:EUtraNetwork" {
+    if-feature ExternalENBFunctionUnderEUtraNetwork;
+    uses ExternalENBFunctionWrapper;
+  }
+}

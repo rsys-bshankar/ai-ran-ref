@@ -1,0 +1,191 @@
+module _3gpp-5gc-nrm-easdffunction {
+  yang-version 1.1;
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-easdffunction;
+  prefix easdf3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-yang-extensions { prefix yext3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp; }
+  import ietf-inet-types { prefix inet; }
+
+  organization "3gpp SA5";
+  contact
+    "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the Edge Application
+    Server Discovery Function (EASDF) in 5GC which can
+    handle the DNS messages according to the instruction
+    from the SMF. For more information about the 5G
+    EASDF, see 3GPP TS 23.548.
+    Copyright 2026, 3GPP Organizational Partners (ARIB,
+    ATIS, CCSA, ETSI, TSDSI, TTA, TTC).
+    All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2026-04-25 { reference CR-1702; }
+
+  grouping DnnEasdfInfoItemGrp {
+    description "This data type represents parameters
+      supported by the EASDF per DNN.
+      (See clause 6.1.6.2.79 TS 29.510).";
+
+    leaf dnn {
+      type string;
+      mandatory true;
+      description "This attribute represents a supported
+        DNN or Wildcard DNN if the EASDF supports all
+        DNNs for the related S-NSSAI. The DNN shall
+        contain the Network Identifier and it may
+        additionally contain an Operator Identifier.
+        If the Operator Identifier is not included, the
+        DNN is supported for all the PLMNs in the
+        plmnList of the NF Profile.";
+    }
+
+    leaf-list dnaiList {
+      //optional support
+      type string;
+      min-elements 1;
+      description "List of Data network access
+        identifiers supported for this DNN.";
+    }
+  }
+
+  grouping SnssaiEasdfInfoItemGrp {
+    description "This data type represents parameters
+      supported by the EASDF per S-NSSAI.";
+      reference "(See clause 6.1.6.2.78 TS 29.510).";
+
+    list sNssai {
+      description "This attribute represents a S-NSSAI.";
+      min-elements 1;
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses types5g3gpp:SnssaiExtensionGrp;
+    }
+
+    list dnnEasdfInfoList {
+      description "This attribute represents a list of
+        parameters supported by the EASDF per DNN.";
+      min-elements 1;
+      key dnn;
+      uses DnnEasdfInfoItemGrp;
+    }
+  }
+
+  grouping EasdfInfoGrp {
+    description "This data type represents EASDF specific
+      data. (See clause 5.4.5.1 of TS 29.571).";
+
+    list sNssaiEasdfInfoList {
+      //optional support
+      description "This attribute represents a list of
+        parameters supported by the EASDF per
+        S-NSSAI.";
+      key idx;
+      leaf idx { type uint32; }
+      uses SnssaiEasdfInfoItemGrp;
+    }
+
+    leaf-list easdfN6IpAddressList {
+      //optional support
+      type inet:ip-address;
+      description "This attribute represents N6 IP
+        addresses of the EASDF.";
+    }
+
+    leaf-list upfN6IpAddressList {
+      //optional support
+      type inet:ip-address;
+      description "This attribute represents N6 IP
+        addresses of PSA UPFs.";
+    }
+  }
+
+  grouping EASDFFunctionGrp {
+    description "Represents the EASDFFunction IOC.";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    list pLMNId {
+      description "It defines the PLMN of the EASDF.";
+      min-elements 1;
+      max-elements 1;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+
+    leaf sBIFQDN {
+      description "The FQDN of the registered NF instance
+        in the service-based interface.";
+      type inet:domain-name;
+    }
+
+    list managedNFProfile {
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      max-elements 1;
+      description "Profile definition of a Managed NF
+        (See TS 23.501).";
+      uses mnfp3gpp:ManagedNFProfileGrp;
+    }
+
+    leaf serverAddr {
+      type string;
+      mandatory true;
+      description "This attribute indicates the DNS
+        server address for the PDU Session
+        (see clause 6.2.2.2 in TS 23.548).";
+    }
+
+    list easdfInfo {
+      //optional support
+      description "This attribute represents EASDF
+        specific data.";
+      max-elements 1;
+      key idx;
+      leaf idx { type uint32; }
+      uses EasdfInfoGrp;
+    }
+
+    leaf isOnboardSatellite {
+      //optional support
+      type boolean;
+      default false;
+      config false;
+      yext3gpp:inVariant;
+      description "This attribute indicates whether the
+        function is on board the satellite.";
+    }
+
+    leaf onboardSatelliteId {
+      //optional support
+      type string {
+        pattern "[0-9]{5}";
+      }
+      config false;
+      yext3gpp:inVariant;
+      description "This attribute indicates the onboard
+        satellite Id. It shall be formatted as a fixed
+        5-digit string, padding with leading digits '0'
+        to complete a 5-digit length.";
+    }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list EASDFFunction {
+      description "5G Core EASDF Function";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses EASDFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

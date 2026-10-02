@@ -1,0 +1,137 @@
+module _3gpp-5gc-nrm-affunction {
+  yang-version 1.1;
+  
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-affunction;
+  prefix af3gpp;
+  
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-5gc-nrm-neffunction { prefix nef3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp;}
+  
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC is defined only to describe the IOCs representing
+               its interaction interface with 5GC (i.e. EP_Rx and EP_N5).
+               It has no attributes defined.
+    Copyright 2026, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, 
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+  
+  revision 2026-05-19 { reference CR-1702 ; } 
+  revision 2023-09-18 { reference CR-1043 ; } 
+  revision 2023-04-26 { reference CR-0916; }
+  revision 2019-10-28 { reference S5-193518 ; }
+  revision 2019-05-15 {reference "initial revision"; }
+  
+  grouping TrustAfInfoGrp {
+    description "Represent the data type TrustAfInfo.";
+    
+    list sNssaiInfoList {
+      description "It represents S-NSSAIs and DNNs supported by the trust AF.";
+      min-elements 1;
+      key idx;
+      leaf idx { type uint32 ; }
+      uses nef3gpp:SnssaiInfoItemGrp;
+    }
+
+    leaf-list afEvents {                   
+      type enumeration {
+        enum SVC_EXPERIENCE;
+        enum UE_MOBILITY;
+        enum UE_COMM;
+        enum EXCEPTIONS;
+        enum USER_DATA_CONGESTION;
+        enum PERF_DATA;
+        enum COLLECTIVE_BEHAVIOUR;
+        enum DISPERSION;
+        enum MS_QOE_METRICS;
+        enum MS_CONSUMPTION;
+        enum MS_NET_ASSIST_INVOCATION;
+        enum MS_DYN_POLICY_INVOCATION;
+        enum MS_ACCESS_ACTIVITY;
+      }                                                    
+      description "This attribute represents list of AF Event(s) supported 
+        by the trusted AF.";   
+      reference "Clause 5.6.3.3 TS 29.517";
+    }                                                                 
+
+    leaf-list appIds {  
+      type string;
+      description "This attribute represents a list of Application ID(s) 
+        supported by the trusted AF. The absence of this attribute indicate 
+        that the AF can be selected for any Application.";
+    }
+
+    leaf-list internalGroupId {
+      type string {
+        pattern 
+          '[A-Fa-f0-9]{8}-[0-9]{3}-[0-9]{2,3}-([A-Fa-f0-9][A-Fa-f0-9]){1,10}';
+      }
+      description "This attribute represents a list of Internal Group 
+        Identifiers supported by the trusted AF.
+        If not provided, it does not imply that the AF supports all internal 
+        groups.";
+    }
+
+    leaf mappingInd {
+      type boolean;
+      default false;
+      description "This attribute indicates whether the trusted AF supports 
+        mapping between UE IP address (IPv4 address or IPv6 prefix) and UE ID 
+        (i.e. SUPI).";
+    }
+  }
+  
+  grouping AFFunctionGrp {
+    uses mf3gpp:ManagedFunctionGrp;
+    
+    list pLMNIdList {
+      description "List of PLMN IDs.";
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+
+    list managedNFProfile {                                            
+      key idx;                                                         
+      leaf idx { type uint32;}                                         
+      min-elements 1;                                                  
+      max-elements 1;                                                  
+      description "Profile definition of a Managed NF (See TS 23.501)";
+      uses mnfp3gpp:ManagedNFProfileGrp;                               
+    }                                                                  
+
+    list commModelList {
+      min-elements 1;
+      key "groupId";
+      description "Specifies a list of commModel. It can be used by NF and
+        NF services to interact with each other in 5G Core network ";
+      reference "3GPP TS 23.501";
+      uses types5g3gpp:CommModel;
+    }
+
+    list trustAfInfo {
+      description "Represents information of a trusted AF Instance.";
+      key idx;                                                         
+      leaf idx { type uint32;}                                         
+      max-elements 1;                                                  
+      uses TrustAfInfoGrp;                               
+     }
+  }
+  
+  augment "/me3gpp:ManagedElement" {
+    list AFFunction {
+      description "5G Core AF Function";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses AFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

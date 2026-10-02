@@ -1,0 +1,78 @@
+module _3gpp-5gc-nrm-ddnmffunction {
+  yang-version 1.1;
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-ddnmffunction;
+  prefix ddnmf3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp; }
+  import ietf-inet-types { prefix inet; }
+
+  organization "3gpp SA5";
+  contact
+    "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the 5G DDNMF function in
+    5GC. For more information about the 5G DDNMF, see
+    TS 23.501.
+    Copyright 2026, 3GPP Organizational Partners (ARIB,
+    ATIS, CCSA, ETSI, TSDSI, TTA, TTC).
+    All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2026-04-25 { reference CR-1702; }
+
+  grouping DDNMFFunctionGrp {
+    description "Represents the DDNMFFunction IOC.";
+    uses mf3gpp:ManagedFunctionGrp;
+
+    list pLMNId {
+      description "The PLMN identifier.";
+      key "mcc mnc";
+      min-elements 1;
+      max-elements 1;
+      uses types3gpp:PLMNId;
+    }
+
+    leaf sBIFQDN {
+      description "The FQDN of the registered NF instance
+        in the service-based interface.";
+      type inet:domain-name;
+    }
+
+    list managedNFProfile {
+      key idx;
+      leaf idx { type uint32; }
+      min-elements 1;
+      max-elements 1;
+      description "Profile definition of a Managed NF
+        (See TS 23.501).";
+      uses mnfp3gpp:ManagedNFProfileGrp;
+    }
+
+    list commModelList {
+      min-elements 1;
+      key "groupId";
+      description "Specifies a list of commModel. It can
+        be used by NF and NF services to interact with
+        each other in 5G Core network.";
+      reference "3GPP TS 23.501";
+      uses types5g3gpp:CommModel;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list DDNMFFunction {
+      description "5G Core DDNMF Function";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses DDNMFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}

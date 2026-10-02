@@ -1,0 +1,72 @@
+module _3gpp-5gc-nrm-smsffunction {
+  yang-version 1.1;
+
+  namespace urn:3gpp:sa5:_3gpp-5gc-nrm-smsffunction;
+  prefix smsf3gpp;
+
+  import _3gpp-common-managed-function { prefix mf3gpp; }
+  import _3gpp-common-managed-element { prefix me3gpp; }
+  import _3gpp-common-yang-types { prefix types3gpp; }
+  import _3gpp-5g-common-yang-types { prefix types5g3gpp; }
+  import _3gpp-common-top { prefix top3gpp; }
+  import _3gpp-5gc-nrm-managed-nfprofile { prefix mnfp3gpp;}
+
+  organization "3gpp SA5";
+  contact "https://www.3gpp.org/DynaReport/TSG-WG--S5--officials.htm?Itemid=464";
+  description "This IOC represents the SMSF function defined in 3GPP TS 23.501.
+    Copyright 2023, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI,
+    TTA, TTC). All rights reserved.";
+  reference "3GPP TS 28.541";
+
+  revision 2025-07-25 { reference CR-1558 ; }
+  revision 2023-09-18 { reference CR-1043 ; }
+  revision 2019-10-25 { reference "S5-194457 S5-195427 S5-193518"; }
+  revision 2019-05-15 { reference "initial revision";}
+
+  grouping SMSFFunctionGrp {
+    uses mf3gpp:ManagedFunctionGrp;
+
+    list pLMNIdList {
+      description "List of at most six entries of PLMN Identifiers, but at
+       least one (the primary PLMN Id). The PLMN Identifier is composed of
+       a Mobile Country Code (MCC) and a Mobile Network Code (MNC).";
+
+      min-elements 1;
+      max-elements 6;
+      key "mcc mnc";
+      uses types3gpp:PLMNId;
+    }
+
+    list managedNFProfile {
+      description "This parameter defines profile for managed NF.
+      See TS 23.501";
+      key idx;
+      leaf idx { type uint32;}
+      min-elements 1;
+      uses mnfp3gpp:ManagedNFProfileGrp;
+    }
+
+    list commModelList {
+      description "The attribute specifies a list of commModel which is 
+      defined as a datatype (see clause 5.3.69). It can be used by NF 
+      and NF services to interact with each other in 5G Core network ";
+      reference "see TS 23.501.";
+      min-elements 1;
+      key "groupId";
+      uses types5g3gpp:CommModel;
+    }
+  }
+
+  augment "/me3gpp:ManagedElement" {
+    list SMSFFunction {
+      description "5G Core SMSF Function";
+      reference "3GPP TS 28.541";
+      key id;
+      uses top3gpp:Top_Grp;
+      container attributes {
+        uses SMSFFunctionGrp;
+      }
+      uses mf3gpp:ManagedFunctionContainedClasses;
+    }
+  }
+}
