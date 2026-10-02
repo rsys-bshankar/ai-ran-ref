@@ -271,7 +271,9 @@ def test_file_ready_is_notified_to_matching_subscriptions(client, db_session_fac
     _make_me(db_session_factory)
     _subscribe_pm(client)
     sent = []
-    monkeypatch.setattr("app.main.post_webhook", lambda dest, json, timeout=5.0: sent.append((dest, json)))
+    import httpx
+    # PM-file notifications are outbox rows (PR-MSG-1.9), delivered through smo_shared.webhook right after the commit
+    monkeypatch.setattr("smo_shared.webhook.post_webhook", lambda dest, json, timeout=5.0: sent.append((dest, json)) or httpx.Response(200))
     all_types = client.post("/file-subscriptions", json={"consumerReference": "http://consumer/a", "timeTick": 5}).json()
     client.post("/file-subscriptions", json={"consumerReference": "http://consumer/trace", "fileDataType": "Trace"})
     out = client.post("/pm-files", json=FILE).json()
@@ -308,3 +310,31 @@ def test_pm_files_need_the_file_service(client, db_session_factory, dme):
     db.commit()
     _subscribe_pm(client)
     assert client.post("/pm-files", json=FILE).status_code == 409  # O1_SERVICE_NOT_SUPPORTED
+
+
+def test_a_file_ready_notification_survives_a_crash_between_commit_and_send(client, db_session_factory, dme, monkeypatch):
+    """The crash test of MSG-1.9 for RAN NF OAM: the file, the subscription's new sequence number and the notification row are one
+    committed transaction; with the inline send off (the process died after the commit) nothing went out, and a later drain delivers it."""
+    import httpx
+    from smo_shared import outbox
+    from smo_shared.outbox import NotificationOutbox
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    monkeypatch.setenv("MODULE", "ran-nf-oam")
+    _make_me(db_session_factory)
+    _subscribe_pm(client)
+    sent = []
+    monkeypatch.setattr("smo_shared.webhook.post_webhook", lambda dest, json, timeout=5.0: sent.append((dest, json)) or httpx.Response(200))
+    sub = client.post("/file-subscriptions", json={"consumerReference": "http://consumer/a", "timeTick": 5}).json()
+
+    out = client.post("/pm-files", json=FILE).json()
+
+    assert sent == []
+    with db_session_factory() as db:
+        rows = db.query(NotificationOutbox).all()
+    assert [(r.module, r.status, r.destination) for r in rows] == [("ran-nf-oam", "PENDING", "http://consumer/a")]
+    assert rows[0].payload["subscriptionId"] == sub["subscriptionId"] and rows[0].payload["sequenceNo"] == 1
+    assert rows[0].payload["fileInfoList"][0]["fileLocation"] == out["fileLocation"]
+
+    monkeypatch.delenv("SMO_OUTBOX_INLINE_DRAIN")
+    assert outbox.drain(db_session_factory().get_bind())["sent"] == 1
+    assert [d for d, _ in sent] == ["http://consumer/a"]

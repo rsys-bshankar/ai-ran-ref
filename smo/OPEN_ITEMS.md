@@ -236,13 +236,13 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 Webhooks go out best-effort and inline through `smo_shared/webhook.py` (0 retries for notifications, 3 for others per
 `STANDARDS.md`). A restart or an unreachable subscriber loses events.
 
-#### PR-MSG-1 — Transactional outbox (open: adoption, MSG-1.9)
+#### PR-MSG-1 — Transactional outbox (done except two inline leftovers)
 
-`smo_shared/outbox.py` (table, `enqueue`, `drain`, inline drain after commit) and the call-site inventory `docs/NOTIFICATIONS.md` exist; DME, SME, AIMgF, A1 Related, FOCOM and MDAF use the outbox, Intent Service and RAN NF OAM do not yet (`HISTORY.md` §10).
+Done (`HISTORY.md` §10): `smo_shared/outbox.py` (table, `enqueue`, `drain`, inline drain after commit), the call-site inventory `docs/NOTIFICATIONS.md`, and every class-A notification in every module goes through it. Left inline on purpose: the DME stop-job `DELETE` (an outbox row carries only a POST body: a method column would move it) and the two reads whose answer the caller needs.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MSG-1.9 | Convert Intent Service and SA SMOS notifications | Same | MSG-1.4 |
+| MSG-1.10 | `method` column on `notification_outbox`; move the DME stop-job DELETE | Producer stop survives a crash (test) | MSG-1.4 |
 
 #### PR-MSG-2 — Delivery worker
 
@@ -1454,7 +1454,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 1. **Replica-safe foundation (no new infrastructure):** done.
 2. **Safe to expose:** done except SEC-13.2 and SEC-1.6.
 3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: the rest of OBS-2, OPS-1.6, OPS-4.1b (cutting the first tag).
-4. **Durable notifications:** MSG-1.1–1.8 done; MSG-1.9 left one module at a time.
+4. **Durable notifications:** MSG-1.1–1.9 done (SA SMOS has no destination call to move); MSG-1.10 is the one leftover one module at a time.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.
 6. **Safer changes:** MGT-1.1–1.4, MGT-3.1, MGT-8.1.
 7. **Later:** HA, mesh, federation, vendor profiles.

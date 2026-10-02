@@ -40,7 +40,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.r1_client import R1Client
-from smo_shared.webhook import post_webhook
+from smo_shared.outbox import enqueue
 
 from . import ts28312
 from .models import AutonomyDispatch, Intent, IntentHandlingFunction, IntentReport, IntentUtilityFormula
@@ -178,6 +178,7 @@ def create_intent(body: CreateIntentRequest, db: Session = Depends(get_session))
     `_create_intent_row`). Dispatch to the RMIH is best-effort.
     """
     intent = _create_intent_row(db, body)
+    db.commit()  # the intent, its first report and their notifications commit together (PR-MSG-1.9)
     return {"intentId": str(intent.intent_id), "intentReportReference": _s(intent.intent_report_reference)}
 
 
@@ -315,13 +316,14 @@ def _create_intent_row(db: Session, body: CreateIntentRequest) -> Intent:
     db.add(report)
     db.flush()
     intent.intent_report_reference = report.id
-    db.commit()
 
-    post_webhook(fn.notification_destination, json={
+    # Outbox rows in the caller's transaction (PR-MSG-1.9): this function no longer commits, its caller does, and the
+    # notifications are sent once that commit has happened.
+    enqueue(db, fn.notification_destination, {
         "intentId": str(intent.intent_id), "expectationObjectTypes": sorted(_requested_expectation_object_types(expectations)),
         "intentPriority": intent.intent_priority, "rmioId": intent.rmio_id, "intentMgmtPurpose": intent.intent_mgmt_purpose,
-    }, timeout=5.0)
-    _deliver_report(intent, report)
+    })
+    _deliver_report(db, intent, report)
     return intent
 
 
@@ -367,16 +369,16 @@ def _report_view(r: IntentReport) -> dict:
             "attributes": {**attrs, "lastUpdatedTime": r.last_updated_time.isoformat(), "intentReference": str(r.intent_id)}}
 
 
-def _deliver_report(intent: Intent, report: IntentReport) -> None:
+def _deliver_report(db: Session, intent: Intent, report: IntentReport) -> None:
     """IntentReportControl: each control with a reportRecipientAddress gets
     the report when it carries one of its expectedReportTypes (all types
-    when none are listed). Best-effort, like every notification here."""
+    when none are listed). One outbox row per recipient, in the caller's transaction; the caller commits after this."""
     view = _report_view(report)
     present = {ts28312.REPORT_TYPE_OF[k] for k in view["attributes"] if k in ts28312.REPORT_TYPE_OF}
     for control in intent.intent_report_control or []:
         wanted = set(control.get("expectedReportTypes") or []) or present
         if control.get("reportRecipientAddress") and present & wanted:
-            post_webhook(control["reportRecipientAddress"], json={"notificationType": "notifyIntentReport", **view}, timeout=2.0)
+            enqueue(db, control["reportRecipientAddress"], {"notificationType": "notifyIntentReport", **view})
 
 
 @app.get("/intents/{intent_id}")
@@ -418,8 +420,8 @@ def update_intent_admin_state(intent_id: uuid.UUID, body: AdminStateRequest, db:
         db.add(report)
         db.flush()
         intent.intent_report_reference = report.id
+        _deliver_report(db, intent, report)
         db.commit()
-        _deliver_report(intent, report)
     return _intent_view(intent)
 
 
@@ -473,8 +475,8 @@ def publish_intent_report(body: IntentReportRequest, db: Session = Depends(get_s
     db.add(report)
     db.flush()
     intent.intent_report_reference = report.id
+    _deliver_report(db, intent, report)
     db.commit()
-    _deliver_report(intent, report)
     return {"reportId": str(report.id), **_report_view(report)}
 
 
@@ -603,21 +605,22 @@ def delete_intent_utility_formula(formula_id: uuid.UUID, db: Session = Depends(g
 
 # ---------------------------------------------------------------- HISTORY.md OI-6.3: rApp Autonomy Modes
 
-def _notify_autonomy_operator(notification_destination: str | None, dispatch: AutonomyDispatch) -> None:
+def _notify_autonomy_operator(db: Session, notification_destination: str | None, dispatch: AutonomyDispatch) -> None:
     """All three modes always notify the operator of the AI/ML inference
     outcome — not mode-gated; only enforcement (AUTONOMOUS/ASSIST apply
-    it, SHADOW doesn't) and scoping vary by mode. Same best-effort push
-    pattern as every other notification in this build, routed through
-    smo_shared.webhook's SSRF guard like every other caller-chosen
-    callback destination (see that module's docstring for why).
+    it, SHADOW doesn't) and scoping vary by mode. An outbox row in the
+    caller's transaction (PR-MSG-1.9; the caller commits after this), sent
+    once that commit happens and screened by smo_shared.webhook's SSRF
+    guard like every other caller-chosen callback destination (see that
+    module's docstring for why).
     """
-    post_webhook(notification_destination, json={
+    enqueue(db, notification_destination, {
         "dispatchId": str(dispatch.dispatch_id), "instanceId": str(dispatch.instance_id),
         "modelId": str(dispatch.model_id) if dispatch.model_id else None,
         "autonomyMode": dispatch.autonomy_mode, "status": dispatch.status,
         "expectations": dispatch.expectations, "priority": dispatch.priority,
         "intentId": str(dispatch.intent_id) if dispatch.intent_id else None,
-    }, timeout=5.0)
+    })
 
 
 @app.post("/autonomy-dispatches", status_code=201)
@@ -666,8 +669,8 @@ def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, db: Session =
     # SHADOW: dispatch.status stays "SHADOWED" — no Intent, ever, for this record.
 
     db.add(dispatch)
+    _notify_autonomy_operator(db, body.notificationDestination, dispatch)
     db.commit()
-    _notify_autonomy_operator(body.notificationDestination, dispatch)
     return _autonomy_dispatch_view(dispatch)
 
 
@@ -689,8 +692,8 @@ def resolve_autonomy_dispatch(dispatch_id: uuid.UUID, body: ResolveAutonomyDispa
     intent = _create_intent_row(db, _dispatch_intent_request(dispatch, None))
     dispatch.status = "DISPATCHED"
     dispatch.intent_id = intent.intent_id
+    _notify_autonomy_operator(db, dispatch.notification_destination, dispatch)
     db.commit()
-    _notify_autonomy_operator(dispatch.notification_destination, dispatch)
     return _autonomy_dispatch_view(dispatch)
 
 
@@ -717,8 +720,8 @@ def reject_autonomy_dispatch(dispatch_id: uuid.UUID, body: RejectAutonomyDispatc
     dispatch.status = "REJECTED"
     dispatch.rejected_by = body.rejectedBy
     dispatch.rejection_reason = body.reason
+    _notify_autonomy_operator(db, dispatch.notification_destination, dispatch)
     db.commit()
-    _notify_autonomy_operator(dispatch.notification_destination, dispatch)
     return _autonomy_dispatch_view(dispatch)
 
 

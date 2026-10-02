@@ -246,7 +246,7 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 | POST | `/pm-files` | An O1 adaptor reports a finished performance file (201 `FileInfo` + `fileId`, `notified`, `dataJobs`, `recordsDelivered`). Same subscription precondition as `/pm-reports` (422), 409 if the ME lacks the `FILE` service. Its measurements go to DME as `/pm-reports` does |
 | GET | `/files` | TS 28.532 `FileInfo` list: required `fileDataType`, optional `beginTime` / `endTime` (paginated) |
 | GET | `/pm-files/{id}/file` | The file content (404 unknown or expired) |
-| POST / DELETE | `/file-subscriptions`, `/file-subscriptions/{id}` | `consumerReference`, optional `timeTick`, `fileDataType`; `filter` is refused (422). `notifyFileReady` goes to the consumer on each matching file; `sequenceNo` counts per subscription |
+| POST / DELETE | `/file-subscriptions`, `/file-subscriptions/{id}` | `consumerReference`, optional `timeTick`, `fileDataType`; `filter` is refused (422). `notifyFileReady` goes to the consumer on each matching file (an outbox row committed with the file, `PR-MSG-1.9`); `sequenceNo` counts per subscription |
 | POST | `/pm-reports` | NF PM report -> DME records (201). 409 (PM), 422 `SCHEMA_VALIDATION_FAILED` when no PM subscription exists for ME + counter |
 | POST | `/fm-subscriptions` | Registers the `RAN.FaultRecords` DME producer. 409 `O1_SERVICE_NOT_SUPPORTED` (FM) |
 | GET / DELETE | `/fm-subscriptions`, `/fm-subscriptions/{id}` | List (filter ME) / delete (idempotent) |
