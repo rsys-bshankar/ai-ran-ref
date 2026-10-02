@@ -1,0 +1,138 @@
+"""Every route is behind the R1 gateway's token check (PR-QA-6.1).
+
+No backend service checks a token itself: R1 Termination introspects the bearer token on every proxied request
+and is the one enforcement point (`smo_shared/openapi_security.py`). So the question "is any route open?" has
+two halves, both walked here from the apps' real route tables:
+
+  1. R1 Termination's own explicit routes are exactly its four public ones; everything else falls to the
+     catch-all proxy, which authorises.
+  2. For every route of every backend, a request through the gateway with no token, an empty token, a non-bearer
+     scheme or an inactive token is refused with 401 and never reaches the backend; with an active token it does.
+
+`unauthenticated_routes` is the walker; a toy gateway with one seeded open path proves it finds one.
+"""
+
+import re
+from urllib.parse import urlparse
+
+import pytest
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
+from fastapi.testclient import TestClient
+
+from mesh import R1_PREFIX_TO_SERVICE
+
+GOOD_TOKEN = "active-token"
+PUBLIC_AT_THE_GATEWAY = {"/health", "/live", "/ready", "/bootstrap"}
+WALKED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}   # what the gateway's catch-all proxies
+VALID = f"Bearer {GOOD_TOKEN}"
+BAD_AUTHORIZATIONS = [None, "", "Bearer", "Bearer ", "Bearer not-the-token", "Basic YWRtaW46YWRtaW4=", GOOD_TOKEN, VALID]   # a bare token has no scheme: refused
+
+
+def backend_routes(app: FastAPI):
+    """(method, path template filled with a dummy value) for every API route of `app`, docs routes included."""
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        for method in sorted((getattr(route, "methods", None) or set()) & WALKED_METHODS):
+            yield method, re.sub(r"\{[^}]+\}", "x", path)
+
+
+def unauthenticated_routes(client: TestClient, routes, upstream_calls: list) -> list[str]:
+    """Routes (as 'METHOD /path [authorization]') that the gateway let through, or refused wrongly with a token."""
+    offenders = []
+    for method, path in routes:
+        for authorization in BAD_AUTHORIZATIONS:
+            headers = {} if authorization is None else {"Authorization": authorization}
+            before = len(upstream_calls)
+            response = client.request(method, path, headers=headers)
+            reached = len(upstream_calls) - before
+            if authorization == VALID:  # the control: an active token must be forwarded
+                if response.status_code == 401 or reached != 1:
+                    offenders.append(f"{method} {path} refused a valid token")
+            elif response.status_code != 401 or reached:
+                offenders.append(f"{method} {path} [{authorization!r}] -> {response.status_code}, reached backend: {bool(reached)}")
+    return offenders
+
+
+class FakeGateway:
+    """Stands in for httpx.AsyncClient inside R1 Termination: SME's introspection and the backends."""
+
+    def __init__(self, upstream_calls: list, **_):
+        self.upstream_calls = upstream_calls
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def request(self, method, url, **kwargs):
+        import httpx
+        if urlparse(url).path == "/oauth2/introspect" and "json" in kwargs:   # the gateway's own call, not a proxied SME route
+            active = kwargs["json"]["token"] == GOOD_TOKEN
+            return httpx.Response(200, json={"active": active, "client_id": "walker" if active else None})
+        self.upstream_calls.append((method, url))
+        return httpx.Response(200, json={})
+
+
+@pytest.fixture
+def gateway(loaded_apps, monkeypatch):
+    upstream_calls: list = []
+    r1 = loaded_apps["r1-termination"]
+    monkeypatch.setattr(r1.httpx, "AsyncClient", lambda **kwargs: FakeGateway(upstream_calls, **kwargs))
+    return TestClient(r1.app), upstream_calls
+
+
+def test_the_gateways_own_explicit_routes_are_exactly_the_public_ones(loaded_apps):
+    explicit = {route.path for route in loaded_apps["r1-termination"].app.routes
+                if isinstance(route, APIRoute) and route.path != "/{full_path:path}"}
+    assert explicit == PUBLIC_AT_THE_GATEWAY, "an explicit route on the gateway is answered without a token"
+
+
+def test_every_route_of_every_backend_is_refused_without_a_valid_token_and_reaches_the_backend_with_one(
+        loaded_apps, gateway):
+    client, upstream_calls = gateway
+    services = sorted({service for service in R1_PREFIX_TO_SERVICE.values()})
+    walked = 0
+    offenders = []
+    for service in services:
+        prefix = next(p for p, s in R1_PREFIX_TO_SERVICE.items() if s == service)
+        routes = [(method, f"{prefix}{path}") for method, path in backend_routes(loaded_apps[service].app)]
+        walked += len(routes)
+        offenders += unauthenticated_routes(client, routes, upstream_calls)
+    assert walked > 400, f"only {walked} routes walked: the walk is not seeing the route tables"
+    assert offenders == []
+
+
+def test_the_walker_finds_a_seeded_open_route():
+    upstream_calls: list = []
+    toy = FastAPI()
+
+    @toy.api_route("/{full_path:path}", methods=["GET", "POST"])
+    async def proxy(full_path: str, request: Request):
+        if not full_path.startswith("leaky") and request.headers.get("authorization") != f"Bearer {GOOD_TOKEN}":
+            return JSONResponse(status_code=401, content={})
+        upstream_calls.append(full_path)
+        return JSONResponse(status_code=200, content={})
+
+    found = unauthenticated_routes(TestClient(toy), [("GET", "/safe/one"), ("GET", "/leaky/two")], upstream_calls)
+    assert found and all("/leaky/two" in line for line in found) and not any("/safe/one" in line for line in found)
+
+
+def test_each_services_openapi_declares_the_token_on_every_operation_except_its_public_ones():
+    import json
+    from pathlib import Path
+    openapi = Path(__file__).resolve().parent.parent / "docs" / "openapi"
+    allowed_open = {"r1-termination": PUBLIC_AT_THE_GATEWAY, "sme": {"/oauth2/token", "/oauth2/introspect"}}
+    declared = 0
+    for path in sorted(openapi.glob("*.json")):
+        spec = json.loads(path.read_text())
+        if "r1BearerAuth" not in spec.get("components", {}).get("securitySchemes", {}):
+            continue                      # the two southbound mocks are not R1-facing
+        declared += 1
+        assert spec["security"] == [{"r1BearerAuth": []}], path.name
+        open_paths = {p for p, ops in spec["paths"].items()
+                      for op in ops.values() if isinstance(op, dict) and op.get("security") == []}
+        assert open_paths <= allowed_open.get(path.stem, set()), f"{path.name} declares open: {open_paths}"
+    assert declared >= 17
