@@ -1,6 +1,8 @@
 # AI-RAN SMO — Phase 1, Docker deployment topology (SMO Design v1.3 section 4).
 # One shared Postgres instance, moduleScope-partitioned (Requirements v0.1 section 3).
 # Every service built from the same Dockerfile, parameterized by MODULE.
+# stop_grace_period (30 s) is longer than the Dockerfile's UVICORN_GRACEFUL_SHUTDOWN_SECONDS (20 s), so a
+# stopping container finishes its in-flight requests before docker would kill it (PR-ST-6).
 
 services:
   postgres:
@@ -26,6 +28,7 @@ services:
 
   r1-termination:
     build: { context: ., args: { MODULE: r1-termination } }
+    stop_grace_period: 30s
     ports: ["8080:8000"]
     environment:
       SME_URL: http://sme:8000
@@ -51,17 +54,20 @@ services:
 
   sme:
     build: { context: ., args: { MODULE: sme } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment: &db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo:smo@postgres:5432/smo
 
   dme:
     build: { context: ., args: { MODULE: dme } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
 
   onboarding:
     build: { context: ., args: { MODULE: onboarding } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
     volumes:
@@ -69,6 +75,7 @@ services:
 
   rapp-mgmt:
     build: { context: ., args: { MODULE: rapp-mgmt } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
@@ -76,6 +83,7 @@ services:
 
   ran-nf-oam:
     build: { context: ., args: { MODULE: ran-nf-oam } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
@@ -83,6 +91,7 @@ services:
 
   mock-o1-adaptor:
     build: { context: ., args: { MODULE: mock-o1-adaptor } }
+    stop_grace_period: 30s
     # No isolated network segment — unlike mock-near-rt-ric (RT-7, SMO
     # Design v1.3 section 3.9), nothing in this build's own design
     # documents an equivalent O1-adaptor isolation requirement. A real
@@ -97,6 +106,7 @@ services:
   # through R1 Termination, and is reached by the GUI the same way.
   energy-saving-rapp:
     build: { context: ., args: { MODULE: samples/energy-saving-rapp } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
@@ -106,6 +116,7 @@ services:
   # (samples/mobility-optimization-rapp) — R1-only, like energy-saving-rapp.
   mobility-optimization-rapp:
     build: { context: ., args: { MODULE: samples/mobility-optimization-rapp } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
@@ -115,6 +126,7 @@ services:
   # (samples/coverage-optimization-rapp) — R1-only, like energy-saving-rapp.
   coverage-optimization-rapp:
     build: { context: ., args: { MODULE: samples/coverage-optimization-rapp } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
@@ -124,6 +136,7 @@ services:
   # (samples/traffic-steering-rapp) — R1-only, like energy-saving-rapp.
   traffic-steering-rapp:
     build: { context: ., args: { MODULE: samples/traffic-steering-rapp } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
@@ -131,6 +144,7 @@ services:
 
   a1-related:
     build: { context: ., args: { MODULE: a1-related } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     networks: [default, a1_mock_net]
     environment:
@@ -140,11 +154,13 @@ services:
 
   mock-near-rt-ric:
     build: { context: ., args: { MODULE: mock-near-rt-ric } }
+    stop_grace_period: 30s
     networks: [a1_mock_net]   # isolated, non-routable dev segment — ONLY a1-related can reach it,
                               # no published ports, not on `default` (closes RT-7, SMO Design v1.3 section 3.9)
 
   nfo:
     build: { context: ., args: { MODULE: nfo } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
@@ -155,16 +171,19 @@ services:
 
   focom:
     build: { context: ., args: { MODULE: focom } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
 
   mlmr:
     build: { context: ., args: { MODULE: mlmr } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
 
   aimgf:
     build: { context: ., args: { MODULE: aimgf } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
@@ -172,11 +191,13 @@ services:
 
   mllf:
     build: { context: ., args: { MODULE: mllf } }
+    stop_grace_period: 30s
     environment:
       R1_GATEWAY_URL: http://r1-termination:8000
 
   ran-analytics:
     build: { context: ., args: { MODULE: ran-analytics } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
@@ -184,16 +205,19 @@ services:
 
   mdaf:
     build: { context: ., args: { MODULE: mdaf } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
 
   intent-service:
     build: { context: ., args: { MODULE: intent-service } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
 
   so-smos:
     build: { context: ., args: { MODULE: so-smos } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
@@ -201,6 +225,7 @@ services:
 
   sa-smos:
     build: { context: ., args: { MODULE: sa-smos } }
+    stop_grace_period: 30s
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
@@ -212,6 +237,7 @@ services:
   # with its own SME-issued OAuth2 token; neither joins a1_mock_net.
   gui-bff:
     build: { context: ., args: { MODULE: gui-bff } }
+    stop_grace_period: 30s
     depends_on: [r1-termination, sme]
     environment:
       R1_URL: http://r1-termination:8000

@@ -21,6 +21,7 @@ from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.invoker import INVOKER_ID_HEADER
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.timeouts import introspect_timeout, upstream_timeout
 
 app = FastAPI(title="R1 Termination")
 # /health and /bootstrap are this gateway's own two exemptions (see their
@@ -155,14 +156,22 @@ async def proxy(full_path: str, request: Request):
     # token carries no client id.
     if invoker_id:
         forwarded_headers[INVOKER_ID_HEADER] = invoker_id
-    async with httpx.AsyncClient() as client:
-        upstream = await client.request(
-            request.method,
-            f"{backend}/{rest_of_path}",
-            headers=forwarded_headers,
-            params=request.query_params,
-            content=body,
-        )
+    try:
+        async with httpx.AsyncClient(timeout=upstream_timeout()) as client:
+            upstream = await client.request(
+                request.method,
+                f"{backend}/{rest_of_path}",
+                headers=forwarded_headers,
+                params=request.query_params,
+                content=body,
+            )
+    except httpx.TimeoutException:
+        return JSONResponse(status_code=504, content={
+            "title": "UPSTREAM_TIMEOUT", "status": 504,
+            "detail": f"{prefix} did not answer within {upstream_timeout():g} s"})
+    except httpx.HTTPError:
+        return JSONResponse(status_code=502, content={
+            "title": "UPSTREAM_UNAVAILABLE", "status": 502, "detail": f"{prefix} could not be reached"})
     return Response(content=upstream.content, status_code=upstream.status_code, headers=dict(upstream.headers))
 
 
@@ -191,7 +200,7 @@ async def _introspect(request: Request) -> str | None:
     token = auth[len("bearer "):].strip()
     if not token:
         return None
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=introspect_timeout()) as client:
         try:
             resp = await client.request("POST", f"{ROUTES['/sme']}/oauth2/introspect", json={"token": token})
         except httpx.HTTPError:

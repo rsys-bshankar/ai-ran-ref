@@ -142,3 +142,18 @@ def test_a_callers_own_headers_survive_the_401_refresh_retry(net):
 def test_the_clients_own_authorization_wins_over_a_callers(net):
     R1Client(R1).get("/focom/inventory", headers={"Authorization": "Bearer attacker"})
     assert net.calls[-1][2]["Authorization"] == "Bearer tok-1"
+
+
+def test_every_call_through_r1_has_an_explicit_timeout_not_httpxs_implicit_default(net, monkeypatch):
+    """PR-ST-6: the 30 s default of timeouts.py, changeable by SMO_HTTP_TIMEOUT_SECONDS, and a caller's own wins."""
+    seen = []
+    real_get = net.get
+    monkeypatch.setattr(r1_client.httpx, "get", lambda url, **kw: (seen.append((url, kw.get("timeout"))), real_get(url, **kw))[1])
+    monkeypatch.delenv("SMO_HTTP_TIMEOUT_SECONDS", raising=False)
+    R1Client(R1).get("/focom/inventory")
+    assert seen[-1] == (f"{R1}/focom/inventory", 30.0)
+    monkeypatch.setenv("SMO_HTTP_TIMEOUT_SECONDS", "7")
+    R1Client(R1).get("/focom/inventory")
+    assert seen[-1][1] == 7.0
+    R1Client(R1).get("/focom/inventory", timeout=2.0)
+    assert seen[-1][1] == 2.0

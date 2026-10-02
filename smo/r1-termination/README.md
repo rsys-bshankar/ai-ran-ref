@@ -9,7 +9,7 @@
 | Depends on (over R1) | SME (`POST /oauth2/introspect`, direct to SME's address, not through itself); every module in `ROUTES` as a forwarding target |
 | Called by | rApps, the GUI BFF, `smo_shared.R1Client` in every module, the reference rApps |
 | Database tables | None (stateless) |
-| Unit tests | 18 passed (`tests/`, no DB, standalone) |
+| Unit tests | 23 passed (`tests/`, no DB, standalone) |
 | Status | Done. Token model is opaque-token introspection, not JWT/IdP signature checking; route-level test depth tracked by [OI-4](../OPEN_ITEMS.md) |
 
 ## 1. High-level design (HLD)
@@ -71,7 +71,7 @@ It calls only SME (introspection) and the chosen backend. It never reads a datab
 | `/a1-related` is routed but marked reserved | Inert until a Near-RT RIC exists. |
 | Explicit `operation_id="proxy"` on the catch-all | FastAPI's auto id depended on set iteration order of the five methods and made the committed OpenAPI spec check flaky. |
 
-Failure behaviour: the proxy does not catch transport errors from the backend. An unreachable backend surfaces as an unhandled error (HTTP 500), not 502/504. Upstream status codes and bodies (including errors) are passed through unchanged. The backend call uses `httpx.AsyncClient()` with its default timeout (5 s); the gateway sets none of its own.
+Failure behaviour: a backend that does not answer within `R1_UPSTREAM_TIMEOUT_SECONDS` (60) is a `504 UPSTREAM_TIMEOUT`, one that cannot be reached is a `502 UPSTREAM_UNAVAILABLE`. Upstream status codes and bodies (including errors) are passed through unchanged. The backend call has the explicit 60 s timeout, longer than the 30 s a calling module allows itself (`smo_shared/timeouts.py`), so the outer call always outlasts the inner one; before this the gateway used httpx's implicit 5 s and failed any slower operation with an unhandled error.
 
 ## 2. Low-level design (LLD)
 
@@ -148,6 +148,8 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 | Variable | Default | Effect |
 |---|---|---|
 | `<NAME>_URL` per route | see the route table | Backend base URL for that prefix. `DME_URL` serves three prefixes. |
+| `R1_UPSTREAM_TIMEOUT_SECONDS` | `60` | How long the gateway waits for the backend it proxies to |
+| `R1_INTROSPECT_TIMEOUT_SECONDS` | `5` | How long it waits for SME's token introspection (a timeout fails closed: 401) |
 
 `SME_URL` is also the target of introspection and of the URIs in `/bootstrap`.
 
@@ -159,6 +161,8 @@ The gateway answers with `JSONResponse` bodies of the form `{"title": ..., "stat
 |---|---|---|
 | `NO_ROUTE` | 404 | First path segment is not in `ROUTES` |
 | `UNAUTHORIZED` | 401 | No `Authorization` header, not `Bearer`, empty token, SME unreachable, or token not active |
+| `UPSTREAM_TIMEOUT` | 504 | The backend did not answer within `R1_UPSTREAM_TIMEOUT_SECONDS` (`detail` names the route prefix) |
+| `UPSTREAM_UNAVAILABLE` | 502 | The backend could not be reached (connection refused, DNS failure, reset) |
 
 Every other status and body is the backend's, passed through.
 
@@ -167,7 +171,7 @@ Every other status and body is the backend's, passed through.
 - Opaque-token introspection instead of signed JWTs. SME checks a token's scope when it issues it (HISTORY.md OI-2-oauth2-scope), but the gateway does not enforce it.
 - Authentication only: no per-invoker or per-API authorization at the gateway. Routes map to modules, not to published APIs, so there is nothing here to match a scope against.
 - No rate limiting, retry, circuit breaking or request-size limit.
-- Backend transport failures give 500 rather than 502/504; the default 5 s upstream timeout also caps any longer per-call timeout a caller sets further upstream.
+- The upstream timeout is one value for every route (60 s), not per route or per call; a caller that sets its own longer timeout is still cut at 60 s.
 - Upstream response headers are forwarded verbatim, including those describing the encoding of the original body.
 - Test depth ([OI-4](../OPEN_ITEMS.md)).
 
@@ -189,7 +193,7 @@ cd smo/r1-termination && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 - A real token round trip (SME issues, gateway introspects, backend answers) and the in-process service mesh: `tests_integration/` (`mesh.py` re-implements the prefix routing and bypasses gateway mechanics; `test_demo_runbook.py` exercises `/bootstrap`).
 - The committed `docs/openapi/r1-termination.json` matching the live schema: `tests_integration/test_openapi_specs.py`.
-- Real network behaviour (timeouts, unreachable backend): not tested.
+- Real network behaviour: the timeout and error mapping is tested with a stubbed client, not over a real socket.
 
 ## 4. References
 

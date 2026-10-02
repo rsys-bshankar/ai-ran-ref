@@ -9,7 +9,7 @@
 | Depends on (over R1) | `R1Client` calls R1 Termination (`/bootstrap`) and SME (`/invoker-registrations`, `/oauth2/token`) for its own token; no other module |
 | Called by | Every backend module (imports); the SDK (`sdk/`) and the four sample rApps via `R1Client`. Not imported by `gui-bff` |
 | Database tables | None. Provides `Base`, the engine and sessions that modules' `models.py` use |
-| Unit tests | 40 passed (`tests/`, no database) |
+| Unit tests | 120 passed (`tests/`; 30 more are skipped without `SMO_TEST_POSTGRES_URL`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -69,7 +69,8 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 
 | File | Responsibility |
 |---|---|
-| `smo_shared/db.py` | `DATABASE_URL`, `engine`, `SessionLocal`, `Base`, `session_scope()`, `get_session()` |
+| `smo_shared/db.py` | `DATABASE_URL`, `engine_options()` / `build_engine()` (pool and session limits from `SMO_DB_*`), `engine`, `SessionLocal`, `Base`, `session_scope()`, `get_session()` |
+| `smo_shared/timeouts.py` | `call_timeout()`, `upstream_timeout()`, `introspect_timeout()`: the platform's outbound HTTP timeouts, read from the environment when asked |
 | `smo_shared/statemachine.py` | `StateMachine`, `Transition`, `IllegalTransition` |
 | `smo_shared/errors.py` | `ProblemDetails`, `problem()`, `FrameworkError`, `framework_error()`, `illegal_transition_error()` |
 | `smo_shared/pagination.py` | `paginate()`, `PageLimit`, `PageOffset`, `DEFAULT_LIMIT`, `MAX_LIMIT` |
@@ -162,7 +163,7 @@ Rule: any caller-supplied callback URL (`notificationDestination`, `callbackUri`
 | Auth | Explicit `bearer_token` is used as is and never refreshed. Otherwise the process token: (1) `GET {base}/bootstrap` -> first `tokenEndPoint.uri`; (2) take the module's identity from `SMO_INVOKER_ID`/`SMO_INVOKER_SECRET` if set, else from the `module_identity` row for `MODULE`, else onboard at SME `/invoker-registrations` (label `smo-module:<MODULE>:<random>`) and store it; a replica that loses the race to store offboards its duplicate and adopts the winner's (no `MODULE`, `SMO_MODULE_IDENTITY_STORE=off` or an unreachable database: a per-process identity as before); (3) `client_credentials` grant, scope `smo-internal`. If SME answers 400 it onboards afresh once, replacing the stored identity with a compare-and-swap so only one replica does. Cached until `expires_in` minus 30 s; refreshed once on a 401 and the call retried once. Thread-safe (lock) |
 | Failure | Token acquisition errors (`httpx.HTTPError`, no token endpoint, bad body) are logged and the call is sent without `Authorization` |
 | Correlation | Adds `X-Correlation-ID` when `get_correlation_id()` is set; adds none otherwise |
-| Timeouts | The bootstrap/onboard/grant calls use 5 s; the module call uses httpx's default unless `timeout=` is passed |
+| Timeouts | The bootstrap/onboard/grant calls use 5 s; the module call uses `call_timeout()` (30 s, `SMO_HTTP_TIMEOUT_SECONDS`) unless `timeout=` is passed, never httpx's implicit 5 s |
 
 All instances in a process share one identity and token (`_identity`).
 
@@ -196,6 +197,9 @@ No background tasks.
 | Variable | Default | Where |
 |---|---|---|
 | `SMO_DATABASE_URL` | `postgresql+psycopg://smo:smo@postgres:5432/smo` | `db.py` |
+| `SMO_DB_POOL_SIZE`, `SMO_DB_MAX_OVERFLOW`, `SMO_DB_POOL_TIMEOUT_SECONDS`, `SMO_DB_POOL_RECYCLE_SECONDS` | 5, 10, 30, 1800 (recycle 0: never); Postgres only | `db.py`: the per-process connection pool. N replicas x W workers can hold N x W x (size + overflow) connections |
+| `SMO_DB_STATEMENT_TIMEOUT_MS`, `SMO_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | 30000, 300000 (0: off); Postgres only | `db.py`: server-side limits so a stuck query or a leaked transaction cannot hold a connection for ever |
+| `SMO_HTTP_TIMEOUT_SECONDS`, `R1_UPSTREAM_TIMEOUT_SECONDS`, `R1_INTROSPECT_TIMEOUT_SECONDS` | 30, 60, 5 | `timeouts.py` (the last two are R1 Termination's) |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | `r1_client.py` |
 | `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset: the module's shared identity from `module_identity`, registered on first use | `r1_client.py` |
 | `SMO_MODULE_IDENTITY_STORE` | `db`; `off` gives each process its own invoker | `r1_client.py` |
@@ -245,6 +249,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 | `tests/test_versioning.py` | `Versioned` on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres: version starts at 1 and every update bumps it; two sessions firing one transition have exactly one winner; a write to another column also conflicts; the repeat after a conflict is refused as an illegal transition; eight threads racing one transition give one winner; a stale write is a 409 ProblemDetails | 11 (5 need Postgres) |
 | `tests/test_idempotency.py` | `@idempotent` on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres: no header runs every time; a repeat replays the first answer and runs nothing; another payload or path is 422; keys are scoped to the caller; a failed attempt is not stored; a running key is 409; an abandoned reservation is taken over; expired records are purged; invalid keys are 422; six threads racing one key run the command once | 27 (13 need Postgres) |
 | `tests/test_module_identity.py` | The store on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres (first insert wins; replace is a compare-and-swap; eight racing threads give one winner each) and `R1Client` with a fake SME: replicas and restarts of a module share one invoker; modules do not share; a replica that loses the race offboards its duplicate; an invoker SME forgot is replaced once and the others adopt the replacement; a broken store falls back to per-process; no `MODULE`, store off and an environment identity bypass the store | 20 (6 need Postgres) |
+| `tests/test_db_engine.py` | `engine_options`: Postgres defaults, every setting from the environment, 0 turns a limit off, SQLite gets none, the pool settings reach the engine; on real Postgres (`SMO_TEST_POSTGRES_URL`): a statement over the limit is cancelled by the server and the pool survives, a session idle inside a transaction is ended, and the control (no limit, same statement completes); the timeout defaults nest | 10 (3 need Postgres) |
 
 ### 3.3 What is not covered here
 

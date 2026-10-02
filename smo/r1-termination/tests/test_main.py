@@ -4,6 +4,7 @@ Run with: pytest smo/r1-termination/tests -q
 
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app, ROUTES
@@ -80,6 +81,9 @@ def test_proxy_forwards_to_correct_backend(monkeypatch):
     calls = []
 
     class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            pass
+
         async def __aenter__(self):
             return self
 
@@ -120,6 +124,9 @@ def test_proxy_rejects_a_non_bearer_authorization_header():
 
 def test_proxy_rejects_a_token_sme_reports_inactive(monkeypatch):
     class InactiveAsyncClient:
+        def __init__(self, **kwargs):
+            pass
+
         async def __aenter__(self):
             return self
 
@@ -144,6 +151,9 @@ def test_proxy_fails_closed_when_sme_introspection_is_unreachable(monkeypatch):
     import httpx as httpx_module
 
     class UnreachableAsyncClient:
+        def __init__(self, **kwargs):
+            pass
+
         async def __aenter__(self):
             return self
 
@@ -166,6 +176,9 @@ class RecordingAsyncClient:
     headers, params, body).
     """
     calls = []
+
+    def __init__(self, **kwargs):
+        pass
 
     async def __aenter__(self):
         return self
@@ -282,6 +295,9 @@ def test_proxy_forwards_the_introspected_client_id_and_drops_a_spoofed_one(monke
     seen = {}
 
     class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            pass
+
         async def __aenter__(self):
             return self
 
@@ -298,3 +314,62 @@ def test_proxy_forwards_the_introspected_client_id_and_drops_a_spoofed_one(monke
     resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers={**AUTH_HEADERS, "X-R1-Invoker-Id": "someone-else"})
     assert resp.status_code == 200
     assert seen["headers"]["X-R1-Invoker-Id"] == "invoker-7"
+
+
+# ---------------------------------------------------------------- PR-ST-6: explicit timeouts, clean errors
+
+class TimeoutProbe:
+    """Records the `timeout` each AsyncClient is built with, answers introspection, and fails the forwarded call as told."""
+    built = []
+    forward_error = None
+
+    def __init__(self, **kwargs):
+        TimeoutProbe.built.append(kwargs.get("timeout"))
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def request(self, method, url, **kwargs):
+        if url == INTROSPECT_URL:
+            return FakeResponse(content=b'{"active": true}')
+        if TimeoutProbe.forward_error is not None:
+            raise TimeoutProbe.forward_error
+        return FakeResponse()
+
+
+@pytest.fixture
+def probe(monkeypatch):
+    TimeoutProbe.built, TimeoutProbe.forward_error = [], None
+    monkeypatch.setattr("app.main.httpx.AsyncClient", TimeoutProbe)
+    return TimeoutProbe
+
+
+def test_the_proxy_uses_explicit_timeouts_for_introspection_and_for_the_backend_call(probe):
+    assert client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS).status_code == 200
+    assert probe.built == [5.0, 60.0]     # introspection (fails closed fast), then the backend, which may be slow
+
+
+def test_the_proxy_timeouts_come_from_the_environment(probe, monkeypatch):
+    monkeypatch.setenv("R1_INTROSPECT_TIMEOUT_SECONDS", "2")
+    monkeypatch.setenv("R1_UPSTREAM_TIMEOUT_SECONDS", "90")
+    client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
+    assert probe.built == [2.0, 90.0]
+
+
+def test_a_backend_that_is_too_slow_is_a_504_not_an_unhandled_error(probe):
+    import httpx as httpx_module
+    probe.forward_error = httpx_module.ReadTimeout("slow")
+    resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
+    assert resp.status_code == 504
+    assert resp.json()["title"] == "UPSTREAM_TIMEOUT" and "/sme" in resp.json()["detail"]
+
+
+def test_a_backend_that_cannot_be_reached_is_a_502(probe):
+    import httpx as httpx_module
+    probe.forward_error = httpx_module.ConnectError("refused")
+    resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
+    assert resp.status_code == 502
+    assert resp.json()["title"] == "UPSTREAM_UNAVAILABLE"

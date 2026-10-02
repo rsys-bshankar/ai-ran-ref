@@ -36,6 +36,7 @@ import httpx
 
 from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from .correlation import get_correlation_id
+from .timeouts import call_timeout
 
 R1_GATEWAY_URL = os.environ.get("R1_GATEWAY_URL", "http://r1-termination:8000")
 
@@ -189,6 +190,7 @@ class R1Client:
         # A caller's own headers (for example `Idempotency-Key`, PR-ST-3) ride along with the
         # authorization and correlation headers; the client's own win on a clash.
         extra = kwargs.pop("headers", None) or {}
+        kwargs.setdefault("timeout", call_timeout())   # never httpx's implicit 5 s (timeouts.py)
         resp = send(self._url(path), headers={**extra, **self._headers()}, **kwargs)
         if resp.status_code == 401 and self._bearer_token is None:
             # expired or revoked at SME since it was cached: one fresh token, one retry
