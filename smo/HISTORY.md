@@ -1247,3 +1247,16 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   formatter or a decision to depend on the shared package; its `log.warning` lines name no credentials. Request and response bodies are never logged. Log shipping
   (`OBS-6`), traces (`OBS-3`), metrics (`OBS-2`) and a log-volume budget are not done; `correlationId` on records from background threads started by a handler would be
   empty (nothing starts one: the statelessness guard forbids it).
+
+### PR-OBS-2 — Metrics (OBS-2.1–2.3)
+
+- **Pinned (OBS-2.1).** `prometheus-client` is a direct dependency in `requirements/runtime.in`, compiled into `runtime.txt` and `dev.txt` with hashes (0.26.0), and in `shared/pyproject.toml`.
+- **Two series (OBS-2.2).** `smo_shared/metrics.py` `MetricsMiddleware` (pure ASGI): `smo_http_requests_total` and the histogram `smo_http_request_duration_seconds`, labelled
+  `method`, **route template** and `status`. Raw paths never become label values (bounded cardinality); unmatched requests are one `route="unmatched"` series. Probes and
+  `/metrics` itself are not counted, so a scrape every few seconds is not most of the traffic. Held per process: with `UVICORN_WORKERS` above 1 a scrape sees one worker, so the
+  default of one worker per container and scaling by replicas is the supported shape until multiprocess mode is added.
+- **`/metrics` (OBS-2.3).** `install_metrics(app)` after `install_logging(app)` in all 23 apps: the Prometheus text format, not in the OpenAPI specs. It is for the scraper on the
+  container network. R1 Termination answers `/<module>/metrics` with 404 `NO_ROUTE` before introspection or forwarding, so a token holder cannot read another module's series
+  through the gateway (`tests_integration/test_metrics_adoption.py`, which fails with the guard removed); the TLS edge returns 404 for `/metrics` on 8443. R1's own `/metrics`
+  is on its container port, which the development compose file publishes; production publishes only the edge (`PR-SEC-9`).
+- **Adopted everywhere (OBS-2.7)** by the same change. **Not done:** DB pool gauges (OBS-2.4), FSM transition counter (OBS-2.5), business metrics and alerting (`OBS-4`, `OBS-5`).

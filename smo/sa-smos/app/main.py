@@ -33,6 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.logconfig import install_logging
+from smo_shared.metrics import install_metrics
 from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
@@ -45,6 +46,7 @@ from .models import AssuranceMonitor, RemedialAction
 
 app = FastAPI(title="SA SMOS")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
+install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
 apply_r1_gateway_security(app)
 apply_correlation_id(app)
 

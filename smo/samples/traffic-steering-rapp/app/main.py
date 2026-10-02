@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 from smo_sdk import AiRuntimeSdk, SdkError
 from smo_sdk.data import AlarmScope
 from smo_shared.logconfig import install_logging
+from smo_shared.metrics import install_metrics
 from smo_shared.health import install_health
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.db import get_session
@@ -58,6 +59,7 @@ from .producer import SimPublishRequest, publish_sim, register_sim_type, router 
 
 app = FastAPI(title="Traffic Steering rApp")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
+install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
 apply_correlation_id(app)
 
 _r1 = R1Client()

@@ -25,6 +25,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from smo_shared.logconfig import install_logging
+from smo_shared.metrics import install_metrics
 from smo_shared.health import database_check, install_health
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
@@ -54,6 +55,7 @@ _SCRYPT_N, _SCRYPT_R, _SCRYPT_P, _SCRYPT_DKLEN = 2**14, 8, 1, 32
 
 app = FastAPI(title="SME — Service Management and Exposure")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
+install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
 # SME issues and introspects the R1 bearer token itself (r1-termination's
 # own _authorized() calls /oauth2/introspect on every proxied request) —
 # these two routes are the one exemption, the same way a token endpoint is

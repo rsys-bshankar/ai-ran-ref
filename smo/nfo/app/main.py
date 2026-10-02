@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.logconfig import install_logging
+from smo_shared.metrics import install_metrics
 from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
@@ -38,6 +39,7 @@ from .statemachine import DeploymentEvent, DeploymentState, NFO_FSM
 
 app = FastAPI(title="NFO SMOS (O2dms)")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
+install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
 install_concurrency_handler(app)  # a stale write (PR-ST-2) is a 409, not a 500
 apply_r1_gateway_security(app)
 apply_correlation_id(app)
