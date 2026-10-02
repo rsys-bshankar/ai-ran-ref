@@ -42,7 +42,7 @@ from .models import Alarm, CMSchemaCache, FileSubscription, VendorCapability, FM
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
 from . import restconf_client
-from .netconf_client import send_edit_config, send_get_config
+from .netconf_client import NETCONF_TIMEOUT_SECONDS, send_edit_config, send_get_config
 from .vendors import MnsService, check_vendor_mode, require_service, router as vendors_router, schema_problems
 from .statemachine import (
     ENDPOINT_HEALTH_FSM,
@@ -72,8 +72,26 @@ MISSED_HEARTBEAT_THRESHOLD = datetime.timedelta(seconds=90)
 # (the delays before each attempt; "max 3 retries"). An <rpc-error> is a
 # definite answer and never retried. Exhausting the retries raises an
 # alarm on the ME. Overridable for demos and tests.
+#
+# The retries run inside the request that submitted the job (a request thread sleeps; moving them to a job
+# runner is MSG-4 / ST-9.3, not built), so their total time is bounded, per sub-change, by a budget (PR-ST-9):
+# a retry is not started when the time already spent plus its delay would pass DISPATCH_RETRY_BUDGET_SECONDS,
+# and the first attempt is always made. The default, 35 s, is exactly the sum of the default delays, so a
+# fast-failing adaptor (connection refused) gets the whole schedule; an unresponsive one (each attempt waits out
+# the 30 s exchange timeout) gets two attempts. Worst case per sub-change: the budget plus one more attempt in
+# flight (`worst_case_dispatch_seconds()`, 65 s by default). A job's sub-changes are dispatched one after the
+# other, so a job of N changes can take N times that. R1 Termination answers 504 after
+# R1_UPSTREAM_TIMEOUT_SECONDS (60), while this request goes on: set the budget to 25 or less for a single-change
+# caller that must be answered inside that window.
 NETCONF_RETRY_DELAYS = [float(d) for d in os.environ.get("RAN_NF_OAM_NETCONF_RETRY_DELAYS", "0,5,10,20").split(",")]
+DISPATCH_RETRY_BUDGET_SECONDS = float(os.environ.get("RAN_NF_OAM_DISPATCH_RETRY_BUDGET_SECONDS", "35"))
 _sleep = time.sleep
+_monotonic = time.monotonic
+
+
+def worst_case_dispatch_seconds() -> float:
+    """The longest one sub-change's dispatch can take: the retry time allowed by the budget, plus the last attempt."""
+    return min(sum(NETCONF_RETRY_DELAYS), DISPATCH_RETRY_BUDGET_SECONDS) + NETCONF_TIMEOUT_SECONDS
 
 
 # OI-1-cm-sync-restconf: the O1 protocols this module dispatches CM over —
@@ -90,10 +108,13 @@ def _o1_client(protocol: str):
 def _dispatch_with_retries(adaptor_uri: str, change: dict, attribute_changes: dict, message_id: str,
                            operation: str, protocol: str = "NETCONF") -> tuple[bool, str | None, int]:
     """(applied, rejection reason, attempts) for one sub-change. The same
-    retry policy for both protocols: only a transient failure is retried."""
+    retry policy for both protocols: only a transient failure is retried, and only within the time budget."""
     send_edit, _, default_reason = _o1_client(protocol)
     reason, attempts = None, 0
+    started = _monotonic()
     for delay in NETCONF_RETRY_DELAYS:
+        if attempts and _monotonic() - started + delay > DISPATCH_RETRY_BUDGET_SECONDS:
+            break                      # the budget (above) is spent: give up now, as for a non-retryable failure
         if delay:
             _sleep(delay)
         attempts += 1

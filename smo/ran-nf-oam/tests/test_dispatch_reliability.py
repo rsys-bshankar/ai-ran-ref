@@ -175,3 +175,75 @@ def test_pm_reports_carry_multi_counter_per_relation_measurements(client, db_ses
     assert posted[0]["payload"]["values"] == counters and posted[0]["payload"]["relation"] == "201-202"
     assert client.post("/pm-reports", json={"managedElementRef": "ME-1", "counterType": "HO_PERFORMANCE", "measurements": [
         {"cellId": "201", "timestamp": "2026-01-01T00:00:00Z"}]}).status_code == 422
+
+
+# ---------------------------------------------------------------- the retry time budget (PR-ST-9)
+
+class FakeClock:
+    """Time that only moves when the code sleeps or an attempt 'takes' time, so the bound can be asserted exactly."""
+
+    def __init__(self, monkeypatch):
+        self.now = 0.0
+        self._monkeypatch = monkeypatch
+        monkeypatch.setattr("app.main._monotonic", lambda: self.now)
+        monkeypatch.setattr("app.main._sleep", self._sleep)
+
+    def _sleep(self, seconds):
+        self.now += seconds
+
+    def dispatch_failing(self, attempt_seconds):
+        """One sub-change against an adaptor whose every attempt takes `attempt_seconds` and fails transiently."""
+        import app.main as main
+
+        def send(adaptor_uri, target_ref, attribute_changes, message_id, operation="merge", managed_function_ref=None):
+            self.now += attempt_seconds
+            return EditResult(False, "NETCONF_TIMEOUT")
+
+        self._monkeypatch.setattr("app.main.send_edit_config", send)
+        return main._dispatch_with_retries("http://adaptor", CHANGE, {"a": 1}, "job-1", "merge")
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    return FakeClock(monkeypatch)
+
+
+def test_the_default_worst_case_is_the_budget_plus_one_attempt_in_flight():
+    import app.main as main
+    assert main.DISPATCH_RETRY_BUDGET_SECONDS == 35.0 and main.NETCONF_RETRY_DELAYS == [0.0, 5.0, 10.0, 20.0]
+    assert main.worst_case_dispatch_seconds() == 65.0
+
+
+def test_an_adaptor_that_fails_fast_gets_the_whole_retry_schedule(clock):
+    applied, reason, attempts = clock.dispatch_failing(attempt_seconds=0)
+    assert (applied, reason, attempts) == (False, "NETCONF_TIMEOUT", 4)
+    assert clock.now == 35.0                                   # 5 + 10 + 20, the documented schedule, unchanged
+
+
+def test_an_adaptor_that_waits_out_the_exchange_timeout_is_cut_off_inside_the_worst_case(clock):
+    import app.main as main
+    applied, reason, attempts = clock.dispatch_failing(attempt_seconds=30)
+    assert (applied, attempts) == (False, 2)                   # not four attempts of 30 s: the budget stops it
+    assert clock.now <= main.worst_case_dispatch_seconds() == 65.0
+
+
+@pytest.mark.parametrize("attempt_seconds", [0, 1, 7, 15, 30])
+def test_no_attempt_time_takes_one_sub_change_past_the_worst_case(clock, attempt_seconds):
+    import app.main as main
+    clock.dispatch_failing(attempt_seconds)
+    assert clock.now <= main.worst_case_dispatch_seconds()
+
+
+def test_a_smaller_budget_stops_the_retries_earlier(clock, monkeypatch):
+    monkeypatch.setattr("app.main.DISPATCH_RETRY_BUDGET_SECONDS", 12.0)
+    applied, reason, attempts = clock.dispatch_failing(attempt_seconds=0)
+    assert attempts == 2 and clock.now == 5.0                  # 0, then +5; the +10 would end at 15 s > 12 s
+    import app.main as main
+    assert main.worst_case_dispatch_seconds() == 12.0 + 30.0
+
+
+def test_the_first_attempt_is_always_made_whatever_the_budget(clock, monkeypatch):
+    monkeypatch.setattr("app.main.DISPATCH_RETRY_BUDGET_SECONDS", 0.0)
+    monkeypatch.setattr("app.main.NETCONF_RETRY_DELAYS", [7.0, 7.0])
+    applied, reason, attempts = clock.dispatch_failing(attempt_seconds=0)
+    assert attempts == 1 and reason == "NETCONF_TIMEOUT"
