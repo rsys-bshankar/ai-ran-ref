@@ -729,6 +729,55 @@
         "summary": "Register Invoker"
       }
     },
+    "/invoker-registrations/purge-stale": {
+      "post": {
+        "description": "PR-ST-4 housekeeping (this build's own addition; CAPIF has no such operation). Offboards every invoker\nthat has obtained no token for `unused_for_days` days (or, if it never did, was onboarded that long ago):\nthe leftovers of processes that registered an identity of their own and were replaced. A module that\ncomes back later and finds its identity gone is onboarded afresh by `R1Client`. `dry_run` defaults to\ntrue: it lists what would go and deletes nothing.",
+        "operationId": "purge_stale_invokers_invoker_registrations_purge_stale_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "unused_for_days",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Unused For Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Purge Stale Invokers"
+      }
+    },
     "/invoker-registrations/{api_invoker_id}": {
       "delete": {
         "description": "DeleteOnboardedInvokersApiInvokerId \u2014 offboarding. The invoker's\nlive tokens and trusted-invoker security context go with it, so\nnothing it was granted outlives it. Idempotent (204 for an unknown id).\nEmits API_INVOKER_OFFBOARDED.",

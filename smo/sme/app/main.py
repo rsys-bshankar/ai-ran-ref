@@ -18,10 +18,10 @@ from typing import Literal
 import httpx
 import jwt
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
@@ -234,6 +234,12 @@ def offboard_invoker(api_invoker_id: str, db: Session = Depends(get_session)):
     inv = db.get(InvokerRegistration, api_invoker_id)
     if inv is None:
         return
+    _offboard(db, inv)
+
+
+def _offboard(db: Session, inv: InvokerRegistration) -> None:
+    """Remove an invoker with everything it was granted, and tell subscribers."""
+    api_invoker_id = inv.api_invoker_id
     db.query(IssuedAccessToken).filter(IssuedAccessToken.api_invoker_id == api_invoker_id).delete()
     trusted = db.get(TrustedInvoker, api_invoker_id)
     if trusted is not None:
@@ -241,6 +247,23 @@ def offboard_invoker(api_invoker_id: str, db: Session = Depends(get_session)):
     db.delete(inv)
     db.commit()
     notify_invoker_change(db, api_invoker_id, "API_INVOKER_OFFBOARDED")
+
+
+@app.post("/invoker-registrations/purge-stale")
+def purge_stale_invokers(unused_for_days: int = Query(gt=0), dry_run: bool = True, db: Session = Depends(get_session)):
+    """PR-ST-4 housekeeping (this build's own addition; CAPIF has no such operation). Offboards every invoker
+    that has obtained no token for `unused_for_days` days (or, if it never did, was onboarded that long ago):
+    the leftovers of processes that registered an identity of their own and were replaced. A module that
+    comes back later and finds its identity gone is onboarded afresh by `R1Client`. `dry_run` defaults to
+    true: it lists what would go and deletes nothing."""
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=unused_for_days)
+    stale = list(db.scalars(select(InvokerRegistration).where(
+        func.coalesce(InvokerRegistration.last_token_issued_at, InvokerRegistration.created_at) < cutoff)))
+    ids = sorted(inv.api_invoker_id for inv in stale)
+    if not dry_run:
+        for inv in stale:
+            _offboard(db, inv)
+    return {"unusedForDays": unused_for_days, "dryRun": dry_run, "count": len(ids), "invokerIds": ids}
 
 
 class AccessTokenRequest(BaseModel):
@@ -383,6 +406,7 @@ def issue_access_token(body: AccessTokenRequest, db: Session = Depends(get_sessi
     expires_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=ACCESS_TOKEN_TTL_SECONDS)
     db.add(IssuedAccessToken(access_token_hash=_hash_token(token), api_invoker_id=inv.api_invoker_id,
                              expires_at=expires_at, scope=body.scope or None))
+    inv.last_token_issued_at = datetime.datetime.now(datetime.UTC)
     db.commit()
     return {"access_token": token, "expires_in": ACCESS_TOKEN_TTL_SECONDS, "token_type": "Bearer", "scope": body.scope}
 

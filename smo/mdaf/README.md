@@ -201,7 +201,7 @@ Each delivery writes an `mda_report_delivery` row, surfaced as `deliveredToReque
 |---|---|---|
 | `SMO_DATABASE_URL` | `postgresql+psycopg://smo:smo@postgres:5432/smo` | Database (`smo_shared.db`) |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | Base URL of outbound R1 calls (`smo_shared.r1_client`) |
-| `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset (self-onboards at SME) | OAuth2 client identity for outbound R1 calls |
+| `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset (the module's shared identity from the `module_identity` table, registered at SME on first use) | OAuth2 client identity for outbound R1 calls |
 
 No MDAF-specific variables.
 

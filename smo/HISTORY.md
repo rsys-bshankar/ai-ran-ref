@@ -881,3 +881,35 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   documented in `ARCHITECTURE.md`. Storing 4xx answers: a deterministic refusal is cheap to recompute and storing it would
   pin a stale refusal. Versioning the header into OpenAPI: it is a platform-wide convention, documented once.
 
+### PR-ST-4 — One module identity across replicas
+
+- **The number (ST-4.1).** Eighteen processes call R1: fourteen platform modules (`a1-related`, `aimgf`, `dme`,
+  `intent-service`, `mdaf`, `mllf`, `mlmr`, `nfo`, `onboarding`, `ran-analytics`, `ran-nf-oam`, `rapp-mgmt`, `sa-smos`,
+  `so-smos`) and the four sample rApps. Each registered a fresh SME invoker on its first outgoing call after every start,
+  so one restart of the stack added up to 18 registrations, and N replicas of a module added N. (Counted from the code; the
+  stack was not run.)
+- **Shared identity (ST-4.2).** `smo_shared/module_identity.py`: the `module_identity` table (migration included) and
+  `DbIdentityStore` (`load`, `insert`, `replace`). `R1Client`'s onboarding takes the identity from `SMO_INVOKER_ID`/`SECRET`
+  if set, else from the stored row for `MODULE`, else registers at SME and stores it. A replica that loses the primary-key race
+  offboards its own duplicate and adopts the winner's. When SME refuses the stored invoker, one replica replaces it with a
+  compare-and-swap on the old invoker id and the others adopt the replacement. No `MODULE`, `SMO_MODULE_IDENTITY_STORE=off`
+  or an unreachable database falls back to the old per-process identity, so `R1Client` still never raises. The secret is stored
+  as issued, like the BFF's `gui_smo_credential`: the module has to present it to SME.
+- **Housekeeping (ST-4.4).** SME invokers carry `created_at` and `last_token_issued_at` (set at every token grant), and
+  `POST /invoker-registrations/purge-stale?unused_for_days=N&dry_run=` offboards the ones unused for N days; `dry_run`
+  defaults to true. A purged module is onboarded afresh by the replace path above. Tested against stale, recent and
+  long-onboarded-but-active invokers.
+- **Proof.** `shared/tests/test_module_identity.py` (store on SQLite and real Postgres, including eight threads racing an insert
+  and a replace; `R1Client` against a fake SME: replicas and restarts share one invoker, a lost race offboards the duplicate, a
+  forgotten invoker is replaced once). With the load-and-adopt step removed, 6 of its tests fail.
+- **Not taken, and why.** The plan's ST-4.3, an SME registration that is idempotent on a stable label: SME keeps only a hash of
+  the secret, so a repeat could not return it; rotating it on each repeat would make replicas invalidate each other; and anyone
+  who knew `smo-module:<MODULE>` could take the module's identity. The registration stays "always creates", as in the CAPIF
+  reference. The plan's init step that registers one invoker per module before the service starts: ordering across the compose
+  and Helm start-up, and nothing for a replica added later; registering lazily in the first replica that needs it covers both.
+  Storing the secret hashed or in a secret manager: `SEC-4` is where a managed secret would replace the column.
+- **Known limits.** A losing replica's duplicate is removed best-effort (a failed delete leaves an orphan the purge removes).
+  Anything that can read the shared database can read module secrets, which the shared database already allowed
+  (`DB-2` narrows it). A database volume created before this change lacks the new table and columns; the README now says to
+  recreate it until `PR-OPS-1` lands.
+

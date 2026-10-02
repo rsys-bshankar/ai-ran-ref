@@ -93,6 +93,10 @@ docker compose up -d --build
 docker compose ps
 ```
 
+The schema is created once, from `migrations/001_init.sql`, when the Postgres volume is first made. After
+pulling a change that edits that file, recreate the volume (`docker compose down -v`, which discards demo data):
+there is no migration tooling yet (`OPEN_ITEMS.md`, `PR-OPS-1`).
+
 - R1 Termination: `curl -s http://localhost:8080/bootstrap`
 - Operator GUI: <http://localhost:3000>, user `admin`. If `GUI_ADMIN_PASSWORD`
   was unset, read the generated password with

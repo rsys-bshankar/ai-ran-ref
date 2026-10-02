@@ -118,7 +118,7 @@ its class is in the same file (so `R1Gateway` below is listed here, not detected
 
 | Holder | Where | What it is | Safe with N replicas? | Fix |
 |---|---|---|---|---|
-| `_identity` (`_ModuleIdentity`) | `shared/smo_shared/r1_client.py` | SME access-token cache and this process's invoker id and secret | Token cache: yes. Identity: no, each process onboards its own invoker at SME when `SMO_INVOKER_ID` is unset, so every replica and restart adds a registration | `PR-ST-4` |
+| `_identity` (`_ModuleIdentity`) | `shared/smo_shared/r1_client.py` | SME access-token cache, and this process's copy of the module's invoker id and secret | Yes. The token cache is per process by nature; the invoker identity is one per module, kept in the `module_identity` table (`module_identity.py`): the first replica to need it registers it, the others adopt it, and a replica that loses the race discards its duplicate. `SMO_INVOKER_ID`/`SECRET` still override | none |
 | `app.state.login_failures` | `gui-bff/app/main.py` | Login-lockout counters per username | No, a replica does not see failures counted by another | `PR-ST-5` |
 | JWT signing secret | `gui-bff/app/config.py` | Random per boot when `GUI_JWT_SECRET` is unset | No, a session cookie from one replica fails on another | `PR-ST-5` (set `GUI_JWT_SECRET` meanwhile) |
 | `R1Gateway` token cache | `gui-bff/app/smo_client.py` | The BFF's SME token, refreshed once on a 401 | Yes. Its invoker credential is persisted in the database (`SmoCredential`), so replicas share one identity | none |

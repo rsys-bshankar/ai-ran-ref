@@ -845,3 +845,68 @@ def test_list_event_subscriptions_per_subscriber(client):
     listed = client.get("/capif-events/v1/rapp-1/subscriptions").json()["items"]
     assert [(s["subscriberId"], s["eventTypes"]) for s in listed] == [("rapp-1", ["SERVICE_API_AVAILABLE"])]
     assert client.get("/capif-events/v1/rapp-2/subscriptions").json()["items"] == []
+
+
+# ---------------------------------------------------------------- PR-ST-4: stale-invoker housekeeping
+
+def _age_invoker(db_session_factory, invoker_id, days, *, last_token=False):
+    """Back-date an invoker as if it was onboarded (and, if `last_token`, last got a token) `days` ago."""
+    when = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
+    with db_session_factory() as session:
+        inv = session.get(InvokerRegistration, invoker_id)
+        if last_token:
+            inv.last_token_issued_at = when
+        else:
+            inv.created_at, inv.last_token_issued_at = when, None
+        session.commit()
+
+
+def test_an_invoker_records_when_it_was_onboarded_and_when_it_last_got_a_token(client, db_session_factory):
+    inv = _register_invoker(client)
+    with db_session_factory() as session:
+        row = session.get(InvokerRegistration, inv["apiInvokerId"])
+        assert row.created_at is not None and row.last_token_issued_at is None
+    token = client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": inv["apiInvokerId"],
+                                                "client_secret": inv["onboardingSecret"]})
+    assert token.status_code == 200
+    with db_session_factory() as session:
+        assert session.get(InvokerRegistration, inv["apiInvokerId"]).last_token_issued_at is not None
+
+
+def test_purge_stale_is_a_dry_run_by_default_and_lists_only_the_stale(client, db_session_factory):
+    stale, recent = _register_invoker(client, "pk-stale"), _register_invoker(client, "pk-recent")
+    _age_invoker(db_session_factory, stale["apiInvokerId"], days=10)
+    resp = client.post("/invoker-registrations/purge-stale", params={"unused_for_days": 7})
+    assert resp.status_code == 200
+    assert resp.json() == {"unusedForDays": 7, "dryRun": True, "count": 1, "invokerIds": [stale["apiInvokerId"]]}
+    ids = {i["apiInvokerId"] for i in client.get("/invoker-registrations").json()["items"]}
+    assert ids == {stale["apiInvokerId"], recent["apiInvokerId"]}  # nothing deleted
+
+
+def test_purge_stale_offboards_only_the_stale_with_their_tokens_and_trust(client, db_session_factory):
+    stale, recent = _register_invoker(client, "pk-stale"), _register_invoker(client, "pk-recent")
+    for inv in (stale, recent):
+        assert client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": inv["apiInvokerId"],
+                                                   "client_secret": inv["onboardingSecret"]}).status_code == 200
+    _age_invoker(db_session_factory, stale["apiInvokerId"], days=10, last_token=True)
+
+    resp = client.post("/invoker-registrations/purge-stale", params={"unused_for_days": 7, "dry_run": False})
+    assert resp.json()["invokerIds"] == [stale["apiInvokerId"]]
+    ids = {i["apiInvokerId"] for i in client.get("/invoker-registrations").json()["items"]}
+    assert ids == {recent["apiInvokerId"]}
+    with db_session_factory() as session:
+        assert session.query(IssuedAccessToken).filter_by(api_invoker_id=stale["apiInvokerId"]).count() == 0
+        assert session.query(IssuedAccessToken).filter_by(api_invoker_id=recent["apiInvokerId"]).count() == 1
+
+
+def test_an_invoker_that_keeps_getting_tokens_is_never_stale(client, db_session_factory):
+    inv = _register_invoker(client)
+    _age_invoker(db_session_factory, inv["apiInvokerId"], days=30)           # onboarded long ago ...
+    client.post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": inv["apiInvokerId"],
+                                        "client_secret": inv["onboardingSecret"]})  # ... but in use today
+    assert client.post("/invoker-registrations/purge-stale", params={"unused_for_days": 7}).json()["count"] == 0
+
+
+def test_purge_stale_needs_a_positive_number_of_days(client):
+    assert client.post("/invoker-registrations/purge-stale", params={"unused_for_days": 0}).status_code == 422
+    assert client.post("/invoker-registrations/purge-stale").status_code == 422
