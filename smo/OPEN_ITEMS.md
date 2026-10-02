@@ -384,12 +384,10 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-8.1 | Body-size cap middleware (config, default 1 MiB; CSAR upload route higher) | 413 on oversize | – |
-| SEC-8.2 ★ | Token-bucket limiter at R1 Termination keyed by invoker id; 429 with `Retry-After` | Burst test | – |
-| SEC-8.3 | Separate stricter limit for the unauthenticated paths | Test | SEC-8.2 |
-| SEC-8.4 | Limits per route class (read, write, upload) from config | Config test | SEC-8.2 |
-| SEC-8.5 | Shared limiter state (Postgres) so replicas share a budget | Two replicas share one bucket | SEC-8.2 |
-| SEC-8.6 | Same limiter on the BFF login route | Brute-force test | SEC-8.2 |
+| SEC-8.3 | Separate stricter limit for the unauthenticated paths | Test | – |
+| SEC-8.4 | Limits per route class (read, write, upload) from config | Config test | – |
+| SEC-8.5 | Shared limiter state (Postgres) so replicas share a budget | Two replicas share one bucket | – |
+| SEC-8.6 | Same limiter on the BFF login route | Brute-force test | – |
 
 #### PR-SEC-9 — Bootstrap exposure
 
@@ -1459,7 +1457,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):**
    OBS-1.1.
-2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.2.
+2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-13.2.
 3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1.
 4. **Durable notifications:** MSG-1.1–1.4, then MSG-1.5 onwards one module at a time.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.

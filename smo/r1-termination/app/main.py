@@ -17,11 +17,13 @@ import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from smo_shared.bodylimit import MIB, BodySizeLimit, settings_from_env
 from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.health import install_health
 from smo_shared.invoker import INVOKER_ID_HEADER
 from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.ratelimit import TokenBuckets
 from smo_shared.timeouts import introspect_timeout, upstream_timeout
 
 app = FastAPI(title="R1 Termination")
@@ -35,6 +37,18 @@ apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/live", "/rea
 # then propagates through the whole downstream fan-out (see the proxy
 # route below, and smo_shared/r1_client.py for the intra-mesh half).
 apply_correlation_id(app)
+
+# Request body cap (PR-SEC-8.1): 1 MiB for every route, except the one that carries a file, an AI/ML model
+# artifact upload (the GUI's nginx allows the same 50 MiB). Environment: R1_MAX_BODY_BYTES and
+# R1_MAX_BODY_OVERRIDES (`<path-pattern>=<bytes>,...`; setting it replaces the default override).
+app.add_middleware(BodySizeLimit, settings=settings_from_env(
+    "R1", default_overrides=f"/mlmr/models/*/artifact={50 * MIB}"))
+
+# Per-caller request budget (PR-SEC-8.2): a token bucket per invoker id. R1_RATE_PER_SECOND (default 100, 0 turns
+# it off) refills it, R1_RATE_BURST (default 200) is its size. Held in this process: with several replicas each
+# has its own bucket until the shared store of SEC-8.5.
+_limiter = TokenBuckets(rate=lambda: float(os.environ.get("R1_RATE_PER_SECOND", "100")),
+                        burst=lambda: float(os.environ.get("R1_RATE_BURST", "200")))
 
 
 # R1 Termination's own probes, declared ahead of the catch-all proxy route so they are answered here,
@@ -128,6 +142,11 @@ async def proxy(full_path: str, request: Request):
     invoker_id = await _introspect(request)
     if invoker_id is None:
         return JSONResponse(status_code=401, content={"title": "UNAUTHORIZED", "status": 401})
+    wait = _limiter.take(invoker_id or "anonymous")
+    if wait is not None:
+        return JSONResponse(status_code=429, headers={"Retry-After": str(wait)}, content={
+            "title": "RATE_LIMITED", "status": 429,
+            "detail": f"this caller has used its request budget; retry in {wait} s"})
 
     # Strip the module prefix before forwarding — no backend service's own
     # routes carry it (e.g. SME's real route is /published-apis/v1/...,

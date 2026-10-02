@@ -79,6 +79,7 @@ class FakeGateway:
 @pytest.fixture
 def gateway(loaded_apps, monkeypatch):
     upstream_calls: list = []
+    monkeypatch.setenv("R1_RATE_PER_SECOND", "0")   # one walker makes thousands of requests: the budget is not under test here
     r1 = loaded_apps["r1-termination"]
     monkeypatch.setattr(r1.httpx, "AsyncClient", lambda **kwargs: FakeGateway(upstream_calls, **kwargs))
     return TestClient(r1.app), upstream_calls

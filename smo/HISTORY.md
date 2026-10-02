@@ -1140,3 +1140,28 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Not taken, still open.** `read_only: true` with `tmpfs` (SEC-13.2): the runbook `docker compose cp`s CSARs into `r1-termination:/tmp`, which
   does not work into a tmpfs, so the replay and the runbook need another way to serve packages first. The Helm chart (SEC-13.4, needs the
   chart). `seccomp`/`AppArmor` profiles, and image scanning (`PR-SEC-12`).
+
+### PR-SEC-8 — Rate and size limits (8.1, 8.2; 8.3–8.6 open)
+
+- **Body cap (SEC-8.1).** `smo_shared/bodylimit.py` `BodySizeLimit`, an ASGI middleware, answers `413 PAYLOAD_TOO_LARGE` before the service reads a
+  body over the cap: from `Content-Length` when there is one, and by counting bytes as they arrive when there is not (a chunked upload), so a caller
+  cannot dodge it by leaving the header out. It sits on R1 Termination (every API request passes it; the backends stay behind it): 1 MiB
+  (`R1_MAX_BODY_BYTES`) for every path except `/mlmr/models/*/artifact`, the one route that carries a file, which gets 50 MiB like the GUI's nginx
+  `client_max_body_size` (`R1_MAX_BODY_OVERRIDES`, `<path-pattern>=<bytes>`, `fnmatch` patterns, set to replace the default). The plan said "CSAR upload
+  route higher"; there is none (Onboarding takes a package location), the model artifact upload is the real one. Settings are read per request.
+- **Rate limit (SEC-8.2).** `smo_shared/ratelimit.py` `TokenBuckets`: one bucket per invoker id (the id R1 vouches for), refilled at `R1_RATE_PER_SECOND`
+  (100) up to `R1_RATE_BURST` (200); an empty bucket is `429 RATE_LIMITED` with `Retry-After` in whole seconds to the next token. It runs after the
+  token check, so an unauthenticated request spends nobody's budget (and is not limited here yet, SEC-8.3), and before the backend is called. `0` turns it
+  off. Idle buckets are forgotten once they would be full, bounding the table by the callers active recently. Defaults are generous on purpose: the
+  platform's own modules call through R1 constantly, each as its own invoker.
+- **A known limit, stated where it lives.** The buckets are in the process, so N gateway replicas give a caller N times the rate until `SEC-8.5` (a shared
+  store). `docs/ARCHITECTURE.md`'s process-state table has a row for it. The statelessness guard does not see it: it tracks classes defined in the
+  same module, not an instance of an imported one, so the row is by hand (a gap in the guard, noted rather than fixed here).
+- **Proof.** `shared/tests/test_bodylimit.py` (raw ASGI: exact at the cap, declared length refused before the app reads, chunked body stopped, overrides,
+  a started response is not replaced) and `test_ratelimit.py` (fake clock: burst then rate, whole-second `Retry-After`, per-caller buckets, off at 0,
+  idle eviction, eight threads never exceed the burst); `r1-termination/tests`: 429 after the burst with `Retry-After` and no backend call, one noisy
+  caller does not starve another, unauthenticated requests spend no budget, 413 at 1 MiB and the artifact route's 50 MiB (and only that route), settings from
+  the environment. Disabling the byte count, the refill clamp or the `>= 1` test each fails a test. The authorisation walk (`QA-6.1`) turns the limiter
+  off: it makes thousands of requests as one caller.
+- **Not taken, still open.** SEC-8.3 a stricter limit on unauthenticated paths (`/bootstrap`, the 401s), SEC-8.4 limits per route class, SEC-8.5 the
+  shared store, SEC-8.6 the BFF login route; a per-route cap on the backends themselves (they are only reachable through R1).
