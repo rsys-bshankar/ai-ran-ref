@@ -26,4 +26,14 @@ WORKDIR /srv/module
 
 ENV PYTHONPATH=/srv/module:/srv/sdk
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# Worker processes per container, and how long a stopping container keeps finishing the requests it already
+# accepted (PR-ST-6). On SIGTERM uvicorn stops accepting connections, lets in-flight requests complete, and
+# exits; anything still running after UVICORN_GRACEFUL_SHUTDOWN_SECONDS is cut. docker-compose.yml gives every
+# service a stop_grace_period longer than that, so docker's own SIGKILL never lands first. Workers hold no
+# shared state (docs/ARCHITECTURE.md, Process state and scale-out), so a service may raise UVICORN_WORKERS; the
+# two mock services keep their state in memory and must stay at 1. `exec` makes uvicorn PID 1, so it receives
+# the stop signal itself.
+ENV UVICORN_WORKERS=1 \
+    UVICORN_GRACEFUL_SHUTDOWN_SECONDS=20
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS} --timeout-graceful-shutdown ${UVICORN_GRACEFUL_SHUTDOWN_SECONDS}"]

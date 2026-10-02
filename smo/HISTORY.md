@@ -945,3 +945,25 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   `GUI_DATABASE_URL`, which the README now says. A generated admin password with several instances: each writes its own
   password file, so set `GUI_ADMIN_PASSWORD` when seeding a shared database.
 
+### PR-ST-6 — Pool, timeouts and shutdown
+
+- **Pool and server-side limits (ST-6.1, ST-6.2).** `smo_shared/db.py` builds the engine from `engine_options()`: `pool_size`
+  (`SMO_DB_POOL_SIZE`, 5), `max_overflow` (10), `pool_timeout` (30 s), `pool_recycle` (1800 s), and on Postgres a
+  `statement_timeout` (30 s) and `idle_in_transaction_session_timeout` (300 s) sent as connection options. `0` turns a limit
+  off; SQLite keeps only `pool_pre_ping`. The idle-in-transaction default is longer than any request so it only catches a
+  leaked transaction. Proof on real Postgres: a `pg_sleep` is cancelled, an idle transaction is ended, and the control
+  without limits is not.
+- **One timeout for every outbound call (ST-6.3).** `smo_shared/timeouts.py` holds the three values (call 30 s, R1 upstream 60 s,
+  introspection 5 s; each overridable by env) and they nest: a module's R1 call outlasts R1 Termination's upstream call, which
+  outlasts the introspection. `R1Client` now sets a default timeout on every call. A grep-style AST test
+  (`tests_integration/test_http_timeouts.py`) fails on any `httpx` call or client in service code without `timeout=`.
+- **Found on the way.** R1 Termination's proxy used httpx's implicit 5 s timeout and let any upstream error escape as a 500.
+  It now answers 504 `UPSTREAM_TIMEOUT` and 502 `UPSTREAM_UNAVAILABLE` (flat bodies, as the rest of R1).
+- **Workers and drain (ST-6.4, ST-6.5).** The Dockerfile runs `exec uvicorn ... --workers $UVICORN_WORKERS
+  --timeout-graceful-shutdown $UVICORN_GRACEFUL_SHUTDOWN_SECONDS` (1 and 20 s), so SIGTERM reaches uvicorn, and every service in
+  compose gets `stop_grace_period: 30s`. `tests_integration/test_graceful_shutdown.py` runs that CMD, signals it mid-request and
+  asserts the request completes, new connections are refused or reset, the exit is bounded, and the compose grace exceeds the
+  drain; without `exec` all four fail. uvicorn re-raises SIGTERM after draining, so the exit status is -15 / 143, not 0; with
+  several workers new connections may be accepted and then reset during the drain.
+- **Not taken.** Per-module pool sizes (the env is per container already); more than one worker for the mocks (module-level
+  state, out of scope).
