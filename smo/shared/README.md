@@ -9,7 +9,7 @@
 | Depends on (over R1) | `R1Client` calls R1 Termination (`/bootstrap`) and SME (`/invoker-registrations`, `/oauth2/token`) for its own token; no other module |
 | Called by | Every backend module (imports); the SDK (`sdk/`) and the four sample rApps via `R1Client`. Not imported by `gui-bff` |
 | Database tables | None. Provides `Base`, the engine and sessions that modules' `models.py` use |
-| Unit tests | 180 passed (`tests/`; 40 more are skipped without `SMO_TEST_POSTGRES_URL`) |
+| Unit tests | 213 passed (`tests/`; 40 more are skipped without `SMO_TEST_POSTGRES_URL`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -71,6 +71,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 |---|---|
 | `smo_shared/db.py` | `MissingDatabaseUrl`, `resolve_database_url()`, `DATABASE_URL`, `engine_options()` / `build_engine()` (pool and session limits from `SMO_DB_*`), `engine`, `SessionLocal`, `Base`, `session_scope()`, `get_session()` |
 | `smo_shared/single_runner.py` | `run_once_per_interval(name, interval_seconds, fn)`, `advisory_lock(name)` and the `PeriodicRun` model (table `periodic_run`): a periodic task runs on one replica per interval. No caller yet |
+| `smo_shared/logconfig.py` | `configure_logging()`, `install_logging(app)`, `JsonFormatter`, `RedactionFilter`, `AccessLogMiddleware`: one JSON object per log line, one access line per request, secrets scrubbed |
 | `smo_shared/secretfile.py` | `read_secret(name)`: the value of `NAME`, or the contents of the file named by `NAME_FILE` (`SecretConflict` if both, `SecretFileError` if unreadable); used for the database URL and password |
 | `smo_shared/bodylimit.py` | `BodySizeLimit` (ASGI middleware: 413 over a path's cap, from `Content-Length` or counted while streaming), `settings_from_env`, `parse_overrides` |
 | `smo_shared/ratelimit.py` | `TokenBuckets`: a token bucket per caller, `take()` returns None or the seconds to wait; per process |
@@ -172,6 +173,16 @@ Rule: any caller-supplied callback URL (`notificationDestination`, `callbackUri`
 
 All instances in a process share one identity and token (`_identity`).
 
+#### Logging (`logconfig.py`)
+
+| Item | Behaviour |
+|---|---|
+| `configure_logging(service=None)` | Puts one handler on the root logger (stdout, JSON, redaction filter); level from `LOG_LEVEL` (default INFO; an unknown name is INFO with a warning); uvicorn's own logs go through it and its plain-text access line is off. Idempotent; handlers that are not its own are left alone |
+| `install_logging(app)` | What every `main.py` calls: configure (if nothing did) and add `AccessLogMiddleware` |
+| Fields | `timestamp` (UTC, ms), `level`, `logger`, `service` (the container's `MODULE`), `message`, `correlationId` (inside a request), `exception` (one field, not extra lines), and every `extra=` key |
+| Access line | `logger: smo.access`, `message: request`, `method`, `route` (the template, `/models/{model_id}`; `unmatched` if none, never the raw path or the query string), `status`, `durationMs`, `correlationId`; probes (`/live`, `/ready`, `/health`) at DEBUG, 5xx at ERROR |
+| Redaction | On the handler, so uvicorn and third-party loggers too: `Authorization`/`Bearer` values, `password=`, `secret=`, `token=`, `api_key=` pairs (also JSON `"key": "value"`), the password in `scheme://user:password@host`, and any extra field named like a secret, in the message, its arguments, the exception text and the extras. A safety net, not permission to log a credential |
+
 #### Single runner (`single_runner.py`)
 
 | Item | Behaviour |
@@ -223,6 +234,7 @@ No background tasks.
 | `SMO_DB_POOL_SIZE`, `SMO_DB_MAX_OVERFLOW`, `SMO_DB_POOL_TIMEOUT_SECONDS`, `SMO_DB_POOL_RECYCLE_SECONDS` | 5, 10, 30, 1800 (recycle 0: never); Postgres only | `db.py`: the per-process connection pool. N replicas x W workers can hold N x W x (size + overflow) connections |
 | `SMO_DB_STATEMENT_TIMEOUT_MS`, `SMO_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | 30000, 300000 (0: off); Postgres only | `db.py`: server-side limits so a stuck query or a leaked transaction cannot hold a connection for ever |
 | `READY_CHECK_TIMEOUT_SECONDS` | 3 | `health.py`: the longest a readiness check may take |
+| `LOG_LEVEL` | `INFO` | `logconfig.py`: DEBUG, INFO, WARNING, ERROR or CRITICAL |
 | `SMO_HTTP_TIMEOUT_SECONDS`, `R1_UPSTREAM_TIMEOUT_SECONDS`, `R1_INTROSPECT_TIMEOUT_SECONDS` | 30, 60, 5 | `timeouts.py` (the last two are R1 Termination's) |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | `r1_client.py` |
 | `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset: the module's shared identity from `module_identity`, registered on first use | `r1_client.py` |
@@ -275,6 +287,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 | `tests/test_module_identity.py` | The store on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres (first insert wins; replace is a compare-and-swap; eight racing threads give one winner each) and `R1Client` with a fake SME: replicas and restarts of a module share one invoker; modules do not share; a replica that loses the race offboards its duplicate; an invoker SME forgot is replaced once and the others adopt the replacement; a broken store falls back to per-process; no `MODULE`, store off and an environment identity bypass the store | 20 (6 need Postgres) |
 | `tests/test_db_url.py` | The configured URL is used as given; an unset or blank one outside tests is refused with a message naming the variable and `scripts/init_secrets.sh`; under pytest it is an in-memory SQLite, never a server; a real process without the variable exits non-zero on import, and starts with it | 7 |
 | `tests/test_single_runner.py` | A repeat inside the interval does not run, one after it does; tasks are independent; a failed run gives the interval back; six racing replicas run the task once; on real Postgres: two sessions cannot hold one lock and it is free afterwards, a dead holder frees it, and a run longer than the interval is not started again elsewhere | 16 (10 need Postgres) |
+| `tests/test_logconfig.py` | One JSON object per line (newlines, quotes and non-ASCII escaped); `service` and `correlationId` on records inside a request; extras become keys; an exception is one field; the access line has method, route template, status and duration but not the raw path or query; unmatched 404, 5xx as ERROR, probes hidden at INFO; nine shapes of seeded secret (bearer, basic, password, URL userinfo, JSON, `key=`) never reach the output, also through printf arguments, extras, exception text and uvicorn or library loggers; `LOG_LEVEL` and an unknown level; idempotent configuration, others' handlers kept | 33 |
 | `tests/test_secretfile.py` | Value from the variable or the file, trailing newline removed and nothing else trimmed, both set is an error, a missing file names the variable and path; the password from a file is put into a password-less URL (percent-encoded), replaces one already there, the whole URL may come from a file | 11 |
 | `tests/test_bodylimit.py` | The cap is exact (at it passes, one byte over is 413); a declared length over it is refused before the app reads; a chunked body is stopped when it passes the cap; per-path overrides; a response already started is not replaced; non-HTTP scopes pass; override parsing; settings from the environment | 9 |
 | `tests/test_ratelimit.py` | Burst then rate; `Retry-After` is whole seconds to the next token; callers have separate buckets; a rate of 0 turns it off; settings read on every call; idle buckets are forgotten; eight threads never take more than the burst | 7 |

@@ -1221,3 +1221,29 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Not taken, still open.** SEC-1.6: `/bootstrap` still advertises `http://sme:8000/oauth2/token` and friends, so an external rApp that bootstraps over HTTPS is
   then told to use HTTP. It needs the advertised base URL to be configurable (and the SME token endpoint reachable at the edge). mTLS between services is
   `PR-SEC-2`. Certificate rotation and a real CA (`SEC-1`'s production path) are the deployment's; OCSP stapling, HTTP/3 and a redirect from the plain ports are not done.
+
+### PR-OBS-1 — Structured logs
+
+- **One format (OBS-1.1, 1.2, 1.5).** `smo_shared/logconfig.py` `configure_logging()` puts one handler on the root logger: one JSON object per line on stdout with `timestamp`
+  (UTC, milliseconds), `level`, `logger`, `service` (the container's `MODULE`), `message`, `correlationId` (the id `X-Correlation-ID` carries through the
+  fan-out, read from the request context, so it is on every record logged while handling a request, including from libraries), `exception` (one field, not a
+  traceback spread over lines) and every `extra=` key. `LOG_LEVEL` sets the level (default INFO; an unknown name falls back to INFO and says so). Uvicorn's own
+  loggers are sent through the same handler; its plain-text access line is turned off (`--no-access-log` in the Dockerfile CMD, and the logger disabled) because
+  the middleware below replaces it. The handler writes to whatever `sys.stdout` is at the moment of each record, so a test runner that swaps stdout never leaves it
+  on a closed stream. Only this module's own handler is replaced on a second call; handlers that are not its own are left alone.
+- **Access log (OBS-1.3).** `AccessLogMiddleware` (pure ASGI, so it sees the real status and the whole duration): one `smo.access` line per request with `method`, the **route
+  template** (`/models/{model_id}`, `unmatched` if no route matched), `status`, `durationMs` and `correlationId`. The raw path and the query string are never logged:
+  an id in a path, or a token in a query, would be. Probes (`/live`, `/ready`, `/health`) are DEBUG so a probe every few seconds from every container does not drown
+  the log; a 5xx is ERROR.
+- **Redaction (OBS-1.4).** A filter on the handler (so it covers uvicorn and third-party loggers too) scrubs, before a line is formatted: `Authorization`/`Bearer` values
+  (keeping the scheme), `password=`, `secret=`, `token=`, `api_key=` style pairs and their JSON form, the password in a `scheme://user:password@host` URL, and any extra
+  field whose name says it is a secret (also inside dicts and lists), in the message, its printf arguments, the exception text and the extras. It is a safety net
+  for the mistake nobody meant to make, not permission to log a credential; the test seeds nine shapes of secret (the generic HTTP client logs request URLs, which is
+  where a `token=` query would otherwise have leaked).
+- **Adopted everywhere (OBS-1.6).** `install_logging(app)` after the `FastAPI(...)` line in the 16 backends, R1 Termination, the four sample rApps and the two mocks (23 apps),
+  mechanically; it configures logging only if nothing has, so the order of calls does not matter. `tests_integration/test_logging_adoption.py` fails on a service without
+  the middleware and checks one JSON access line per request, with the template and without the query.
+- **Not taken, still open.** The GUI BFF keeps its own plain logging: it deliberately does not depend on `smo_shared` (its `main.py` says why), so it needs its own copy of the
+  formatter or a decision to depend on the shared package; its `log.warning` lines name no credentials. Request and response bodies are never logged. Log shipping
+  (`OBS-6`), traces (`OBS-3`), metrics (`OBS-2`) and a log-volume budget are not done; `correlationId` on records from background threads started by a handler would be
+  empty (nothing starts one: the statelessness guard forbids it).
