@@ -11,6 +11,7 @@
 | Database tables | `o1_adaptor_endpoint`, `managed_entity`, `alarm`, `cm_schema_cache`, `vendor_capability`, `write_config_job`, `write_config_sub_change`, `pm_subscription`, `fm_subscription`, `software_management_job`, `msac_identity`, `msac_role`, `msac_access_rule`, `pm_file`, `file_subscription` |
 | Unit tests | 136 passed (`tests/`, SQLite, standalone) |
 | Status | Done for NETCONF-shaped and RESTCONF O1 CM dispatch. Open: alarm-storm correlation (`OI-1-alarm-storm`), TS 28.532 streaming reporting (`SA-RANOAM-8`, file reporting is built); MSAC, `accessScope`, DN refs and PerceivedSeverity are closed (`SA-RANOAM-1`, `-2`, `-4`, `-6-severity`); see [section 2.8](#28-limits-and-open-items) |
+| Time-driven behaviour | On request, never on a timer: endpoint health ages at the point of use (`/discover`, the config-write gate); retries run inline (see `docs/ARCHITECTURE.md`, Process state and scale-out) |
 
 ## 1. High-level design (HLD)
 

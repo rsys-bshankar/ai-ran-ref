@@ -11,6 +11,7 @@
 | Database tables | `a1_policy`, `policy_status_subscription`, `a1_ei_type`, `a1_service_registration` |
 | Unit tests | 45 passed (`tests/`, SQLite, standalone) |
 | Status | Done for the mapping-store scope against a test double. Open: `OI-5-a1-scope` (OWN/OTHERS scope), `OI-5-a1-ric-inventory` (types and RIC inventory), `OI-1-a1-ml` (A1-ML out of scope) |
+| Time-driven behaviour | On request, never on a timer: a stale service is swept when `GET /services` reads it |
 
 ## 1. High-level design (HLD)
 

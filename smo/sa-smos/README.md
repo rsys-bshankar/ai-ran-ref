@@ -11,6 +11,7 @@
 | Database tables | `assurance_monitor`, `remedial_action`, `o1_cm_enactment` |
 | Unit tests | 32 passed (`tests/`, SQLite, standalone) |
 | Status | Done for Phase 1; `SCALE` always escalates and `CONFIG_CHANGE` is a stub write (see 2.8) |
+| Time-driven behaviour | Caller-driven: `POST /monitors/{id}/evaluate` is called with current metrics; the service does not poll |
 
 ## 1. High-level design (HLD)
 

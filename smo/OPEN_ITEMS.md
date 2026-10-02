@@ -123,7 +123,7 @@ and HA much later).
 
 | Area | Prefix | Features |
 |---|---|---|
-| Stateless / scale-out | `PR-ST` | ST-1 audit and guard · ST-2 FSM concurrency · ST-3 idempotency · ST-4 module identity · ST-5 BFF session state · ST-6 pool/timeouts/shutdown · ST-7 readiness · ST-8 single-runner · ST-9 inline retry |
+| Stateless / scale-out | `PR-ST` | ST-2 FSM concurrency · ST-3 idempotency · ST-4 module identity · ST-5 BFF session state · ST-6 pool/timeouts/shutdown · ST-7 readiness · ST-8 single-runner · ST-9 inline retry |
 | Database | `PR-DB` | DB-1 credentials · DB-2 per-module schemas · DB-3 retention · DB-4 indexes/pagination · DB-5 pooler · DB-6 backup · DB-7 Postgres HA |
 | Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
@@ -144,19 +144,10 @@ and HA much later).
 
 ### 5.1 Stateless / scale-out (`PR-ST`)
 
-State today, checked in the code: no `create_task`, `BackgroundTasks`, `Thread` or scheduler in any `*/app`
+State today, checked in the code (audit closed as `PR-ST-1`, `HISTORY.md` §10): no `create_task`, `BackgroundTasks`, `Thread` or scheduler in any `*/app`
 module. Process state is limited to `R1Client`'s token cache and invoker identity
 (`shared/smo_shared/r1_client.py`), an `lru_cache` of the vendor registry (`ran-nf-oam/app/vendors.py`), the
 GUI BFF's per-process login lockout, and module-level dicts in the two mocks (test doubles, out of scope).
-
-#### PR-ST-1 — Statelessness audit and guard
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| ST-1.1 ★ | Table of every in-process state holder per module (the four above, plus anything the audit finds) in `docs/ARCHITECTURE.md` | Table merged; each row says safe / needs fix and the item that fixes it | – |
-| ST-1.2 | AST test: fail on new module-level mutable containers, threads or `create_task` in `*/app`, with an allowlist file | Test fails on a seeded violation, passes on `main` | ST-1.1 |
-| ST-1.3 | Run ST-1.2 in `smo-tests.yml` | Job is required on PRs touching `smo/` | ST-1.2 |
-| ST-1.4 ★ | Find how time-driven behaviour starts today: SA SMOS monitors, MDAF delivery, rApp Management supervision, `heartbeatInterval` **(verify)** | One line per behaviour in its module README: "on request" or "needs a tick" | – |
 
 #### PR-ST-2 — Optimistic concurrency on FSM transitions
 
@@ -227,11 +218,11 @@ restart adds a registration.
 | ST-7.5 | Adopt in all modules (keep `/health` as alias of `/live`) | Integration suite green | ST-7.2 |
 | ST-7.6 | Compose healthchecks use `/ready` | `docker compose ps` shows healthy | ST-7.5 |
 
-#### PR-ST-8 — Single-runner guard (only if ST-1.4 finds a periodic task)
+#### PR-ST-8 — Single-runner guard (deferred: `ST-1.4` found no periodic task today; needed when `SB-18.2`, `MGT-6.4`, `MGT-8.6` or `MGT-12.1` lands)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| ST-8.1 | `smo_shared` helper: Postgres advisory lock with a lease | Two sessions: one acquires | ST-1.4 |
+| ST-8.1 | `smo_shared` helper: Postgres advisory lock with a lease | Two sessions: one acquires | – |
 | ST-8.2 | `run_once_per_interval(name, interval, fn)` using it | Three replicas fire once per interval | ST-8.1 |
 | ST-8.3 | Adopt for each periodic task found | Per task: one firing per interval | ST-8.2 |
 
@@ -1547,7 +1538,7 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 
 Pick any, or mix them. `Needs` is the only constraint.
 
-1. **Replica-safe foundation (no new infrastructure):** ST-1.1, ST-1.4, ST-2.1–2.3, ST-4.1–4.3, ST-5.1, ST-6.1,
+1. **Replica-safe foundation (no new infrastructure):** ST-2.1–2.3, ST-4.1–4.3, ST-5.1, ST-6.1,
    ST-7.1–7.2, DB-1.1, OBS-1.1.
 2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.1–13.3, DB-1.1–1.3, QA-6.1.
 3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1, DB-6.1.
