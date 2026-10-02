@@ -913,3 +913,35 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   (`DB-2` narrows it). A database volume created before this change lacks the new table and columns; the README now says to
   recreate it until `PR-OPS-1` lands.
 
+### PR-ST-5 — GUI BFF without per-process state
+
+- **Session signing key (ST-5.1).** With `GUI_JWT_SECRET` unset the BFF no longer signs with a random per-process
+  value: the first instance stores the one it generated in `gui_setting`, and every instance of that database (and every
+  restart) reads it back, so a session from one instance is accepted by another and survives a restart. An explicit
+  `GUI_JWT_SECRET` is used as is and stores nothing. Chosen over the plan's "require an explicit shared value" because that
+  would break the documented throwaway quickstart (`GUI_JWT_SECRET` has always been optional).
+- **Login lockout (ST-5.2, ST-5.3).** The `app.state.login_failures` dict is gone; failures are rows in `gui_login_failure`
+  (username, count, window start), counted with atomic SQL (`count = count + 1`, a restart of an expired window, an insert
+  that falls back to counting when two instances insert at once), so concurrent instances lose no failure. Chosen over the
+  plan's two columns on `gui_user`: the counter is keyed by the name as typed, so an unknown username locks exactly like a
+  real one and the lockout does not reveal which usernames exist (the old map had the same property). The new tables are
+  created by the BFF's existing `create_all`, so no existing database needs altering.
+- **Found on the way, same class of problem.** (1) Two instances onboarding at SME at once each registered an invoker and
+  the last writer won the `gui_smo_credential` row: now an insert-or-adopt with a compare-and-swap replace, and the loser
+  offboards its duplicate (as `PR-ST-4` does for the modules). (2) Two instances seeding one empty database crashed the
+  second on a duplicate key and left a generated-password file that did not match the stored admin: now the loser keeps the
+  winner's users and removes its own file. (3) Instances starting together all run `create_all` on a shared database, whose
+  check-then-create is not atomic: `Database()` now looks again after losing that race.
+- **Proof.** `gui-bff/tests/test_shared_state.py`: instances on one database file share the key, the lockout and the SME
+  credential; two instances on different explicit secrets do not accept each other's sessions (the control); an old database
+  gains the new tables; the stored-setting, failure-counting and credential operations race on SQLite and real Postgres
+  (CI `migration-postgres` job). With the shared key and the credential race handling broken, 5 of its tests fail.
+- **A latent flake, fixed.** `test_a_tampered_session_token_is_rejected` overwrote the last two characters of the signature
+  with `AA`; the last character of a 43-character base64url signature carries only 4 data bits, so about one token in a
+  thousand came out unchanged and still valid (measured: 21 of 20,000). It failed once in this PR's CI. It now changes one whole
+  character in the middle of the signature (0 of 20,000 verify).
+- **Not taken, and still open.** Server-side logout revocation (a JWT stays valid until `exp` or a `token_version` bump;
+  `SEC-7.4`). Running several instances on the default SQLite file: it belongs to one instance, so instances need one shared
+  `GUI_DATABASE_URL`, which the README now says. A generated admin password with several instances: each writes its own
+  password file, so set `GUI_ADMIN_PASSWORD` when seeding a shared database.
+

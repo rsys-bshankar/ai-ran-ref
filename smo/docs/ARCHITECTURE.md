@@ -119,9 +119,8 @@ its class is in the same file (so `R1Gateway` below is listed here, not detected
 | Holder | Where | What it is | Safe with N replicas? | Fix |
 |---|---|---|---|---|
 | `_identity` (`_ModuleIdentity`) | `shared/smo_shared/r1_client.py` | SME access-token cache, and this process's copy of the module's invoker id and secret | Yes. The token cache is per process by nature; the invoker identity is one per module, kept in the `module_identity` table (`module_identity.py`): the first replica to need it registers it, the others adopt it, and a replica that loses the race discards its duplicate. `SMO_INVOKER_ID`/`SECRET` still override | none |
-| `app.state.login_failures` | `gui-bff/app/main.py` | Login-lockout counters per username | No, a replica does not see failures counted by another | `PR-ST-5` |
-| JWT signing secret | `gui-bff/app/config.py` | Random per boot when `GUI_JWT_SECRET` is unset | No, a session cookie from one replica fails on another | `PR-ST-5` (set `GUI_JWT_SECRET` meanwhile) |
-| `R1Gateway` token cache | `gui-bff/app/smo_client.py` | The BFF's SME token, refreshed once on a 401 | Yes. Its invoker credential is persisted in the database (`SmoCredential`), so replicas share one identity | none |
+| GUI BFF shared state | `gui-bff/app/db.py` | The session signing key when `GUI_JWT_SECRET` is unset (`gui_setting`), the failed-login counters (`gui_login_failure`) and the BFF's SME credential (`gui_smo_credential`) | Yes, they are rows in the BFF's database, so instances on one shared `GUI_DATABASE_URL` agree on them; the default SQLite file belongs to one instance | none |
+| `R1Gateway` token cache | `gui-bff/app/smo_client.py` | The BFF's SME token, refreshed once on a 401 | Yes. The token is per process by nature; the invoker credential is stored in the database, and two instances that onboard at once keep one and offboard the other | none |
 | `_builtin_schemas` (`lru_cache`) | `ran-nf-oam/app/vendors.py` | Bundled `cm_schemas/*.json`, read once | Yes, read-only and identical everywhere | none |
 | `engine`, `SessionLocal` | `shared/smo_shared/db.py` | SQLAlchemy connection pool | Yes, a pool is per process by nature; sizing is `PR-ST-6` | none |
 | FSM tables (`*_FSM`) | `<module>/app/statemachine.py` | Transition tables built once at import and never mutated | Yes | none |

@@ -8,9 +8,9 @@
 | R1 route / port | None. Not an R1 service: reached only as `/api/*` through the `gui` nginx (:3000); container :8000, publishes no host port |
 | Depends on (over R1) | R1 Termination (`/bootstrap`, `/health`, every proxied `/<module>/...`) and, for its own token, SME's `/invoker-registrations` and `/oauth2/token` (URL discovered via R1 `/bootstrap`, or `SME_URL`) |
 | Called by | The GUI SPA (`../gui/`), and scripts via `POST /api/token` |
-| Database tables | `gui_user`, `gui_audit_log`, `gui_smo_credential` (own SQLite/SQLAlchemy store, not the SMO Postgres schema) |
-| Unit tests | 152 passed (`tests/`, SQLite, standalone; R1 and SME faked with `httpx.MockTransport`) |
-| Status | Done. No OPEN_ITEMS ids. Sessions are stateless JWTs (no server-side logout revocation) and login lockout is per process; see 2.8 |
+| Database tables | `gui_user`, `gui_audit_log`, `gui_smo_credential`, `gui_setting`, `gui_login_failure` (own SQLite/SQLAlchemy store, not the SMO Postgres schema) |
+| Unit tests | 173 passed (`tests/`, SQLite, standalone; R1 and SME faked with `httpx.MockTransport`; 3 more run only when `SMO_TEST_POSTGRES_URL` is set) |
+| Status | Done. No OPEN_ITEMS ids. Sessions are stateless JWTs (no server-side logout revocation). Several instances work against one shared `GUI_DATABASE_URL`: signing key, lockout counters and SME credential live in it; see 2.8 |
 
 The console as a whole (pages, screenshots, role matrix, run instructions, `GUI_*` quick reference) is described in [`../gui/README.md`](../gui/README.md). This file documents only the BFF's own design and does not repeat the role tables there; the authoritative permission table is `app/rbac.py`.
 
@@ -122,7 +122,7 @@ Own database (`GUI_DATABASE_URL`, default `sqlite:///./gui-bff.db`; compose uses
 
 ### 2.3 State machines
 
-None: stateless. The only state is per-user `token_version` and `active` (no transitions beyond what 2.4 lists), plus the in-process login-failure map and token cache (2.5).
+None: stateless. The only state is per-user `token_version` and `active` (no transitions beyond what 2.4 lists), plus the SME token cache (2.5). The signing key, the login-failure counters and the SME credential are database rows, shared by every instance of the database.
 
 ### 2.4 API
 
@@ -184,7 +184,7 @@ Forced values replace whatever the browser sent. The role split for `POST /aimgf
 
 **Background tasks**: none. In-process state: the login-failure map (`username -> (count, first_failure_time)`) and the cached SME token.
 
-**Login lockout**: 5 failures (`MAX_LOGIN_FAILURES`) inside 300 s (`LOCKOUT_SECONDS`) lock the account for the rest of that window (429 `TOO_MANY_ATTEMPTS`, audited `LOGIN_LOCKED`); a success clears the counter.
+**Login lockout**: 5 failures (`MAX_LOGIN_FAILURES`) inside 300 s (`LOCKOUT_SECONDS`) lock the account for the rest of that window (429 `TOO_MANY_ATTEMPTS`, audited `LOGIN_LOCKED`); a success clears the counter. The counters are rows in `gui_login_failure`, keyed by the username as typed (an unknown name is counted and locked exactly like a real one, so the lockout does not reveal which usernames exist), updated atomically in SQL, so every instance sharing the database counts the same failures.
 
 ### 2.6 Configuration
 
@@ -195,7 +195,7 @@ All read in `app/config.py` at import time.
 | `R1_URL` | `http://r1-termination:8000` | R1 Termination base URL |
 | `SME_URL` | unset (discovered via R1 `/bootstrap`) | Override SME base for onboarding and token |
 | `GUI_DATABASE_URL` | `sqlite:///./gui-bff.db` | Users, audit, SME credential (compose: `sqlite:////data/gui-bff.db`) |
-| `GUI_JWT_SECRET` | random per boot (warning logged; sessions end on restart) | HS256 key |
+| `GUI_JWT_SECRET` | unset: the first instance generates a key and stores it in `gui_setting`; every instance of the database (and every restart) then uses that one (warning logged) | HS256 key |
 | `GUI_SESSION_TTL_SECONDS` | `28800` | JWT and cookie lifetime |
 | `GUI_COOKIE_SECURE` | `true` | `Secure` flag on both cookies |
 | `GUI_ADMIN_PASSWORD` | random, written to `GUI_INITIAL_PASSWORD_FILE` | Seeds `admin` on first boot (user table empty) |
@@ -226,7 +226,8 @@ The BFF answers `{"title", "status", "detail"?}` (no `type` / `instance`). Error
 ### 2.8 Limits and open items
 
 - Sessions are stateless: `POST /api/logout` clears the cookies but does not invalidate the JWT, which stays valid until `exp` or a `token_version` bump. A script that captured a Bearer token keeps it for the TTL.
-- Login-failure counters and the SME token cache are per process and not shared; with more than one replica the lockout is per replica. The login-failure map is in memory and resets on restart.
+- Running more than one instance needs one shared database: set `GUI_DATABASE_URL` to the same Postgres (or similar) for all of them. The default SQLite file belongs to one instance, and two instances on separate files would have separate users. When seeding on first boot, set `GUI_ADMIN_PASSWORD` explicitly: with a generated password each instance writes its own password file, and an instance that loses the seeding race deletes the one it wrote.
+- The SME token cache is per process (a token is per process by nature); an expired or revoked token is refreshed once on a 401.
 - No external IdP: users and roles live in `gui_user`. R1 Termination's own OAuth is unchanged.
 - No per-module data validation: an operator can submit anything the module accepts; the BFF checks role only.
 - The RBAC regexes are mirrored in the SPA (`../gui/src/auth/permissions.fixture.json`); regenerate with `cd gui-bff && PYTHONPATH=. python scripts/export_permissions.py` after editing `rbac.py` (`test_rbac.py` fails on drift).
@@ -247,14 +248,14 @@ cd smo/gui-bff && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Passed |
 |---|---|---|
 | `tests/test_main.py` | Login cookies (HttpOnly session, readable CSRF, Secure default), wrong password audited, lockout, tampered token, logout, seeding (no password in git, never touches a populated table), viewer/operator/admin gating through the proxy (nothing reaches R1 when denied), identity pinning (ack user, remedial `requester_is_admin`, intent RMIO, CM-write requester/MSAC tier, ASSIST reject, energy-saving override), role change on next request, CSRF on cookie sessions, Bearer grant without CSRF, BFF token (not browser credentials) forwarded, hop-by-hop and `Set-Cookie` stripping, SMO auth failure without leaking exception text, upstream error pass-through, one-time token refresh on 401, audit of mutations and not reads, append-only audit guard, security headers, health aggregation (including SMO auth failure), user admin (create/update/delete, session revocation, last-admin guard, own password change), audit listing/filters, `/api/permissions` | 43 |
+| `tests/test_shared_state.py` | Instances on one database: a generated signing key is stored once and shared (a session from one instance is accepted by another and survives a restart; separate explicit secrets are not shared, as the control); failed logins count across instances, a success clears them, an unknown name locks like a real one, the window restarts, concurrent failures are all counted; two instances seeding one empty database do not crash and leave one password file; two instances onboarding at once keep one SME invoker and offboard the duplicate; a forgotten invoker is replaced once; instances starting together all create the schema; an old database gains the new tables; the store operations under races on SQLite and Postgres | 21 (3 of them are Postgres variants, skipped without `SMO_TEST_POSTGRES_URL`) |
 | `tests/test_rbac.py` | Every module readable by a viewer; minimum role per route (parametrized, 109 cases total in the file); `event=DEPRECATE` admin-only via `query_match` including duplicated values; unlisted routes refused for everyone; ids cannot span path segments; every mutating rule requires at least operator; SPA permissions fixture equals the live table | 109 |
 
 ### 3.3 What is not covered here
 
 - Against a real R1 Termination / SME / modules: not in `tests_integration/` either; the BFF is exercised only against the fake in `tests/test_main.py` (`FakeSmo`).
 - The SPA side (role gating in JavaScript, API helpers): `cd smo/gui && npx vitest run`, including `src/auth/rbac.test.ts` against the shared fixture.
-- Concurrency and multi-replica lockout behaviour: not covered.
-- A non-SQLite `GUI_DATABASE_URL`: not covered.
+- The whole BFF against a non-SQLite database: only the shared-state operations (stored setting, failed-login counting, SME credential store and replace) run on Postgres, in `tests/test_shared_state.py`.
 
 ## 4. References
 

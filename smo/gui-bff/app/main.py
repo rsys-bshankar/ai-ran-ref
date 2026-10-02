@@ -27,7 +27,7 @@ import os
 import re
 import secrets
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 
 import httpx
@@ -35,6 +35,7 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, Respo
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
 from .db import AuditEntry, Database, GuiUser
@@ -127,9 +128,11 @@ def seed_users(db: Database, cfg: Settings) -> None:
         if s.scalar(select(GuiUser).limit(1)) is not None:
             return
         admin_password = cfg.admin_password
+        wrote_password_file = False
         if not admin_password:
             admin_password = secrets.token_urlsafe(12)
             _write_initial_password(cfg.initial_password_file, admin_password)
+            wrote_password_file = True
             log.warning("GUI_ADMIN_PASSWORD not set: seeded user 'admin' with a generated password, written to %s "
                         "(mode 0600). Sign in, change it under Admin > Users, then delete the file.",
                         cfg.initial_password_file)
@@ -138,7 +141,16 @@ def seed_users(db: Database, cfg: Settings) -> None:
         for username, password, role in seeds:
             if password:
                 s.add(GuiUser(username=username, password_hash=hash_password(password), role=role))
-        s.commit()
+        try:
+            s.commit()
+        except IntegrityError:
+            # Another instance seeded the same database a moment earlier (PR-ST-5): its users stand, and the
+            # password this instance generated would not match them, so it must not leave its file behind.
+            s.rollback()
+            if wrote_password_file:
+                with suppress(OSError):
+                    os.remove(cfg.initial_password_file)
+            log.info("another instance seeded the GUI users first; keeping its users")
 
 
 def _write_initial_password(path: str, password: str) -> None:
@@ -165,7 +177,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             app.state.db = Database(cfg.database_url)
         seed_users(app.state.db, cfg)
         if cfg.jwt_secret_generated:
-            log.warning("GUI_JWT_SECRET not set: using a random per-boot secret (sessions end on restart)")
+            # Not a per-process random value: every instance of this database must sign with the same key.
+            cfg.jwt_secret = app.state.db.shared_setting("jwt_secret", cfg.jwt_secret)
+            log.warning("GUI_JWT_SECRET not set: using the session signing key stored in the BFF database "
+                        "(shared by every instance of this database; set GUI_JWT_SECRET to manage it yourself)")
         if app.state.gateway is None:
             app.state.gateway = R1Gateway(cfg.r1_url, app.state.db, sme_url=cfg.sme_url, timeout=cfg.upstream_timeout_seconds)
         yield
@@ -174,7 +189,6 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     app = FastAPI(title="SMO Operator GUI BFF", lifespan=lifespan, docs_url=None, redoc_url=None,
                   openapi_url="/api/openapi.json")
     app.state.db, app.state.gateway, app.state.cfg = db, gateway, cfg
-    app.state.login_failures = {}
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -206,9 +220,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         response.set_cookie(CSRF_COOKIE, csrf, httponly=False, path="/", **common)
 
     def check_credentials(username: str, password: str) -> GuiUser | JSONResponse:
-        failures = app.state.login_failures
-        count, first = failures.get(username, (0, 0.0))
-        if count >= MAX_LOGIN_FAILURES and time.time() - first < LOCKOUT_SECONDS:
+        if app.state.db.login_locked(username, MAX_LOGIN_FAILURES, LOCKOUT_SECONDS, time.time()):
             audit("LOGIN_LOCKED", username=username)
             return _problem(429, "TOO_MANY_ATTEMPTS", "account temporarily locked after repeated failures")
         with app.state.db.session() as s:
@@ -217,12 +229,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         # doesn't reveal which usernames exist.
         ok = verify_password(password, user.password_hash if user else _DUMMY_HASH) and user is not None and user.active
         if not ok:
-            if time.time() - first >= LOCKOUT_SECONDS:
-                count, first = 0, time.time()
-            failures[username] = (count + 1, first)
+            app.state.db.record_login_failure(username, LOCKOUT_SECONDS, time.time())
             audit("LOGIN_FAILED", username=username)
             return _problem(401, "INVALID_CREDENTIALS")
-        failures.pop(username, None)
+        app.state.db.clear_login_failures(username)
         return user
 
     def current_session(request: Request) -> Session:

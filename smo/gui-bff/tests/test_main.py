@@ -152,7 +152,13 @@ def test_a_tampered_session_token_is_rejected(app):
     client = login(app, "viewer")
     token = client.cookies.get(SESSION_COOKIE)
     header, payload, sig = token.split(".")
-    client.cookies.set(SESSION_COOKIE, f"{header}.{payload}.{sig[:-2]}AA", path="/api")
+    # Change one whole character in the middle of the signature, to a different one, so the signature bytes
+    # always change. (Overwriting the last two characters is not enough: the last of a 43-character base64url
+    # signature carries only 4 data bits, so about one token in a thousand would come out unchanged and valid.)
+    middle = len(sig) // 2
+    tampered = sig[:middle] + ("B" if sig[middle] == "A" else "A") + sig[middle + 1:]
+    assert tampered != sig
+    client.cookies.set(SESSION_COOKIE, f"{header}.{payload}.{tampered}", path="/api")
     assert client.get("/api/me").status_code == 401
 
 
