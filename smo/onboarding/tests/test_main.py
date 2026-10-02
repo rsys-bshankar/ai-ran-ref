@@ -803,3 +803,23 @@ def test_usage_stop_is_idempotent(client, monkeypatch):
 
     assert client.post(f"/packages/{package_id}/usage/{reg}/stop").status_code == 200
     assert client.get(f"/packages/{package_id}/usage").json()["items"][0]["stoppedAt"] == first
+
+
+@pytest.mark.parametrize("location", [
+    "http://169.254.169.254/latest/meta-data/pkg.csar",   # cloud metadata endpoint
+    "http://127.0.0.1:8000/pkg.csar",
+    "http://localhost/pkg.csar",
+    "file:///etc/pkg.csar",
+])
+def test_onboard_never_fetches_a_disallowed_location(client, monkeypatch, location):
+    """CodeQL py/full-ssrf: the package location is caller-supplied, so it goes
+    through the shared SSRF guard before any fetch; a refused location is a
+    FAILED onboarding and the network is never touched."""
+    def must_not_fetch(*args, **kwargs):
+        raise AssertionError("a disallowed package location was fetched")
+    monkeypatch.setattr("app.main.httpx.get", must_not_fetch)
+
+    resp = client.post("/packages", json={"location": location})
+    assert resp.status_code == 202
+    status = client.get(f"/packages/{resp.json()['packageId']}/onboarding-status")
+    assert status.json()["state"] == "FAILED"

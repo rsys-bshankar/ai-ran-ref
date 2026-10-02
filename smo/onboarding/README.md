@@ -85,7 +85,7 @@ Onboarding never calls rApp Management, AIMgF or SME. The FK from NFO's descript
 
 Idempotency: usage stop is idempotent (an already stopped registration keeps its first `stoppedAt`). Onboarding the same location twice is refused by the duplicate check, not deduplicated.
 
-Security: the package location is fetched with a direct `httpx.get` (30 s timeout), not through `smo_shared.webhook`; the only pre-fetch check is the `.csar` suffix. The caller of `POST /packages` is therefore trusted to name a reachable, appropriate location; the GUI BFF limits this route to the operator role. Onboarding performs no authorization of its own beyond R1 Termination's token check.
+Security: the package location is fetched with a direct `httpx.get` (30 s timeout, no redirects). Before the fetch it must end in `.csar` and pass the shared SSRF guard (`smo_shared.webhook.is_safe_webhook_destination`: http/https only; loopback, link-local such as the cloud metadata address, multicast and reserved addresses refused), otherwise the package goes to `FAILED` and nothing is fetched. Any other hostname or private address is allowed, because the package server is usually another container. The caller of `POST /packages` is therefore still trusted to name an appropriate location; the GUI BFF limits this route to the operator role. Onboarding performs no authorization of its own beyond R1 Termination's token check.
 
 ## 2. Low-level design (LLD)
 

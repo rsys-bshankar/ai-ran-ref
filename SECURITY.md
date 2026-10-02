@@ -25,7 +25,9 @@ backports.
 **Please do not open a public issue or pull request for a security problem.**
 
 Report it privately through GitHub: open the repository's **Security** tab and
-choose **Report a vulnerability** (GitHub private vulnerability reporting).
+choose **Report a vulnerability** (GitHub private vulnerability reporting), or go
+straight to
+<https://github.com/rsys-bshankar/ai-ran-ref/security/advisories/new>.
 If that option is not available to you, open an issue that says only that you
 have a security report to make, with no details, and a maintainer will arrange
 a private channel.

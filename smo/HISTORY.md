@@ -580,6 +580,11 @@ From the architectural review of call flows 02/03/04/06/08/09/10/11/17/20 (#130)
   `AWAITING_SCOPE` until `/resolve`, SHADOW → `SHADOWED`, no Intent. All modes notify the operator.
   Bypasses SO SMOS by design. `shared/smo_shared/webhook.py` SSRF guard (http/https only; loopback,
   link-local, multicast, reserved rejected) applied to every callback site (CodeQL `py/full-ssrf`).
+  Later: Onboarding's package fetch (`_validate_package`) goes through the same guard; the guard returns
+  False rather than raising for a malformed URL such as `http://[` (found by the Hypothesis property
+  tests in `shared/tests/test_webhook_properties.py`). CodeQL does not recognise the custom guard as a
+  sanitizer, so its `py/full-ssrf` alerts on the guarded calls are dismissed as by-design (a hostname
+  allowlist is not viable here, see the module docstring).
   (#138) Wave 8 follow-ons: ASSIST `/reject` → `REJECTED`; dispatched Intent carries
   `objectInstance` and a `Cell` context from `regionScope`; SA SMOS O1-CM handler (W8). (#145)
 - **OI-6.4** `RequestTraining.dmeDataJobIds` checked with `GET /dme/data-jobs/{id}`

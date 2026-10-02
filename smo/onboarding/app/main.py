@@ -55,6 +55,7 @@ from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
+from smo_shared.webhook import is_safe_webhook_destination
 
 from .models import ApplicationPackage, Artifact, PackageUsageRegistration
 from .statemachine import ONBOARDING_FSM, PackageEvent, PackageState
@@ -321,6 +322,11 @@ def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, d
     """
     if not location.endswith(".csar"):
         raise PackageValidationFailed(f"package location {location!r} does not end with .csar")
+    # The location is caller-supplied and fetched from here (CodeQL py/full-ssrf):
+    # the same scheme + loopback/link-local/metadata guard every other outbound
+    # call in this build goes through (smo_shared.webhook), before anything is fetched.
+    if not is_safe_webhook_destination(location):
+        raise PackageValidationFailed(f"package location {location!r} is not an allowed http(s) destination")
     resp = httpx.get(location, timeout=30.0)
     resp.raise_for_status()
     data = resp.content
