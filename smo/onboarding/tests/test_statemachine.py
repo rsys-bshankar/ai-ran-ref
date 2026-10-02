@@ -31,7 +31,7 @@ def db():
 
 def make_package(db, state=PackageState.ONBOARDING, parent_id=None) -> ApplicationPackage:
     pkg = ApplicationPackage(
-        application_type="rApp", name="hello-world", version="1.0",
+        application_type="rApp", name="energy-saving", version="1.0",
         state=state, manifest_ref="s3://pkg.csar", parent_package_id=parent_id,
     )
     db.add(pkg)

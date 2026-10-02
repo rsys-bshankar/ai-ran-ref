@@ -55,7 +55,6 @@ reached this shape see [HISTORY.md](../HISTORY.md).
 |                rApp Layer                      |
 |  EnergySaving | Mobility Optimization          |
 |  Coverage Optimization | Traffic Steering      |
-|  hello-world (sample)                          |
 +------------------------------------------------+
                     ^
                     v
@@ -190,7 +189,7 @@ of the Intent Service.
 | Exposure | `r1-termination/` (R1 gateway), `sdk/` (AI Runtime SDK), `gui/` + `gui-bff/` |
 | Southbound simulators | `mock-o1-adaptor/`, `mock-near-rt-ric/` |
 | Shared library | `shared/smo_shared/` (DB, errors, pagination, correlation, webhook, R1 client, OpenAPI security) |
-| rApps | `samples/` (four reference rApps + `hello-world-rapp`) |
+| rApps | `samples/` (four reference rApps) |
 | Tooling and tests | `scripts/`, `migrations/`, `tests_integration/` |
 
 Each module directory holds `app/` (`models.py`, `statemachine.py`, `main.py`), `tests/`

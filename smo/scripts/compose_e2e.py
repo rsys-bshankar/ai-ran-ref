@@ -30,7 +30,7 @@ HEALTH = [
     "coverage-optimization-rapp", "traffic-steering-rapp",
 ]
 ANSWERS = ["mock-o1-adaptor", "gui-bff"]
-CSAR_URL = "http://r1-termination:8899/hello-world-rapp.csar"
+CSAR_URL = "http://r1-termination:8899/energy-saving-rapp.csar"
 
 failures: list[str] = []
 

@@ -17,7 +17,7 @@ from pathlib import Path
 
 
 def test_real_demo_csar_onboards_and_deploys(mesh, loaded_apps, shared_engine, monkeypatch):
-    """smo/samples/hello-world-rapp.csar — the real, spec-shaped sample
+    """smo/samples/energy-saving-rapp.csar — the real, spec-shaped sample
     package smo/DEMO_RUNBOOK.md walks a live docker-compose deployment
     through — must keep onboarding and deploying for real, through
     _validate_package's actual (unstubbed) zip-parsing, not a mocked
@@ -29,7 +29,7 @@ def test_real_demo_csar_onboards_and_deploys(mesh, loaded_apps, shared_engine, m
     originally guessed wrong, which would have rejected every real CSAR
     the reference itself produces.
     """
-    csar_bytes = (Path(__file__).resolve().parent.parent / "samples" / "hello-world-rapp.csar").read_bytes()
+    csar_bytes = (Path(__file__).resolve().parent.parent / "samples" / "energy-saving-rapp.csar").read_bytes()
 
     class FakeResp:
         content = csar_bytes
@@ -40,20 +40,20 @@ def test_real_demo_csar_onboards_and_deploys(mesh, loaded_apps, shared_engine, m
     real_get = httpx.get  # the mesh's own installed dispatcher — must still handle every other call
 
     def fake_get(location, timeout=None, **kwargs):
-        if location == "http://example/hello-world-rapp.csar":
+        if location == "http://example/energy-saving-rapp.csar":
             return FakeResp()
         return real_get(location, timeout=timeout, **kwargs)
 
     monkeypatch.setattr(loaded_apps["onboarding"].httpx, "get", fake_get)
 
-    onboard = mesh["onboarding"].post("/packages", json={"location": "http://example/hello-world-rapp.csar"})
+    onboard = mesh["onboarding"].post("/packages", json={"location": "http://example/energy-saving-rapp.csar"})
     package_id = onboard.json()["packageId"]
 
     status = mesh["onboarding"].get(f"/packages/{package_id}/onboarding-status")
     assert status.json()["state"] == "AVAILABLE"
     assert status.json()["nfDeploymentDescriptorId"] is not None
     pkg = next(p for p in mesh["onboarding"].get("/packages").json()["items"] if p["packageId"] == package_id)
-    assert (pkg["name"], pkg["version"], pkg["vendor"]) == ("hello-world-rapp", "1.0", "ai-ran-ref")
+    assert (pkg["name"], pkg["version"], pkg["vendor"]) == ("EnergySaving_rApp", "1.0.0", "Radisys")
 
     create = mesh["rapp-mgmt"].post("/instances", json={"packageId": package_id, "config": {}})
     assert create.status_code == 202
@@ -467,7 +467,7 @@ def test_runtime_profile_flows_from_rapp_manifest_to_nfo_descriptor(mesh, loaded
 
     import httpx
 
-    original = (Path(__file__).resolve().parent.parent / "samples" / "hello-world-rapp.csar").read_bytes()
+    original = (Path(__file__).resolve().parent.parent / "samples" / "energy-saving-rapp.csar").read_bytes()
     buf = io.BytesIO()
     with zipfile.ZipFile(io.BytesIO(original)) as src, zipfile.ZipFile(buf, "w") as dst:
         for item in src.infolist():

@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callbacks):
-    csar_bytes = (Path(__file__).resolve().parent.parent / "samples" / "hello-world-rapp.csar").read_bytes()
+    csar_bytes = (Path(__file__).resolve().parent.parent / "samples" / "energy-saving-rapp.csar").read_bytes()
 
     class FakeResp:
         content = csar_bytes
@@ -24,12 +24,12 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     real_get = httpx.get  # the mesh's own installed dispatcher — must still handle every other call
 
     def fake_get(location, timeout=None, **kwargs):
-        if location == "http://example/hello-world-rapp.csar":
+        if location == "http://example/energy-saving-rapp.csar":
             return FakeResp()
         return real_get(location, timeout=timeout, **kwargs)
 
     monkeypatch.setattr(loaded_apps["onboarding"].httpx, "get", fake_get)
-    csar_location = callbacks.csar_url("http://example/hello-world-rapp.csar")  # live: served by the test container
+    csar_location = callbacks.csar_url("http://example/energy-saving-rapp.csar")  # live: served by the test container
 
     # DEMO_RUNBOOK.md step 2: onboard
     onboard = mesh["onboarding"].post("/packages", json={"location": csar_location})
@@ -65,7 +65,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert {e["apiName"] for e in boot.json()["apiEndpoints"]} == {"service-apis", "published-apis"}
 
     prov = mesh["sme"].post("/provider-registrations", json={
-        "apfId": "hello-world-rapp", "providerDomainInfo": "Hello World rApp — demo provider domain",
+        "apfId": "energy-saving-rapp", "providerDomainInfo": "Energy Saving rApp — demo provider domain",
     })
     assert prov.status_code == 201
 
@@ -83,20 +83,20 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert token.status_code == 200
     assert token.json()["token_type"] == "Bearer"
 
-    svc = mesh["sme"].post("/published-apis/v1/hello-world-rapp/service-apis", json={
-        "serviceName": "helloworld-api", "producerId": "hello-world-rapp",
-        "endpoint": "http://hello-world-rapp:8080/helloworld/v1", "version": "v1",
-        "fullApiVersions": ["v1"], "moduleScope": "hello-world-rapp",
+    svc = mesh["sme"].post("/published-apis/v1/energy-saving-rapp/service-apis", json={
+        "serviceName": "energy-saving-api", "producerId": "energy-saving-rapp",
+        "endpoint": "http://energy-saving-rapp:8080/energy-saving/v1", "version": "v1",
+        "fullApiVersions": ["v1"], "moduleScope": "energy-saving-rapp",
     })
     assert svc.status_code == 201
-    helloworld_service_id = svc.json()["serviceId"]
+    energy_saving_service_id = svc.json()["serviceId"]
 
     dme_prod = mesh["dme"].post("/production-capabilities", json={
-        "namespace": "demo", "name": "hello-world-metrics", "version": "1.0",
-        "typeName": "hello-world-metrics-v1", "producerId": "hello-world-rapp",
+        "namespace": "demo", "name": "energy-saving-metrics", "version": "1.0",
+        "typeName": "energy-saving-metrics-v1", "producerId": "energy-saving-rapp",
         "dataProductionSchema": {"type": "object", "properties": {"greeting": {"type": "string"}}},
-        "producerHealthCallbackUrl": "http://hello-world-rapp:8080/health",
-        "jobCallbackUrl": "http://hello-world-rapp:8080/dme-jobs",
+        "producerHealthCallbackUrl": "http://energy-saving-rapp:8080/health",
+        "jobCallbackUrl": "http://energy-saving-rapp:8080/dme-jobs",
     })
     assert dme_prod.status_code == 201
 
@@ -104,7 +104,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # Onboarding/rApp Mgmt finding 3: this also registers the package's
     # own CSAR-bundled Files/Sme/ declarations with SME automatically,
     # under this instance's own real oauthClientId — a real, separate
-    # registration from the manual "hello-world-rapp" one above.
+    # registration from the manual "energy-saving-rapp" one above.
     bc = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/bootstrap-complete")
     assert bc.status_code == 200
     assert bc.json()["state"] == "RUNNING"
@@ -113,10 +113,10 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert get_inst.status_code == 200
     assert get_inst.json()["state"] == "RUNNING"
     assert len(get_inst.json()["smeServiceIds"]) == 1
-    assert get_inst.json()["smeServiceIds"][0] != helloworld_service_id
+    assert get_inst.json()["smeServiceIds"][0] != energy_saving_service_id
 
     # step 6: operate
-    perf = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/performance", json={"greeting": "hello world", "requestsServed": 1})
+    perf = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/performance", json={"cellsAsleep": 2, "prbSavedPercent": 12.5})
     assert perf.status_code == 200
 
     # step 7: RAN NF OAM closed-loop — register a managed element, dispatch
@@ -134,7 +134,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert hb.json()["healthStatus"] == "ACTIVE"
 
     job = mesh["ran-nf-oam"].post("/config-jobs", json={
-        "requestedBy": "hello-world-rapp", "scope": "cell",
+        "requestedBy": "energy-saving-rapp", "scope": "cell",
         "changes": [{"managedElementRef": "demo-o-du-1", "attributeChanges": {"adminState": "UNLOCKED"}}],
     })
     assert job.status_code == 202
@@ -150,7 +150,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # an all-or-nothing outcome — WriteConfigurationChanges' own real
     # per-ME dispatch gate (ENDPOINT_UNREACHABLE), not a scripted one.
     partial_job = mesh["ran-nf-oam"].post("/config-jobs", json={
-        "requestedBy": "hello-world-rapp", "scope": "cell",
+        "requestedBy": "energy-saving-rapp", "scope": "cell",
         "changes": [
             {"managedElementRef": "demo-o-du-1", "attributeChanges": {"adminState": "LOCKED"}},
             {"managedElementRef": "demo-o-du-2-never-registered", "attributeChanges": {"adminState": "LOCKED"}},
@@ -251,7 +251,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
 
     intent = mesh["intent-service"].post("/intents", json={
         "userLabel": "demo energy intent", "intentReportControl": [{"observationPeriod": 60}], "intentExpectations": [{"expectationId": "e1", "expectationVerb": "DELIVER", "expectationObject": {"objectType": "RAN_SUBNETWORK"}, "expectationTargets": [{"targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValueRange": 500}]}],
-        "rmioId": "hello-world-rapp", "rmihId": "so-smos", "intentHandlingScope": "RAN",
+        "rmioId": "energy-saving-rapp", "rmihId": "so-smos", "intentHandlingScope": "RAN",
     })
     assert intent.status_code == 201
     intent_id = intent.json()["intentId"]
@@ -281,7 +281,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
 
     rejected = mesh["intent-service"].post("/intents", json={
         "userLabel": "demo energy intent", "intentReportControl": [{"observationPeriod": 60}], "intentExpectations": [{"expectationId": "e1", "expectationVerb": "DELIVER", "expectationObject": {"objectType": "RAN_SUBNETWORK"}, "expectationTargets": [{"targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValueRange": 500}]}],
-        "rmioId": "hello-world-rapp", "rmihId": "sa-smos", "intentHandlingScope": "RAN",
+        "rmioId": "energy-saving-rapp", "rmihId": "sa-smos", "intentHandlingScope": "RAN",
     })
     assert rejected.status_code == 422
     assert rejected.json()["detail"]["title"] == "RMIH_CAPABILITY_MISMATCH"
@@ -290,7 +290,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
 
     intent2 = mesh["intent-service"].post("/intents", json={
         "userLabel": "demo energy intent", "intentReportControl": [{"observationPeriod": 60}], "intentExpectations": [{"expectationId": "e1", "expectationVerb": "DELIVER", "expectationObject": {"objectType": "RAN_SUBNETWORK"}, "expectationTargets": [{"targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValueRange": 500}]}],
-        "rmioId": "hello-world-rapp", "rmihId": "so-smos", "intentHandlingScope": "RAN",
+        "rmioId": "energy-saving-rapp", "rmihId": "so-smos", "intentHandlingScope": "RAN",
     })
     assert intent2.status_code == 201
     intent2_id = intent2.json()["intentId"]
@@ -317,7 +317,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # 8-9 above.
     policy_notifications = callbacks.capture("a1-related", "http://demo-consumer:9000/policy-status")
 
-    service = mesh["a1-related"].put("/services", json={"serviceId": "hello-world-rapp", "keepAliveIntervalSeconds": 0})
+    service = mesh["a1-related"].put("/services", json={"serviceId": "energy-saving-rapp", "keepAliveIntervalSeconds": 0})
     assert service.status_code == 200
 
     policy_types = mesh["a1-related"].get("/policy-types")
@@ -327,7 +327,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     policy_object = {"scope": {"cellId": "demo-cell-1"}, "qosObjectives": {"gfbr": 100}}
     policy = mesh["a1-related"].post("/policies", json={
         "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": policy_object,
-        "nearRtRicId": "mock-near-rt-ric-001", "creatorId": "hello-world-rapp",
+        "nearRtRicId": "mock-near-rt-ric-001", "creatorId": "energy-saving-rapp",
     })
     assert policy.status_code == 201
     assert policy.json()["enforcementStatus"] == "ENFORCED"
@@ -340,7 +340,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
 
     duplicate = mesh["a1-related"].post("/policies", json={
         "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": policy_object,
-        "nearRtRicId": "mock-near-rt-ric-001", "creatorId": "hello-world-rapp",
+        "nearRtRicId": "mock-near-rt-ric-001", "creatorId": "energy-saving-rapp",
     })
     assert duplicate.status_code == 201
     assert duplicate.json()["enforcementStatus"] == "REJECTED"
@@ -358,7 +358,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert del_policy.status_code == 204
     del_duplicate = mesh["a1-related"].delete(f"/policies/{duplicate_policy_id}")
     assert del_duplicate.status_code == 204
-    del_service = mesh["a1-related"].delete("/services/hello-world-rapp")
+    del_service = mesh["a1-related"].delete("/services/energy-saving-rapp")
     assert del_service.status_code == 204
 
     # step 12: SME Trusted Invokers — register a real security context
@@ -366,7 +366,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # confirm real values on request, revoke, confirm removal.
     register_ti = mesh["sme"].put(f"/trusted-invokers/{invoker['apiInvokerId']}", json={
         "notificationDestination": "http://demo-consumer:9000/security-notify",
-        "securityInfo": [{"aefId": "hello-world-rapp", "apiId": "helloworld-api", "authenticationInfo": "demo-auth-info",
+        "securityInfo": [{"aefId": "energy-saving-rapp", "apiId": "energy-saving-api", "authenticationInfo": "demo-auth-info",
                            "authorizationInfo": "demo-authz-info", "prefSecurityMethods": ["OAUTH"]}],
     })
     assert register_ti.status_code == 201
@@ -382,7 +382,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert revealed.json()["securityInfo"][0]["authorizationInfo"] == "demo-authz-info"
 
     revoke = mesh["sme"].post(f"/trusted-invokers/{invoker['apiInvokerId']}/delete", json={
-        "aefId": "hello-world-rapp", "apiIds": ["helloworld-api"], "apiInvokerId": invoker["apiInvokerId"], "cause": "UNEXPECTED_REASON",
+        "aefId": "energy-saving-rapp", "apiIds": ["energy-saving-api"], "apiInvokerId": invoker["apiInvokerId"], "cause": "UNEXPECTED_REASON",
     })
     assert revoke.status_code == 204
 
@@ -395,17 +395,17 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # NFO's own RuntimeLifecycle), upload/download a real artifact
     # (MLMR), deregister.
     model = mesh["mlmr"].post("/models", json={
-        "modelType": "hello-world-anomaly-detector", "version": "1.0.0",
-        "description": "Demo anomaly-detection model for the hello-world rApp",
-        "author": "hello-world-rapp", "owner": "hello-world-rapp",
+        "modelType": "energy-saving-anomaly-detector", "version": "1.0.0",
+        "description": "Demo anomaly-detection model for the Energy Saving rApp",
+        "author": "energy-saving-rapp", "owner": "energy-saving-rapp",
         "inputDataType": "application/json", "outputDataType": "application/json",
     })
     assert model.status_code == 201
     model_id = model.json()["modelId"]
 
     training = mesh["aimgf"].post("/training-jobs", json={
-        "modelId": model_id, "producerId": "hello-world-rapp", "runId": "demo-run-1",
-        "trainingDataset": "s3://demo/hello-world-train", "validationDataset": "s3://demo/hello-world-val",
+        "modelId": model_id, "producerId": "energy-saving-rapp", "runId": "demo-run-1",
+        "trainingDataset": "s3://demo/energy-saving-train", "validationDataset": "s3://demo/energy-saving-val",
     })
     assert training.status_code == 201
     training_job_id = training.json()["trainingJobId"]
@@ -415,7 +415,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
 
     artifact_bytes = b"demo-model-weights-bytes"
     artifact = mesh["mlmr"].post(f"/models/{model_id}/artifact",
-                                  files={"file": ("hello-world-model.zip", artifact_bytes, "application/zip")})
+                                  files={"file": ("energy-saving-model.zip", artifact_bytes, "application/zip")})
     assert artifact.status_code == 201
     assert artifact.json()["artifactVersion"] == 1
 
@@ -438,7 +438,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
                                            params={"event": "APPROVE_TRAINING", "decided_by": "demo-operator", "rationale": "training approved for the demo"})
     assert approve_training.status_code == 200
 
-    validation = mesh["aimgf"].post("/validation-jobs", json={"modelId": model_id, "trainingJobId": training_job_id, "producerId": "hello-world-rapp"})
+    validation = mesh["aimgf"].post("/validation-jobs", json={"modelId": model_id, "trainingJobId": training_job_id, "producerId": "energy-saving-rapp"})
     assert validation.status_code == 201
     validation_complete = mesh["aimgf"].post(f"/validation-jobs/{validation.json()['validationJobId']}/complete", json={"succeeded": True, "metrics": {"accuracy": 0.95}})
     assert validation_complete.json()["status"] == "COMPLETED"
@@ -448,7 +448,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
                                              params={"event": "APPROVE_VALIDATION", "decided_by": "demo-operator", "rationale": "validation approved for the demo"})
     assert approve_validation.status_code == 200
 
-    emulation = mesh["aimgf"].post("/emulation-jobs", json={"modelId": model_id, "producerId": "hello-world-rapp"})
+    emulation = mesh["aimgf"].post("/emulation-jobs", json={"modelId": model_id, "producerId": "energy-saving-rapp"})
     assert emulation.status_code == 201
     emulation_complete = mesh["aimgf"].post(f"/emulation-jobs/{emulation.json()['emulationJobId']}/complete", json={"succeeded": True, "metrics": {"latencyMs": 8}})
     assert emulation_complete.json()["status"] == "COMPLETED"
@@ -489,12 +489,12 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     analytics_notifications = callbacks.capture("mdaf", "http://demo-consumer:9000/analytics-reports")
 
     producer = mesh["ran-analytics"].post("/producers",
-        params={"producer_id": "hello-world-rapp", "analytics_type": "coverage-issue-analysis"},
+        params={"producer_id": "energy-saving-rapp", "analytics_type": "coverage-issue-analysis"},
         json={"dme_input_types": [], "output_schema": {"type": "object", "properties": {"issue": {"type": "string"}}}})
     assert producer.status_code == 201
 
     producers = mesh["ran-analytics"].get("/producers", params={"analytics_type": "coverage-issue-analysis"})
-    assert any(p["producerId"] == "hello-world-rapp" for p in producers.json()["items"])
+    assert any(p["producerId"] == "energy-saving-rapp" for p in producers.json()["items"])
 
     subscription = mesh["mdaf"].post("/subscriptions", params={
         "analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos",
@@ -575,7 +575,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
             {"stepType": "INFRA", "targetModule": "FOCOM", "spec": {"resourceTypeId": "gpu-l40", "description": "SO SMOS provisioned node"}},
             {"stepType": "POLICY", "targetModule": "A1_RELATED", "policyTypeId": "NOT_A_REAL_POLICY_TYPE",
              "policyObject": {"scope": {"cellId": "demo-cell-1"}}, "nearRtRicId": "mock-near-rt-ric-001"},
-            {"stepType": "TRAINING", "targetModule": "AI_ML_WORKFLOW", "producerId": "hello-world-rapp"},
+            {"stepType": "TRAINING", "targetModule": "AI_ML_WORKFLOW", "producerId": "energy-saving-rapp"},
         ],
     })
     assert order.status_code == 202
@@ -602,17 +602,17 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     dme_type_notifications = callbacks.capture("dme", "http://demo-consumer:9000/dme-type-events")
 
     dme_sub = mesh["dme"].post("/type-subscriptions", json={
-        "notificationDestination": "http://demo-consumer:9000/dme-type-events", "owner": "hello-world-rapp",
+        "notificationDestination": "http://demo-consumer:9000/dme-type-events", "owner": "energy-saving-rapp",
     })
     assert dme_sub.status_code == 201
     dme_subscription_id = dme_sub.json()["subscriptionId"]
 
     new_type = mesh["dme"].post("/production-capabilities", json={
         "namespace": "demo", "name": "dme-type-sub-demo", "version": "1.0",
-        "typeName": "dme-type-sub-demo-v1", "producerId": "hello-world-rapp",
+        "typeName": "dme-type-sub-demo-v1", "producerId": "energy-saving-rapp",
         "dataProductionSchema": {"type": "object", "properties": {"reading": {"type": "number"}}},
-        "producerHealthCallbackUrl": "http://hello-world-rapp:8080/health",
-        "jobCallbackUrl": "http://hello-world-rapp:8080/dme-jobs",
+        "producerHealthCallbackUrl": "http://energy-saving-rapp:8080/health",
+        "jobCallbackUrl": "http://energy-saving-rapp:8080/dme-jobs",
     })
     assert new_type.status_code == 201
     new_type_id = new_type.json()["registrationId"]
@@ -620,13 +620,13 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert dme_type_notifications[0]["infoTypeId"] == new_type_id
     assert dme_type_notifications[0]["status"] == "REGISTERED"
 
-    deregistered = mesh["dme"].delete("/production-capabilities", params={"producer_id": "hello-world-rapp"})
+    deregistered = mesh["dme"].delete("/production-capabilities", params={"producer_id": "energy-saving-rapp"})
     assert deregistered.status_code == 204
     # HISTORY.md §7's Producer/Type conflation finding, closed: Producer
     # and Type are two real, separately-owned entities now (ICS's own
     # deleteInfoProducer never touches info-types at all) — no
-    # notification fires here; both hello-world-rapp's DmeTypes (step 4's
-    # hello-world-metrics and the new demo one above) stay registered,
+    # notification fires here; both energy-saving-rapp's DmeTypes (step 4's
+    # energy-saving-metrics and the new demo one above) stay registered,
     # just DISABLED (no producer left).
     assert len(dme_type_notifications) == 1
     remaining = {t["typeName"]: t for t in mesh["dme"].get("/dme-types").json()}
@@ -702,7 +702,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     for i in range(2):
         group_model = mesh["mlmr"].post("/models", json={
             "modelType": f"demo-coordination-group-model-{i}", "version": "1.0.0",
-            "author": "hello-world-rapp", "owner": "hello-world-rapp",
+            "author": "energy-saving-rapp", "owner": "energy-saving-rapp",
         })
         assert group_model.status_code == 201
         group_model_ids.append(group_model.json()["modelId"])
@@ -738,9 +738,9 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # step 21: SME event-subscription apiId filtering — SubscribeEvents'
     # own apiIds filter (real and unit-tested since an earlier pass) has
     # never appeared anywhere in this runbook. A subscriber scoped to
-    # helloworld-api's own serviceId must not be notified about an
+    # energy-saving-api's own serviceId must not be notified about an
     # unrelated service's events, but must be notified about
-    # helloworld-api's own. Intercepted the same way as DME's own
+    # energy-saving-api's own. Intercepted the same way as DME's own
     # type-subscription step above.
     sme_notifications = callbacks.capture("sme", "http://demo-consumer:9000/sme-events-", with_location=True)
 
@@ -753,36 +753,36 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
 
     scoped_sub = mesh["sme"].post("/capif-events/v1/consumer-scoped/subscriptions", json={
         "subscriberId": "consumer-scoped", "eventTypes": ["SERVICE_API_UPDATE"],
-        "callbackUri": "http://demo-consumer:9000/sme-events-scoped", "apiIds": [helloworld_service_id],
+        "callbackUri": "http://demo-consumer:9000/sme-events-scoped", "apiIds": [energy_saving_service_id],
     })
     assert scoped_sub.status_code == 201
     scoped_sub_id = scoped_sub.json()["subscriptionId"]
 
-    other_svc = mesh["sme"].post("/published-apis/v1/hello-world-rapp/service-apis", json={
-        "serviceName": "other-api", "producerId": "hello-world-rapp",
-        "endpoint": "http://hello-world-rapp:8080/other/v1", "version": "1.0", "moduleScope": "hello-world-rapp",
+    other_svc = mesh["sme"].post("/published-apis/v1/energy-saving-rapp/service-apis", json={
+        "serviceName": "other-api", "producerId": "energy-saving-rapp",
+        "endpoint": "http://energy-saving-rapp:8080/other/v1", "version": "1.0", "moduleScope": "energy-saving-rapp",
     })
     assert other_svc.status_code == 201
-    other_svc_update = mesh["sme"].post("/published-apis/v1/hello-world-rapp/service-apis", json={
-        "serviceName": "other-api", "producerId": "hello-world-rapp",
-        "endpoint": "http://hello-world-rapp:8080/other/v1", "version": "2.0", "moduleScope": "hello-world-rapp",
+    other_svc_update = mesh["sme"].post("/published-apis/v1/energy-saving-rapp/service-apis", json={
+        "serviceName": "other-api", "producerId": "energy-saving-rapp",
+        "endpoint": "http://energy-saving-rapp:8080/other/v1", "version": "2.0", "moduleScope": "energy-saving-rapp",
     })
     assert other_svc_update.status_code == 201
     # only consumer-unscoped's callback — consumer-scoped's own apiIds
-    # filter (scoped to helloworld-api, not other-api) excludes it.
+    # filter (scoped to energy-saving-api, not other-api) excludes it.
     assert [loc for loc, _ in sme_notifications] == ["http://demo-consumer:9000/sme-events-unscoped"]
 
-    helloworld_update = mesh["sme"].post("/published-apis/v1/hello-world-rapp/service-apis", json={
-        "serviceName": "helloworld-api", "producerId": "hello-world-rapp",
-        "endpoint": "http://hello-world-rapp:8080/helloworld/v1", "version": "v2",
-        "fullApiVersions": ["v1"], "moduleScope": "hello-world-rapp",
+    energy_saving_update = mesh["sme"].post("/published-apis/v1/energy-saving-rapp/service-apis", json={
+        "serviceName": "energy-saving-api", "producerId": "energy-saving-rapp",
+        "endpoint": "http://energy-saving-rapp:8080/energy-saving/v1", "version": "v2",
+        "fullApiVersions": ["v1"], "moduleScope": "energy-saving-rapp",
     })
-    assert helloworld_update.status_code == 201
+    assert energy_saving_update.status_code == 201
     # both — this update matches consumer-scoped's own apiIds filter too.
     assert sorted(loc for loc, _ in sme_notifications[1:]) == sorted([
         "http://demo-consumer:9000/sme-events-scoped", "http://demo-consumer:9000/sme-events-unscoped",
     ])
-    assert all(n[1]["serviceId"] == helloworld_service_id for n in sme_notifications[1:])
+    assert all(n[1]["serviceId"] == energy_saving_service_id for n in sme_notifications[1:])
 
     assert mesh["sme"].delete(f"/capif-events/v1/consumer-unscoped/subscriptions/{unscoped_sub_id}").status_code == 204
     assert mesh["sme"].delete(f"/capif-events/v1/consumer-scoped/subscriptions/{scoped_sub_id}").status_code == 204

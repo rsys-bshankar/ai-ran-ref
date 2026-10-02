@@ -399,7 +399,7 @@ closed partially; residuals are in OPEN_ITEMS.
 - **OI-C-specs-folder** — Spec directories moved into `specs/` with `specs/README.md` catalogue.
 - **OI-C-spec-audit** — First formal-spec audit, written up as `HISTORY.md §7` (section 7 here).
   Second Repo Blueprint pass found no further MnS Registry protocol to ground against.
-- **OI-C-demo-csar** — `samples/hello-world-rapp/` + `build_csar.py`; onboard → deploy → bootstrap →
+- **OI-C-demo-csar** — `samples/hello-world-rapp/` (since removed; the lifecycle runbook now uses the Energy Saving package) + `build_csar.py`; onboard → deploy → bootstrap →
   operate → retire runbook. Found the required ACM file path was wrong in both validator and fixture.
 - **OI-C-demo-ranoam** — `POST /o1-adaptor-endpoints` creates `ManagedEntity` + `O1AdaptorEndpoint`
   in `DISCOVERED`; runbook: heartbeat → CM write → alarm ingest/ack/clear, plus `PARTIAL_SUCCESS` on

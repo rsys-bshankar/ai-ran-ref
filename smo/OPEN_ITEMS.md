@@ -1323,7 +1323,7 @@ Current state, checked: AIMgF training, validation, emulation and inference jobs
 
 #### PR-RAPP-7 — New-rApp recipe
 
-Repeat for each new rApp (anomaly detection, root cause, slice assurance, ...): copy `hello-world`; model;
+Repeat for each new rApp (anomaly detection, root cause, slice assurance, ...): copy `energy-saving-rapp`; model;
 decision engine; `demo.py`; manifest and capabilities; CSAR build; unit tests; runbook section; call flow; entry in
 the README tables. Each rApp is one piece of work per bullet, in that order.
 

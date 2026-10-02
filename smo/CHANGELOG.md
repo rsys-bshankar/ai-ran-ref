@@ -28,6 +28,7 @@ No release has been tagged yet. Everything below is unreleased.
 - Containers run as a non-root user with all capabilities dropped; NFO no longer runs privileged and no longer mounts the Docker socket. Volumes created by an earlier stack are root-owned: recreate them (#203).
 - The Dockerfile's plain-text uvicorn access line is off; the structured access log replaces it (#207).
 - The migration CI job and `CLAUDE.md` step 4 create the schema with `scripts/migrate.py` instead of applying the SQL file directly (#209).
+- The hello-world sample rApp and its CSAR are removed. The demo runbook (§0–§23), the integration tests and the GUI's onboard-form hint use the Energy Saving package instead.
 
 ### Upgrade notes
 - `docker compose up -d --build` runs the migrations (`docker compose logs migrate`); outside compose run `python scripts/migrate.py`. A database created from `001_init.sql` by an earlier stack is stamped at `0001` first. Take a backup (`scripts/db_backup.sh`) before upgrading; `python scripts/migrate.py --downgrade -1` reverses one revision.

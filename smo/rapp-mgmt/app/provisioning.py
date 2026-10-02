@@ -109,7 +109,7 @@ def release_instance_resources(inst: RAppInstance, reason: str) -> dict:
 def _sme_provider_registration_body(provider: dict, apf_id: str) -> dict:
     """A CSAR's own `Files/Sme/providers/*.json` may already be this
     build's own real `ProviderRegistrationRequest` body
-    (`samples/hello-world-rapp/`'s own established convention —
+    (this build's own established convention —
     `apfId`/`providerDomainInfo`) or the real external CAPIF
     `APIProviderEnrolmentDetails` shape (`apiProvDomInfo`/`apiProvFuncs`,
     grounded against `nonrtric-plt-rappmanager`'s own real sample
@@ -126,7 +126,7 @@ def _sme_provider_registration_body(provider: dict, apf_id: str) -> dict:
 def _sme_service_registration_body(service_api: dict, apf_id: str) -> dict:
     """A CSAR's own `Files/Sme/serviceapis/*.json` may already be this
     build's own real `ServiceRegistration` body
-    (`samples/hello-world-rapp/`'s own established convention —
+    (this build's own established convention —
     `serviceName`/`endpoint`/`version`/`moduleScope`/... directly) or
     the real external CAPIF `ServiceAPIDescription` shape
     (`apiName`/`aefProfiles` with nested `versions`/
@@ -145,8 +145,8 @@ def _sme_service_registration_body(service_api: dict, apf_id: str) -> dict:
     lossy reshaping there.
 
     `serviceName` is always suffixed with this instance's own apfId —
-    caught by running this against this repo's own real, already-shipped
-    demo CSAR (`samples/hello-world-rapp/`), not assumed: SME's own
+    caught by running this against this repo's own real CSAR in this
+    build's own shape, not assumed: SME's own
     `register_service` treats `serviceName` as globally unique across
     every producer (`sme/app/main.py`'s own documented Section 2.3
     rule), so a CSAR's fixed, package-level `serviceName` would

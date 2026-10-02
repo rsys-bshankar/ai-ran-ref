@@ -330,11 +330,11 @@ def test_bootstrap_complete_registers_package_sme_declarations(client, db_sessio
     Uses the real external CAPIF shape (apiProvDomInfo/apiName+aefProfiles,
     grounded against nonrtric-plt-rappmanager's own real sample packages)
     — see the sibling test below for this build's own direct-shape CSARs
-    (samples/hello-world-rapp/'s own established convention).
+    (this build's own established convention).
     """
     sme_declarations = {
         "providers": [{"apiProvDomInfo": "Provider domain"}],
-        "serviceApis": [{"apiName": "Hello World API Set 1", "aefProfiles": [{"aefId": "aef-1"}]}],
+        "serviceApis": [{"apiName": "Energy Saving API Set 1", "aefProfiles": [{"aefId": "aef-1"}]}],
     }
     service_id = uuid.uuid4()
     calls = []
@@ -361,7 +361,7 @@ def test_bootstrap_complete_registers_package_sme_declarations(client, db_sessio
             # Suffixed with apf_id — SME's own serviceName is globally
             # unique across producers, so a CSAR's fixed name would
             # otherwise collide across separate instances/registrations.
-            "serviceName": f"Hello World API Set 1-{apf_id}", "producerId": apf_id,
+            "serviceName": f"Energy Saving API Set 1-{apf_id}", "producerId": apf_id,
             "endpoint": "http://unknown", "version": "1.0", "moduleScope": "rapp",
             "aefProfiles": [{"aefId": "aef-1"}],
         }),
@@ -376,8 +376,7 @@ def test_bootstrap_complete_registers_package_sme_declarations(client, db_sessio
 
 
 def test_bootstrap_complete_passes_through_this_builds_own_sme_declaration_shape(client, monkeypatch):
-    """samples/hello-world-rapp/'s own real, already-shipped CSAR bundles
-    Files/Sme/ content in this build's own request-body shape directly
+    """A CSAR may bundle Files/Sme/ content in this build's own request-body shape directly
     (apfId/providerDomainInfo; serviceName/endpoint/version/moduleScope/
     aefProfiles/...) rather than the real external CAPIF shape — caught
     by reading that real sample file, not assumed. Both fields must pass
@@ -387,13 +386,13 @@ def test_bootstrap_complete_passes_through_this_builds_own_sme_declaration_shape
     the same package never collide on one shared apfId).
     """
     sme_declarations = {
-        "providers": [{"apfId": "hello-world-rapp", "providerDomainInfo": "Hello World rApp — demo provider domain"}],
+        "providers": [{"apfId": "energy-saving-rapp", "providerDomainInfo": "Energy Saving rApp — demo provider domain"}],
         "serviceApis": [{
-            "serviceName": "helloworld-api", "producerId": "hello-world-rapp",
-            "endpoint": "http://hello-world-rapp:8080/helloworld/v1", "version": "v1",
-            "fullApiVersions": ["v1"], "serviceCapabilities": {"resource": "helloworld", "operations": ["GET"]},
-            "selectionCriteria": {}, "moduleScope": "hello-world-rapp", "allowedConsumers": ["hello-world-rapp"],
-            "aefProfiles": [{"aefId": "hello-world-rapp-aef", "interfaceDescription": {"ipv4Addr": "hello-world-rapp", "port": 8080}}],
+            "serviceName": "energy-saving-api", "producerId": "energy-saving-rapp",
+            "endpoint": "http://energy-saving-rapp:8080/energy-saving/v1", "version": "v1",
+            "fullApiVersions": ["v1"], "serviceCapabilities": {"resource": "energy-saving", "operations": ["GET"]},
+            "selectionCriteria": {}, "moduleScope": "energy-saving-rapp", "allowedConsumers": ["energy-saving-rapp"],
+            "aefProfiles": [{"aefId": "energy-saving-rapp-aef", "interfaceDescription": {"ipv4Addr": "energy-saving-rapp", "port": 8080}}],
         }],
     }
     service_id = uuid.uuid4()
@@ -414,12 +413,12 @@ def test_bootstrap_complete_passes_through_this_builds_own_sme_declaration_shape
     assert resp.status_code == 200
 
     apf_id = created["oauthClientId"]
-    assert calls[0] == ("/sme/provider-registrations", {"apfId": apf_id, "providerDomainInfo": "Hello World rApp — demo provider domain"})
+    assert calls[0] == ("/sme/provider-registrations", {"apfId": apf_id, "providerDomainInfo": "Energy Saving rApp — demo provider domain"})
     service_call_path, service_call_body = calls[1]
     assert service_call_path == f"/sme/published-apis/v1/{apf_id}/service-apis"
-    assert service_call_body["producerId"] == apf_id  # overridden — never the CSAR's own hardcoded "hello-world-rapp"
-    assert service_call_body["serviceName"] == f"helloworld-api-{apf_id}"  # suffixed — see this build's own global serviceName-uniqueness rule
-    assert service_call_body["endpoint"] == "http://hello-world-rapp:8080/helloworld/v1"
+    assert service_call_body["producerId"] == apf_id  # overridden — never the CSAR's own hardcoded "energy-saving-rapp"
+    assert service_call_body["serviceName"] == f"energy-saving-api-{apf_id}"  # suffixed — see this build's own global serviceName-uniqueness rule
+    assert service_call_body["endpoint"] == "http://energy-saving-rapp:8080/energy-saving/v1"
     assert service_call_body["aefProfiles"] == sme_declarations["serviceApis"][0]["aefProfiles"]
 
 
@@ -428,7 +427,7 @@ def test_terminate_instance_deregisters_sme_service_apis_too(client, monkeypatch
     each real serviceId bootstrap-complete received back, not just the
     provider domain.
     """
-    sme_declarations = {"providers": [{"apiProvDomInfo": "Provider domain"}], "serviceApis": [{"apiName": "Hello World"}]}
+    sme_declarations = {"providers": [{"apiProvDomInfo": "Provider domain"}], "serviceApis": [{"apiName": "Energy Saving API"}]}
     service_id = uuid.uuid4()
     fake_get, fake_post = _route_r1_get_post(sme_declarations=sme_declarations, sme_service_id=service_id)
     calls = []
