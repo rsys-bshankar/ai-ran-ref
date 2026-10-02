@@ -80,6 +80,14 @@ def _type_of(prop: dict, base: Path, depth: int = 0) -> dict:
     out = {"type": prop.get("type", "object" if ("properties" in prop or "allOf" in prop) else "any")}
     if "enum" in prop:
         out["enum"] = list(prop["enum"])
+    # constraints the checker (ran-nf-oam/app/leafcheck.py) applies (PR-SB-5.1)
+    if out["type"] in ("integer", "number") and ("minimum" in prop or "maximum" in prop):
+        out["range"] = [[prop.get("minimum"), prop.get("maximum")]]
+    if out["type"] == "string":
+        if "minLength" in prop or "maxLength" in prop:
+            out["length"] = [[prop.get("minLength", 0), prop.get("maxLength")]]
+        if "pattern" in prop:
+            out["pattern"] = [prop["pattern"]]
     return out
 
 

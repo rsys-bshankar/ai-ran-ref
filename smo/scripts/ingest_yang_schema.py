@@ -17,6 +17,12 @@ accepts), `{"classes": {"<IOC>": {"<attribute>": {"type": ..., "enum"?: [...]}}}
 * `type`: integers -> `integer`, `decimal64` -> `number`, `boolean` and `empty` -> `boolean`,
   `enumeration` -> `string` with `enum`, a `leaf-list` -> `array`; a typedef is followed to its
   base type; everything else (`string`, `identityref`, `leafref`, `union`, `bits`, ...) is `string`.
+* Constraints (SB-5.1, checked by `ran-nf-oam/app/leafcheck.py`): an integer carries `range`, a list of
+  `[lo, hi]` intervals (its own `range`, else its typedef's, else the native bounds of `uint8` ... `int64`);
+  a `decimal64` carries `fractionDigits` and, when restricted, `range`; a `string` carries `length` (intervals,
+  `null` = unbounded) and `pattern` (a list: a typedef's patterns and the leaf's own all apply). The most
+  derived `range` / `length` replaces the inherited one. `min` / `max` are the type's bounds; `invert-match`
+  patterns are not captured.
 * A grouping or typedef is found by name across all the input files, then across the `--library`
   files. A library is where definitions come from without contributing classes of its own: the 3GPP SA5
   YANG (`specs/MnS/yang-models`: `_3gpp-common-top`, `-managed-function`, `-ep-rp`, `-yang-types`, ...)
@@ -37,6 +43,29 @@ import re
 from pathlib import Path
 
 INT_TYPES = {"int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"}
+INT_BOUNDS = {"int8": (-2**7, 2**7 - 1), "int16": (-2**15, 2**15 - 1), "int32": (-2**31, 2**31 - 1), "int64": (-2**63, 2**63 - 1),
+              "uint8": (0, 2**8 - 1), "uint16": (0, 2**16 - 1), "uint32": (0, 2**32 - 1), "uint64": (0, 2**64 - 1)}
+DECIMAL64_MAX = 2**63 - 1
+
+
+def _number(text: str, decimal: bool):
+    text = text.strip().lstrip("+")
+    if decimal:
+        return float(text)
+    return int(text, 16) if text.lower().startswith(("0x", "-0x")) else int(text)
+
+
+def parse_intervals(text: str, low, high, decimal: bool = False) -> list[list]:
+    """A YANG `range` / `length` argument ("0..100 | 200", "min..max", "-90.0..+90.0") as [[lo, hi], ...];
+    `min` and `max` become `low` and `high`, which may be None (unbounded)."""
+    out = []
+    for part in text.split("|"):
+        bounds = [b.strip() for b in part.split("..")]
+        ends = [low if b == "min" else high if b == "max" else _number(b, decimal) for b in bounds if b != ""]
+        if not ends:
+            continue
+        out.append([ends[0], ends[-1]])
+    return out
 DATA_NODES = {"leaf", "leaf-list", "list", "container", "choice", "anydata", "anyxml"}
 
 
@@ -158,22 +187,45 @@ class Bundle:
     # type -> descriptor entry
     def type_of(self, type_stmt, depth: int = 0) -> dict:
         name = _local(type_stmt[1])
+        own = {c[0]: c for c in _children(type_stmt, "range", "length", "fraction-digits")}
+        patterns = [c[1] for c in _children(type_stmt, "pattern")
+                    if not any(m[0] == "modifier" and m[1] == "invert-match" for m in c[2])]
         if name in INT_TYPES:
-            return {"type": "integer"}
-        if name == "decimal64":
-            return {"type": "number"}
-        if name in ("boolean", "empty"):
+            entry = {"type": "integer", "range": [list(INT_BOUNDS[name])]}
+        elif name == "decimal64":
+            entry = {"type": "number"}
+        elif name in ("boolean", "empty"):
             return {"type": "boolean"}
-        if name == "enumeration":
+        elif name == "enumeration":
             return {"type": "string", "enum": [e[1] for e in _children(type_stmt, "enum")]}
-        if name in ("string", "binary", "bits", "identityref", "leafref", "instance-identifier", "union"):
+        elif name == "string":
+            entry = {"type": "string"}
+        elif name in ("binary", "bits", "identityref", "leafref", "instance-identifier", "union"):
             return {"type": "string"}
-        typedef = self.typedefs.get(name)
-        if typedef is not None and depth < 10:
+        else:
+            typedef = self.typedefs.get(name)
+            if typedef is None or depth >= 10:
+                return {"type": "any"}
             self._used(typedef)
             inner = _children(typedef, "type")
-            return self.type_of(inner[0], depth + 1) if inner else {"type": "any"}
-        return {"type": "any"}
+            entry = self.type_of(inner[0], depth + 1) if inner else {"type": "any"}
+        # this statement's own restrictions sit on top of what the base or typedef gave
+        if name == "decimal64" and "fraction-digits" in own:
+            entry["fractionDigits"] = int(own["fraction-digits"][1])
+        if entry["type"] in ("integer", "number") and "range" in own:
+            entry_bounds = entry.get("range") or [[None, None]]
+            low, high = min((r[0] for r in entry_bounds), default=None), max((r[1] for r in entry_bounds), default=None)
+            if entry["type"] == "number":
+                digits = entry.get("fractionDigits")
+                limit = DECIMAL64_MAX / 10 ** digits if digits is not None else None
+                low, high = (-limit if limit else None), limit
+            entry["range"] = parse_intervals(own["range"][1], low, high, decimal=entry["type"] == "number")
+        if entry["type"] == "string":
+            if "length" in own:
+                entry["length"] = parse_intervals(own["length"][1], 0, None)
+            if patterns:
+                entry["pattern"] = entry.get("pattern", []) + patterns
+        return entry
 
     def attributes(self, node, seen=frozenset()) -> dict:
         attrs: dict[str, dict] = {}

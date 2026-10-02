@@ -19,6 +19,7 @@ No release has been tagged yet. Everything below is unreleased.
 - Liveness and readiness probes (`/live`, `/ready`; `/health` kept), single-runner guard for periodic work, idempotency keys on command routes, optimistic concurrency on lifecycle rows, one SME identity per module across replicas, connection pool limits and graceful shutdown (#190–#198).
 
 ### Changed
+- **CM writes are checked against each leaf's type and constraints before anything is sent.** A write with an out-of-range number (`localPortNumber` 70000), the wrong type, a string over its length or off its pattern, or too many decimals is refused with 422 `SCHEMA_VALIDATION_FAILED` and a reason, for vendors whose data model comes from the bundled WG10 / WG5 YANG or the 3GPP NR NRM descriptors, or from a descriptor you load; before, only unknown attributes and enum values were refused (SB-5).
 - DME's type-change, offer-termination and job-push notifications are written to the transactional outbox in the same transaction as the change and sent after it commits, so a crash no longer loses them; delivery is at least once, so a consumer may see one twice after a crash (#MSG-1.5).
 - SME's CAPIF event notifications (service and invoker events) use the same outbox, with the same at-least-once delivery (MSG-1.6).
 - AI/ML Workflow's job-completion and model-performance notifications use the outbox too, committed together with the completion or report they announce (MSG-1.7).

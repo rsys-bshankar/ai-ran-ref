@@ -1396,3 +1396,20 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Tests (SB-3.5).** The descriptor-vs-source integration test regenerates each YANG descriptor with the library and compares classes, `unresolved`, revision and `library`; two unit tests for the library mode (definitions only
   and input wins; unresolved without it); no bundled YANG descriptor has an unresolved grouping; `EP_E2` and `NearRTRICFunction` carry `id` and `userLabel`; the `ORU` class assertion now includes `id`.
 - **Not done:** WG4 O-RU YANG (`PR-SB-4`), `when` / `must` evaluation, and the 5GC and NR modules as descriptors of their own.
+
+### PR-SB-5 — YANG-validated writes (SB-5.1, 5.2)
+
+- **Constraints in the descriptors (SB-5.1, part 1).** A descriptor attribute used to carry `type` and `enum` only, so an out-of-range number or a malformed string passed the schema check. `scripts/ingest_yang_schema.py` now also captures, per leaf:
+  `range` (a list of `[lo, hi]` intervals; the leaf's own, else its typedef's, else the native bounds of `int8` ... `uint64`), `fractionDigits` for `decimal64` (and its `range`), and for strings `length` (intervals, `null` unbounded) and `pattern`
+  (a list: a typedef's patterns and the leaf's own all apply). Typedef chains work: the most derived `range` / `length` replaces the inherited one, patterns accumulate; `min` / `max`, `|` alternatives, spaces around `..`, `+90.0` and hex numbers are read.
+  `ingest_cm_schema.py` (OpenAPI) captures `minimum` / `maximum` / `minLength` / `maxLength` / `pattern` the same way. All five bundled descriptors were regenerated (61 attributes of the TS 28.541 NR NRM gained a range or length;
+  nothing else changed).
+- **The checker (SB-5.1, part 2).** `ran-nf-oam/app/leafcheck.py` `check_value(entry, value)` returns `None` or the reason. Integer: a JSON integer, an integer-valued string (RFC 7951 sends 64-bit integers as strings) or float, never a boolean,
+  then `range`. Decimal: a number or numeric string, at most `fractionDigits` decimals, `range`. Boolean: `true`/`false` or those strings. String: a string (a number is read as its text, because the descriptor folds `union`, `leafref`,
+  `identityref` and `bits` into "string"), `length` in characters, every `pattern` (anchored, as in YANG). Enum (any type): the listed members. Array, object, any: their JSON shapes. A pattern Python's `re` cannot read is skipped, not guessed at.
+- **Run on every sub-change (SB-5.2).** `vendors.schema_problems`, which `POST /config-jobs` already ran on every change before creating a job or dispatching anything, now calls it (the old enum-only branch became one case of it). A job with
+  one bad change in two sends neither; the 422 `SCHEMA_VALIDATION_FAILED` detail names the attribute, the value and the reason (`localPortNumber=70000 is out of range 0..65535`).
+- **Tests.** 53 checker cases (`tests/test_leafcheck.py`); constraint capture from YANG (typedef chains, alternatives, patterns accumulating, invert-match skipped) and from OpenAPI; the end-to-end refusal for the WG10 descriptor (an `inet:port-number`), for the
+  3GPP descriptor (`gnbIdLength` 22..32, `gnbDuId` 0..68719476735), a wrong type, and a two-change job where nothing is sent; the descriptor-vs-source integration test regenerates all of them. No existing write test needed a change.
+- **Deliberately lenient:** a vendor's `union` leaf is never rejected for its type; an integer accepts `"7"`; unknown YANG `must` / `when` conditions are not evaluated.
+- **Not done:** failure to `rejection_reason` codes (SB-5.3), the unknown-attribute policy flag (SB-5.4), `must` constraints (SB-5.5).
