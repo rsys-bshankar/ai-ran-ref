@@ -441,21 +441,17 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 
 ### 5.5 Observability (`PR-OBS`)
 
-No Prometheus, OpenTelemetry or `/metrics` usage exists in the code (checked). A correlation id exists in
+HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10); no OpenTelemetry usage exists in the code (checked). A correlation id exists in
 `smo_shared/correlation.py`. Liveness and readiness are `PR-ST-7`.
 
-#### PR-OBS-2 — Metrics
+#### PR-OBS-2 — Metrics (open: OBS-2.4 onward)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OBS-2.1 | Pin `prometheus-client` in the hashed lock | Lock check green | – |
-| OBS-2.2 ★ | HTTP middleware: count and latency histogram by method, route template, status | Metric visible in a test client | OBS-2.1 |
-| OBS-2.3 | `/metrics` route; reachable from the compose network only (separate port or guard) | Not proxied by R1 Termination (test) | OBS-2.2 |
 | OBS-2.4 | DB pool gauges (in use, overflow, waiting) | Values change under load | OBS-2.2 |
 | OBS-2.5 | FSM transition counter from one hook in `statemachine.py` | Counter increments per transition | OBS-2.2 |
 | OBS-2.6 | Outbound call metrics in `R1Client` and the webhook helper | Per-destination outcome counts | OBS-2.2 |
-| OBS-2.7 | Adopt in all modules | Each exposes `/metrics` | OBS-2.3 |
-| OBS-2.8 | Committed Grafana dashboard JSON for the golden signals | Imports cleanly | OBS-2.7 |
+| OBS-2.8 | Committed Grafana dashboard JSON for the golden signals | Imports cleanly | OBS-2.3 |
 
 #### PR-OBS-3 — Distributed traces
 

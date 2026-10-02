@@ -18,6 +18,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from smo_shared.logconfig import install_logging
+from smo_shared.metrics import install_metrics
 from smo_shared.bodylimit import MIB, BodySizeLimit, settings_from_env
 from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
@@ -29,6 +30,7 @@ from smo_shared.timeouts import introspect_timeout, upstream_timeout
 
 app = FastAPI(title="R1 Termination")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
+install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
 # /health (with /live and /ready) and /bootstrap are this gateway's own exemptions (see
 # below: the probes are answered ahead of _authorized entirely, /bootstrap is "No auth (network-isolated)") — every other
 # path here is the catch-all proxy route, which really does call
@@ -137,6 +139,9 @@ async def proxy(full_path: str, request: Request):
     """
     segments = full_path.split("/", 1)
     prefix = "/" + segments[0]
+    if segments[1:] == ["metrics"]:
+        # Every module's /metrics is for the scraper on the container network (PR-OBS-2.3), not for token holders.
+        return JSONResponse(status_code=404, content={"title": "NO_ROUTE", "status": 404})
     backend = ROUTES.get(prefix)
     if backend is None:
         return JSONResponse(status_code=404, content={"title": "NO_ROUTE", "status": 404})

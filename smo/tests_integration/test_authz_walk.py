@@ -24,16 +24,19 @@ from fastapi.testclient import TestClient
 from mesh import R1_PREFIX_TO_SERVICE
 
 GOOD_TOKEN = "active-token"
-PUBLIC_AT_THE_GATEWAY = {"/health", "/live", "/ready", "/bootstrap"}
+# /metrics: the gateway's own series, for the scraper on the container network (PR-OBS-2.3); the edge does not forward it
+PUBLIC_AT_THE_GATEWAY = {"/health", "/live", "/ready", "/bootstrap", "/metrics"}
 WALKED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}   # what the gateway's catch-all proxies
 VALID = f"Bearer {GOOD_TOKEN}"
 BAD_AUTHORIZATIONS = [None, "", "Bearer", "Bearer ", "Bearer not-the-token", "Basic YWRtaW46YWRtaW4=", GOOD_TOKEN, VALID]   # a bare token has no scheme: refused
 
 
 def backend_routes(app: FastAPI):
-    """(method, path template filled with a dummy value) for every API route of `app`, docs routes included."""
+    """(method, path template filled with a dummy value) for every API route of `app`, docs routes included (not `/metrics`)."""
     for route in app.routes:
         path = getattr(route, "path", None)
+        if path == "/metrics":
+            continue          # for the scraper, never reached through the gateway (test_metrics_adoption.py)
         for method in sorted((getattr(route, "methods", None) or set()) & WALKED_METHODS):
             yield method, re.sub(r"\{[^}]+\}", "x", path)
 

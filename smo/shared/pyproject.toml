@@ -5,6 +5,7 @@ description = "Shared library for the AI-RAN SMO Phase 1 reference implementatio
 requires-python = ">=3.11"
 dependencies = [
     "sqlalchemy>=2.0",
+    "prometheus-client>=0.20",
     "psycopg[binary]>=3.1",
     "fastapi>=0.110",
     "pydantic>=2.6",

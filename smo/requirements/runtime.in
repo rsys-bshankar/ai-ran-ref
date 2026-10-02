@@ -12,3 +12,4 @@ jsonschema
 pyyaml
 defusedxml
 pyjwt[crypto]
+prometheus-client

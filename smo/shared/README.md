@@ -71,6 +71,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 |---|---|
 | `smo_shared/db.py` | `MissingDatabaseUrl`, `resolve_database_url()`, `DATABASE_URL`, `engine_options()` / `build_engine()` (pool and session limits from `SMO_DB_*`), `engine`, `SessionLocal`, `Base`, `session_scope()`, `get_session()` |
 | `smo_shared/single_runner.py` | `run_once_per_interval(name, interval_seconds, fn)`, `advisory_lock(name)` and the `PeriodicRun` model (table `periodic_run`): a periodic task runs on one replica per interval. No caller yet |
+| `smo_shared/metrics.py` | `install_metrics(app)`, `MetricsMiddleware`: request count and latency series by route template, and `GET /metrics` |
 | `smo_shared/logconfig.py` | `configure_logging()`, `install_logging(app)`, `JsonFormatter`, `RedactionFilter`, `AccessLogMiddleware`: one JSON object per log line, one access line per request, secrets scrubbed |
 | `smo_shared/secretfile.py` | `read_secret(name)`: the value of `NAME`, or the contents of the file named by `NAME_FILE` (`SecretConflict` if both, `SecretFileError` if unreadable); used for the database URL and password |
 | `smo_shared/bodylimit.py` | `BodySizeLimit` (ASGI middleware: 413 over a path's cap, from `Content-Length` or counted while streaming), `settings_from_env`, `parse_overrides` |
@@ -172,6 +173,13 @@ Rule: any caller-supplied callback URL (`notificationDestination`, `callbackUri`
 | Timeouts | The bootstrap/onboard/grant calls use 5 s; the module call uses `call_timeout()` (30 s, `SMO_HTTP_TIMEOUT_SECONDS`) unless `timeout=` is passed, never httpx's implicit 5 s |
 
 All instances in a process share one identity and token (`_identity`).
+
+#### Metrics (`metrics.py`)
+
+| Item | Behaviour |
+|---|---|
+| `install_metrics(app)` | What every `main.py` calls after `install_logging`: `MetricsMiddleware` plus `GET /metrics` (Prometheus text, not in the OpenAPI spec) |
+| `smo_http_requests_total`, `smo_http_request_duration_seconds` | Labels `method`, `route` (template, or `unmatched`) and `status`; probes and `/metrics` not counted; per process |
 
 #### Logging (`logconfig.py`)
 
@@ -287,6 +295,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 | `tests/test_module_identity.py` | The store on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres (first insert wins; replace is a compare-and-swap; eight racing threads give one winner each) and `R1Client` with a fake SME: replicas and restarts of a module share one invoker; modules do not share; a replica that loses the race offboards its duplicate; an invoker SME forgot is replaced once and the others adopt the replacement; a broken store falls back to per-process; no `MODULE`, store off and an environment identity bypass the store | 20 (6 need Postgres) |
 | `tests/test_db_url.py` | The configured URL is used as given; an unset or blank one outside tests is refused with a message naming the variable and `scripts/init_secrets.sh`; under pytest it is an in-memory SQLite, never a server; a real process without the variable exits non-zero on import, and starts with it | 7 |
 | `tests/test_single_runner.py` | A repeat inside the interval does not run, one after it does; tasks are independent; a failed run gives the interval back; six racing replicas run the task once; on real Postgres: two sessions cannot hold one lock and it is free afterwards, a dead holder frees it, and a run longer than the interval is not started again elsewhere | 16 (10 need Postgres) |
+| `tests/test_metrics.py` | Count by template and status (raw ids never labels), unmatched paths share one series, latency histogram, probes and the scrape not counted, Prometheus text, absent from OpenAPI | 6 |
 | `tests/test_logconfig.py` | One JSON object per line (newlines, quotes and non-ASCII escaped); `service` and `correlationId` on records inside a request; extras become keys; an exception is one field; the access line has method, route template, status and duration but not the raw path or query; unmatched 404, 5xx as ERROR, probes hidden at INFO; nine shapes of seeded secret (bearer, basic, password, URL userinfo, JSON, `key=`) never reach the output, also through printf arguments, extras, exception text and uvicorn or library loggers; `LOG_LEVEL` and an unknown level; idempotent configuration, others' handlers kept | 33 |
 | `tests/test_secretfile.py` | Value from the variable or the file, trailing newline removed and nothing else trimmed, both set is an error, a missing file names the variable and path; the password from a file is put into a password-less URL (percent-encoded), replaces one already there, the whole URL may come from a file | 11 |
 | `tests/test_bodylimit.py` | The cap is exact (at it passes, one byte over is 413); a declared length over it is refused before the app reads; a chunked body is stopped when it passes the cap; per-path overrides; a response already started is not replaced; non-HTTP scopes pass; override parsing; settings from the environment | 9 |
