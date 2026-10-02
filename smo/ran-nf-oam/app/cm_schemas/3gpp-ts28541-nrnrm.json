@@ -99,15 +99,33 @@
   },
   "Beam": {
    "beamAzimuth": {
+    "range": [
+     [
+      -1800,
+      1800
+     ]
+    ],
     "type": "integer"
    },
    "beamHorizWidth": {
+    "range": [
+     [
+      0,
+      3599
+     ]
+    ],
     "type": "integer"
    },
    "beamIndex": {
     "type": "integer"
    },
    "beamTilt": {
+    "range": [
+     [
+      -900,
+      900
+     ]
+    ],
     "type": "integer"
    },
    "beamType": {
@@ -117,6 +135,12 @@
     "type": "string"
    },
    "beamVertWidth": {
+    "range": [
+     [
+      0,
+      1800
+     ]
+    ],
     "type": "integer"
    }
   },
@@ -244,12 +268,30 @@
   },
   "CommonBeamformingFunction": {
    "coverageShape": {
+    "range": [
+     [
+      null,
+      65535
+     ]
+    ],
     "type": "integer"
    },
    "digitalAzimuth": {
+    "range": [
+     [
+      -1800,
+      1800
+     ]
+    ],
     "type": "integer"
    },
    "digitalTilt": {
+    "range": [
+     [
+      -900,
+      900
+     ]
+    ],
     "type": "integer"
    }
   },
@@ -318,9 +360,21 @@
     "type": "array"
    },
    "maximumDeviationHoTrigger": {
+    "range": [
+     [
+      -20,
+      20
+     ]
+    ],
     "type": "integer"
    },
    "minimumTimeBetweenHoTriggerChange": {
+    "range": [
+     [
+      0,
+      604800
+     ]
+    ],
     "type": "integer"
    }
   },
@@ -335,15 +389,39 @@
     "type": "array"
    },
    "maximumDeviationHoTriggerHigh": {
+    "range": [
+     [
+      -20,
+      20
+     ]
+    ],
     "type": "integer"
    },
    "maximumDeviationHoTriggerLow": {
+    "range": [
+     [
+      -20,
+      20
+     ]
+    ],
     "type": "integer"
    },
    "minimumTimeBetweenHoTriggerChange": {
+    "range": [
+     [
+      0,
+      604800
+     ]
+    ],
     "type": "integer"
    },
    "tstoreUEcntxt": {
+    "range": [
+     [
+      0,
+      1023
+     ]
+    ],
     "type": "integer"
    }
   },
@@ -579,12 +657,24 @@
     "type": "integer"
    },
    "cellReselectionSubPriority": {
+    "range": [
+     [
+      0.2,
+      0.8
+     ]
+    ],
     "type": "number"
    },
    "eUTranFrequencyRef": {
     "type": "string"
    },
    "pMax": {
+    "range": [
+     [
+      -30,
+      33
+     ]
+    ],
     "type": "integer"
    },
    "qOffsetFreq": {
@@ -594,9 +684,21 @@
     "type": "number"
    },
    "qRxLevMin": {
+    "range": [
+     [
+      -140,
+      -44
+     ]
+    ],
     "type": "integer"
    },
    "tReselectionEutran": {
+    "range": [
+     [
+      0,
+      7
+     ]
+    ],
     "type": "integer"
    },
    "tReselectionNRSfHigh": {
@@ -618,23 +720,59 @@
     "type": "integer"
    },
    "threshXHighP": {
+    "range": [
+     [
+      0,
+      62
+     ]
+    ],
     "type": "integer"
    },
    "threshXHighQ": {
+    "range": [
+     [
+      0,
+      31
+     ]
+    ],
     "type": "integer"
    },
    "threshXLowP": {
+    "range": [
+     [
+      0,
+      62
+     ]
+    ],
     "type": "integer"
    },
    "threshXLowQ": {
+    "range": [
+     [
+      0,
+      31
+     ]
+    ],
     "type": "integer"
    }
   },
   "EUtranFrequency": {
    "earfcnDL": {
+    "range": [
+     [
+      0,
+      262143
+     ]
+    ],
     "type": "integer"
    },
    "multiBandInfoListEutra": {
+    "range": [
+     [
+      1,
+      256
+     ]
+    ],
     "type": "integer"
    }
   },
@@ -691,9 +829,21 @@
   },
   "ExternalGNBCUCPFunction": {
    "gnbId": {
+    "range": [
+     [
+      0,
+      4294967295
+     ]
+    ],
     "type": "integer"
    },
    "gnbIdLength": {
+    "range": [
+     [
+      22,
+      32
+     ]
+    ],
     "type": "integer"
    },
    "peeParametersList": {
@@ -720,9 +870,21 @@
   },
   "ExternalGNBCUUPFunction": {
    "gnbId": {
+    "range": [
+     [
+      0,
+      4294967295
+     ]
+    ],
     "type": "integer"
    },
    "gnbIdLength": {
+    "range": [
+     [
+      22,
+      32
+     ]
+    ],
     "type": "integer"
    },
    "peeParametersList": {
@@ -746,9 +908,21 @@
   },
   "ExternalGNBDUFunction": {
    "gnbId": {
+    "range": [
+     [
+      0,
+      4294967295
+     ]
+    ],
     "type": "integer"
    },
    "gnbIdLength": {
+    "range": [
+     [
+      22,
+      32
+     ]
+    ],
     "type": "integer"
    },
    "peeParametersList": {
@@ -778,6 +952,12 @@
     "type": "string"
    },
    "nrPci": {
+    "range": [
+     [
+      null,
+      503
+     ]
+    ],
     "type": "integer"
    },
    "peeParametersList": {
@@ -819,12 +999,30 @@
     "type": "string"
    },
    "gnbCuName": {
+    "length": [
+     [
+      0,
+      150
+     ]
+    ],
     "type": "string"
    },
    "gnbId": {
+    "range": [
+     [
+      0,
+      4294967295
+     ]
+    ],
     "type": "integer"
    },
    "gnbIdLength": {
+    "range": [
+     [
+      22,
+      32
+     ]
+    ],
     "type": "integer"
    },
    "isOnboardSatellite": {
@@ -846,6 +1044,9 @@
     "type": "string"
    },
    "onboardSatelliteId": {
+    "pattern": [
+     "^[0-9]{5}$"
+    ],
     "type": "string"
    },
    "peeParametersList": {
@@ -905,18 +1106,39 @@
     "type": "string"
    },
    "gnbCuUpId": {
+    "range": [
+     [
+      0,
+      68719476735
+     ]
+    ],
     "type": "integer"
    },
    "gnbId": {
+    "range": [
+     [
+      0,
+      4294967295
+     ]
+    ],
     "type": "integer"
    },
    "gnbIdLength": {
+    "range": [
+     [
+      22,
+      32
+     ]
+    ],
     "type": "integer"
    },
    "isOnboardSatellite": {
     "type": "boolean"
    },
    "onboardSatelliteId": {
+    "pattern": [
+     "^[0-9]{5}$"
+    ],
     "type": "string"
    },
    "peeParametersList": {
@@ -946,15 +1168,39 @@
     "type": "string"
    },
    "gnbDuId": {
+    "range": [
+     [
+      0,
+      68719476735
+     ]
+    ],
     "type": "integer"
    },
    "gnbDuName": {
+    "length": [
+     [
+      0,
+      150
+     ]
+    ],
     "type": "string"
    },
    "gnbId": {
+    "range": [
+     [
+      0,
+      4294967295
+     ]
+    ],
     "type": "integer"
    },
    "gnbIdLength": {
+    "range": [
+     [
+      22,
+      32
+     ]
+    ],
     "type": "integer"
    },
    "iABRef": {
@@ -964,6 +1210,9 @@
     "type": "boolean"
    },
    "onboardSatelliteId": {
+    "pattern": [
+     "^[0-9]{5}$"
+    ],
     "type": "string"
    },
    "peeParametersList": {
@@ -1109,12 +1358,21 @@
     "type": "array"
    },
    "nRTAC": {
+    "pattern": [
+     "(^[A-Fa-f0-9]{4}$)|(^[A-Fa-f0-9]{6}$)"
+    ],
     "type": "string"
    },
    "nTNTAClist": {
     "type": "array"
    },
    "nrPci": {
+    "range": [
+     [
+      null,
+      503
+     ]
+    ],
     "type": "integer"
    },
    "operationalState": {
@@ -1168,9 +1426,21 @@
     "type": "integer"
    },
    "ssbFrequency": {
+    "range": [
+     [
+      0,
+      3279165
+     ]
+    ],
     "type": "integer"
    },
    "ssbOffset": {
+    "range": [
+     [
+      0,
+      159
+     ]
+    ],
     "type": "integer"
    },
    "ssbPeriodicity": {
@@ -1271,6 +1541,12 @@
     "type": "integer"
    },
    "cellReselectionSubPriority": {
+    "range": [
+     [
+      0.2,
+      0.8
+     ]
+    ],
     "type": "number"
    },
    "nRFrequencyRef": {
@@ -1280,6 +1556,12 @@
     "type": "array"
    },
    "pMax": {
+    "range": [
+     [
+      -30,
+      33
+     ]
+    ],
     "type": "integer"
    },
    "qOffsetFreq": {
@@ -1289,6 +1571,12 @@
     "type": "number"
    },
    "qRxLevMin": {
+    "range": [
+     [
+      -140,
+      -44
+     ]
+    ],
     "type": "integer"
    },
    "tReselectionNRSfHigh": {
@@ -1310,26 +1598,68 @@
     "type": "integer"
    },
    "tReselectionNr": {
+    "range": [
+     [
+      0,
+      7
+     ]
+    ],
     "type": "integer"
    },
    "threshXHighP": {
+    "range": [
+     [
+      0,
+      62
+     ]
+    ],
     "type": "integer"
    },
    "threshXHighQ": {
+    "range": [
+     [
+      0,
+      31
+     ]
+    ],
     "type": "integer"
    },
    "threshXLowP": {
+    "range": [
+     [
+      0,
+      62
+     ]
+    ],
     "type": "integer"
    },
    "threshXLowQ": {
+    "range": [
+     [
+      0,
+      31
+     ]
+    ],
     "type": "integer"
    }
   },
   "NRFrequency": {
    "absoluteFrequencySSB": {
+    "range": [
+     [
+      0,
+      3279165
+     ]
+    ],
     "type": "integer"
    },
    "multiFrequencyBandListNR": {
+    "range": [
+     [
+      1,
+      256
+     ]
+    ],
     "type": "integer"
    },
    "ssbSubCarrierSpacing": {
@@ -1409,12 +1739,30 @@
     "type": "array"
    },
    "rRMPolicyDedicatedRatio": {
+    "range": [
+     [
+      0,
+      100
+     ]
+    ],
     "type": "integer"
    },
    "rRMPolicyMaxRatio": {
+    "range": [
+     [
+      0,
+      100
+     ]
+    ],
     "type": "integer"
    },
    "rRMPolicyMinRatio": {
+    "range": [
+     [
+      0,
+      100
+     ]
+    ],
     "type": "integer"
    },
    "resourceType": {
@@ -1452,6 +1800,12 @@
     "type": "array"
    },
    "setId": {
+    "range": [
+     [
+      null,
+      4194303
+     ]
+    ],
     "type": "integer"
    },
    "setType": {

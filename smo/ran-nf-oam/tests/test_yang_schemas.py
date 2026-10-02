@@ -75,10 +75,10 @@ def test_classes_attributes_types_and_enums(tmp_path):
     assert set(b.classes) == {"Radio", "Plain", "Aug"}  # nested list / container are attributes, not classes
     radio = b.classes["Radio"]
     assert radio["txPower"] == {"type": "string", "enum": ["LOW", "HIGH"]}  # a typedef'd enumeration
-    assert radio["load"] == {"type": "integer"}  # a typedef of a typedef
-    assert radio["ratio"] == {"type": "number"} and radio["on"] == {"type": "boolean"} and radio["pinned"] == {"type": "boolean"}
-    assert radio["label"] == {"type": "string"} and radio["neighbours"] == {"type": "array"}
-    assert radio["dlArfcn"] == {"type": "integer"} and radio["arfcn"] == {"type": "integer"}  # through choice / case
+    assert radio["load"] == {"type": "integer", "range": [[0, 100]]}  # a typedef of a typedef: the restriction comes through
+    assert radio["ratio"] == {"type": "number", "fractionDigits": 2} and radio["on"] == {"type": "boolean"} and radio["pinned"] == {"type": "boolean"}
+    assert radio["label"] == {"type": "string", "pattern": ["ab"]} and radio["neighbours"] == {"type": "array"}
+    assert radio["dlArfcn"] == {"type": "integer", "range": [[0, 2**32 - 1]]} and radio["arfcn"] == {"type": "integer", "range": [[-2**31, 2**31 - 1]]}  # through choice / case
     assert radio["sectors"] == {"type": "array"} and radio["limits"] == {"type": "object"}
     assert radio["mystery"] == {"type": "any"} and radio["unionised"] == {"type": "string"}
     assert radio["extra"] == {"type": "string"} and "attributes" not in radio  # `container attributes` is flattened
@@ -94,7 +94,7 @@ def test_a_grouping_in_another_file_resolves_and_a_cycle_terminates(tmp_path):
     (tmp_path / "a.yang").write_text("module a { grouping G { leaf fromG { type string; } uses H; } grouping H { uses G; leaf fromH { type int8; } } }")
     (tmp_path / "b.yang").write_text("module b { container C { uses G; } }")
     b = yang.ingest([tmp_path / "a.yang", tmp_path / "b.yang"])
-    assert b.classes["C"] == {"fromG": {"type": "string"}, "fromH": {"type": "integer"}} and not b.unresolved
+    assert b.classes["C"] == {"fromG": {"type": "string"}, "fromH": {"type": "integer", "range": [[-128, 127]]}} and not b.unresolved
 
 
 def test_a_library_supplies_definitions_but_no_classes_and_the_input_wins(tmp_path):
@@ -107,7 +107,7 @@ def test_a_library_supplies_definitions_but_no_classes_and_the_input_wins(tmp_pa
         " list Radio { key id; uses lib:Top_Grp; container attributes { uses Shared; leaf load { type pct; } } } }")
     b = yang.ingest([tmp_path / "own.yang"], [tmp_path / "lib.yang"])
     assert b.classes == {"Radio": {"id": {"type": "string"}, "userLabel": {"type": "string"}, "fromOwn": {"type": "string"},
-                                   "load": {"type": "integer"}}}              # no LibOnly; the input's `Shared` won
+                                   "load": {"type": "integer", "range": [[0, 255]]}}}   # no LibOnly; the input's `Shared` won
     assert not b.unresolved and b.library_used == {"lib.yang"}
 
 
@@ -134,7 +134,7 @@ def test_no_bundled_yang_descriptor_has_an_unresolved_grouping_any_more():
 def test_the_3gpp_common_attributes_are_in_the_o1_nrm_classes(client):
     classes = _full(client, "o-ran-wg10-o1nrm")
     assert {"id", "userLabel"} <= set(classes["EP_E2"]) and {"id", "userLabel"} <= set(classes["NearRTRICFunction"])
-    assert classes["EP_D2C"]["localPortNumber"] == {"type": "integer"}      # an `inet:port-number`, `any` before the library
+    assert classes["EP_D2C"]["localPortNumber"] == {"type": "integer", "range": [[0, 65535]]}   # an `inet:port-number`, `any` before the library
 
 def _full(client, name):
     listed = {(s["schemaName"]): s for s in client.get("/cm-schemas").json()["items"]}
@@ -190,3 +190,89 @@ def test_a_vendor_conforms_to_the_combined_wg10_wg5_model(client, dispatched):
     assert _write(client, className="ORU", attributeChanges={"ruInstanceId": "ru-1"}).status_code == 202
     assert _write(client, className="PDCPConfig", attributeChanges={}).status_code == 202  # a WG5 O-CU class
     assert _write(client, className="NRCellDU", attributeChanges={"administrativeState": "LOCKED"}).status_code == 422  # OWN: no 3GPP model
+
+
+# ---------------------------------------------------------------- constraints (SB-5.1)
+
+CONSTRAINED = '''
+module acme-limits {
+  namespace "urn:acme:limits"; prefix al;
+  typedef pct { type uint8 { range "0..100"; } }
+  typedef pct-half { type pct { range "10..50"; } }
+  typedef hex { type string { pattern '[A-F]+'; length "1..8"; } }
+  typedef hex-pair { type hex { pattern '.{2}'; } }
+  typedef latitude { type decimal64 { fraction-digits 4; range "-90.0000..+90.0000"; } }
+  container Limits {
+    leaf pct { type pct; }
+    leaf half { type pct-half; }
+    leaf holes { type uint16 { range "0 | 5..10 | 100..max"; } }
+    leaf native { type int8; }
+    leaf hexPair { type hex-pair; }
+    leaf lat { type latitude; }
+    leaf money { type decimal64 { fraction-digits 2; } }
+    leaf short { type string { length "min..5"; } }
+    leaf plain { type string; }
+    leaf negated { type string { pattern 'x' { modifier invert-match; } } }
+  }
+}
+'''
+
+
+def test_ranges_lengths_patterns_and_fraction_digits_are_captured(tmp_path):
+    (tmp_path / "limits.yang").write_text(CONSTRAINED)
+    limits = yang.ingest([tmp_path / "limits.yang"]).classes["Limits"]
+    assert limits["pct"] == {"type": "integer", "range": [[0, 100]]}
+    assert limits["half"]["range"] == [[10, 50]]                                   # the most derived range replaces the inherited
+    assert limits["holes"]["range"] == [[0, 0], [5, 10], [100, 65535]]             # `|` alternatives, `max` = the type's bound
+    assert limits["native"] == {"type": "integer", "range": [[-128, 127]]}         # no range: the native bounds
+    assert limits["hexPair"] == {"type": "string", "length": [[1, 8]], "pattern": ["[A-F]+", ".{2}"]}   # patterns accumulate
+    assert limits["lat"] == {"type": "number", "range": [[-90.0, 90.0]], "fractionDigits": 4}
+    assert limits["money"] == {"type": "number", "fractionDigits": 2}
+    assert limits["short"] == {"type": "string", "length": [[0, 5]]}
+    assert limits["plain"] == {"type": "string"} and limits["negated"] == {"type": "string"}   # invert-match is not captured
+
+
+def test_the_openapi_front_end_captures_minimum_maximum_length_and_pattern(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ingest_cm_schema", Path(__file__).resolve().parents[2] / "scripts" / "ingest_cm_schema.py")
+    cm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cm)
+    assert cm._type_of({"type": "integer", "minimum": 0, "maximum": 7}, tmp_path) == {"type": "integer", "range": [[0, 7]]}
+    assert cm._type_of({"type": "integer", "minimum": 5}, tmp_path) == {"type": "integer", "range": [[5, None]]}
+    assert cm._type_of({"type": "string", "maxLength": 9, "pattern": "^a+$"}, tmp_path) == {"type": "string", "length": [[0, 9]], "pattern": ["^a+$"]}
+    assert cm._type_of({"type": "integer"}, tmp_path) == {"type": "integer"}
+
+
+def test_a_value_outside_the_leafs_type_or_range_is_refused_before_anything_is_sent(client, dispatched):
+    """SB-5.2: every sub-change is checked against its leaf's YANG type and range before dispatch; one bad change stops the job."""
+    rev = next(s["revision"] for s in client.get("/cm-schemas").json()["items"] if s["schemaName"] == "o-ran-wg10-o1nrm")
+    _vendor(client, "oran", conformanceMode="COMBINED", schemaRef={"schemaName": "o-ran-wg10-o1nrm", "revision": rev})
+    _endpoint(client, vendor="oran")
+
+    assert _write(client, className="EP_D2C", attributeChanges={"localPortNumber": 8080}).status_code == 202       # inet:port-number
+    assert _write(client, className="GNBDUFunction", attributeChanges={"gnbIdLength": 28}).status_code == 202      # TS 28.541: 22..32
+    sent_so_far = len(dispatched)
+
+    too_big = _write(client, className="EP_D2C", attributeChanges={"localPortNumber": 70000})
+    assert too_big.status_code == 422
+    assert "localPortNumber=70000 is out of range 0..65535" in too_big.json()["detail"]["detail"]
+    below = _write(client, className="GNBDUFunction", attributeChanges={"gnbIdLength": 21})
+    assert below.status_code == 422 and "gnbIdLength=21 is out of range 22..32" in below.json()["detail"]["detail"]
+    wrong_type = _write(client, className="EP_D2C", attributeChanges={"localPortNumber": "http"})
+    assert wrong_type.status_code == 422 and "is not an integer" in wrong_type.json()["detail"]["detail"]
+
+    # one bad change in a job of two: neither is sent
+    both = client.post("/config-jobs", json={"requestedBy": "rapp", "scope": "cell", "changes": [
+        {"managedElementRef": "ME-A", "className": "EP_D2C", "attributeChanges": {"localPortNumber": 9000}},
+        {"managedElementRef": "ME-A", "className": "EP_D2C", "attributeChanges": {"remotePortNumber": 99999}}]})
+    assert both.status_code == 422 and "remotePortNumber=99999" in both.json()["detail"]["detail"]
+    assert len(dispatched) == sent_so_far
+
+
+def test_a_range_in_the_3gpp_spec_descriptor_is_checked_too(client, dispatched):
+    _vendor(client, "plain3gpp", conformanceMode="SPEC")
+    _endpoint(client, vendor="plain3gpp")
+    ok = _write(client, className="GNBDUFunction", attributeChanges={"gnbDuId": 1234, "gnbIdLength": 24})
+    assert ok.status_code == 202
+    bad = _write(client, className="GNBDUFunction", attributeChanges={"gnbDuId": -1})
+    assert bad.status_code == 422 and "gnbDuId=-1 is out of range 0..68719476735" in bad.json()["detail"]["detail"]

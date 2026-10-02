@@ -48,6 +48,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.webhook import get_webhook
 
 from .ldn import leaf_class
+from .leafcheck import check_value
 from .models import CMSchemaCache, ManagedEntity, O1AdaptorEndpoint, VendorCapability
 
 router = APIRouter()
@@ -390,8 +391,10 @@ def schema_problems(db: Session, change: dict) -> list[str]:
             spec = next((a[attr] for a in classes.values() if attr in a), None)
         if spec is None:
             problems.append(f"{where}: attribute {attr} is not defined" + (f" on {ioc}" if ioc else " on any class"))
-        elif spec.get("enum") and value not in spec["enum"]:
-            problems.append(f"{where}: {attr}={value!r} is not one of {spec['enum']}")
+        else:  # SB-5.2: the leaf's type, range, length, pattern, fraction digits and enum, before anything is dispatched
+            reason = check_value(spec, value)
+            if reason is not None:
+                problems.append(f"{where}: {attr}={value!r} {reason}")
     return problems
 
 

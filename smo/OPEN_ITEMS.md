@@ -706,15 +706,15 @@ FOCOM and NFO are model-level.
 | SB-4.3 | Register the O-RU managed-function classes in the vendor capability registry | Registry test | SB-4.2 |
 | SB-4.4 | Tests for one O-RU write | Test green | SB-4.3 |
 
-#### PR-SB-5 — YANG-validated writes
+#### PR-SB-5 — YANG-validated writes (open: 5.3 onward)
+
+A CM write's values are checked against the leaf's YANG type, range, length, pattern, fraction digits and enum before dispatch (`app/leafcheck.py`, `HISTORY.md` §10).
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-5.1 | Leaf type and range checker driven by a descriptor | Unit tests per YANG type | – |
-| SB-5.2 ★ | Run it on every sub-change before sending | Out-of-range value is rejected with a reason | SB-5.1 |
 | SB-5.3 | Map failures to `rejection_reason` codes | Test | SB-5.2 |
 | SB-5.4 | Unknown-attribute policy flag: reject or pass | Both modes tested | SB-5.2 |
-| SB-5.5 | Enum, pattern and `must` constraint support | Tests | SB-5.1 |
+| SB-5.5 | `must` constraint support (enum, pattern, length and range are done: `SB-5.1`) | Tests | SB-5.2 done |
 
 #### PR-SB-6 — MO containment tree (`SA-RANOAM-4`)
 
@@ -1442,7 +1442,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 2. **Safe to expose:** done except SEC-13.2 and SEC-1.6.
 3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: the rest of OBS-2, OPS-1.6, OPS-4.1b (cutting the first tag).
 4. **Durable notifications:** MSG-1.1–1.9 done (SA SMOS has no destination call to move); MSG-1.10 is the one leftover one module at a time.
-5. **First real O1 path:** SB-3 done; SB-1.1–1.5 and SB-5.1–5.2 open.
+5. **First real O1 path:** SB-3 and SB-5.1–5.2 done; SB-1.1–1.5 open.
 6. **Safer changes:** MGT-1.1–1.4, MGT-3.1, MGT-8.1.
 7. **Later:** HA, mesh, federation, vendor profiles.
 8. **Dev sanity and demo:** OPS-10.1–10.4 (master redeploy gate on Actions) and OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-1.6, OPS-2 and OPS-5.
