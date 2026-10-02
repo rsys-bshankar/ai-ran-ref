@@ -128,7 +128,7 @@ and HA much later).
 | Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
 | Observability | `PR-OBS` | OBS-2 metrics · OBS-3 traces · OBS-4 business metrics · OBS-5 alerts/SLOs · OBS-6 log shipping · OBS-7 runbooks · OBS-8 self-monitoring |
-| Packaging / ops | `PR-OPS` | OPS-1 migrations · OPS-2 Helm · OPS-3 migrate hook · OPS-4 releases · OPS-5 rolling upgrade · OPS-6 GitOps · OPS-7 config reference · OPS-8 flags · OPS-9 sizing |
+| Packaging / ops | `PR-OPS` | OPS-1 migrations · OPS-2 Helm · OPS-3 migrate hook · OPS-4 releases · OPS-5 rolling upgrade · OPS-6 GitOps · OPS-7 config reference · OPS-8 flags · OPS-9 sizing · OPS-10 dev-sanity pipeline (Actions) · OPS-11 demo environment (Codespaces) |
 | High availability | `PR-HA` | HA-1 replicas · HA-2 rolling restart · HA-3 DB failover · HA-4 worker failover · HA-5 placement · HA-6 DR · HA-7 geo |
 | Southbound | `PR-SB` | SB-1 NETCONF/SSH · SB-2 adaptor credentials · SB-3 3GPP YANG · SB-4 WG4 YANG · SB-5 YANG validation · SB-6 containment · SB-7 VES · SB-8 streaming · SB-9 conformance kit · SB-10 vendor profile · SB-11 RIC inventory · SB-12 A1 scope · SB-13 RIC simulator lane · SB-14 O2-IMS client · SB-15 async provisioning · SB-16 K8s driver · SB-17 NFO scale size · SB-18 FOCOM PM collector |
 | Management functions | `PR-MGT` | MGT-1 CM history/rollback · MGT-2 MSAC reach · MGT-3 dry-run · MGT-4 change windows · MGT-5 canary · MGT-6 drift · MGT-7 plan mgmt · MGT-8 alarm lifecycle · MGT-9 correlation · MGT-10 topology RCA · MGT-11 KPI engine · MGT-12 PM at scale · MGT-13 trace/QoE · MGT-14 zero-touch · MGT-15 SW campaigns · MGT-16 intent conflicts · MGT-17 SO saga · MGT-18 SLA assurance |
@@ -584,6 +584,35 @@ Tag scheme and `CHANGELOG.md` exist (`PR-OPS-4.1`, `HISTORY.md` §10); no tag ha
 |---|---|---|---|
 | OPS-9.1 | Default CPU and memory requests/limits in `values.yaml` | Pods schedule on kind | OPS-2.2 |
 | OPS-9.2 | Replace guesses by measured values | Table with the load that produced each | QA-1.4 |
+
+#### PR-OPS-10 — Development-sanity pipeline on GitHub Actions (Target 1)
+
+Purpose: tell the team, on every merge, that the whole stack still comes up and works. Runs on GitHub Actions only (free minutes; no GUI to open, headless checks only). It starts as option (a), *tear down and redeploy the whole stack on every merge to master*, and grows into option (b), *packaging and proper upgrades*, as the `PR-OPS` features below land. Option (a) always starts from empty data, so it cannot catch upgrade bugs; that is what the (b) steps add.
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-10.1 ★ | Workflow `deploy-on-master.yml` (trigger `push: master`): build, `docker compose up`, replay the demo runbook (reuses the `compose-e2e` steps), then `docker compose down -v` | Green on a master merge; logs uploaded as an artifact on failure | – |
+| OPS-10.2 | Concurrency group so a newer merge cancels an older run; job `timeout-minutes` kept below the minutes budget | Two quick merges leave one run | OPS-10.1 |
+| OPS-10.3 | Headless GUI smoke check (Playwright against the GUI port) with screenshots uploaded as an artifact | Artifact holds the login and module-status screens | OPS-10.1 |
+| OPS-10.4 | Status badge and a failed-run notification to the maintainers | A seeded break notifies | OPS-10.1 |
+| OPS-10.5 | (b) Upgrade lane: install the previous release, upgrade to the merged commit, replay | Job green; fails on a seeded breaking migration | OPS-1.6, OPS-4.1b, OPS-5.2 |
+| OPS-10.6 | (b) Helm on kind replaces the compose lane as the master gate; compose stays for local use | Master gate runs `OPS-2.8` and `OPS-2.9` | OPS-2.9, OPS-10.5 |
+| OPS-10.7 | (b) Rolling-upgrade lane (mixed versions) added to the master gate | Replay green | OPS-5.3, OPS-10.6 |
+
+Decision rule: until `OPS-10.5` is green, the master gate is option (a). Do not remove the compose lane before `OPS-10.6` has been green for a few merges.
+
+#### PR-OPS-11 — Demo environment on GitHub Codespaces (Target 2)
+
+Purpose: show the GUI and the rApp flows to people. Used **on demand only**: create a fresh codespace for the demo, use it, then delete it. It is never the development gate (that is `PR-OPS-10`), and it is not a permanent deployment. The reason to scrap it after each demo is to save the free core-hours.
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OPS-11.1 ★ | Set the Codespaces spending limit to **$0** on the owner account (GitHub Settings, Billing, Spending limits) as a safeguard; a person does this | Limit reads $0 | – |
+| OPS-11.2 | `.devcontainer/devcontainer.json` sized for the stack (4 cores, Docker-in-Docker), forwarding the GUI and R1 ports | Fresh codespace opens with ports listed | – |
+| OPS-11.3 | `scripts/codespace-up.sh`: create secrets, `docker compose up`, wait for health, seed the sample rApp, print the GUI URL | One command from a fresh codespace to a working GUI | OPS-11.2 |
+| OPS-11.4 | Demo procedure in `DEMO_RUNBOOK.md`: create, run, delete after the demo, with the idle timeout set short (30 minutes) | Procedure reviewed and followed once | OPS-11.3 |
+| OPS-11.5 | Optional prebuild of the image on master so a fresh codespace starts quickly (watch prebuild storage; skip if it costs more than it saves) | Start time measured before and after | OPS-11.2 |
+| OPS-11.6 | Once Helm exists: the same script installs the chart on kind so the demo shows the packaged install (check it fits the machine) | Demo runs on the chart | OPS-2.9, OPS-11.3 |
 
 ### 5.7 High availability and DR (`PR-HA`)
 
@@ -1430,3 +1459,4 @@ Pick any, or mix them. `Needs` is the only constraint.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.
 6. **Safer changes:** MGT-1.1–1.4, MGT-3.1, MGT-8.1.
 7. **Later:** HA, mesh, federation, vendor profiles.
+8. **Dev sanity and demo:** OPS-10.1–10.4 (master redeploy gate on Actions) and OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-1.6, OPS-2 and OPS-5.
