@@ -22,6 +22,7 @@ from sqlalchemy.orm import sessionmaker
 
 from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
+from smo_shared.testing import concurrent_commit_on
 
 from app.main import app
 from app import models as aimgf_models
@@ -1531,3 +1532,17 @@ def test_retired_model_with_a_stale_active_runtime_refuses_inference(client, mlm
     resp = client.post(f"/models/{model_id}/inference-jobs")
     assert resp.status_code == 409
     assert resp.json()["detail"]["detail"] == "model is RETIRED"
+
+
+def test_a_concurrent_writer_turns_a_lifecycle_advance_into_a_409_and_the_repeat_succeeds(client, mlmr, db_session_factory):
+    """PR-ST-2: ModelLifecycle (model and runtime state) is versioned; a stale write is a 409."""
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
+
+    with concurrent_commit_on("model_lifecycle") as fired:
+        stale = client.post(f"/models/{model_id}/advance", params={"event": "ROLLBACK", "decided_by": "op"})
+    assert fired and stale.status_code == 409
+    assert stale.json()["detail"]["title"] == "CONCURRENT_MODIFICATION"
+
+    repeat = client.post(f"/models/{model_id}/advance", params={"event": "ROLLBACK", "decided_by": "op"})
+    assert repeat.status_code == 200

@@ -6,11 +6,12 @@ from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
+from smo_shared.versioning import Versioned
 
 PACKAGE_STATES = {"ONBOARDING", "AVAILABLE", "DEPRECATED", "DELETING", "FAILED"}
 
 
-class ApplicationPackage(Base):
+class ApplicationPackage(Versioned, Base):
     __tablename__ = "application_package"
 
     package_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

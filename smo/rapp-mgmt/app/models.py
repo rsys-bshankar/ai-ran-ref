@@ -5,9 +5,10 @@ from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
+from smo_shared.versioning import Versioned
 
 
-class RAppInstance(Base):
+class RAppInstance(Versioned, Base):
     __tablename__ = "rapp_instance"
 
     instance_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

@@ -9,7 +9,7 @@
 | Depends on (over R1) | R1 Termination, for routes of SME, DME, RAN NF OAM (read-only inventory), MLMR, AIMgF, MLLF, MDAF, RAN Analytics, Intent Service. Through `smo_shared.r1_client.R1Client` |
 | Called by | The four sample rApps (`../samples/{energy-saving,mobility-optimization,coverage-optimization,traffic-steering}-rapp/app/main.py`); any rApp author. No SMO module imports it |
 | Database tables | None |
-| Unit tests | 121 passed (`tests/`, no network: a recording fake `R1Client`) |
+| Unit tests | 130 passed (`tests/`, no network: a recording fake `R1Client`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)

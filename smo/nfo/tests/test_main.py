@@ -14,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 from sqlalchemy import Uuid as UuidType
 
 from smo_shared.db import Base, get_session
+from smo_shared.testing import concurrent_commit_on
 
 from app.main import app
 from app.models import LCMOperation, NFDeployment, NFDeploymentDescriptor, NFOCloudResource
@@ -448,3 +449,21 @@ def test_list_descriptors_and_deployment_operations(client, monkeypatch):
     client.post(f"/deployments/{created['nfDeploymentId']}/heal")
     ops = client.get(f"/deployments/{created['nfDeploymentId']}/operations").json()["items"]
     assert [o["operationType"] for o in ops] == ["INSTANTIATE", "HEAL"]
+
+
+def test_a_concurrent_writer_turns_a_heal_into_a_409_and_the_repeat_succeeds(client, monkeypatch, db_session_factory):
+    """PR-ST-2: NFDeployment is versioned; a stale write is a 409, not a lost update.
+    (A scale returns the row to RUNNING within the request, so it writes nothing to protect.)"""
+    created = _instantiate(client, monkeypatch).json()
+    nf_deployment_id = uuid.UUID(created["nfDeploymentId"])
+    with db_session_factory() as session:
+        session.get(NFDeployment, nf_deployment_id).state = "ABNORMAL"
+        session.commit()
+
+    with concurrent_commit_on("nf_deployment") as fired:
+        stale = client.post(f"/deployments/{nf_deployment_id}/heal")
+    assert fired and stale.status_code == 409
+    assert stale.json()["detail"]["title"] == "CONCURRENT_MODIFICATION"
+
+    repeat = client.post(f"/deployments/{nf_deployment_id}/heal")
+    assert repeat.status_code == 200 and repeat.json()["state"] == "RUNNING"

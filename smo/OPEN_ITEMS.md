@@ -107,8 +107,8 @@ and HA much later).
 
 **How to read it**
 
-- A **feature** (`PR-ST-2`) is a capability. Its **steps** (`ST-2.1`, `ST-2.2`, …) are the pickable units. Cite a
-  step as `PR-ST-2.3`.
+- A **feature** (`PR-ST-3`) is a capability. Its **steps** (`ST-3.1`, `ST-3.2`, …) are the pickable units. Cite a
+  step as `PR-ST-3.3`.
 - Every step is sized **≤ 2 days** and has a testable **Done when**. A step that cannot be said in one line of
   "Done when" has been split further.
 - **Needs** lists hard prerequisites only (`–` means it can start today). Steps are listed in a sensible order, but
@@ -123,7 +123,7 @@ and HA much later).
 
 | Area | Prefix | Features |
 |---|---|---|
-| Stateless / scale-out | `PR-ST` | ST-2 FSM concurrency · ST-3 idempotency · ST-4 module identity · ST-5 BFF session state · ST-6 pool/timeouts/shutdown · ST-7 readiness · ST-8 single-runner · ST-9 inline retry |
+| Stateless / scale-out | `PR-ST` | ST-3 idempotency · ST-4 module identity · ST-5 BFF session state · ST-6 pool/timeouts/shutdown · ST-7 readiness · ST-8 single-runner · ST-9 inline retry |
 | Database | `PR-DB` | DB-1 credentials · DB-2 per-module schemas · DB-3 retention · DB-4 indexes/pagination · DB-5 pooler · DB-6 backup · DB-7 Postgres HA |
 | Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
@@ -139,7 +139,7 @@ and HA much later).
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
-**Dependency spine** (everything else is independent of it): `ST-2` → `HA-1`; `DB-2` → `HA-3`; `MSG-1` → `MSG-2` →
+**Dependency spine** (everything else is independent of it): `ST-4`, `ST-5` → `HA-1`; `DB-2` → `HA-3`; `MSG-1` → `MSG-2` →
 `MSG-4`/`HA-4`; `OPS-1` → `OPS-3`/`OPS-5`; `OBS-2` → `OBS-4`/`OBS-5`.
 
 ### 5.1 Stateless / scale-out (`PR-ST`)
@@ -148,21 +148,6 @@ State today, checked in the code (audit closed as `PR-ST-1`, `HISTORY.md` §10):
 module. Process state is limited to `R1Client`'s token cache and invoker identity
 (`shared/smo_shared/r1_client.py`), an `lru_cache` of the vendor registry (`ran-nf-oam/app/vendors.py`), the
 GUI BFF's per-process login lockout, and module-level dicts in the two mocks (test doubles, out of scope).
-
-#### PR-ST-2 — Optimistic concurrency on FSM transitions
-
-No `with_for_update` or version column exists today, so two replicas can both fire the same transition on one row.
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| ST-2.1 | `row_version` integer mixin in `smo_shared`; add the column and migration to `rapp_instance` only | Column present; migration-vs-models check green | – |
-| ST-2.2 | Helper in `smo_shared/statemachine.py`: fire, then `UPDATE … WHERE row_version = :v`; on 0 rows raise a conflict error mapped to 409 (RFC 7807) | Unit test: stale version → 409, no state change | ST-2.1 |
-| ST-2.3 ★ | Two-session test on real Postgres: both sessions fire the same event | Exactly one succeeds | ST-2.2 |
-| ST-2.4 | Roll out to `application_package` | Same two-session test passes | ST-2.2 |
-| ST-2.5 | Roll out to `nf_deployment` | Same | ST-2.2 |
-| ST-2.6 | Roll out to AIMgF model and runtime lifecycle rows | Same | ST-2.2 |
-| ST-2.7 | Roll out to RAN NF OAM `write_config_job` and `software_management_job` | Same | ST-2.2 |
-| ST-2.8 | SDK retry rule: re-read and retry once on 409 for idempotent transitions; document it | SDK test covers it | ST-2.2 |
 
 #### PR-ST-3 — Idempotency keys on commands
 
@@ -627,7 +612,7 @@ No Prometheus, OpenTelemetry or `/metrics` usage exists in the code (checked). A
 | OPS-1.1 | ADR: Alembic (or equivalent); one history for all modules or one per module | ADR merged | – |
 | OPS-1.2 ★ | Baseline revision equal to `001_init.sql`; existing DBs are stamped | Fresh DB and stamped DB reach the same schema | OPS-1.1 |
 | OPS-1.3 | Point the migration-vs-models check at the migration head | Check green; fails on a model change without a revision | OPS-1.2 |
-| OPS-1.4 | First real revision (use `ST-2.1`'s column as the template) | Applies and rolls back | OPS-1.2 |
+| OPS-1.4 | First real revision (a small additive change, like `PR-ST-2`'s `row_version` column, is the template) | Applies and rolls back | OPS-1.2 |
 | OPS-1.5 | Compose `migrate` one-shot service that the modules wait for | Fresh `up` is green | OPS-1.2 |
 | OPS-1.6 | CI: upgrade the previous commit's schema to head | Job green | OPS-1.4 |
 | OPS-1.7 | Contributor rule in `CLAUDE.md`: schema change = revision | Rule merged | OPS-1.3 |
@@ -707,7 +692,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| HA-1.1 | Two replicas per module in compose (`deploy.replicas`) or Helm | All start | ST-2.7, ST-4.2, ST-5.3 |
+| HA-1.1 | Two replicas per module in compose (`deploy.replicas`) or Helm | All start | ST-4.2, ST-5.3 |
 | HA-1.2 | Replay the runbook against the replicas | Green | HA-1.1 |
 | HA-1.3 | Fix list from failures in HA-1.2, one PR each | List empty | HA-1.2 |
 
@@ -1538,7 +1523,7 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 
 Pick any, or mix them. `Needs` is the only constraint.
 
-1. **Replica-safe foundation (no new infrastructure):** ST-2.1–2.3, ST-4.1–4.3, ST-5.1, ST-6.1,
+1. **Replica-safe foundation (no new infrastructure):** ST-3.1–3.3, ST-4.1–4.3, ST-5.1, ST-6.1,
    ST-7.1–7.2, DB-1.1, OBS-1.1.
 2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.1–13.3, DB-1.1–1.3, QA-6.1.
 3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1, DB-6.1.

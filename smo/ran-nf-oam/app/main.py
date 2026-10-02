@@ -34,6 +34,7 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.webhook import post_webhook
+from smo_shared.versioning import install_concurrency_handler
 
 from .models import Alarm, CMSchemaCache, FileSubscription, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
@@ -57,6 +58,7 @@ from .statemachine import (
 )
 
 app = FastAPI(title="RAN NF OAM SMOS")
+install_concurrency_handler(app)  # a stale write (PR-ST-2) is a 409, not a 500
 app.include_router(msac.router)
 apply_r1_gateway_security(app)
 apply_correlation_id(app)

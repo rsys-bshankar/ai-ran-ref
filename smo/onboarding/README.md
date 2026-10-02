@@ -8,8 +8,8 @@
 | R1 route / port | `/onboarding` via R1 Termination (container `:8000`) |
 | Depends on (over R1) | NFO (`POST /nfo/descriptors`); the package location itself (plain HTTP GET, not over R1) |
 | Called by | rApp Management (`onboarding-status`, `usage/start`, `usage/stop`); AIMgF (`onboarding-status`, for `aiCapabilities.runtimeProfiles`); GUI BFF (operator and admin actions); operators |
-| Database tables | `application_package`, `artifact`, `package_usage_registration` |
-| Unit tests | 74 passed (`tests/`, SQLite, standalone) |
+| Database tables | `application_package` (versioned), `artifact`, `package_usage_registration` |
+| Unit tests | 85 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Package signature verification is not performed (see 1.5, 2.8) |
 
 ## 1. High-level design (HLD)

@@ -131,9 +131,11 @@ its class is in the same file (so `R1Gateway` below is listed here, not detected
 What is **not** state: webhook destinations, subscriptions, jobs, FSM states,
 registrations and every other business object are database rows.
 
-Concurrency between replicas on the same row is a separate matter: FSM
-transitions have no version check yet (`PR-ST-2`), and the inline retry in
-`ran-nf-oam` holds a worker for its whole back-off (`PR-ST-9`).
+Concurrency between replicas on the same row is handled by optimistic
+versioning (see [R1 API conventions](#r1-api-conventions), Concurrency): the
+rows that carry a lifecycle state have a `row_version`, and a stale write is a
+409. The inline retry in `ran-nf-oam` still holds a worker for its whole
+back-off (`PR-ST-9`).
 
 ### How time-driven behaviour starts
 
@@ -208,6 +210,7 @@ Every R1-facing service applies the same conventions, implemented once in
 | Authentication | R1 Termination introspects every proxied bearer token against SME's issuer (RFC 7662). Each service's OpenAPI declares the `r1BearerAuth` HTTP-bearer scheme (`openapi_security.py`). Exempt at the gateway: `/health` and `/bootstrap` only; `/bootstrap` returns SME's own address for `/oauth2/token`, which is not proxied unauthenticated. The `r1BearerAuth` scheme is not declared on SME's own `/oauth2/token` and `/oauth2/introspect`. The southbound mocks (`mock-o1-adaptor`, `mock-near-rt-ric`) are not R1-facing. |
 | Versioning | `info.version` is the R1 contract version (`R1_CONTRACT_VERSION`, `1.0.0`). |
 | Errors | ProblemDetails-shaped bodies (`title`, `status`, `detail`; `type` is always `about:blank`, the error code is in `title`) raised via `framework_error()` / `FrameworkError` (`errors.py`) as an `HTTPException`, so the object arrives nested under a top-level `detail` key. R1 Termination and gui-bff answer flat `{title, status, detail}`. A1 policy management keeps its own A1 error table. |
+| Concurrency | A row that carries a lifecycle state is `Versioned` (`versioning.py`): `row_version INTEGER NOT NULL DEFAULT 1`, and every ORM UPDATE or DELETE of it is `... WHERE row_version = <loaded>`. When another request committed first, the write fails and the route answers `409 CONCURRENT_MODIFICATION` (ProblemDetails, installed per app by `install_concurrency_handler`); the caller repeats the request, which reloads the row and either succeeds or is refused as an illegal transition. `smo_sdk` repeats a mutating call once on that 409. Versioned today: `application_package`, `rapp_instance`, `nf_deployment`, `model_lifecycle`, `write_config_job`, `software_management_job`. A new lifecycle table should use the mixin and add the column to the migration. Bulk `update()` statements do not carry the check. Lazy sweeps that write from a read (`rapp-mgmt` upgrade timeout) treat a lost race as "already done". |
 | Pagination | Every DB-backed list returns `{items, total, limit, offset}` from a SQL `LIMIT`/`OFFSET` plus `COUNT(*)` (`pagination.py`). Exceptions: fixed enums (A1 `/policy-types`) and spec-fixed shapes (A1-PMS `/services`; CAPIF `GetApfIdServiceApis` / `DiscoverServices` in SME). The GUI's `useSmo()` and the SDK's `ensure_ok()` unwrap `items`. |
 | Subscriptions | Subscription resources name their callback `notificationDestination`, unless a real external spec fixes another name (FOCOM `callback` per O2ims, SME `callbackUri` per CAPIF). One-off job callbacks (`InferenceJob.notificationDestination`, `TrainingJob.notificationUri`) are not subscriptions. |
 | Callbacks | Any caller-supplied callback URL is called through `smo_shared.webhook`. |

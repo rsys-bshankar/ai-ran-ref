@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from smo_shared.db import Base, get_session
+from smo_shared.testing import concurrent_commit_on
 
 from app.main import app
 from app.models import RAppFaultReport, RAppInstance, RAppInstanceVersion, RAppPerformanceReport
@@ -903,6 +904,36 @@ def test_resolving_an_overdue_upgrade_as_succeeded_is_409_timed_out(client, db_s
     assert client.get(f"/instances/{created['instanceId']}").json()["state"] == "RUNNING"  # the rollback was committed
 
 
+def test_losing_the_lazy_upgrade_sweep_to_another_replica_is_not_an_error_on_a_read(client, db_session_factory, monkeypatch):
+    """PR-ST-2: a read that sweeps an overdue upgrade races other replicas doing the same.
+    Losing the race means the sweep is done; the read still answers, and is not a 409."""
+    created = _running_instance(client, monkeypatch)
+    client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())})
+    _expire_upgrade(db_session_factory, created["instanceId"])
+
+    with concurrent_commit_on("rapp_instance") as fired:
+        listed = client.get("/instances")
+    assert fired and listed.status_code == 200
+
+    with concurrent_commit_on("rapp_instance") as fired:
+        single = client.get(f"/instances/{created['instanceId']}")
+    assert fired and single.status_code == 200
+
+    # with no competing writer the sweep still happens
+    assert client.get(f"/instances/{created['instanceId']}").json()["state"] == "RUNNING"
+
+
+def test_losing_the_lazy_sweep_while_resolving_an_overdue_upgrade_is_still_409_timed_out(client, db_session_factory, monkeypatch):
+    created = _running_instance(client, monkeypatch)
+    client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())})
+    _expire_upgrade(db_session_factory, created["instanceId"])
+
+    with concurrent_commit_on("rapp_instance") as fired:
+        resp = client.post(f"/instances/{created['instanceId']}/upgrade/resolve", params={"succeeded": True})
+    assert fired and resp.status_code == 409
+    assert resp.json()["detail"]["title"] == "RAPP_UPGRADE_TIMED_OUT"
+
+
 # ---------------------------------------------------------------- OI-1-sa-rollback: version history and RollbackInstance
 
 def _commit_upgrade(client, instance_id, new_package):
@@ -1047,3 +1078,20 @@ def test_rollback_to_a_package_no_longer_deployable_is_refused(client, monkeypat
 
     assert resp.status_code == 409 and resp.json()["detail"]["title"] == "MODEL_NOT_CERTIFIED"
     assert client.get(f"/instances/{v2_id}").json()["state"] == "RUNNING"
+
+
+def test_a_concurrent_writer_turns_a_transition_into_a_409_and_the_repeat_succeeds(client, db_session_factory):
+    """PR-ST-2: RAppInstance is versioned. Another replica committing between this request's
+    load and its write makes the write 409 CONCURRENT_MODIFICATION, never a silent overwrite."""
+    inst_id = uuid.uuid4()
+    with db_session_factory() as session:
+        session.add(RAppInstance(instance_id=inst_id, package_id=uuid.uuid4(), state=InstanceState.FAULTED, oauth_client_id=None))
+        session.commit()
+
+    with concurrent_commit_on("rapp_instance") as fired:
+        stale = client.post(f"/instances/{inst_id}/recover")
+    assert fired and stale.status_code == 409
+    assert stale.json()["detail"]["title"] == "CONCURRENT_MODIFICATION"
+
+    repeat = client.post(f"/instances/{inst_id}/recover")
+    assert repeat.status_code == 200 and repeat.json()["state"] == "DEPLOYING"

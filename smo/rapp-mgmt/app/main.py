@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error, illegal_transition_error
@@ -20,6 +21,7 @@ from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
+from smo_shared.versioning import install_concurrency_handler
 
 from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
 from .provisioning import (DEPLOYABLE_PACKAGE_STATES, provision_instance, register_sme_declarations,  # noqa: F401
@@ -29,6 +31,7 @@ from .upgrade import (current_instance_id, expire_overdue_upgrade, resolve_upgra
                       start_upgrade, version_history)
 
 app = FastAPI(title="rApp Management SMOS")
+install_concurrency_handler(app)  # a stale write (PR-ST-2) is a 409, not a 500
 apply_r1_gateway_security(app)
 apply_correlation_id(app)
 
@@ -74,6 +77,20 @@ def _upgrade_owner(db: Session, inst: RAppInstance) -> RAppInstance | None:
     return db.scalar(select(RAppInstance).where(RAppInstance.pending_upgrade_instance_id == inst.instance_id))
 
 
+def _sweep_overdue_upgrade(db: Session, old: RAppInstance) -> bool | None:
+    """The lazy upgradeTimeoutSeconds sweep (upgrade.py) for one upgrade, committed on its own.
+    True: this request rolled it back. False: nothing was overdue. None: another replica
+    ran the same sweep first (the write was stale, PR-ST-2), so it is done either way."""
+    try:
+        if not expire_overdue_upgrade(db, old):
+            return False
+        db.commit()
+        return True
+    except StaleDataError:
+        db.rollback()
+        return None
+
+
 def _load_instance(db: Session, instance_id: uuid.UUID) -> RAppInstance:
     """404 for an unknown id; otherwise first enforces upgradeTimeoutSeconds
     on the upgrade this instance takes part in (upgrade.py's lazy timeout),
@@ -81,12 +98,13 @@ def _load_instance(db: Session, instance_id: uuid.UUID) -> RAppInstance:
     request can't undo it. A replacement rolled back here is gone: 404."""
     inst = _get_or_404(db, instance_id)
     owner = _upgrade_owner(db, inst)
-    if owner is not None and expire_overdue_upgrade(db, owner):
-        db.commit()
-        if owner.instance_id != instance_id:
-            raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND,
-                                  detail=f"RAppInstance {instance_id} was an upgrade replacement, rolled back after "
-                                         f"upgradeTimeoutSeconds={owner.upgrade_timeout_seconds}")
+    swept = _sweep_overdue_upgrade(db, owner) if owner is not None else False
+    if swept is None:  # another replica swept it first: reload, which is a 404 if the replacement is gone
+        return _get_or_404(db, instance_id)
+    if swept and owner.instance_id != instance_id:
+        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND,
+                              detail=f"RAppInstance {instance_id} was an upgrade replacement, rolled back after "
+                                     f"upgradeTimeoutSeconds={owner.upgrade_timeout_seconds}")
     return inst
 
 
@@ -189,8 +207,7 @@ def resolve_upgrade_outcome(instance_id: uuid.UUID, succeeded: bool, db: Session
     old = _get_or_404(db, instance_id)
     if old.pending_upgrade_instance_id is None:
         raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail=f"RAppInstance {instance_id} has no pending upgrade")
-    if expire_overdue_upgrade(db, old):
-        db.commit()
+    if _sweep_overdue_upgrade(db, old) is not False:
         if succeeded:
             raise framework_error(FrameworkError.RAPP_UPGRADE_TIMED_OUT,
                                   detail=f"upgrade of RAppInstance {instance_id} exceeded upgradeTimeoutSeconds="
@@ -379,10 +396,8 @@ def report_fault(instance_id: uuid.UUID, severity: str, description: str = "", d
 def list_instances(state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                     db: Session = Depends(get_session)):
     # lazy upgradeTimeoutSeconds enforcement (upgrade.py) for every upgrade in flight
-    overdue = [old for old in db.scalars(select(RAppInstance).where(RAppInstance.state == InstanceState.UPGRADING))
-               if expire_overdue_upgrade(db, old)]
-    if overdue:
-        db.commit()
+    for old in list(db.scalars(select(RAppInstance).where(RAppInstance.state == InstanceState.UPGRADING))):
+        _sweep_overdue_upgrade(db, old)
     stmt = select(RAppInstance)
     if state:
         stmt = stmt.where(RAppInstance.state == state)

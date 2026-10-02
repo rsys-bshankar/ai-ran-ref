@@ -816,3 +816,38 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Not taken.** ALL_CAPS names are trusted as constants and the instance-state rule only sees classes
   defined in the same file; a stricter rule (every module-level mutable regardless of case, or every
   imported class) was rejected as noisier than useful. `R1Gateway` is in the audit table by hand.
+
+### PR-ST-2 — Optimistic concurrency on lifecycle rows
+
+- **Mechanism (ST-2.1, ST-2.2).** `smo_shared/versioning.py`: the `Versioned` mixin adds
+  `row_version INTEGER NOT NULL DEFAULT 1` and sets SQLAlchemy's `version_id_col`, so every ORM UPDATE or
+  DELETE of the row is `... WHERE row_version = <loaded>`. A write that matches no row raises
+  `StaleDataError`, which `install_concurrency_handler(app)` turns into `409 CONCURRENT_MODIFICATION`
+  (ProblemDetails, same envelope as `problem()`; new `FrameworkError.CONCURRENT_MODIFICATION`).
+- **Rollout (ST-2.1, 2.4 to 2.7).** `rapp_instance`, `application_package`, `nf_deployment`,
+  `model_lifecycle` (model and runtime state in one row), `write_config_job` and `software_management_job`;
+  columns added to `migrations/001_init.sql`; the handler installed in the five owning modules. Each module
+  has a route test in which `smo_shared.testing.concurrent_commit_on(table)` lands another writer's commit
+  between load and write: the route answers 409, and the repeat succeeds.
+- **Proof (ST-2.3).** `shared/tests/test_versioning.py` runs on file SQLite and, with
+  `SMO_TEST_POSTGRES_URL` (CI job `migration-postgres`), on real Postgres: two sessions firing one
+  transition have one winner; eight threads racing one transition have one winner; the repeat after a
+  conflict is refused as an illegal transition. Removing the mixin makes five of these fail.
+- **Lazy sweeps (found on the way).** `rapp-mgmt`'s upgrade-timeout sweep writes from reads and from
+  `upgrade/resolve`. `_sweep_overdue_upgrade` treats a lost race as "another replica already did it":
+  reads carry on, `resolve` still answers `RAPP_UPGRADE_TIMED_OUT`. The stale write can surface inside the
+  sweep's own flush, not only at the commit, so the helper wraps both.
+- **SDK (ST-2.8).** `smo_sdk._common._RetryOnConflict` sends a mutating call once more on `409
+  CONCURRENT_MODIFICATION` only: other 409s (illegal transition, name conflict) are final; reads and
+  calls with `files` are not retried.
+- **Not taken.** A check inside `StateMachine.fire()`: the FSM is a pure transition table whose callers
+  assign the returned state, so the check belongs at the write, where it also covers non-FSM columns.
+  `SELECT ... FOR UPDATE`: it would hold a connection and a row lock across the R1 calls many routes make
+  before committing. Versioning the remaining job tables (`training_job`, `validation_job`, `emulation_job`,
+  `inference_job`, the NRM processes): their transitions are driven by one external completion call each;
+  add the mixin if a second writer appears. NFO `scale` needs no check: it returns the row to `RUNNING`
+  within the request, so it writes no net change.
+- **Known limit.** Side effects a route performs before its commit (a call to NFO, SME or DME) can run
+  twice when the first attempt loses the race and is repeated, and the lazy sweep's teardown calls can run
+  on two replicas. The remedy is the idempotency key of `PR-ST-3`.
+

@@ -5,9 +5,10 @@ from sqlalchemy import ARRAY, Boolean, CheckConstraint, DateTime, Float, Foreign
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
+from smo_shared.versioning import Versioned
 
 
-class ModelLifecycle(Base):
+class ModelLifecycle(Versioned, Base):
     """Wave 2's own lifecycle-state truth (docs/ARCHITECTURE.md (AIMgF),
     docs/ARCHITECTURE.md: "Lifecycle state: AIMgF
     ✅, MLMR ❌"). Replaces Wave 1's `PATCH /mlmr/models/{id}/lifecycle`

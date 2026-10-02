@@ -48,6 +48,46 @@ def ensure_ok(resp) -> dict | list | None:
     return body
 
 
+def _is_concurrent_modification(resp) -> bool:
+    """409 whose ProblemDetails title is CONCURRENT_MODIFICATION (smo_shared/versioning.py), as
+    opposed to the other 409s (an illegal transition, a name conflict), which are final answers."""
+    if resp.status_code != 409:
+        return False
+    try:
+        detail = resp.json().get("detail")
+    except (ValueError, AttributeError):
+        return False
+    return isinstance(detail, dict) and detail.get("title") == "CONCURRENT_MODIFICATION"
+
+
+class _RetryOnConflict:
+    """Wraps an R1 client so a mutating call that lost a write race (409 CONCURRENT_MODIFICATION,
+    PR-ST-2) is sent once more. The platform rolled the first attempt back and reloads the row for
+    the second, so the repeat either succeeds or is refused for what it now is (for example an
+    illegal transition because the other writer already made the same move); a second conflict is
+    returned as is. Reads are never retried, nor are calls that carry `files` (a consumed stream
+    cannot be resent). Side effects a route performs before its commit, such as a call to another
+    module, can run twice; the real remedy for that is an idempotency key (PR-ST-3)."""
+
+    _MUTATING = ("post", "put", "patch", "delete")
+
+    def __init__(self, r1):
+        self._r1 = r1
+
+    def __getattr__(self, name):
+        attr = getattr(self._r1, name)
+        if name not in self._MUTATING:
+            return attr
+
+        def call(path, *args, **kwargs):
+            resp = attr(path, *args, **kwargs)
+            if kwargs.get("files") is None and _is_concurrent_modification(resp):
+                resp = attr(path, *args, **kwargs)
+            return resp
+
+        return call
+
+
 class BaseClient:
     def __init__(self, r1: R1Client | None = None):
-        self._r1 = r1 or R1Client()
+        self._r1 = _RetryOnConflict(r1 or R1Client())

@@ -38,7 +38,10 @@ Postgres-shaped models against an in-memory SQLite test DB:
 import json
 import uuid
 
+from contextlib import contextmanager
+
 from sqlalchemy import create_engine, event
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 
@@ -75,3 +78,30 @@ def make_test_engine():
         conn.exec_driver_sql("BEGIN")
 
     return engine
+
+
+@contextmanager
+def concurrent_commit_on(table: str):
+    """Test helper for smo_shared.versioning (PR-ST-2): inside the block, the
+    next ORM flush that is about to UPDATE a row of `table` first has another
+    writer's commit land on it (`row_version` + 1), exactly what a second
+    replica committing between this request's load and its write looks like.
+    The request's UPDATE then matches no row and the route answers 409
+    CONCURRENT_MODIFICATION. Yields a list that holds one item once it fired.
+    """
+    fired: list[bool] = []
+
+    def before_flush(session, flush_context, instances):
+        if fired:
+            return
+        for obj in session.dirty:
+            if getattr(obj, "__tablename__", None) == table and session.is_modified(obj):
+                session.connection().exec_driver_sql(f"UPDATE {table} SET row_version = row_version + 1")
+                fired.append(True)
+                return
+
+    event.listen(Session, "before_flush", before_flush)
+    try:
+        yield fired
+    finally:
+        event.remove(Session, "before_flush", before_flush)

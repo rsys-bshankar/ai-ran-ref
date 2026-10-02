@@ -5,6 +5,7 @@ from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, Integer, JSON, Stri
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
+from smo_shared.versioning import Versioned
 
 
 class O1AdaptorEndpoint(Base):
@@ -167,7 +168,7 @@ class VendorCapability(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
 
-class WriteConfigJob(Base):
+class WriteConfigJob(Versioned, Base):
     __tablename__ = "write_config_job"
 
     job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -235,7 +236,7 @@ class FMSubscription(Base):
     southbound_engine: Mapped[str] = mapped_column(String, nullable=False)
 
 
-class SoftwareManagementJob(Base):
+class SoftwareManagementJob(Versioned, Base):
     __tablename__ = "software_management_job"
 
     job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
