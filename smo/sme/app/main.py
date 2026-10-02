@@ -33,7 +33,7 @@ from smo_shared.timeutil import as_utc
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
-from smo_shared.webhook import post_webhook
+from smo_shared.outbox import enqueue
 
 from .models import (API_INVOKER_EVENTS, EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration,
                      ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile, TrustedInvoker, UsedClientAssertion)
@@ -202,8 +202,8 @@ def register_invoker(body: InvokerRegistrationRequest, db: Session = Depends(get
     inv = InvokerRegistration(api_invoker_id=api_invoker_id, public_key=body.apiInvokerPublicKey,
                                onboarding_secret_hash=_hash_secret(onboarding_secret))
     db.add(inv)
+    notify_invoker_change(db, api_invoker_id, "API_INVOKER_ONBOARDED")  # enqueued in this transaction (PR-MSG-1.6)
     db.commit()
-    notify_invoker_change(db, api_invoker_id, "API_INVOKER_ONBOARDED")
     return {"apiInvokerId": inv.api_invoker_id, "onboardingSecret": onboarding_secret,
             "keyAuthentication": _pem_public_key(inv.public_key) is not None}
 
@@ -218,8 +218,8 @@ def update_invoker(api_invoker_id: str, body: InvokerRegistrationRequest, db: Se
         raise framework_error(FrameworkError.INVOKER_NOT_REGISTERED, detail=f"invoker {api_invoker_id} not registered")
     _check_public_key(body.apiInvokerPublicKey)
     inv.public_key = body.apiInvokerPublicKey
-    db.commit()
     notify_invoker_change(db, api_invoker_id, "API_INVOKER_UPDATED")
+    db.commit()
     return {"apiInvokerId": inv.api_invoker_id, "keyAuthentication": _pem_public_key(inv.public_key) is not None}
 
 
@@ -243,8 +243,8 @@ def _offboard(db: Session, inv: InvokerRegistration) -> None:
     if trusted is not None:
         db.delete(trusted)
     db.delete(inv)
-    db.commit()
     notify_invoker_change(db, api_invoker_id, "API_INVOKER_OFFBOARDED")
+    db.commit()
 
 
 @app.post("/invoker-registrations/purge-stale")
@@ -626,8 +626,10 @@ def register_service(apf_id: str, body: ServiceRegistration, db: Session = Depen
         db.add(ServiceAuthzPolicy(service_id=profile.service_id, allowed_consumers=body.allowedConsumers))
     else:
         profile.authz_policy.allowed_consumers = body.allowedConsumers
-    db.commit()
+    db.flush()
+    db.expire(profile, ["authz_policy"])  # the visibility check below reads the policy this request just wrote
     notify_service_change(db, profile, "SERVICE_API_UPDATE" if existing is not None else "SERVICE_API_AVAILABLE")
+    db.commit()
     return {"serviceId": str(profile.service_id)}
 
 
@@ -748,9 +750,9 @@ def _filters_match(sub: ServiceEventSubscription, detail: dict) -> bool:
 def _deliver(db: Session, event_type: str, detail: dict, payload: dict, visible=lambda sub: True) -> None:
     for sub in db.scalars(select(ServiceEventSubscription)).all():
         if event_type in sub.event_types and _filters_match(sub, detail) and visible(sub):
-            post_webhook(sub.callback_uri, json={**payload, "subscriptionId": str(sub.subscription_id),
-                                                  "eventType": event_type, "eventDetail": detail}, timeout=5.0)
-            # Phase 1: best-effort; no retry/backoff queue yet
+            enqueue(db, sub.callback_uri, {**payload, "subscriptionId": str(sub.subscription_id),
+                                           "eventType": event_type, "eventDetail": detail})
+            # A row in the caller's transaction, sent after it commits (PR-MSG-1.6); the caller commits.
 
 
 def notify_service_change(db: Session, service: ServiceProfile, event_type: str) -> None:

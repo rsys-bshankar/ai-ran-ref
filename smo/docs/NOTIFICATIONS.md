@@ -26,7 +26,7 @@ After the move, a notification is sent after the transaction that caused it comm
 | `dme/app/main.py` | `_push_job_to_producers` | `enqueue` | A | Each supporting producer's job callback: a data job exists | moved (MSG-1.5) |
 | `dme/app/main.py` | `_stop_job_at_producers` | `delete_webhook` | B | Each supporting producer: stop this job | open (needs a method column) |
 | `dme/app/main.py` | `_producer_is_healthy` | `get_webhook` | C | A producer's health URL: answers the type's ENABLED/DISABLED status | stays inline |
-| `sme/app/main.py` | `_deliver` | `post_webhook` | A | Event subscribers: a service API became available, changed or went away | MSG-1.6 |
+| `sme/app/main.py` | `_deliver` | `enqueue` | A | Event subscribers: a service API became available, changed or went away | moved (MSG-1.6) |
 | `aimgf/app/main.py` | `_notify_job_completion` | `post_webhook` | A | The job's notification URI: a training or inference job finished | MSG-1.7 |
 | `aimgf/app/main.py` | `report_performance` | `post_webhook` | A | A model subscriber: a performance report, possibly below its floor | MSG-1.7 |
 | `a1-related/app/main.py` | `_notify_policy_status_subscribers` | `post_webhook` | A | Policy-status subscribers: an enforcement status changed | MSG-1.8 |

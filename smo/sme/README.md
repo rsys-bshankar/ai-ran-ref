@@ -86,7 +86,7 @@ SME calls nothing but subscriber callbacks. It reads no other module's data, and
 | `GET /trusted-invokers/{id}` redacts `authenticationInfo` and `authorizationInfo` to `""` unless asked per query flag. Invoker listings never expose a secret or its hash. | As CAPIF core. |
 | `selSecurityMethod` of a trusted-invoker entry is the caller's first `prefSecurityMethods`; it is not matched against AEF-side capabilities. | No AEF-side security-method catalogue exists here to match against. |
 | Revocation (`POST .../delete`) removes only entries matching the notified `aefId` or `apiIds`, and drops the record once none remain. | Implements CAPIF's stated filter semantics directly. |
-| Event delivery is best effort via `smo_shared.webhook`; no retry queue. | An unreachable subscriber must never fail a publish. |
+| Event delivery goes through the transactional outbox (`smo_shared.outbox`, `PR-MSG-1.6`): a row in the same transaction as the change, sent right after it commits, at least once; a failed first attempt waits for the outbox sweep (MSG-2). | An unreachable subscriber must never fail a publish, and a crash between the commit and the send must not lose the event. |
 | Idempotent deletes: deregistering an unknown or someone else's service, provider, trusted invoker, or subscription is a silent 204 (an unmatched owner is a no-op, nothing is notified). | Same shape as CAPIF core. |
 
 Failure behaviour: SME has no outbound dependency whose failure changes a response. If SME is down, R1 Termination fails closed and every call returns 401.
@@ -99,7 +99,7 @@ Failure behaviour: SME has no outbound dependency whose failure changes a respon
 |---|---|
 | `app/main.py` | All routes; secret and token hashing; discovery filter and gate; event notification; trusted-invoker validation. |
 | `app/models.py` | The tables and the event types (`SERVICE_API_EVENTS`, `API_INVOKER_EVENTS`). |
-| `../shared/smo_shared/` | `webhook`, `pagination`, `errors`, `timeutil`, `openapi_security` (exempts `/oauth2/token` and `/oauth2/introspect` from the declared bearer scheme), `r1_client` (the client side of onboarding and token fetch). |
+| `../shared/smo_shared/` | `outbox`, `pagination`, `errors`, `timeutil`, `openapi_security` (exempts `/oauth2/token` and `/oauth2/introspect` from the declared bearer scheme), `r1_client` (the client side of onboarding and token fetch). |
 
 ### 2.2 Data model
 
@@ -191,8 +191,8 @@ None: stateless as to lifecycle. The only time-dependent state is token validity
 | Direction | Call | When | Failure behaviour |
 |---|---|---|---|
 | in | `POST /oauth2/introspect` from R1 Termination | every proxied request | n/a |
-| out, webhook | `POST {callbackUri}` `{serviceId, subscriptionId, eventType, eventDetail: {apiIds, aefIds}}` (5 s) | register (`SERVICE_API_AVAILABLE`), re-register (`SERVICE_API_UPDATE`), deregister (`SERVICE_API_UNAVAILABLE`, sent before the row is deleted) | Best effort; no retry or backoff queue. A subscriber is skipped if its `eventTypes` lacks the event, a filter it sets does not match, or the service's policy lists consumers and the subscriber is not one of them. |
-| out, webhook | `POST {callbackUri}` `{apiInvokerId, subscriptionId, eventType, eventDetail: {apiInvokerIds}}` (5 s) | invoker onboarded, key updated, offboarded | Same; no visibility gate. |
+| out, webhook | `POST {callbackUri}` `{serviceId, subscriptionId, eventType, eventDetail: {apiIds, aefIds}}` (2 s) | register (`SERVICE_API_AVAILABLE`), re-register (`SERVICE_API_UPDATE`), deregister (`SERVICE_API_UNAVAILABLE`, sent before the row is deleted) | At least once, through the outbox: committed with the change, sent after it, a crash leaves a pending row that the outbox sweep sends. A subscriber is skipped if its `eventTypes` lacks the event, a filter it sets does not match, or the service's policy lists consumers and the subscriber is not one of them. |
+| out, webhook | `POST {callbackUri}` `{apiInvokerId, subscriptionId, eventType, eventDetail: {apiInvokerIds}}` (2 s) | invoker onboarded, key updated, offboarded | Same; no visibility gate. |
 
 Matching rule for the last case: the subscriber id is compared with `allowedConsumers` exactly as the discovery gate compares `api_invoker_id`.
 
