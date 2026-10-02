@@ -150,7 +150,8 @@ Captured by a Playwright walk-through of the full stack (every module, R1
 Termination, the BFF and the GUI, on Postgres), starting from an empty
 database. The state on screen is live: it was produced through the module
 APIs, the four reference-rApp demo scripts (`samples/*/demo.py`) and the GUI
-itself, signed in as `admin` at 1440 px wide, except the role views.
+itself, signed in as `admin` at 1440 px wide, except the role views. The
+walk-through finished with no 5xx responses from the GUI's own API.
 
 Lifecycle (LCM) screens are in the order the lifecycle runs, so a module's
 rows read as a story: the state before an action, then the state after it.
@@ -161,6 +162,7 @@ rows read as a story: the state before an action, then the state after it.
 |---|---|
 | [Sign in](docs/screenshots/generic/login.png) | The only page reachable signed out |
 | [Failed sign-in](docs/screenshots/generic/login-failed.png) | Wrong password: a generic error that does not say which half was wrong; 5 failures lock the account for 5 minutes |
+| [Account locked](docs/screenshots/generic/login-locked.png) | After 5 failed attempts the account is locked for 5 minutes; the message does not say whether the user exists |
 | [Dashboard](docs/screenshots/pages/dashboard.png) | Module health for every service, open alarms by severity, SA SMOS escalations, model KPIs, rApp performance and fleet counts |
 | [Lifecycle flows (list)](docs/screenshots/pages/flows.png) | The ten call-flow journeys; pick one, then the entity to follow |
 | [Change password](docs/screenshots/generic/change-password-dialog.png) | Any signed-in user, from the sidebar footer |
@@ -195,6 +197,8 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Packages (tab)](docs/screenshots/pages/rapps-packages.png) | Onboarded packages with state, signature and NF descriptor; one FAILED, one PRIMED, the rest AVAILABLE |
 | [Instances (tab)](docs/screenshots/pages/rapps-instances.png) | rApp instances with state and autonomy mode (SHADOW, ASSIST, AUTONOMOUS) |
 | [Package: failed validation](docs/screenshots/lcm/rapps-package-failed.png) | A package that never became AVAILABLE; nothing to deploy, only Delete |
+| [Onboard a package](docs/screenshots/lcm/rapps-onboard-form.png) | The CSAR location form, filled but not submitted |
+| [Package: onboarded](docs/screenshots/lcm/rapps-package-onboarded.png) | A second version of a package, AVAILABLE after Onboarding validated it |
 | [Package: AVAILABLE](docs/screenshots/lcm/rapps-package-drawer.png) | TOSCA / ASD descriptor, SME declarations, artifacts, usage registrations, Prime |
 | [Package: PRIMED, deprime blocked](docs/screenshots/lcm/rapps-package-primed-deprime-blocked.png) | Deprime is disabled while two usage registrations are active, with the reason |
 | [Deploy dialog](docs/screenshots/lcm/rapps-deploy-dialog.png) | Instance configuration and autonomy mode, fixed for the instance's lifetime |
@@ -203,9 +207,16 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Instance: recovering](docs/screenshots/lcm/rapps-instance-recovering.png) | Recover re-enters DEPLOYING until the rApp bootstraps again |
 | [Instance: RUNNING again](docs/screenshots/lcm/rapps-instance-recovered.png) | Marked bootstrapped; the fault history remains |
 | [Upgrade dialog](docs/screenshots/lcm/rapps-upgrade-dialog.png) | Pick an AVAILABLE package; the upgrade runs as two rows and is resolved success / failure |
+| [Upgrade: UPGRADING](docs/screenshots/lcm/rapps-upgrade-in-progress.png) | The instance waits for the replacement; resolve with Upgrade succeeded or Upgrade failed |
+| [Upgrade: replacement DEPLOYING](docs/screenshots/lcm/rapps-upgrade-replacement-deploying.png) | The replacement instance on the new package, awaiting its bootstrap |
+| [Upgrade: committed](docs/screenshots/lcm/rapps-upgrade-committed.png) | The replacement is RUNNING, the version history shows the UPGRADE and Roll back is offered |
+| [Rollback: UPGRADING](docs/screenshots/lcm/rapps-rollback-in-progress.png) | Roll back starts a replacement on the previous package and configuration |
+| [Rollback: committed](docs/screenshots/lcm/rapps-rollback-committed.png) | Version history now shows ROLLBACK, and the upgrade it undid is marked rolled back |
 | [Instance: UNDEPLOYED](docs/screenshots/lcm/rapps-instance-terminated.png) | After Terminate: NFO teardown and usage stop recorded under *Last teardown* |
 | [Package: PRIMED, usage released](docs/screenshots/lcm/rapps-package-primed-usage-released.png) | Both usage registrations stopped, so Deprime is enabled |
 | [Package: AVAILABLE again](docs/screenshots/lcm/rapps-package-deprimed.png) | Deprime succeeded (PRIMED → DEPRIMING → AVAILABLE) |
+| [Package: DEPRECATED](docs/screenshots/lcm/rapps-package-deprecated.png) | After Deprecate: no new instances; Restore and Delete remain |
+| [Package: DELETING](docs/screenshots/lcm/rapps-package-delete-requested.png) | Delete requested; the cascade-delete guard found no active usage |
 
 #### AI/ML (MLMR, AIMgF, MLLF)
 
@@ -220,6 +231,16 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Register model](docs/screenshots/lcm/aiml-register-model-dialog.png) | Filled but not submitted |
 | [Model: TRAINING](docs/screenshots/lcm/aiml-model-training.png) | Pipeline stepper, training job in progress |
 | [Model: TRAINED, approval gate](docs/screenshots/lcm/aiml-model-trained-approval-gate.png) | After the training job finishes; an operator must approve before validation |
+| [Model: retrain requested](docs/screenshots/lcm/aiml-model-retrain-requested.png) | Retry training after a failed run starts a new training job |
+| [Model: VALIDATING](docs/screenshots/lcm/aiml-model-validating.png) | After the training approval and Request validation |
+| [Model: VALIDATED, approval gate](docs/screenshots/lcm/aiml-model-validated-approval-gate.png) | A second operator gate before emulation |
+| [Model: EMULATED](docs/screenshots/lcm/aiml-model-emulated-submit.png) | Submit for approval opens the governance steps |
+| [Model: PENDING_APPROVAL](docs/screenshots/lcm/aiml-model-pending-approval.png) | Approve or Reject |
+| [Model: CERTIFIED](docs/screenshots/lcm/aiml-model-certified.png) | Promote, Retrain or Deprecate |
+| [Model: PROMOTED](docs/screenshots/lcm/aiml-model-promoted-deploy-node-groups.png) | The Deploy to node groups field, filled |
+| [Deploy targets cleared](docs/screenshots/lcm/aiml-model-node-groups-cleared.png) | `clearedNodeGroups` stamped by MLLF |
+| [Runtime: DEPLOYED](docs/screenshots/lcm/aiml-model-runtime-deployed.png) | AIMgF and NFO deployed the runtime; Activate or Terminate |
+| [Runtime: ACTIVE](docs/screenshots/lcm/aiml-model-runtime-active-inference-requested.png) | An inference job RUNNING, with Completed / Failed to resolve it |
 | [Model: PROMOTED, runtime ACTIVE](docs/screenshots/lcm/aiml-model-promoted-runtime-active.png) | Cleared node groups, artifact, runtime actions, training and inference jobs |
 | [Write back model metrics](docs/screenshots/lcm/aiml-training-metrics-dialog.png) | What the trainer reports for a job; replaces the stored metrics |
 | [Inference jobs](docs/screenshots/lcm/aiml-inference-job-running.png) | COMPLETED and FAILED outcomes across models |
@@ -255,6 +276,8 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Remedial action: RESOLVED](docs/screenshots/lcm/kpis-remedial-action-resolved.png) | `RECONNECT` executed against the order's NF deployment |
 | [Escalated to operator](docs/screenshots/lcm/kpis-escalated-to-operator.png) | Escalate with a reason; outcome ESCALATED |
 | [Group-scoped remediation](docs/screenshots/lcm/kpis-group-retrain-remediation.png) | Any action on a model-group monitor retrains the group |
+| [Register assurance monitor](docs/screenshots/lcm/kpis-register-monitor-form.png) | Scope picked from the SO SMOS orders, metric floors entered |
+| [Monitor registered](docs/screenshots/lcm/kpis-monitor-registered.png) | The new monitor listed with no actions yet |
 
 #### Policy & Intents (A1 Related, Intent Service)
 
@@ -270,9 +293,12 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Policy: ENFORCED](docs/screenshots/lcm/policy-a1-created-enforced.png) | The new policy listed after the Near-RT RIC accepted it |
 | [Policy detail](docs/screenshots/lcm/policy-a1-drawer.png) | Policy object and enforcement status |
 | [Service keep-alive](docs/screenshots/lcm/policy-service-keepalive.png) | A supervised service after Keep alive, with its countdown |
+| [Service unregistered](docs/screenshots/lcm/policy-service-unregistered.png) | Unregister removes the service and deletes its policies |
 | [Create intent](docs/screenshots/lcm/policy-intent-create-form.png) | Handler, expectation object type, targets, priority and purpose |
 | [Intent: ACTIVATED](docs/screenshots/lcm/policy-intent-drawer.png) | Expectations and the handler's reports |
 | [Intent: DEACTIVATED](docs/screenshots/lcm/policy-intent-deactivated.png) | Admin state changed by the intent's own RMIO (`smo-gui`) |
+| [Publish an intent report](docs/screenshots/lcm/policy-intent-report-form.png) | The admin tool for acting as the handling RMIH |
+| [Intent report published](docs/screenshots/lcm/policy-intent-report-published.png) | The new fulfilment report appears first in the intent's reports |
 | [Autonomy: AWAITING_SCOPE](docs/screenshots/lcm/policy-autonomy-awaiting-scope.png) | An ASSIST instance waits for an operator to scope it, or reject it |
 | [Autonomy: resolved](docs/screenshots/lcm/policy-autonomy-resolved.png) | Scope supplied; an intent was created and the dispatch is DISPATCHED |
 
@@ -307,7 +333,11 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [NF deployment: ABNORMAL](docs/screenshots/lcm/nfo-runtime-failure-abnormal.png) | A deployment-manager `RUNTIME_FAILURE` with its reason |
 | [NF deployment: healed](docs/screenshots/lcm/nfo-healed-running.png) | Heal returns it to RUNNING |
 | [O-Cloud resource provisioned](docs/screenshots/lcm/ocloud-resource-provisioned.png) | A new resource in the pool, with Deprovision |
+| [Inventory-change subscription](docs/screenshots/lcm/ocloud-inventory-subscription-form.png) | Callback and resource type filter, filled |
+| [Subscription created](docs/screenshots/lcm/ocloud-inventory-subscription-created.png) | Notified on provision / deprovision of matching resources |
 | [Register O1 endpoint](docs/screenshots/lcm/o1-register-endpoint-dialog.png) | Managed element, adaptor URI, protocols, vendor |
+| [O1 health discovery](docs/screenshots/lcm/o1-health-discovery.png) | Run health discovery re-ages every endpoint's health |
+| [CM write to a RESTCONF ME](docs/screenshots/lcm/o1-cm-write-restconf-applied.png) | A RESTCONF managed element accepts the write; one sub-change APPLIED |
 | [New CM write](docs/screenshots/lcm/o1-cm-write-dialog.png) | Several managed elements, scope, operation, schema-checked changes |
 | [CM write submitted](docs/screenshots/lcm/o1-cm-write-submitted.png) | The new job in the list |
 | [CM job: PARTIAL_SUCCESS](docs/screenshots/lcm/o1-cm-job-partial-success.png) | Per-managed-element sub-changes: APPLIED and REJECTED |
@@ -324,10 +354,14 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [SME: services & invokers (tab)](docs/screenshots/pages/data-sme.png) | Providers, published APIs, invokers, discovery and CAPIF event subscriptions (one unscoped, one limited by `apiIds`) |
 | [DME offer: notify data ready](docs/screenshots/lcm/dme-offer-notify-data-ready.png) | The producer's availability signal for a committed offer |
 | [Register a producer data type](docs/screenshots/lcm/dme-register-type-form.png) | The admin tool for acting as a producer |
+| [Create a data job](docs/screenshots/lcm/dme-data-job-form.png) | Type, mode, delivery (limited to what an offer committed) and consumer |
+| [Data job](docs/screenshots/lcm/dme-data-job-dialog.png) | The created job's record |
 | [Register EI type](docs/screenshots/lcm/a1-ei-register-form.png) | Filled but not submitted |
 | [EI type registered](docs/screenshots/lcm/a1-ei-registered.png) | The new type listed with its DME type |
 | [SME invoker secret](docs/screenshots/lcm/sme-invoker-secret-dialog.png) | Shown once and never again; SME keeps only a hash |
 | [Trusted-invoker security context](docs/screenshots/lcm/sme-trusted-invoker-dialog.png) | AEF, API and preferred security method |
+| [CAPIF event subscription form](docs/screenshots/lcm/sme-event-subscription-form.png) | Subscriber, events and callback |
+| [CAPIF event subscription created](docs/screenshots/lcm/sme-event-subscription-created.png) | Listed under its subscriber |
 
 ### Role views
 
