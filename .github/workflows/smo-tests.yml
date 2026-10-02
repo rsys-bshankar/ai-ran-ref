@@ -200,6 +200,25 @@ jobs:
           curl -fsS --retry 10 --retry-delay 3 --retry-connrefused http://localhost:3000/ | grep -qi '<div id="root"'
           curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:3000/api/modules/status
 
+      - name: TLS edge (profile tls, PR-SEC-1)
+        working-directory: smo
+        run: |
+          scripts/make_dev_certs.sh
+          docker compose --profile tls up -d edge-tls
+          for i in $(seq 1 30); do
+            curl -fsS --cacert certs/ca.crt https://localhost:8443/health > /dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS --cacert certs/ca.crt https://localhost:8443/bootstrap | grep -q apiEndpoints
+          curl -fsS --cacert certs/ca.crt https://localhost:3443/ | grep -qi '<div id="root"'
+          curl -fsS --cacert certs/ca.crt -D - -o /dev/null https://localhost:3443/ | grep -qi '^strict-transport-security: max-age=86400'
+          curl -fsS --cacert certs/ca.crt -D - -o /dev/null https://localhost:8443/health | grep -qi '^strict-transport-security: max-age=86400'
+          # a client that does not trust the CA is refused, and TLS 1.1 is not offered
+          if curl -fsS https://localhost:8443/health > /dev/null 2>&1; then echo "::error::accepted an untrusted certificate"; exit 1; fi
+          if curl -sS --cacert certs/ca.crt --tls-max 1.1 https://localhost:8443/health > /dev/null 2>&1; then
+            echo "::error::TLS 1.1 was accepted"; exit 1
+          fi
+
       - name: Slow statements are logged (PR-DB-4.1)
         working-directory: smo
         run: |

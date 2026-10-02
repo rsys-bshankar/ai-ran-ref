@@ -347,6 +347,19 @@ services:
     volumes:
       - gui_bff_data:/data   # GUI users, audit log, the BFF's SME invoker credential
 
+  # ---------------------------------------------------------------- TLS edge (profile `tls`, PR-SEC-1)
+  # `docker compose --profile tls up -d` adds an HTTPS door in front of the GUI (:3443) and R1 Termination (:8443).
+  # Run scripts/make_dev_certs.sh first. The default stack does not start it and needs no certificate.
+  edge-tls:
+    profiles: ["tls"]
+    image: nginxinc/nginx-unprivileged:1.31-alpine@sha256:26b0bf6fbf07297983cb341998d79c831508787de26627dd2a112321b9c3a4af
+    <<: *hardening
+    depends_on: [r1-termination, gui]
+    ports: ["3443:3443", "8443:8443"]
+    volumes:
+      - ./edge/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    secrets: [tls_cert, tls_key]
+
   gui:
     build: { context: ./gui }
     <<: *hardening
@@ -356,6 +369,10 @@ services:
 secrets:
   db_password:
     file: ./secrets/db_password   # created by scripts/init_secrets.sh; git-ignored
+  tls_cert:                       # the `tls` profile only; created by scripts/make_dev_certs.sh
+    file: ./certs/server.crt
+  tls_key:
+    file: ./certs/server.key
 
 networks:
   default:

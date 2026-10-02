@@ -107,6 +107,14 @@ volumes of a stack started before the services ran as a non-root user: they are 
 - A guided walk-through of every module, with copy-pasteable commands:
   [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md).
 
+TLS: `scripts/make_dev_certs.sh` makes a development CA and a server certificate (`smo/certs/`, git-ignored), and
+`docker compose --profile tls up -d` adds an nginx edge (`edge/nginx.conf`) that terminates HTTPS in front of the GUI
+(`https://localhost:3443`) and R1 Termination (`https://localhost:8443`), with HSTS. Trust `certs/ca.crt` in the browser, or
+`curl --cacert certs/ca.crt https://localhost:8443/bootstrap`. The plain ports 3000 and 8080 stay open: remove their `ports:` in a
+deployment that should be reachable over TLS only. The services behind the edge still speak HTTP on the compose network, and
+`/bootstrap` still advertises their `http://` addresses (`PR-SEC-1.6`). The GUI's session cookie is `Secure` by default
+(`GUI_COOKIE_SECURE`), so it is only sent over the HTTPS door; set it to `false` only for plain-HTTP development.
+
 Slow statements: Postgres logs any statement slower than `POSTGRES_SLOW_QUERY_MS` (default 500 ms, set in `.env`; `-1` turns
 it off) with its duration and text: `docker compose logs postgres | grep duration`.
 

@@ -1193,3 +1193,31 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   role's password to the new value (`docs/SECRETS.md`).
 - **Not taken, still open.** SEC-4.4 and 4.5 (the GUI passwords and session key, and the module invoker secret, through the same helper), 4.6 (adaptor
   credentials as references), 4.7 (External Secrets / Vault manifest, needs the chart), 4.8 (a rotation tried for each secret).
+
+### PR-SEC-1 — TLS at the edge (1.1–1.5; 1.6 open)
+
+- **Development certificates (SEC-1.1).** `scripts/make_dev_certs.sh [--force] [DIR]` makes a development CA (10 years) and a server certificate (365 days) with
+  ECDSA P-256 keys, for `localhost`, `127.0.0.1`, `::1`, `r1-termination`, `gui` and any `SMO_TLS_NAMES` (DNS names or IPs). The server certificate is a
+  leaf (`CA:FALSE`, `serverAuth`, SAN), signed by the CA; the CA key stays 0600 and is never mounted anywhere. An existing set is kept unless `--force`. The
+  output directory `smo/certs/` is 0700 and git-ignored; `server.crt` and `server.key` are 0644 because Compose mounts them as secret files read by an unprivileged
+  nginx (uid 101), the same trade as the database password file, and the directory keeps other accounts out.
+- **One edge, not TLS inside each service (SEC-1.2, 1.3, 1.5).** The compose profile `tls` adds `edge-tls`, an unprivileged nginx (same pinned image as the GUI) with
+  `cap_drop: [ALL]`: `https://localhost:3443` to `gui:8080` and `https://localhost:8443` to `r1-termination:8000`, certificate and key as Compose secrets. Chosen over
+  uvicorn's `--ssl-*` flags on R1 Termination and a TLS server block in the GUI's nginx: turning TLS on in R1 itself would break every internal caller, the
+  healthcheck and the SME bootstrap URLs (all `http://r1-termination:8000`), and a TLS block in the GUI's nginx config cannot be optional (nginx will not start
+  with a missing certificate). So the plan's "`https://localhost:3000`" and "`https://localhost:8080`" became 3443 and 8443: the plain ports stay as they are and the
+  profile adds a door; a deployment that should be TLS-only removes the `ports:` of `gui` and `r1-termination`. The default stack needs no certificate (the secrets
+  are only used by `edge-tls`).
+- **HSTS and the cookie (SEC-1.4).** Both doors send `Strict-Transport-Security: max-age=86400; includeSubDomains` (a day, not a year, so a development certificate does
+  not pin a browser to HTTPS for localhost for months; the config says to raise it on a real edge). The GUI session cookie was already `Secure` by default
+  (`GUI_COOKIE_SECURE`, true in compose, false only in CI, which has no TLS); a test now pins that default.
+- **Proof.** `tests_integration/test_tls_edge.py`: the certificate chains to the CA and is not a CA, carries every name, is valid between 300 and 400 days, its key
+  matches; the CA key is 0600 and the directory 0700; a re-run keeps and `--force` replaces; a real TLS handshake from Python succeeds for each name against the
+  generated certificate and fails for a client without the CA; the nginx config offers only TLS 1.2 and 1.3 (allowing 1.1 or dropping HSTS fails a test), has
+  exactly the two TLS doors and no plain listener, and proxies each to the right service; compose has the edge only under the profile, two published ports, hardening,
+  both secrets, and no other service has a profile. The compose e2e job brings the edge up and checks over real TLS: `/bootstrap` through 8443, the SPA and HSTS
+  through 3443, a client without the CA refused, TLS 1.1 refused. The edge itself could not be started in the sandbox (no Docker daemon, no nginx): that job is its
+  first run.
+- **Not taken, still open.** SEC-1.6: `/bootstrap` still advertises `http://sme:8000/oauth2/token` and friends, so an external rApp that bootstraps over HTTPS is
+  then told to use HTTP. It needs the advertised base URL to be configurable (and the SME token endpoint reachable at the edge). mTLS between services is
+  `PR-SEC-2`. Certificate rotation and a real CA (`SEC-1`'s production path) are the deployment's; OCSP stapling, HTTP/3 and a redirect from the plain ports are not done.
