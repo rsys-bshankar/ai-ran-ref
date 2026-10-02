@@ -123,7 +123,7 @@ and HA much later).
 
 | Area | Prefix | Features |
 |---|---|---|
-| Stateless / scale-out | `PR-ST` | ST-7 readiness (schema check) · ST-8 single-runner (adoption) · ST-9 inline retry |
+| Stateless / scale-out | `PR-ST` | ST-7 readiness (schema check) · ST-8 single-runner (adoption) · ST-9 inline retry (move to job runner) |
 | Database | `PR-DB` | DB-1 credentials · DB-2 per-module schemas · DB-3 retention · DB-4 indexes/pagination · DB-5 pooler · DB-6 backup · DB-7 Postgres HA |
 | Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
@@ -161,14 +161,12 @@ GUI BFF's per-process login lockout, and module-level dicts in the two mocks (te
 |---|---|---|---|
 | ST-8.3 | Adopt `run_once_per_interval` for each periodic task found | Per task: one firing per interval | – |
 
-#### PR-ST-9 — Inline retry in the request thread
+#### PR-ST-9 — Inline retry in the request thread (open: moving it out of the request)
 
-RAN NF OAM retries southbound writes with `time.sleep` inside the request (`ran-nf-oam/app/main.py:72,94`).
+RAN NF OAM still retries southbound writes with `time.sleep` inside the request (`ran-nf-oam/app/main.py`), now bounded by a time budget (worst case per sub-change in the module README).
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| ST-9.1 ★ | Constant and doc for the maximum total retry time per sub-change | Worst-case request time stated in the module README | – |
-| ST-9.2 | Make the retry schedule an env setting with a low default for synchronous callers | Test with a fake clock shows the bound | ST-9.1 |
 | ST-9.3 | Hand retries to the job runner so no `sleep` remains in a request path | Grep test: no `sleep` in `*/app` request code | MSG-4.5 |
 
 

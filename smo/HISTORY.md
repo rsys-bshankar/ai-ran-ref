@@ -1014,3 +1014,24 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Not taken, still open.** ST-8.3, adoption: there is still no periodic task (ST-1.4), so no caller. Who ticks (a Kubernetes CronJob, an
   external scheduler) stays a deployment choice for the feature that needs it. Clock skew between replicas shifts a firing by the skew,
   which is fine for intervals of seconds and up.
+
+### PR-ST-9 — Inline retry in the request thread
+
+- **What was found.** RAN NF OAM dispatches each southbound sub-change inside the request that submitted the job, retrying after
+  `0, 5, 10, 20` s (W10-19) with `time.sleep`. Nothing bounded the total: against an adaptor that waits out the 30 s exchange timeout
+  one sub-change could take 4 x 30 + 35 = 155 s, and a job of N changes N times that, while R1 Termination answers 504 after 60 s
+  (PR-ST-6) and the work carries on unseen by the caller.
+- **The bound (ST-9.1, ST-9.2).** A retry budget per sub-change, `RAN_NF_OAM_DISPATCH_RETRY_BUDGET_SECONDS` (35): a retry is not started if
+  the time already spent plus its delay would pass the budget; the first attempt is always made. The worst case per sub-change is the
+  budget (at most the sum of the delays) plus one attempt in flight: `worst_case_dispatch_seconds()`, 65 s by default, stated in the
+  README with the per-job multiplier and the advice for callers that must answer inside R1's 60 s (one change per job, budget 25 or
+  less). The clock and the sleep are injectable (`_monotonic`, `_sleep`), so the tests assert the bound exactly.
+- **Chosen: keep the documented schedule as the default.** 35 s equals the sum of the default delays, so a fast-failing adaptor
+  (connection refused) still gets all four attempts exactly as W10-19 specifies, and only a slow one is cut (two attempts instead of
+  four). The plan's "low default for synchronous callers" would have changed that specified behaviour for everyone; the env setting
+  gives a synchronous caller the low value without it.
+- **Proof.** `ran-nf-oam/tests/test_dispatch_reliability.py` on a fake clock: fast failures keep the whole schedule (35 s slept), 30 s
+  attempts get two attempts and finish inside 65 s, no attempt duration from 0 to 30 s exceeds the worst case, a smaller budget stops
+  earlier, the first attempt is made even with budget 0. Removing the budget check fails 5 of them.
+- **Not taken, still open.** ST-9.3, moving the retries to the job runner so no `sleep` remains in a request path, needs `MSG-4.5` (there
+  is no job runner yet). A job of several sub-changes still runs them one after the other in the request.
