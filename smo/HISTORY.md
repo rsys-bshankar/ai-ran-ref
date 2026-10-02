@@ -1320,3 +1320,15 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   worker exists, nothing runs that sweep, so a notification whose inline attempt failed stays PENDING (visible in the table) rather than being retried: no worse than the old single best-effort attempt, and recoverable later.
   The `UPDATE` uses `synchronize_session=False`: with the default, SQLAlchemy evaluates the WHERE in Python against identity-map rows and SQLite hands datetimes back naive, which raised comparing naive with aware.
 - **Not done:** no module uses the outbox yet (MSG-1.5 onwards, one PR each), the worker (MSG-2), signing and the delivery log (MSG-5).
+
+### PR-MSG-1.5 — DME callbacks through the outbox
+
+- **Three sites moved** (`docs/NOTIFICATIONS.md`, class A): the type-registered / type-removed notification to every type subscriber, the offer-termination notice, and the job push to every supporting producer (on create and on update).
+  Each is now `enqueue(db, destination, payload)`; the route's own `db.commit()` is the commit that also makes the rows durable and triggers the send.
+- **Order changed, deliberately.** All three used to commit and then call the destination, so a crash in between lost the notification and nothing recorded that it was owed. The enqueue now comes before the commit in
+  `register_dme_type`, `delete_dme_type`, `terminate_data_offer`, `create_data_job` and `update_data_job` (a `flush()` in `create_data_job` gives the job its id for the payload first). Observable behaviour is the same for a caller:
+  the notification still goes out in the request thread right after the commit, and the 86 existing DME tests (which replace `httpx.post`) pass unchanged.
+- **Left inline:** the stop-job `DELETE` (class B) and the health GET (class C).
+- **Tests (3 new):** the MSG-1.5 crash test (with the inline drain off, as if the process died after the commit, the subscriber's notification is one PENDING row, nothing was sent, and a later `drain` delivers it and marks it SENT);
+  one row per producer for a job push, none sent before the drain; a commit that fails leaves no row, sends nothing and un-registers the type too. The DME fixture creates the outbox table.
+- **Differences to know:** the send timeout is now the outbox's 2 s (job push and offer termination used 5 s); a failed first attempt leaves the row PENDING with its attempt counted instead of being forgotten, retried by the sweep once MSG-2's worker exists.

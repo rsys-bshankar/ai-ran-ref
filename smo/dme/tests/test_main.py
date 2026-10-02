@@ -9,7 +9,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from smo_shared import outbox
 from smo_shared.db import Base, get_session
+from smo_shared.outbox import NotificationOutbox
 
 from app.main import app
 from app.models import (
@@ -28,8 +30,9 @@ def client():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine, tables=[DMEProducer.__table__, DMEType.__table__, DMEProducerType.__table__, DMEDeliverySchema.__table__,
                                               DataJob.__table__, DataOffer.__table__, DMETypeSubscription.__table__, DataRecord.__table__,
-                                              DmeActionRecord.__table__])
+                                              DmeActionRecord.__table__, NotificationOutbox.__table__])
     TestSession = sessionmaker(bind=engine)
+    app.state.test_engine = engine
 
     def override_get_session():
         session = TestSession()
@@ -1194,3 +1197,74 @@ def test_a_replayed_action_id_is_ignored_not_forwarded_twice(client, ran_nf_oam)
                              "forwardedJobId": "11111111-1111-1111-1111-111111111111"}
     assert len(ran_nf_oam.received) == 1
     assert client.get(f"/actions/{action_id}").json()["correlationId"] == "exec-42"
+
+
+# ---------------------------------------------------------------- notifications through the outbox (PR-MSG-1.5)
+
+def _outbox_rows(client):
+    with sessionmaker(bind=app.state.test_engine)() as db:
+        return db.query(NotificationOutbox).order_by(NotificationOutbox.created_at).all()
+
+
+def test_a_type_registration_notification_survives_a_crash_between_commit_and_send(client, monkeypatch):
+    """The crash test of MSG-1.5: the subscriber's notification is a committed row, sent after the commit; if the process dies
+    before sending, a later drain delivers it, so a registered type is never silently un-announced."""
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")           # the process dies right after the commit
+    monkeypatch.setenv("MODULE", "dme")                              # what the container sets
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or FakeHealthResponse(200))
+    client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"})
+
+    reg = client.post("/production-capabilities", json=register_type_body()).json()
+
+    assert calls == []
+    pending = _outbox_rows(client)
+    assert [(r.module, r.status, r.destination) for r in pending] == [("dme", "PENDING", "http://consumer/type-changes")]
+    assert pending[0].payload["infoTypeId"] == reg["registrationId"] and pending[0].payload["status"] == "REGISTERED"
+
+    monkeypatch.delenv("SMO_OUTBOX_INLINE_DRAIN")                    # the restarted process sweeps
+    assert outbox.drain(app.state.test_engine)["sent"] == 1
+    assert [(u, j["status"]) for u, j in calls] == [("http://consumer/type-changes", "REGISTERED")]
+    assert _outbox_rows(client)[0].status == "SENT"
+
+
+def test_a_job_push_to_producers_is_one_row_per_producer_and_sent_after_commit(client, monkeypatch):
+    client.post("/production-capabilities", json=register_type_body(producerId="rapp-1"))
+    client.post("/production-capabilities", json=register_type_body(producerId="rapp-2", jobCallbackUrl="http://rapp-2:8000/jobs"))
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or FakeHealthResponse(200))
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    with sessionmaker(bind=app.state.test_engine)() as db:
+        type_id = db.query(DMEType).one().dme_type_id
+    resp = client.post("/data-jobs", json={"dataDeliveryMode": "ONE_TIME", "dmeTypeId": str(type_id), "consumerId": "rapp-x",
+                                           "productionJobDefinition": {}, "dataDeliveryMethod": "PUSH_HTTP", "deliveryDetails": {}})
+    assert resp.status_code == 202, resp.text
+    assert calls == []                                               # nothing goes out before the drain
+    rows = _outbox_rows(client)
+    assert sorted(r.destination for r in rows) == ["http://ran-nf-oam:8000/dme-jobs", "http://rapp-2:8000/jobs"]
+    assert {r.payload["infoJobIdentity"] for r in rows} == {resp.json()["dataJobId"]}
+
+
+def test_nothing_is_announced_when_the_change_does_not_commit(client, monkeypatch):
+    """The other half: a change that rolls back used to have told its subscribers already; now it leaves no row and sends nothing."""
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or FakeHealthResponse(200))
+    client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"})
+
+    from sqlalchemy.orm import Session as OrmSession
+    real_commit = OrmSession.commit
+
+    def failing_commit(self):
+        if self.info.get("outbox_pending_ids"):
+            self.rollback()
+            raise RuntimeError("the database refused the commit")
+        return real_commit(self)
+
+    monkeypatch.setattr(OrmSession, "commit", failing_commit)
+    resp = TestClient(app, raise_server_exceptions=False).post("/production-capabilities", json=register_type_body())
+    monkeypatch.setattr(OrmSession, "commit", real_commit)
+
+    assert resp.status_code == 500
+    assert calls == [] and _outbox_rows(client) == []
+    with sessionmaker(bind=app.state.test_engine)() as db:
+        assert db.query(DMEType).count() == 0                        # the registration itself rolled back too

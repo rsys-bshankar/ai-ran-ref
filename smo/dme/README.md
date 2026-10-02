@@ -78,7 +78,7 @@ A1, Near-RT RIC and xApps are not on the DME loop: inference runs inside the rAp
 
 **Producers and types are separate, many-to-many.** The earlier single-table shape made a second producer for a type impossible. Now a second producer registering a known type, and a producer re-registering after a restart, both succeed. Deregistering a producer removes only the producer and its links: types and their jobs and offers survive, and a type left with no producer reads `DISABLED`. Only `DELETE /dme-types/{id}` removes a type, and only when no producer still supports it (`DME_TYPE_HAS_ACTIVE_PRODUCERS`, 409); that also deletes its jobs and offers. Registration notifies type subscribers only when the type is new, not when a producer joins it.
 
-**Best-effort notifications.** Job push, job stop, type-change notifications and offer-termination notices go through `smo_shared.webhook` (SSRF guard: http/https only, no loopback or link-local literals). An unreachable destination never fails the primary call. Health probing is the exception in direction: a failed or non-2xx probe is the signal (`DISABLED`).
+**Notifications.** Job push, type-change notifications and offer-termination notices are rows in the transactional outbox (`smo_shared.outbox`, `PR-MSG-1.5`): written in the same transaction as the change that caused them and sent right after it commits, so a crash between the commit and the send leaves a pending row instead of losing the notification, and a change that rolls back announces nothing. Delivery is at least once (a consumer may see one twice after a crash) and an unreachable destination never fails the primary call. Job stop (a DELETE) and health probing go straight through `smo_shared.webhook` (SSRF guard: http/https only, no loopback or link-local literals), the first because an outbox row carries only a POST body, the second because the answer is the point. Health probing is the exception in direction: a failed or non-2xx probe is the signal (`DISABLED`).
 
 **Action idempotency.** A caller-chosen `actionId` that DME already recorded is not forwarded again; the answer is `200 {"status": "IGNORED", "originalStatus": ..., "forwardedJobId": ...}`. Without an `actionId` DME mints one.
 
@@ -96,7 +96,7 @@ A1, Near-RT RIC and xApps are not on the DME loop: inference runs inside the rAp
 |---|---|
 | `app/main.py` | All routes, request models, the validation helpers (`_validate_delivery_method`, `_validate_job_definition_schema`, `_validate_lifecycle_eligibility`), the producer fan-out (`_push_job_to_producers`, `_stop_job_at_producers`), type-status computation, action mediation. |
 | `app/models.py` | The SQLAlchemy tables and the value sets `DELIVERY_METHODS`, `SOURCE_DOMAINS`, `LIFECYCLE_STAGES`. |
-| `../shared/smo_shared/` | `webhook` (callbacks), `r1_client` (to RAN NF OAM), `errors`, `pagination`, `correlation`, `openapi_security`. |
+| `../shared/smo_shared/` | `outbox` (notifications), `webhook` (job stop, health probes), `r1_client` (to RAN NF OAM), `errors`, `pagination`, `correlation`, `openapi_security`. |
 
 ### 2.2 Data model
 
