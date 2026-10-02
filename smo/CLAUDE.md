@@ -81,11 +81,11 @@ matching nullability — against a real Postgres, not SQLite** (SQLite's
 unit-test runs don't catch a `CHECK` constraint or a nullable/NOT NULL
 mismatch the same way Postgres does — this caught a real regression
 once, see `HISTORY.md` OI-6.2). Point `SMO_DATABASE_URL` at
-any reachable Postgres 16 instance, or start one if you don't have one:
+any reachable Postgres 18 instance, or start one if you don't have one:
 
 ```bash
 docker run --rm -d --name smo-verify-pg -e POSTGRES_USER=smo -e POSTGRES_PASSWORD=smo \
-  -e POSTGRES_DB=smo -p 5432:5432 postgres:16-alpine
+  -e POSTGRES_DB=smo -p 5432:5432 postgres:18-alpine
 cd smo && SMO_DATABASE_URL=postgresql+psycopg://smo:smo@localhost:5432/smo \
   python scripts/check_migration_matches_models.py
 ```
