@@ -19,7 +19,6 @@ def lab(tmp_path, monkeypatch):
         known.write_text(server.known_hosts_line() if trust else "")
         monkeypatch.setenv("NETCONF_SSH_KNOWN_HOSTS", str(known))
         monkeypatch.setenv("NETCONF_SSH_PASSWORD", "secret")
-        monkeypatch.delenv("NETCONF_SSH_INSECURE_ANY_HOST_KEY", raising=False)
         return server
 
     yield start
@@ -104,12 +103,11 @@ def test_a_changed_host_key_is_refused(lab, tmp_path, monkeypatch):
         other.close()
 
 
-def test_no_known_hosts_configured_refuses_unless_insecure_is_set(lab, monkeypatch):
+def test_no_known_hosts_configured_refuses(lab, monkeypatch):
     server = lab()
     monkeypatch.delenv("NETCONF_SSH_KNOWN_HOSTS")
-    assert send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="m9").reason == "NETCONF_RPC_FAILED"
-    monkeypatch.setenv("NETCONF_SSH_INSECURE_ANY_HOST_KEY", "true")
-    assert send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="m10").applied
+    result = send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="m9")
+    assert result.reason == "NETCONF_RPC_FAILED" and not server.behaviour.received
 
 
 def test_wrong_password_is_refused(lab, monkeypatch):

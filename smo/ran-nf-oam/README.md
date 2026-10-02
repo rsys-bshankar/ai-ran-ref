@@ -61,7 +61,7 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 ```
 
 - It calls DME over R1 only to register itself as a producer (`RAN.PMCounters.<counter>`, `RAN.FaultRecords`) and to fan PM measurements out as DME records. Consumers never read RAN NF OAM for PM; they read DME.
-- An endpoint's `transport` is `http-mock` (default: XML over HTTP to the mock adaptor) or `ssh` (NETCONF over SSH, `adaptorUri` = `ssh://user@host[:port]`, port 830 by default). For `ssh`, set `NETCONF_SSH_KNOWN_HOSTS` (an OpenSSH known_hosts file; an unknown or changed host key is refused), and `NETCONF_SSH_PASSWORD` (or `_FILE`) or `NETCONF_SSH_KEY_FILE`. `NETCONF_SSH_INSECURE_ANY_HOST_KEY=true` skips the host-key check (lab only; logged). Per-endpoint credentials are `PR-SB-2`.
+- An endpoint's `transport` is `http-mock` (default: XML over HTTP to the mock adaptor) or `ssh` (NETCONF over SSH, `adaptorUri` = `ssh://user@host[:port]`, port 830 by default). For `ssh`, set `NETCONF_SSH_KNOWN_HOSTS` (an OpenSSH known_hosts file; an unknown or changed host key is refused), and `NETCONF_SSH_PASSWORD` (or `_FILE`) or `NETCONF_SSH_KEY_FILE`. There is no switch to skip the host-key check. Per-endpoint credentials are `PR-SB-2`.
 - It talks to adaptors directly (southbound, outside R1) using `netconf_client.py` or `restconf_client.py`. The adaptor address is `adaptor_uri` from its own registry, never a URL taken from a request body, except where noted in [onboarding discovery](#operator-steps).
 - It never calls AIMgF, MLMR, MLLF, MDAF, Intent Service, NFO or FOCOM. MDAF is never on the action path.
 - Test vendor: [`mock-o1-adaptor`](../mock-o1-adaptor/README.md).

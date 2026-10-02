@@ -1422,7 +1422,7 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   Registration takes `transport`; `ssh` needs `o1Protocol` NETCONF and an `ssh://user@host[:port]` URI, and an `ssh://` URI needs `transport: ssh` (422 otherwise). `_o1_client(protocol, transport)` picks the client. Capability discovery
   (an HTTP GET) refuses an `ssh` endpoint with `PROTOCOL_NOT_SUPPORTED`.
 - **Session wrapper (SB-1.3).** `app/netconf_ssh.py` `NetconfSession`: connect with a timeout, open the `netconf` subsystem, exchange `<hello>` (always end-of-message framed), use chunked framing when both sides offer base:1.1, else `]]>]]>`.
-  A reply may arrive in any number of pieces; a reply over 16 MiB is refused. Host keys: an `NETCONF_SSH_KNOWN_HOSTS` file with `RejectPolicy`, or refusal when none is configured, unless `NETCONF_SSH_INSECURE_ANY_HOST_KEY` is set (WARNING on every connect).
+  A reply may arrive in any number of pieces; a reply over 16 MiB is refused. Host keys: an `NETCONF_SSH_KNOWN_HOSTS` file with `RejectPolicy`; refusal when none is configured (no way to skip the check).
   Reasons: timeout -> `NETCONF_TIMEOUT`, refused or broken connection -> `NETCONF_UNREACHABLE` (both retried by the existing policy); host key, authentication, missing subsystem, bad hello, `<rpc-error>` -> `NETCONF_RPC_FAILED` (not retried).
 - **Read and write (SB-1.5 wiring; edit-config is also available).** `send_get_config` and `send_edit_config` have the shapes of the HTTP ones, so `POST /config-jobs` and `GET /managed-entities/{ref}/config` work over SSH unchanged.
 - **Tests.** An in-process paramiko SSH server (`tests/netconf_ssh_server.py`) lets the wrapper and the routes run in the unit suite: 18 wrapper cases and 7 route cases.

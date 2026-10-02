@@ -10,7 +10,7 @@ parsers, so the same `EditResult` reasons come out of both transports:
                          (not retryable: repeating it cannot succeed)
 
 The endpoint's `adaptor_uri` is `ssh://user@host[:port]` (default port 830). Host keys are checked against
-`NETCONF_SSH_KNOWN_HOSTS`; the credentials are a stopgap until PR-SB-2 (see the ADR).
+`NETCONF_SSH_KNOWN_HOSTS` and an unknown or changed key is always refused; the credentials are a stopgap until PR-SB-2 (see the ADR).
 """
 
 import logging
@@ -55,18 +55,14 @@ def parse_ssh_uri(adaptor_uri: str) -> tuple[str, str, int]:
 
 
 def _host_key_policy(client: paramiko.SSHClient) -> None:
-    insecure = os.environ.get("NETCONF_SSH_INSECURE_ANY_HOST_KEY", "").lower() in ("1", "true", "yes")
     known_hosts = os.environ.get("NETCONF_SSH_KNOWN_HOSTS", "")
     if known_hosts:
         try:
             client.load_host_keys(known_hosts)
         except OSError as exc:
             raise NetconfSshError("NETCONF_RPC_FAILED", f"NETCONF_SSH_KNOWN_HOSTS cannot be read: {exc.strerror}") from exc
-    if insecure:
-        log.warning("NETCONF_SSH_INSECURE_ANY_HOST_KEY is set: SSH host keys are not verified")
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    elif known_hosts:
-        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    if known_hosts:
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())     # never trust a key on first use
     else:
         raise NetconfSshError("NETCONF_RPC_FAILED", "no host keys known: set NETCONF_SSH_KNOWN_HOSTS")
 

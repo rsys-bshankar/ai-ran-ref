@@ -18,8 +18,9 @@ considered: ncclient, scrapli-netconf and asyncssh.
 3. **Why not scrapli-netconf:** it brings its own transport plugin system (system ssh, ssh2, paramiko, asyncssh), more surface for the same result.
 4. **Why not asyncssh:** it is asyncio only. Every route in `ran-nf-oam` is synchronous and dispatches with blocking calls inside the request thread
    (`HISTORY.md` ST-9), so an async client would need a loop bridge per call. paramiko is blocking and fits the existing code.
-5. **Host keys are checked.** A connection is refused unless the host key is in the file named by `NETCONF_SSH_KNOWN_HOSTS`. The
-   one escape, `NETCONF_SSH_INSECURE_ANY_HOST_KEY=true`, exists for the lab compose profile and is logged at WARNING on every connect.
+5. **Host keys are checked, with no escape hatch.** A connection is refused unless the host key is in the file named by `NETCONF_SSH_KNOWN_HOSTS`;
+   there is no trust-on-first-use and no switch to skip the check (CodeQL flags `AutoAddPolicy`, rightly). The lab compose profile (`SB-1.4`)
+   writes a known_hosts file for its own server instead.
 6. **Credentials are a stopgap until `SB-2`:** the user name is part of the registered `ssh://user@host:port` URI; the password
    (`NETCONF_SSH_PASSWORD`, `*_FILE` convention, `smo_shared/secretfile.py`) or a private key file (`NETCONF_SSH_KEY_FILE`) comes
    from the module's environment. `SB-2.1`/`2.2` replace this with a per-endpoint `credential_ref`.
