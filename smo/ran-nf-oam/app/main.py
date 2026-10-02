@@ -21,7 +21,7 @@ import uuid
 from typing import Literal
 
 from fastapi import Depends, FastAPI, Query, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -175,6 +175,8 @@ class WriteConfigRequest(BaseModel):
     scope: str | None = None
     changes: list[dict]  # each: {managedElementRef, managedFunctionRef?, attributeChanges?, operation?}
     msacRole: str | None = None
+    # MGT-3.1: run every check (MSAC, service presence, data model incl. YANG leaf constraints) and send nothing
+    dryRun: bool = False
 
     @model_validator(mode="after")
     def _scope_and_refs(self):
@@ -264,6 +266,24 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
     return {"endpointId": str(endpoint.endpoint_id), "managedElementRef": me.managed_element_ref, "healthStatus": endpoint.health_status}
 
 
+def _dispatch_blocker(db: Session, change: dict):
+    """(rejection reason or None, managed entity, endpoint): whether a change can be sent at all, from what is registered now."""
+    me = db.get(ManagedEntity, change["managedElementRef"])
+    if me is None or me.o1_adaptor_endpoint_id is None:
+        return "ENDPOINT_UNREACHABLE", me, None
+    endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id)
+    # Live-computed staleness at the point health is actually consulted — the same "no scheduler exists anywhere in this
+    # build" pattern as DME's producer health and A1 Related's service supervision sweep — rather than depending on
+    # something having already called POST /o1-adaptor-endpoints/discover first.
+    _age_endpoint_health(endpoint, datetime.datetime.now(datetime.UTC))
+    if endpoint.health_status in ("UNREACHABLE", "DEGRADED"):
+        return "ENDPOINT_UNREACHABLE", me, endpoint
+    if _o1_client(me.o1_protocol, endpoint.transport) is None:
+        # NETCONF and RESTCONF are dispatched; any other provisioned protocol is rejected rather than silently treated as applied.
+        return "PROTOCOL_NOT_SUPPORTED", me, endpoint
+    return None, me, endpoint
+
+
 @app.post("/config-jobs", status_code=202)
 @idempotent("ran-nf-oam", status_code=202)
 def write_configuration_changes(body: WriteConfigRequest, request: Request, db: Session = Depends(get_session)):
@@ -297,6 +317,18 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
         problems.extend(schema_problems(db, change))
     if problems:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="; ".join(problems))
+    if body.dryRun:
+        # MGT-3.1/3.2: the checks above passed; each change's verdict adds what the dispatch loop would decide from the registry
+        # (no endpoint, endpoint down, no client for its protocol). No job row, no southbound call, no outbox row.
+        verdicts = []
+        for c in body.changes:
+            blocker = _dispatch_blocker(db, c)[0]
+            verdicts.append({"managedElementRef": c["managedElementRef"], "managedFunctionRef": c.get("managedFunctionRef"),
+                             "operation": c.get("operation", "merge"),
+                             "verdict": "PASS" if blocker is None else "WOULD_REJECT", "reason": blocker})
+        return JSONResponse(status_code=200, content={
+            "dryRun": True, "status": "VALIDATED" if all(v["verdict"] == "PASS" for v in verdicts) else "WOULD_REJECT_SOME",
+            "changes": verdicts})
 
     job = WriteConfigJob(requested_by=body.requestedBy, scope=body.accessScope, msac_role=body.msacRole)
     db.add(job)
@@ -314,33 +346,12 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
         # always present the way a merge-only model could.
         attribute_changes = change.get("attributeChanges", {})
         operation = change.get("operation", "merge")
-        me = db.get(ManagedEntity, change["managedElementRef"])
-        if me is None or me.o1_adaptor_endpoint_id is None:
+        blocker, me, endpoint = _dispatch_blocker(db, change)
+        if blocker is not None:
             db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
                                          managed_function_ref=change.get("managedFunctionRef"),
                                          attribute_changes=attribute_changes, operation=operation, status="REJECTED",
-                                         rejection_reason="ENDPOINT_UNREACHABLE"))
-            continue
-        endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id)
-        # Live-computed staleness at the point health is actually consulted —
-        # the same "no scheduler exists anywhere in this build" pattern as
-        # DME's producer health and A1 Related's service supervision sweep —
-        # rather than depending on something having already called
-        # POST /o1-adaptor-endpoints/discover first.
-        _age_endpoint_health(endpoint, datetime.datetime.now(datetime.UTC))
-        if endpoint.health_status in ("UNREACHABLE", "DEGRADED"):
-            db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
-                                         managed_function_ref=change.get("managedFunctionRef"),
-                                         attribute_changes=attribute_changes, operation=operation, status="REJECTED",
-                                         rejection_reason="ENDPOINT_UNREACHABLE"))
-            continue
-        if _o1_client(me.o1_protocol, endpoint.transport) is None:
-            # NETCONF and RESTCONF are dispatched; any other provisioned
-            # protocol is rejected rather than silently treated as applied.
-            db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
-                                         managed_function_ref=change.get("managedFunctionRef"),
-                                         attribute_changes=attribute_changes, operation=operation, status="REJECTED",
-                                         rejection_reason="PROTOCOL_NOT_SUPPORTED"))
+                                         rejection_reason=blocker))
             continue
         applied, reason, attempts = _dispatch_with_retries(endpoint.adaptor_uri, change, attribute_changes,
                                                            str(job.job_id), operation, me.o1_protocol, endpoint.transport)
@@ -448,15 +459,23 @@ def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, 
     return {"alarmId": str(alarm.alarm_id)}
 
 
+def _get_alarm(db: Session, alarm_id: uuid.UUID) -> Alarm:
+    """MGT-8.1: an unknown alarm is a 404, not a 500 from `None.ack_state`."""
+    alarm = db.get(Alarm, alarm_id)
+    if alarm is None:
+        raise framework_error(FrameworkError.ALARM_NOT_FOUND, detail=f"no such alarm {alarm_id}")
+    return alarm
+
+
 @app.patch("/alarms/{alarm_id}/ack")
-def change_alarm_ack_state(alarm_id: uuid.UUID, new_state: str, ack_user_id: str | None = None, db: Session = Depends(get_session)):
+def change_alarm_ack_state(alarm_id: uuid.UUID, new_state: Literal["ACKNOWLEDGED", "UNACKNOWLEDGED"], ack_user_id: str | None = None, db: Session = Depends(get_session)):
     """ackUserId (HISTORY.md §7, TS28111_FaultNrm.yaml's AlarmRecord) —
     who acknowledged it, never recorded before. alarmChangedTime (the
     spec's own "last mutated" timestamp, distinct from raised_at/
     cleared_at) updates here and in clear_alarm below, the two places
     this build actually mutates an existing alarm.
     """
-    alarm = db.get(Alarm, alarm_id)
+    alarm = _get_alarm(db, alarm_id)
     alarm.ack_state = new_state
     alarm.ack_user_id = ack_user_id
     alarm.changed_at = datetime.datetime.now(datetime.UTC)
@@ -473,7 +492,7 @@ def clear_alarm(alarm_id: uuid.UUID, clear_user_id: str | None = None, db: Sessi
     setting severity to 'cleared' (already a valid value in this
     build's own CHECK constraint) rather than a separate state field.
     """
-    alarm = db.get(Alarm, alarm_id)
+    alarm = _get_alarm(db, alarm_id)
     alarm.severity = "cleared"
     alarm.cleared_at = datetime.datetime.now(datetime.UTC)
     alarm.clear_user_id = clear_user_id

@@ -276,3 +276,42 @@ def test_a_range_in_the_3gpp_spec_descriptor_is_checked_too(client, dispatched):
     assert ok.status_code == 202
     bad = _write(client, className="GNBDUFunction", attributeChanges={"gnbDuId": -1})
     assert bad.status_code == 422 and "gnbDuId=-1 is out of range 0..68719476735" in bad.json()["detail"]["detail"]
+
+
+def _dry(client, me="ME-A", **change):
+    return client.post("/config-jobs", json={"requestedBy": "rapp", "scope": "cell", "dryRun": True,
+                                             "changes": [{"managedElementRef": me, **change}]})
+
+
+def test_a_dry_run_runs_every_check_and_sends_nothing(client, dispatched, db_session_factory):
+    """MGT-3.1 to 3.3: the same refusals as a real write (data model, YANG range), a per-change verdict, no job, no southbound call."""
+    from app.models import WriteConfigJob, WriteConfigSubChange
+    rev = next(s["revision"] for s in client.get("/cm-schemas").json()["items"] if s["schemaName"] == "o-ran-wg10-o1nrm")
+    _vendor(client, "oran", conformanceMode="COMBINED", schemaRef={"schemaName": "o-ran-wg10-o1nrm", "revision": rev})
+    _endpoint(client, vendor="oran")
+
+    ok = _dry(client, className="EP_D2C", attributeChanges={"localPortNumber": 8080})
+    assert ok.status_code == 200
+    assert ok.json() == {"dryRun": True, "status": "VALIDATED", "changes": [
+        {"managedElementRef": "ME-A", "managedFunctionRef": None, "operation": "merge", "verdict": "PASS", "reason": None}]}
+
+    too_big = _dry(client, className="EP_D2C", attributeChanges={"localPortNumber": 70000})          # MGT-3.3: the YANG check applies
+    assert too_big.status_code == 422 and "is out of range 0..65535" in too_big.json()["detail"]["detail"]
+    assert _dry(client, className="ORU", attributeChanges={"noSuchAttr": 1}).status_code == 422
+    nope = _dry(client, me="ME-NOPE", attributeChanges={"a": 1}).json()                              # not registered: a real write is rejected
+    assert nope["status"] == "WOULD_REJECT_SOME" and nope["changes"][0] == {
+        "managedElementRef": "ME-NOPE", "managedFunctionRef": None, "operation": "merge", "verdict": "WOULD_REJECT", "reason": "ENDPOINT_UNREACHABLE"}
+
+    assert dispatched == []                                                                         # nothing went southbound
+    db = db_session_factory()
+    assert db.query(WriteConfigJob).count() == 0 and db.query(WriteConfigSubChange).count() == 0
+    db.close()
+    real = _write(client, className="EP_D2C", attributeChanges={"localPortNumber": 8080})           # and a real write still dispatches
+    assert real.status_code == 202 and len(dispatched) == 1
+
+
+def test_a_dry_run_is_denied_where_the_real_write_would_be(client, dispatched):
+    resp = client.post("/config-jobs", json={"requestedBy": "rapp", "scope": "entire-RAN", "dryRun": True,
+                                             "changes": [{"managedElementRef": "ME-A", "attributeChanges": {"a": 1}}]})
+    assert resp.status_code == 403 and "MSAC_ACCESS_DENIED" in str(resp.json())
+    assert dispatched == []

@@ -522,6 +522,25 @@ def test_change_alarm_ack_state(client, db_session_factory):
     assert resp.json()["ackState"] == "ACKNOWLEDGED"
 
 
+def test_ack_and_clear_of_an_unknown_alarm_are_404(client):
+    """MGT-8.1: both used to raise AttributeError on None (a 500)."""
+    missing = uuid.uuid4()
+    for path, params in ((f"/alarms/{missing}/ack", {"new_state": "ACKNOWLEDGED"}), (f"/alarms/{missing}/clear", {})):
+        resp = client.patch(path, params=params)
+        assert resp.status_code == 404 and resp.json()["detail"]["title"] == "ALARM_NOT_FOUND"
+
+
+def test_ack_state_must_be_a_known_value_and_nothing_is_stored_otherwise(client, db_session_factory):
+    _make_me(db_session_factory)
+    alarm_id = client.post("/alarms/ingest", params={
+        "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "major",
+    }).json()["alarmId"]
+    assert client.patch(f"/alarms/{alarm_id}/ack", params={"new_state": "MAYBE"}).status_code == 422
+    assert client.get("/alarms").json()["items"][0]["ackState"] == "UNACKNOWLEDGED"
+    assert client.patch(f"/alarms/{alarm_id}/ack", params={"new_state": "ACKNOWLEDGED"}).status_code == 200
+    assert client.patch(f"/alarms/{alarm_id}/ack", params={"new_state": "UNACKNOWLEDGED"}).json()["ackState"] == "UNACKNOWLEDGED"
+
+
 def test_change_alarm_ack_state_records_ack_user_id_and_changed_at(client, db_session_factory):
     """HISTORY.md §7: TS28111_FaultNrm.yaml's AlarmRecord carries
     ackUserId (who acknowledged it) and alarmChangedTime (its own "last

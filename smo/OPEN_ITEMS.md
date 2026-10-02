@@ -884,13 +884,12 @@ ack and clear routes.
 | MGT-2.4 | Same on software-management jobs | Test | – |
 | MGT-2.5 | Same on file routes | Test | – |
 
-#### PR-MGT-3 — Dry run
+#### PR-MGT-3 — Dry run (done: `HISTORY.md` §10)
+
+No steps open.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-3.1 ★ | `dryRun=true` on `POST /config-jobs`: run schema and MSAC checks, send nothing | No southbound call (test) | – |
-| MGT-3.2 | Per-sub-change verdict in the response | Test | MGT-3.1 |
-| MGT-3.3 | Include the YANG check when available | Test | MGT-3.1, SB-5.2 |
 
 #### PR-MGT-4 — Change windows and approvals
 
@@ -935,12 +934,10 @@ ack and clear routes.
 
 #### PR-MGT-8 — Alarm lifecycle depth
 
-Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`). The handlers shown in the code have no check for a missing
-alarm and take any `new_state` string.
+Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 404 and `new_state` must be `ACKNOWLEDGED` or `UNACKNOWLEDGED` (`MGT-8.1`, `HISTORY.md` §10).
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-8.1 ★ | 404 for an unknown alarm; `new_state` validated against the allowed values | Tests for both | – |
 | MGT-8.2 | `alarm_history` table: every ack, clear and severity change | Migration; row per change | – |
 | MGT-8.3 | Comments: add and list | Route tests | – |
 | MGT-8.4 | List filters: severity, state, time range, element | Route tests | – |
@@ -1441,6 +1438,6 @@ Pick any, or mix them. `Needs` is the only constraint.
 3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: the rest of OBS-2, OPS-1.6, OPS-4.1b (cutting the first tag).
 4. **Durable notifications:** MSG-1.1–1.9 done (SA SMOS has no destination call to move); MSG-1.10 is the one leftover one module at a time.
 5. **First real O1 path:** SB-3, SB-5.1–5.2, SB-1.1–1.2 done; SB-1.3 and 1.5 built and tested in-process; SB-1.4 (the netopeer2 lab) open.
-6. **Safer changes:** MGT-1.1–1.4, MGT-3.1, MGT-8.1.
+6. **Safer changes:** MGT-3 and MGT-8.1 done; MGT-1.1–1.4 open.
 7. **Later:** HA, mesh, federation, vendor profiles.
 8. **Dev sanity and demo:** OPS-10.1–10.4 (master redeploy gate on Actions) and OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-1.6, OPS-2 and OPS-5.
