@@ -1098,3 +1098,20 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Not taken, still open.** `auto_explain` and `pg_stat_statements` (the next step up from a log line; needs a preloaded library and an
   extension per database); `EXPLAIN` of the ten busiest list routes against a large table (DB-4.2, needs `QA-1.2` seed data), the
   indexes they show are missing (DB-4.3), and keyset pagination (DB-4.4, DB-4.5).
+
+### PR-QA-6 — Authorisation matrix (QA-6.1; 6.2 open)
+
+- **The walk (QA-6.1).** No backend checks a token; R1 Termination is the one enforcement point, so "is any route open?" is a question about the
+  gateway. `tests_integration/test_authz_walk.py` answers it from the apps' real route tables: (1) the gateway's explicit routes are exactly
+  `/health`, `/live`, `/ready` and `/bootstrap` (any other explicit route on it would be answered before the token check); (2) for every
+  method-and-path of every backend (455 today, docs routes included), a request through the gateway with no `Authorization`, an empty one, a
+  bare `Bearer`, a non-bearer scheme, a bare token without a scheme, or an inactive token is 401 and never reaches the backend, and with an
+  active token it is forwarded exactly once (so the walk cannot pass by refusing everything); (3) every committed OpenAPI spec declares the
+  `r1BearerAuth` requirement on every operation, with `security: []` only on the gateway's four public paths and SME's `/oauth2/token` and
+  `/oauth2/introspect`.
+- **Teeth.** The walker is a function (`unauthenticated_routes`) proved on a toy gateway with one seeded open path. On the real gateway, adding an
+  explicit `GET /debug-routes` fails the first test and skipping the check for one prefix (`dme/data-jobs`) fails the walk; both reverted.
+- **Found on the way.** Nothing open. One thing the first draft got wrong, worth keeping: SME's own `/oauth2/introspect` route and the gateway's
+  introspection call have the same URL once the prefix is stripped, so the fake backend told them apart by the call shape (`json=` vs a forwarded body).
+- **Not taken, still open.** QA-6.2 (the GUI BFF's role matrix). An unknown prefix is answered 404 `NO_ROUTE` before the token check, which tells an
+  unauthenticated caller which prefixes exist (they are public in `/bootstrap`-adjacent docs); the walk does not treat that as open since no backend is reached.

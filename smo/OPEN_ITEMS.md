@@ -1449,7 +1449,6 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 | QA-4.1 | Upgrade test in CI: previous schema to head, then the replay | Job green | OPS-1.6 |
 | QA-5.1 | 24-hour soak at baseline load | No memory or pool growth | QA-1.4, OBS-2.4 |
 | QA-5.2 | 72-hour soak | Same | QA-5.1 |
-| QA-6.1 ★ | Test that walks the route table: every route needs a token except `/health` and `/bootstrap` | Fails on a seeded open route | – |
 | QA-6.2 | Role matrix test for the GUI BFF (`rbac.py`) | Every rule has a positive and a negative test | – |
 | QA-7.1 | `mllf` route tests (5 tests today, the CERTIFIED gate) | ≥ 20 route-level tests | – |
 | QA-7.2 | Same for `ran-analytics`, `mock-o1-adaptor`, `so-smos`, `mock-near-rt-ric`, `r1-termination` | Counts raised, one PR each | – |
@@ -1462,7 +1461,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):**
    OBS-1.1.
-2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.1–13.3, QA-6.1.
+2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.1–13.3.
 3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1.
 4. **Durable notifications:** MSG-1.1–1.4, then MSG-1.5 onwards one module at a time.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.
