@@ -135,10 +135,13 @@ class R1Client:
         return headers
 
     def _send(self, send, path: str, **kwargs) -> httpx.Response:
-        resp = send(self._url(path), headers=self._headers(), **kwargs)
+        # A caller's own headers (for example `Idempotency-Key`, PR-ST-3) ride along with the
+        # authorization and correlation headers; the client's own win on a clash.
+        extra = kwargs.pop("headers", None) or {}
+        resp = send(self._url(path), headers={**extra, **self._headers()}, **kwargs)
         if resp.status_code == 401 and self._bearer_token is None:
             # expired or revoked at SME since it was cached: one fresh token, one retry
-            resp = send(self._url(path), headers=self._headers(refresh=True), **kwargs)
+            resp = send(self._url(path), headers={**extra, **self._headers(refresh=True)}, **kwargs)
         return resp
 
     def get(self, path: str, **kwargs) -> httpx.Response:

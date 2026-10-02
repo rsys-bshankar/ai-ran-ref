@@ -14,10 +14,11 @@ class Scripted:
     """An R1 client that answers each call from a list, and records the calls."""
 
     def __init__(self, *responses):
-        self.responses, self.calls = list(responses), []
+        self.responses, self.calls, self.headers = list(responses), [], []
 
     def _answer(self, verb, path, **kw):
         self.calls.append((verb, path))
+        self.headers.append(kw.get("headers"))
         return self.responses.pop(0)
 
     def get(self, path, **kw):
@@ -74,3 +75,28 @@ def test_a_successful_call_is_sent_once():
     r1 = Scripted(FakeResponse(204))
     PlatformClient(r1).deregister_provider("apf-1")
     assert len(r1.calls) == 1
+
+
+def test_every_post_carries_an_idempotency_key_and_the_repeat_reuses_it():
+    r1 = Scripted(_conflict(), FakeResponse(201, {}))
+    PlatformClient(r1)._r1.post("/nfo/deployments", json={})
+    keys = [h["Idempotency-Key"] for h in r1.headers]
+    assert len(keys) == 2 and keys[0] == keys[1] and len(keys[0]) == 32
+
+
+def test_each_post_gets_its_own_key():
+    r1 = Scripted(FakeResponse(201, {}), FakeResponse(201, {}))
+    client = PlatformClient(r1)._r1
+    client.post("/a", json={})
+    client.post("/a", json={})
+    assert r1.headers[0]["Idempotency-Key"] != r1.headers[1]["Idempotency-Key"]
+
+
+def test_a_callers_own_key_is_kept_and_other_verbs_and_uploads_get_none():
+    r1 = Scripted(FakeResponse(201, {}), FakeResponse(204), FakeResponse(200, {}))
+    client = PlatformClient(r1)._r1
+    client.post("/a", json={}, headers={"Idempotency-Key": "mine"})
+    client.delete("/a")
+    client.post("/upload", files={"f": b"x"})
+    assert r1.headers[0] == {"Idempotency-Key": "mine"}
+    assert r1.headers[1] is None and r1.headers[2] is None

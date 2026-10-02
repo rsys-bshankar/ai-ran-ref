@@ -153,6 +153,10 @@ class FrameworkError:
     # PR-ST-2 — a row's version changed between load and write (another request
     # committed first); smo_shared/versioning.py. The caller repeats the request.
     CONCURRENT_MODIFICATION = ("CONCURRENT_MODIFICATION", 409)
+    # PR-ST-3 — Idempotency-Key header on command routes; smo_shared/idempotency.py.
+    IDEMPOTENCY_KEY_INVALID = ("IDEMPOTENCY_KEY_INVALID", 422)
+    IDEMPOTENCY_KEY_REUSED = ("IDEMPOTENCY_KEY_REUSED", 422)
+    IDEMPOTENCY_KEY_IN_PROGRESS = ("IDEMPOTENCY_KEY_IN_PROGRESS", 409)
 
 
 def framework_error(code: tuple[str, int], detail: str | None = None) -> HTTPException:

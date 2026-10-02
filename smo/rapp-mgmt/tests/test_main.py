@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from smo_shared.db import Base, get_session
+from smo_shared.idempotency import IdempotencyKey
 from smo_shared.testing import concurrent_commit_on
 
 from app.main import app
@@ -43,7 +44,7 @@ def db_session_factory():
     Base.metadata.create_all(engine, tables=[
         Base.metadata.tables["application_package"], Base.metadata.tables["package_usage_registration"],
         RAppInstance.__table__, RAppFaultReport.__table__, RAppPerformanceReport.__table__,
-        RAppInstanceVersion.__table__,
+        RAppInstanceVersion.__table__, IdempotencyKey.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -1095,3 +1096,22 @@ def test_a_concurrent_writer_turns_a_transition_into_a_409_and_the_repeat_succee
 
     repeat = client.post(f"/instances/{inst_id}/recover")
     assert repeat.status_code == 200 and repeat.json()["state"] == "DEPLOYING"
+
+
+def test_create_instance_with_an_idempotency_key_creates_one_instance(client, db_session_factory, monkeypatch):
+    """PR-ST-3: a repeat of CreateInstance with the same Idempotency-Key is answered from the first
+    answer, not run again; the same key with another payload is refused."""
+    fake_get, fake_post = _route_r1_get_post()
+    monkeypatch.setattr("app.main.R1Client.get", fake_get)
+    monkeypatch.setattr("app.main.R1Client.post", fake_post)
+    body = {"packageId": str(uuid.uuid4()), "config": {}}
+
+    first = client.post("/instances", json=body, headers={"Idempotency-Key": "create-1"})
+    again = client.post("/instances", json=body, headers={"Idempotency-Key": "create-1"})
+    assert first.status_code == again.status_code == 202
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    with db_session_factory() as session:
+        assert session.query(RAppInstance).count() == 1
+
+    other = client.post("/instances", json={**body, "packageId": str(uuid.uuid4())}, headers={"Idempotency-Key": "create-1"})
+    assert other.status_code == 422 and other.json()["detail"]["title"] == "IDEMPOTENCY_KEY_REUSED"

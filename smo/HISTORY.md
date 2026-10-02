@@ -851,3 +851,33 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   twice when the first attempt loses the race and is repeated, and the lazy sweep's teardown calls can run
   on two replicas. The remedy is the idempotency key of `PR-ST-3`.
 
+### PR-ST-3 — Idempotency keys on commands
+
+- **Mechanism (ST-3.1, ST-3.2).** `smo_shared/idempotency.py`: the `@idempotent(module, status_code)` route decorator
+  (the route takes `request: Request` and `db: Session`) and the `idempotency_key` table (primary key module, caller, key;
+  request hash, state, stored status and body, created_at; migration in `001_init.sql`). The first use commits an
+  `IN_PROGRESS` reservation, runs the route and stores the 2xx answer as `COMPLETED`; a repeat gets that answer with
+  `Idempotent-Replayed: true`. The key is scoped to the caller (the invoker id R1 Termination vouches for, `anonymous`
+  without one), and the request hash covers method, path and payload, so another request under the same key is
+  `422 IDEMPOTENCY_KEY_REUSED`. A repeat while the first runs is `409 IDEMPOTENCY_KEY_IN_PROGRESS`; an attempt that raises
+  releases its reservation, so only 2xx answers are ever stored and a repeat after a failure (including a lost write race,
+  `PR-ST-2`) runs again. A reservation older than `IDEMPOTENCY_IN_PROGRESS_SECONDS` (300) is taken over by a
+  compare-and-swap, so exactly one replica takes an abandoned key.
+- **Routes (ST-3.3 to ST-3.6).** `POST /rapp-mgmt/instances`; `POST /nfo/deployments` and `.../scale`; AIMgF `POST
+  /training-jobs`, `/validation-jobs`, `/emulation-jobs`, `/models/{id}/inference-jobs`; `POST /ran-nf-oam/config-jobs`. Each has
+  a route test that a repeat creates no second row (and, for config jobs, sends nothing southbound twice); an integration
+  test through the shared database and NFO's real FOCOM call also shows the per-caller scoping.
+- **Expiry (ST-3.7).** Records older than `IDEMPOTENCY_KEY_TTL_SECONDS` (86400) are deleted when a new key is reserved, so there
+  is no scheduler and no extra write on a replay.
+- **SDK (ST-3.8).** `smo_sdk._common._RetryOnConflict` adds a generated `Idempotency-Key` to every POST (not uploads, and a
+  caller's own key wins) and the repeat after `409 CONCURRENT_MODIFICATION` reuses it. This needed `R1Client` to merge a
+  caller's `headers=` with its own; the client's authorization and correlation headers win on a clash, and the extra headers
+  survive the 401 refresh retry.
+- **Proof.** `shared/tests/test_idempotency.py` on SQLite and real Postgres (CI `migration-postgres` job), including six
+  threads racing one key (one execution; the rest replay or get 409). With the reservation logic removed, 16 of its tests fail.
+- **Not taken.** Writing the stored answer inside the route's own transaction: routes commit internally and build their
+  response afterwards, so the answer is stored right after the commit instead. A replica that dies in that window leaves a
+  reservation that is taken over after the in-progress timeout, and the command can then run a second time; the window is
+  documented in `ARCHITECTURE.md`. Storing 4xx answers: a deterministic refusal is cheap to recompute and storing it would
+  pin a stale refusal. Versioning the header into OpenAPI: it is a platform-wide convention, documented once.
+

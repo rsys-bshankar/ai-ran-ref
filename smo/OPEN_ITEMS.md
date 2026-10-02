@@ -107,8 +107,8 @@ and HA much later).
 
 **How to read it**
 
-- A **feature** (`PR-ST-3`) is a capability. Its **steps** (`ST-3.1`, `ST-3.2`, …) are the pickable units. Cite a
-  step as `PR-ST-3.3`.
+- A **feature** (`PR-ST-4`) is a capability. Its **steps** (`ST-4.1`, `ST-4.2`, …) are the pickable units. Cite a
+  step as `PR-ST-4.3`.
 - Every step is sized **≤ 2 days** and has a testable **Done when**. A step that cannot be said in one line of
   "Done when" has been split further.
 - **Needs** lists hard prerequisites only (`–` means it can start today). Steps are listed in a sensible order, but
@@ -123,7 +123,7 @@ and HA much later).
 
 | Area | Prefix | Features |
 |---|---|---|
-| Stateless / scale-out | `PR-ST` | ST-3 idempotency · ST-4 module identity · ST-5 BFF session state · ST-6 pool/timeouts/shutdown · ST-7 readiness · ST-8 single-runner · ST-9 inline retry |
+| Stateless / scale-out | `PR-ST` | ST-4 module identity · ST-5 BFF session state · ST-6 pool/timeouts/shutdown · ST-7 readiness · ST-8 single-runner · ST-9 inline retry |
 | Database | `PR-DB` | DB-1 credentials · DB-2 per-module schemas · DB-3 retention · DB-4 indexes/pagination · DB-5 pooler · DB-6 backup · DB-7 Postgres HA |
 | Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
@@ -148,19 +148,6 @@ State today, checked in the code (audit closed as `PR-ST-1`, `HISTORY.md` §10):
 module. Process state is limited to `R1Client`'s token cache and invoker identity
 (`shared/smo_shared/r1_client.py`), an `lru_cache` of the vendor registry (`ran-nf-oam/app/vendors.py`), the
 GUI BFF's per-process login lockout, and module-level dicts in the two mocks (test doubles, out of scope).
-
-#### PR-ST-3 — Idempotency keys on commands
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| ST-3.1 | `idempotency_key` table: module, key, request hash, response status and body, created_at | Migration applied | – |
-| ST-3.2 | `smo_shared` helper: begin (replay or reserve), complete | Unit tests: replay returns stored response; same key with different body is 422; concurrent same key blocks or 409 | ST-3.1 |
-| ST-3.3 ★ | Apply to `rapp-mgmt` deploy | Retry with the same key creates one instance | ST-3.2 |
-| ST-3.4 | Apply to `nfo` instantiate and scale | Same | ST-3.2 |
-| ST-3.5 | Apply to AIMgF job start routes | Same | ST-3.2 |
-| ST-3.6 | Apply to RAN NF OAM `POST /config-jobs` | Retry does not create a second job or second southbound write | ST-3.2 |
-| ST-3.7 | Purge expired keys (TTL env, default 24 h) | Purge test | ST-3.1 |
-| ST-3.8 | SDK sends a generated key and reuses it on retry | SDK test | ST-3.3 |
 
 #### PR-ST-4 — One module identity across replicas
 
@@ -1523,7 +1510,7 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 
 Pick any, or mix them. `Needs` is the only constraint.
 
-1. **Replica-safe foundation (no new infrastructure):** ST-3.1–3.3, ST-4.1–4.3, ST-5.1, ST-6.1,
+1. **Replica-safe foundation (no new infrastructure):** ST-4.1–4.3, ST-5.1, ST-6.1,
    ST-7.1–7.2, DB-1.1, OBS-1.1.
 2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.1–13.3, DB-1.1–1.3, QA-6.1.
 3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1, DB-6.1.

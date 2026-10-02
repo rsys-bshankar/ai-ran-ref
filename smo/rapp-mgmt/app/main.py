@@ -8,7 +8,7 @@ and UpgradeInstance's auto-rollback made precise (upgrade.py).
 import uuid
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.versioning import install_concurrency_handler
+from smo_shared.idempotency import idempotent
 
 from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
 from .provisioning import (DEPLOYABLE_PACKAGE_STATES, provision_instance, register_sme_declarations,  # noqa: F401
@@ -116,7 +117,8 @@ def _fire(inst: RAppInstance, event: InstanceEvent) -> InstanceState:
 
 
 @app.post("/instances", status_code=202)
-def create_instance(body: CreateInstanceRequest, db: Session = Depends(get_session)):
+@idempotent("rapp-mgmt", status_code=202)
+def create_instance(body: CreateInstanceRequest, request: Request, db: Session = Depends(get_session)):
     """CreateInstance — requires a validated package: AVAILABLE, or PRIMED
     (AVAILABLE plus pre-provisioned resources; D-SEC-RAPP-1); 404 for an
     unknown package, 409 for any other state. NFO handoff per Onboarding/rApp

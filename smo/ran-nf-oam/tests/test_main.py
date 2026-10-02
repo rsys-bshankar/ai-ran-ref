@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
 from smo_shared.testing import concurrent_commit_on
+from smo_shared.idempotency import IdempotencyKey
 
 from app.main import app
 from app.models import Alarm, CMSchemaCache, FMSubscription, FileSubscription, ManagedEntity, MsacAccessRule, MsacIdentity, MsacRole, PMFile, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, VendorCapability, WriteConfigJob, WriteConfigSubChange
@@ -26,7 +27,7 @@ def db_session_factory():
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__,
         WriteConfigJob.__table__, WriteConfigSubChange.__table__, PMSubscription.__table__, FMSubscription.__table__, SoftwareManagementJob.__table__,
         VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__, MsacAccessRule.__table__, PMFile.__table__,
-        FileSubscription.__table__,
+        FileSubscription.__table__, IdempotencyKey.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -665,3 +666,21 @@ def test_a_concurrent_writer_turns_a_config_job_write_into_a_409(client, db_sess
         stale = client.post("/config-jobs", json={"requestedBy": "op", "scope": "cell", "changes": []})
     assert fired and stale.status_code == 409
     assert stale.json()["detail"]["title"] == "CONCURRENT_MODIFICATION"
+
+
+def test_a_config_job_with_an_idempotency_key_is_written_once(client, db_session_factory, monkeypatch):
+    """PR-ST-3: a repeat of WriteConfigurationChanges with the same Idempotency-Key creates no second
+    job and sends nothing southbound a second time."""
+    _make_me(db_session_factory, protocol="NETCONF")
+    sent = []
+    monkeypatch.setattr("app.main.send_edit_config", lambda *a, **kw: sent.append(a) or True)
+    body = {"requestedBy": "operator", "scope": "cell",
+            "changes": [{"managedElementRef": "ME-1", "attributeChanges": {"adminState": "UNLOCKED"}}]}
+
+    first = client.post("/config-jobs", json=body, headers={"Idempotency-Key": "cfg-1"})
+    again = client.post("/config-jobs", json=body, headers={"Idempotency-Key": "cfg-1"})
+    assert first.status_code == again.status_code == 202
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    assert len(sent) == 1
+    with db_session_factory() as session:
+        assert session.query(WriteConfigJob).count() == 1

@@ -14,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 from sqlalchemy import Uuid as UuidType
 
 from smo_shared.db import Base, get_session
+from smo_shared.idempotency import IdempotencyKey
 from smo_shared.testing import concurrent_commit_on
 
 from app.main import app
@@ -36,7 +37,7 @@ def db_session_factory():
         Table("application_package", Base.metadata, Column("package_id", UuidType, primary_key=True))
     Base.metadata.create_all(engine, tables=[
         Base.metadata.tables["application_package"], NFDeploymentDescriptor.__table__, NFDeployment.__table__,
-        NFOCloudResource.__table__, LCMOperation.__table__,
+        NFOCloudResource.__table__, LCMOperation.__table__, IdempotencyKey.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -467,3 +468,24 @@ def test_a_concurrent_writer_turns_a_heal_into_a_409_and_the_repeat_succeeds(cli
 
     repeat = client.post(f"/deployments/{nf_deployment_id}/heal")
     assert repeat.status_code == 200 and repeat.json()["state"] == "RUNNING"
+
+
+def test_instantiate_and_scale_with_an_idempotency_key_run_once(client, monkeypatch, db_session_factory):
+    """PR-ST-3: a repeat with the same Idempotency-Key is answered from the first answer."""
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"oCloudId": "c1"}))
+    descriptor_id = _create_descriptor(client)
+    body = {"nfDeploymentDescriptorId": descriptor_id, "name": "nf-idem"}
+
+    first = client.post("/deployments", json=body, headers={"Idempotency-Key": "inst-1"})
+    again = client.post("/deployments", json=body, headers={"Idempotency-Key": "inst-1"})
+    assert first.status_code == again.status_code == 202
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    with db_session_factory() as session:
+        assert session.query(NFDeployment).count() == 1
+
+    deployment_id = first.json()["nfDeploymentId"]
+    scaled = client.post(f"/deployments/{deployment_id}/scale", headers={"Idempotency-Key": "scale-1"})
+    repeated = client.post(f"/deployments/{deployment_id}/scale", headers={"Idempotency-Key": "scale-1"})
+    assert scaled.status_code == repeated.status_code == 200 and repeated.headers["Idempotent-Replayed"] == "true"
+    with db_session_factory() as session:
+        assert session.query(LCMOperation).filter_by(operation_type="SCALE").count() == 1

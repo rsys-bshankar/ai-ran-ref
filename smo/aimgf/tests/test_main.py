@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 from smo_shared.db import Base, get_session
+from smo_shared.idempotency import IdempotencyKey
 from smo_shared.testing import make_test_engine
 from smo_shared.testing import concurrent_commit_on
 
@@ -125,6 +126,7 @@ def db_session_factory():
         cls.__table__ for cls in vars(aimgf_models).values()
         if isinstance(cls, type) and issubclass(cls, Base) and cls is not Base and cls.__module__ == aimgf_models.__name__
     ])
+    IdempotencyKey.__table__.create(engine)
     return sessionmaker(bind=engine)
 
 
@@ -1546,3 +1548,31 @@ def test_a_concurrent_writer_turns_a_lifecycle_advance_into_a_409_and_the_repeat
 
     repeat = client.post(f"/models/{model_id}/advance", params={"event": "ROLLBACK", "decided_by": "op"})
     assert repeat.status_code == 200
+
+
+def test_a_job_start_with_an_idempotency_key_creates_one_job(client, mlmr, db_session_factory):
+    """PR-ST-3: a repeat of RequestTraining with the same Idempotency-Key is answered from the first
+    answer and starts no second job; without the key a repeat is a real second request."""
+    model_id = mlmr.add_model()
+    body = {"modelId": str(model_id), "producerId": "rapp-1"}
+
+    first = client.post("/training-jobs", json=body, headers={"Idempotency-Key": "train-1"})
+    again = client.post("/training-jobs", json=body, headers={"Idempotency-Key": "train-1"})
+    assert first.status_code == again.status_code == 201
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+    with db_session_factory() as session:
+        assert session.query(TrainingJob).count() == 1
+    assert client.post("/training-jobs", json=body).status_code == 201  # no key: a real second request
+    with db_session_factory() as session:
+        assert session.query(TrainingJob).count() == 2
+
+
+def test_a_started_validation_job_is_replayed_by_key(client, mlmr, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
+    body = {"modelId": str(model_id), "producerId": "rapp-1"}
+    first = client.post("/validation-jobs", json=body, headers={"Idempotency-Key": "val-1"})
+    again = client.post("/validation-jobs", json=body, headers={"Idempotency-Key": "val-1"})
+    assert first.status_code == again.status_code == 201 and again.json() == first.json()
+    with db_session_factory() as session:
+        assert session.query(ValidationJob).count() == 1

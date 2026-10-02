@@ -9,7 +9,8 @@
 | Depends on (over R1) | Onboarding (`onboarding-status`, `usage/start`, `usage/stop`); NFO (`POST /nfo/deployments`, `DELETE /nfo/deployments/{id}`); SME (provider and service-API registration and deregistration); DME (`DELETE /dme/production-capabilities`) |
 | Called by | Operators and GUI BFF; the rApp container itself (`bootstrap-complete`, `config`, `performance`, `fault`); Intent Service (reads an instance's `autonomyMode` and `regionScope`); SA SMOS (`rollback`, `versions`); the reference rApps (read their own instance) |
 | Database tables | `rapp_instance` (versioned), `rapp_instance_version`, `rapp_fault_report`, `rapp_performance_report` |
-| Unit tests | 91 passed (`tests/`, SQLite, standalone) |
+| Idempotency | `POST /instances` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
+| Unit tests | 92 passed (`tests/`, SQLite, standalone) |
 | Status | Done. No open item in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) names this module; limits in 2.8 |
 | Time-driven behaviour | On request, never on a timer: an overdue upgrade is rolled back the next time either row is touched |
 
