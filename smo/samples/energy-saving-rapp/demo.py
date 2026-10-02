@@ -92,6 +92,15 @@ def demo_01(state: dict) -> None:
     instance and start it."""
     package = call("post", "onboarding", "/packages", json={"location": CSAR_URL})
     status = call("get", "onboarding", f"/packages/{package['packageId']}/onboarding-status")
+    if status["state"] != "AVAILABLE":
+        # Onboarding rejects a byte-identical package (DEMO_RUNBOOK.md §2), so when the
+        # runbook's lifecycle sections already onboarded this CSAR, reuse that package.
+        existing = [p for p in call("get", "onboarding", "/packages", params={"limit": 500})["items"]
+                    if p["name"] == "EnergySaving_rApp" and p["state"] in ("AVAILABLE", "PRIMED")]
+        if not existing:
+            raise SystemExit(f"EnergySaving_rApp package is {status['state']} and none is AVAILABLE")
+        package = {"packageId": existing[0]["packageId"]}
+        status = call("get", "onboarding", f"/packages/{package['packageId']}/onboarding-status")
     instance = call("post", "rapp-mgmt", "/instances", json={
         "packageId": package["packageId"], "autonomyMode": "AUTONOMOUS",
         "config": {"managedElementRef": ME, "cells": CELLS, "actuator": "ADMINISTRATIVE_STATE"},
