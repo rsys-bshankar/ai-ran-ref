@@ -115,10 +115,8 @@ and HA much later).
   only `Needs` is binding.
 - **★** marks a step that gives value on its own if you stop right after it.
 - **(verify)** marks a statement that was not confirmed against running code.
-- Where a step touches a table, it includes its migration. The Alembic history exists (`PR-OPS-1.1`–`1.3`), but
-  the compose stack still creates the schema from `migrations/001_init.sql` alone and a rule that a schema change must be a
-  revision is `OPS-1.7`: until `OPS-1.4`/`1.5` land, keep editing `001_init.sql` as today and expect existing databases to need
-  a revision once those do.
+- Where a step touches a table, it includes its migration: a revision in `migrations/versions/` (`CLAUDE.md`, "Schema changes
+  are revisions"), never an edit to `001_init.sql`.
 - When a feature is complete, move its ID to `HISTORY.md`, as for sections 1–4.
 
 ### 5.0 Feature map
@@ -179,7 +177,7 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | DB-2.1 ★ | Table → owning-module map for all tables (≈120) in a checked-in file | File merged | – |
-| DB-2.2 | CI test: every table in `001_init.sql` is declared by exactly one module's models | Test fails on an orphan table | DB-2.1 |
+| DB-2.2 | CI test: every table in the migrated schema is declared by exactly one module's models | Test fails on an orphan table | DB-2.1 |
 | DB-2.3 | List foreign keys that cross modules; each is a break of "modules talk only through R1" | List with a decision per FK (keep as ID reference without FK, or move) | DB-2.1 |
 | DB-2.4 | Replace cross-module FKs by plain ID columns, one module pair per PR | Per PR: tests and migration check green | DB-2.3 |
 | DB-2.5 | Pilot: `onboarding` tables in schema `onboarding`; `search_path` set by the service | Module works; other modules unaffected | DB-2.2 |
@@ -243,7 +241,6 @@ Webhooks go out best-effort and inline through `smo_shared/webhook.py` (0 retrie
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | MSG-1.1 ★ | Classify every `post_webhook` call site: fire-and-forget vs needs the response (an RMIH callback may) | Table committed; only the first class moves | – |
-| MSG-1.2 | `notification_outbox` table: id, module, destination, payload, status, attempts, next_attempt_at, created_at | Migration applied | – |
 | MSG-1.3 | `enqueue(db, destination, payload)` inserts in the caller's transaction | Rollback of the caller removes the row (test) | MSG-1.2 |
 | MSG-1.4 | `drain(db)` sends pending rows right after commit, keeping today's behaviour | A crash between commit and send leaves a pending row that a later drain sends | MSG-1.3 |
 | MSG-1.5 | Convert DME callbacks | Existing DME tests green; new crash test | MSG-1.4 |
@@ -515,16 +512,13 @@ HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10); no Op
 
 ### 5.6 Packaging, migrations and release (`PR-OPS`)
 
-#### PR-OPS-1 — Real migrations (open: OPS-1.4 onward)
+#### PR-OPS-1 — Real migrations (open: OPS-1.6)
 
-Alembic is in place (`docs/adr/0001-schema-migrations.md`, `HISTORY.md` §10): baseline `0001` is `001_init.sql`, `scripts/migrate.py` upgrades or stamps. There is no second revision yet.
+Alembic is in place and compose runs it (`docs/adr/0001-schema-migrations.md`, `HISTORY.md` §10): baseline `0001` is `001_init.sql`, revision `0002` is the notification outbox, `scripts/migrate.py` upgrades, stamps or downgrades, and the `migrate` service runs before the modules.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-1.4 | First real revision (a small additive change, like `PR-ST-2`'s `row_version` column, is the template) | Applies and rolls back | OPS-1.2 |
-| OPS-1.5 | Compose `migrate` one-shot service that the modules wait for | Fresh `up` is green | OPS-1.2 |
 | OPS-1.6 | CI: upgrade the previous commit's schema to head | Job green | OPS-1.4 |
-| OPS-1.7 | Contributor rule in `CLAUDE.md`: schema change = revision | Rule merged | OPS-1.3 |
 
 #### PR-OPS-2 — Helm chart
 
@@ -1435,7 +1429,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):** done.
 2. **Safe to expose:** done except SEC-13.2 and SEC-1.6.
-3. **Operable:** OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1.
+3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: the rest of OBS-2, OPS-1.6, OPS-4.1b (cutting the first tag).
 4. **Durable notifications:** MSG-1.1–1.4, then MSG-1.5 onwards one module at a time.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.
 6. **Safer changes:** MGT-1.1–1.4, MGT-3.1, MGT-8.1.

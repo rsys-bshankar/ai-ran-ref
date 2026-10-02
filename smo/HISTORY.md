@@ -1286,3 +1286,18 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **`smo/CHANGELOG.md`.** Keep a Changelog format, operator-facing (behaviour, configuration, schema), with the production-readiness work to date under `[Unreleased]`, including the changes an upgrading operator must act on (no default
   database password, non-root volumes to recreate, `migrate.py`). `tests_integration/test_changelog.py` keeps it well-formed: an `Unreleased` section first, semver dated headings newest first, a link per section.
 - **Decision not taken:** the first tag. A person cuts it: a tag is an outward, effectively permanent act. It is `OPS-4.1b` in `OPEN_ITEMS.md`, with `smo-v0.1.0` proposed. Image publishing by tag (4.2), release notes (4.3) and the `SECURITY.md` table (4.4) are open.
+
+### PR-OPS-1 (continued) and PR-MSG-1.2 — First revision, the migrate service, the contributor rule (OPS-1.4, 1.5, 1.7; MSG-1.2)
+
+- **Revision `0002` (OPS-1.4, MSG-1.2).** `migrations/versions/0002_notification_outbox.py` creates `notification_outbox` (id, module, destination, payload JSONB, status `PENDING|SENT|DEAD` with a CHECK, attempts,
+  next_attempt_at, last_error, created_at) and a partial index on `next_attempt_at WHERE status = 'PENDING'`, which is what a drain asks. It is the first revision and is additive (a new table nothing else reads), so the
+  previous release runs on the new schema. `smo_shared/outbox.py` is the ORM model, imported by `scripts/check_migration_matches_models.py`. `enqueue` and `drain` (MSG-1.3, 1.4) and the modules' adoption (1.5+) are open. A real
+  table was chosen over a throw-away column so the first revision is something the next feature needs anyway. `scripts/migrate.py` gained `--downgrade REVISION` (`-1`: one step); `test_migrations.py` takes a database from `0001`
+  to head and back and finds the schema equal to one that never left `0001`, then forward again; its `HEAD` constant must be raised with every revision.
+- **The `migrate` service (OPS-1.5).** A compose one-shot service (`restart: "no"`, hardened like the others, no published port) runs `python /srv/scripts/migrate.py`; every database-using service `depends_on` it with
+  `service_completed_successfully` (one YAML anchor, `x-wait-for-schema`, instead of 19 copies). The Dockerfile copies `alembic.ini`, `migrations/` and `scripts/migrate.py` into every image, so the image of any release can bring
+  the database to that release's schema; the service uses the R1 Termination build. Postgres no longer has `001_init.sql` mounted into initdb: an empty volume is migrated from the baseline, a volume made by an earlier stack
+  is stamped at `0001` and upgraded (the case `migrate.py` already handled), an up-to-date one is untouched. If it fails nothing else starts and `docker compose logs migrate` says why. CI's compose-e2e job asserts the service
+  exited 0 and the database is at the newest revision in the repository. Not verified outside CI: there is no Docker daemon in the development sandbox, so the compose path is first exercised by that job.
+- **The rule (OPS-1.7).** `CLAUDE.md`, "Schema changes are revisions": a revision plus the model in one PR, never an edit to `001_init.sql` or an earlier revision, compatible with the previous release where possible, `HEAD` raised in
+  the test, a `CHANGELOG.md` line. Upgrade-from-the-previous-commit in CI (OPS-1.6) is still open.

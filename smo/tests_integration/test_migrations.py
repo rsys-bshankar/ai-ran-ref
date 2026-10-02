@@ -21,6 +21,7 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
+HEAD = "0002"          # raise this with every new revision: the tests below then check it is the head
 
 
 def _scripts() -> ScriptDirectory:
@@ -41,6 +42,10 @@ def test_the_baseline_revision_runs_the_001_init_sql_file_unchanged():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert module.BASELINE_SQL == SMO_ROOT / "migrations" / "001_init.sql" and module.BASELINE_SQL.is_file()
+
+
+def test_the_head_is_the_revision_these_tests_expect():
+    assert _scripts().get_current_head() == HEAD, "a new revision: update HEAD here and add what it needs to the tests below"
 
 
 def test_every_revision_has_a_downgrade_or_says_it_cannot():
@@ -85,7 +90,7 @@ def _schema(url: str) -> dict:
 def test_a_fresh_database_and_a_hand_created_one_reach_the_same_schema(databases):
     fresh = _run(MIGRATE, databases["fresh"])
     assert fresh.returncode == 0, fresh.stderr
-    assert "upgraded to 0001" in fresh.stdout and "stamped" not in fresh.stdout
+    assert f"upgraded to {HEAD}" in fresh.stdout and "stamped" not in fresh.stdout
 
     engine = create_engine(databases["legacy"])        # created the way docker compose's initdb does: the file, no alembic
     with engine.begin() as connection:
@@ -96,7 +101,7 @@ def test_a_fresh_database_and_a_hand_created_one_reach_the_same_schema(databases
     assert "stamped the existing schema at 0001" in legacy.stdout
 
     assert _schema(databases["fresh"]) == _schema(databases["legacy"])
-    assert _run(MIGRATE, databases["legacy"], "--current").stdout.strip() == "0001"
+    assert _run(MIGRATE, databases["legacy"], "--current").stdout.strip() == HEAD
 
 
 @needs_postgres
@@ -126,3 +131,22 @@ def test_a_model_change_without_a_revision_fails_the_check(databases):
     engine.dispose()
     result = _run(CHECK, databases["fresh"])
     assert result.returncode == 1 and "service_profile.api_supp_feats" in result.stdout
+
+
+@needs_postgres
+def test_the_revision_after_the_baseline_applies_to_a_baseline_database_and_rolls_back(databases):
+    """OPS-1.4: from 0001 to head and back, with the schema after the round trip equal to a database that never left 0001."""
+    assert _run(MIGRATE, databases["fresh"], "--revision", "0001").returncode == 0
+    at_baseline = _schema(databases["fresh"])
+    assert "notification_outbox" not in {table for table, _ in at_baseline["constraints"]}
+
+    up = _run(MIGRATE, databases["fresh"])
+    assert up.returncode == 0 and f"upgraded to {HEAD}" in up.stdout, up.stderr
+    assert any(table == "notification_outbox" for table, *_ in _schema(databases["fresh"])["columns"])
+
+    down = _run(MIGRATE, databases["fresh"], "--downgrade", "-1")
+    assert down.returncode == 0 and "downgraded to 0001" in down.stdout, down.stderr
+    assert _schema(databases["fresh"]) == at_baseline
+
+    assert _run(MIGRATE, databases["fresh"]).returncode == 0           # and forward again
+    assert _run(MIGRATE, databases["fresh"], "--current").stdout.strip() == HEAD

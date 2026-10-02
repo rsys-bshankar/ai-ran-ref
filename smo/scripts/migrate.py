@@ -3,6 +3,7 @@
 
     python scripts/migrate.py                 upgrade to head (the default)
     python scripts/migrate.py --revision 0001 upgrade to a given revision
+    python scripts/migrate.py --downgrade -1  reverse one revision (or to a revision id); take a backup first
     python scripts/migrate.py --current       print the database's revision and exit
 
 The URL comes from `SMO_DATABASE_URL` (or the `*_FILE` forms), as for every service.
@@ -58,15 +59,26 @@ def migrate(connection, revision: str = "head") -> str | None:
     return current_revision(connection)
 
 
+def downgrade(connection, revision: str) -> str | None:
+    """Reverses to `revision` (a revision id, or `-1` for one step); returns the revision the database is then at."""
+    command.downgrade(alembic_config(connection), revision)
+    connection.commit()
+    return current_revision(connection)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--revision", default="head")
+    parser.add_argument("--downgrade", metavar="REVISION", help="reverse to REVISION (-1: one step) instead of upgrading")
     parser.add_argument("--current", action="store_true")
     args = parser.parse_args()
     engine = create_engine(resolve_database_url())
     with engine.connect() as connection:
         if args.current:
             print(current_revision(connection) or "(none)")
+            return 0
+        if args.downgrade:
+            print(f"downgraded to {downgrade(connection, args.downgrade) or '(none)'}")
             return 0
         legacy = is_legacy(connection)
         revision = migrate(connection, args.revision)
