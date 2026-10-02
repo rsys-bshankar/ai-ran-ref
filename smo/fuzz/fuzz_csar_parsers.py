@@ -19,6 +19,8 @@ from io import BytesIO
 import atheris
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "onboarding"))
+# Importing the app builds the database engine, which has no default URL (PR-DB-1); the parsers never connect.
+os.environ.setdefault("SMO_DATABASE_URL", "sqlite://")
 
 with atheris.instrument_imports():
     from app.main import (ONBOARD_VALIDATION_FAILURES, _asd_identity, _parse_ai_capabilities,

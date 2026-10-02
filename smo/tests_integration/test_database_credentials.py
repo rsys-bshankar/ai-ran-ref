@@ -33,3 +33,11 @@ def test_the_example_env_names_the_password_and_the_real_env_is_ignored():
     assert re.search(r"^POSTGRES_PASSWORD=\S+", example, re.M)
     assert not LITERAL_PASSWORD.search(example) and "POSTGRES_PASSWORD=smo" not in example
     assert ".env" in (SMO_ROOT / ".gitignore").read_text().splitlines()
+
+
+def test_every_fuzz_target_that_imports_an_app_sets_a_database_url_first():
+    # a fuzz target runs outside pytest, where an unset URL is refused; it found this the hard way in CI
+    for path in (SMO_ROOT / "fuzz").glob("fuzz_*.py"):
+        text = path.read_text()
+        if re.search(r"^\s*from app\.|^\s*import app\b", text, re.M):
+            assert "SMO_DATABASE_URL" in text, f"{path.name} imports an app without setting SMO_DATABASE_URL"

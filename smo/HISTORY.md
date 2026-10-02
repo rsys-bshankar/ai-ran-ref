@@ -1047,6 +1047,8 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   at import without connecting, so the detector (`"pytest" in sys.modules`) changes nothing for them, and a production image does not
   contain pytest. The two scripts that import the apps outside pytest: `generate_openapi_specs.py` sets `sqlite://` (it never connects);
   `check_migration_matches_models.py` now refuses to run without `SMO_DATABASE_URL` and no longer defaults to `smo:smo@localhost`.
+  The CSAR parser fuzz target (ClusterFuzzLite) imports the onboarding app outside pytest and broke on the first CI run of this change; it
+  now sets `sqlite://` before importing (it never connects), and a test requires that of every fuzz target that imports an app.
 - **Compose (DB-1.3).** `POSTGRES_PASSWORD` and every service's `SMO_DATABASE_URL` read `${POSTGRES_PASSWORD:?...}` from `smo/.env`
   (copied from the committed `.env.example`, which holds a placeholder, not a usable password; `.env` is git-ignored). `docker compose
   config` fails without it; CI asserts that, then validates with `--env-file .env.example` and copies it to `.env` for the e2e stack.
