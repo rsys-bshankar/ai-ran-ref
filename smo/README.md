@@ -106,6 +106,20 @@ there is no migration tooling yet (`OPEN_ITEMS.md`, `PR-OPS-1`).
 - A guided walk-through of every module, with copy-pasteable commands:
   [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md).
 
+Back up and restore the database (`scripts/db_backup.sh`, `scripts/db_restore.sh`): one `pg_dump` custom-format file,
+checked before it is kept, mode 0600 (it holds every table, including each module's SME invoker secret).
+
+```bash
+cd smo
+scripts/db_backup.sh --compose                        # the stack's postgres container; writes smo/backups/smo-<UTC>.dump
+SMO_DATABASE_URL=... scripts/db_backup.sh out.dump     # or any database, with a pg_dump at least as new as the server
+docker compose stop $(docker compose config --services | grep -vx postgres)   # nothing may write during a restore
+scripts/db_restore.sh --compose --yes backups/smo-<UTC>.dump                    # replaces the data, in one transaction
+```
+
+A restore needs `--yes`, replaces every object in the dump (`--clean --if-exists`) and, being one transaction, changes
+nothing if it fails. WAL archiving and point-in-time recovery are not set up yet (`PR-DB-6.3`).
+
 Run the tests:
 
 ```bash

@@ -1061,3 +1061,25 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Not taken, still open.** Compose still publishes Postgres on host port 5432 and runs it as superuser `smo` for every module
   (`PR-DB-2` per-module roles; `PR-SEC-4` secrets manager replaces the `.env` file; `SEC-4.3`). The GUI BFF's own SQLite needs no password.
   A volume created with the old `smo` password keeps it: recreate the volume (`docker compose down -v`) or change the role's password.
+
+### PR-DB-6 — Backup and restore (DB-6.1; 6.2–6.4 open)
+
+- **The scripts (DB-6.1).** `scripts/db_backup.sh` writes one `pg_dump --format=custom` file (`--no-owner --no-privileges`); `scripts/db_restore.sh`
+  puts it back with `pg_restore --clean --if-exists --exit-on-error --single-transaction`, so a restore that fails (a truncated or foreign file)
+  changes nothing. Two modes: the host's `pg_dump`/`pg_restore` against `SMO_DATABASE_URL` (override the binaries with `PG_DUMP` / `PG_RESTORE`;
+  they must be at least as new as the server), or `--compose`, which runs them inside the compose `postgres` container, always the right
+  version for the server and the mode the stack's operator wants. `scripts/pg_env.sh` turns the SQLAlchemy URL into `PG*` variables, so the
+  password is never on a command line (`ps`).
+- **Safe by default.** The dump goes to `OUTPUT.partial`, is checked with `pg_restore --list` and only then renamed, so a failed dump leaves nothing
+  that looks like a backup. The file is mode 0600: it holds every table, including each module's SME invoker secret. A restore refuses without
+  `--yes`. The README says to stop the writing services first.
+- **Proof.** `tests_integration/test_db_backup_restore.py` on a real Postgres (`SMO_TEST_POSTGRES_URL`): migration applied to a scratch database
+  and seeded (including a value with quotes and non-ASCII), backed up, restored into an empty database and compared table by table (122
+  tables); a second restore over a drifted live database brings the original data back; no `--yes` changes nothing; a truncated file
+  changes nothing; a failed backup leaves no file; the password is never seen in a process listing. Dropping `--clean`, the `--yes` check or
+  putting the password in `--dbname` each fails a test. The test skips when the client tools are older than the server (pg_dump refuses),
+  which is the case on the CI runner (Postgres 16 client, 18 server), so CI covers the scripts in the compose e2e job instead: backup in
+  compose mode, stop everything but the database, delete rows, restore, and compare the row count.
+- **Not taken, still open.** `compose` mode could not be run in the sandbox this was written in (no Docker daemon): its first run is the CI e2e
+  job. WAL archiving and point-in-time recovery (DB-6.3), a restore drill with timings (DB-6.4), and the CI job with a runbook smoke after the
+  restore and a host-mode run against Postgres 18 (DB-6.2) are not done; a dump restores to the moment it was taken only.
