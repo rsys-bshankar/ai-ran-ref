@@ -18,6 +18,7 @@ users authenticate to the BFF, the BFF authenticates to the SMO.
 import asyncio
 import secrets
 import time
+from contextlib import suppress
 
 import httpx
 
@@ -66,21 +67,25 @@ class R1Gateway:
     def _sme_base(self, token_endpoint: str) -> str:
         return self._sme_url_override or token_endpoint.rsplit("/oauth2/token", 1)[0]
 
-    async def _onboard_invoker(self, token_endpoint: str) -> SmoCredential:
+    async def _onboard_invoker(self, token_endpoint: str, stale: SmoCredential | None = None) -> SmoCredential:
+        """Register at SME and store the identity for every instance of this database (PR-ST-5). If another
+        instance stored its own first (or, with `stale`, replaced the refused identity first), this instance
+        offboards the duplicate it just registered and adopts the stored one."""
         # An opaque per-BFF label, not a PEM key: the BFF authenticates with
         # its onboarding secret, so SME has no key to verify assertions with
         # (an RFC 7523 client assertion needs a PEM key, SA-SME-1-public-key).
-        resp = await self._client.post(f"{self._sme_base(token_endpoint)}/invoker-registrations",
+        sme = self._sme_base(token_endpoint)
+        resp = await self._client.post(f"{sme}/invoker-registrations",
                                        json={"apiInvokerPublicKey": f"smo-gui-bff:{secrets.token_urlsafe(16)}"})
         if resp.status_code != 201:
             raise SmoAuthError(f"SME invoker onboarding returned {resp.status_code}")
         body = resp.json()
-        with self._db.session() as s:
-            cred = s.get(SmoCredential, 1) or SmoCredential(id=1)
-            cred.api_invoker_id, cred.onboarding_secret = body["apiInvokerId"], body["onboardingSecret"]
-            s.merge(cred)
-            s.commit()
-        return cred
+        stale_id = stale.api_invoker_id if stale is not None else None
+        if self._db.store_smo_credential(body["apiInvokerId"], body["onboardingSecret"], stale_invoker_id=stale_id):
+            return SmoCredential(id=1, api_invoker_id=body["apiInvokerId"], onboarding_secret=body["onboardingSecret"])
+        with suppress(httpx.HTTPError):   # an orphan registration is only clutter; SME's stale-invoker purge removes it
+            await self._client.delete(f"{sme}/invoker-registrations/{body['apiInvokerId']}")
+        return self._stored_credential() or await self._onboard_invoker(token_endpoint)
 
     def _stored_credential(self) -> SmoCredential | None:
         with self._db.session() as s:
@@ -103,7 +108,7 @@ class R1Gateway:
                 if resp.status_code == 400:
                     # SME no longer knows this invoker (e.g. its DB was
                     # reset): onboard afresh, once.
-                    cred = await self._onboard_invoker(token_endpoint)
+                    cred = await self._onboard_invoker(token_endpoint, stale=cred)
                     resp = await self._request_token(token_endpoint, cred)
             except httpx.HTTPError as exc:
                 raise SmoAuthError(f"SME unreachable: {exc.__class__.__name__}") from exc

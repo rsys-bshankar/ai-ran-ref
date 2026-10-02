@@ -1,7 +1,10 @@
 """GUI BFF settings — all from the environment, nothing secret in git.
 
-GUI_JWT_SECRET / GUI_ADMIN_PASSWORD may be left unset for a throwaway demo:
-the BFF then generates a random value at boot. A generated admin password is
+GUI_JWT_SECRET / GUI_ADMIN_PASSWORD may be left unset for a throwaway demo.
+An unset GUI_JWT_SECRET is not a per-process random value: the first instance
+generates one and stores it in the BFF's database (`gui_setting`), and every
+instance (and restart) using that database signs and verifies with the same key,
+so run replicas against one shared GUI_DATABASE_URL. A generated admin password is
 written to GUI_INITIAL_PASSWORD_FILE (mode 0600), never logged; the log only
 says where it is. A real deployment sets both.
 """

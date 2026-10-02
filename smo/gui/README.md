@@ -39,7 +39,7 @@ docker compose up --build
 | `GUI_ADMIN_PASSWORD` | random, written to `GUI_INITIAL_PASSWORD_FILE` | Seeds user `admin` on first boot only |
 | `GUI_INITIAL_PASSWORD_FILE` | `/data/initial-admin-password` in compose | Where a generated admin password goes (mode 0600, never logged): `docker compose exec gui-bff cat /data/initial-admin-password`; delete it after changing the password |
 | `GUI_OPERATOR_PASSWORD` / `GUI_VIEWER_PASSWORD` | unset → user not created | Seed users `operator` / `viewer` |
-| `GUI_JWT_SECRET` | random per boot (sessions end on restart) | HS256 session signing key |
+| `GUI_JWT_SECRET` | unset: generated once and stored in the BFF database, so sessions survive restarts and are shared by every instance of that database | HS256 session signing key |
 | `GUI_COOKIE_SECURE` | `true` | Set `false` only for plain-http access by a non-localhost name |
 | `GUI_DATABASE_URL` | `sqlite:////data/gui-bff.db` (compose volume) | Users, audit log, the BFF's SME credential |
 | `GUI_SESSION_TTL_SECONDS` | `28800` | Session lifetime |
