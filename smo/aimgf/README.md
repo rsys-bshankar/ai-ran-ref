@@ -329,7 +329,7 @@ End-to-end flows: [call flow 02](../docs/call-flows/02-aiml-model-train-to-infer
 
 | Variable | Default | Use |
 |---|---|---|
-| `SMO_DATABASE_URL` | see `smo_shared/db.py` | database (Postgres in compose, SQLite in tests) |
+| `SMO_DATABASE_URL` | none; required | database (Postgres in compose, SQLite in tests) |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | base URL of every outbound R1 call |
 | `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` | unset (self-onboard at SME on first call) | pre-provisioned OAuth2 client identity |
 | `AIMGF_TIMEOUT_TRAINING_SECONDS` | `1800` | default training timeout |

@@ -182,7 +182,7 @@ Inbound: rApp Management calls `onboarding-status` on every create, upgrade and 
 
 ### 2.6 Configuration
 
-Onboarding reads no environment variable of its own. Through `smo_shared`: `SMO_DATABASE_URL` (default `postgresql+psycopg://smo:smo@postgres:5432/smo`) and `R1_GATEWAY_URL` (default `http://r1-termination:8000`, for the NFO call). Constant: package fetch timeout 30 s.
+Onboarding reads no environment variable of its own. Through `smo_shared`: `SMO_DATABASE_URL` (required, no default) and `R1_GATEWAY_URL` (default `http://r1-termination:8000`, for the NFO call). Constant: package fetch timeout 30 s.
 
 ### 2.7 Error codes
 

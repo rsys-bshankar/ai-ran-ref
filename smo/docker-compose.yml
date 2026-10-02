@@ -1,6 +1,8 @@
 # AI-RAN SMO — Phase 1, Docker deployment topology (SMO Design v1.3 section 4).
 # One shared Postgres instance, moduleScope-partitioned (Requirements v0.1 section 3).
 # Every service built from the same Dockerfile, parameterized by MODULE.
+# The database password comes from smo/.env (copy .env.example): there is no default, and `docker compose`
+# stops with a message if POSTGRES_PASSWORD is unset (PR-DB-1).
 # stop_grace_period (30 s) is longer than the Dockerfile's UVICORN_GRACEFUL_SHUTDOWN_SECONDS (20 s), so a
 # stopping container finishes its in-flight requests before docker would kill it (PR-ST-6).
 
@@ -19,7 +21,7 @@ services:
     image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     environment:
       POSTGRES_USER: smo
-      POSTGRES_PASSWORD: smo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in smo/.env (copy .env.example)}
       POSTGRES_DB: smo
     volumes:
       # PostgreSQL 18+ images keep data in a version-named subdirectory of
@@ -69,7 +71,7 @@ services:
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment: &db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo:smo@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in smo/.env (copy .env.example)}@postgres:5432/smo
 
   dme:
     build: { context: ., args: { MODULE: dme } }

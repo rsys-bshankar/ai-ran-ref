@@ -32,6 +32,10 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, inspect
 
+if not os.environ.get("SMO_DATABASE_URL"):  # no default credentials (PR-DB-1); checked before the app modules import smo_shared.db
+    sys.exit("SMO_DATABASE_URL is not set: point it at a Postgres with migrations/001_init.sql applied "
+             "(see smo/CLAUDE.md, step 4).")
+
 SMO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SMO_ROOT / "tests_integration"))
 sys.path.insert(0, str(SMO_ROOT / "sdk"))  # the sample rApp imports the AI Runtime SDK
@@ -61,7 +65,7 @@ def main() -> None:
     for module_dir in ALL_MODULES:
         load_app_module(module_dir)  # side effect: registers that module's tables on the shared Base
 
-    database_url = os.environ.get("SMO_DATABASE_URL", "postgresql+psycopg://smo:smo@localhost:5432/smo")
+    database_url = os.environ["SMO_DATABASE_URL"]
     engine = create_engine(database_url)
     inspector = inspect(engine)
     real_tables = set(inspector.get_table_names())

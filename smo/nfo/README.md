@@ -155,7 +155,7 @@ All routes are under `/nfo` through R1. Lists return `{items, total, limit, offs
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SMO_DATABASE_URL` | `postgresql+psycopg://smo:smo@postgres:5432/smo` | Database (shared lib) |
+| `SMO_DATABASE_URL` | none; required (the service refuses to start without it) | Database (shared lib) |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | R1 gateway for the FOCOM call (shared lib) |
 
 No NFO-specific variables. The fallback cluster id is a constant.

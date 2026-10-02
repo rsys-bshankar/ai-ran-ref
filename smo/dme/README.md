@@ -247,7 +247,7 @@ No background tasks and no scheduler.
 
 ### 2.6 Configuration
 
-DME reads no environment variable of its own. Through `smo_shared`: `SMO_DATABASE_URL` (default `postgresql+psycopg://smo:smo@postgres:5432/smo`), `R1_GATEWAY_URL` (default `http://r1-termination:8000`), and optionally `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` to pin the identity `R1Client` uses toward RAN NF OAM. Constant in code: `DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS = 10.0`.
+DME reads no environment variable of its own. Through `smo_shared`: `SMO_DATABASE_URL` (required, no default), `R1_GATEWAY_URL` (default `http://r1-termination:8000`), and optionally `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` to pin the identity `R1Client` uses toward RAN NF OAM. Constant in code: `DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS = 10.0`.
 
 ### 2.7 Error codes
 

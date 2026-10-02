@@ -1035,3 +1035,27 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   earlier, the first attempt is made even with budget 0. Removing the budget check fails 5 of them.
 - **Not taken, still open.** ST-9.3, moving the retries to the job runner so no `sleep` remains in a request path, needs `MSG-4.5` (there
   is no job runner yet). A job of several sub-changes still runs them one after the other in the request.
+
+### PR-DB-1 — No default credentials
+
+- **No default URL (DB-1.1).** `smo_shared/db.py` no longer falls back to `postgresql+psycopg://smo:smo@postgres:5432/smo`. With
+  `SMO_DATABASE_URL` unset or blank, importing it raises `MissingDatabaseUrl`, whose message names the variable, shows the URL shape and
+  points at `.env.example`, so a container exits at start instead of quietly talking to whatever answers on `postgres:5432` with a known
+  password. `resolve_database_url()` is the single place that decides.
+- **Tests (DB-1.2).** Under pytest an unset URL is an in-memory SQLite (`TEST_DATABASE_URL`), never a server. Chosen over setting the
+  variable in every module's tests (about 25 places, and a new module would silently break): the unit suites already build the engine
+  at import without connecting, so the detector (`"pytest" in sys.modules`) changes nothing for them, and a production image does not
+  contain pytest. The two scripts that import the apps outside pytest: `generate_openapi_specs.py` sets `sqlite://` (it never connects);
+  `check_migration_matches_models.py` now refuses to run without `SMO_DATABASE_URL` and no longer defaults to `smo:smo@localhost`.
+- **Compose (DB-1.3).** `POSTGRES_PASSWORD` and every service's `SMO_DATABASE_URL` read `${POSTGRES_PASSWORD:?...}` from `smo/.env`
+  (copied from the committed `.env.example`, which holds a placeholder, not a usable password; `.env` is git-ignored). `docker compose
+  config` fails without it; CI asserts that, then validates with `--env-file .env.example` and copies it to `.env` for the e2e stack.
+  The password sits inside a URL, so it must be URL-safe (`openssl rand -hex 24`); the example says so.
+- **Docs (DB-1.4).** README and GUI quickstarts, the demo runbook, the verification battery in `CLAUDE.md` (its local Postgres now uses
+  a throwaway password, and applies the migration before the check, which the old text left out) and every module's config table.
+- **Proof.** `shared/tests/test_db_url.py` (including a real subprocess that exits non-zero without the variable and starts with it) and
+  `tests_integration/test_database_credentials.py` (no `smo:smo@` literal in service, shared or script source; compose requires the
+  password on the database and on every service URL; `.env.example` names it and `.env` is ignored).
+- **Not taken, still open.** Compose still publishes Postgres on host port 5432 and runs it as superuser `smo` for every module
+  (`PR-DB-2` per-module roles; `PR-SEC-4` secrets manager replaces the `.env` file; `SEC-4.3`). The GUI BFF's own SQLite needs no password.
+  A volume created with the old `smo` password keeps it: recreate the volume (`docker compose down -v`) or change the role's password.

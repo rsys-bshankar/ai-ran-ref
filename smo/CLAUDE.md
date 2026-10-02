@@ -73,7 +73,7 @@ before this check: `python scripts/generate_openapi_specs.py`.
 **3. `docker-compose.yml` is structurally valid:**
 
 ```bash
-cd smo && docker compose config --quiet
+cd smo && docker compose --env-file .env.example config --quiet
 ```
 
 **4. Every ORM model's columns actually exist in the migration, with
@@ -84,9 +84,11 @@ once, see `HISTORY.md` OI-6.2). Point `SMO_DATABASE_URL` at
 any reachable Postgres 18 instance, or start one if you don't have one:
 
 ```bash
-docker run --rm -d --name smo-verify-pg -e POSTGRES_USER=smo -e POSTGRES_PASSWORD=smo \
+docker run --rm -d --name smo-verify-pg -e POSTGRES_USER=smo -e POSTGRES_PASSWORD=verify-only \
   -e POSTGRES_DB=smo -p 5432:5432 postgres:18-alpine
-cd smo && SMO_DATABASE_URL=postgresql+psycopg://smo:smo@localhost:5432/smo \
+# the script does not create the schema: apply it first
+PGPASSWORD=verify-only psql -h localhost -U smo -d smo -v ON_ERROR_STOP=1 -f smo/migrations/001_init.sql
+cd smo && SMO_DATABASE_URL=postgresql+psycopg://smo:verify-only@localhost:5432/smo \
   python scripts/check_migration_matches_models.py
 ```
 

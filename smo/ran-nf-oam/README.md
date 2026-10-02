@@ -295,7 +295,7 @@ RPC shape: an `<rpc>` whose `message-id` is the job id, containing `<edit-config
 |---|---|---|
 | `RAN_NF_OAM_NETCONF_RETRY_DELAYS` | `0,5,10,20` | Seconds before each dispatch attempt (4 attempts); applies to NETCONF and RESTCONF alike |
 | `RAN_NF_OAM_DISPATCH_RETRY_BUDGET_SECONDS` | `35` | The most time one sub-change may spend waiting between attempts (and in earlier attempts) before no further retry starts; worst case per sub-change is this plus the 30 s exchange timeout |
-| `SMO_DATABASE_URL` | `postgresql+psycopg://smo:smo@postgres:5432/smo` | Database (shared lib) |
+| `SMO_DATABASE_URL` | none; required (the service refuses to start without it) | Database (shared lib) |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | R1 gateway for DME calls (shared lib) |
 | `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset | R1Client credentials (shared lib) |
 

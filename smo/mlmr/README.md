@@ -149,7 +149,7 @@ MLMR sends no callbacks and runs no background tasks. Callers are listed in the 
 
 | Variable | Default | Use |
 |---|---|---|
-| `SMO_DATABASE_URL` | see `smo_shared/db.py` | database |
+| `SMO_DATABASE_URL` | none; required | database |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | outbound R1 base URL |
 | `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` | unset | pre-provisioned OAuth2 identity (otherwise self-onboards at SME) |
 

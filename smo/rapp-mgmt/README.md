@@ -199,7 +199,7 @@ No inbound callbacks and no background tasks.
 
 ### 2.6 Configuration
 
-rApp Management reads no environment variable of its own. Through `smo_shared`: `SMO_DATABASE_URL` (default `postgresql+psycopg://smo:smo@postgres:5432/smo`), `R1_GATEWAY_URL` (default `http://r1-termination:8000`), and optionally `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET`. In code: `DEPLOYABLE_PACKAGE_STATES = ("AVAILABLE", "PRIMED")`; `upgrade_timeout_seconds` column default 300.
+rApp Management reads no environment variable of its own. Through `smo_shared`: `SMO_DATABASE_URL` (required, no default), `R1_GATEWAY_URL` (default `http://r1-termination:8000`), and optionally `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET`. In code: `DEPLOYABLE_PACKAGE_STATES = ("AVAILABLE", "PRIMED")`; `upgrade_timeout_seconds` column default 300.
 
 ### 2.7 Error codes
 

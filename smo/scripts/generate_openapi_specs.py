@@ -12,8 +12,12 @@ result to fix that.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
+
+# Importing the apps builds the database engine but never connects; there is no default URL (PR-DB-1).
+os.environ.setdefault("SMO_DATABASE_URL", "sqlite://")
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SMO_ROOT / "tests_integration"))

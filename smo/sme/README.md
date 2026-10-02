@@ -198,7 +198,7 @@ Matching rule for the last case: the subscriber id is compared with `allowedCons
 
 ### 2.6 Configuration
 
-`SME_TOKEN_AUDIENCE`: the `aud` a client assertion must carry (default `{SME_URL}/oauth2/token`, with `SME_URL` default `http://sme:8000`: the token endpoint R1 Termination advertises). Through `smo_shared`: `SMO_DATABASE_URL` (default `postgresql+psycopg://smo:smo@postgres:5432/smo`). Constants in code: `ACCESS_TOKEN_TTL_SECONDS = 3600`; `INTERNAL_SCOPES = {smo-internal, smo-gui}`; `MAX_ASSERTION_LIFETIME_SECONDS = 300`; scrypt parameters `n=2**14, r=8, p=1, dklen=32`.
+`SME_TOKEN_AUDIENCE`: the `aud` a client assertion must carry (default `{SME_URL}/oauth2/token`, with `SME_URL` default `http://sme:8000`: the token endpoint R1 Termination advertises). Through `smo_shared`: `SMO_DATABASE_URL` (required, no default). Constants in code: `ACCESS_TOKEN_TTL_SECONDS = 3600`; `INTERNAL_SCOPES = {smo-internal, smo-gui}`; `MAX_ASSERTION_LIFETIME_SECONDS = 300`; scrypt parameters `n=2**14, r=8, p=1, dklen=32`.
 
 ### 2.7 Error codes
 

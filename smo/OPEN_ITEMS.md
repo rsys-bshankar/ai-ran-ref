@@ -124,7 +124,7 @@ and HA much later).
 | Area | Prefix | Features |
 |---|---|---|
 | Stateless / scale-out | `PR-ST` | ST-7 readiness (schema check) · ST-8 single-runner (adoption) · ST-9 inline retry (move to job runner) |
-| Database | `PR-DB` | DB-1 credentials · DB-2 per-module schemas · DB-3 retention · DB-4 indexes/pagination · DB-5 pooler · DB-6 backup · DB-7 Postgres HA |
+| Database | `PR-DB` | DB-2 per-module schemas · DB-3 retention · DB-4 indexes/pagination · DB-5 pooler · DB-6 backup · DB-7 Postgres HA |
 | Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
 | Observability | `PR-OBS` | OBS-1 logs · OBS-2 metrics · OBS-3 traces · OBS-4 business metrics · OBS-5 alerts/SLOs · OBS-6 log shipping · OBS-7 runbooks · OBS-8 self-monitoring |
@@ -171,15 +171,6 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 
 
 ### 5.2 Database (`PR-DB`)
-
-#### PR-DB-1 — No default credentials
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| DB-1.1 ★ | `SMO_DATABASE_URL` has no default outside tests (`shared/smo_shared/db.py`); fail fast with a clear message | Service refuses to start without it | – |
-| DB-1.2 | Test harness sets it (`testing.py`, integration mesh) | Full unit and integration suites green | DB-1.1 |
-| DB-1.3 | Compose reads `${POSTGRES_PASSWORD:?}` and the URL from an `.env.example` | `docker compose config` fails with no `.env` | DB-1.1 |
-| DB-1.4 | Runbook and README quickstart updated | Quickstart works from a clean clone | DB-1.3 |
 
 #### PR-DB-2 — Per-module schemas and roles
 
@@ -350,7 +341,7 @@ are plain HTTP.
 |---|---|---|---|
 | SEC-4.1 ★ | Inventory of every secret: DB password, GUI admin password, session key, invoker secrets, adaptor credentials | Table in `docs/` with owner and rotation note | – |
 | SEC-4.2 | `*_FILE` convention helper in `smo_shared` (read the value from a file if `VAR_FILE` is set) | Unit test | – |
-| SEC-4.3 | Compose secrets for the DB password | No password literal in compose | SEC-4.2, DB-1.3 |
+| SEC-4.3 | Compose secrets for the DB password | No password literal in compose | SEC-4.2 |
 | SEC-4.4 | Same for GUI admin password and session key | Same | SEC-4.2 |
 | SEC-4.5 | Same for the module invoker secret (`module_identity.invoker_secret`, or `SMO_INVOKER_SECRET`, which already overrides it) | Same | SEC-4.2 |
 | SEC-4.6 | Adaptor credentials stored as a secret reference, never a value, in `o1_adaptor_endpoint` | Route accepts a reference only | SEC-4.2 |
@@ -1472,8 +1463,8 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):**
-   DB-1.1, OBS-1.1.
-2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.1–13.3, DB-1.1–1.3, QA-6.1.
+   OBS-1.1.
+2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.1–13.3, QA-6.1.
 3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1, DB-6.1.
 4. **Durable notifications:** MSG-1.1–1.4, then MSG-1.5 onwards one module at a time.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.
