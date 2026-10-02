@@ -54,7 +54,7 @@ from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
-from smo_shared.webhook import post_webhook
+from smo_shared.outbox import enqueue
 from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 
@@ -440,9 +440,9 @@ def _expire_overdue_jobs(db: Session) -> list[dict]:
             job.status = INFERENCE_JOB_FSM.fire(InferenceState(job.status), InferenceEvent.FAIL)
             expired.append(("INFERENCE", job.inference_job_id, job.notification_destination))
     if expired:
-        db.commit()
         for kind, job_id, destination in expired:
-            _notify_job_completion(destination, kind, job_id, False, None, {"failureReason": "TIMEOUT"})
+            _notify_job_completion(db, destination, kind, job_id, False, None, {"failureReason": "TIMEOUT"})
+        db.commit()  # the failures and their notifications commit together (PR-MSG-1.7)
     return [{"jobKind": kind, "jobId": str(job_id)} for kind, job_id, _ in expired]
 
 
@@ -470,22 +470,22 @@ def _validate_dme_data_job_ids(dme_data_job_ids: list[uuid.UUID]) -> None:
             raise framework_error(FrameworkError.DME_ARTIFACT_NOT_FOUND, detail=f"no such DME data job {data_job_id}")
 
 
-def _notify_job_completion(notification_uri: str | None, job_kind: str, job_id: uuid.UUID, succeeded: bool,
+def _notify_job_completion(db: Session, notification_uri: str | None, job_kind: str, job_id: uuid.UUID, succeeded: bool,
                             outcome_artifact_dme_type_id: uuid.UUID | None, metrics: dict) -> None:
     """HISTORY.md OI-6.5: TS28.105-style completion notification —
     `advance(TRAINING_COMPLETE)`/`complete(validationJobId, ...)`/
     `complete(emulationJobId, ...)` used to be bare state transitions
-    with no side effect beyond the FSM move itself. Best-effort, the
-    same pattern as every other subscription-shaped notification in
-    this build (report_performance's own subscriber push, MDAF's
-    publish_report, Intent Service's CreateIntent) — an unreachable
-    destination never fails the completion call itself.
+    with no side effect beyond the FSM move itself. Written to the
+    transactional outbox in the caller's transaction (PR-MSG-1.7) and
+    sent once the caller commits: the caller must commit after this —
+    an unreachable destination never fails the completion call itself,
+    and a crash after the commit no longer loses the notification.
     """
-    post_webhook(notification_uri, json={
+    enqueue(db, notification_uri, {
         "jobKind": job_kind, "jobId": str(job_id), "succeeded": succeeded,
         "outcomeArtifactDmeTypeId": str(outcome_artifact_dme_type_id) if outcome_artifact_dme_type_id else None,
         "metrics": metrics,
-    }, timeout=2.0)
+    })
 
 
 # Training status -> TS 28.105 ProcessMonitor.status of its MLTrainingProcess.
@@ -684,9 +684,9 @@ def complete_training(training_job_id: uuid.UUID, body: CompleteJobRequest, db: 
     _write_training_report(db, job, body)
     if job.ml_update_process_id is not None:
         _advance_ml_update_process(db, job.ml_update_process_id)
-    db.commit()
-    _notify_job_completion(job.notification_uri, "TRAINING", job.training_job_id, body.succeeded,
+    _notify_job_completion(db, job.notification_uri, "TRAINING", job.training_job_id, body.succeeded,
                             job.outcome_artifact_dme_type_id, job.model_metrics)
+    db.commit()
     return _training_job_view(job)
 
 
@@ -940,9 +940,9 @@ def complete_validation(validation_job_id: uuid.UUID, body: CompleteJobRequest, 
     db.add(MLTestingReport(validation_job_id=job.validation_job_id, ml_testing_function_id=job.ml_testing_function_id,
                            model_performance_testing=ts28105.dump(body.modelPerformanceTesting),
                            ml_testing_result="PASSED" if body.succeeded else "FAILED"))
-    db.commit()
-    _notify_job_completion(job.notification_uri, "VALIDATION", job.validation_job_id, body.succeeded,
+    _notify_job_completion(db, job.notification_uri, "VALIDATION", job.validation_job_id, body.succeeded,
                             job.outcome_artifact_dme_type_id, job.metrics)
+    db.commit()
     return _validation_job_view(job)
 
 
@@ -1030,9 +1030,9 @@ def complete_emulation(emulation_job_id: uuid.UUID, body: CompleteJobRequest, db
                                    inference_outputs=ts28105.dump(body.inferenceOutputs) or [],
                                    potential_impact_info=ts28105.dump(body.potentialImpactInfo),
                                    ml_model_refs=[str(job.model_id)]))
-    db.commit()
-    _notify_job_completion(job.notification_uri, "EMULATION", job.emulation_job_id, body.succeeded,
+    _notify_job_completion(db, job.notification_uri, "EMULATION", job.emulation_job_id, body.succeeded,
                             job.outcome_artifact_dme_type_id, job.metrics)
+    db.commit()
     return _emulation_job_view(job)
 
 
@@ -1436,15 +1436,16 @@ def report_performance(subscription_id: uuid.UUID, metrics: dict, db: Session = 
     breached = bool(sub.guard_kpi_floor) and any(metrics.get(k, 0) < v for k, v in (sub.guard_kpi_floor or {}).items())
     report = PerformanceReport(subscription_id=subscription_id, metrics=metrics, breached_floor=breached)
     db.add(report)
-    db.commit()
+    db.flush()  # the report's id, for the notification
 
-    # HISTORY.md §7's `MLMFSubscription` finding, closed: best-effort,
-    # same pattern as every other subscription notification in this
-    # build — an unreachable subscriber never fails the report call
-    # that triggered it.
-    post_webhook(sub.notification_destination, json={
+    # HISTORY.md §7's `MLMFSubscription` finding, closed: the subscriber's
+    # push is a transactional-outbox row (PR-MSG-1.7), sent once the report
+    # commits — an unreachable subscriber never fails the report call that
+    # triggered it, and a crash after the commit no longer loses the push.
+    enqueue(db, sub.notification_destination, {
         "reportId": str(report.id), "modelId": str(sub.model_id), "metrics": metrics, "breachedFloor": breached,
-    }, timeout=2.0)
+    })
+    db.commit()
 
     result = {"reportId": str(report.id), "breachedFloor": breached}
     if breached:

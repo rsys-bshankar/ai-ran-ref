@@ -22,6 +22,8 @@ from sqlalchemy.orm import sessionmaker
 
 from smo_shared.db import Base, get_session
 from smo_shared.idempotency import IdempotencyKey
+from smo_shared import outbox
+from smo_shared.outbox import NotificationOutbox
 from smo_shared.testing import make_test_engine
 from smo_shared.testing import concurrent_commit_on
 
@@ -127,6 +129,7 @@ def db_session_factory():
         if isinstance(cls, type) and issubclass(cls, Base) and cls is not Base and cls.__module__ == aimgf_models.__name__
     ])
     IdempotencyKey.__table__.create(engine)
+    NotificationOutbox.__table__.create(engine)
     return sessionmaker(bind=engine)
 
 
@@ -1576,3 +1579,76 @@ def test_a_started_validation_job_is_replayed_by_key(client, mlmr, db_session_fa
     assert first.status_code == again.status_code == 201 and again.json() == first.json()
     with db_session_factory() as session:
         assert session.query(ValidationJob).count() == 1
+
+
+# ---------------------------------------------------------------- notifications through the outbox (PR-MSG-1.7)
+
+def _outbox_rows(db_session_factory):
+    with db_session_factory() as db:
+        return db.query(NotificationOutbox).order_by(NotificationOutbox.created_at).all()
+
+
+def test_a_job_completion_notification_survives_a_crash_between_commit_and_send(client, mlmr, db_session_factory, monkeypatch):
+    """The crash test of MSG-1.7: the completion is committed together with its notification row; with the inline send off (the
+    process died after the commit) nothing went out, and a later drain delivers it."""
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    monkeypatch.setenv("MODULE", "aimgf")
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or FakeResponse(200, {}))
+    model_id = mlmr.add_model()
+    training_job_id = client.post("/training-jobs", json={
+        "modelId": str(model_id), "producerId": "rapp-1", "notificationUri": "http://consumer/training-cb",
+    }).json()["trainingJobId"]
+
+    resp = client.post(f"/training-jobs/{training_job_id}/complete", json={"succeeded": True})
+    assert resp.status_code == 200 and resp.json()["status"] == "FINISHED"
+
+    assert calls == []
+    rows = _outbox_rows(db_session_factory)
+    assert [(r.module, r.status, r.destination) for r in rows] == [("aimgf", "PENDING", "http://consumer/training-cb")]
+    assert rows[0].payload["jobKind"] == "TRAINING" and rows[0].payload["jobId"] == training_job_id
+
+    monkeypatch.delenv("SMO_OUTBOX_INLINE_DRAIN")
+    assert outbox.drain(db_session_factory().get_bind())["sent"] == 1
+    assert [(u, b["jobId"]) for u, b in calls] == [("http://consumer/training-cb", training_job_id)]
+
+
+def test_a_performance_report_is_committed_with_its_subscriber_push(client, mlmr, db_session_factory, monkeypatch):
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    model_id = mlmr.add_model()
+    sub_id = client.post("/mlmf/subscriptions", params={
+        "model_id": str(model_id), "dme_type_id": str(uuid.uuid4()), "notification_destination": "http://consumer/mlmf-events",
+    }, json={"metric_types": ["accuracy"], "guard_kpi_floor": {"accuracy": 0.9}}).json()["subscriptionId"]
+
+    report_id = client.post(f"/mlmf/subscriptions/{sub_id}/reports", json={"accuracy": 0.5}).json()["reportId"]
+
+    rows = _outbox_rows(db_session_factory)
+    assert [r.destination for r in rows] == ["http://consumer/mlmf-events"]
+    assert rows[0].payload["reportId"] == report_id and rows[0].payload["breachedFloor"] is True
+
+
+def test_nothing_is_announced_when_the_completion_does_not_commit(client, mlmr, db_session_factory, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    model_id = mlmr.add_model()
+    training_job_id = client.post("/training-jobs", json={
+        "modelId": str(model_id), "producerId": "rapp-1", "notificationUri": "http://consumer/training-cb",
+    }).json()["trainingJobId"]
+
+    from sqlalchemy.orm import Session as OrmSession
+    real_commit = OrmSession.commit
+
+    def failing_commit(self):
+        if self.info.get("outbox_pending_ids"):
+            self.rollback()
+            raise RuntimeError("the database refused the commit")
+        return real_commit(self)
+
+    monkeypatch.setattr(OrmSession, "commit", failing_commit)
+    resp = TestClient(app, raise_server_exceptions=False).post(f"/training-jobs/{training_job_id}/complete", json={"succeeded": True})
+    monkeypatch.setattr(OrmSession, "commit", real_commit)
+
+    assert resp.status_code == 500
+    assert calls == [] and _outbox_rows(db_session_factory) == []
+    with db_session_factory() as db:
+        assert db.get(aimgf_models.TrainingJob, uuid.UUID(training_job_id)).status != "FINISHED"   # the completion rolled back with it
