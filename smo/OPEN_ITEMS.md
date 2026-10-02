@@ -123,7 +123,7 @@ and HA much later).
 
 | Area | Prefix | Features |
 |---|---|---|
-| Stateless / scale-out | `PR-ST` | ST-7 readiness · ST-8 single-runner · ST-9 inline retry |
+| Stateless / scale-out | `PR-ST` | ST-7 readiness (schema check) · ST-8 single-runner · ST-9 inline retry |
 | Database | `PR-DB` | DB-1 credentials · DB-2 per-module schemas · DB-3 retention · DB-4 indexes/pagination · DB-5 pooler · DB-6 backup · DB-7 Postgres HA |
 | Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
@@ -149,16 +149,11 @@ module. Process state is limited to `R1Client`'s token cache and invoker identit
 (`shared/smo_shared/r1_client.py`), an `lru_cache` of the vendor registry (`ran-nf-oam/app/vendors.py`), the
 GUI BFF's per-process login lockout, and module-level dicts in the two mocks (test doubles, out of scope).
 
-#### PR-ST-7 — Readiness vs liveness (also the base for `OBS-8`)
+#### PR-ST-7 — Readiness vs liveness (open: the schema check; also the base for `OBS-8`)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| ST-7.1 ★ | `smo_shared` router factory: `/live` always 200; `/ready` runs registered checks | Unit test with a failing check → 503 | – |
-| ST-7.2 | Check: DB reachable (`SELECT 1`) | Down DB → `/ready` 503, `/live` 200 | ST-7.1 |
-| ST-7.3 | Check: SME token obtainable (modules that call R1) | SME down → not ready | ST-7.1 |
-| ST-7.4 | Check: schema at expected head | Mismatch → not ready | ST-7.1, OPS-1.2 |
-| ST-7.5 | Adopt in all modules (keep `/health` as alias of `/live`) | Integration suite green | ST-7.2 |
-| ST-7.6 | Compose healthchecks use `/ready` | `docker compose ps` shows healthy | ST-7.5 |
+| ST-7.4 | Check: schema at expected head (a function passed to `install_health`, as `database_check` is) | Mismatch → not ready | OPS-1.2 |
 
 #### PR-ST-8 — Single-runner guard (deferred: `ST-1.4` found no periodic task today; needed when `SB-18.2`, `MGT-6.4`, `MGT-8.6` or `MGT-12.1` lands)
 
@@ -555,7 +550,7 @@ No Prometheus, OpenTelemetry or `/metrics` usage exists in the code (checked). A
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | OBS-8.1 | `/version` per module (build SHA from an env set in the image) | Route test | – |
-| OBS-8.2 | BFF `GET /modules/status` adds readiness and version | Test | ST-7.5, OBS-8.1 |
+| OBS-8.2 | BFF `GET /modules/status` adds readiness and version | Test | OBS-8.1 |
 | OBS-8.3 | GUI shows readiness and version columns | Component test | OBS-8.2 |
 
 ### 5.6 Packaging, migrations and release (`PR-OPS`)
@@ -581,7 +576,7 @@ No Prometheus, OpenTelemetry or `/metrics` usage exists in the code (checked). A
 | OPS-2.1 ★ | Chart skeleton and `values.yaml` | `helm lint` green | – |
 | OPS-2.2 | One generic template looped over modules; `onboarding` first | Pod runs on kind | OPS-2.1 |
 | OPS-2.3 | Config and secret wiring (env, `*_FILE`) | Pod reads DB URL from a Secret | OPS-2.2, SEC-4.2 |
-| OPS-2.4 | Probes from `/live` and `/ready` | Probes pass | OPS-2.2, ST-7.5 |
+| OPS-2.4 | Probes from `/live` and `/ready` | Probes pass | OPS-2.2 |
 | OPS-2.5 | Services, plus Ingress for R1 Termination and the GUI | Reachable from the kind host | OPS-2.2 |
 | OPS-2.6 | NetworkPolicy equal to the compose network rules (`a1_mock_net` isolation included) | Denied-path test | OPS-2.2 |
 | OPS-2.7 | PodDisruptionBudget and HPA templates (off by default) | `helm template` renders | OPS-2.2 |
@@ -1481,7 +1476,7 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):**
-   ST-7.1–7.2, DB-1.1, OBS-1.1.
+   DB-1.1, OBS-1.1.
 2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.1–13.3, DB-1.1–1.3, QA-6.1.
 3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1, DB-6.1.
 4. **Durable notifications:** MSG-1.1–1.4, then MSG-1.5 onwards one module at a time.

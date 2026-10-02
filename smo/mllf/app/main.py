@@ -25,6 +25,7 @@ is; no code change, ownership docs corrected instead.
 import uuid
 
 from fastapi import FastAPI, HTTPException
+from smo_shared.health import install_health, sme_token_check
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
@@ -37,12 +38,7 @@ apply_correlation_id(app)
 _aimgf = R1Client()
 
 
-@app.get("/health")
-def health_check():
-    """Liveness probe. The GUI BFF's GET /modules/status fans out to
-    /<module>/health through R1 Termination for every module in parallel.
-    """
-    return {"status": "healthy"}
+install_health(app, checks=[sme_token_check])  # /live, /ready and the /health alias (PR-ST-7)
 
 
 @app.post("/models/{model_id}/deploy")

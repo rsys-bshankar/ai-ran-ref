@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
@@ -647,16 +648,7 @@ def delete_file_subscription(subscription_id: uuid.UUID, db: Session = Depends(g
         db.commit()
 
 
-@app.get("/health")
-def health_check():
-    """Producer health-supervision callback (HISTORY.md §5):
-    subscribe_pm registers this exact URL with DME as its
-    producerHealthCallbackUrl, but no route ever answered it — a health
-    poller hitting the registered callback would 404 against a producer
-    this module itself just told DME was healthy. A plain liveness
-    check: reachable and 200 means this RAN NF OAM instance is up.
-    """
-    return {"status": "healthy"}
+install_health(app, checks=[database_check, sme_token_check])  # /live, /ready and the /health alias (PR-ST-7)
 
 
 @app.post("/dme-jobs")

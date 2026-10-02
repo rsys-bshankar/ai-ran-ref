@@ -71,7 +71,7 @@
   "paths": {
     "/health": {
       "get": {
-        "description": "Liveness probe. The GUI BFF's GET /modules/status fans out to\n/<module>/health through R1 Termination for every module in parallel.",
+        "description": "Liveness probe, kept as an alias of `/live`. The GUI BFF's `GET /modules/status` fans out to\n`/<module>/health` through R1 Termination for every module in parallel, and DME supervises\nproducers on it.",
         "operationId": "health_check_health_get",
         "responses": {
           "200": {
@@ -83,7 +83,30 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Health Check"
+        "summary": "Health Check",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/live": {
+      "get": {
+        "description": "Liveness probe: the process is up. Depends on nothing else.",
+        "operationId": "live_live_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Live",
+        "tags": [
+          "health"
+        ]
       }
     },
     "/models/{model_id}/deploy": {
@@ -137,6 +160,26 @@
           }
         },
         "summary": "Request Model Deployment"
+      }
+    },
+    "/ready": {
+      "get": {
+        "description": "Readiness probe: 200 when the database and SME (where this module uses them) answer, else 503\nnaming the failing check. Take the replica out of rotation on 503; do not restart it.",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "health"
+        ]
       }
     }
   },

@@ -967,3 +967,28 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   several workers new connections may be accepted and then reset during the drain.
 - **Not taken.** Per-module pool sizes (the env is per container already); more than one worker for the mocks (module-level
   state, out of scope).
+
+### PR-ST-7 — Readiness vs liveness
+
+- **One router for every service (ST-7.1, ST-7.5).** `smo_shared/health.py` `install_health(app, checks)` adds `/live` (always 200),
+  `/ready` (runs the checks, 200 or 503 naming the failing one) and keeps `/health` as an alias of `/live`, because DME's producer
+  supervision, the GUI module grid and the runbook already call it. Adopted by all 16 backends, R1 Termination, the four sample rApps and
+  the two mocks (which had no probe at all); the GUI BFF is not a module behind R1 and keeps its own surface. The per-module `/health`
+  handlers and their copies of one docstring are gone.
+- **Checks (ST-7.2, ST-7.3).** `database_check` (`SELECT 1`) on every service with a database, `sme_token_check` on every caller of R1
+  (the cached token, so a probe costs nothing; SME down and no cached token means not ready). SME itself skips the token check (it is
+  the issuer, and R1 depends on it), and so does focom, which calls nobody. Checks run in parallel and are bounded by
+  `READY_CHECK_TIMEOUT_SECONDS` (3) so a hung dependency is a `timeout` in the answer, not a hung probe. A failing check shows its
+  exception class, never its message, since a database error message can carry the connection string.
+- **R1 Termination.** `/live`, `/ready` and `/health` are public in its OpenAPI like `/health` was; it is ready whenever it is live: it
+  has no database and no state, and an SME outage already shows as 401 at the gateway and as every module's own `/ready`.
+- **Compose (ST-7.6).** Every service built from the shared Dockerfile (all but the GUI BFF) has a healthcheck that calls `/ready`
+  with Python (the image has no curl), so `docker compose ps` shows what can take traffic. Nothing waits on them yet:
+  `depends_on` still gates only on Postgres.
+- **Proof.** `shared/tests/test_health.py` (checks, timeout, parallelism, real SQLite and Postgres, a closed Postgres port) and
+  `tests_integration/test_probes.py` (every loaded service: 200 when dependencies answer, 503 for every database service with the
+  database down while `/live` and `/health` stay 200, 503 without an SME token for R1 callers, the gateway's probes need no token, and
+  compose probes `/ready` on every shared-Dockerfile service).
+- **Not taken, still open.** ST-7.4, the schema-at-head check, needs `OPS-1.2` (there is no schema version to compare to yet); it
+  stays in `OPEN_ITEMS.md` as one function to add to `install_health`'s list. Gating `depends_on` on `service_healthy` for the
+  modules: the start-up order is not a problem today, and a not-ready SME would stall the whole stack.
