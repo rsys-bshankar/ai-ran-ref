@@ -219,10 +219,9 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| DB-6.1 ★ | `scripts/db_backup.sh` and `db_restore.sh` (`pg_dump`/`pg_restore`) | Round trip on demo data | – |
-| DB-6.2 | CI job: backup, wipe, restore, run a runbook smoke | Job green | DB-6.1 |
+| DB-6.2 | CI job: backup, wipe, restore, run a runbook smoke (a compose-mode round trip exists since DB-6.1; this adds the runbook smoke and a host-mode run against Postgres 18) | Job green | – |
 | DB-6.3 | Document WAL archiving and point-in-time recovery | Doc reviewed | – |
-| DB-6.4 | Restore drill checklist with timings | Checklist filled once | DB-6.1 |
+| DB-6.4 | Restore drill checklist with timings | Checklist filled once | – |
 
 #### PR-DB-7 — Postgres HA
 
@@ -667,7 +666,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | HA-6.1 | RPO and RTO targets written down | Numbers agreed | – |
-| HA-6.2 | Off-site backup shipping | Restore from the off-site copy | DB-6.1 |
+| HA-6.2 | Off-site backup shipping | Restore from the off-site copy | – |
 | HA-6.3 | Restore order and re-pointing steps (GUI, R1, adaptors) | One full drill with timings | HA-6.2 |
 
 #### PR-HA-7 — Geo-redundancy
@@ -1465,7 +1464,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 1. **Replica-safe foundation (no new infrastructure):**
    OBS-1.1.
 2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.1–13.3, QA-6.1.
-3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1, DB-6.1.
+3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1.
 4. **Durable notifications:** MSG-1.1–1.4, then MSG-1.5 onwards one module at a time.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.
 6. **Safer changes:** MGT-1.1–1.4, MGT-3.1, MGT-8.1.

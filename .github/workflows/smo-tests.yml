@@ -196,6 +196,20 @@ jobs:
           curl -fsS --retry 10 --retry-delay 3 --retry-connrefused http://localhost:3000/ | grep -qi '<div id="root"'
           curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:3000/api/modules/status
 
+      - name: Backup and restore round trip (compose mode, PR-DB-6.1)
+        working-directory: smo
+        run: |
+          count() { docker compose exec -T postgres psql -U smo -d smo -Atc "SELECT count(*) FROM $1"; }
+          before=$(count module_identity)
+          [ "$before" -gt 0 ]
+          scripts/db_backup.sh --compose /tmp/smo-ci.dump
+          # nothing may write during a restore: stop every service but the database, then lose some data
+          docker compose stop $(docker compose config --services | grep -vx postgres)
+          docker compose exec -T postgres psql -U smo -d smo -c "DELETE FROM module_identity"
+          [ "$(count module_identity)" = 0 ]
+          scripts/db_restore.sh --compose --yes /tmp/smo-ci.dump
+          [ "$(count module_identity)" = "$before" ]
+
       - name: Dump logs on failure
         if: failure()
         working-directory: smo
