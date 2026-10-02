@@ -18,21 +18,51 @@ def test_no_service_or_script_source_carries_the_old_default_url():
     assert offenders == [], f"a default database URL with a password in source: {offenders}"
 
 
-def test_compose_takes_the_database_password_from_the_environment_and_requires_it():
+def _compose() -> dict:
+    return yaml.safe_load((SMO_ROOT / "docker-compose.yml").read_text())
+
+
+def test_the_database_password_is_a_compose_secret_file_never_a_literal_or_an_environment_value():
+    compose = _compose()
     text = (SMO_ROOT / "docker-compose.yml").read_text()
-    assert not LITERAL_PASSWORD.search(text)
-    services = yaml.safe_load(text.replace("${POSTGRES_PASSWORD:?", "${POSTGRES_PASSWORD_REQUIRED:?"))["services"]
-    assert "POSTGRES_PASSWORD_REQUIRED:?" in services["postgres"]["environment"]["POSTGRES_PASSWORD"]
-    urls = [s["environment"]["SMO_DATABASE_URL"] for s in services.values()
-            if isinstance(s.get("environment"), dict) and "SMO_DATABASE_URL" in s["environment"]]
-    assert len(urls) >= 15 and all("POSTGRES_PASSWORD_REQUIRED:?" in url for url in urls)
+    assert not LITERAL_PASSWORD.search(text) and "POSTGRES_PASSWORD:" not in text
+    assert compose["secrets"]["db_password"]["file"] == "./secrets/db_password"
+    postgres = compose["services"]["postgres"]
+    assert postgres["environment"]["POSTGRES_PASSWORD_FILE"] == "/run/secrets/db_password"
+    assert "db_password" in postgres["secrets"]
+    users = {name: svc for name, svc in compose["services"].items()
+             if isinstance(svc.get("environment"), dict) and "SMO_DATABASE_URL" in svc["environment"]}
+    assert len(users) >= 15
+    for name, svc in users.items():
+        env = svc["environment"]
+        assert "@postgres" in env["SMO_DATABASE_URL"] and ":" not in env["SMO_DATABASE_URL"].split("//", 1)[1].split("@")[0], \
+            f"{name}: the URL carries a password"
+        assert env["SMO_DATABASE_PASSWORD_FILE"] == "/run/secrets/db_password", name
+        assert "db_password" in svc["secrets"], f"{name} cannot read the secret it is told to"
 
 
-def test_the_example_env_names_the_password_and_the_real_env_is_ignored():
+def test_the_secret_directory_and_the_real_env_file_are_git_ignored_and_the_example_holds_no_password():
     example = (SMO_ROOT / ".env.example").read_text()
-    assert re.search(r"^POSTGRES_PASSWORD=\S+", example, re.M)
-    assert not LITERAL_PASSWORD.search(example) and "POSTGRES_PASSWORD=smo" not in example
-    assert ".env" in (SMO_ROOT / ".gitignore").read_text().splitlines()
+    assert "POSTGRES_PASSWORD=" not in example and not LITERAL_PASSWORD.search(example)
+    ignored = (SMO_ROOT / ".gitignore").read_text().splitlines()
+    assert ".env" in ignored and "secrets/" in ignored
+
+
+def test_init_secrets_creates_the_file_once_and_never_overwrites_it(tmp_path):
+    import shutil
+    import stat
+    import subprocess
+    root = tmp_path / "smo"
+    (root / "scripts").mkdir(parents=True)
+    shutil.copy(SMO_ROOT / "scripts" / "init_secrets.sh", root / "scripts" / "init_secrets.sh")
+    script = str(root / "scripts" / "init_secrets.sh")
+    first = subprocess.run([script], capture_output=True, text=True, check=True)
+    secret = root / "secrets" / "db_password"
+    value = secret.read_text()
+    assert first.stdout.startswith("created:") and re.fullmatch(r"[0-9a-f]{48}", value) and value not in first.stdout
+    assert stat.S_IMODE(secret.parent.stat().st_mode) == 0o700 and stat.S_IMODE(secret.stat().st_mode) == 0o644
+    again = subprocess.run([script], capture_output=True, text=True, check=True)
+    assert again.stdout.startswith("kept:") and secret.read_text() == value
 
 
 def test_every_fuzz_target_that_imports_an_app_sets_a_database_url_first():

@@ -12,7 +12,7 @@ SMO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _command() -> list[str]:
-    compose = (SMO_ROOT / "docker-compose.yml").read_text().replace("${POSTGRES_PASSWORD:?", "${POSTGRES_PASSWORD_REQUIRED:?")
+    compose = (SMO_ROOT / "docker-compose.yml").read_text()
     return yaml.safe_load(compose)["services"]["postgres"]["command"]
 
 

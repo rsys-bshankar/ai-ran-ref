@@ -3,7 +3,10 @@ import sys
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+from .secretfile import read_secret
 
 # All fourteen modules share ONE Postgres instance, partitioned by moduleScope
 # per Requirements v0.1 section 3 — not one DB per module. Each module's models set
@@ -24,18 +27,25 @@ TEST_DATABASE_URL = "sqlite://"
 
 
 def resolve_database_url(environ=os.environ, under_pytest: bool | None = None) -> str:
-    url = environ.get("SMO_DATABASE_URL", "").strip()
-    if url:
-        return url
-    if under_pytest is None:
-        under_pytest = "pytest" in sys.modules
-    if under_pytest:
-        return TEST_DATABASE_URL
-    raise MissingDatabaseUrl(
-        "SMO_DATABASE_URL is not set. Set it to the Postgres URL for this deployment, for example "
-        "postgresql+psycopg://<user>:<password>@<host>:5432/<database> (docker compose reads it from "
-        "smo/.env, see .env.example). There is deliberately no default."
-    )
+    """The database URL, from `SMO_DATABASE_URL` or the file named by `SMO_DATABASE_URL_FILE`; the password may
+    be kept out of the URL in `SMO_DATABASE_PASSWORD` or, better, the file named by `SMO_DATABASE_PASSWORD_FILE`
+    (`secretfile.py`), and is then put into it. Compose uses that last form, so no container's environment
+    carries the password."""
+    url = (read_secret("SMO_DATABASE_URL", environ) or "").strip()
+    if not url:
+        if under_pytest is None:
+            under_pytest = "pytest" in sys.modules
+        if under_pytest:
+            return TEST_DATABASE_URL
+        raise MissingDatabaseUrl(
+            "SMO_DATABASE_URL is not set. Set it to the Postgres URL for this deployment, for example "
+            "postgresql+psycopg://<user>:<password>@<host>:5432/<database> (docker compose sets it, with the "
+            "password in a secret file: run scripts/init_secrets.sh, see docs/SECRETS.md). There is deliberately no default."
+        )
+    password = read_secret("SMO_DATABASE_PASSWORD", environ)
+    if password is not None:
+        url = make_url(url).set(password=password).render_as_string(hide_password=False)
+    return url
 
 
 DATABASE_URL = resolve_database_url()

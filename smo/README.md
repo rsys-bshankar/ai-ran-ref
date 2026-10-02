@@ -88,7 +88,7 @@ which obtains its own SME token the same way an rApp does.
 
 ```bash
 cd smo
-cp .env.example .env                     # then set POSTGRES_PASSWORD in .env (there is no default; `openssl rand -hex 24` works)
+scripts/init_secrets.sh                  # once: writes the database password to secrets/db_password (no default)
 export GUI_ADMIN_PASSWORD='choose-one'   # optional; otherwise one is generated
 docker compose up -d --build
 docker compose ps
@@ -96,7 +96,7 @@ docker compose ps
 
 The schema is created once, from `migrations/001_init.sql`, when the Postgres volume is first made. After
 pulling a change that edits that file, recreate the volume (`docker compose down -v`, which discards demo data):
-there is no migration tooling yet (`OPEN_ITEMS.md`, `PR-OPS-1`). The same goes for the `gui_bff_data` and `smo_packages`
+there is no migration tooling yet (`OPEN_ITEMS.md`, `PR-OPS-1`). A volume made when the database password was still `smo` (or any other earlier password) keeps it, and the new random one will not match: recreate the volume as well. The same goes for the `gui_bff_data` and `smo_packages`
 volumes of a stack started before the services ran as a non-root user: they are root-owned, so recreate them too.
 
 - R1 Termination: `curl -s http://localhost:8080/bootstrap`
@@ -131,7 +131,7 @@ cd smo
 pip install -e shared
 (cd onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q)   # one module's unit suite
 PYTHONPATH=shared python -m pytest tests_integration/ -q              # cross-service integration suite
-docker compose --env-file .env.example config --quiet                 # compose file is valid
+docker compose config --quiet                                         # compose file is valid
 ```
 
 The full verification battery is in [`CLAUDE.md`](CLAUDE.md): every module's
@@ -204,6 +204,7 @@ smo/
 | [`docs/openapi/`](docs/openapi/) | Generated OpenAPI spec per service |
 | [`gui/README.md`](gui/README.md) | Operator GUI: running it, roles, security, pages, screenshots |
 | [`OPEN_ITEMS.md`](OPEN_ITEMS.md) | Items still open, and deliberate scope cuts |
+| [`docs/SECRETS.md`](docs/SECRETS.md) | Every secret: owner, how it is supplied, how it is stored (hash or plaintext), how it is rotated |
 | [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md) | Command-by-command live demo against `docker compose up` |
 | [`CLAUDE.md`](CLAUDE.md) | Working practice, conventions, full test battery |
 | [`docs/STANDARDS.md`](docs/STANDARDS.md) | Reference: TS 28.105/28.104/28.312 compliance matrices, runtime realisation and the frozen design decisions |

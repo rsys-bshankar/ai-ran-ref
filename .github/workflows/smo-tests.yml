@@ -139,13 +139,17 @@ jobs:
       - name: docker-compose.yml is structurally valid
         working-directory: smo
         run: |
-          # no .env yet: compose must refuse to start without a database password (PR-DB-1)
-          if docker compose config --quiet 2>/dev/null; then echo "compose accepted a missing POSTGRES_PASSWORD"; exit 1; fi
-          docker compose --env-file .env.example config --quiet
+          docker compose config --quiet
+          # the database password is a secret file: it must not appear in the rendered config (PR-SEC-4.3)
+          if docker compose config | grep -E "POSTGRES_PASSWORD:|smo:smo@"; then
+            echo "::error::a database password is in the compose configuration"; exit 1
+          fi
 
-      - name: Create .env from .env.example
+      - name: Create the secret files and .env
         working-directory: smo
-        run: cp .env.example .env
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
 
       - name: docker compose up --build
         working-directory: smo
