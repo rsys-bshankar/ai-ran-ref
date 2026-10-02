@@ -20,6 +20,12 @@ RUN pip install --no-cache-dir --no-deps -e /srv/shared
 # builds on; the SMO modules themselves never import it.
 COPY sdk /srv/sdk
 
+# The schema migrations travel in every image, so the image of any release can bring the database to that release's
+# schema: docker compose's `migrate` service runs `python /srv/scripts/migrate.py` from one of them (PR-OPS-1.5).
+COPY alembic.ini /srv/alembic.ini
+COPY migrations /srv/migrations
+COPY scripts/migrate.py /srv/scripts/migrate.py
+
 COPY ${MODULE}/pyproject.toml* /srv/module/
 COPY ${MODULE}/app /srv/module/app
 WORKDIR /srv/module

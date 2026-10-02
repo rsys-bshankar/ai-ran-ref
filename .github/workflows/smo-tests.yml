@@ -158,6 +158,19 @@ jobs:
           GUI_COOKIE_SECURE: "false"
         run: docker compose up -d --build
 
+      # PR-OPS-1.5: the one-shot migrate service created the schema (the stack no longer mounts 001_init.sql into
+      # Postgres) and the database is at the newest revision in the repository.
+      - name: The migrate service ran and the database is at the migration head
+        working-directory: smo
+        run: |
+          state=$(docker compose ps -a migrate --format json | jq -rs '.[0] | "\(.State) \(.ExitCode)"')
+          echo "migrate: $state"
+          [ "$state" = "exited 0" ]
+          head=$(ls migrations/versions | grep -oE '^[0-9]+' | sort | tail -1)
+          at=$(docker compose exec -T postgres psql -U smo -d smo -Atc "SELECT version_num FROM alembic_version")
+          echo "database at $at, repository head $head"
+          [ "$at" = "$head" ]
+
       - name: Every service up, R1 gate answers (fast gate)
         working-directory: smo
         run: docker compose exec -T r1-termination python3 - < scripts/compose_e2e.py

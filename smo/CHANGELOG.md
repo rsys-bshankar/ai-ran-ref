@@ -19,12 +19,13 @@ No release has been tagged yet. Everything below is unreleased.
 - Liveness and readiness probes (`/live`, `/ready`; `/health` kept), single-runner guard for periodic work, idempotency keys on command routes, optimistic concurrency on lifecycle rows, one SME identity per module across replicas, connection pool limits and graceful shutdown (#190–#198).
 
 ### Changed
+- **The schema is created and upgraded by a `migrate` service**, which every service waits for; Postgres no longer mounts `001_init.sql`. A kept volume is stamped and upgraded on the next `docker compose up -d --build`; an empty one is built from the baseline. Schema revision `0002` adds the `notification_outbox` table (additive).
 - **Database credentials have no default.** Services refuse to start without `SMO_DATABASE_URL`; compose reads the password from `secrets/db_password` (run `scripts/init_secrets.sh` first). A Postgres volume created with the old default password keeps it: recreate the volume (#199, #205).
 - Containers run as a non-root user with all capabilities dropped; NFO no longer runs privileged and no longer mounts the Docker socket. Volumes created by an earlier stack are root-owned: recreate them (#203).
 - The Dockerfile's plain-text uvicorn access line is off; the structured access log replaces it (#207).
 - The migration CI job and `CLAUDE.md` step 4 create the schema with `scripts/migrate.py` instead of applying the SQL file directly (#209).
 
 ### Upgrade notes
-- Compose still creates the schema from `001_init.sql` on a new volume; a kept database is brought forward with `python scripts/migrate.py` (it stamps `0001` on first run). There are no revisions after `0001` yet.
+- `docker compose up -d --build` runs the migrations (`docker compose logs migrate`); outside compose run `python scripts/migrate.py`. A database created from `001_init.sql` by an earlier stack is stamped at `0001` first. Take a backup (`scripts/db_backup.sh`) before upgrading; `python scripts/migrate.py --downgrade -1` reverses one revision.
 
 [Unreleased]: https://github.com/rsys-bshankar/ai-ran-ref/commits/main

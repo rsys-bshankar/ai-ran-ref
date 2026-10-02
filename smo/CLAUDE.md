@@ -111,6 +111,21 @@ string, for instance, silently breaks the sequence-diagram grammar and
 only shows up as a render error on the PR, never in a text diff. Run it
 (or let CI run it) after touching any file under `docs/call-flows/`.
 
+## Schema changes are revisions
+
+The database schema is the Alembic history in `migrations/` (`docs/adr/0001-schema-migrations.md`). To add or change a table,
+column, index or constraint:
+
+1. Write a revision in `migrations/versions/` (next number, `down_revision` = the current head, a real `downgrade()`), and change
+   the ORM model in the same PR. Never edit `001_init.sql` or an earlier revision: a database that already ran it will not see the change.
+2. Keep it compatible with the previous release's code where you can (add before use, remove in a later release): `docs/RELEASES.md`,
+   "What each number means".
+3. Run `python scripts/migrate.py` then `python scripts/check_migration_matches_models.py` against Postgres (step 4 below), and raise
+   `HEAD` in `tests_integration/test_migrations.py`.
+4. Add a line under `[Unreleased]` in `CHANGELOG.md`.
+
+Docker compose runs the migrations itself (the `migrate` service); services start only after it succeeds.
+
 ## PR conventions
 
 - Branch names: `claude/<kebab-case-description>`.

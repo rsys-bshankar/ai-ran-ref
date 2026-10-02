@@ -24,6 +24,12 @@ x-hardening: &hardening
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
 
+# Every service that uses the database waits for it to be healthy AND for the one-shot `migrate` service to have
+# finished (PR-OPS-1.5): the schema is created and upgraded by the Alembic history, never by the services.
+x-wait-for-schema: &wait_for_schema
+  postgres: { condition: service_healthy }
+  migrate: { condition: service_completed_successfully }
+
 services:
   postgres:
     image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
@@ -41,7 +47,6 @@ services:
       # A volume left by a 16 stack is not readable by 18: `docker compose down -v`
       # (demo data) or pg_dump/pg_restore across the upgrade.
       - smo_pgdata:/var/lib/postgresql
-      - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -49,6 +54,23 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Brings the database to the schema of this release, then exits (PR-OPS-1.5, docs/adr/0001-schema-migrations.md): an
+  # empty database gets the baseline and every revision after it, a database made from 001_init.sql by an earlier
+  # stack is stamped and upgraded, an up-to-date one is left alone. The services wait for it to finish; if it fails
+  # they do not start, and `docker compose logs migrate` says why. The image is any of the service images (all carry
+  # the migrations); this one is the R1 Termination build, so no extra image layer is built.
+  migrate:
+    build: { context: ., args: { MODULE: r1-termination } }
+    command: ["python", "/srv/scripts/migrate.py"]
+    restart: "no"
+    stop_grace_period: 30s
+    secrets: [db_password]
+    <<: *hardening
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      SMO_DATABASE_URL: postgresql+psycopg://smo@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
 
   r1-termination:
     build: { context: ., args: { MODULE: r1-termination } }
@@ -84,7 +106,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment: &db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo@postgres:5432/smo   # no password here: smo_shared/db.py adds it from the file below
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
@@ -95,7 +117,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment: *db_env
 
   onboarding:
@@ -104,7 +126,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment: *db_env
     volumes:
       - smo_packages:/srv/packages   # FileSystem-aaS, SMO Design v1.3 section 3.4
@@ -115,7 +137,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
@@ -126,7 +148,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
@@ -154,7 +176,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
@@ -167,7 +189,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
@@ -180,7 +202,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
@@ -193,7 +215,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
@@ -204,7 +226,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     networks: [default, a1_mock_net]
     environment:
       <<: *db_env
@@ -225,7 +247,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
@@ -240,7 +262,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment: *db_env
 
   mlmr:
@@ -249,7 +271,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment: *db_env
 
   aimgf:
@@ -258,7 +280,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
@@ -277,7 +299,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
@@ -288,7 +310,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment: *db_env
 
   intent-service:
@@ -297,7 +319,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment: *db_env
 
   so-smos:
@@ -306,7 +328,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
@@ -317,7 +339,7 @@ services:
     secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: *wait_for_schema
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000

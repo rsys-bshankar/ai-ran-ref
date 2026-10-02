@@ -50,7 +50,7 @@ that realises a standard and adds its own behaviour on top says so.
 | [Intent Service](intent-service/README.md) | 3GPP (TS 28.312) | `intent-service/` | TS 28.312 intents, intent handlers (RMIH), reports, autonomy dispatches | `/intent-service` |
 | [SO SMOS](so-smos/README.md) | O-RAN SMOS (WG1 SMO-ARCH §4.2.7); SMOS interfaces are unspecified, so the design is internal; does not register as an RMIH | `so-smos/` | Multi-step service orders over a dispatch table, fail-fast | `/so-smos` |
 | [SA SMOS](sa-smos/README.md) | O-RAN SMOS (WG1 SMO-ARCH §4.2.8); SMOS interfaces are unspecified, so the design is internal; its O1-CM handler acts as a 3GPP TS 28.312 RMIH | `sa-smos/` | Assurance monitors, remedial actions, O1-CM intent handler | `/sa-smos` |
-| Postgres | n/a (infrastructure) | — | `postgres:18-alpine`, seeded from `migrations/001_init.sql` | host `5432` |
+| Postgres | n/a (infrastructure) | — | `postgres:18-alpine`, schema by the `migrate` one-shot service (Alembic, `migrations/`) | host `5432` |
 
 ### Test doubles, SDK, GUI
 
@@ -94,10 +94,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-The schema is created once, from `migrations/001_init.sql`, when the Postgres volume is first made. After
-pulling a change that edits that file, recreate the volume (`docker compose down -v`, which discards demo data):
-a database that is kept is upgraded with `python scripts/migrate.py` (Alembic; it stamps a database that was created from the file, `docs/adr/0001-schema-migrations.md`), but the compose stack does not run it yet (`OPEN_ITEMS.md`, `PR-OPS-1.5`). A volume made when the database password was still `smo` (or any other earlier password) keeps it, and the new random one will not match: recreate the volume as well. The same goes for the `gui_bff_data` and `smo_packages`
-volumes of a stack started before the services ran as a non-root user: they are root-owned, so recreate them too.
+The schema is created and upgraded by the `migrate` one-shot service (Alembic, `docs/adr/0001-schema-migrations.md`), which every service waits for: an empty volume gets the baseline (`migrations/001_init.sql`) and every revision after it, a volume made by an earlier stack that created the schema from the file is stamped and upgraded, an up-to-date one is left alone. After pulling a change, `docker compose up -d --build` migrates in place; `docker compose logs migrate` shows what it did. `docker compose down -v` still discards the demo data. A volume made when the database password was still `smo` (or any other earlier password) keeps it, and the new random one will not match: recreate the volume as well. The same goes for the `gui_bff_data` and `smo_packages` volumes of a stack started before the services ran as a non-root user: they are root-owned, so recreate them too.
 
 - R1 Termination: `curl -s http://localhost:8080/bootstrap`
 - Operator GUI: <http://localhost:3000>, user `admin`. If `GUI_ADMIN_PASSWORD`
