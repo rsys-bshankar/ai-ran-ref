@@ -100,11 +100,9 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     })
     assert dme_prod.status_code == 201
 
-    # step 5: bootstrap-complete — DEPLOYING -> RUNNING. HISTORY.md §7's
-    # Onboarding/rApp Mgmt finding 3: this also registers the package's
-    # own CSAR-bundled Files/Sme/ declarations with SME automatically,
-    # under this instance's own real oauthClientId — a real, separate
-    # registration from the manual "energy-saving-rapp" one above.
+    # step 5: bootstrap-complete — DEPLOYING -> RUNNING. A package that
+    # bundles Files/Sme/ declarations has them registered with SME here;
+    # the Energy Saving package ships none, so nothing is registered.
     bc = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/bootstrap-complete")
     assert bc.status_code == 200
     assert bc.json()["state"] == "RUNNING"
@@ -112,8 +110,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     get_inst = mesh["rapp-mgmt"].get(f"/instances/{instance_id}")
     assert get_inst.status_code == 200
     assert get_inst.json()["state"] == "RUNNING"
-    assert len(get_inst.json()["smeServiceIds"]) == 1
-    assert get_inst.json()["smeServiceIds"][0] != energy_saving_service_id
+    assert not get_inst.json()["smeServiceIds"]
 
     # step 6: operate
     perf = mesh["rapp-mgmt"].post(f"/instances/{instance_id}/performance", json={"cellsAsleep": 2, "prbSavedPercent": 12.5})

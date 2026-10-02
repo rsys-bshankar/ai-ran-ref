@@ -244,9 +244,9 @@ print(r.status_code, r.json())
 "
 ```
 
-`state` is now `RUNNING`. Confirm it; `smeServiceIds` holds the serviceId(s)
-from bootstrap-complete's automatic SME registration under the instance's
-`oauthClientId`, separate from the manual `energy-saving-rapp` one:
+`state` is now `RUNNING`. Confirm it; `smeServiceIds` is empty, because this
+package bundles no `Files/Sme/` declarations for bootstrap-complete to
+register:
 
 ```bash
 docker compose exec r1-termination python3 -c "
