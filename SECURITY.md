@@ -65,6 +65,9 @@ What is in place, so you can judge what counts as a vulnerability:
 - **Network exposure.** In `docker-compose.yml` only R1 Termination (`:8080`),
   the GUI (`:3000`) and Postgres (`:5432`) publish host ports. The A1 Near-RT
   RIC test double sits on an isolated network reachable only from `a1-related`.
+  The optional `tls` profile adds an nginx edge on `:3443` (GUI) and `:8443` (R1)
+  with TLS 1.2+ and HSTS; the plain ports stay open until a deployment removes them.
+  Services behind the edge speak HTTP on the compose network (`PR-SEC-2` for mTLS).
 - **Operator GUI.** Session JWT in an `HttpOnly; Secure; SameSite=Strict`
   cookie, CSRF double-submit on unsafe methods, role checks (viewer / operator /
   admin) re-read on every request, account lockout after repeated failures, an

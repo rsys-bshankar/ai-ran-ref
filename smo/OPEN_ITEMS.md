@@ -308,18 +308,13 @@ are plain HTTP.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-1.1 ★ | Script that makes a dev CA and a server certificate | Files produced | – |
-| SEC-1.2 | nginx (GUI) TLS server block using mounted certs | `https://localhost:3000` works | SEC-1.1 |
-| SEC-1.3 | R1 Termination served over TLS (uvicorn flags or documented ingress) | `https://localhost:8080/bootstrap` works | SEC-1.1 |
-| SEC-1.4 | `Secure` cookie and HSTS when TLS is on | Header test | SEC-1.2 |
-| SEC-1.5 | Compose profile `tls` that wires 1.2 to 1.4 | Profile starts clean | SEC-1.3 |
-| SEC-1.6 | `/bootstrap` advertises `https` URLs under the profile | rApp demo works over HTTPS | SEC-1.5 |
+| SEC-1.6 | `/bootstrap` advertises `https` URLs under the profile | rApp demo works over HTTPS | – |
 
 #### PR-SEC-2 — mTLS between services
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-2.1 | Per-service certificates from the dev CA | Script output | SEC-1.1 |
+| SEC-2.1 | Per-service certificates from the dev CA | Script output | – |
 | SEC-2.2 | Uvicorn option to require client certs, by env | Call without a cert is refused | SEC-2.1 |
 | SEC-2.3 | `R1Client` and every internal `httpx` call present a client cert and verify the CA | Runbook replay green | SEC-2.2 |
 | SEC-2.4 | `sslmode=verify-full` for Postgres | Connection fails with a wrong CA | SEC-2.1 |
@@ -441,7 +436,7 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 | SEC-14.1 | Data-flow diagram of R1, O1, A1, O2, GUI, DB | Diagram in `docs/` | – |
 | SEC-14.2 | STRIDE table per flow | Table with a mitigation or an item ID per row | SEC-14.1 |
 | SEC-14.3 | Findings imported as items in this file | Each has an ID | SEC-14.2 |
-| SEC-14.4 | Scope for an external penetration test | One-page scope | SEC-1.5, SEC-4.5 |
+| SEC-14.4 | Scope for an external penetration test | One-page scope | SEC-4.5 |
 
 
 ### 5.5 Observability (`PR-OBS`)
@@ -1454,7 +1449,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):**
    OBS-1.1.
-2. **Safe to expose:** SEC-1.1–1.5, SEC-13.2.
+2. **Safe to expose:** SEC-13.2.
 3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1.
 4. **Durable notifications:** MSG-1.1–1.4, then MSG-1.5 onwards one module at a time.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.
