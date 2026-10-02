@@ -22,6 +22,8 @@ class O1AdaptorEndpoint(Base):
     # this adaptor declares (PROV/FM/PM/FILE/STREAM/SWM/SUBSCRIPTION/HEARTBEAT).
     # NULL means "whatever its vendor's capability declares".
     supported_services: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
+    # PR-SB-1.2: how the adaptor is reached: 'http-mock' (the XML-over-HTTP mock) or 'ssh' (NETCONF over SSH, RFC 6242)
+    transport: Mapped[str] = mapped_column(String, nullable=False, default="http-mock", server_default="http-mock")
 
 
 class ManagedEntity(Base):

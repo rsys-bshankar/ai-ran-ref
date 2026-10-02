@@ -44,6 +44,7 @@ from .models import Alarm, CMSchemaCache, FileSubscription, VendorCapability, FM
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
 from . import restconf_client
+from . import netconf_ssh
 from .netconf_client import NETCONF_TIMEOUT_SECONDS, send_edit_config, send_get_config
 from .vendors import MnsService, check_vendor_mode, require_service, router as vendors_router, schema_problems
 from .statemachine import (
@@ -101,7 +102,9 @@ def worst_case_dispatch_seconds() -> float:
 # OI-1-cm-sync-restconf: the O1 protocols this module dispatches CM over —
 # o1_protocol -> (edit, read, reason for an unexplained failure). Resolved
 # at call time so tests can patch either client function.
-def _o1_client(protocol: str):
+def _o1_client(protocol: str, transport: str = "http-mock"):
+    if protocol == "NETCONF" and transport == "ssh":
+        return netconf_ssh.send_edit_config, netconf_ssh.send_get_config, "NETCONF_RPC_FAILED"
     if protocol == "NETCONF":
         return send_edit_config, send_get_config, "NETCONF_RPC_FAILED"
     if protocol == "RESTCONF":
@@ -110,10 +113,10 @@ def _o1_client(protocol: str):
 
 
 def _dispatch_with_retries(adaptor_uri: str, change: dict, attribute_changes: dict, message_id: str,
-                           operation: str, protocol: str = "NETCONF") -> tuple[bool, str | None, int]:
+                           operation: str, protocol: str = "NETCONF", transport: str = "http-mock") -> tuple[bool, str | None, int]:
     """(applied, rejection reason, attempts) for one sub-change. The same
     retry policy for both protocols: only a transient failure is retried, and only within the time budget."""
-    send_edit, _, default_reason = _o1_client(protocol)
+    send_edit, _, default_reason = _o1_client(protocol, transport)
     reason, attempts = None, 0
     started = _monotonic()
     for delay in NETCONF_RETRY_DELAYS:
@@ -197,6 +200,21 @@ class RegisterO1AdaptorEndpointRequest(BaseModel):
     # Wave 9 (W9-01): the MnS services this adaptor implements; omitted =
     # its vendor's declared capability (vendors.py)
     supportedServices: list[MnsService] | None = None
+    # PR-SB-1.2: how the adaptor is reached. `ssh`: NETCONF over SSH (RFC 6242), adaptorUri is ssh://user@host[:port].
+    transport: Literal["http-mock", "ssh"] = "http-mock"
+
+    @model_validator(mode="after")
+    def _transport_matches(self):
+        if self.transport == "ssh":
+            if self.o1Protocol != "NETCONF":
+                raise ValueError("transport ssh carries NETCONF only")
+            try:
+                netconf_ssh.parse_ssh_uri(self.adaptorUri)
+            except netconf_ssh.NetconfSshError as exc:
+                raise ValueError(exc.detail) from exc
+        elif self.adaptorUri.lower().startswith("ssh:"):
+            raise ValueError("an ssh:// adaptorUri needs transport ssh")
+        return self
 
 
 @app.post("/o1-adaptor-endpoints", status_code=201)
@@ -235,7 +253,7 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
                               detail=f"supportedServices {body.supportedServices} exceed vendor {body.vendorName!r}'s {cap.supported_services}")
     endpoint = O1AdaptorEndpoint(managed_element_ref=body.managedElementRef, adaptor_uri=body.adaptorUri,
                                   protocol_support=body.protocolSupport, health_status=EndpointHealth.DISCOVERED.value,
-                                  supported_services=body.supportedServices)
+                                  supported_services=body.supportedServices, transport=body.transport)
     db.add(endpoint)
     db.flush()
     me = ManagedEntity(managed_element_ref=body.managedElementRef, managed_function_ref=body.managedFunctionRef,
@@ -316,7 +334,7 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
                                          attribute_changes=attribute_changes, operation=operation, status="REJECTED",
                                          rejection_reason="ENDPOINT_UNREACHABLE"))
             continue
-        if _o1_client(me.o1_protocol) is None:
+        if _o1_client(me.o1_protocol, endpoint.transport) is None:
             # NETCONF and RESTCONF are dispatched; any other provisioned
             # protocol is rejected rather than silently treated as applied.
             db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
@@ -325,7 +343,7 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
                                          rejection_reason="PROTOCOL_NOT_SUPPORTED"))
             continue
         applied, reason, attempts = _dispatch_with_retries(endpoint.adaptor_uri, change, attribute_changes,
-                                                           str(job.job_id), operation, me.o1_protocol)
+                                                           str(job.job_id), operation, me.o1_protocol, endpoint.transport)
         if not applied and attempts > 1:
             _raise_dispatch_alarm(db, job.job_id, change, reason, attempts)
         db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
@@ -353,7 +371,7 @@ def read_configuration(managed_element_ref: str, managed_function_ref: str | Non
     endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id) if me and me.o1_adaptor_endpoint_id else None
     if endpoint is None:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"{managed_element_ref} has no registered O1 adaptor")
-    client = _o1_client(me.o1_protocol)
+    client = _o1_client(me.o1_protocol, endpoint.transport)
     if client is None:
         raise framework_error(FrameworkError.PROTOCOL_NOT_SUPPORTED,
                               detail=f"{managed_element_ref} is provisioned for {me.o1_protocol}, which has no client")
@@ -875,7 +893,7 @@ def list_o1_adaptor_endpoints(health_status: str | None = None, limit: int = Pag
         stmt = stmt.where(O1AdaptorEndpoint.health_status == health_status)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"endpointId": str(ep.endpoint_id), "managedElementRef": ep.managed_element_ref, "adaptorUri": ep.adaptor_uri,
-             "protocolSupport": ep.protocol_support, "registeredVia": ep.registered_via, "healthStatus": ep.health_status,
+             "protocolSupport": ep.protocol_support, "registeredVia": ep.registered_via, "transport": ep.transport, "healthStatus": ep.health_status,
              "lastHeartbeatAt": ep.last_heartbeat_at.isoformat() if ep.last_heartbeat_at else None,
              "supportedServices": ep.supported_services}
             for ep in page["items"]]}

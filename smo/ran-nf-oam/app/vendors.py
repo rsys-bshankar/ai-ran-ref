@@ -284,6 +284,9 @@ def _registered_discovery_uri(db: Session, managed_element_ref: str, vendor_name
     endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id) if me.o1_adaptor_endpoint_id else None
     if endpoint is None:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"{managed_element_ref} has no registered O1 adaptor")
+    if endpoint.transport != "http-mock":
+        raise framework_error(FrameworkError.PROTOCOL_NOT_SUPPORTED,
+                              detail=f"capability discovery is an HTTP GET; {managed_element_ref} is reached over {endpoint.transport}")
     origin = urlsplit(endpoint.adaptor_uri)
     return urlunsplit((origin.scheme, origin.netloc, "/capabilities", "", ""))
 

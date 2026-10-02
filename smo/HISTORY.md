@@ -1413,3 +1413,17 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   3GPP descriptor (`gnbIdLength` 22..32, `gnbDuId` 0..68719476735), a wrong type, and a two-change job where nothing is sent; the descriptor-vs-source integration test regenerates all of them. No existing write test needed a change.
 - **Deliberately lenient:** a vendor's `union` leaf is never rejected for its type; an integer accepts `"7"`; unknown YANG `must` / `when` conditions are not evaluated.
 - **Not done:** failure to `rejection_reason` codes (SB-5.3), the unknown-attribute policy flag (SB-5.4), `must` constraints (SB-5.5).
+
+### PR-SB-1 (part 1) — NETCONF over SSH (SB-1.1, 1.2, 1.3, 1.5 wiring)
+
+- **Library (SB-1.1).** `docs/adr/0002-netconf-over-ssh-client.md`: paramiko for the SSH session and our own framing and hello (the RPC builders and reply parsers are `netconf_client.py`'s, reused). Not ncclient (a large layer over paramiko that hides
+  framing and timeouts), not scrapli-netconf (a plugin system for the same result), not asyncssh (asyncio only; every route here dispatches with blocking calls). `paramiko` joins `requirements/runtime.in` (with `bcrypt`, `pynacl`, `invoke`).
+- **`transport` column (SB-1.2).** Revision `0003`: `o1_adaptor_endpoint.transport TEXT NOT NULL DEFAULT 'http-mock' CHECK (... IN ('http-mock','ssh'))`; existing rows are `http-mock`, the previous release ignores the column.
+  Registration takes `transport`; `ssh` needs `o1Protocol` NETCONF and an `ssh://user@host[:port]` URI, and an `ssh://` URI needs `transport: ssh` (422 otherwise). `_o1_client(protocol, transport)` picks the client. Capability discovery
+  (an HTTP GET) refuses an `ssh` endpoint with `PROTOCOL_NOT_SUPPORTED`.
+- **Session wrapper (SB-1.3).** `app/netconf_ssh.py` `NetconfSession`: connect with a timeout, open the `netconf` subsystem, exchange `<hello>` (always end-of-message framed), use chunked framing when both sides offer base:1.1, else `]]>]]>`.
+  A reply may arrive in any number of pieces; a reply over 16 MiB is refused. Host keys: an `NETCONF_SSH_KNOWN_HOSTS` file with `RejectPolicy`; refusal when none is configured (no way to skip the check).
+  Reasons: timeout -> `NETCONF_TIMEOUT`, refused or broken connection -> `NETCONF_UNREACHABLE` (both retried by the existing policy); host key, authentication, missing subsystem, bad hello, `<rpc-error>` -> `NETCONF_RPC_FAILED` (not retried).
+- **Read and write (SB-1.5 wiring; edit-config is also available).** `send_get_config` and `send_edit_config` have the shapes of the HTTP ones, so `POST /config-jobs` and `GET /managed-entities/{ref}/config` work over SSH unchanged.
+- **Tests.** An in-process paramiko SSH server (`tests/netconf_ssh_server.py`) lets the wrapper and the routes run in the unit suite: 18 wrapper cases and 7 route cases.
+- **Not done:** the `netconf-lab` compose profile and a run against netopeer2 (SB-1.4, and SB-1.5's "route returns data from the lab server"), `<rpc-error>` tag mapping (SB-1.7), candidate datastore (SB-1.8), credentials per endpoint and a pinning route (`PR-SB-2`).
