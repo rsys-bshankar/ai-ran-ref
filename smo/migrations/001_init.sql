@@ -1766,3 +1766,8 @@ CREATE TABLE module_identity (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- PR-ST-8: one row per periodic task; the replica that moves last_run_at forward runs it (smo_shared/single_runner.py).
+CREATE TABLE periodic_run (
+  name         TEXT PRIMARY KEY,
+  last_run_at  TIMESTAMPTZ NOT NULL
+);

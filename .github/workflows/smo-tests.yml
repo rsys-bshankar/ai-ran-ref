@@ -252,12 +252,12 @@ jobs:
           SMO_DATABASE_URL: postgresql+psycopg://smo:smo@localhost:5432/smo
         run: python scripts/check_migration_matches_models.py
 
-      # PR-ST-2 to -7: the races on a versioned row, on one Idempotency-Key, on a module's shared invoker and on the GUI BFF's shared state, and the server-side statement and idle-transaction limits, on the real database.
+      # PR-ST-2 to -8: the races on a versioned row, on one Idempotency-Key, on a module's shared invoker and on the GUI BFF's shared state, and the server-side statement and idle-transaction limits, on the real database.
       - name: Concurrency, idempotency and shared state under real Postgres
         working-directory: smo/shared
         env:
           SMO_TEST_POSTGRES_URL: postgresql+psycopg://smo:smo@localhost:5432/smo
         run: |
           pip install --require-hashes -r ../requirements/dev.txt
-          PYTHONPATH=. python -m pytest tests/test_versioning.py tests/test_idempotency.py tests/test_module_identity.py tests/test_db_engine.py tests/test_health.py -v
+          PYTHONPATH=. python -m pytest tests/test_versioning.py tests/test_idempotency.py tests/test_module_identity.py tests/test_db_engine.py tests/test_health.py tests/test_single_runner.py -v
           (cd ../gui-bff && PYTHONPATH=.:../shared python -m pytest tests/test_shared_state.py -v)

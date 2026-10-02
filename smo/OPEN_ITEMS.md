@@ -123,7 +123,7 @@ and HA much later).
 
 | Area | Prefix | Features |
 |---|---|---|
-| Stateless / scale-out | `PR-ST` | ST-7 readiness (schema check) · ST-8 single-runner · ST-9 inline retry |
+| Stateless / scale-out | `PR-ST` | ST-7 readiness (schema check) · ST-8 single-runner (adoption) · ST-9 inline retry |
 | Database | `PR-DB` | DB-1 credentials · DB-2 per-module schemas · DB-3 retention · DB-4 indexes/pagination · DB-5 pooler · DB-6 backup · DB-7 Postgres HA |
 | Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
@@ -155,13 +155,11 @@ GUI BFF's per-process login lockout, and module-level dicts in the two mocks (te
 |---|---|---|---|
 | ST-7.4 | Check: schema at expected head (a function passed to `install_health`, as `database_check` is) | Mismatch → not ready | OPS-1.2 |
 
-#### PR-ST-8 — Single-runner guard (deferred: `ST-1.4` found no periodic task today; needed when `SB-18.2`, `MGT-6.4`, `MGT-8.6` or `MGT-12.1` lands)
+#### PR-ST-8 — Single-runner guard (open: adoption; `ST-1.4` found no periodic task today, needed when `SB-18.2`, `MGT-6.4`, `MGT-8.6` or `MGT-12.1` lands)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| ST-8.1 | `smo_shared` helper: Postgres advisory lock with a lease | Two sessions: one acquires | – |
-| ST-8.2 | `run_once_per_interval(name, interval, fn)` using it | Three replicas fire once per interval | ST-8.1 |
-| ST-8.3 | Adopt for each periodic task found | Per task: one firing per interval | ST-8.2 |
+| ST-8.3 | Adopt `run_once_per_interval` for each periodic task found | Per task: one firing per interval | – |
 
 #### PR-ST-9 — Inline retry in the request thread
 
@@ -886,7 +884,7 @@ Needs access to a vendor simulator or lab.
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | SB-18.1 | `reportInterval` and `heartbeatInterval` stored and validated | Route tests | – |
-| SB-18.2 | Scheduled collection task | One collection per interval across replicas | ST-8.2 |
+| SB-18.2 | Scheduled collection task | One collection per interval across replicas | – |
 | SB-18.3 | `PerformanceMeasurementStore` retention | Old rows purged | DB-3.2 |
 | SB-18.4 | `FILE` reporting mode | File written and listed | SB-18.2 |
 | SB-18.5 | `STREAM` reporting mode | Messages on a topic | SB-18.2, SB-8.1 |
@@ -957,7 +955,7 @@ ack and clear routes.
 | MGT-6.1 | Desired-state store per element | Migration | – |
 | MGT-6.2 | On-demand compare with the actual config | Route test | MGT-6.1 |
 | MGT-6.3 | Drift report with a count per element | Route test | MGT-6.2 |
-| MGT-6.4 | Scheduled compare | One run per interval | MGT-6.2, ST-8.2 |
+| MGT-6.4 | Scheduled compare | One run per interval | MGT-6.2 |
 | MGT-6.5 | Remediation as a config job | Test | MGT-6.2 |
 
 #### PR-MGT-7 — Plan management (TS 28.572)
@@ -983,7 +981,7 @@ alarm and take any `new_state` string.
 | MGT-8.3 | Comments: add and list | Route tests | – |
 | MGT-8.4 | List filters: severity, state, time range, element | Route tests | – |
 | MGT-8.5 | Repeat raise of the same `source_alarm_id`: update count and time instead of a new row (confirm today's behaviour first) **(verify)** | Test | – |
-| MGT-8.6 | Aging policy: auto-clear after N hours without a repeat | One run per interval | ST-8.2 |
+| MGT-8.6 | Aging policy: auto-clear after N hours without a repeat | One run per interval | – |
 | MGT-8.7 | Suppression windows per element (planned work) | Alarm in a window is flagged | MGT-8.2 |
 | MGT-8.8 | FM subscription notifications for ack and clear (confirm what is sent today) **(verify)** | Receiver gets them | MSG-1.4 |
 
@@ -1025,7 +1023,7 @@ alarm and take any `new_state` string.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-12.1 | Scheduled file fetch per adaptor | One fetch per interval across replicas | ST-8.2 |
+| MGT-12.1 | Scheduled file fetch per adaptor | One fetch per interval across replicas | – |
 | MGT-12.2 | Parser for the 3GPP XML PM file format | Parses sample files | – |
 | MGT-12.3 | De-duplicate by file id | Test | MGT-12.1 |
 | MGT-12.4 | Backlog gauge | Visible on `/metrics` | OBS-2.2 |
@@ -1089,7 +1087,7 @@ alarm and take any `new_state` string.
 | MGT-18.1 | SLA objects (KPI, threshold, window) | Migration | – |
 | MGT-18.2 | Monitor evaluates SLAs from the KPI engine | Breach detected | MGT-18.1, MGT-11.5 |
 | MGT-18.3 | Breach events | Event delivered | MGT-18.2, MSG-1.4 |
-| MGT-18.4 | Escalation steps with timers | Test | MGT-18.3, ST-8.2 |
+| MGT-18.4 | Escalation steps with timers | Test | MGT-18.3 |
 
 
 ### 5.10 Northbound and OSS/BSS (`PR-NB`)

@@ -9,7 +9,7 @@
 | Depends on (over R1) | `R1Client` calls R1 Termination (`/bootstrap`) and SME (`/invoker-registrations`, `/oauth2/token`) for its own token; no other module |
 | Called by | Every backend module (imports); the SDK (`sdk/`) and the four sample rApps via `R1Client`. Not imported by `gui-bff` |
 | Database tables | None. Provides `Base`, the engine and sessions that modules' `models.py` use |
-| Unit tests | 131 passed (`tests/`; 31 more are skipped without `SMO_TEST_POSTGRES_URL`) |
+| Unit tests | 146 passed (`tests/`; 40 more are skipped without `SMO_TEST_POSTGRES_URL`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -70,6 +70,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | File | Responsibility |
 |---|---|
 | `smo_shared/db.py` | `DATABASE_URL`, `engine_options()` / `build_engine()` (pool and session limits from `SMO_DB_*`), `engine`, `SessionLocal`, `Base`, `session_scope()`, `get_session()` |
+| `smo_shared/single_runner.py` | `run_once_per_interval(name, interval_seconds, fn)`, `advisory_lock(name)` and the `PeriodicRun` model (table `periodic_run`): a periodic task runs on one replica per interval. No caller yet |
 | `smo_shared/health.py` | `install_health(app, checks)`: `/live`, `/ready` and the `/health` alias; `database_check`, `sme_token_check`, `run_checks` |
 | `smo_shared/timeouts.py` | `call_timeout()`, `upstream_timeout()`, `introspect_timeout()`: the platform's outbound HTTP timeouts, read from the environment when asked |
 | `smo_shared/statemachine.py` | `StateMachine`, `Transition`, `IllegalTransition` |
@@ -168,6 +169,14 @@ Rule: any caller-supplied callback URL (`notificationDestination`, `callbackUri`
 
 All instances in a process share one identity and token (`_identity`).
 
+#### Single runner (`single_runner.py`)
+
+| Item | Behaviour |
+|---|---|
+| `run_once_per_interval(name, interval_seconds, fn)` | Any number of replicas may call it on any schedule; across them `fn` runs at most once per interval and the call returns True where it ran. The claim is one atomic `UPDATE periodic_run SET last_run_at = now WHERE name = ... AND last_run_at <= now - interval`, so there is no leader and nothing to clean up after a crash. A raising `fn` gives the claim back (the next tick retries) and propagates |
+| `advisory_lock(name)` | Postgres `pg_try_advisory_lock` on a dedicated autocommit connection (a pooled transaction would be ended by the idle-in-transaction limit); yields True if held, False if another session holds it; the server frees it when the holder dies. Always True on SQLite. `run_once_per_interval` holds it during `fn`, so a run longer than the interval is not started twice |
+| Who ticks | Not this module: a Kubernetes CronJob, an external scheduler or an endpoint hit on a timer calls it. Nothing in the platform does yet (`HISTORY.md` §10, ST-1.4), and the statelessness guard forbids starting a scheduler inside a service |
+
 #### Probes (`health.py`)
 
 | Item | Behaviour |
@@ -260,6 +269,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 | `tests/test_versioning.py` | `Versioned` on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres: version starts at 1 and every update bumps it; two sessions firing one transition have exactly one winner; a write to another column also conflicts; the repeat after a conflict is refused as an illegal transition; eight threads racing one transition give one winner; a stale write is a 409 ProblemDetails | 11 (5 need Postgres) |
 | `tests/test_idempotency.py` | `@idempotent` on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres: no header runs every time; a repeat replays the first answer and runs nothing; another payload or path is 422; keys are scoped to the caller; a failed attempt is not stored; a running key is 409; an abandoned reservation is taken over; expired records are purged; invalid keys are 422; six threads racing one key run the command once | 27 (13 need Postgres) |
 | `tests/test_module_identity.py` | The store on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres (first insert wins; replace is a compare-and-swap; eight racing threads give one winner each) and `R1Client` with a fake SME: replicas and restarts of a module share one invoker; modules do not share; a replica that loses the race offboards its duplicate; an invoker SME forgot is replaced once and the others adopt the replacement; a broken store falls back to per-process; no `MODULE`, store off and an environment identity bypass the store | 20 (6 need Postgres) |
+| `tests/test_single_runner.py` | A repeat inside the interval does not run, one after it does; tasks are independent; a failed run gives the interval back; six racing replicas run the task once; on real Postgres: two sessions cannot hold one lock and it is free afterwards, a dead holder frees it, and a run longer than the interval is not started again elsewhere | 16 (10 need Postgres) |
 | `tests/test_health.py` | `/live` and `/health` stay 200 whatever the checks say; `/ready` 200 with all checks passing, 503 naming a failing one without its message; a hung check is `timeout` and does not hang the probe; checks run in parallel; the database check on SQLite and real Postgres, a down database (SQLite path, closed Postgres port) is not ready; the SME token check follows whether a token can be had | 11 (1 needs Postgres) |
 | `tests/test_db_engine.py` | `engine_options`: Postgres defaults, every setting from the environment, 0 turns a limit off, SQLite gets none, the pool settings reach the engine; on real Postgres (`SMO_TEST_POSTGRES_URL`): a statement over the limit is cancelled by the server and the pool survives, a session idle inside a transaction is ended, and the control (no limit, same statement completes); the timeout defaults nest | 10 (3 need Postgres) |
 
