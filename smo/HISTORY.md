@@ -1344,3 +1344,13 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Tests (3 new):** the MSG-1.6 crash test (inline drain off: one PENDING row with the event and service id, nothing sent, a later drain delivers it); the visibility gate still hides a gated service from a subscriber outside
   `allowedConsumers` when the notification is enqueued in the registering request; a registration whose commit fails leaves no row, sends nothing and registers no service. The SME fixture creates the outbox table.
 - **Differences to know:** send timeout is the outbox's 2 s (was 5 s); a failed first attempt stays PENDING for the sweep instead of being forgotten; at-least-once, so a subscriber may see an event twice after a crash.
+
+### PR-MSG-1.7 — AIMgF notifications through the outbox
+
+- **Two sites moved:** `_notify_job_completion` (training, validation and emulation completion, and the execution-timeout sweep for those and for inference jobs: one function, four call sites) and `report_performance`'s push to the
+  MLMF subscription's destination. `_notify_job_completion` now takes the session and enqueues; the docstring says the caller must commit after it.
+- **Order changed:** every caller enqueues before its `db.commit()`: `complete_training_job`, `complete_validation_job`, `complete_emulation_job`, and the timeout sweep, which used to commit and then loop over the expired jobs and now
+  enqueues all of them and commits once. `report_performance` flushes the new report (for its id), enqueues, then commits. A completion and its notification are one transaction.
+- **Tests (3 new):** the MSG-1.7 crash test (training completion with the inline drain off: one PENDING row with the job kind and id, nothing sent, a later drain delivers it); a performance report is committed with its subscriber push;
+  a completion whose commit fails leaves no row, sends nothing and leaves the job unfinished. The AIMgF fixture creates the outbox table; all 195 existing tests (which replace `httpx.post`) pass unchanged.
+- **Differences to know:** at-least-once; a failed first attempt stays PENDING for the sweep. The send timeout was already 2 s here.
