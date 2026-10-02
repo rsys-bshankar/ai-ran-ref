@@ -196,6 +196,12 @@ jobs:
           curl -fsS --retry 10 --retry-delay 3 --retry-connrefused http://localhost:3000/ | grep -qi '<div id="root"'
           curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:3000/api/modules/status
 
+      - name: Slow statements are logged (PR-DB-4.1)
+        working-directory: smo
+        run: |
+          docker compose exec -T postgres psql -U smo -d smo -c "SELECT pg_sleep(1)" > /dev/null
+          docker compose logs --no-color postgres | grep -E "duration: [0-9.]+ ms +statement: SELECT pg_sleep"
+
       - name: Backup and restore round trip (compose mode, PR-DB-6.1)
         working-directory: smo
         run: |
