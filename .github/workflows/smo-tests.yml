@@ -251,3 +251,12 @@ jobs:
         env:
           SMO_DATABASE_URL: postgresql+psycopg://smo:smo@localhost:5432/smo
         run: python scripts/check_migration_matches_models.py
+
+      # PR-ST-2: the two-session and eight-thread races on a versioned row, on the real database.
+      - name: Optimistic concurrency under real Postgres
+        working-directory: smo/shared
+        env:
+          SMO_TEST_POSTGRES_URL: postgresql+psycopg://smo:smo@localhost:5432/smo
+        run: |
+          pip install --require-hashes -r ../requirements/dev.txt
+          PYTHONPATH=. python -m pytest tests/test_versioning.py -v

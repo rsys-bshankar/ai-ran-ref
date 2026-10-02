@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 
 from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
+from smo_shared.testing import concurrent_commit_on
 
 from app.main import app
 from app.models import Alarm, CMSchemaCache, FMSubscription, FileSubscription, ManagedEntity, MsacAccessRule, MsacIdentity, MsacRole, PMFile, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, VendorCapability, WriteConfigJob, WriteConfigSubChange
@@ -640,3 +641,27 @@ def test_an_alarm_can_name_the_cell_it_is_about(client, db_session_factory):
     assert by_source["whole"]["managedFunctionRef"] is None
     only = client.get("/alarms", params={"managed_function_ref": "NRCellDU=101"}).json()["items"]
     assert [a["sourceAlarmId"] for a in only] == ["cell-101"]
+
+
+def test_a_concurrent_writer_turns_a_software_job_advance_into_a_409_and_the_repeat_succeeds(client, db_session_factory):
+    """PR-ST-2: SoftwareManagementJob is versioned; a stale write is a 409, not a lost update."""
+    _make_me(db_session_factory, last_heartbeat_at=datetime.datetime.now(datetime.UTC))
+    job = client.post("/software-management-jobs", params={"managed_element_ref": "ME-1"}).json()
+
+    with concurrent_commit_on("software_management_job") as fired:
+        stale = client.post(f"/software-management-jobs/{job['jobId']}/advance", params={"succeeded": True})
+    assert fired and stale.status_code == 409
+    assert stale.json()["detail"]["title"] == "CONCURRENT_MODIFICATION"
+
+    repeat = client.post(f"/software-management-jobs/{job['jobId']}/advance", params={"succeeded": True})
+    assert repeat.status_code == 200
+
+
+def test_a_concurrent_writer_turns_a_config_job_write_into_a_409(client, db_session_factory, monkeypatch):
+    """PR-ST-2: WriteConfigJob is versioned: a stale status write is a 409 as well."""
+    _make_me(db_session_factory, last_heartbeat_at=datetime.datetime.now(datetime.UTC))
+    monkeypatch.setattr("app.main.send_edit_config", lambda *a, **kw: None)
+    with concurrent_commit_on("write_config_job") as fired:
+        stale = client.post("/config-jobs", json={"requestedBy": "op", "scope": "cell", "changes": []})
+    assert fired and stale.status_code == 409
+    assert stale.json()["detail"]["title"] == "CONCURRENT_MODIFICATION"

@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from smo_shared.db import Base, get_session
+from smo_shared.testing import concurrent_commit_on
 
 from app.main import app
 from app.models import ApplicationPackage, Artifact, PackageUsageRegistration
@@ -875,3 +876,16 @@ def test_onboarding_a_package_with_a_non_utf8_sme_file_ends_in_failed(client, mo
     assert resp.status_code == 202
     status = client.get(f"/packages/{resp.json()['packageId']}/onboarding-status")
     assert status.json()["state"] == "FAILED"
+
+
+def test_a_concurrent_writer_turns_a_transition_into_a_409_and_the_repeat_succeeds(client, monkeypatch):
+    """PR-ST-2: ApplicationPackage is versioned; a stale write is a 409, not a lost update."""
+    package_id = _make_available_package(client, monkeypatch)
+
+    with concurrent_commit_on("application_package") as fired:
+        stale = client.post(f"/packages/{package_id}/deprecate")
+    assert fired and stale.status_code == 409
+    assert stale.json()["detail"]["title"] == "CONCURRENT_MODIFICATION"
+
+    repeat = client.post(f"/packages/{package_id}/deprecate")
+    assert repeat.status_code == 200 and repeat.json()["state"] == "DEPRECATED"

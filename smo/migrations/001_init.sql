@@ -211,6 +211,7 @@ CREATE TABLE dme_action_record (
 
 CREATE TABLE application_package (
   package_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  row_version            INTEGER NOT NULL DEFAULT 1,  -- optimistic concurrency (PR-ST-2, smo_shared/versioning.py)
   application_type       TEXT NOT NULL CHECK (application_type IN ('rApp','xApp','CloudifiedNF','PNF')),
   name                     TEXT NOT NULL,
   vendor                     TEXT,
@@ -252,6 +253,7 @@ CREATE TABLE package_usage_registration (
 
 CREATE TABLE rapp_instance (
   instance_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  row_version            INTEGER NOT NULL DEFAULT 1,  -- optimistic concurrency (PR-ST-2, smo_shared/versioning.py)
   package_id               UUID NOT NULL REFERENCES application_package(package_id),
   state                       TEXT NOT NULL DEFAULT 'DEPLOYING'
                                  CHECK (state IN ('DEPLOYING','RUNNING','UPGRADING','UNDEPLOYED','FAULTED')),
@@ -402,6 +404,7 @@ CREATE TABLE vendor_capability (
 
 CREATE TABLE write_config_job (
   job_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  row_version            INTEGER NOT NULL DEFAULT 1,  -- optimistic concurrency (PR-ST-2, smo_shared/versioning.py)
   requested_by       TEXT NOT NULL,
   scope              TEXT NOT NULL,
   schema_validated_at TIMESTAMPTZ,
@@ -494,6 +497,7 @@ CREATE TABLE fm_subscription (
 
 CREATE TABLE software_management_job (
   job_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  row_version            INTEGER NOT NULL DEFAULT 1,  -- optimistic concurrency (PR-ST-2, smo_shared/versioning.py)
   managed_element_ref  TEXT NOT NULL REFERENCES managed_entity(managed_element_ref),
   ru_instance_id        TEXT,   -- NEW section 3.4: reserved until O1 Adaptor's WG4 SWM RPC augment exists
   phase                   TEXT NOT NULL CHECK (phase IN ('DOWNLOAD','INSTALL','ACTIVATE')),
@@ -573,6 +577,7 @@ ALTER TABLE application_package
 
 CREATE TABLE nf_deployment (
   nf_deployment_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  row_version            INTEGER NOT NULL DEFAULT 1,  -- optimistic concurrency (PR-ST-2, smo_shared/versioning.py)
   nf_deployment_descriptor_id  UUID NOT NULL REFERENCES nf_deployment_descriptor(nf_deployment_descriptor_id),
   name                          TEXT NOT NULL,   -- NEW section 5: the reference's own duplication guard needs a real name
   cluster_id                     TEXT NOT NULL,   -- degenerate single value, Phase 1
@@ -1035,6 +1040,7 @@ CREATE TABLE inference_job (
 
 CREATE TABLE model_lifecycle (
   model_id                     UUID PRIMARY KEY REFERENCES aiml_model(model_id) ON DELETE CASCADE,
+  row_version            INTEGER NOT NULL DEFAULT 1,  -- optimistic concurrency (PR-ST-2, smo_shared/versioning.py)
   model_lifecycle_state         TEXT NOT NULL DEFAULT 'REGISTERED' CHECK (model_lifecycle_state IN (
     'REGISTERED','TRAINING','TRAINED','VALIDATING','VALIDATED','EMULATING','EMULATED',
     'PENDING_APPROVAL','APPROVED','CERTIFIED','PROMOTED','DEPRECATED','RETIRED','FAILED'

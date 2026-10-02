@@ -4,6 +4,7 @@ from sqlalchemy import ForeignKey, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
+from smo_shared.versioning import Versioned
 
 
 class NFDeploymentDescriptor(Base):
@@ -23,7 +24,7 @@ class NFDeploymentDescriptor(Base):
     workload_template: Mapped[dict] = mapped_column(JSON, nullable=False)
 
 
-class NFDeployment(Base):
+class NFDeployment(Versioned, Base):
     """HISTORY.md §5: `name` didn't exist at all — the
     reference's own duplication guard (`_check_duplication`,
     dms_lcm_nfdeployment.py) rejects a second NfDeployment with the same

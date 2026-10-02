@@ -150,6 +150,9 @@ class FrameworkError:
     # after its upgradeTimeoutSeconds deadline (already rolled back).
     PACKAGE_USAGE_REGISTRATION_NOT_FOUND = ("PACKAGE_USAGE_REGISTRATION_NOT_FOUND", 404)
     RAPP_UPGRADE_TIMED_OUT = ("RAPP_UPGRADE_TIMED_OUT", 409)
+    # PR-ST-2 — a row's version changed between load and write (another request
+    # committed first); smo_shared/versioning.py. The caller repeats the request.
+    CONCURRENT_MODIFICATION = ("CONCURRENT_MODIFICATION", 409)
 
 
 def framework_error(code: tuple[str, int], detail: str | None = None) -> HTTPException:
