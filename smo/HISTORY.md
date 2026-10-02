@@ -1165,3 +1165,31 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   off: it makes thousands of requests as one caller.
 - **Not taken, still open.** SEC-8.3 a stricter limit on unauthenticated paths (`/bootstrap`, the 401s), SEC-8.4 limits per route class, SEC-8.5 the
   shared store, SEC-8.6 the BFF login route; a per-route cap on the backends themselves (they are only reachable through R1).
+
+### PR-SEC-4 — Secret management (4.1–4.3; 4.4–4.8 open)
+
+- **Inventory (SEC-4.1).** `docs/SECRETS.md`: every secret with owner, how it is supplied, how it is stored (hash or plaintext), how it is rotated today
+  and what is planned, plus where a secret must never appear and the database password's rotation steps. Writing it found one thing the plan did not
+  list: AIMgF's `feature_group.token` (an InfluxDB token supplied by the caller) is stored in plaintext and returned by reads of the feature group. It
+  is in the table, with the `SEC-4.6` pattern (a reference, not a value) as the fix; not changed here. The plaintext credentials the platform keeps
+  by design (`module_identity.invoker_secret`, `gui_smo_credential`) are marked as such: a database dump or backup holds them.
+- **The `*_FILE` helper (SEC-4.2).** `smo_shared/secretfile.py` `read_secret(NAME)`: the variable's value, or the contents of the file named by `NAME_FILE`; neither is
+  None; both set is `SecretConflict` (which wins is not something to guess about a credential); an unreadable file is `SecretFileError` naming the variable and
+  path, never contents; one trailing newline is removed and nothing else trimmed. `smo_shared/db.py` uses it for the URL (`SMO_DATABASE_URL` or
+  `_FILE`) and the password (`SMO_DATABASE_PASSWORD` or `_FILE`), put into the URL percent-encoded with SQLAlchemy's own URL type, so any character in a
+  generated password works.
+- **Compose secret for the database password (SEC-4.3).** A top-level secret `db_password` from `secrets/db_password`, created once by
+  `scripts/init_secrets.sh` (random 48 hex characters, never printed, an existing file is kept so a re-run cannot lock the stack out of its own
+  database). Postgres reads it through the official image's `POSTGRES_PASSWORD_FILE`; every module gets `SMO_DATABASE_URL` with no password and
+  `SMO_DATABASE_PASSWORD_FILE=/run/secrets/db_password`. This replaces the `${POSTGRES_PASSWORD:?}` of `PR-DB-1`, which kept the password out of the compose
+  file but still put it in every container's environment (`docker inspect`, `/proc/<pid>/environ`); `.env.example` no longer has it. The directory is 0700
+  and git-ignored; the file is 0644 because Compose bind-mounts it as it is and the services run as uid 10001 (the directory keeps other accounts out).
+  CI checks the rendered compose config for a password and creates the secret before bringing the stack up.
+- **Proof.** `shared/tests/test_secretfile.py` (including the percent-encoding of `p@ss/word:1`) and `tests_integration/test_database_credentials.py`
+  (compose has no password literal and no `POSTGRES_PASSWORD:`; Postgres and every service that has a database URL has the secret and a password-less URL;
+  `secrets/` and `.env` are ignored; `init_secrets.sh` creates mode-correct files once and never overwrites). The runtime path (Postgres reading the file, uid 10001
+  reading a root-owned 0644 bind mount) could not be run in the sandbox (no Docker daemon): the CI compose e2e job is its first run.
+- **Upgrade.** A Postgres volume made with the earlier password keeps it, and the generated one will not match: `docker compose down -v` (demo data) or set the
+  role's password to the new value (`docs/SECRETS.md`).
+- **Not taken, still open.** SEC-4.4 and 4.5 (the GUI passwords and session key, and the module invoker secret, through the same helper), 4.6 (adaptor
+  credentials as references), 4.7 (External Secrets / Vault manifest, needs the chart), 4.8 (a rotation tried for each secret).

@@ -337,14 +337,11 @@ are plain HTTP.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-4.1 ★ | Inventory of every secret: DB password, GUI admin password, session key, invoker secrets, adaptor credentials | Table in `docs/` with owner and rotation note | – |
-| SEC-4.2 | `*_FILE` convention helper in `smo_shared` (read the value from a file if `VAR_FILE` is set) | Unit test | – |
-| SEC-4.3 | Compose secrets for the DB password | No password literal in compose | SEC-4.2 |
-| SEC-4.4 | Same for GUI admin password and session key | Same | SEC-4.2 |
-| SEC-4.5 | Same for the module invoker secret (`module_identity.invoker_secret`, or `SMO_INVOKER_SECRET`, which already overrides it) | Same | SEC-4.2 |
-| SEC-4.6 | Adaptor credentials stored as a secret reference, never a value, in `o1_adaptor_endpoint` | Route accepts a reference only | SEC-4.2 |
+| SEC-4.4 | Same for GUI admin password and session key | Same | – |
+| SEC-4.5 | Same for the module invoker secret (`module_identity.invoker_secret`, or `SMO_INVOKER_SECRET`, which already overrides it) | Same | – |
+| SEC-4.6 | Adaptor credentials stored as a secret reference, never a value, in `o1_adaptor_endpoint` | Route accepts a reference only | – |
 | SEC-4.7 | External Secrets or Vault example manifest | Example applies on a lab cluster | OPS-2.3 |
-| SEC-4.8 | Rotation runbook for each secret | Each rotation tried once | SEC-4.3 |
+| SEC-4.8 | Rotation runbook for each secret (the database password's steps are written down in `docs/SECRETS.md`, untried) | Each rotation tried once | – |
 
 #### PR-SEC-5 — Signing keys and token caching
 
@@ -352,7 +349,7 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-5.1 | BFF option for RS256/ES256 with a key file | Login works with each algorithm | SEC-4.2 |
+| SEC-5.1 | BFF option for RS256/ES256 with a key file | Login works with each algorithm | – |
 | SEC-5.2 | `kid` header and a key set (current and previous) for rotation | Token signed with the old key still verifies | SEC-5.1 |
 | SEC-5.3 | `/.well-known/jwks.json` on the BFF | Route test | SEC-5.1 |
 | SEC-5.4 ★ | Short TTL cache of introspection results at R1 Termination, dropped on revocation | Load test shows fewer SME calls; revoked token rejected within the TTL | – |
@@ -361,7 +358,7 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-6.1 | Config: issuer, client id and secret, redirect URL, scopes | Startup validates config | SEC-4.2 |
+| SEC-6.1 | Config: issuer, client id and secret, redirect URL, scopes | Startup validates config | – |
 | SEC-6.2 | Authorization-code with PKCE routes (`/api/oidc/login`, `/callback`) | Works against a local Keycloak container | SEC-6.1 |
 | SEC-6.3 | ID token validation via the issuer's JWKS | Bad signature and wrong audience refused | SEC-6.2 |
 | SEC-6.4 | Group claim → `rbac.py` role mapping from config | Mapped user gets the right role | SEC-6.3 |
@@ -556,7 +553,7 @@ No Prometheus, OpenTelemetry or `/metrics` usage exists in the code (checked). A
 |---|---|---|---|
 | OPS-2.1 ★ | Chart skeleton and `values.yaml` | `helm lint` green | – |
 | OPS-2.2 | One generic template looped over modules; `onboarding` first | Pod runs on kind | OPS-2.1 |
-| OPS-2.3 | Config and secret wiring (env, `*_FILE`) | Pod reads DB URL from a Secret | OPS-2.2, SEC-4.2 |
+| OPS-2.3 | Config and secret wiring (env, `*_FILE`) | Pod reads DB URL from a Secret | OPS-2.2 |
 | OPS-2.4 | Probes from `/live` and `/ready` | Probes pass | OPS-2.2 |
 | OPS-2.5 | Services, plus Ingress for R1 Termination and the GUI | Reachable from the kind host | OPS-2.2 |
 | OPS-2.6 | NetworkPolicy equal to the compose network rules (`a1_mock_net` isolation included) | Denied-path test | OPS-2.2 |
@@ -753,7 +750,7 @@ FOCOM and NFO are model-level.
 | SB-7.2 ★ | Map the fault domain to the existing `/alarms/ingest` path | Alarm row created | SB-7.1 |
 | SB-7.3 | Map `heartbeat` to the adaptor heartbeat | Health updated | SB-7.1 |
 | SB-7.4 | Map `measurement` and `stndDefined` PM to the `/pm-reports` path | PM record created | SB-7.1 |
-| SB-7.5 | Basic auth for the listener, credentials from `SEC-4.2` | 401 without it | SB-7.1 |
+| SB-7.5 | Basic auth for the listener, credentials through the `*_FILE` helper (`smo_shared/secretfile.py`) | 401 without it | SB-7.1 |
 | SB-7.6 | Kafka consumer variant | Same events via a topic | SB-7.1, MSG-3.4 |
 
 #### PR-SB-8 — Streaming PM (`SA-RANOAM-8`)
@@ -1457,7 +1454,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):**
    OBS-1.1.
-2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-13.2.
+2. **Safe to expose:** SEC-1.1–1.5, SEC-13.2.
 3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1.
 4. **Durable notifications:** MSG-1.1–1.4, then MSG-1.5 onwards one module at a time.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.

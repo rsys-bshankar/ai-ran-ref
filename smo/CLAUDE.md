@@ -73,7 +73,7 @@ before this check: `python scripts/generate_openapi_specs.py`.
 **3. `docker-compose.yml` is structurally valid:**
 
 ```bash
-cd smo && docker compose --env-file .env.example config --quiet
+cd smo && docker compose config --quiet
 ```
 
 **4. Every ORM model's columns actually exist in the migration, with

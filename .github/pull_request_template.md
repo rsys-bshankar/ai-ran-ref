@@ -5,6 +5,6 @@
 <!-- Tick the steps of the verification battery in smo/CLAUDE.md that were run. -->
 - [ ] Every module's unit suite
 - [ ] `tests_integration/` (in-process mesh)
-- [ ] `docker compose --env-file .env.example config` / `compose-e2e` (live stack)
+- [ ] `docker compose config` / `compose-e2e` (live stack)
 - [ ] Migration vs models against a real Postgres
 - [ ] GUI typecheck, Vitest, build, diagram validation

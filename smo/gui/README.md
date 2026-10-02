@@ -27,7 +27,7 @@ With the whole stack:
 
 ```bash
 cd smo
-cp .env.example .env   # then set POSTGRES_PASSWORD (required, no default)
+scripts/init_secrets.sh   # once: the database password (secrets/db_password), no default
 export GUI_ADMIN_PASSWORD='choose-one' GUI_OPERATOR_PASSWORD='…' GUI_VIEWER_PASSWORD='…' GUI_JWT_SECRET="$(openssl rand -base64 48)"
 docker compose up --build
 # open http://localhost:3000

@@ -1,8 +1,9 @@
 # AI-RAN SMO — Phase 1, Docker deployment topology (SMO Design v1.3 section 4).
 # One shared Postgres instance, moduleScope-partitioned (Requirements v0.1 section 3).
 # Every service built from the same Dockerfile, parameterized by MODULE.
-# The database password comes from smo/.env (copy .env.example): there is no default, and `docker compose`
-# stops with a message if POSTGRES_PASSWORD is unset (PR-DB-1).
+# The database password is a Compose secret, a file mounted at /run/secrets/db_password (PR-SEC-4.3): run
+# scripts/init_secrets.sh once to create it. There is no default and no password in this file or in any container's
+# environment; the stack does not start without the secret file (PR-DB-1).
 # stop_grace_period (30 s) is longer than the Dockerfile's UVICORN_GRACEFUL_SHUTDOWN_SECONDS (20 s), so a
 # stopping container finishes its in-flight requests before docker would kill it (PR-ST-6).
 
@@ -28,8 +29,9 @@ services:
     image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     environment:
       POSTGRES_USER: smo
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in smo/.env (copy .env.example)}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password   # the official image reads the password from this file
       POSTGRES_DB: smo
+    secrets: [db_password]
     # Slow-statement log (PR-DB-4.1): any statement running longer than POSTGRES_SLOW_QUERY_MS (default 500 ms)
     # is logged with its duration and text: `docker compose logs postgres | grep duration`. -1 turns it off, 0 logs all.
     command: ["postgres", "-c", "log_min_duration_statement=${POSTGRES_SLOW_QUERY_MS:-500}"]
@@ -79,15 +81,18 @@ services:
   sme:
     build: { context: ., args: { MODULE: sme } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment: &db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in smo/.env (copy .env.example)}@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo@postgres:5432/smo   # no password here: smo_shared/db.py adds it from the file below
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
 
   dme:
     build: { context: ., args: { MODULE: dme } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -96,6 +101,7 @@ services:
   onboarding:
     build: { context: ., args: { MODULE: onboarding } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -106,6 +112,7 @@ services:
   rapp-mgmt:
     build: { context: ., args: { MODULE: rapp-mgmt } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -116,6 +123,7 @@ services:
   ran-nf-oam:
     build: { context: ., args: { MODULE: ran-nf-oam } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -143,6 +151,7 @@ services:
   energy-saving-rapp:
     build: { context: ., args: { MODULE: samples/energy-saving-rapp } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -155,6 +164,7 @@ services:
   mobility-optimization-rapp:
     build: { context: ., args: { MODULE: samples/mobility-optimization-rapp } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -167,6 +177,7 @@ services:
   coverage-optimization-rapp:
     build: { context: ., args: { MODULE: samples/coverage-optimization-rapp } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -179,6 +190,7 @@ services:
   traffic-steering-rapp:
     build: { context: ., args: { MODULE: samples/traffic-steering-rapp } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -189,6 +201,7 @@ services:
   a1-related:
     build: { context: ., args: { MODULE: a1-related } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -209,6 +222,7 @@ services:
   nfo:
     build: { context: ., args: { MODULE: nfo } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -223,6 +237,7 @@ services:
   focom:
     build: { context: ., args: { MODULE: focom } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -231,6 +246,7 @@ services:
   mlmr:
     build: { context: ., args: { MODULE: mlmr } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -239,6 +255,7 @@ services:
   aimgf:
     build: { context: ., args: { MODULE: aimgf } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -257,6 +274,7 @@ services:
   ran-analytics:
     build: { context: ., args: { MODULE: ran-analytics } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -267,6 +285,7 @@ services:
   mdaf:
     build: { context: ., args: { MODULE: mdaf } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -275,6 +294,7 @@ services:
   intent-service:
     build: { context: ., args: { MODULE: intent-service } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -283,6 +303,7 @@ services:
   so-smos:
     build: { context: ., args: { MODULE: so-smos } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -293,6 +314,7 @@ services:
   sa-smos:
     build: { context: ., args: { MODULE: sa-smos } }
     stop_grace_period: 30s
+    secrets: [db_password]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
@@ -330,6 +352,10 @@ services:
     <<: *hardening
     depends_on: [gui-bff]
     ports: ["3000:8080"]
+
+secrets:
+  db_password:
+    file: ./secrets/db_password   # created by scripts/init_secrets.sh; git-ignored
 
 networks:
   default:

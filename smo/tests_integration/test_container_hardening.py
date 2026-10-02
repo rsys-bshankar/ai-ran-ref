@@ -10,7 +10,7 @@ DOCKERFILE = (SMO_ROOT / "Dockerfile").read_text()
 
 
 def _compose() -> dict:
-    text = (SMO_ROOT / "docker-compose.yml").read_text().replace("${POSTGRES_PASSWORD:?", "${POSTGRES_PASSWORD_REQUIRED:?")
+    text = (SMO_ROOT / "docker-compose.yml").read_text()
     return yaml.safe_load(text)["services"]
 
 

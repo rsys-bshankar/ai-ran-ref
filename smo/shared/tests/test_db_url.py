@@ -22,7 +22,7 @@ def test_an_unset_or_blank_url_outside_tests_is_refused_with_a_message_that_says
     with pytest.raises(MissingDatabaseUrl) as error:
         resolve_database_url(environ, under_pytest=False)
     message = str(error.value)
-    assert "SMO_DATABASE_URL" in message and ".env.example" in message and "no default" in message
+    assert "SMO_DATABASE_URL" in message and "init_secrets.sh" in message and "no default" in message
     assert "smo:smo" not in message
 
 
