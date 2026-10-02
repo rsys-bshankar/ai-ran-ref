@@ -1332,3 +1332,15 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Tests (3 new):** the MSG-1.5 crash test (with the inline drain off, as if the process died after the commit, the subscriber's notification is one PENDING row, nothing was sent, and a later `drain` delivers it and marks it SENT);
   one row per producer for a job push, none sent before the drain; a commit that fails leaves no row, sends nothing and un-registers the type too. The DME fixture creates the outbox table.
 - **Differences to know:** the send timeout is now the outbox's 2 s (job push and offer termination used 5 s); a failed first attempt leaves the row PENDING with its attempt counted instead of being forgotten, retried by the sweep once MSG-2's worker exists.
+
+### PR-MSG-1.6 — SME event subscriptions through the outbox
+
+- **One site moved:** `_deliver` in `sme/app/main.py`, which every CAPIF event goes through (`SERVICE_API_AVAILABLE`/`UPDATE`/`UNAVAILABLE` and `API_INVOKER_ONBOARDED`/`UPDATED`/`OFFBOARDED`). It enqueues one row per matching subscriber;
+  the filters (event types, `apiIds`/`aefIds`/invoker ids, the discovery-visibility gate) are unchanged and still applied at enqueue time.
+- **Order changed:** the enqueue now comes before the commit in `register_service`, `deregister_service` (it already ran before the delete), `register_invoker`, `update_invoker` and `_offboard` (which also serves `purge-stale`).
+  One thing needed care: `register_service` used to commit first, which expired the profile, so the visibility check in `notify_service_change` saw the authorization policy written a moment earlier. Before a commit that policy was
+  cached as `None` (the request had just read it, found none and added one separately), so a gated service would have been announced to everybody. The route now flushes and expires `authz_policy` before notifying; with that line removed,
+  an existing test and the new one fail (checked).
+- **Tests (3 new):** the MSG-1.6 crash test (inline drain off: one PENDING row with the event and service id, nothing sent, a later drain delivers it); the visibility gate still hides a gated service from a subscriber outside
+  `allowedConsumers` when the notification is enqueued in the registering request; a registration whose commit fails leaves no row, sends nothing and registers no service. The SME fixture creates the outbox table.
+- **Differences to know:** send timeout is the outbox's 2 s (was 5 s); a failed first attempt stays PENDING for the sweep instead of being forgotten; at-least-once, so a subscriber may see an event twice after a crash.

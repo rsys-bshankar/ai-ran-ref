@@ -11,7 +11,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from smo_shared import outbox
 from smo_shared.db import Base, get_session
+from smo_shared.outbox import NotificationOutbox
 
 from app.main import app
 from app.models import (InvokerRegistration, IssuedAccessToken, ProviderRegistration, ServiceAuthzPolicy, ServiceEventSubscription,
@@ -32,6 +34,7 @@ def db_session_factory():
     Base.metadata.create_all(engine, tables=[
         ServiceProfile.__table__, ServiceAuthzPolicy.__table__, ServiceEventSubscription.__table__, ProviderRegistration.__table__,
         InvokerRegistration.__table__, IssuedAccessToken.__table__, TrustedInvoker.__table__, UsedClientAssertion.__table__,
+        NotificationOutbox.__table__,
     ])
     return sessionmaker(bind=engine)
 
@@ -910,3 +913,71 @@ def test_an_invoker_that_keeps_getting_tokens_is_never_stale(client, db_session_
 def test_purge_stale_needs_a_positive_number_of_days(client):
     assert client.post("/invoker-registrations/purge-stale", params={"unused_for_days": 0}).status_code == 422
     assert client.post("/invoker-registrations/purge-stale").status_code == 422
+
+
+# ---------------------------------------------------------------- notifications through the outbox (PR-MSG-1.6)
+
+def _outbox_rows(db_session_factory):
+    with db_session_factory() as db:
+        return db.query(NotificationOutbox).order_by(NotificationOutbox.created_at).all()
+
+
+def test_a_service_event_survives_a_crash_between_commit_and_send(client, db_session_factory, monkeypatch):
+    """The crash test of MSG-1.6: the subscriber's event is a committed row; with the inline send off (the process died after the
+    commit) nothing went out, and a later drain delivers it."""
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    monkeypatch.setenv("MODULE", "sme")
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or type("R", (), {"status_code": 200})())
+    client.post("/capif-events/v1/rapp-2/subscriptions", json={
+        "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-2/cb"})
+
+    reg = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body()).json()
+
+    assert calls == []
+    rows = _outbox_rows(db_session_factory)
+    assert [(r.module, r.status, r.destination) for r in rows] == [("sme", "PENDING", "http://rapp-2/cb")]
+    assert rows[0].payload["eventType"] == "SERVICE_API_AVAILABLE" and rows[0].payload["serviceId"] == reg["serviceId"]
+
+    monkeypatch.delenv("SMO_OUTBOX_INLINE_DRAIN")
+    assert outbox.drain(db_session_factory().get_bind())["sent"] == 1
+    assert [(u, b["eventType"]) for u, b in calls] == [("http://rapp-2/cb", "SERVICE_API_AVAILABLE")]
+
+
+def test_the_visibility_gate_still_sees_the_policy_written_in_the_same_request(client, db_session_factory, monkeypatch):
+    """Enqueueing now happens before the commit, so the discovery-visibility check reads the policy this very request wrote:
+    a subscriber outside `allowedConsumers` must not hear of a gated service."""
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    client.post("/capif-events/v1/rapp-3/subscriptions", json={
+        "subscriberId": "rapp-3", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-3/cb"})
+    client.post("/capif-events/v1/rapp-2/subscriptions", json={
+        "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-2/cb"})
+    resp = client.post("/published-apis/v1/rapp-1/service-apis", json=register_body(
+        allowedConsumers=["rapp-2"], gatesDiscoveryVisibility=True))
+    assert resp.status_code == 201, resp.text
+    assert {r.destination for r in _outbox_rows(db_session_factory)} == {"http://rapp-2/cb"}
+
+
+def test_nothing_is_announced_when_the_registration_does_not_commit(client, db_session_factory, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    client.post("/capif-events/v1/rapp-2/subscriptions", json={
+        "subscriberId": "rapp-2", "eventTypes": ["SERVICE_API_AVAILABLE"], "callbackUri": "http://rapp-2/cb"})
+
+    from sqlalchemy.orm import Session as OrmSession
+    real_commit = OrmSession.commit
+
+    def failing_commit(self):
+        if self.info.get("outbox_pending_ids"):
+            self.rollback()
+            raise RuntimeError("the database refused the commit")
+        return real_commit(self)
+
+    monkeypatch.setattr(OrmSession, "commit", failing_commit)
+    resp = TestClient(app, raise_server_exceptions=False).post("/published-apis/v1/rapp-1/service-apis", json=register_body())
+    monkeypatch.setattr(OrmSession, "commit", real_commit)
+
+    assert resp.status_code == 500
+    assert calls == [] and _outbox_rows(db_session_factory) == []
+    with db_session_factory() as db:
+        assert db.query(ServiceProfile).count() == 0
