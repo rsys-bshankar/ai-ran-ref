@@ -74,9 +74,19 @@ def test_the_ca_key_is_private_the_directory_is_owner_only_and_a_rerun_keeps_wha
     assert forced.stdout.startswith("created:") and (directory / "server.crt").read_bytes() != before
 
 
+def _client_context() -> ssl.SSLContext:
+    """A verifying client that will not speak anything older than TLS 1.2."""
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.check_hostname = True
+    context.verify_mode = ssl.CERT_REQUIRED
+    return context
+
+
 @pytestmark_openssl
 def test_a_real_tls_handshake_works_for_a_client_that_trusts_the_ca_and_fails_for_one_that_does_not(certs):
     server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_context.minimum_version = ssl.TLSVersion.TLSv1_2
     server_context.load_cert_chain(certs / "server.crt", certs / "server.key")
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
@@ -93,13 +103,16 @@ def test_a_real_tls_handshake_works_for_a_client_that_trusts_the_ca_and_fails_fo
                 pass
 
     threading.Thread(target=serve, daemon=True).start()
-    trusting = ssl.create_default_context(cafile=str(certs / "ca.crt"))
+    trusting = _client_context()
+    trusting.load_verify_locations(cafile=str(certs / "ca.crt"))
     for name in ("localhost", "r1-termination", "smo.example.test"):          # each name the certificate carries
         with socket.create_connection(("127.0.0.1", port), timeout=10) as raw, trusting.wrap_socket(raw, server_hostname=name) as tls:
             assert tls.recv(5) == b"hello" and tls.version() in ("TLSv1.2", "TLSv1.3")
     with pytest.raises(ssl.SSLCertVerificationError):                          # a client with the system trust store
         with socket.create_connection(("127.0.0.1", port), timeout=10) as raw:
-            ssl.create_default_context().wrap_socket(raw, server_hostname="localhost")
+            untrusting = _client_context()
+            untrusting.load_default_certs()                                    # the system store, which does not have our CA
+            untrusting.wrap_socket(raw, server_hostname="localhost")
     listener.close()
 
 
