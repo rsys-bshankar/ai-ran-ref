@@ -2,7 +2,7 @@
 
 This is the Phase 1 SMO reference implementation. The documentation:
 
-- `README.md` — what it is, the modules, quickstart, layout, status;
+- `README.md` — what it is, the modules, quickstart, layout;
 - `<module>/README.md` — each module's HLD, LLD and unit tests (update it in the same change as the module's code);
 - `docs/ARCHITECTURE.md` — layers, golden rules, R1 conventions, standards per service;
 - `docs/RAPP_PACKAGING.md` — rApp CSAR layout and the manifest / capabilities parameters;
@@ -117,8 +117,7 @@ only shows up as a render error on the PR, never in a text diff. Run it
   checklist naming the specific battery steps above that were run.
 - When a change closes (or partially closes) an `OPEN_ITEMS.md` item,
   move it to `HISTORY.md` in the same PR, under the same ID, with real
-  implementation detail (not just "done"); keep `README.md`'s status
-  table in sync. A design choice deliberately *not* taken belongs in the
+  implementation detail (not just "done"). A design choice deliberately *not* taken belongs in the
   same entry, not left implicit. Keep docs current: state what the code
   does now, not how it got there.
 - Don't merge your own PR on the assumption that's always wanted —

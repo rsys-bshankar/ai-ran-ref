@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { unwrapPage } from "../api/hooks";
 import { api, ApiError, type RequestOptions } from "../api/client";
 import type { AuditEntry, GuiUser } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -115,7 +116,7 @@ function Audit() {
   const [action, setAction] = useState("");
   const entries = useQuery<AuditEntry[], ApiError>({
     queryKey: ["bff", "admin", "audit", username, action],
-    queryFn: () => api("/admin/audit", { query: { limit: 300, username, action } }),
+    queryFn: async () => unwrapPage<AuditEntry[]>(await api<unknown>("/admin/audit", { query: { limit: 300, username, action } })),
     refetchInterval: 10_000,
   });
   return (
