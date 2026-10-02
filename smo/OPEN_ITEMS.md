@@ -436,9 +436,7 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-13.1 | Non-root `USER` in `Dockerfile` (check current state first) | `docker exec id` shows non-root | – |
-| SEC-13.2 | `read_only: true` with `tmpfs` for scratch paths | Runbook replay green | SEC-13.1 |
-| SEC-13.3 | `cap_drop: [ALL]`, `no-new-privileges` | Same | SEC-13.1 |
+| SEC-13.2 | `read_only: true` with `tmpfs` for scratch paths (the runbook `docker compose cp`s CSARs into `r1-termination:/tmp`, which does not work into a tmpfs: serve them from the replay container or a volume first) | Runbook replay green | – |
 | SEC-13.4 | Same settings in the Helm chart | `kubectl` shows them | OPS-2.2 |
 
 #### PR-SEC-14 — Threat model
@@ -1461,7 +1459,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):**
    OBS-1.1.
-2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.1–13.3.
+2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.2.
 3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1.
 4. **Durable notifications:** MSG-1.1–1.4, then MSG-1.5 onwards one module at a time.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.

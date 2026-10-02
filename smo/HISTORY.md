@@ -1115,3 +1115,28 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   introspection call have the same URL once the prefix is stripped, so the fake backend told them apart by the call shape (`json=` vs a forwarded body).
 - **Not taken, still open.** QA-6.2 (the GUI BFF's role matrix). An unknown prefix is answered 404 `NO_ROUTE` before the token check, which tells an
   unauthenticated caller which prefixes exist (they are public in `/bootstrap`-adjacent docs); the walk does not treat that as open since no backend is reached.
+
+### PR-SEC-13 — Container hardening (13.1, 13.3; 13.2 and 13.4 open)
+
+- **Non-root (SEC-13.1).** Checked first: every service built from the shared `Dockerfile` ran as root. The image now creates user `smo`
+  (uid/gid 10001) and ends with `USER 10001:10001`, a numeric id so a runtime policy can verify it. `/srv` (code, the editable shared
+  install) stays root-owned and read-only to it. The only places a service writes are `/data` (the GUI BFF's SQLite database and first-run
+  admin password file) and `/srv/packages` (Onboarding's package volume); both are created and chowned in the image, and a new named volume
+  takes its ownership from the image directory, so compose needed no `user:` or init step. A volume made by an older, root-run stack stays
+  root-owned and needs `docker compose down -v` (README).
+- **Capabilities and escalation (SEC-13.3).** Every service we build (the 24 on the shared image and the nginx GUI, which was already
+  unprivileged) gets `cap_drop: [ALL]` and `security_opt: [no-new-privileges:true]` through one `x-hardening` anchor. Postgres keeps
+  its defaults: its entrypoint drops privileges itself and needs a few.
+- **Found on the way: NFO was `privileged: true` with `/var/run/docker.sock` mounted.** Either is root on the host. Nothing used them: NFO
+  has never started a container (its README says no `docker run`; the only mention is a comment). Both are removed; the Docker bridge of
+  SMO Design v1.3 section 3.7 is to be built as a narrow separate component (a socket proxy or the Kubernetes API), not by giving the
+  service the socket. `cap_drop` next to `privileged` would have been a lie, since privileged grants every capability.
+- **Proof.** `tests_integration/test_container_hardening.py`: the last `USER` is numeric, non-zero and before `CMD`; `/data` and
+  `/srv/packages` are created and chowned and are the volume mount points; every built service drops all capabilities and sets
+  no-new-privileges; no service is privileged, on the host network, PID or IPC namespace, adds a capability or mounts the Docker socket
+  (this is the check that found NFO). Removing `USER` or adding `cap_add` to one service fails it. The compose e2e job is the runtime check
+  (every service starts and passes the runbook replay as uid 10001); the sandbox had no Docker daemon, so the image build and run were
+  first exercised there.
+- **Not taken, still open.** `read_only: true` with `tmpfs` (SEC-13.2): the runbook `docker compose cp`s CSARs into `r1-termination:/tmp`, which
+  does not work into a tmpfs, so the replay and the runbook need another way to serve packages first. The Helm chart (SEC-13.4, needs the
+  chart). `seccomp`/`AppArmor` profiles, and image scanning (`PR-SEC-12`).

@@ -174,6 +174,7 @@ Returned as `{"detail": {"type": "about:blank", "title": <code>, "status", "deta
 
 ### 2.8 Limits and open items
 
+- **No Docker bridge, and no privileges.** The compose service has no `privileged: true` and no Docker socket mount (removed in `PR-SEC-13`: nothing used them, and either is root on the host). The Docker bridge of SMO Design v1.3 section 3.7 is to be added as a separate, narrowly scoped component, not by giving this container the socket.
 - **No real runtime.** No Helm, Kubernetes or `docker run`, and no real DMS: the asynchronous Terminate's completion and the runtime failure report are whatever calls `dms-notifications`. `workload_ref` is never set. Real pod-health remediation behind Heal is out of scope.
 - `INSTANTIATING` and `UPDATING` still complete within their request; an asynchronous Instantiate or Scale is not modelled.
 - **Scale has no target size** (replicas or resources); it only drives `RUNNING` -> `UPDATING` -> `RUNNING` (`OI-7-nfo-scale-size` in `OPEN_ITEMS.md`).
