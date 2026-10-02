@@ -547,11 +547,13 @@ Alembic is in place (`docs/adr/0001-schema-migrations.md`, `HISTORY.md` §10): b
 | OPS-3.1 | Pre-upgrade Helm hook Job runs the migrations once | Upgrade runs it once | OPS-1.5, OPS-2.2 |
 | OPS-3.2 | Services refuse to become ready on an older schema | Test | ST-7.4 |
 
-#### PR-OPS-4 — Releases
+#### PR-OPS-4 — Releases (open: 4.1b, 4.2 onward)
+
+Tag scheme and `CHANGELOG.md` exist (`PR-OPS-4.1`, `HISTORY.md` §10); no tag has been cut.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-4.1 | Tag scheme (semver), `CHANGELOG.md` | First tag cut | – |
+| OPS-4.1b | Cut the first tag, `smo-v0.1.0` (`docs/RELEASES.md`, "Cutting a release"); a person does this | Tag exists, `CHANGELOG.md` section dated | – |
 | OPS-4.2 | Workflow that builds and pushes images by tag and digest | Images published | OPS-4.1 |
 | OPS-4.3 | Generated release notes from merged PR titles | Notes appear on the tag | OPS-4.1 |
 | OPS-4.4 | `SECURITY.md` supported-versions table updated | Table matches tags | OPS-4.1 |
