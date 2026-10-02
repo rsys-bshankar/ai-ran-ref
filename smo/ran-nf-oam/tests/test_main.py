@@ -15,6 +15,8 @@ from smo_shared.db import Base, get_session
 from smo_shared.testing import make_test_engine
 from smo_shared.testing import concurrent_commit_on
 from smo_shared.idempotency import IdempotencyKey
+from smo_shared import outbox
+from smo_shared.outbox import NotificationOutbox
 
 from app.main import app
 from app.models import Alarm, CMSchemaCache, FMSubscription, FileSubscription, ManagedEntity, MsacAccessRule, MsacIdentity, MsacRole, PMFile, O1AdaptorEndpoint, PMSubscription, SoftwareManagementJob, VendorCapability, WriteConfigJob, WriteConfigSubChange
@@ -27,7 +29,7 @@ def db_session_factory():
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__,
         WriteConfigJob.__table__, WriteConfigSubChange.__table__, PMSubscription.__table__, FMSubscription.__table__, SoftwareManagementJob.__table__,
         VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__, MsacAccessRule.__table__, PMFile.__table__,
-        FileSubscription.__table__, IdempotencyKey.__table__,
+        FileSubscription.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__,
     ])
     return sessionmaker(bind=engine)
 

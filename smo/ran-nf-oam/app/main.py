@@ -36,7 +36,7 @@ from smo_shared.timeutil import as_utc
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
-from smo_shared.webhook import post_webhook
+from smo_shared.outbox import enqueue
 from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 
@@ -622,12 +622,12 @@ def report_pm_file(body: PmFileRequest, db: Session = Depends(get_session)):
         if sub.file_data_type in (None, body.fileDataType):
             sub.sequence_no += 1
     file_id = str(pm_file.file_id)
+    for subscription_id, consumer, sequence_no in targets:  # outbox rows, committed with the file and the new sequence numbers (PR-MSG-1.9)
+        enqueue(db, consumer, {"href": "/ran-nf-oam/file-subscriptions", "notificationId": sequence_no,
+                               "notificationType": "notifyFileReady", "eventTime": info["fileReadyTime"],
+                               "sequenceNo": sequence_no, "subscriptionId": str(subscription_id),
+                               "fileInfoList": [info]})
     db.commit()
-    for subscription_id, consumer, sequence_no in targets:
-        post_webhook(consumer, json={"href": "/ran-nf-oam/file-subscriptions", "notificationId": sequence_no,
-                                     "notificationType": "notifyFileReady", "eventTime": info["fileReadyTime"],
-                                     "sequenceNo": sequence_no, "subscriptionId": str(subscription_id),
-                                     "fileInfoList": [info]}, timeout=2.0)
     jobs, delivered = _fan_out_to_dme(body.managedElementRef, body.counterType, body.measurements)
     return {"fileId": file_id, **info, "notified": len(targets), "dataJobs": jobs, "recordsDelivered": delivered}
 

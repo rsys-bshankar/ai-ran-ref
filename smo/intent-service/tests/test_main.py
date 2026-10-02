@@ -16,7 +16,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
+from smo_shared import outbox
 from smo_shared.db import Base, get_session
+from smo_shared.outbox import NotificationOutbox
 from smo_shared.testing import make_test_engine
 
 from app import models as intent_models
@@ -30,7 +32,9 @@ def client():
         cls.__table__ for cls in vars(intent_models).values()
         if isinstance(cls, type) and issubclass(cls, Base) and cls is not Base and cls.__module__ == intent_models.__name__
     ])
+    NotificationOutbox.__table__.create(engine)
     TestSession = sessionmaker(bind=engine)
+    app.state.test_engine = engine
 
     def override_get_session():
         session = TestSession()
@@ -723,3 +727,72 @@ def test_an_expectation_naming_its_cells_is_bounded_by_the_region_scope(client, 
     for exp in (expectation("gnb-du-01", ["999"]), expectation("gnb-du-09", ["101"])):
         resp = client.post("/autonomy-dispatches", json=_dispatch(auto, expectations=[exp]))
         assert resp.status_code == 422 and "outside the dispatch's regionScope" in resp.json()["detail"]["detail"]
+
+
+# ---------------------------------------------------------------- notifications through the outbox (PR-MSG-1.9)
+
+def _outbox_rows():
+    with sessionmaker(bind=app.state.test_engine)() as db:
+        return db.query(NotificationOutbox).order_by(NotificationOutbox.created_at).all()
+
+
+def test_an_intent_and_its_notifications_survive_a_crash_between_commit_and_send(client, monkeypatch):
+    """The crash test of MSG-1.9 for the Intent Service: the intent, its first report and the RMIH and report-recipient
+    notifications are one committed transaction; with the inline send off (the process died after the commit) nothing went
+    out, and a later drain delivers them."""
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    monkeypatch.setenv("MODULE", "intent-service")
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or FakeResponse(200, {}))
+    _register_rmih(client, callback="http://so-smos:8000/intents/notify")
+
+    created = client.post("/intents", json=_intent(intentReportControl=[
+        {"observationPeriod": 60, "reportRecipientAddress": "http://rapp-1/reports"}])).json()
+
+    assert calls == []
+    rows = _outbox_rows()
+    assert sorted(r.destination for r in rows) == ["http://rapp-1/reports", "http://so-smos:8000/intents/notify"]
+    assert {r.module for r in rows} == {"intent-service"} and {r.status for r in rows} == {"PENDING"}
+    by_destination = {r.destination: r.payload for r in rows}
+    assert by_destination["http://so-smos:8000/intents/notify"]["intentId"] == created["intentId"]
+    assert by_destination["http://rapp-1/reports"]["notificationType"] == "notifyIntentReport"
+
+    monkeypatch.delenv("SMO_OUTBOX_INLINE_DRAIN")
+    assert outbox.drain(app.state.test_engine)["sent"] == 2
+    assert sorted(u for u, _ in calls) == ["http://rapp-1/reports", "http://so-smos:8000/intents/notify"]
+
+
+def test_an_autonomy_dispatch_the_intent_it_creates_and_the_notifications_are_one_transaction(client, rapp_mgmt, monkeypatch):
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    _register_rmih(client)
+    instance_id = rapp_mgmt.add_instance(autonomy_mode="AUTONOMOUS", region_scope={})
+    body = client.post("/autonomy-dispatches", json=_dispatch(instance_id, notificationDestination="http://operator/auto")).json()
+    assert body["status"] == "DISPATCHED" and body["intentId"]
+
+    # the RMIH, the operator's dispatch notice, and the Intent's own first report (its report recipient is the operator destination)
+    rows = _outbox_rows()
+    assert sorted(r.destination for r in rows) == ["http://operator/auto", "http://operator/auto", "http://so-smos:8000/intents/notify"]
+    assert sorted("autonomyMode" in r.payload for r in rows if r.destination == "http://operator/auto") == [False, True]
+
+
+def test_nothing_is_announced_and_no_intent_is_stored_when_the_create_does_not_commit(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    _register_rmih(client)
+
+    from sqlalchemy.orm import Session as OrmSession
+    real_commit = OrmSession.commit
+
+    def failing_commit(self):
+        if self.info.get("outbox_pending_ids"):
+            self.rollback()
+            raise RuntimeError("the database refused the commit")
+        return real_commit(self)
+
+    monkeypatch.setattr(OrmSession, "commit", failing_commit)
+    resp = TestClient(app, raise_server_exceptions=False).post("/intents", json=_intent())
+    monkeypatch.setattr(OrmSession, "commit", real_commit)
+
+    assert resp.status_code == 500
+    assert calls == [] and _outbox_rows() == []
+    assert client.get("/intents").json()["total"] == 0

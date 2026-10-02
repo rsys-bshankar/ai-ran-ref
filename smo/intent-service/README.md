@@ -93,7 +93,7 @@ Platform-wide ownership summary: [ARCHITECTURE.md](../docs/ARCHITECTURE.md).
 - `Intent.rmih_id` is a foreign key with `ON DELETE CASCADE`: deregistering an RMIH ends every intent addressed to
   it, so a `GET /intents/{id}` can 404 after that. The cascade is enforced by PostgreSQL only; SQLite does not
   enforce it in unit tests.
-- Dispatch is one best-effort notification to the named RMIH. RMIHs register with a `notificationDestination`.
+- Dispatch is one notification to the named RMIH, an outbox row committed with the intent (`PR-MSG-1.9`). RMIHs register with a `notificationDestination`.
 
 **Autonomy dispatch.** An rApp instance carries `autonomyMode` (`AUTONOMOUS` / `ASSIST` / `SHADOW`, default
 `SHADOW`) and `regionScope` (rApp Management). An inference outcome is handed to
@@ -105,7 +105,7 @@ Platform-wide ownership summary: [ARCHITECTURE.md](../docs/ARCHITECTURE.md).
 | `ASSIST` | `AWAITING_SCOPE` until the operator calls `/resolve` (with scope → Intent, `DISPATCHED`) or `/reject` (→ `REJECTED`; 409 unless `AWAITING_SCOPE`). |
 | `SHADOW` | `SHADOWED`; never enforced, no Intent ever. |
 
-Every mode notifies the operator (best effort, via `smo_shared.webhook`); notification is not mode-gated. All modes
+Every mode notifies the operator (an outbox row committed with the dispatch, `smo_shared.outbox`); notification is not mode-gated. All modes
 validate the RMIH and capability up front, so a SHADOW dispatch to an unknown or incapable RMIH is rejected too.
 The mode is snapshotted onto the dispatch at request time and never rewritten by a later change on the instance.
 
@@ -123,8 +123,10 @@ The mode is snapshotted onto the dispatch at request time and never rewritten by
 - **Region scope bounds, never widens.** For an autonomy-created intent the region scope fills a missing
   `objectInstance` (a different one is rejected) and its `cells` become the expectation's `Cell` context; an
   expectation that already names cells is intersected with the region, and an empty intersection is rejected.
-- **Notifications are best-effort.** New-intent push (5 s), report delivery (2 s) and operator notification (5 s)
-  never fail the triggering call. A destination is never guessed.
+- **Notifications go through the transactional outbox** (`smo_shared.outbox`, `PR-MSG-1.9`). The new-intent push, report delivery and
+  operator notification are rows in the same transaction as the intent, report or dispatch they announce, sent right after it commits (2 s
+  timeout), at least once; they never fail the triggering call, and a crash after the commit no longer loses them. An autonomy dispatch and the
+  Intent it creates are now one transaction (`_create_intent_row` no longer commits; its callers do). A destination is never guessed.
 - **Security / RBAC.** RMIH registration is framework-internal only (D-SEC-POLICY-1):
   `is_framework_internal_identity(rmihId)` rejects any rmihId that parses as a UUID (an rApp instance id). Only the
   creating RMIO (`rmioId`) may change an intent's admin state. The GUI BFF pins `rmioId` for GUI-created intents,
@@ -256,12 +258,12 @@ and, when the dispatch has one, `reportRecipientAddress = notificationDestinatio
 
 | Trigger | Interaction | Failure behaviour |
 |---|---|---|
-| Intent created (any path) | POST to the RMIH's `notificationDestination`: `{intentId, expectationObjectTypes, intentPriority, rmioId, intentMgmtPurpose}`. The RMIH reads the intent back over R1. | Best-effort; unreachable RMIH never fails create |
-| Any report written (initial, admin-state, published) | For each `intentReportControl` with a `reportRecipientAddress` whose `expectedReportTypes` (all when empty) intersect the report: POST `{notificationType: "notifyIntentReport", ...report view}` | Best-effort |
+| Intent created (any path) | POST to the RMIH's `notificationDestination`: `{intentId, expectationObjectTypes, intentPriority, rmioId, intentMgmtPurpose}`. The RMIH reads the intent back over R1. | Outbox row, committed with the intent; unreachable RMIH never fails create |
+| Any report written (initial, admin-state, published) | For each `intentReportControl` with a `reportRecipientAddress` whose `expectedReportTypes` (all when empty) intersect the report: POST `{notificationType: "notifyIntentReport", ...report view}` | Outbox row, committed with the report |
 | Autonomy dispatch | `GET /rapp-mgmt/instances/{id}` for `autonomyMode` and `regionScope` | Non-200 → 404 `RAPP_INSTANCE_NOT_FOUND` |
-| Autonomy dispatch / resolve / reject | POST dispatch summary to `notificationDestination` | Best-effort; none sent when no destination; non-http(s) schemes are blocked by `smo_shared.webhook` |
+| Autonomy dispatch / resolve / reject | POST dispatch summary to `notificationDestination` | Outbox row, committed with the dispatch; none sent when no destination; non-http(s) schemes are refused by the SSRF guard (`smo_shared.webhook`) at enqueue and at send |
 
-All webhooks go through `smo_shared.webhook.post_webhook`, which blocks non-http(s) schemes and loopback,
+All notifications are sent through `smo_shared.webhook.post_webhook` (by the outbox), which blocks non-http(s) schemes and loopback,
 link-local, multicast and reserved literal addresses. No background tasks.
 
 ### 2.6 Configuration

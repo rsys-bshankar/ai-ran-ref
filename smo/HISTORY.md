@@ -1368,3 +1368,16 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   commit with their alarm; a FOCOM provision whose commit fails leaves no row, no resource and sends nothing; an MDAF publish whose commit fails stores no report and sends nothing. The three fixtures create the outbox table. One existing
   FOCOM test patched `app.fcaps.post_webhook`; it now patches `smo_shared.webhook.post_webhook`, the outbox's network seam. All other existing tests (which replace `httpx.post`) pass unchanged.
 - **Differences to know:** at-least-once; a failed first attempt stays PENDING for the sweep; the send timeout is the outbox's 2 s (the same as these modules used).
+
+### PR-MSG-1.9 — Intent Service and RAN NF OAM notifications through the outbox (closes MSG-1's adoption)
+
+- **Four sites moved:** the Intent Service's RMIH notification (`_create_intent_row`), report delivery to `intentReportControl` recipients (`_deliver_report`, from three places) and the autonomy-operator notification
+  (`_notify_autonomy_operator`, from dispatch, resolve and reject); RAN NF OAM's `notifyFileReady` to file subscribers (`report_pm_file`). SA SMOS, named in the plan, has no registered-destination call (see `docs/NOTIFICATIONS.md`), so there was nothing to move.
+- **`_create_intent_row` no longer commits.** It used to commit the intent and its first report, then post, and the autonomy paths then committed the dispatch separately. It now enqueues and returns, and every caller commits:
+  `create_intent` commits after it; `request_autonomy_dispatch` and `resolve_autonomy_dispatch` already committed after it, so the dispatch, the Intent it creates, their reports and all notifications are now **one transaction**
+  (a dispatch can no longer survive with its Intent missing, or the reverse). `_deliver_report` and `_notify_autonomy_operator` take the session and enqueue; `update_intent_admin_state`, `publish_intent_report`, resolve, reject and
+  request enqueue before their commit. RAN NF OAM enqueues one row per matching subscription before the commit that stores the file and bumps the subscriptions' sequence numbers, so the number a consumer is told is the number that was saved.
+- **Tests (4 new):** the MSG-1.9 crash test in each module (Intent: the intent, its first report and the RMIH and recipient notifications; RAN NF OAM: the file, the sequence number and the notification; inline drain off: PENDING rows, nothing sent,
+  a later drain delivers them); an AUTONOMOUS dispatch's operator notice, RMIH notice and Intent report in one transaction; a create whose commit fails stores no intent, no row, sends nothing. Both fixtures create the outbox table; one
+  RAN NF OAM test patched `app.main.post_webhook` and now patches `smo_shared.webhook.post_webhook`.
+- **Left:** `MSG-1.10`, a `method` column so the DME stop-job DELETE can use the outbox. With 1.9 every class-A notification in the platform is durable. Still open for delivery: the sweep (a worker, `MSG-2`), signing and a delivery log (`MSG-5`).

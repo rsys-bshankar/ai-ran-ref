@@ -13,8 +13,9 @@ without a row here.
 | **B** | A command to a destination (a DELETE) whose answer nothing reads | Stays inline for now: the outbox row carries only a POST body. Needs a method column (a later step) before it can move |
 | **C** | A read whose answer the caller uses to decide something (a health probe, a capability discovery) | Stays inline, always: the caller needs the answer in the request |
 
-Everything classed A ignores the response today (`post_webhook` returns it and no caller keeps it), including the Intent Service's
-RMIH callback, so there is no A-class site that needs the response: the first sort of site the plan worried about does not occur.
+Everything classed A ignored the response (`post_webhook` returns it and no caller kept it), including the Intent Service's
+RMIH callback, so no A-class site needed the response: the first sort of site the plan worried about did not occur. All of them have
+moved (`PR-MSG-1.5`–`1.9`); what is left inline is the class-B DELETE and the two class-C reads.
 After the move, a notification is sent after the transaction that caused it commits, never before, and a rolled-back change sends nothing.
 
 ## Call sites
@@ -35,10 +36,10 @@ After the move, a notification is sent after the transaction that caused it comm
 | `focom/app/fcaps.py` | `_report` | `enqueue` | A | Performance subscribers: new measurements | moved (MSG-1.8) |
 | `mdaf/app/main.py` | `_notify_report_subscribers` | `enqueue` | A | Analytics subscribers: a report crossed their threshold | moved (MSG-1.8) |
 | `mdaf/app/mda.py` | `_deliver` | `enqueue` | A | An MDA request's reporting target: a report, or a report file, is ready (two call sites). `delivery.notified` is set whatever the answer was; after the move it means "enqueued" | moved (MSG-1.8) |
-| `intent-service/app/main.py` | `_create_intent_row` | `post_webhook` | A | The RMIH's notification destination: an intent was created | MSG-1.9 |
-| `intent-service/app/main.py` | `_deliver_report` | `post_webhook` | A | Each report recipient of an intent: a report is available | MSG-1.9 |
-| `intent-service/app/main.py` | `_notify_autonomy_operator` | `post_webhook` | A | The operator's destination: an autonomy dispatch outcome | MSG-1.9 |
-| `ran-nf-oam/app/main.py` | `report_pm_file` | `post_webhook` | A | File subscribers: a PM file is ready (one per subscriber, after the commit already) | MSG-1.9 (with the Intent Service PR: both are TS 28 notifications) |
+| `intent-service/app/main.py` | `_create_intent_row` | `enqueue` | A | The RMIH's notification destination: an intent was created | moved (MSG-1.9) |
+| `intent-service/app/main.py` | `_deliver_report` | `enqueue` | A | Each report recipient of an intent: a report is available | moved (MSG-1.9) |
+| `intent-service/app/main.py` | `_notify_autonomy_operator` | `enqueue` | A | The operator's destination: an autonomy dispatch outcome | moved (MSG-1.9) |
+| `ran-nf-oam/app/main.py` | `report_pm_file` | `enqueue` | A | File subscribers: a PM file is ready (one per subscriber, after the commit already) | moved (MSG-1.9) |
 | `ran-nf-oam/app/vendors.py` | `onboard_vendor` | `get_webhook` | C | The adaptor's `/capabilities`: the answer fills the vendor profile | stays inline |
 
 SA SMOS has no call site: its notifications, where it has any, travel through R1 Termination, not to a registered destination.
