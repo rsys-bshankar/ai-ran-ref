@@ -76,7 +76,7 @@ before this check: `python scripts/generate_openapi_specs.py`.
 cd smo && docker compose config --quiet
 ```
 
-**4. Every ORM model's columns actually exist in the migration, with
+**4. Every ORM model's columns actually exist in the migrated schema, with
 matching nullability — against a real Postgres, not SQLite** (SQLite's
 unit-test runs don't catch a `CHECK` constraint or a nullable/NOT NULL
 mismatch the same way Postgres does — this caught a real regression
@@ -86,10 +86,9 @@ any reachable Postgres 18 instance, or start one if you don't have one:
 ```bash
 docker run --rm -d --name smo-verify-pg -e POSTGRES_USER=smo -e POSTGRES_PASSWORD=verify-only \
   -e POSTGRES_DB=smo -p 5432:5432 postgres:18-alpine
-# the script does not create the schema: apply it first
-PGPASSWORD=verify-only psql -h localhost -U smo -d smo -v ON_ERROR_STOP=1 -f smo/migrations/001_init.sql
-cd smo && SMO_DATABASE_URL=postgresql+psycopg://smo:verify-only@localhost:5432/smo \
-  python scripts/check_migration_matches_models.py
+# the script does not create the schema: migrate to head first (Alembic, docs/adr/0001-schema-migrations.md)
+cd smo && export SMO_DATABASE_URL=postgresql+psycopg://smo:verify-only@localhost:5432/smo
+python scripts/migrate.py && python scripts/check_migration_matches_models.py
 ```
 
 **5. GUI — typecheck, unit tests, production build, and call-flow

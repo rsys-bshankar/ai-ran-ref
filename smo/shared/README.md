@@ -97,7 +97,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 
 ### 2.2 Data model
 
-None. `db.Base` is the declarative base all modules' `models.py` subclass; no table is defined in this package. The schema is `../migrations/001_init.sql`, checked against the ORM models by `../scripts/check_migration_matches_models.py`.
+None. `db.Base` is the declarative base all modules' `models.py` subclass; no table is defined in this package. The schema is `../migrations/001_init.sql` plus the Alembic revisions after it (`../scripts/migrate.py`), checked against the ORM models by `../scripts/check_migration_matches_models.py`.
 
 ### 2.3 State machines
 

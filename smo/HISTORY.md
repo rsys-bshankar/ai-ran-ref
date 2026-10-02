@@ -1260,3 +1260,19 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   through the gateway (`tests_integration/test_metrics_adoption.py`, which fails with the guard removed); the TLS edge returns 404 for `/metrics` on 8443. R1's own `/metrics`
   is on its container port, which the development compose file publishes; production publishes only the edge (`PR-SEC-9`).
 - **Adopted everywhere (OBS-2.7)** by the same change. **Not done:** DB pool gauges (OBS-2.4), FSM transition counter (OBS-2.5), business metrics and alerting (`OBS-4`, `OBS-5`).
+
+### PR-OPS-1 — Alembic baseline (OPS-1.1–1.3)
+
+- **Decision (OPS-1.1).** `docs/adr/0001-schema-migrations.md`: Alembic; **one history for the whole schema** (the tables are one schema with foreign keys across module boundaries, applied once by one job);
+  hand-written revisions, no autogenerate (the revisions, not the models, define the schema; the models check is the safety net); migrations run by a job, never by N replicas at start-up. `001_init.sql` is
+  frozen once released.
+- **Baseline and stamping (OPS-1.2).** `migrations/versions/0001_baseline.py` runs `migrations/001_init.sql` unchanged, through the raw DBAPI cursor with no parameters (`op.execute(text())` reads the `:` of a CHECK as a bind parameter
+  and `exec_driver_sql` makes psycopg read the `%` of `NOT LIKE '%:%'` as a placeholder; both failed). `scripts/migrate.py` upgrades to head (or `--revision`, `--current`): a database with the schema but no `alembic_version`
+  (what compose's initdb makes) is **stamped** at `0001` first and then upgraded, an empty one runs the baseline, a migrated one is a no-op. Alembic's directory is `migrations/` itself (`env.py`, `versions/`), not `alembic/`,
+  so it cannot shadow the package; `smo/alembic.ini`; `alembic` is a direct dependency in the hashed lock. `tests_integration/test_migrations.py` (on Postgres): a fresh database and a stamped one have the same columns,
+  defaults and constraints; a second run neither restamps nor changes anything; history is one linear chain whose baseline is the SQL file.
+- **Check at head (OPS-1.3).** `scripts/check_migration_matches_models.py` now requires the database to be at the migration head (it names `scripts/migrate.py` otherwise) and then compares columns and nullability as before;
+  a model change with no revision fails it (tested by dropping a column after migrating). CI's `migration-postgres` job migrates the empty database with `migrate.py` instead of piping the SQL file to `psql`, then runs the check
+  and the migration tests; `CLAUDE.md` step 4 does the same.
+- **Not done:** the first real revision (OPS-1.4), a compose `migrate` service the modules wait for (OPS-1.5: compose still creates the schema from the file alone), upgrade-from-previous-commit in CI (OPS-1.6), the contributor
+  rule that a schema change is a revision (OPS-1.7), and the schema-at-head readiness check (ST-7.4).

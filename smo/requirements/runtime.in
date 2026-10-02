@@ -13,3 +13,4 @@ pyyaml
 defusedxml
 pyjwt[crypto]
 prometheus-client
+alembic

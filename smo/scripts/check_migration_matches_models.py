@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compares migrations/001_init.sql's real, applied Postgres schema
+"""Compares the real Postgres schema, migrated to the head revision,
 against every module's own SQLAlchemy ORM model definitions, table by
 table and column by column.
 
@@ -21,9 +21,11 @@ check (SQLAlchemy's generic String()/Text()/ARRAY-with-SQLite-variant
 types don't map to a single canonical Postgres type name, so a strict
 type comparison would produce noise unrelated to any real bug).
 
-Requires a live Postgres with migrations/001_init.sql already applied
-(SMO_DATABASE_URL) — run from the migration-postgres CI job, which
-already has both.
+Requires a live Postgres migrated to the head revision with
+`python scripts/migrate.py` (SMO_DATABASE_URL), which this script also
+verifies: a model change needs a revision (migrations/versions/, PR-OPS-1,
+docs/adr/0001-schema-migrations.md), and the check fails until the database,
+migrated to head, has the column. Run from the migration-postgres CI job.
 """
 
 import os
@@ -33,7 +35,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, inspect
 
 if not os.environ.get("SMO_DATABASE_URL"):  # no default credentials (PR-DB-1); checked before the app modules import smo_shared.db
-    sys.exit("SMO_DATABASE_URL is not set: point it at a Postgres with migrations/001_init.sql applied "
+    sys.exit("SMO_DATABASE_URL is not set: point it at a Postgres migrated with `python scripts/migrate.py` "
              "(see smo/CLAUDE.md, step 4).")
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
@@ -61,6 +63,21 @@ ALL_MODULES = [
 ]
 
 
+def check_at_head(engine) -> None:
+    from alembic.config import Config
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    config = Config(str(SMO_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(SMO_ROOT / "migrations"))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    with engine.connect() as connection:
+        current = MigrationContext.configure(connection).get_current_revision()
+    if current != head:
+        sys.exit(f"the database is at revision {current!r}, the migration head is {head!r}: "
+                 "run `python scripts/migrate.py` first")
+
+
 def main() -> None:
     for module_dir in ALL_MODULES:
         load_app_module(module_dir)  # side effect: registers that module's tables on the shared Base
@@ -68,27 +85,28 @@ def main() -> None:
     database_url = os.environ["SMO_DATABASE_URL"]
     engine = create_engine(database_url)
     inspector = inspect(engine)
+    check_at_head(engine)
     real_tables = set(inspector.get_table_names())
 
     errors = []
     for table in Base.metadata.sorted_tables:
         if table.name not in real_tables:
-            errors.append(f"table {table.name!r}: declared by the ORM but missing from the migration")
+            errors.append(f"table {table.name!r}: declared by the ORM but missing from the migrated schema")
             continue
         real_columns = {c["name"]: c for c in inspector.get_columns(table.name)}
         for column in table.columns:
             if column.name not in real_columns:
-                errors.append(f"{table.name}.{column.name}: declared by the ORM but missing from the migration")
+                errors.append(f"{table.name}.{column.name}: declared by the ORM but missing from the migrated schema")
                 continue
             real_nullable = bool(real_columns[column.name]["nullable"])
             if real_nullable != bool(column.nullable):
                 errors.append(
                     f"{table.name}.{column.name}: ORM says nullable={column.nullable}, "
-                    f"migration says nullable={real_nullable}"
+                    f"schema says nullable={real_nullable}"
                 )
 
     if errors:
-        print(f"Schema mismatches between migrations/001_init.sql and the ORM models ({len(errors)}):")
+        print(f"Schema mismatches between the migrated schema and the ORM models ({len(errors)}):")
         for e in errors:
             print(f"  - {e}")
         sys.exit(1)
