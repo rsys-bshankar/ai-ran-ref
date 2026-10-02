@@ -1276,3 +1276,13 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   and the migration tests; `CLAUDE.md` step 4 does the same.
 - **Not done:** the first real revision (OPS-1.4), a compose `migrate` service the modules wait for (OPS-1.5: compose still creates the schema from the file alone), upgrade-from-previous-commit in CI (OPS-1.6), the contributor
   rule that a schema change is a revision (OPS-1.7), and the schema-at-head readiness check (ST-7.4).
+
+### PR-OPS-4 — Release scheme and changelog (OPS-4.1)
+
+- **Scheme.** `docs/RELEASES.md`: Semantic Versioning with a `smo-v` tag prefix (the repository also holds the specification material outside `smo/`), one version for the whole platform (every image, the shared library, the SDK and the
+  Alembic history move together), `-rc.N` for candidates, `0.MINOR` is the breaking number until 1.0. What each bump means is stated against what an operator or rApp depends on: R1 routes and fields, the CSAR manifest, configuration
+  variables, and the schema (a revision is additive when the previous release's code runs on it; anything else is a MAJOR or an expand/contract split across two MINORs, `PR-OPS-5`). The release procedure is written down: rename
+  `Unreleased`, merge as its own PR, annotated tag on the merge commit, tags never moved.
+- **`smo/CHANGELOG.md`.** Keep a Changelog format, operator-facing (behaviour, configuration, schema), with the production-readiness work to date under `[Unreleased]`, including the changes an upgrading operator must act on (no default
+  database password, non-root volumes to recreate, `migrate.py`). `tests_integration/test_changelog.py` keeps it well-formed: an `Unreleased` section first, semver dated headings newest first, a link per section.
+- **Decision not taken:** the first tag. A person cuts it: a tag is an outward, effectively permanent act. It is `OPS-4.1b` in `OPEN_ITEMS.md`, with `smo-v0.1.0` proposed. Image publishing by tag (4.2), release notes (4.3) and the `SECURITY.md` table (4.4) are open.
