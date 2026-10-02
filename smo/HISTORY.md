@@ -1083,3 +1083,18 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Not taken, still open.** `compose` mode could not be run in the sandbox this was written in (no Docker daemon): its first run is the CI e2e
   job. WAL archiving and point-in-time recovery (DB-6.3), a restore drill with timings (DB-6.4), and the CI job with a runbook smoke after the
   restore and a host-mode run against Postgres 18 (DB-6.2) are not done; a dump restores to the moment it was taken only.
+
+### PR-DB-4 — Indexes and pagination (DB-4.1; 4.2–4.5 open)
+
+- **Slow-statement log (DB-4.1).** The compose `postgres` service starts with `-c log_min_duration_statement=${POSTGRES_SLOW_QUERY_MS:-500}`: any
+  statement slower than 500 ms is logged with its duration and text (`docker compose logs postgres | grep duration`). `POSTGRES_SLOW_QUERY_MS`
+  in `.env` changes it (`-1` off, `0` every statement); `.env.example` and the README say so. The `command:` keeps the image's `postgres`
+  entrypoint, so first-start initialisation (the migration in `docker-entrypoint-initdb.d`) is unchanged. A plain startup flag, not a
+  `postgresql.conf` mount: nothing to keep in step with the image's version.
+- **Proof.** `tests_integration/test_slow_query_log.py`: the compose command carries the setting with the 500 ms default and the documented
+  override; a real Postgres accepts the exact option with each documented value (`SHOW` returns `500ms`, `0`, `-1`); a misspelt setting
+  fails all four. The compose e2e job runs `SELECT pg_sleep(1)` in the container and greps the container log for the logged duration, so
+  the whole path (flag, server, log) is checked on a real server.
+- **Not taken, still open.** `auto_explain` and `pg_stat_statements` (the next step up from a log line; needs a preloaded library and an
+  extension per database); `EXPLAIN` of the ten busiest list routes against a large table (DB-4.2, needs `QA-1.2` seed data), the
+  indexes they show are missing (DB-4.3), and keyset pagination (DB-4.4, DB-4.5).

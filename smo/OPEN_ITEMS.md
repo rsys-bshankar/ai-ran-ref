@@ -201,7 +201,6 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| DB-4.1 ★ | Slow-query logging switch (`log_min_duration_statement`) in compose | Slow query appears in the log | – |
 | DB-4.2 | Script: `EXPLAIN` the ten most used list routes against a seeded large table | Plans recorded | QA-1.2 |
 | DB-4.3 | Add the missing indexes | No sequential scan on those routes at 1M rows | DB-4.2 |
 | DB-4.4 | Keyset (cursor) pagination option in `pagination.py` (`?after=`), `LIMIT/OFFSET` stays default | Unit tests; one route adopts it | – |

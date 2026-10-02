@@ -106,6 +106,9 @@ there is no migration tooling yet (`OPEN_ITEMS.md`, `PR-OPS-1`).
 - A guided walk-through of every module, with copy-pasteable commands:
   [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md).
 
+Slow statements: Postgres logs any statement slower than `POSTGRES_SLOW_QUERY_MS` (default 500 ms, set in `.env`; `-1` turns
+it off) with its duration and text: `docker compose logs postgres | grep duration`.
+
 Back up and restore the database (`scripts/db_backup.sh`, `scripts/db_restore.sh`): one `pg_dump` custom-format file,
 checked before it is kept, mode 0600 (it holds every table, including each module's SME invoker secret).
 
