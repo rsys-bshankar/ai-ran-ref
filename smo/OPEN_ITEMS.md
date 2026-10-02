@@ -236,14 +236,13 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 Webhooks go out best-effort and inline through `smo_shared/webhook.py` (0 retries for notifications, 3 for others per
 `STANDARDS.md`). A restart or an unreachable subscriber loses events.
 
-#### PR-MSG-1 — Transactional outbox
+#### PR-MSG-1 — Transactional outbox (open: adoption, MSG-1.5 onwards)
+
+`smo_shared/outbox.py` (table, `enqueue`, `drain`, inline drain after commit) and the call-site inventory `docs/NOTIFICATIONS.md` exist; no module uses the outbox yet (`HISTORY.md` §10).
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MSG-1.1 ★ | Classify every `post_webhook` call site: fire-and-forget vs needs the response (an RMIH callback may) | Table committed; only the first class moves | – |
-| MSG-1.3 | `enqueue(db, destination, payload)` inserts in the caller's transaction | Rollback of the caller removes the row (test) | MSG-1.2 |
-| MSG-1.4 | `drain(db)` sends pending rows right after commit, keeping today's behaviour | A crash between commit and send leaves a pending row that a later drain sends | MSG-1.3 |
-| MSG-1.5 | Convert DME callbacks | Existing DME tests green; new crash test | MSG-1.4 |
+| MSG-1.5 | Convert DME callbacks (the three class-A sites in `docs/NOTIFICATIONS.md`; the DELETE stays inline) | Existing DME tests green; new crash test | MSG-1.4 |
 | MSG-1.6 | Convert SME event subscriptions | Same | MSG-1.4 |
 | MSG-1.7 | Convert AIMgF job-completion and guard notifications | Same | MSG-1.4 |
 | MSG-1.8 | Convert A1 Related, FOCOM and MDAF subscription callbacks | Same | MSG-1.4 |
@@ -1430,7 +1429,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 1. **Replica-safe foundation (no new infrastructure):** done.
 2. **Safe to expose:** done except SEC-13.2 and SEC-1.6.
 3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: the rest of OBS-2, OPS-1.6, OPS-4.1b (cutting the first tag).
-4. **Durable notifications:** MSG-1.1–1.4, then MSG-1.5 onwards one module at a time.
+4. **Durable notifications:** MSG-1.1–1.4 done; MSG-1.5 onwards one module at a time.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.
 6. **Safer changes:** MGT-1.1–1.4, MGT-3.1, MGT-8.1.
 7. **Later:** HA, mesh, federation, vendor profiles.
