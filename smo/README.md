@@ -96,7 +96,8 @@ docker compose ps
 
 The schema is created once, from `migrations/001_init.sql`, when the Postgres volume is first made. After
 pulling a change that edits that file, recreate the volume (`docker compose down -v`, which discards demo data):
-there is no migration tooling yet (`OPEN_ITEMS.md`, `PR-OPS-1`).
+there is no migration tooling yet (`OPEN_ITEMS.md`, `PR-OPS-1`). The same goes for the `gui_bff_data` and `smo_packages`
+volumes of a stack started before the services ran as a non-root user: they are root-owned, so recreate them too.
 
 - R1 Termination: `curl -s http://localhost:8080/bootstrap`
 - Operator GUI: <http://localhost:3000>, user `admin`. If `GUI_ADMIN_PASSWORD`

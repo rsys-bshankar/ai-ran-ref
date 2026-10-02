@@ -16,6 +16,13 @@ x-ready-probe: &ready_probe
   retries: 5
   start_period: 30s
 
+# Container hardening for every service we build (PR-SEC-13): no Linux capability (a service binds port 8000 and
+# needs none), and no way to gain one through a setuid binary. Postgres keeps its defaults: its entrypoint
+# drops privileges itself and needs a few.
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
 services:
   postgres:
     image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
@@ -44,6 +51,7 @@ services:
   r1-termination:
     build: { context: ., args: { MODULE: r1-termination } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     ports: ["8080:8000"]
     environment:
@@ -71,6 +79,7 @@ services:
   sme:
     build: { context: ., args: { MODULE: sme } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment: &db_env
@@ -79,6 +88,7 @@ services:
   dme:
     build: { context: ., args: { MODULE: dme } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
@@ -86,6 +96,7 @@ services:
   onboarding:
     build: { context: ., args: { MODULE: onboarding } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
@@ -95,6 +106,7 @@ services:
   rapp-mgmt:
     build: { context: ., args: { MODULE: rapp-mgmt } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -104,6 +116,7 @@ services:
   ran-nf-oam:
     build: { context: ., args: { MODULE: ran-nf-oam } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -113,6 +126,7 @@ services:
   mock-o1-adaptor:
     build: { context: ., args: { MODULE: mock-o1-adaptor } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     # No isolated network segment — unlike mock-near-rt-ric (RT-7, SMO
     # Design v1.3 section 3.9), nothing in this build's own design
@@ -129,6 +143,7 @@ services:
   energy-saving-rapp:
     build: { context: ., args: { MODULE: samples/energy-saving-rapp } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -140,6 +155,7 @@ services:
   mobility-optimization-rapp:
     build: { context: ., args: { MODULE: samples/mobility-optimization-rapp } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -151,6 +167,7 @@ services:
   coverage-optimization-rapp:
     build: { context: ., args: { MODULE: samples/coverage-optimization-rapp } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -162,6 +179,7 @@ services:
   traffic-steering-rapp:
     build: { context: ., args: { MODULE: samples/traffic-steering-rapp } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -171,6 +189,7 @@ services:
   a1-related:
     build: { context: ., args: { MODULE: a1-related } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     networks: [default, a1_mock_net]
@@ -182,6 +201,7 @@ services:
   mock-near-rt-ric:
     build: { context: ., args: { MODULE: mock-near-rt-ric } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     networks: [a1_mock_net]   # isolated, non-routable dev segment — ONLY a1-related can reach it,
                               # no published ports, not on `default` (closes RT-7, SMO Design v1.3 section 3.9)
@@ -189,18 +209,21 @@ services:
   nfo:
     build: { context: ., args: { MODULE: nfo } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
-    privileged: true   # Phase 1: docker run --gpus passthrough needs this on the NFO container itself
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock   # NFO's Docker bridge (SMO Design v1.3 section 3.7)
+    # No `privileged: true` and no Docker socket (PR-SEC-13): NFO never started a container (it runs no
+    # `docker run`, nfo/README.md), and either one is root on the host. The Docker bridge of SMO Design v1.3
+    # section 3.7 has to arrive as a narrow, separately-run component (a socket proxy that allows a few API calls,
+    # or the Kubernetes API), not as this service holding the socket.
 
   focom:
     build: { context: ., args: { MODULE: focom } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
@@ -208,6 +231,7 @@ services:
   mlmr:
     build: { context: ., args: { MODULE: mlmr } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
@@ -215,6 +239,7 @@ services:
   aimgf:
     build: { context: ., args: { MODULE: aimgf } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -224,6 +249,7 @@ services:
   mllf:
     build: { context: ., args: { MODULE: mllf } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     environment:
       R1_GATEWAY_URL: http://r1-termination:8000
@@ -231,6 +257,7 @@ services:
   ran-analytics:
     build: { context: ., args: { MODULE: ran-analytics } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -240,6 +267,7 @@ services:
   mdaf:
     build: { context: ., args: { MODULE: mdaf } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
@@ -247,6 +275,7 @@ services:
   intent-service:
     build: { context: ., args: { MODULE: intent-service } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment: *db_env
@@ -254,6 +283,7 @@ services:
   so-smos:
     build: { context: ., args: { MODULE: so-smos } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -263,6 +293,7 @@ services:
   sa-smos:
     build: { context: ., args: { MODULE: sa-smos } }
     stop_grace_period: 30s
+    <<: *hardening
     healthcheck: *ready_probe
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -276,6 +307,7 @@ services:
   gui-bff:
     build: { context: ., args: { MODULE: gui-bff } }
     stop_grace_period: 30s
+    <<: *hardening
     depends_on: [r1-termination, sme]
     environment:
       R1_URL: http://r1-termination:8000
@@ -295,6 +327,7 @@ services:
 
   gui:
     build: { context: ./gui }
+    <<: *hardening
     depends_on: [gui-bff]
     ports: ["3000:8080"]
 

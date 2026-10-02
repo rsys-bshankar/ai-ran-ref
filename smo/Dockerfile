@@ -24,6 +24,17 @@ COPY ${MODULE}/pyproject.toml* /srv/module/
 COPY ${MODULE}/app /srv/module/app
 WORKDIR /srv/module
 
+# Run as an unprivileged user (PR-SEC-13.1). The code under /srv is root-owned and read-only to it; the only
+# places a service writes are the two directories below, which compose mounts volumes on (a new named volume
+# takes its ownership from the image, so the user can write to it): /data (the GUI BFF's database and
+# first-run admin password) and /srv/packages (Onboarding's package store). A volume created by an earlier,
+# root-run stack stays root-owned: recreate it (`docker compose down -v`, which discards demo data).
+RUN groupadd --system --gid 10001 smo \
+ && useradd --system --uid 10001 --gid smo --no-create-home --shell /usr/sbin/nologin smo \
+ && mkdir -p /data /srv/packages \
+ && chown smo:smo /data /srv/packages
+USER 10001:10001
+
 ENV PYTHONPATH=/srv/module:/srv/sdk
 EXPOSE 8000
 
