@@ -768,6 +768,11 @@
             "title": "Changes",
             "type": "array"
           },
+          "dryRun": {
+            "default": false,
+            "title": "Dryrun",
+            "type": "boolean"
+          },
           "msacRole": {
             "anyOf": [
               {
@@ -1117,6 +1122,10 @@
             "name": "new_state",
             "required": true,
             "schema": {
+              "enum": [
+                "ACKNOWLEDGED",
+                "UNACKNOWLEDGED"
+              ],
               "title": "New State",
               "type": "string"
             }

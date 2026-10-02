@@ -231,7 +231,7 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 
 | Method | Path | Purpose / notable errors |
 |---|---|---|
-| POST | `/config-jobs` | `WriteConfigurationChanges` (202 `{jobId, status}`). Body: `requestedBy`, `accessScope` (`scope` is a deprecated alias; both, if sent, must agree), `changes[]` (`managedElementRef`, `managedFunctionRef?`, `className?`, `attributeChanges?`, `operation?`), `msacRole?`. 403 `MSAC_ACCESS_DENIED`, 409 `O1_SERVICE_NOT_SUPPORTED`, 422 `SCHEMA_VALIDATION_FAILED` |
+| POST | `/config-jobs` | `WriteConfigurationChanges` (202 `{jobId, status}`). Body: `requestedBy`, `accessScope` (`scope` is a deprecated alias; both, if sent, must agree), `changes[]` (`managedElementRef`, `managedFunctionRef?`, `className?`, `attributeChanges?`, `operation?`), `msacRole?`, `dryRun?` (true: run every check, send and store nothing, answer 200 `{dryRun, status: VALIDATED | WOULD_REJECT_SOME, changes[]: {…, verdict: PASS | WOULD_REJECT, reason}}`). 403 `MSAC_ACCESS_DENIED`, 409 `O1_SERVICE_NOT_SUPPORTED`, 422 `SCHEMA_VALIDATION_FAILED` |
 | GET | `/config-jobs/{job_id}` | Job with `subChanges` (`operation`, `status`, `rejectionReason`, `attempts`) |
 | GET | `/config-jobs` | List; filter `status` |
 
@@ -241,7 +241,7 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 |---|---|---|
 | POST | `/alarms/ingest` | Query parameters: `source_alarm_id`, `managed_element_ref`, `severity`, optional `managed_function_ref` (the cell or other function it is about) and fault fields. Returns `{alarmId}`. 409 `O1_SERVICE_NOT_SUPPORTED` (FM) |
 | GET | `/alarms` | List; filters `managed_element_ref`, `managed_function_ref` (flat, full DN, or an RDN ending a stored DN), `severity` (any case; `cleared` isolates history; 422 outside `PerceivedSeverity`) |
-| PATCH | `/alarms/{id}/ack` | `new_state`, `ack_user_id?` |
+| PATCH | `/alarms/{id}/ack` | `new_state` (`ACKNOWLEDGED` or `UNACKNOWLEDGED`), `ack_user_id?`; 404 `ALARM_NOT_FOUND` |
 | PATCH | `/alarms/{id}/clear` | Sets `severity=cleared` (`perceivedSeverity` `CLEARED`), `cleared_at`, `clear_user_id?`; alarm stays listed |
 | POST | `/pm-subscriptions` | Query: `managed_element_ref`, `counter_type`, `delivery_method`, `granularity_period?`. Registers a DME producer. 409 `O1_SERVICE_NOT_SUPPORTED` (PM) |
 | GET / DELETE | `/pm-subscriptions`, `/pm-subscriptions/{id}` | List (filter ME) / delete (idempotent) |

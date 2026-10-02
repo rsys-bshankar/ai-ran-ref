@@ -1427,3 +1427,12 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Read and write (SB-1.5 wiring; edit-config is also available).** `send_get_config` and `send_edit_config` have the shapes of the HTTP ones, so `POST /config-jobs` and `GET /managed-entities/{ref}/config` work over SSH unchanged.
 - **Tests.** An in-process paramiko SSH server (`tests/netconf_ssh_server.py`) lets the wrapper and the routes run in the unit suite: 18 wrapper cases and 7 route cases.
 - **Not done:** the `netconf-lab` compose profile and a run against netopeer2 (SB-1.4, and SB-1.5's "route returns data from the lab server"), `<rpc-error>` tag mapping (SB-1.7), candidate datastore (SB-1.8), credentials per endpoint and a pinning route (`PR-SB-2`).
+
+### PR-MGT-3 and MGT-8.1 — dry run, and a 404 for an unknown alarm
+
+- **Dry run (MGT-3.1–3.3).** `POST /config-jobs` takes `dryRun: true`. It runs the same MSAC, service-presence and data-model checks as a real write (the YANG leaf checks of `SB-5` included), so the same refusals come back as 403 / 422. When they pass it
+  creates no job, sends nothing southbound and writes no outbox row; it answers 200 `{"dryRun": true, "status": "VALIDATED" | "WOULD_REJECT_SOME", "changes": [{managedElementRef, managedFunctionRef, operation, verdict: "PASS" | "WOULD_REJECT", reason}]}`.
+  The verdict reuses the dispatch loop's own gate (`_dispatch_blocker`: no registered endpoint, endpoint `UNREACHABLE` / `DEGRADED` after aging, no client for the protocol), so a change a real write would reject at dispatch is reported as `WOULD_REJECT` with its reason, not `PASS`.
+  The response is stored and replayed under an `Idempotency-Key` like any other. **Not checked:** whether the adaptor would accept the value (only a real write learns that).
+- **Alarm 404 and ack state (MGT-8.1).** `PATCH /alarms/{id}/ack` and `/clear` on an unknown id raised `AttributeError` (a 500); they now return 404 `ALARM_NOT_FOUND` (new in `FrameworkError`). `new_state` is `ACKNOWLEDGED` or `UNACKNOWLEDGED` (what the table's CHECK allows), anything else 422 with nothing stored.
+- **Tests.** `test_yang_schemas.py` (dry run: pass, YANG refusal, unknown attribute, unregistered element, nothing written or sent, the real write afterwards; MSAC denial), `test_main.py` (404 for both routes, invalid and valid ack states).
