@@ -37,6 +37,9 @@ def test_allows_ordinary_http_and_https_destinations(destination):
     "http://LOCALHOST/cb",
     "http://metadata.google.internal/computeMetadata/v1/",
     "http://0.0.0.0/cb",
+    "http://[",              # malformed (unclosed IPv6 bracket): refused, not an exception
+    "http://[::1/cb",
+    "file://[",
     "http://224.0.0.1/cb",   # multicast
     "not-a-url",
 ])

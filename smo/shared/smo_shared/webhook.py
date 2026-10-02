@@ -55,10 +55,14 @@ def _is_blocked_literal_ip(host: str) -> bool:
 def is_safe_webhook_destination(destination: str | None) -> bool:
     if not destination:
         return False
-    parts = urlsplit(destination)
-    if parts.scheme not in _ALLOWED_SCHEMES or not parts.hostname:
+    try:
+        parts = urlsplit(destination)
+        hostname = parts.hostname
+    except ValueError:  # malformed, e.g. an unclosed IPv6 bracket ("http://[")
         return False
-    host = parts.hostname.lower()
+    if parts.scheme not in _ALLOWED_SCHEMES or not hostname:
+        return False
+    host = hostname.lower()
     if host in _BLOCKED_HOSTNAMES:
         return False
     return not _is_blocked_literal_ip(host)
