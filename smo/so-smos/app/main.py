@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from smo_shared.logconfig import install_logging
 from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.r1_client import R1Client
@@ -23,6 +24,7 @@ from .dispatch import execute_order
 from .models import ServiceOrder
 
 app = FastAPI(title="SO SMOS")
+install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 apply_r1_gateway_security(app)
 apply_correlation_id(app)
 

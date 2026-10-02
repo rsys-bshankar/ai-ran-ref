@@ -17,6 +17,7 @@ import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from smo_shared.logconfig import install_logging
 from smo_shared.bodylimit import MIB, BodySizeLimit, settings_from_env
 from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
@@ -27,6 +28,7 @@ from smo_shared.ratelimit import TokenBuckets
 from smo_shared.timeouts import introspect_timeout, upstream_timeout
 
 app = FastAPI(title="R1 Termination")
+install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 # /health (with /live and /ready) and /bootstrap are this gateway's own exemptions (see
 # below: the probes are answered ahead of _authorized entirely, /bootstrap is "No auth (network-isolated)") — every other
 # path here is the catch-all proxy route, which really does call

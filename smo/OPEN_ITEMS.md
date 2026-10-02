@@ -127,7 +127,7 @@ and HA much later).
 | Database | `PR-DB` | DB-2 per-module schemas · DB-3 retention · DB-4 indexes/pagination · DB-5 pooler · DB-6 backup · DB-7 Postgres HA |
 | Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
-| Observability | `PR-OBS` | OBS-1 logs · OBS-2 metrics · OBS-3 traces · OBS-4 business metrics · OBS-5 alerts/SLOs · OBS-6 log shipping · OBS-7 runbooks · OBS-8 self-monitoring |
+| Observability | `PR-OBS` | OBS-2 metrics · OBS-3 traces · OBS-4 business metrics · OBS-5 alerts/SLOs · OBS-6 log shipping · OBS-7 runbooks · OBS-8 self-monitoring |
 | Packaging / ops | `PR-OPS` | OPS-1 migrations · OPS-2 Helm · OPS-3 migrate hook · OPS-4 releases · OPS-5 rolling upgrade · OPS-6 GitOps · OPS-7 config reference · OPS-8 flags · OPS-9 sizing |
 | High availability | `PR-HA` | HA-1 replicas · HA-2 rolling restart · HA-3 DB failover · HA-4 worker failover · HA-5 placement · HA-6 DR · HA-7 geo |
 | Southbound | `PR-SB` | SB-1 NETCONF/SSH · SB-2 adaptor credentials · SB-3 3GPP YANG · SB-4 WG4 YANG · SB-5 YANG validation · SB-6 containment · SB-7 VES · SB-8 streaming · SB-9 conformance kit · SB-10 vendor profile · SB-11 RIC inventory · SB-12 A1 scope · SB-13 RIC simulator lane · SB-14 O2-IMS client · SB-15 async provisioning · SB-16 K8s driver · SB-17 NFO scale size · SB-18 FOCOM PM collector |
@@ -444,17 +444,6 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 No Prometheus, OpenTelemetry or `/metrics` usage exists in the code (checked). A correlation id exists in
 `smo_shared/correlation.py`. Liveness and readiness are `PR-ST-7`.
 
-#### PR-OBS-1 — Structured logs
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| OBS-1.1 ★ | JSON formatter and one `configure_logging()` in `smo_shared` | Unit test: one JSON object per record | – |
-| OBS-1.2 | Add module name and correlation id to every record | Field present inside a request | OBS-1.1 |
-| OBS-1.3 | Access-log middleware: route template, status, duration | One line per request | OBS-1.1 |
-| OBS-1.4 | Redaction filter for tokens, secrets, `Authorization` | Seeded secret never appears | OBS-1.1 |
-| OBS-1.5 | `LOG_LEVEL` env | Test | OBS-1.1 |
-| OBS-1.6 | Adopt in every module (one PR, mechanical) | Integration suite green | OBS-1.2 |
-
 #### PR-OBS-2 — Metrics
 
 | Step | What | Done when | Needs |
@@ -503,9 +492,9 @@ No Prometheus, OpenTelemetry or `/metrics` usage exists in the code (checked). A
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OBS-6.1 | Fluent Bit config reading container JSON logs | Logs forwarded | OBS-1.6 |
+| OBS-6.1 | Fluent Bit config reading container JSON logs | Logs forwarded | – |
 | OBS-6.2 | Loki and Grafana in a compose profile | Search by correlation id works | OBS-6.1 |
-| OBS-6.3 | Elasticsearch field mapping doc | Doc reviewed | OBS-1.2 |
+| OBS-6.3 | Elasticsearch field mapping doc | Doc reviewed | – |
 
 #### PR-OBS-7 — Runbooks
 
@@ -1447,10 +1436,9 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 
 Pick any, or mix them. `Needs` is the only constraint.
 
-1. **Replica-safe foundation (no new infrastructure):**
-   OBS-1.1.
-2. **Safe to expose:** SEC-13.2.
-3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1.
+1. **Replica-safe foundation (no new infrastructure):** done.
+2. **Safe to expose:** done except SEC-13.2 and SEC-1.6.
+3. **Operable:** OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1.
 4. **Durable notifications:** MSG-1.1–1.4, then MSG-1.5 onwards one module at a time.
 5. **First real O1 path:** SB-1.1–1.5, SB-3.1–3.5, SB-5.1–5.2.
 6. **Safer changes:** MGT-1.1–1.4, MGT-3.1, MGT-8.1.

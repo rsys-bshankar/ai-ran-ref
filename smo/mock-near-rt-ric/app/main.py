@@ -21,9 +21,11 @@ import uuid
 
 from fastapi import FastAPI
 
+from smo_shared.logconfig import install_logging
 from smo_shared.health import install_health
 
 app = FastAPI(title="Mock Near-RT RIC (A1-P test double)")
+install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 install_health(app)  # /live, /ready and /health for the compose healthcheck (PR-ST-7)
 
 _policies: dict[str, dict] = {}

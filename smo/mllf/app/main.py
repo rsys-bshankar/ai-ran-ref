@@ -25,6 +25,7 @@ is; no code change, ownership docs corrected instead.
 import uuid
 
 from fastapi import FastAPI, HTTPException
+from smo_shared.logconfig import install_logging
 from smo_shared.health import install_health, sme_token_check
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
@@ -32,6 +33,7 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 
 app = FastAPI(title="MLLF")
+install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 apply_r1_gateway_security(app)
 apply_correlation_id(app)
 
