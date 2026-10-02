@@ -1354,3 +1354,17 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Tests (3 new):** the MSG-1.7 crash test (training completion with the inline drain off: one PENDING row with the job kind and id, nothing sent, a later drain delivers it); a performance report is committed with its subscriber push;
   a completion whose commit fails leaves no row, sends nothing and leaves the job unfinished. The AIMgF fixture creates the outbox table; all 195 existing tests (which replace `httpx.post`) pass unchanged.
 - **Differences to know:** at-least-once; a failed first attempt stays PENDING for the sweep. The send timeout was already 2 s here.
+
+### PR-MSG-1.8 — A1 Related, FOCOM and MDAF notifications through the outbox
+
+- **Six sites moved** (`docs/NOTIFICATIONS.md`): A1 Related's policy-status notification; FOCOM's inventory notification, alarm notification (`fcaps._notify`) and performance report (`fcaps._report`); MDAF's analytics-report
+  subscriber notification and its MDA request delivery (`_deliver`, two POSTs). Subscriber selection and filters are unchanged.
+- **Order changed:** the enqueue now precedes the commit everywhere: A1's `update_policy` and `query_policy_status` (the status change and its notification commit together); FOCOM's provision and deprovision (a `flush()` gives
+  the resource its id), alarm ingest (flush), acknowledge, clear, severity change, and performance ingest.
+- **MDAF is one transaction now.** `publish_report` and `publish_mda_report` used to commit the report, then `_notify_report_subscribers` committed again (to persist `threshold_state`), then `_deliver` committed a third time. The report
+  is now flushed, the subscriber rows enqueued (no commit there any more), and `_deliver`'s commit makes the report, the notifications, the threshold state and the request deliveries atomic. The cost: a failure in delivery matching
+  now rolls back the report instead of leaving it stored without its deliveries. `delivery.notified` now means "enqueued".
+- **Tests (6 new):** the MSG-1.8 crash test in each of the three modules (inline drain off: one PENDING row, nothing sent, the report/resource/policy change is there, a later drain delivers it); FOCOM alarm NEW and CLEAR notifications
+  commit with their alarm; a FOCOM provision whose commit fails leaves no row, no resource and sends nothing; an MDAF publish whose commit fails stores no report and sends nothing. The three fixtures create the outbox table. One existing
+  FOCOM test patched `app.fcaps.post_webhook`; it now patches `smo_shared.webhook.post_webhook`, the outbox's network seam. All other existing tests (which replace `httpx.post`) pass unchanged.
+- **Differences to know:** at-least-once; a failed first attempt stays PENDING for the sweep; the send timeout is the outbox's 2 s (the same as these modules used).

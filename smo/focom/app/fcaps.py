@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.pagination import PageLimit, PageOffset, paginate
-from smo_shared.webhook import post_webhook
+from smo_shared.outbox import enqueue
 
 from .common import PHASE1_CLUSTER_ID, AttributeValuePair, global_cloud_id, ioc
 from .models import AlarmSubscription, OCloudAlarm, OCloudPerformanceMetric, PerformanceJob, PerformanceSubscription, Resource
@@ -84,12 +84,13 @@ def _alarm_view(a: OCloudAlarm) -> dict:
 
 
 def _notify(db: Session, kind: str, alarm: OCloudAlarm) -> None:
-    """AlarmEvent to every subscription whose filter admits `kind` (best-effort)."""
+    """AlarmEvent to every subscription whose filter admits `kind`: one outbox row each, in the caller's transaction (PR-MSG-1.8),
+    sent after the caller commits. The caller commits after this."""
     for sub in db.scalars(select(AlarmSubscription)).all():
         if sub.filter in (None, kind):
-            post_webhook(sub.callback, json={"globalCloudId": GLOBAL_CLOUD_ID, "consumerSubscriptionId": sub.consumer_subscription_id,
-                                             "alarmNotificationType": kind, "objectRef": f"/focom/alarms/{alarm.alarm_id}",
-                                             "alarmEventRecord": _alarm_view(alarm)}, timeout=2.0)
+            enqueue(db, sub.callback, {"globalCloudId": GLOBAL_CLOUD_ID, "consumerSubscriptionId": sub.consumer_subscription_id,
+                                       "alarmNotificationType": kind, "objectRef": f"/focom/alarms/{alarm.alarm_id}",
+                                       "alarmEventRecord": _alarm_view(alarm)})
 
 
 def _get_alarm(db: Session, alarm_id: uuid.UUID) -> OCloudAlarm:
@@ -123,8 +124,9 @@ def ingest_ocloud_alarm(resource_ref: str, severity: str, event_type: str = "OTH
                         alarm_definition_id=alarm_definition_id, probable_cause_id=probable_cause_id,
                         resource_type_id=resource_type_id or _resource_type_of(db, resource_ref))
     db.add(alarm)
-    db.commit()
+    db.flush()  # the alarm's id, for the notification
     _notify(db, "NEW", alarm)
+    db.commit()
     return {"alarmId": str(alarm.alarm_id)}
 
 
@@ -137,8 +139,8 @@ def get_ocloud_alarm(alarm_id: uuid.UUID, db: Session = Depends(get_session)):
 def acknowledge_alarm(alarm_id: uuid.UUID, db: Session = Depends(get_session)):
     alarm = _get_alarm(db, alarm_id)
     alarm.acknowledged, alarm.acknowledged_at, alarm.changed_at = True, _now(), _now()
-    db.commit()
     _notify(db, "ACKNOWLEDGE", alarm)
+    db.commit()
     return _alarm_view(alarm)
 
 
@@ -146,8 +148,8 @@ def acknowledge_alarm(alarm_id: uuid.UUID, db: Session = Depends(get_session)):
 def clear_alarm(alarm_id: uuid.UUID, db: Session = Depends(get_session)):
     alarm = _get_alarm(db, alarm_id)
     alarm.severity, alarm.cleared_at, alarm.changed_at = "cleared", _now(), _now()
-    db.commit()
     _notify(db, "CLEAR", alarm)
+    db.commit()
     return _alarm_view(alarm)
 
 
@@ -155,8 +157,8 @@ def clear_alarm(alarm_id: uuid.UUID, db: Session = Depends(get_session)):
 def change_alarm_severity(alarm_id: uuid.UUID, severity: str, db: Session = Depends(get_session)):
     alarm = _get_alarm(db, alarm_id)
     alarm.severity, alarm.changed_at = _severity(severity), _now()
-    db.commit()
     _notify(db, "CHANGE", alarm)
+    db.commit()
     return _alarm_view(alarm)
 
 
@@ -253,8 +255,8 @@ def ingest_performance_record(body: PerformanceIngestBody, db: Session = Depends
                                      job_id=str(job.job_id) if job else None,
                                      collected_at=body.timeStamp or _now())
     db.add(record)
+    notified = _report(db, record, job)  # outbox rows for the matching subscriptions, committed with the record
     db.commit()
-    notified = _report(db, record, job)
     return {**_metric_view(record), "notified": notified}
 
 
@@ -285,14 +287,14 @@ def _report(db: Session, record: OCloudPerformanceMetric, job: PerformanceJob | 
         criteria = sub.global_subscription_criteria
         if criteria and not any(_criteria_match(c, record, resource_type_id) for c in criteria):
             continue
-        post_webhook(sub.callback, json={
+        enqueue(db, sub.callback, {
             "globalCloudId": GLOBAL_CLOUD_ID, "notificationTime": _iso(_now()), "performanceSubscriptionId": str(sub.subscription_id),
             "consumerPerformanceSubscriptionId": sub.consumer_subscription_id,
             "jobReports": [{"performanceJobId": str(job.job_id), "consumerJobId": job.consumer_job_id, "measuredResources": [{
                 "resourceId": record.resource_ref, "measurementValues": [{
                     "performanceMeasurementId": record.metric_name, "measurementCollectionTime": _iso(record.collected_at),
                     "measurementValue": record.measurement_value if record.measurement_value is not None else record.value,
-                    "isSuspect": record.is_suspect}]}]}]}, timeout=2.0)
+                    "isSuspect": record.is_suspect}]}]}]})
         sent += 1
     return sent
 

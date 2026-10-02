@@ -12,8 +12,10 @@ from test_main import client, db_session  # noqa: F401  (pytest fixtures)
 
 @pytest.fixture
 def sent(monkeypatch):
+    """What the notifications send: they are outbox rows (PR-MSG-1.8), delivered through smo_shared.webhook right after the commit."""
+    import httpx
     posts = []
-    monkeypatch.setattr("app.fcaps.post_webhook", lambda dest, json, timeout=5.0: posts.append((dest, json)))
+    monkeypatch.setattr("smo_shared.webhook.post_webhook", lambda dest, json, timeout=5.0: posts.append((dest, json)) or httpx.Response(200))
     return posts
 
 

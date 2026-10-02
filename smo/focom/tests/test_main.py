@@ -10,7 +10,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from smo_shared import outbox
 from smo_shared.db import Base, get_session
+from smo_shared.outbox import NotificationOutbox
 
 from app.main import app, PHASE1_CLUSTER_ID, PHASE1_DEPLOYMENT_MANAGER_ID, PHASE1_POOL_ID, PHASE1_RESOURCE_TYPE_ID
 from app.models import (AlarmSubscription, DeploymentManager, InventorySubscription, Location, O2imsObject, OCloudAlarm, OCloudPerformanceMetric,
@@ -24,7 +26,7 @@ def db_session():
         OCloudAlarm.__table__, OCloudPerformanceMetric.__table__, InventorySubscription.__table__,
         ResourceType.__table__, ResourcePool.__table__, Resource.__table__, DeploymentManager.__table__,
         Location.__table__, OCloudSite.__table__, AlarmSubscription.__table__, PerformanceJob.__table__,
-        PerformanceSubscription.__table__, O2imsObject.__table__,
+        PerformanceSubscription.__table__, O2imsObject.__table__, NotificationOutbox.__table__,
     ])
     TestSession = sessionmaker(bind=engine)
     return TestSession
@@ -584,3 +586,66 @@ def test_list_inventory_subscriptions(client):
     sub = client.post("/inventory/subscriptions", json={"callback": "http://consumer/cb", "consumerSubscriptionId": "c-1"}).json()
     listed = client.get("/inventory/subscriptions").json()["items"]
     assert [(s["subscriptionId"], s["consumerSubscriptionId"]) for s in listed] == [(sub["subscriptionId"], "c-1")]
+
+
+# ---------------------------------------------------------------- notifications through the outbox (PR-MSG-1.8)
+
+def _outbox_rows(db_session):
+    with db_session() as db:
+        return db.query(NotificationOutbox).order_by(NotificationOutbox.created_at).all()
+
+
+def test_an_inventory_notification_survives_a_crash_between_commit_and_send(client, db_session, monkeypatch):
+    """The crash test of MSG-1.8 for FOCOM: the subscriber's notification is a committed row; with the inline send off
+    (the process died after the commit) nothing went out, and a later drain delivers it."""
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    monkeypatch.setenv("MODULE", "focom")
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or type("R", (), {"status_code": 200})())
+    client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40", "consumerSubscriptionId": "sub-1"})
+
+    resource_id = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()["resourceId"]
+
+    assert calls == []
+    rows = _outbox_rows(db_session)
+    assert [(r.module, r.status, r.destination) for r in rows] == [("focom", "PENDING", "http://consumer/callback")]
+    assert rows[0].payload["resourceId"] == resource_id and rows[0].payload["notificationEventType"] == "CREATE"
+
+    monkeypatch.delenv("SMO_OUTBOX_INLINE_DRAIN")
+    assert outbox.drain(db_session().get_bind())["sent"] == 1
+    assert [u for u, _ in calls] == ["http://consumer/callback"]
+
+
+def test_an_alarm_and_its_notification_commit_together(client, db_session, monkeypatch):
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    client.post("/alarm-subscriptions", json={"callback": "http://consumer/alarms", "consumerSubscriptionId": "a-1"})
+    alarm_id = client.post("/alarms/ingest", params={"resource_ref": "host-1", "severity": "critical"}).json()["alarmId"]
+    client.patch(f"/alarms/{alarm_id}/clear")
+
+    rows = _outbox_rows(db_session)
+    assert [r.payload["alarmNotificationType"] for r in rows] == ["NEW", "CLEAR"]
+    assert {r.payload["alarmEventRecord"]["alarmId"] for r in rows} == {alarm_id}
+
+
+def test_nothing_is_announced_when_the_provision_does_not_commit(client, db_session, monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
+    client.post("/inventory/subscriptions", json={"callback": "http://consumer/callback", "resourceTypeId": "gpu-l40"})
+
+    from sqlalchemy.orm import Session as OrmSession
+    real_commit = OrmSession.commit
+
+    def failing_commit(self):
+        if self.info.get("outbox_pending_ids"):
+            self.rollback()
+            raise RuntimeError("the database refused the commit")
+        return real_commit(self)
+
+    monkeypatch.setattr(OrmSession, "commit", failing_commit)
+    resp = TestClient(app, raise_server_exceptions=False).post("/resources/provision", json={"resourceTypeId": "gpu-l40"})
+    monkeypatch.setattr(OrmSession, "commit", real_commit)
+
+    assert resp.status_code == 500
+    assert calls == [] and _outbox_rows(db_session) == []
+    with db_session() as db:
+        assert db.query(Resource).count() == 0

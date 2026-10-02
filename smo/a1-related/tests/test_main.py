@@ -11,7 +11,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from smo_shared import outbox
 from smo_shared.db import Base, get_session
+from smo_shared.outbox import NotificationOutbox
 
 from app.a1_termination_client import A1TerminationClient
 from app.main import app, get_a1_termination_client
@@ -53,7 +55,8 @@ def engine():
     # One shared connection for the whole test, matching the real deployment's
     # one-shared-Postgres-instance topology closely enough for a unit test.
     e = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(e, tables=[A1Policy.__table__, PolicyStatusSubscription.__table__, A1EIType.__table__, A1ServiceRegistration.__table__])
+    Base.metadata.create_all(e, tables=[A1Policy.__table__, PolicyStatusSubscription.__table__, A1EIType.__table__, A1ServiceRegistration.__table__,
+                                          NotificationOutbox.__table__])
     return e
 
 
@@ -635,3 +638,29 @@ def test_list_ei_types_returns_registrations_with_their_dme_type(client, monkeyp
                                               "dme_namespace": "RAN", "dme_name": "CoverageIssue", "dme_version": "1.0.0"})
     assert client.get("/ei-types").json()["items"] == [{"eiTypeId": "ei-1", "registeredBy": "rapp-1",
                                                "eiSourceDmeTypeId": "11111111-1111-1111-1111-111111111111"}]
+
+
+# ---------------------------------------------------------------- notifications through the outbox (PR-MSG-1.8)
+
+def test_a_policy_status_notification_survives_a_crash_between_commit_and_send(client, db_session_factory, monkeypatch):
+    """The crash test of MSG-1.8 for A1 Related: the subscriber's notification is a committed row, sent after the commit; with
+    the inline send off (the process died after the commit) nothing went out, and a later drain delivers it."""
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    monkeypatch.setenv("MODULE", "a1-related")
+    calls = []
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)) or type("R", (), {"status_code": 200})())
+    created = client.post("/policies", json={
+        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell1"}, "nearRtRicId": "ric1", "creatorId": "rapp-1"}).json()
+    client.post("/policies/subscriptions", json={"notificationDestination": "http://consumer/callback", "policyIdList": [created["policyId"]]})
+
+    client.put(f"/policies/{created['policyId']}", json={})            # a real status change (see the fake A1 termination)
+
+    assert calls == []
+    with db_session_factory() as db:
+        rows = db.query(NotificationOutbox).all()
+    assert [(r.module, r.status, r.destination) for r in rows] == [("a1-related", "PENDING", "http://consumer/callback")]
+    assert rows[0].payload["policyId"] == created["policyId"]
+
+    monkeypatch.delenv("SMO_OUTBOX_INLINE_DRAIN")
+    assert outbox.drain(db_session_factory().get_bind())["sent"] == 1
+    assert [u for u, _ in calls] == ["http://consumer/callback"]

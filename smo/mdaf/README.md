@@ -82,9 +82,11 @@ ownership summary.
   IE in `threshold_state`), not on every report while the level holds. A value inside the hysteresis band
   leaves state unchanged. The first report already past the threshold fires once; a monitored IE absent from a
   report is skipped. A subscription without `thresholdInfo` is notified on every report.
-- **Delivery is best-effort.** Webhooks use `smo_shared.webhook.post_webhook` (2 s timeout; unreachable or
-  rejected destinations never fail the publish). A subscription without `notificationDestination` is pull-only;
-  the target is never guessed from `requestedBy`.
+- **Delivery goes through the transactional outbox** (`smo_shared.outbox`, `PR-MSG-1.8`). Publishing a report is one transaction:
+  the report, the subscriber notifications, the `threshold_state` updates and the request deliveries commit together, and the
+  notifications are sent right after (2 s timeout), at least once. A crash after the commit no longer loses them; an unreachable
+  or rejected destination never fails the publish. `delivery.notified` means "enqueued". A subscription without
+  `notificationDestination` is pull-only; the target is never guessed from `requestedBy`.
 - **Drift forwarding never fails the publish.** Any exception talking to AIMgF is swallowed per model.
 - **Security.** No per-service auth: every route is declared bearer-protected in the OpenAPI contract
   (`apply_r1_gateway_security`) and enforced only by R1 Termination. The GUI BFF RBAC rule table lists
@@ -177,8 +179,8 @@ set explicitly. A `pmPredictions` list is flattened so each `pmName` is addressa
 | Trigger | Action | Failure behaviour |
 |---|---|---|
 | Publish (`/reports`, `/mda-reports`) | `GET /dme/data-jobs/{id}` per input source | Non-200 aborts the publish with `DME_ARTIFACT_NOT_FOUND` |
-| Publish | `analytics_type` subscribers: POST `{reportId, analyticsType, output, inputSources}` to `notificationDestination`, gated by `thresholdInfo` | Best-effort; `threshold_state` is committed regardless |
-| Publish | Request matching and delivery (see below) | Best-effort webhooks |
+| Publish | `analytics_type` subscribers: POST `{reportId, analyticsType, output, inputSources}` to `notificationDestination`, gated by `thresholdInfo` | Through the outbox, in the report's own transaction; `threshold_state` is committed regardless |
+| Publish | Request matching and delivery (see below) | Outbox rows, committed with the report |
 | `DRIFT` report with `mLModelRef` output IE | `GET /aimgf/mlmf/subscriptions?model_id=` then `POST /aimgf/mlmf/subscriptions/{id}/reports` with the numeric IEs as metrics; AIMgF's guard-KPI floor decides whether to retrain | Swallowed per model; never fails the publish |
 
 Request matching (`_request_matches`) for a report with no `mDARequestRef`: the request must be `active`; if both

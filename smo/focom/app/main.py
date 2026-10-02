@@ -22,7 +22,7 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
-from smo_shared.webhook import post_webhook
+from smo_shared.outbox import enqueue
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from . import fcaps, provisioning, sites
@@ -315,11 +315,11 @@ def _notify_inventory_subscribers(db: Session, event_type: str, resource_id: str
     for sub in db.scalars(select(InventorySubscription)).all():
         if sub.resource_type_id is not None and resource_type_id is not None and sub.resource_type_id != resource_type_id:
             continue
-        post_webhook(sub.callback, json={
+        enqueue(db, sub.callback, {
             "objectType": "resource", "notificationEventType": event_type,
             "resourceId": resource_id, "resourceTypeId": resource_type_id,
             "consumerSubscriptionId": sub.consumer_subscription_id,
-        }, timeout=2.0)
+        })
 
 
 @app.post("/inventory/subscriptions", status_code=201)
@@ -373,8 +373,9 @@ def provision_resource(spec: dict, db: Session = Depends(get_session)):
     resource = Resource(resource_type_id=resource_type_id, resource_pool_id=PHASE1_POOL_ID, description=spec.get("description"),
                          global_asset_id=spec.get("globalAssetId"), tags=spec.get("tags"), groups=spec.get("groups"))
     db.add(resource)
+    db.flush()  # the resource's id, for the notification
+    _notify_inventory_subscribers(db, "CREATE", str(resource.resource_id), resource_type_id)  # enqueued in this transaction (PR-MSG-1.8)
     db.commit()
-    _notify_inventory_subscribers(db, "CREATE", str(resource.resource_id), resource_type_id)
     return {"resourceId": str(resource.resource_id), "clusterId": PHASE1_CLUSTER_ID}
 
 
@@ -387,8 +388,8 @@ def deprovision_resource(resource_id: str, db: Session = Depends(get_session)):
     resource_type_id = resource.resource_type_id if resource is not None else None
     if resource is not None:
         db.delete(resource)
-        db.commit()
     _notify_inventory_subscribers(db, "DELETE", resource_id, resource_type_id)
+    db.commit()
     return {"status": "deprovisioned"}
 
 

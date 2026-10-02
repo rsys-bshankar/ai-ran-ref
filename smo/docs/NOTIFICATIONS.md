@@ -29,12 +29,12 @@ After the move, a notification is sent after the transaction that caused it comm
 | `sme/app/main.py` | `_deliver` | `enqueue` | A | Event subscribers: a service API became available, changed or went away | moved (MSG-1.6) |
 | `aimgf/app/main.py` | `_notify_job_completion` | `enqueue` | A | The job's notification URI: a training or inference job finished | moved (MSG-1.7) |
 | `aimgf/app/main.py` | `report_performance` | `enqueue` | A | A model subscriber: a performance report, possibly below its floor | moved (MSG-1.7) |
-| `a1-related/app/main.py` | `_notify_policy_status_subscribers` | `post_webhook` | A | Policy-status subscribers: an enforcement status changed | MSG-1.8 |
-| `focom/app/main.py` | `_notify_inventory_subscribers` | `post_webhook` | A | Inventory subscribers: a resource changed | MSG-1.8 |
-| `focom/app/fcaps.py` | `_notify` | `post_webhook` | A | Alarm subscribers: an alarm was raised, changed or cleared | MSG-1.8 |
-| `focom/app/fcaps.py` | `_report` | `post_webhook` | A | Performance subscribers: new measurements | MSG-1.8 |
-| `mdaf/app/main.py` | `_notify_report_subscribers` | `post_webhook` | A | Analytics subscribers: a report crossed their threshold | MSG-1.8 |
-| `mdaf/app/mda.py` | `_deliver` | `post_webhook` | A | An MDA request's reporting target: a report, or a report file, is ready (two call sites). `delivery.notified` is set whatever the answer was; after the move it means "enqueued" | MSG-1.8 |
+| `a1-related/app/main.py` | `_notify_policy_status_subscribers` | `enqueue` | A | Policy-status subscribers: an enforcement status changed | moved (MSG-1.8) |
+| `focom/app/main.py` | `_notify_inventory_subscribers` | `enqueue` | A | Inventory subscribers: a resource changed | moved (MSG-1.8) |
+| `focom/app/fcaps.py` | `_notify` | `enqueue` | A | Alarm subscribers: an alarm was raised, changed or cleared | moved (MSG-1.8) |
+| `focom/app/fcaps.py` | `_report` | `enqueue` | A | Performance subscribers: new measurements | moved (MSG-1.8) |
+| `mdaf/app/main.py` | `_notify_report_subscribers` | `enqueue` | A | Analytics subscribers: a report crossed their threshold | moved (MSG-1.8) |
+| `mdaf/app/mda.py` | `_deliver` | `enqueue` | A | An MDA request's reporting target: a report, or a report file, is ready (two call sites). `delivery.notified` is set whatever the answer was; after the move it means "enqueued" | moved (MSG-1.8) |
 | `intent-service/app/main.py` | `_create_intent_row` | `post_webhook` | A | The RMIH's notification destination: an intent was created | MSG-1.9 |
 | `intent-service/app/main.py` | `_deliver_report` | `post_webhook` | A | Each report recipient of an intent: a report is available | MSG-1.9 |
 | `intent-service/app/main.py` | `_notify_autonomy_operator` | `post_webhook` | A | The operator's destination: an autonomy dispatch outcome | MSG-1.9 |
