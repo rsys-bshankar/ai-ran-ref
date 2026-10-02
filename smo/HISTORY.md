@@ -13,6 +13,7 @@ entries here by section (`HISTORY.md §5`) or ID (`HISTORY.md OI-6.3`).
 | `OI-5-<module>-…` | Former §5, O-RAN-SC repo-audited completeness gaps |
 | `OI-C-…` | Former "Closed" section entries not already covered by §1–§5 (pilot demo, audits) |
 | `OI-6.1` … `OI-6.7` | Former §6, AI/ML pipeline review (numbers kept) |
+| `PR-<area>-<n>` | Production-readiness features from `OPEN_ITEMS.md` §5, closed (§10) |
 | `SA-<area>-<n>` | Former `HISTORY.md §7`, numbered as in that file's per-module sections |
 | `W0` … `W10.4` | Waves of the AI Platform Service Decomposition; work-item IDs (`W9-02`) are indexed at the end of §9, decisions `D-1`…`D-9` are in `docs/STANDARDS.md` |
 
@@ -791,3 +792,27 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **W10.4-08** — Coordination with EnergySaving, Mobility (two-way CIO) and Coverage
 - **W10.4-09** — Audit, dashboard, GUI **Traffic Steering** page, BFF rules, R1 route, compose service
 - **W10.4-10** — Integration tests, runbook §27, call flow 25, exit review
+
+## 10. Production readiness (closed features from `OPEN_ITEMS.md` §5)
+
+### PR-ST-1 — Statelessness audit and guard
+
+- **Audit (ST-1.1).** The table of what a process holds is in
+  `docs/ARCHITECTURE.md`, "Process state and scale-out". Result: no service starts a thread, timer or
+  task; the holders are `R1Client`'s per-process identity (fixed by `PR-ST-4`), the GUI BFF's lockout
+  counters and its per-boot JWT secret (`PR-ST-5`), and a read-only `lru_cache` of the bundled CM schemas.
+  The BFF's SME credential is already persisted in the database, so replicas share one identity there.
+- **Guard (ST-1.2, ST-1.3).** `scripts/check_statelessness.py` parses `<module>/app`, `shared/smo_shared`,
+  `sdk/smo_sdk` and `samples/*/app` and fails on module-level mutable containers, locks and thread-locals,
+  a module-level instance of a stateful class defined in the same file, `app.state.x = <mutable>`, `global`,
+  `lru_cache`/`cache`, and thread, task, executor, `BackgroundTasks`, `sched` or `apscheduler` use. Findings
+  that are accepted are in `scripts/statelessness_allowlist.txt`, each with a reason; a stale entry fails the
+  check. `tests_integration/test_statelessness_guard.py` runs it on the real tree and proves each rule fires
+  on a seeded violation. CI runs it in the `lint` job (standard library only).
+- **Time-driven behaviour (ST-1.4).** Nothing needs a periodic tick: endpoint health ageing (RAN NF OAM), A1
+  service keep-alive, the rApp upgrade timeout, SA SMOS monitors, MDAF delivery and FOCOM intervals are all
+  lazy, caller-driven or stored-only. Table in `docs/ARCHITECTURE.md`; one row in each module README.
+  Consequence: `PR-ST-8` has no consumer yet and is deferred until a feature adds a periodic task.
+- **Not taken.** ALL_CAPS names are trusted as constants and the instance-state rule only sees classes
+  defined in the same file; a stricter rule (every module-level mutable regardless of case, or every
+  imported class) was rejected as noisier than useful. `R1Gateway` is in the audit table by hand.

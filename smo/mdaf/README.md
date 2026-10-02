@@ -11,6 +11,7 @@
 | Database tables | `mdaf_report`, `mda_subscription`, `mda_function`, `mda_request`, `mda_report_delivery` |
 | Unit tests | 36 passed (`tests/`, SQLite, standalone) |
 | Status | Done. `STREAMING` reporting is recorded, not streamed (see 2.8) |
+| Time-driven behaviour | Push on publish: subscribers are notified when a report is stored; no timer |
 
 ## 1. High-level design (HLD)
 

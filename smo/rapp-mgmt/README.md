@@ -11,6 +11,7 @@
 | Database tables | `rapp_instance`, `rapp_instance_version`, `rapp_fault_report`, `rapp_performance_report` |
 | Unit tests | 88 passed (`tests/`, SQLite, standalone) |
 | Status | Done. No open item in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) names this module; limits in 2.8 |
+| Time-driven behaviour | On request, never on a timer: an overdue upgrade is rolled back the next time either row is touched |
 
 ## 1. High-level design (HLD)
 

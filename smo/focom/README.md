@@ -11,6 +11,7 @@
 | Database tables | `inventory_subscription`, `resource_type`, `resource_pool`, `resource`, `deployment_manager`, `ocloud_alarm`, `ocloud_alarm_subscription`, `ocloud_performance_metric`, `ocloud_performance_job`, `ocloud_performance_subscription`, `ocloud_location`, `ocloud_site`, `o2ims_object` |
 | Unit tests | 73 passed (`tests/`, SQLite, standalone) |
 | Status | Done for the Phase 1 single-cluster scope. `SA-FOCOM-2`, `-6`, `-7` and `-9` are closed at the REST level; limits in [section 2.8](#28-limits-and-open-items) |
+| Time-driven behaviour | None: `collectionInterval`, `reportInterval` and `heartbeatInterval` are stored, not scheduled (`SA-FOCOM-6`) |
 
 ## 1. High-level design (HLD)
 

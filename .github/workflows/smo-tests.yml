@@ -39,6 +39,12 @@ jobs:
           pip install --require-hashes -r requirements/lint.txt
           ruff check .
 
+      # Service code keeps no request-visible state and starts no background work
+      # (docs/ARCHITECTURE.md, "Process state and scale-out"). Standard library only.
+      - name: statelessness guard
+        working-directory: smo
+        run: python scripts/check_statelessness.py
+
   unit-and-integration:
     name: Unit + integration tests (SQLite)
     runs-on: ubuntu-latest

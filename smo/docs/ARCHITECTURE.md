@@ -17,6 +17,7 @@ reached this shape see [HISTORY.md](../HISTORY.md).
 
 - [Layered architecture](#layered-architecture)
 - [Golden rules](#golden-rules)
+- [Process state and scale-out](#process-state-and-scale-out)
 - [Service map](#service-map)
 - [Repository layout](#repository-layout)
 - [R1 API conventions](#r1-api-conventions)
@@ -94,6 +95,67 @@ reached this shape see [HISTORY.md](../HISTORY.md).
    R1 Termination's gateway (`r1-termination/`). Nothing bypasses it; the AI
    Runtime SDK (`sdk/smo_sdk/`) is a thin client over that same path, not a
    second one.
+7. **Service code is stateless.** A module keeps its state in Postgres, never
+   in the process, and starts no background work, so any number of identical
+   replicas can serve any request. Enforced by
+   `scripts/check_statelessness.py` (CI job `lint`); the accepted exceptions
+   are in [Process state and scale-out](#process-state-and-scale-out).
+
+## Process state and scale-out
+
+Every module is request-driven: no service starts a thread, timer, task
+scheduler or background task, and each keeps its state in Postgres. The only
+state a process holds is listed below. `scripts/check_statelessness.py` fails
+the build on any new in-process state or background work in `<module>/app`,
+`shared/smo_shared`, `sdk/smo_sdk` and `samples/*/app` (the `mock-*` test doubles
+are out of scope), unless the finding is in
+`scripts/statelessness_allowlist.txt` with a reason; an allowlist entry whose
+finding has gone also fails, so the list cannot rot. Its limits: an ALL_CAPS
+name is trusted to be a constant, and a class instance is recognised only when
+its class is in the same file (so `R1Gateway` below is listed here, not detected).
+
+### What a process holds today
+
+| Holder | Where | What it is | Safe with N replicas? | Fix |
+|---|---|---|---|---|
+| `_identity` (`_ModuleIdentity`) | `shared/smo_shared/r1_client.py` | SME access-token cache and this process's invoker id and secret | Token cache: yes. Identity: no, each process onboards its own invoker at SME when `SMO_INVOKER_ID` is unset, so every replica and restart adds a registration | `PR-ST-4` |
+| `app.state.login_failures` | `gui-bff/app/main.py` | Login-lockout counters per username | No, a replica does not see failures counted by another | `PR-ST-5` |
+| JWT signing secret | `gui-bff/app/config.py` | Random per boot when `GUI_JWT_SECRET` is unset | No, a session cookie from one replica fails on another | `PR-ST-5` (set `GUI_JWT_SECRET` meanwhile) |
+| `R1Gateway` token cache | `gui-bff/app/smo_client.py` | The BFF's SME token, refreshed once on a 401 | Yes. Its invoker credential is persisted in the database (`SmoCredential`), so replicas share one identity | none |
+| `_builtin_schemas` (`lru_cache`) | `ran-nf-oam/app/vendors.py` | Bundled `cm_schemas/*.json`, read once | Yes, read-only and identical everywhere | none |
+| `engine`, `SessionLocal` | `shared/smo_shared/db.py` | SQLAlchemy connection pool | Yes, a pool is per process by nature; sizing is `PR-ST-6` | none |
+| FSM tables (`*_FSM`) | `<module>/app/statemachine.py` | Transition tables built once at import and never mutated | Yes | none |
+| `_r1 = R1Client()` | most `main.py` | A thin client; it holds only a base URL | Yes | none |
+| Module-level dicts and lists | `mock-near-rt-ric`, `mock-o1-adaptor` | Test-double state | Not applicable, they are test doubles | none |
+
+What is **not** state: webhook destinations, subscriptions, jobs, FSM states,
+registrations and every other business object are database rows.
+
+Concurrency between replicas on the same row is a separate matter: FSM
+transitions have no version check yet (`PR-ST-2`), and the inline retry in
+`ran-nf-oam` holds a worker for its whole back-off (`PR-ST-9`).
+
+### How time-driven behaviour starts
+
+No module needs a periodic tick today. Everything that looks scheduled is
+evaluated lazily on a request or pushed by an external caller, so there is
+nothing to elect a leader for yet.
+
+| Behaviour | Module | How it is triggered |
+|---|---|---|
+| Missed-heartbeat health of an O1 endpoint (`MISSED_HEARTBEAT_THRESHOLD`) | RAN NF OAM | Aged at the point of use: in `POST /o1-adaptor-endpoints/discover` and at the config-write gate (`_age_endpoint_health`) |
+| A1 service keep-alive sweep (`keepAliveIntervalSeconds`) | A1 Related | A stale service and its policies are swept when `GET /services` reads it (`_sweep_stale_service`) |
+| `upgradeTimeoutSeconds` | rApp Management | An overdue upgrade is rolled back the next time either row is touched (`expire_overdue_upgrade`) |
+| Threshold monitors | SA SMOS | The caller posts `POST /monitors/{id}/evaluate` with current metrics; the service does not poll |
+| Analytics report delivery | MDAF | Pushed to subscribers when a report is stored; otherwise the consumer polls `QueryAnalyticsReport` |
+| `collectionInterval`, `reportInterval`, `heartbeatInterval` | FOCOM | Stored and validated only; nothing collects on a schedule (`SA-FOCOM-6`) |
+
+The lazy sweeps above write to the database from a read, so two replicas can
+both run the same sweep; that is another reason `PR-ST-2` matters.
+
+A feature that needs a real periodic task (an alarm-aging sweep, a PM
+collector, a drift check) must not add a thread or `create_task`: it needs the
+single-runner helper of `PR-ST-8` or the job runner of `PR-MSG-4`.
 
 ## Service map
 
