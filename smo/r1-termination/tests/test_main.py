@@ -11,6 +11,15 @@ from app.main import app, ROUTES
 
 client = TestClient(app)
 
+
+@pytest.fixture(autouse=True)
+def fresh_rate_limiter():
+    """Every test starts with every caller's bucket full (the limiter is a module-level object)."""
+    from app.main import _limiter
+    _limiter.clear()
+    yield
+    _limiter.clear()
+
 INTROSPECT_URL = f"{ROUTES['/sme']}/oauth2/introspect"
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}  # accepted by every fake client below, which treats introspection as a no-op success
 
@@ -373,3 +382,90 @@ def test_a_backend_that_cannot_be_reached_is_a_502(probe):
     resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
     assert resp.status_code == 502
     assert resp.json()["title"] == "UPSTREAM_UNAVAILABLE"
+
+
+# ---------------------------------------------------------------- limits (PR-SEC-8)
+
+def _backend_that_accepts_any_token(monkeypatch, client_id="caller-a", forwarded=None):
+    class Fake:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kwargs):
+            if url == INTROSPECT_URL:
+                return FakeResponse(content=json.dumps({"active": True, "client_id": client_id}).encode())
+            if forwarded is not None:
+                forwarded.append(url)
+            return FakeResponse()
+
+    monkeypatch.setattr("app.main.httpx.AsyncClient", Fake)
+
+
+def test_a_caller_over_its_budget_gets_429_with_retry_after_and_is_not_forwarded(monkeypatch):
+    monkeypatch.setenv("R1_RATE_BURST", "3")
+    monkeypatch.setenv("R1_RATE_PER_SECOND", "1")
+    forwarded: list = []
+    _backend_that_accepts_any_token(monkeypatch, forwarded=forwarded)
+
+    statuses = [client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS).status_code for _ in range(5)]
+    assert statuses[:3] == [200, 200, 200] and statuses[3:] == [429, 429]
+    refused = client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
+    assert refused.json()["title"] == "RATE_LIMITED" and refused.headers["Retry-After"] == "1"
+    assert len(forwarded) == 3                                  # the refused requests never reached the backend
+
+
+def test_the_budget_is_per_caller_so_one_noisy_invoker_does_not_starve_another(monkeypatch):
+    monkeypatch.setenv("R1_RATE_BURST", "2")
+    monkeypatch.setenv("R1_RATE_PER_SECOND", "0.001")
+    _backend_that_accepts_any_token(monkeypatch, client_id="noisy")
+    assert [client.get("/sme/x", headers=AUTH_HEADERS).status_code for _ in range(3)] == [200, 200, 429]
+    _backend_that_accepts_any_token(monkeypatch, client_id="quiet")
+    assert client.get("/sme/x", headers=AUTH_HEADERS).status_code == 200
+
+
+def test_a_rate_of_zero_turns_the_limiter_off(monkeypatch):
+    monkeypatch.setenv("R1_RATE_PER_SECOND", "0")
+    monkeypatch.setenv("R1_RATE_BURST", "1")
+    _backend_that_accepts_any_token(monkeypatch)
+    assert {client.get("/sme/x", headers=AUTH_HEADERS).status_code for _ in range(20)} == {200}
+
+
+def test_a_refused_unauthenticated_request_does_not_spend_anyones_budget(monkeypatch):
+    monkeypatch.setenv("R1_RATE_BURST", "1")
+    monkeypatch.setenv("R1_RATE_PER_SECOND", "0.001")
+    _backend_that_accepts_any_token(monkeypatch)
+    assert client.get("/sme/x").status_code == 401 and client.get("/sme/x").status_code == 401
+    assert client.get("/sme/x", headers=AUTH_HEADERS).status_code == 200
+
+
+def test_a_body_over_the_cap_is_413_and_never_reaches_the_backend(monkeypatch):
+    forwarded: list = []
+    _backend_that_accepts_any_token(monkeypatch, forwarded=forwarded)
+    resp = client.post("/dme/data-jobs", headers=AUTH_HEADERS, content=b"x" * (1024 * 1024 + 1))
+    assert resp.status_code == 413 and resp.json()["title"] == "PAYLOAD_TOO_LARGE" and forwarded == []
+    assert client.post("/dme/data-jobs", headers=AUTH_HEADERS, content=b"x" * 1024 * 1024).status_code == 200
+
+
+def test_the_model_artifact_upload_route_accepts_a_larger_body_and_only_that_route(monkeypatch):
+    _backend_that_accepts_any_token(monkeypatch)
+    big = b"z" * (3 * 1024 * 1024)
+    assert client.post("/mlmr/models/abc/artifact", headers=AUTH_HEADERS, content=big).status_code == 200
+    assert client.post("/mlmr/models", headers=AUTH_HEADERS, content=big).status_code == 413
+    huge = b"z" * (50 * 1024 * 1024 + 1)
+    assert client.post("/mlmr/models/abc/artifact", headers=AUTH_HEADERS, content=huge).status_code == 413
+
+
+def test_the_cap_and_its_overrides_come_from_the_environment(monkeypatch):
+    _backend_that_accepts_any_token(monkeypatch)
+    monkeypatch.setenv("R1_MAX_BODY_BYTES", "100")
+    assert client.post("/dme/x", headers=AUTH_HEADERS, content=b"a" * 101).status_code == 413
+    assert client.post("/dme/x", headers=AUTH_HEADERS, content=b"a" * 100).status_code == 200
+    monkeypatch.setenv("R1_MAX_BODY_OVERRIDES", "/dme/big=1000")
+    assert client.post("/dme/big", headers=AUTH_HEADERS, content=b"a" * 900).status_code == 200
+    assert client.post("/dme/x", headers=AUTH_HEADERS, content=b"a" * 900).status_code == 413

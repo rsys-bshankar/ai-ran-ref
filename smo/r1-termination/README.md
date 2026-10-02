@@ -9,7 +9,7 @@
 | Depends on (over R1) | SME (`POST /oauth2/introspect`, direct to SME's address, not through itself); every module in `ROUTES` as a forwarding target |
 | Called by | rApps, the GUI BFF, `smo_shared.R1Client` in every module, the reference rApps |
 | Database tables | None (stateless) |
-| Unit tests | 23 passed (`tests/`, no DB, standalone) |
+| Unit tests | 30 passed (`tests/`, no DB, standalone) |
 | Status | Done. Token model is opaque-token introspection, not JWT/IdP signature checking; route-level test depth tracked by [OI-4](../OPEN_ITEMS.md) |
 
 ## 1. High-level design (HLD)
@@ -149,6 +149,10 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 |---|---|---|
 | `<NAME>_URL` per route | see the route table | Backend base URL for that prefix. `DME_URL` serves three prefixes. |
 | `R1_UPSTREAM_TIMEOUT_SECONDS` | `60` | How long the gateway waits for the backend it proxies to |
+| `R1_MAX_BODY_BYTES` | `1048576` | Largest request body any route accepts (413 over it) |
+| `R1_MAX_BODY_OVERRIDES` | `/mlmr/models/*/artifact=52428800` | `<path-pattern>=<bytes>,...` caps that replace the default for matching paths (`*` matches anything); the default is the model artifact upload, 50 MiB like the GUI's nginx. Setting it replaces this default |
+| `R1_RATE_PER_SECOND` | `100` | Requests a second each caller (invoker id) may sustain; `0` turns the limiter off |
+| `R1_RATE_BURST` | `200` | Requests a caller may make at once before it is held to the rate |
 | `R1_INTROSPECT_TIMEOUT_SECONDS` | `5` | How long it waits for SME's token introspection (a timeout fails closed: 401) |
 
 `SME_URL` is also the target of introspection and of the URIs in `/bootstrap`.
@@ -161,6 +165,8 @@ The gateway answers with `JSONResponse` bodies of the form `{"title": ..., "stat
 |---|---|---|
 | `NO_ROUTE` | 404 | First path segment is not in `ROUTES` |
 | `UNAUTHORIZED` | 401 | No `Authorization` header, not `Bearer`, empty token, SME unreachable, or token not active |
+| `PAYLOAD_TOO_LARGE` | 413 | The request body is larger than the cap for that path (`Content-Length`, or counted while streaming); the backend is not called |
+| `RATE_LIMITED` | 429 | The caller has used its request budget; `Retry-After` is the whole seconds to wait. Counted after authentication, so a refused unauthenticated request spends nobody's budget |
 | `UPSTREAM_TIMEOUT` | 504 | The backend did not answer within `R1_UPSTREAM_TIMEOUT_SECONDS` (`detail` names the route prefix) |
 | `UPSTREAM_UNAVAILABLE` | 502 | The backend could not be reached (connection refused, DNS failure, reset) |
 
@@ -170,7 +176,7 @@ Every other status and body is the backend's, passed through.
 
 - Opaque-token introspection instead of signed JWTs. SME checks a token's scope when it issues it (HISTORY.md OI-2-oauth2-scope), but the gateway does not enforce it.
 - Authentication only: no per-invoker or per-API authorization at the gateway. Routes map to modules, not to published APIs, so there is nothing here to match a scope against.
-- No rate limiting, retry, circuit breaking or request-size limit.
+- Rate limit and body cap are in place (`PR-SEC-8.1`, `8.2`); no retry or circuit breaking. The buckets are per process, so with N gateway replicas a caller has N times the rate until the shared store of `SEC-8.5`; unauthenticated requests are not limited here yet (`SEC-8.3`), and one rate applies to every route (`SEC-8.4`).
 - The upstream timeout is one value for every route (60 s), not per route or per call; a caller that sets its own longer timeout is still cut at 60 s.
 - Upstream response headers are forwarded verbatim, including those describing the encoding of the original body.
 - Test depth ([OI-4](../OPEN_ITEMS.md)).
