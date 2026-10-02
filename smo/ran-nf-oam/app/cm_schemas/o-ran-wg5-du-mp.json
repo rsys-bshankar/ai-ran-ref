@@ -15,9 +15,15 @@
    },
    "ctiActivateOnOdu": {
     "type": "boolean"
+   },
+   "id": {
+    "type": "string"
    }
   },
   "SharedOruConfiguration": {
+   "id": {
+    "type": "string"
+   },
    "oDuIdForSharedORu": {
     "type": "string"
    },
@@ -158,6 +164,9 @@
    }
   }
  },
+ "library": [
+  "MnS/yang-models/_3gpp-common-top.yang"
+ ],
  "revision": "2023-03-17",
  "schemaName": "o-ran-wg5-du-mp",
  "source": [
@@ -211,7 +220,5 @@
   "O-RAN-WG5-O-DU-MP-YANGs/additional-configuration/o-ran_3gpp-nr-nrm-rrmpolicy.yang"
  ],
  "type": "YANG",
- "unresolved": [
-  "top3gpp:Top_Grp"
- ]
+ "unresolved": []
 }

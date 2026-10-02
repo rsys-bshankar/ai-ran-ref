@@ -97,7 +97,44 @@ def test_a_grouping_in_another_file_resolves_and_a_cycle_terminates(tmp_path):
     assert b.classes["C"] == {"fromG": {"type": "string"}, "fromH": {"type": "integer"}} and not b.unresolved
 
 
+def test_a_library_supplies_definitions_but_no_classes_and_the_input_wins(tmp_path):
+    """SB-3: the 3GPP common modules are a library: their groupings and typedefs resolve, their own IOCs are not classes."""
+    (tmp_path / "lib.yang").write_text(
+        "module lib { typedef pct { type uint8; } grouping Top_Grp { leaf id { type string; } leaf userLabel { type string; } }"
+        " grouping Shared { leaf fromLib { type string; } } container LibOnly { leaf x { type string; } } }")
+    (tmp_path / "own.yang").write_text(
+        "module own { grouping Shared { leaf fromOwn { type string; } }"
+        " list Radio { key id; uses lib:Top_Grp; container attributes { uses Shared; leaf load { type pct; } } } }")
+    b = yang.ingest([tmp_path / "own.yang"], [tmp_path / "lib.yang"])
+    assert b.classes == {"Radio": {"id": {"type": "string"}, "userLabel": {"type": "string"}, "fromOwn": {"type": "string"},
+                                   "load": {"type": "integer"}}}              # no LibOnly; the input's `Shared` won
+    assert not b.unresolved and b.library_used == {"lib.yang"}
+
+
+def test_without_the_library_the_same_input_leaves_the_grouping_unresolved(tmp_path):
+    (tmp_path / "own.yang").write_text("module own { list Radio { key id; uses top:Top_Grp; leaf n { type string; } } }")
+    b = yang.ingest([tmp_path / "own.yang"])
+    assert b.unresolved == {"top:Top_Grp"} and b.classes["Radio"] == {"n": {"type": "string"}} and not b.library_used
+
+
 # ---------------------------------------------------------------- the bundled descriptors
+
+def test_no_bundled_yang_descriptor_has_an_unresolved_grouping_any_more():
+    """SB-3.4: with the 3GPP common modules as a library, `id`, `userLabel` and the EP and managed-function groupings resolve."""
+    import json
+    schemas = sorted((Path(__file__).resolve().parents[1] / "app" / "cm_schemas").glob("*.json"))
+    yang_descriptors = [json.loads(p.read_text()) for p in schemas]
+    yang_descriptors = [d for d in yang_descriptors if d["type"] == "YANG"]
+    assert len(yang_descriptors) == 4
+    for descriptor in yang_descriptors:
+        assert descriptor["unresolved"] == [], (descriptor["schemaName"], descriptor["unresolved"])
+        assert descriptor["library"], descriptor["schemaName"]
+
+
+def test_the_3gpp_common_attributes_are_in_the_o1_nrm_classes(client):
+    classes = _full(client, "o-ran-wg10-o1nrm")
+    assert {"id", "userLabel"} <= set(classes["EP_E2"]) and {"id", "userLabel"} <= set(classes["NearRTRICFunction"])
+    assert classes["EP_D2C"]["localPortNumber"] == {"type": "integer"}      # an `inet:port-number`, `any` before the library
 
 def _full(client, name):
     listed = {(s["schemaName"]): s for s in client.get("/cm-schemas").json()["items"]}
@@ -108,7 +145,7 @@ def _full(client, name):
 def test_the_wg10_o1nrm_classes_are_bundled(client):
     classes = _full(client, "o-ran-wg10-o1nrm")
     assert {"ORU", "NearRTRICFunction", "EP_E2", "EP_D2C", "EP_D2U", "NESPolicy", "NESPolicyRelation", "RRMPolicyRBAlloc", "D2Params"} <= set(classes)
-    assert classes["ORU"] == {"oRUControllerList": {"type": "array"}, "ruInstanceId": {"type": "string"}}
+    assert classes["ORU"] == {"id": {"type": "string"}, "oRUControllerList": {"type": "array"}, "ruInstanceId": {"type": "string"}}
     assert classes["NESPolicy"]["policyType"] == {"type": "string", "enum": ["TRX_CONTROL", "ASM"]}
     assert classes["RRMPolicyRBAlloc"]["direction"]["enum"] == ["BIDIRECTION", "UL", "DL"]
 

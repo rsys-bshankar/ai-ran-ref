@@ -15,6 +15,9 @@
    },
    "ctiActivateOnOdu": {
     "type": "boolean"
+   },
+   "id": {
+    "type": "string"
    }
   },
   "D2Params": {
@@ -23,6 +26,9 @@
    },
    "endCRNTI": {
     "type": "integer"
+   },
+   "id": {
+    "type": "string"
    },
    "startCRNTI": {
     "type": "integer"
@@ -49,11 +55,26 @@
    }
   },
   "EP_D2C": {
+   "SupportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "farEndEntity": {
+    "type": "string"
+   },
+   "id": {
+    "type": "string"
+   },
+   "localAddress": {
+    "type": "array"
+   },
    "localPortNumber": {
-    "type": "any"
+    "type": "integer"
+   },
+   "remoteAddress": {
+    "type": "string"
    },
    "remotePortNumber": {
-    "type": "any"
+    "type": "integer"
    },
    "tRemoteT1": {
     "type": "integer"
@@ -63,17 +84,47 @@
    },
    "tRemoteT3": {
     "type": "integer"
+   },
+   "userLabel": {
+    "type": "string"
    }
   },
   "EP_D2U": {
+   "SupportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "farEndEntity": {
+    "type": "string"
+   },
+   "id": {
+    "type": "string"
+   },
+   "localAddress": {
+    "type": "array"
+   },
    "localPortNumber": {
-    "type": "any"
+    "type": "integer"
+   },
+   "remoteAddress": {
+    "type": "string"
    },
    "remotePortNumber": {
-    "type": "any"
+    "type": "integer"
+   },
+   "userLabel": {
+    "type": "string"
    }
   },
   "EP_E2": {
+   "SupportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "farEndEntity": {
+    "type": "string"
+   },
+   "id": {
+    "type": "string"
+   },
    "tRICControl": {
     "type": "integer"
    },
@@ -88,6 +139,9 @@
    },
    "tRICQuery": {
     "type": "integer"
+   },
+   "userLabel": {
+    "type": "string"
    }
   },
   "NESPolicy": {
@@ -96,6 +150,9 @@
    },
    "applicableTimeWindows": {
     "type": "array"
+   },
+   "id": {
+    "type": "string"
    },
    "policyId": {
     "type": "string"
@@ -114,17 +171,44 @@
   "NESPolicyRelation": {
    "configuredNesPolicyList": {
     "type": "array"
+   },
+   "id": {
+    "type": "string"
    }
   },
   "NearRTRICFunction": {
+   "SupportedPerfMetricGroups": {
+    "type": "array"
+   },
+   "id": {
+    "type": "string"
+   },
    "nearRTRICId": {
     "type": "integer"
    },
    "nearRTRICPLMNID": {
     "type": "object"
+   },
+   "peeParameterslist": {
+    "type": "array"
+   },
+   "priorityLabel": {
+    "type": "integer"
+   },
+   "supportedTraceMetrics": {
+    "type": "array"
+   },
+   "userLabel": {
+    "type": "string"
+   },
+   "vnfParametersList": {
+    "type": "array"
    }
   },
   "ORU": {
+   "id": {
+    "type": "string"
+   },
    "oRUControllerList": {
     "type": "array"
    },
@@ -141,6 +225,9 @@
    },
    "header-compression-enabled": {
     "type": "boolean"
+   },
+   "id": {
+    "type": "string"
    },
    "pdcp-sn-size-dl": {
     "enum": [
@@ -188,6 +275,9 @@
     ],
     "type": "string"
    },
+   "id": {
+    "type": "string"
+   },
    "numberOfPRBs": {
     "type": "integer"
    },
@@ -202,11 +292,17 @@
    "cipheringAlgoPrio": {
     "type": "array"
    },
+   "id": {
+    "type": "string"
+   },
    "integrityProtectAlgoPrio": {
     "type": "array"
    }
   },
   "SharedOruConfiguration": {
+   "id": {
+    "type": "string"
+   },
    "oDuIdForSharedORu": {
     "type": "string"
    },
@@ -352,6 +448,14 @@
    }
   }
  },
+ "library": [
+  "MnS/yang-models/_3gpp-common-ep-rp.yang",
+  "MnS/yang-models/_3gpp-common-managed-function.yang",
+  "MnS/yang-models/_3gpp-common-measurements.yang",
+  "MnS/yang-models/_3gpp-common-top.yang",
+  "MnS/yang-models/_3gpp-common-yang-types.yang",
+  "MnS/yang-models/external-yams/ietf-inet-types.yang"
+ ],
  "revision": "2026-02-11",
  "schemaName": "o-ran-wg10-wg5",
  "source": [
@@ -423,10 +527,5 @@
   "O-RAN-WG5-O-CU-MP-YANGs/o-ran-pdcp.yang"
  ],
  "type": "YANG",
- "unresolved": [
-  "eprp3gpp:EP_Common",
-  "eprp3gpp:EP_RPGrp",
-  "mf3gpp:ManagedFunctionGrp",
-  "top3gpp:Top_Grp"
- ]
+ "unresolved": []
 }
