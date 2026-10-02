@@ -823,3 +823,55 @@ def test_onboard_never_fetches_a_disallowed_location(client, monkeypatch, locati
     assert resp.status_code == 202
     status = client.get(f"/packages/{resp.json()['packageId']}/onboarding-status")
     assert status.json()["state"] == "FAILED"
+
+
+# ---------------------------------------------------------------- fuzz findings (fuzz/fuzz_csar_parsers.py)
+
+def _zip_with(**entries):
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, content in entries.items():
+            z.writestr(name.replace("__", "/").replace("_", "."), content)
+    return zipfile.ZipFile(BytesIO(buf.getvalue()))
+
+
+def test_a_non_utf8_sme_declaration_is_a_validation_failure_not_a_crash():
+    """The fuzzer's first finding: json.loads on non-UTF-8 bytes raised
+    UnicodeDecodeError, which was not an onboarding validation failure."""
+    from app.main import ONBOARD_VALIDATION_FAILURES, _parse_sme_declarations
+
+    z = _zip_with(Files__Sme__serviceapis__a_json=b"\xf7\xff\xfe")
+    with pytest.raises(ONBOARD_VALIDATION_FAILURES):
+        _parse_sme_declarations(z)
+
+
+@pytest.mark.parametrize("name, content", [
+    ("manifest_yaml", "- a\n- b\n"),                  # a list, not a mapping
+    ("manifest_yaml", "rappManifest: [1, 2]\n"),      # rappManifest not a mapping
+    ("capabilities_yaml", "- consumes\n"),
+    ("capabilities_yaml", "capabilities: [x]\n"),
+])
+def test_a_manifest_or_capabilities_file_that_is_not_a_mapping_fails_validation(name, content):
+    from app.main import PackageValidationFailed, _parse_ai_capabilities
+
+    with pytest.raises(PackageValidationFailed):
+        _parse_ai_capabilities(_zip_with(**{name: content}))
+
+
+def test_onboarding_a_package_with_a_non_utf8_sme_file_ends_in_failed(client, monkeypatch):
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("TOSCA-Metadata/TOSCA.meta", "Entry-Definitions: Definitions/asd.yaml\n")
+        z.writestr("Definitions/asd.yaml", "application_name: demo\n")
+        z.writestr("Files/Sme/serviceapis/a.json", b"\xf7\xff\xfe")
+
+    class FakeHttpResponse:
+        content = buf.getvalue()
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None: FakeHttpResponse())
+    resp = client.post("/packages", json={"location": "http://example/pkg.csar"})
+    assert resp.status_code == 202
+    status = client.get(f"/packages/{resp.json()['packageId']}/onboarding-status")
+    assert status.json()["state"] == "FAILED"
