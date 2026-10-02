@@ -21,7 +21,7 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0002"          # raise this with every new revision: the tests below then check it is the head
+HEAD = "0003"          # raise this with every new revision: the tests below then check it is the head
 
 
 def _scripts() -> ScriptDirectory:
@@ -144,7 +144,10 @@ def test_the_revision_after_the_baseline_applies_to_a_baseline_database_and_roll
     assert up.returncode == 0 and f"upgraded to {HEAD}" in up.stdout, up.stderr
     assert any(table == "notification_outbox" for table, *_ in _schema(databases["fresh"])["columns"])
 
-    down = _run(MIGRATE, databases["fresh"], "--downgrade", "-1")
+    one = _run(MIGRATE, databases["fresh"], "--downgrade", "-1")                          # 0003 -> 0002: the transport column goes
+    assert one.returncode == 0 and "downgraded to 0002" in one.stdout, one.stderr
+    assert not any(table == "o1_adaptor_endpoint" and column == "transport" for table, column, *_ in _schema(databases["fresh"])["columns"])
+    down = _run(MIGRATE, databases["fresh"], "--downgrade", "0001")
     assert down.returncode == 0 and "downgraded to 0001" in down.stdout, down.stderr
     assert _schema(databases["fresh"]) == at_baseline
 

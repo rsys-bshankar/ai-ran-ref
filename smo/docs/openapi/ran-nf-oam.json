@@ -457,6 +457,15 @@
             ],
             "title": "Supportedservices"
           },
+          "transport": {
+            "default": "http-mock",
+            "enum": [
+              "http-mock",
+              "ssh"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
           "vendorName": {
             "anyOf": [
               {

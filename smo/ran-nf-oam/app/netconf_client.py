@@ -90,12 +90,17 @@ def _post(adaptor_uri: str, rpc: str) -> tuple[httpx.Response | None, str | None
 
 
 def _reply_root(resp: httpx.Response):
+    return parse_reply(resp.text)
+
+
+def parse_reply(text: str):
+    """The `<rpc-reply>` element of a reply body, or None when it is not one."""
     try:
         # defusedxml (not stdlib ET) — the O1 Adaptor's reply is a response
         # from a southbound network endpoint, not a value this process
         # controls; reject entity-expansion / external-entity XML the same
         # way an unparseable reply is already rejected.
-        root = ET.fromstring(resp.text)
+        root = ET.fromstring(text)
     except (ET.ParseError, DefusedXmlException):
         return None
     return root if root.tag.rsplit("}", 1)[-1] == "rpc-reply" else None
@@ -114,7 +119,11 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
     resp, reason = _post(adaptor_uri, rpc)
     if resp is None:
         return EditResult(False, reason)
-    root = _reply_root(resp)
+    return edit_outcome(_reply_root(resp))
+
+
+def edit_outcome(root) -> EditResult:
+    """Applied when the `<rpc-reply>` carries `<ok/>`; anything else is a non-retryable NETCONF_RPC_FAILED."""
     if root is None or not any(child.tag.rsplit("}", 1)[-1] == "ok" for child in root):
         return EditResult(False, "NETCONF_RPC_FAILED")
     return EditResult(True)
@@ -128,6 +137,11 @@ def send_get_config(adaptor_uri: str, target_ref: str, message_id: str,
     root = resp is not None and _reply_root(resp)
     if root is None or root is False:
         return None
+    return config_attributes(root)
+
+
+def config_attributes(root) -> dict | None:
+    """The attributes of the one `<managed-object>` in a `<get-config>` reply's `<data>`, or None without a `<data>`."""
     data = next((c for c in root if c.tag.rsplit("}", 1)[-1] == "data"), None)
     if data is None:
         return None

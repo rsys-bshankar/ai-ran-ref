@@ -8,6 +8,7 @@ No release has been tagged yet. Everything below is unreleased.
 ## [Unreleased]
 
 ### Added
+- NETCONF over SSH to an O1 adaptor: register it with `transport: ssh` and `adaptorUri` `ssh://user@host[:port]`; CM writes and `GET /managed-entities/{ref}/config` then use RFC 6242 sessions. Set `NETCONF_SSH_KNOWN_HOSTS` and `NETCONF_SSH_PASSWORD` (or `_FILE`) / `NETCONF_SSH_KEY_FILE` for RAN NF OAM. Schema revision `0003` adds `o1_adaptor_endpoint.transport` (default `http-mock`) (SB-1.1–1.3).
 - Structured JSON logs on stdout in every service, one access line per request with the route template, status and duration, secrets scrubbed; `LOG_LEVEL` (#207).
 - `GET /metrics` in every service (Prometheus): request count and latency by method, route template and status. Container network only: R1 Termination and the TLS edge do not forward it (#208).
 - Alembic schema migrations: baseline revision `0001` is `migrations/001_init.sql`; `python scripts/migrate.py` upgrades, and stamps a database that was created from the file (#209).

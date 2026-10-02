@@ -14,3 +14,4 @@ defusedxml
 pyjwt[crypto]
 prometheus-client
 alembic
+paramiko

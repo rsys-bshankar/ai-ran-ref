@@ -61,6 +61,7 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 ```
 
 - It calls DME over R1 only to register itself as a producer (`RAN.PMCounters.<counter>`, `RAN.FaultRecords`) and to fan PM measurements out as DME records. Consumers never read RAN NF OAM for PM; they read DME.
+- An endpoint's `transport` is `http-mock` (default: XML over HTTP to the mock adaptor) or `ssh` (NETCONF over SSH, `adaptorUri` = `ssh://user@host[:port]`, port 830 by default). For `ssh`, set `NETCONF_SSH_KNOWN_HOSTS` (an OpenSSH known_hosts file; an unknown or changed host key is refused), and `NETCONF_SSH_PASSWORD` (or `_FILE`) or `NETCONF_SSH_KEY_FILE`. `NETCONF_SSH_INSECURE_ANY_HOST_KEY=true` skips the host-key check (lab only; logged). Per-endpoint credentials are `PR-SB-2`.
 - It talks to adaptors directly (southbound, outside R1) using `netconf_client.py` or `restconf_client.py`. The adaptor address is `adaptor_uri` from its own registry, never a URL taken from a request body, except where noted in [onboarding discovery](#operator-steps).
 - It never calls AIMgF, MLMR, MLLF, MDAF, Intent Service, NFO or FOCOM. MDAF is never on the action path.
 - Test vendor: [`mock-o1-adaptor`](../mock-o1-adaptor/README.md).
@@ -102,6 +103,7 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 | `app/leafcheck.py` | `check_value(entry, value)`: a descriptor entry's type, `range`, `length`, `pattern`, `fractionDigits` and `enum` against one value (`PR-SB-5.1`); used by `schema_problems` |
 | `app/vendors.py` | Capability registry, CM schemas, onboarding flow, managed entities, cell guards, and the two request-time checks (`require_service`, `schema_problems`); mounted as a router |
 | `app/netconf_client.py` | RFC 6241 `edit-config` / `get-config` RPC builders, HTTP transport, `EditResult` (reason, retryable) |
+| `app/netconf_ssh.py` | NETCONF over SSH (RFC 6242, `transport = ssh`): paramiko session and `netconf` subsystem, `<hello>`, end-of-message and chunked framing, host-key check, the same `EditResult` reasons; `docs/adr/0002-netconf-over-ssh-client.md` |
 | `app/restconf_client.py` | RFC 8040 client: data-resource URL (percent-encoded keys), `yang-data+json` body, edit `operation` -> PATCH / PUT / POST / DELETE, GET read-back, `RestconfResult` (reason, retryable, `error_tag`); reuses `EditResult` and the 30 s timeout |
 | `app/statemachine.py` | Three FSMs: `WriteConfigJob`, `SoftwareManagementJob`, endpoint health; `aggregate_event` |
 | `app/models.py` | SQLAlchemy models |
@@ -445,6 +447,8 @@ cd smo/ran-nf-oam && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_leafcheck.py` | Every YANG type: integer (range with holes, strings and floats, never a boolean), decimal64 (fraction digits, range), boolean, string (length, every pattern, an unreadable pattern skipped), enum of any type, array / object / any; each rejection's reason | 53 |
 | `tests/test_vendors.py` | Bundled spec descriptor and custom schema load, capability CRUD and defaults, vendor-mode gating, `SPEC` / `OWN` / `COMBINED` schema checks, unregistered vendor unchecked, service-presence guards, onboarding with discovery and its failures, cell guards | 10 |
 | `tests/test_dispatch_reliability.py` | `function-ref` dispatch, retry with backoff, the retry time budget on a fake clock (a fast-failing adaptor keeps the whole schedule, a slow one is cut off inside the 65 s worst case for every attempt duration, a smaller budget stops earlier, the first attempt is always made), retry exhaustion -> failed change + alarm, no retry on `<rpc-error>`, read-after-write, PM report fan-out to every data job, multi-counter per-relation measurements; RESTCONF retry and alarm, no retry on an `ietf-restconf:errors` reply, RESTCONF read-after-write | 20 |
+| `tests/test_netconf_ssh.py` | The SSH wrapper against an in-process SSH server (`tests/netconf_ssh_server.py`): both framings, a reply in pieces, `<rpc-error>`, timeout, closed port, hang-up, unknown / changed host key, wrong password, no subsystem, bad hello, `*_FILE` password | 18 |
+| `tests/test_ssh_transport_routes.py` | `transport` on registration (default, mismatches refused), config job and `GET .../config` over SSH, rejection and retry reasons | 7 |
 | `tests/test_netconf_client.py` | RPC builders (`operation`, `function-ref`), `<ok/>` handling, failure reasons, `get-config` parsing | 12 |
 | `tests/test_restconf_client.py` | Data-resource URL and key encoding, `yang-data+json` bodies, `operation` -> method mapping (PATCH / PUT / POST on the parent / DELETE), `remove` tolerating `data-missing`, error-reply vs transient failure reasons, GET read-back parsing | 22 |
 | `tests/test_statemachine.py` | The three FSMs, aggregation, forbidden transitions (e.g. `ACTIVE` -> `UNREACHABLE`) | 10 |
