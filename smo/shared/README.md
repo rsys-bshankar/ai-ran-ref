@@ -55,7 +55,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | Decision | Reason |
 |---|---|
 | One shared Postgres, partitioned by `moduleScope` columns, not per-module databases | Requirements v0.1 section 3. `db.py` offers one `Base`/engine; each module's models set and filter by their own scope. |
-| `R1Client` is synchronous `httpx` with one process-wide identity and token cache | Cross-module calls inside request handlers are sync. One invoker onboarded per process (or pinned by `SMO_INVOKER_ID`/`SMO_INVOKER_SECRET`); refreshed 30 s before expiry and once on 401. |
+| `R1Client` is synchronous `httpx` with one process-wide identity and token cache | Cross-module calls inside request handlers are sync. One invoker per module, shared by its replicas through the `module_identity` table (or pinned by `SMO_INVOKER_ID`/`SMO_INVOKER_SECRET`); refreshed 30 s before expiry and once on 401. |
 | When no token can be obtained, `R1Client` sends the call without `Authorization` and logs a warning rather than raising | R1 answers 401, which every caller already treats as an ordinary failed call. |
 | Webhook guard blocks by scheme and literal address only (no DNS resolution, no hostname allowlist) | Legitimate callback hosts (rApp/producer containers) are assigned at deploy time and unknown in advance; unit tests use fictional hostnames. Residual risk: a hostname resolving to a blocked address (DNS rebinding) is accepted. |
 | Webhook helpers never raise on an unreachable destination | Callbacks are best effort; each call site previously swallowed `httpx.HTTPError`. |
@@ -80,6 +80,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | `smo_shared/openapi_security.py` | `apply_r1_gateway_security()`, `BEARER_SCHEME_NAME`, `R1_CONTRACT_VERSION` |
 | `smo_shared/identity.py` | `rapp_id_from_instance()`, `is_framework_internal_identity()` |
 | `smo_shared/timeutil.py` | `as_utc()` |
+| `smo_shared/module_identity.py` | `DbIdentityStore` (`load`, `insert`, `replace`: a compare-and-swap) and the `ModuleIdentityRow` model (table `module_identity`): one SME invoker per module, shared by its replicas |
 | `smo_shared/idempotency.py` | `idempotent(module, status_code)` route decorator, `run_idempotent()`, the `IdempotencyKey` model (table `idempotency_key`), `request_hash()` |
 | `smo_shared/versioning.py` | `Versioned` (adds `row_version`, enforces it on every ORM UPDATE), `install_concurrency_handler()` (a stale write becomes 409 `CONCURRENT_MODIFICATION`) |
 | `smo_shared/testing.py` | `make_test_engine()`, `concurrent_commit_on(table)` (simulates another replica committing first, for 409 tests) |
@@ -158,7 +159,7 @@ Rule: any caller-supplied callback URL (`notificationDestination`, `callbackUri`
 |---|---|
 | `R1_GATEWAY_URL` | `R1_GATEWAY_URL`, default `http://r1-termination:8000` |
 | `get(path, **kw)`, `post(path, json=None, **kw)`, `put(...)`, `patch(...)`, `delete(path, **kw)` | `path` is `/<module>/...`; extra kwargs go to `httpx` (`params`, `files`, `timeout`, ...). Returns the raw `httpx.Response` (no status check, no raise) |
-| Auth | Explicit `bearer_token` is used as is and never refreshed. Otherwise the process token: (1) `GET {base}/bootstrap` -> first `tokenEndPoint.uri`; (2) onboard once at SME `/invoker-registrations` (label `smo-module:<MODULE>:<random>`) unless `SMO_INVOKER_ID` and `SMO_INVOKER_SECRET` are set; (3) `client_credentials` grant, scope `smo-internal`. If SME answers 400 it onboards afresh once. Cached until `expires_in` minus 30 s; refreshed once on a 401 and the call retried once. Thread-safe (lock) |
+| Auth | Explicit `bearer_token` is used as is and never refreshed. Otherwise the process token: (1) `GET {base}/bootstrap` -> first `tokenEndPoint.uri`; (2) take the module's identity from `SMO_INVOKER_ID`/`SMO_INVOKER_SECRET` if set, else from the `module_identity` row for `MODULE`, else onboard at SME `/invoker-registrations` (label `smo-module:<MODULE>:<random>`) and store it; a replica that loses the race to store offboards its duplicate and adopts the winner's (no `MODULE`, `SMO_MODULE_IDENTITY_STORE=off` or an unreachable database: a per-process identity as before); (3) `client_credentials` grant, scope `smo-internal`. If SME answers 400 it onboards afresh once, replacing the stored identity with a compare-and-swap so only one replica does. Cached until `expires_in` minus 30 s; refreshed once on a 401 and the call retried once. Thread-safe (lock) |
 | Failure | Token acquisition errors (`httpx.HTTPError`, no token endpoint, bad body) are logged and the call is sent without `Authorization` |
 | Correlation | Adds `X-Correlation-ID` when `get_correlation_id()` is set; adds none otherwise |
 | Timeouts | The bootstrap/onboard/grant calls use 5 s; the module call uses httpx's default unless `timeout=` is passed |
@@ -196,7 +197,8 @@ No background tasks.
 |---|---|---|
 | `SMO_DATABASE_URL` | `postgresql+psycopg://smo:smo@postgres:5432/smo` | `db.py` |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | `r1_client.py` |
-| `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset: onboard a fresh invoker on first use | `r1_client.py` |
+| `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset: the module's shared identity from `module_identity`, registered on first use | `r1_client.py` |
+| `SMO_MODULE_IDENTITY_STORE` | `db`; `off` gives each process its own invoker | `r1_client.py` |
 | `MODULE` | `unknown` (set by the root `Dockerfile` build arg) | `r1_client.py`, label of the onboarded invoker |
 
 ### 2.7 Error codes
@@ -242,6 +244,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 | `tests/test_webhook.py` | Allowed destinations (http/https, ordinary and private-range hosts); rejected ones (bad scheme, loopback, link-local/metadata, multicast, unspecified, malformed; parametrized); `post_webhook`/`get_webhook`/`delete_webhook` call `httpx` for an allowed destination, no-op for a disallowed one, and `post_webhook` swallows an unreachable destination | 29 |
 | `tests/test_versioning.py` | `Versioned` on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres: version starts at 1 and every update bumps it; two sessions firing one transition have exactly one winner; a write to another column also conflicts; the repeat after a conflict is refused as an illegal transition; eight threads racing one transition give one winner; a stale write is a 409 ProblemDetails | 11 (5 need Postgres) |
 | `tests/test_idempotency.py` | `@idempotent` on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres: no header runs every time; a repeat replays the first answer and runs nothing; another payload or path is 422; keys are scoped to the caller; a failed attempt is not stored; a running key is 409; an abandoned reservation is taken over; expired records are purged; invalid keys are 422; six threads racing one key run the command once | 27 (13 need Postgres) |
+| `tests/test_module_identity.py` | The store on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres (first insert wins; replace is a compare-and-swap; eight racing threads give one winner each) and `R1Client` with a fake SME: replicas and restarts of a module share one invoker; modules do not share; a replica that loses the race offboards its duplicate; an invoker SME forgot is replaced once and the others adopt the replacement; a broken store falls back to per-process; no `MODULE`, store off and an environment identity bypass the store | 20 (6 need Postgres) |
 
 ### 3.3 What is not covered here
 

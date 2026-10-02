@@ -252,11 +252,11 @@ jobs:
           SMO_DATABASE_URL: postgresql+psycopg://smo:smo@localhost:5432/smo
         run: python scripts/check_migration_matches_models.py
 
-      # PR-ST-2 and PR-ST-3: the races on a versioned row and on one Idempotency-Key, on the real database.
-      - name: Concurrency and idempotency under real Postgres
+      # PR-ST-2, -3 and -4: the races on a versioned row, on one Idempotency-Key and on a module's shared invoker, on the real database.
+      - name: Concurrency, idempotency and shared identity under real Postgres
         working-directory: smo/shared
         env:
           SMO_TEST_POSTGRES_URL: postgresql+psycopg://smo:smo@localhost:5432/smo
         run: |
           pip install --require-hashes -r ../requirements/dev.txt
-          PYTHONPATH=. python -m pytest tests/test_versioning.py tests/test_idempotency.py -v
+          PYTHONPATH=. python -m pytest tests/test_versioning.py tests/test_idempotency.py tests/test_module_identity.py -v

@@ -9,7 +9,7 @@
 | Depends on (over R1) | Caller-registered event callback URLs only; no other module |
 | Called by | R1 Termination (`/oauth2/introspect` on every proxied request); every module's `R1Client` (invoker onboarding and `/oauth2/token`); rApps and producers (publish, discover, subscribe); rApp Management (registers a package's declared providers and service APIs per instance); RAN Analytics (producer registration creates a service); GUI BFF |
 | Database tables | `service_profile`, `service_authz_policy`, `provider_registration`, `invoker_registration`, `issued_access_token`, `used_client_assertion`, `trusted_invoker`, `service_event_subscription` |
-| Unit tests | 101 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 106 passed (`tests/`, SQLite, standalone) |
 | Status | Done for the subset in 1.2 |
 
 ## 1. High-level design (HLD)
@@ -148,9 +148,10 @@ None: stateless as to lifecycle. The only time-dependent state is token validity
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/invoker-registrations` (201) | `{apiInvokerPublicKey}` → `{apiInvokerId, onboardingSecret, keyAuthentication}`; always creates a new invoker; emits `API_INVOKER_ONBOARDED` | 422 `SECURITY_CONTEXT_INVALID` (a malformed PEM key) |
+| POST | `/invoker-registrations` (201) | `{apiInvokerPublicKey}` → `{apiInvokerId, onboardingSecret, keyAuthentication}`; always creates a new invoker (it cannot be idempotent: only a hash of the secret is kept, so a repeat could not return it; modules share one identity through `smo_shared/module_identity.py` instead); emits `API_INVOKER_ONBOARDED` | 422 `SECURITY_CONTEXT_INVALID` (a malformed PEM key) |
 | PUT | `/invoker-registrations/{id}` | Replace the public key (rotation) → `{apiInvokerId, keyAuthentication}`; emits `API_INVOKER_UPDATED` | 400 `INVOKER_NOT_REGISTERED`; 422 |
 | DELETE | `/invoker-registrations/{id}` (204) | Offboard: the invoker, its tokens and its trusted-invoker context; idempotent; emits `API_INVOKER_OFFBOARDED` | |
+| POST | `/invoker-registrations/purge-stale` | PR-ST-4 housekeeping (this build's own): query `unused_for_days` (> 0) and `dry_run` (default true). Offboards, like DELETE, every invoker that got no token for that long (or never did and was onboarded that long ago) → `{unusedForDays, dryRun, count, invokerIds}`. Invokers carry `created_at` and `last_token_issued_at`. A module whose identity is purged is onboarded afresh by `R1Client` | 422 `unused_for_days` missing or ≤ 0 |
 | GET | `/invoker-registrations` | Paged: `apiInvokerId`, `apiInvokerPublicKey`, `keyAuthentication`, `trusted` | |
 | POST | `/oauth2/token` | `{grant_type: client_credentials, client_id, client_secret? \| client_assertion_type + client_assertion?, scope?}` → `{access_token, expires_in, token_type: Bearer, scope}` | 400 `unsupported_grant_type`, `invalid_request` (secret and assertion together), `invalid_client`, `unauthorized_client`, `invalid_scope` |
 | POST | `/oauth2/introspect` | `{token}` → `{active: false}` or `{active: true, client_id, exp, scope?}`; unauthenticated | |

@@ -47,10 +47,14 @@ _EXPIRY_MARGIN_SECONDS = 30
 class _ModuleIdentity:
     """This process's OAuth2 client identity at SME, and its cached token."""
 
-    def __init__(self):
+    def __init__(self, store=None):
         self.lock = threading.Lock()
         self.invoker_id: str | None = os.environ.get("SMO_INVOKER_ID") or None
         self.invoker_secret: str | None = os.environ.get("SMO_INVOKER_SECRET") or None
+        # Where this module's invoker identity is shared with its other replicas (module_identity.py).
+        # None = decide on first use: the database store when MODULE is set, else a per-process identity.
+        self._store = store
+        self._store_resolved = store is not None
         self.token_endpoint: str | None = None
         self.token: str | None = None
         self.expires_at = 0.0
@@ -63,16 +67,63 @@ class _ModuleIdentity:
             self.token_endpoint = next(u for u in uris if u)
         return self.token_endpoint
 
-    def _onboard(self, token_endpoint: str) -> None:
-        # An opaque per-process label, not a PEM key: this client authenticates
-        # with its onboarding secret, so SME has no key to verify assertions
-        # with (an RFC 7523 client assertion needs a PEM key, SA-SME-1-public-key).
+    def _identity_store(self):
+        if not self._store_resolved:
+            self._store_resolved = True
+            if os.environ.get("MODULE") and os.environ.get("SMO_MODULE_IDENTITY_STORE", "db") != "off":
+                from .module_identity import DbIdentityStore
+                self._store = DbIdentityStore()
+        return self._store
+
+    def _register_at_sme(self, token_endpoint: str) -> tuple[str, str]:
+        # An opaque label, not a PEM key: this client authenticates with its onboarding
+        # secret, so SME has no key to verify assertions with (an RFC 7523 client
+        # assertion needs a PEM key, SA-SME-1-public-key).
         sme = token_endpoint.rsplit("/oauth2/token", 1)[0]
         label = f"smo-module:{os.environ.get('MODULE', 'unknown')}:{secrets.token_urlsafe(8)}"
         resp = httpx.post(f"{sme}/invoker-registrations", json={"apiInvokerPublicKey": label}, timeout=5.0)
         resp.raise_for_status()
         body = resp.json()
-        self.invoker_id, self.invoker_secret = body["apiInvokerId"], body["onboardingSecret"]
+        return body["apiInvokerId"], body["onboardingSecret"]
+
+    def _onboard(self, token_endpoint: str, stale_invoker_id: str | None = None) -> None:
+        """Obtain this module's invoker identity. With a shared store (PR-ST-4) all replicas of the
+        module use one invoker: the stored identity is adopted if there is one (other than
+        `stale_invoker_id`, which SME refused); otherwise this process registers one and stores it,
+        and a replica that loses the race to store discards its own registration and adopts the winner's."""
+        module = os.environ.get("MODULE", "unknown")
+        store = self._identity_store()
+        if store is not None:
+            try:
+                stored = store.load(module)
+                if stored is not None and stored[0] != stale_invoker_id:
+                    self.invoker_id, self.invoker_secret = stored
+                    return
+            except Exception as exc:  # the store is an optimisation: without it, register per process as before
+                log.warning("module identity store unavailable, registering this process on its own: %r", exc)
+                store = None
+        invoker_id, secret = self._register_at_sme(token_endpoint)
+        if store is not None:
+            try:
+                stored_ok = (store.insert(module, invoker_id, secret) if stale_invoker_id is None
+                             else store.replace(module, stale_invoker_id, invoker_id, secret))
+                if not stored_ok:  # another replica stored its identity first: use that one, drop ours
+                    self._offboard(token_endpoint, invoker_id)
+                    winner = store.load(module)
+                    if winner is not None:
+                        self.invoker_id, self.invoker_secret = winner
+                        return
+            except Exception as exc:
+                log.warning("could not store the module identity, using this process's own: %r", exc)
+        self.invoker_id, self.invoker_secret = invoker_id, secret
+
+    @staticmethod
+    def _offboard(token_endpoint: str, invoker_id: str) -> None:
+        sme = token_endpoint.rsplit("/oauth2/token", 1)[0]
+        try:
+            httpx.delete(f"{sme}/invoker-registrations/{invoker_id}", timeout=5.0)
+        except httpx.HTTPError as exc:  # an orphan registration is only clutter; SME's stale-invoker purge removes it
+            log.warning("could not offboard the duplicate invoker %s: %r", invoker_id, exc)
 
     def _grant(self, token_endpoint: str) -> httpx.Response:
         return httpx.post(token_endpoint, json={
@@ -90,7 +141,7 @@ class _ModuleIdentity:
                     self._onboard(token_endpoint)
                 resp = self._grant(token_endpoint)
                 if resp.status_code == 400:   # SME no longer knows this invoker: onboard afresh, once
-                    self._onboard(token_endpoint)
+                    self._onboard(token_endpoint, stale_invoker_id=self.invoker_id)
                     resp = self._grant(token_endpoint)
                 resp.raise_for_status()
             except (httpx.HTTPError, StopIteration, KeyError, ValueError) as exc:

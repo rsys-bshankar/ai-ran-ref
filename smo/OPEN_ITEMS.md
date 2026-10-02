@@ -107,8 +107,8 @@ and HA much later).
 
 **How to read it**
 
-- A **feature** (`PR-ST-4`) is a capability. Its **steps** (`ST-4.1`, `ST-4.2`, …) are the pickable units. Cite a
-  step as `PR-ST-4.3`.
+- A **feature** (`PR-ST-5`) is a capability. Its **steps** (`ST-5.1`, `ST-5.2`, …) are the pickable units. Cite a
+  step as `PR-ST-5.3`.
 - Every step is sized **≤ 2 days** and has a testable **Done when**. A step that cannot be said in one line of
   "Done when" has been split further.
 - **Needs** lists hard prerequisites only (`–` means it can start today). Steps are listed in a sensible order, but
@@ -123,7 +123,7 @@ and HA much later).
 
 | Area | Prefix | Features |
 |---|---|---|
-| Stateless / scale-out | `PR-ST` | ST-4 module identity · ST-5 BFF session state · ST-6 pool/timeouts/shutdown · ST-7 readiness · ST-8 single-runner · ST-9 inline retry |
+| Stateless / scale-out | `PR-ST` | ST-5 BFF session state · ST-6 pool/timeouts/shutdown · ST-7 readiness · ST-8 single-runner · ST-9 inline retry |
 | Database | `PR-DB` | DB-1 credentials · DB-2 per-module schemas · DB-3 retention · DB-4 indexes/pagination · DB-5 pooler · DB-6 backup · DB-7 Postgres HA |
 | Messaging and jobs | `PR-MSG` | MSG-1 outbox · MSG-2 delivery worker · MSG-3 event bus · MSG-4 job runner · MSG-5 signing/log · MSG-6 SSRF at send |
 | Security | `PR-SEC` | SEC-1 edge TLS · SEC-2 mTLS · SEC-3 mesh · SEC-4 secrets · SEC-5 signing keys · SEC-6 OIDC · SEC-7 MFA/revocation · SEC-8 rate limits · SEC-9 bootstrap exposure · SEC-10 tenant/region authz · SEC-11 audit · SEC-12 supply chain · SEC-13 container hardening · SEC-14 threat model |
@@ -139,7 +139,7 @@ and HA much later).
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
-**Dependency spine** (everything else is independent of it): `ST-4`, `ST-5` → `HA-1`; `DB-2` → `HA-3`; `MSG-1` → `MSG-2` →
+**Dependency spine** (everything else is independent of it): `ST-5` → `HA-1`; `DB-2` → `HA-3`; `MSG-1` → `MSG-2` →
 `MSG-4`/`HA-4`; `OPS-1` → `OPS-3`/`OPS-5`; `OBS-2` → `OBS-4`/`OBS-5`.
 
 ### 5.1 Stateless / scale-out (`PR-ST`)
@@ -148,18 +148,6 @@ State today, checked in the code (audit closed as `PR-ST-1`, `HISTORY.md` §10):
 module. Process state is limited to `R1Client`'s token cache and invoker identity
 (`shared/smo_shared/r1_client.py`), an `lru_cache` of the vendor registry (`ran-nf-oam/app/vendors.py`), the
 GUI BFF's per-process login lockout, and module-level dicts in the two mocks (test doubles, out of scope).
-
-#### PR-ST-4 — One module identity across replicas
-
-Each process self-onboards an SME invoker with a random label when `SMO_INVOKER_ID` is unset, so every replica and every
-restart adds a registration.
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| ST-4.1 ★ | Count registrations after restarting every module once; record the number | Number in the PR description | – |
-| ST-4.2 | Compose/Helm: one init step registers one invoker per `MODULE` and hands `SMO_INVOKER_ID`/`SECRET` to the service | Restarts add zero registrations | ST-4.1 |
-| ST-4.3 | SME: make registration idempotent on a stable label (`smo-module:<MODULE>`) | Second registration with the same label returns the existing invoker | – |
-| ST-4.4 | Housekeeping: admin route or script to delete invokers unused for N days | Test deletes only the stale ones | – |
 
 #### PR-ST-5 — GUI BFF without per-process state
 
@@ -391,7 +379,7 @@ are plain HTTP.
 | SEC-4.2 | `*_FILE` convention helper in `smo_shared` (read the value from a file if `VAR_FILE` is set) | Unit test | – |
 | SEC-4.3 | Compose secrets for the DB password | No password literal in compose | SEC-4.2, DB-1.3 |
 | SEC-4.4 | Same for GUI admin password and session key | Same | SEC-4.2 |
-| SEC-4.5 | Same for module invoker secrets | Same | SEC-4.2, ST-4.2 |
+| SEC-4.5 | Same for the module invoker secret (`module_identity.invoker_secret`, or `SMO_INVOKER_SECRET`, which already overrides it) | Same | SEC-4.2 |
 | SEC-4.6 | Adaptor credentials stored as a secret reference, never a value, in `o1_adaptor_endpoint` | Route accepts a reference only | SEC-4.2 |
 | SEC-4.7 | External Secrets or Vault example manifest | Example applies on a lab cluster | OPS-2.3 |
 | SEC-4.8 | Rotation runbook for each secret | Each rotation tried once | SEC-4.3 |
@@ -679,7 +667,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| HA-1.1 | Two replicas per module in compose (`deploy.replicas`) or Helm | All start | ST-4.2, ST-5.3 |
+| HA-1.1 | Two replicas per module in compose (`deploy.replicas`) or Helm | All start | ST-5.3 |
 | HA-1.2 | Replay the runbook against the replicas | Green | HA-1.1 |
 | HA-1.3 | Fix list from failures in HA-1.2, one PR each | List empty | HA-1.2 |
 
@@ -1510,7 +1498,7 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 
 Pick any, or mix them. `Needs` is the only constraint.
 
-1. **Replica-safe foundation (no new infrastructure):** ST-4.1–4.3, ST-5.1, ST-6.1,
+1. **Replica-safe foundation (no new infrastructure):** ST-5.1, ST-6.1,
    ST-7.1–7.2, DB-1.1, OBS-1.1.
 2. **Safe to expose:** SEC-1.1–1.5, SEC-4.1–4.3, SEC-8.1–8.2, SEC-13.1–13.3, DB-1.1–1.3, QA-6.1.
 3. **Operable:** OBS-1.1–1.6, OBS-2.1–2.3, OPS-1.1–1.3, OPS-4.1, DB-6.1.

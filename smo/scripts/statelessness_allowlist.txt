@@ -3,6 +3,6 @@
 # A stale entry (finding gone) fails the check, so delete entries when you fix them.
 # The audit table these refer to: docs/ARCHITECTURE.md, "Process state and scale-out".
 
-shared/smo_shared/r1_client.py:instance-state:_identity  # per-process SME token cache and invoker identity; a cache only, but every process self-registers its own invoker (OPEN_ITEMS PR-ST-4)
+shared/smo_shared/r1_client.py:instance-state:_identity  # per-process SME token cache only (a cache is safe per replica); the invoker identity itself is shared by all replicas through the module_identity table (PR-ST-4)
 ran-nf-oam/app/vendors.py:cache:_builtin_schemas  # pure: reads the bundled, read-only cm_schemas/*.json once; identical in every replica
 gui-bff/app/main.py:app-state:login_failures  # per-process login-lockout counters; a replica does not see another's failures (OPEN_ITEMS PR-ST-5)

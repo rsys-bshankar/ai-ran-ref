@@ -106,6 +106,11 @@ class InvokerRegistration(Base):
     api_invoker_id: Mapped[str] = mapped_column(String, primary_key=True)
     public_key: Mapped[str] = mapped_column(String, nullable=False)
     onboarding_secret_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # PR-ST-4 housekeeping: when it was onboarded and when it last obtained a token, so the stale-invoker purge
+    # can tell a live invoker from one a restarted process left behind.
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.UTC))
+    last_token_issued_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class IssuedAccessToken(Base):

@@ -270,7 +270,7 @@ link-local, multicast and reserved literal addresses. No background tasks.
 |---|---|---|
 | `SMO_DATABASE_URL` | `postgresql+psycopg://smo:smo@postgres:5432/smo` | Database |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | Outbound R1 base URL |
-| `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset (self-onboards at SME) | Outbound OAuth2 identity |
+| `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset (the module's shared identity from the `module_identity` table, registered at SME on first use) | Outbound OAuth2 identity |
 
 No Intent-Service-specific variables.
 

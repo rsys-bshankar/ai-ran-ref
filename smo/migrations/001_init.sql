@@ -71,7 +71,10 @@ CREATE TABLE invoker_registration (
   -- verifies the invoker's RFC 7523 client assertions (SA-SME-1-public-key);
   -- anything else is an opaque label (onboarding-secret auth only).
   public_key                 TEXT NOT NULL,
-  onboarding_secret_hash       TEXT NOT NULL
+  onboarding_secret_hash       TEXT NOT NULL,
+  -- PR-ST-4: lets POST /invoker-registrations/purge-stale tell a live invoker from a leftover one
+  created_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_token_issued_at         TIMESTAMPTZ
 );
 
 -- NEW section 2: opaque, server-tracked bearer tokens — the honest
@@ -1753,4 +1756,13 @@ CREATE TABLE idempotency_key (
   PRIMARY KEY (module, scope, key)
 );
 CREATE INDEX idempotency_key_created_at ON idempotency_key (created_at);
+
+-- PR-ST-4: one SME invoker identity per module, shared by all its replicas (smo_shared/module_identity.py).
+-- The secret is stored as issued: the module must present it to SME's token endpoint.
+CREATE TABLE module_identity (
+  module           TEXT PRIMARY KEY,   -- the MODULE build arg, e.g. 'aimgf'
+  invoker_id       TEXT NOT NULL,
+  invoker_secret   TEXT NOT NULL,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 

@@ -40,6 +40,7 @@ from loader import load_app_module  # noqa: E402
 
 from smo_shared.db import Base  # noqa: E402
 import smo_shared.idempotency  # noqa: E402,F401  (registers idempotency_key on the shared Base)
+import smo_shared.module_identity  # noqa: E402,F401  (registers module_identity on the shared Base)
 
 # Every module that persists to Postgres via smo_shared.db.Base — the two
 # mocks (mock-near-rt-ric, mock-o1-adaptor) have no models and aren't part
