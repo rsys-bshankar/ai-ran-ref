@@ -30,7 +30,10 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from smo_shared.health import install_health
+
 app = FastAPI(title="Mock O1 Adaptor (NETCONF and RESTCONF test double)")
+install_health(app)  # /live, /ready and /health for the compose healthcheck (PR-ST-7)
 
 NETCONF_BASE_NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
 

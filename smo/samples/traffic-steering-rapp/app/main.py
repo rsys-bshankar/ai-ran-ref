@@ -42,6 +42,7 @@ from sqlalchemy.orm import Session
 
 from smo_sdk import AiRuntimeSdk, SdkError
 from smo_sdk.data import AlarmScope
+from smo_shared.health import install_health
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.db import get_session
 from smo_shared.r1_client import R1Client
@@ -297,9 +298,7 @@ def _reconcile(db: Session, inst: TrafficInstance) -> list[dict]:
 
 # ---------------------------------------------------------------- instance + datasets
 
-@app.get("/health")
-def health():
-    return {"status": "healthy"}
+install_health(app)  # /live, /ready and the /health alias (PR-ST-7)
 
 
 @app.post("/instances/{instance_id}/start")

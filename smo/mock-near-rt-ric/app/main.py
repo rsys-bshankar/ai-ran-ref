@@ -21,7 +21,10 @@ import uuid
 
 from fastapi import FastAPI
 
+from smo_shared.health import install_health
+
 app = FastAPI(title="Mock Near-RT RIC (A1-P test double)")
+install_health(app)  # /live, /ready and /health for the compose healthcheck (PR-ST-7)
 
 _policies: dict[str, dict] = {}
 _fingerprints: dict[str, str] = {}  # policy_id -> content fingerprint. ADOPT from the real near-rt-ric-simulator's own policy_fingerprint dict (a1_mediator_controller.py)

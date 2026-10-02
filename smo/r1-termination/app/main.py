@@ -19,17 +19,17 @@ from fastapi.responses import JSONResponse
 
 from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
+from smo_shared.health import install_health
 from smo_shared.invoker import INVOKER_ID_HEADER
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.timeouts import introspect_timeout, upstream_timeout
 
 app = FastAPI(title="R1 Termination")
-# /health and /bootstrap are this gateway's own two exemptions (see their
-# own docstrings above/below: /health is answered ahead of _authorized
-# entirely, /bootstrap is "No auth (network-isolated)") — every other
+# /health (with /live and /ready) and /bootstrap are this gateway's own exemptions (see
+# below: the probes are answered ahead of _authorized entirely, /bootstrap is "No auth (network-isolated)") — every other
 # path here is the catch-all proxy route, which really does call
 # _authorized() on every request.
-apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/bootstrap"}))
+apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/live", "/ready", "/bootstrap"}))
 # This gateway is the true origin point for external traffic: a caller
 # that never sent its own X-Correlation-ID gets one assigned here, which
 # then propagates through the whole downstream fan-out (see the proxy
@@ -37,15 +37,13 @@ apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/bootstrap"})
 apply_correlation_id(app)
 
 
-@app.get("/health")
-def health_check():
-    """R1 Termination's own liveness probe — declared ahead of the
-    catch-all proxy route so it is answered here, unauthenticated, rather
-    than 404ing as an unknown prefix. Every backend module's own /health
-    is reached through the proxy as /<module>/health (token-gated like
-    any other proxied call); the GUI BFF's GET /modules/status probes both.
-    """
-    return {"status": "healthy"}
+# R1 Termination's own probes, declared ahead of the catch-all proxy route so they are answered here,
+# unauthenticated, rather than 404ing as an unknown prefix. Every backend module's own probes are
+# reached through the proxy as /<module>/health, /<module>/ready (token-gated like any proxied call);
+# the GUI BFF's GET /modules/status probes both. The gateway keeps no state and has no database, so
+# it is ready whenever it is live; SME being down shows as 401s on proxied calls and as the modules'
+# own /ready failing.
+install_health(app)
 
 
 # path prefix -> backend service, per Foundational Platform LLD section 4.2

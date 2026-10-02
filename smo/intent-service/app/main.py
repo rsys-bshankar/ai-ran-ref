@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.identity import is_framework_internal_identity
@@ -52,14 +53,7 @@ apply_correlation_id(app)
 _r1 = R1Client()
 
 
-@app.get("/health")
-def health_check():
-    """Liveness probe. The GUI BFF's GET /modules/status fans out to
-    /<module>/health through R1 Termination for every module in parallel,
-    so every module answers one — previously only ran-nf-oam/a1-related
-    did (as their own DME producer-health callback URL).
-    """
-    return {"status": "healthy"}
+install_health(app, checks=[database_check, sme_token_check])  # /live, /ready and the /health alias (PR-ST-7)
 
 
 class CreateIntentRequest(BaseModel):
