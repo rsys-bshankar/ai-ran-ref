@@ -1301,3 +1301,22 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   exited 0 and the database is at the newest revision in the repository. Not verified outside CI: there is no Docker daemon in the development sandbox, so the compose path is first exercised by that job.
 - **The rule (OPS-1.7).** `CLAUDE.md`, "Schema changes are revisions": a revision plus the model in one PR, never an edit to `001_init.sql` or an earlier revision, compatible with the previous release where possible, `HEAD` raised in
   the test, a `CHANGELOG.md` line. Upgrade-from-the-previous-commit in CI (OPS-1.6) is still open.
+
+### PR-MSG-1 — Transactional outbox: inventory, enqueue, drain (MSG-1.1, 1.3, 1.4)
+
+- **Inventory (MSG-1.1).** `docs/NOTIFICATIONS.md` lists every call to a caller-registered destination (20: 17 POSTs, 1 DELETE, 2 GETs) with a class: **A** a notification whose answer nothing reads (17, move to the outbox), **B** a command
+  (the DME stop-job DELETE; stays inline until the outbox row can carry a method), **C** a read whose answer the caller uses (DME producer health, RAN NF OAM capability discovery; inline always). The worry that an RMIH
+  callback might need its answer did not hold: no A-class site keeps the response. `tests_integration/test_notification_inventory.py` walks the AST of every `app/` and fails on a call site (or a use of `enqueue`) without a row, and on a row
+  without a call site. Found on the way: MDAF sets `delivery.notified = True` whatever the answer was (after the move it means "enqueued"); SA SMOS has no registered-destination call at all.
+- **`enqueue` (MSG-1.3).** `enqueue(db, destination, payload, module=None)` adds a PENDING `notification_outbox` row to the caller's session and flushes nothing: rolling back removes it (tested), and a rollback also forgets the
+  session's pending ids. A destination the SSRF guard refuses is dropped with a warning at this point, as `post_webhook` did, and `drain` checks again at send time. `module` defaults to the container's `MODULE`.
+- **`drain` (MSG-1.4).** An `after_commit` listener on SQLAlchemy's `Session` drains, in the committing thread, exactly the rows that session enqueued, which is what the inline `post_webhook` did minus its two failure modes (lost on a crash
+  after the commit; sent although the request rolled back). It never raises into the caller. `drain(engine)` with no ids is the sweep a worker (MSG-2) or a recovery path runs: every due PENDING row, oldest first, then the retention
+  purge of SENT rows (`SMO_OUTBOX_SENT_RETENTION_SECONDS`, default a day). A row is **claimed** by one atomic `UPDATE ... WHERE status = 'PENDING' AND next_attempt_at <= now` that also pushes `next_attempt_at` a 60 s lease ahead, so concurrent
+  replicas never send a row twice (four threads, Postgres and SQLite, tested) and a process killed mid-send leaves a row that becomes due when the lease ends: **at-least-once**, so a consumer may see a notification twice after a crash.
+  Outcomes: any answer below 500 is SENT (a 4xx is the destination refusing and a retry changes nothing); no answer or a 5xx counts an attempt and backs off (5 s, 30 s, 2 min, 10 min); the fifth failed attempt, or a destination the SSRF
+  guard refuses at send time, is DEAD. `SMO_OUTBOX_INLINE_DRAIN=false` turns the inline drain off for a deployment that has a worker (MSG-2.5).
+- **Decision not taken:** the inline drain sends only this commit's own rows and never retries failed ones, so one dead subscriber does not add its 2 to 5 s timeout to every later request; its rows wait for the sweep. Until MSG-2's
+  worker exists, nothing runs that sweep, so a notification whose inline attempt failed stays PENDING (visible in the table) rather than being retried: no worse than the old single best-effort attempt, and recoverable later.
+  The `UPDATE` uses `synchronize_session=False`: with the default, SQLAlchemy evaluates the WHERE in Python against identity-map rows and SQLite hands datetimes back naive, which raised comparing naive with aware.
+- **Not done:** no module uses the outbox yet (MSG-1.5 onwards, one PR each), the worker (MSG-2), signing and the delivery log (MSG-5).
