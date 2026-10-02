@@ -1,7 +1,7 @@
 # Call Flow: Traffic Steering rApp — Load PM → Forecast → Safety → Idle priority / CIO → Verification → KPI check
 
 The Traffic Steering rApp (`samples/traffic-steering-rapp/`; Wave 10.4 in
-`docs/ROADMAP.md`) is the fourth reference rApp. It moves load off
+`docs/STANDARDS.md`) is the fourth reference rApp. It moves load off
 congested cells:
 * idle UEs, by the cell's reselection priority towards another frequency
   layer;

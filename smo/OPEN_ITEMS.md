@@ -24,6 +24,9 @@ Each item: what is missing, why it matters, suggested approach.
 
 ## 2. Platform gaps
 
+- **OI-7-nfo-scale-size** — Runtime scaling takes no target size: `POST /nfo/deployments/{id}/scale` has no
+  replica or resource argument, so AIMgF `runtime/scale` cannot ask for one. Approach: add `replicas` /
+  `resources` to the NFO scale call and the AIMgF scale request, and pass the manifest's runtime profile bounds.
 - **OI-5-a1-scope** — `subscriptionScope` OWN/OTHERS is treated as ALL; no subscriber identity is
   tracked. Approach: record the subscriber's rApp id (from the R1 token) and compare with
   `creator_id`.

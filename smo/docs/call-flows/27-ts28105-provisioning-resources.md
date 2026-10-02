@@ -1,7 +1,7 @@
 # Call Flow: TS 28.105 Provisioning Resources — Training Request/Process, Update Request, Model Loading Policy/Request, Execution Timeouts
 
 AIMgF exposes every TS 28.105 AI/ML NRM IOC it owns as a flat REST resource with the spec's
-own attribute names (`aimgf/app/nrm.py`, HISTORY.md W4, `docs/ROADMAP.md` TS 28.105 matrix).
+own attribute names (`aimgf/app/nrm.py`, HISTORY.md W4, `docs/STANDARDS.md` TS 28.105 matrix).
 The request resources are not a separate bookkeeping layer. An `MLTrainingRequest` *is* a
 `TrainingJob`, and an `MLTestingRequest` *is* a `ValidationJob`. Both start through the same
 `_start_training` / `_start_validation` core as `POST /training-jobs` and
@@ -214,5 +214,5 @@ sequenceDiagram
 - An ML update is all-or-nothing at start and per-run afterwards. It finishes when every run is terminal. Its process is `FINISHED` only if every run succeeded, and the `MLUpdateReport` lists only the models that succeeded.
 - Model loading checks every model up front (`CERTIFIED`/`PROMOTED`, runtime not terminating), then brings each runtime to `ACTIVE` through AIMgF's own `RuntimeLifecycle` and NFO (call flow 17). MLLF is not involved. A loading policy is stored data plus an explicit `/trigger`, and nothing in AIMgF evaluates its `thresholdList`. There is no unload operation: cancelling a loading request does not remove anything already loaded.
 - Inference through an `AIMLInferenceFunction` needs three things: a runtime in `ACTIVE`, a function in `ACTIVATED`, and the model in the function's `mLModelRefList`.
-- Execution timeouts (HISTORY.md W7, `docs/ROADMAP.md` "Runtime profiles and timeouts") fail an overdue run cleanly. The run's status becomes `FAILED`, its NFO runtime is deleted, and the model's stage is failed only when that transition is still legal (`_fire_if_legal`), so there is no lifecycle corruption. The requester is notified with `failureReason: TIMEOUT`, and a late completion or resolve returns 409. An inference timeout fails only the `InferenceJob`.
+- Execution timeouts (HISTORY.md W7, `docs/STANDARDS.md` "Runtime profiles and timeouts") fail an overdue run cleanly. The run's status becomes `FAILED`, its NFO runtime is deleted, and the model's stage is failed only when that transition is still legal (`_fire_if_legal`), so there is no lifecycle corruption. The requester is notified with `failureReason: TIMEOUT`, and a late completion or resolve returns 409. An inference timeout fails only the `InferenceJob`.
 - TS 28.105 has no attribute for runtime sizing or a run timeout, so `MLTrainingRequest` and `MLTestingRequest` take the same optional vendor extensions as `/training-jobs` and `/validation-jobs`: `packageId` (the rApp package whose manifest `runtimeProfiles` entry applies), `runtimeProfile` (an explicit profile, which wins) and `timeoutSeconds` (W7-03, W7-04). This follows the precedent of `dmeDataJobIds`/`notificationUri` on the same bodies. `MLUpdateRequest` takes none of them, so its `FINE_TUNING` runs are unsized and use the deployment-wide default timeout.

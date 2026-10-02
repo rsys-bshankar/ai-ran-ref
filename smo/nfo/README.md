@@ -10,7 +10,7 @@
 | Called by | AIMgF (runtime create / scale / terminate, per model runtime and per training / validation / emulation run), rApp Management (`POST /nfo/deployments`, `DELETE /nfo/deployments/{id}`), SO SMOS (`POST /nfo/deployments`), SA SMOS (`POST /nfo/deployments/{id}/heal`), Onboarding (`POST /nfo/descriptors`), GUI / GUI BFF |
 | Database tables | `nf_deployment_descriptor`, `nf_deployment`, `nf_ocloud_resource`, `lcm_operation` |
 | Unit tests | 40 passed (`tests/`, SQLite, standalone) |
-| Status | Done for the Phase 1 scope (single O-Cloud; synchronous by default, asynchronous Terminate on request). Scale takes no target size (see [ROADMAP](../docs/ROADMAP.md)) |
+| Status | Done for the Phase 1 scope (single O-Cloud; synchronous by default, asynchronous Terminate on request). Scale takes no target size (see `OI-7-nfo-scale-size` in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)) |
 
 ## 1. High-level design (HLD)
 
@@ -175,7 +175,7 @@ Returned as `{"detail": {"type": "about:blank", "title": <code>, "status", "deta
 
 - **No real runtime.** No Helm, Kubernetes or `docker run`, and no real DMS: the asynchronous Terminate's completion and the runtime failure report are whatever calls `dms-notifications`. `workload_ref` is never set. Real pod-health remediation behind Heal is out of scope.
 - `INSTANTIATING` and `UPDATING` still complete within their request; an asynchronous Instantiate or Scale is not modelled.
-- **Scale has no target size** (replicas or resources); it only drives `RUNNING` -> `UPDATING` -> `RUNNING` (see ROADMAP backlog).
+- **Scale has no target size** (replicas or resources); it only drives `RUNNING` -> `UPDATING` -> `RUNNING` (`OI-7-nfo-scale-size` in `OPEN_ITEMS.md`).
 - **No asynchronous completion** notification to callers; they observe the synchronous response.
 - **Single O-Cloud.** Placement is whatever FOCOM reports (`oCloudId`); there is no multi-cluster scheduling.
 - **Unguarded reads.** `placement` and `operations/{id}` on an unknown id are unhandled 500s (one is asserted as a known gap in the tests).
@@ -207,5 +207,5 @@ FOCOM is replaced by a monkeypatched `R1Client.get`.
 
 - Call flows: [15 NFO workload lifecycle](../docs/call-flows/15-nfo-workload-lifecycle.md), [16 FOCOM resource inventory](../docs/call-flows/16-focom-resource-inventory-lifecycle.md), [17 model runtime lifecycle](../docs/call-flows/17-model-runtime-lifecycle.md), [14 correlation id](../docs/call-flows/14-correlation-id-propagation.md)
 - OpenAPI: [`../docs/openapi/nfo.json`](../docs/openapi/nfo.json)
-- Architecture and R1 conventions: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md); open work: [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md); [ROADMAP](../docs/ROADMAP.md)
+- Architecture and R1 conventions: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md); open work: [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md); [STANDARDS](../docs/STANDARDS.md)
 - Related READMEs: [FOCOM](../focom/README.md), [AIMgF](../aimgf/README.md)

@@ -1,5 +1,5 @@
 """Traffic Steering rApp — the Wave 10.4 reference rApp
-(docs/ROADMAP.md Wave 10.4, W10.4-01..10). A Non-RT RIC rApp that
+(HISTORY.md Wave 10.4, W10.4-01..10). A Non-RT RIC rApp that
 moves load off congested cells. Idle UEs are steered with each cell's
 reselection priority towards another frequency layer; connected UEs with the
 cell individual offset of a neighbour relation. Like the other reference

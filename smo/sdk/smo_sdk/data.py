@@ -160,7 +160,7 @@ class DataClient(BaseClient):
         return ensure_ok(self._r1.get("/dme/actions", params={"managed_element_ref": managed_element_ref, "requested_by": requested_by}))
 
     # ---------------------------------------------------------------- Wave 9: RAN inventory reads (RAN NF OAM)
-    # docs/ROADMAP.md W9-01..06 — what an rApp needs to know
+    # HISTORY.md W9-01..06 — what an rApp needs to know
     # before deciding an O1 action: a cell's guard attributes (D-5), and the
     # managed element's vendor capabilities.
 

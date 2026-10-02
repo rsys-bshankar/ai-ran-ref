@@ -1,4 +1,4 @@
-"""Generic O1-CM intent handler — Wave 8 (docs/ROADMAP.md W8-07,
+"""Generic O1-CM intent handler — Wave 8 (HISTORY.md W8-07,
 decision D-1).
 
 SA SMOS registers itself with Intent Service as an IntentHandlingFunction

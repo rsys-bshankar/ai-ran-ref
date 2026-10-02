@@ -327,5 +327,5 @@ in-process mesh (including that `docs/openapi/intent-service.json` matches the l
 - Call flows: [09 Intent Service intent flow](../docs/call-flows/09-intent-service-intent-flow.md), [22](../docs/call-flows/22-energy-saving-closed-loop.md), [23](../docs/call-flows/23-mobility-optimization-closed-loop.md), [24](../docs/call-flows/24-coverage-optimization-closed-loop.md), [25](../docs/call-flows/25-traffic-steering-closed-loop.md) (closed loops that dispatch intents)
 - OpenAPI: [`../docs/openapi/intent-service.json`](../docs/openapi/intent-service.json)
 - Specs: [`TS28312_IntentNrm.yaml`](../../specs/5G_APIs/TS28312_IntentNrm.yaml) and the five `TS28312_*Expectation.yaml` files
-- Compliance matrix: [`../docs/ROADMAP.md`](../docs/ROADMAP.md); platform rules: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md); open items: [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)
+- Compliance matrix: [`../docs/STANDARDS.md`](../docs/STANDARDS.md); platform rules: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md); open items: [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)
 - Related: [`../sa-smos/README.md`](../sa-smos/README.md) (O1-CM handler, the RMIH `sa-smos`), `../gui-bff/app/rbac.py`

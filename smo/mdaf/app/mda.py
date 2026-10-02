@@ -1,4 +1,4 @@
-"""TS 28.104 MDA NRM at REST level — Wave 5 (docs/ROADMAP.md
+"""TS 28.104 MDA NRM at REST level — Wave 5 (HISTORY.md
 W5-01..W5-04, decision D-9): MDAFunction, MDARequest and MDAReport with the
 spec's own attribute names and enums, as `{"id", "attributes"}` resources.
 

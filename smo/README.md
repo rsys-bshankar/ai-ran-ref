@@ -164,7 +164,7 @@ smo/
   docs/
     ARCHITECTURE.md         layers, golden rules, R1 conventions, standards per service
     RAPP_PACKAGING.md       rApp CSAR layout, manifest.yaml / capabilities.yaml, per-sample parameter tables
-    ROADMAP.md              frozen decisions, TS 28.105/28.104/28.312 compliance matrices, runtime realisation
+    STANDARDS.md            frozen decisions, TS 28.105/28.104/28.312 compliance matrices, runtime realisation
     call-flows/             27 Mermaid sequence diagrams of end-to-end journeys
     openapi/                committed OpenAPI spec per service, checked against the live schema
 ```
@@ -178,7 +178,7 @@ smo/
 | Formal-spec audit (3GPP / O-RAN specs in `../specs/`) | Done where a spec file exists | [`HISTORY.md`](HISTORY.md) |
 | AI/ML pipeline review (§6 backlog, items 6.1–6.7) | Done | [`HISTORY.md`](HISTORY.md) |
 | Waves 0–3: AI Platform service decomposition, R1 contracts | Done | [`HISTORY.md`](HISTORY.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| Waves 4–10.4: TS 28.105/28.104/28.312 compliance, runtime, autonomy, multi-vendor O1, four reference rApps | Done | [`docs/ROADMAP.md`](docs/ROADMAP.md), [`HISTORY.md`](HISTORY.md) |
+| Waves 4–10.4: TS 28.105/28.104/28.312 compliance, runtime, autonomy, multi-vendor O1, four reference rApps | Done | [`docs/STANDARDS.md`](docs/STANDARDS.md), [`HISTORY.md`](HISTORY.md) |
 | Open items and deliberate scope cuts | Open | [`OPEN_ITEMS.md`](OPEN_ITEMS.md) |
 
 ## Documentation map
@@ -195,5 +195,5 @@ smo/
 | [`OPEN_ITEMS.md`](OPEN_ITEMS.md) | Items still open, and deliberate scope cuts |
 | [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md) | Command-by-command live demo against `docker compose up` |
 | [`CLAUDE.md`](CLAUDE.md) | Working practice, conventions, full test battery |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Reference: TS 28.105/28.104/28.312 compliance matrices and runtime realisation, plus the frozen decisions and wave plan |
+| [`docs/STANDARDS.md`](docs/STANDARDS.md) | Reference: TS 28.105/28.104/28.312 compliance matrices, runtime realisation and the frozen design decisions |
 | [`HISTORY.md`](HISTORY.md) | Audit trail only: decisions, closed items and the spec audit. Not needed to use or extend the platform; code comments cite its IDs |

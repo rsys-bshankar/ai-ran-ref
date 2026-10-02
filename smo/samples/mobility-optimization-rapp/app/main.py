@@ -1,5 +1,5 @@
 """Mobility Optimization rApp — the Wave 10.2 reference rApp
-(docs/ROADMAP.md Wave 10.2, W10.2-01..10). A Non-RT RIC rApp that
+(HISTORY.md Wave 10.2, W10.2-01..10). A Non-RT RIC rApp that
 tunes each neighbour relation's Cell Individual Offset (CIO) from
 handover failures, through O1. Like the EnergySaving rApp it uses O1 PM
 data only, and the R1 interface only through the AI Runtime SDK; there is

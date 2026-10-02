@@ -2,7 +2,7 @@
 
 What the Phase 1 SMO reference build decided and built, condensed from the former
 `HISTORY.md` (§1–§6, "Closed", "Suggested next pass"), `HISTORY.md §7` and the Wave
-exit reviews. Items still open are in [`HISTORY.md`](HISTORY.md). Code comments cite
+exit reviews. Items still open are in [`OPEN_ITEMS.md`](OPEN_ITEMS.md). Code comments cite
 entries here by section (`HISTORY.md §5`) or ID (`HISTORY.md OI-6.3`).
 
 **ID scheme**
@@ -14,7 +14,7 @@ entries here by section (`HISTORY.md §5`) or ID (`HISTORY.md OI-6.3`).
 | `OI-C-…` | Former "Closed" section entries not already covered by §1–§5 (pilot demo, audits) |
 | `OI-6.1` … `OI-6.7` | Former §6, AI/ML pipeline review (numbers kept) |
 | `SA-<area>-<n>` | Former `HISTORY.md §7`, numbered as in that file's per-module sections |
-| `W0` … `W10.4` | Waves of the AI Platform Service Decomposition and `docs/ROADMAP.md` |
+| `W0` … `W10.4` | Waves of the AI Platform Service Decomposition; work-item IDs (`W9-02`) are indexed at the end of §9, decisions `D-1`…`D-9` are in `docs/STANDARDS.md` |
 
 PR numbers are given where the squash-merge title or the original text names them.
 
@@ -606,7 +606,9 @@ From the architectural review of call flows 02/03/04/06/08/09/10/11/17/20 (#130)
   correlation-ID propagation across R1 (#118).
 
 ### W0 (Waves 4–10 plan) — #140
-Consolidated work items and frozen decisions in `docs/ROADMAP.md`.
+Frozen decisions D-1…D-9 are in `docs/STANDARDS.md`. Order of the work: Waves 4, 5 and 6 (the three standards) feed Wave 7
+(runtime) and Wave 8 (autonomy), which feed Wave 10.1; Wave 9 (multi-vendor O1) is independent but the 10.1 O1 path must not regress
+it; 10.2, 10.3 and 10.4 each started after the previous exit.
 - D-1 Generic O1-CM intent handler (RMIH) in SA SMOS.
 - D-1b ASSIST: approve (resolve with scope) or reject; stays `AWAITING_SCOPE` until one.
 - D-2 Actuator per instance: `NRCellDU.administrativeState` or
@@ -623,23 +625,26 @@ Consolidated work items and frozen decisions in `docs/ROADMAP.md`.
 ### W4 — TS 28.105 at REST level (AIMgF + MLMR) — #141
 Every TS 28.105 IOC as a REST resource with spec names/enums (`aimgf/app/nrm.py`, MLMR
 `/ml-models`, `/ml-model-repositories`, `/ml-model-coordination-groups`), FL/RL as data model.
-Exit: `docs/ROADMAP.md` — 20/20 IOCs, 125/126 attributes; one deviation,
+Exit: `docs/STANDARDS.md` — 20/20 IOCs, 125/126 attributes; one deviation,
 `MLTrainingFunction.ThresholdMonitors` (TS 28.623 containment).
 
 ### W5 — TS 28.104 at REST level (MDAF) — #142
 MDAFunction/MDARequest/MDAReport with typed AnalyticsReport/PredictionReport/DriftReport;
 `TRAFFIC_FORECAST` + traffic-trend PREDICTIONS_PM_DATA report via `sdk.analytics`; DriftReport →
-AIMgF retrain notification. Exit: `docs/ROADMAP.md` — 48/48; deviations: addressing,
+AIMgF retrain notification. Exit: `docs/STANDARDS.md` — 48/48; deviations: addressing,
 STREAMING transport.
 
 ### W6 — strict TS 28.312 (Intent Service) — #143
 Intent, IntentReport (seven kinds), IntentHandlingFunction, IntentUtilityFormula; structured,
 family-checked expectations; energy-saving template `sdk.intent.energy_saving_expectation`;
-IntentReport carries action refs. Exit: `docs/ROADMAP.md` — 83/91 compliant, 8 partial
+IntentReport carries action refs. Exit: `docs/STANDARDS.md` — 83/91 compliant, 8 partial
 value datatypes; all callers migrated.
 
 ### W7 — runtime realization (MLTF/MLVF/MLEF/MLIF) — #144
-Gap analysis `docs/ROADMAP.md`; per-execution-mode runtime profiles from the
+Gaps found and closed: execution runtimes unsized (descriptor carried only `{jobKind, jobId}`), manifest without execution modes or
+compute, runs that could stay IN_PROGRESS forever, late completions overwriting a finished run, unknown inference job → 500 (now 404
+`INFERENCE_JOB_NOT_FOUND`). Open by design: Instantiate is synchronous (no async completion from NFO). Still open: runtime scaling
+takes no target size (`OPEN_ITEMS.md` OI-7-nfo-scale-size). Per-execution-mode runtime profiles from the
 rApp manifest carried to the NFO descriptor; stage timeouts (training 30 min, validation 15 min,
 emulation 30 min, inference 5 s) → job FAILED + lifecycle FAILED event. Exit: tests green.
 
@@ -699,3 +704,83 @@ per-class thresholds from the TS 28.541 CCO parameter sets are a refinement.
   source or HO failure rise > 2 points; coordination; protected cells; target ≤ 55; 6 h anti-oscillation.
 Exit review: 15/15, TS-01..20 and Demo 00–11 green. Deviations: linear load
 model, region scope lists relations, layers from instance config, one knob per step.
+
+### Work-item index
+
+Code comments and docs cite wave work items by ID (`W9-02`, `W10.3-10`). One line each; the design
+decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entries above.
+
+- **W4-04** — Every TS 28.105 IOC at REST level (D-9), spec names/enums + notifications
+- **W5-01** — TS 28.104 mapping matrix
+- **W5-02** — Every TS 28.104 IOC/datatype at REST level (D-9); AnalyticsReport / PredictionReport / DriftReport as typed report kinds
+- **W5-03** — `TRAFFIC_FORECAST` / TrafficTrendReport via `sdk.analytics`
+- **W5-04** — DriftReport → AIMgF retrain signal
+- **W6-03** — Energy-saving expectation template
+- **W6-04** — IntentReport fulfilment linked to downstream actions
+- **W7-03** — Per-mode runtime profiles (cpu/memory/gpu) from the manifest → NFO descriptor
+- **W7-04** — Stage timeouts: training 30 min, validation 15 min, emulation 30 min, inference 5 s
+- **W8-07** — Generic O1-CM Intent handler (D-1)
+- **W8-08** — ASSIST reject (D-1b)
+- **W9-01** — Capability Registry: per-vendor services, conformance mode, schema ref
+- **W9-02** — `CMSchemaCache` bound to the registry; CM writes validated against the vendor schema
+- **W9-03** — Vendor onboarding flow (discover → load → declare)
+- **W9-04** — `O1_NETCONF` / `O1_RESTCONF` vendor modes
+- **W9-05** — Exit
+- **W9-06** — Cell guard attributes (D-5)
+- **W10-01** — Package → `energy-saving-rapp.csar` (manifest, capabilities, model + four logic files)
+- **W10-02** — Energy model: threshold + linear regression for next-hour PRB → `{futurePrb, recommendedState, confidence}` (D-6)
+- **W10-03** — SDK wrappers (D-4)
+- **W10-04** — PRB utilization PM → RAN NF OAM → DME `PRB_UTILIZATION`, sample producer
+- **W10-05** — Synthetic `PRB_UTILIZATION_SIM` (D-7)
+- **W10-06** — Consume MDAF prediction via `sdk.analytics`
+- **W10-07** — Full AIMgF lifecycle REGISTERED → … → PROMOTED on MLTF/MLVF/MLEF
+- **W10-08** — MLIF deploy AIMgF → NFO → runtime ACTIVE (MLLF checks CERTIFIED)
+- **W10-09** — Inference via `POST /models/{id}/inference-jobs`
+- **W10-10** — Pipeline: input → prediction → safety → decision → O1 execution → verification → audit
+- **W10-11** — Sleep: PRB < 5 % for 60 min and all guards pass (D-3)
+- **W10-12** — Wake: predicted PRB > 15 %, neighbour PRB > 80 %, critical coverage alarm, or operator override
+- **W10-13** — Hysteresis: 5–15 % → NO_CHANGE
+- **W10-14** — Hard / medium / soft safety guards, independent of AI confidence (W9-06 data + `/alarms`)
+- **W10-15** — Operator override suppresses AI recommendations
+- **W10-16** — Action path AutonomyDispatch → Intent → O1-CM RMIH → DME → RAN NF OAM → adaptor; actuator per instance (D-2)
+- **W10-17** — Mock O1 adaptor models `NRCellDU.administrativeState`, `CESManagementFunction.energySavingControl/energySavingState`
+- **W10-18** — Idempotency: skip if already in state; `actionId` dedup → IGNORED
+- **W10-19** — Timeouts DME→OAM 10 s, NETCONF 30 s; retries immediate/+5/+10/+20 s; then `ACTION_FAILED` + alarm
+- **W10-20** — Read-after-write verification → `VERIFY_FAILED` on mismatch
+- **W10-21** — Rollback to UNLOCKED on VERIFY_FAILED / NETCONF_FAILED / PARTIAL_SUCCESS / neighbour congestion / coverage alarm
+- **W10-23** — Audit trace chain joined by correlation id
+- **W10-24** — GUI Energy Saving dashboard
+- **W10-25** — Carrier-grade tests: false wake-up, neighbour overload recovery, read-after-write mismatch
+- **W10-26** — Integration suite TC01–TC33
+- **W10-27** — DEMO_RUNBOOK §24, Demo 01–11
+- **W10-B1** — Energy model LSTM variant (D-6): PRB → PRB for the next N windows
+- **W10.2-01** — Package → `mobility-optimization-rapp.csar`
+- **W10.2-02** — Model `MobilityRobustnessPredictor` + logic files; JSON artifact in MLMR
+- **W10.2-03** — Multi-counter PM (`values`, `relation`) in RAN NF OAM `/pm-reports`; `HO_PERFORMANCE` + `HO_PERFORMANCE_SIM`
+- **W10.2-04** — Mock adaptor: `NRCellRelation` (`cellIndividualOffset`, `isHOAllowed`), `DMROFunction`
+- **W10.2-05** — MRO engine: classification, thresholds (act ≥ 5 %, hold 2–5 %), step controller, pacing, guards
+- **W10.2-06** — Actuation via AutonomyDispatch → Intent → O1-CM handler → DME → RAN NF OAM; reverts direct to DME; DMRO bounds at deploy
+- **W10.2-07** — KPI-verified revert, else CONFIRMED
+- **W10.2-08** — EnergySaving coordination over R1
+- **W10.2-09** — Audit, dashboard, GUI **Mobility** page, BFF rules, R1 route, compose service
+- **W10.2-10** — Integration tests, runbook §25, call flow 23, exit review
+- **W10.3-01** — Package → `coverage-optimization-rapp.csar`
+- **W10.3-02** — Model `CoverageSensitivityModel` (12 learned sensitivities) + joint optimiser + logic files
+- **W10.3-03** — `COVERAGE_PERFORMANCE` PM (`MR.*`, CM snapshot) in DME; `COVERAGE_PERFORMANCE_SIM`; sample propagation model
+- **W10.3-04** — Mock adaptor: `CommonBeamformingFunction`, `NRSectorCarrier`
+- **W10.3-05** — Engine: guards, bounds, pacing, sample minimum → allowed moves
+- **W10.3-06** — Actuation: one AutonomyDispatch per pass, one expectation per changed cell; reverts direct to DME
+- **W10.3-07** — KPI-verified revert of the whole change set, else CONFIRMED
+- **W10.3-08** — Coordination with EnergySaving and Mobility over R1
+- **W10.3-09** — Audit, dashboard, GUI **Coverage** page, BFF rules, R1 route, compose service
+- **W10.3-10** — Integration tests, runbook §26, call flow 24, exit review
+- **W10.4-01** — Package → `traffic-steering-rapp.csar`
+- **W10.4-02** — Model `CongestionSteeringModel` + logic files
+- **W10.4-03** — `LOAD_PERFORMANCE` PM in DME; `LOAD_PERFORMANCE_SIM` with hotspots; sample load model
+- **W10.4-04** — Mock adaptor: `NRFreqRelation` (`cellReselectionPriority`, `qOffsetFreq`), `NRCellRelation.isMLBAllowed`
+- **W10.4-05** — Engine: thresholds, hysteresis, target and knob choice, guards, bounds, pacing, anti-oscillation
+- **W10.4-06** — Actuation: one AutonomyDispatch per pass, one expectation per change; reverts direct to DME
+- **W10.4-07** — KPI-verified revert, else CONFIRMED
+- **W10.4-08** — Coordination with EnergySaving, Mobility (two-way CIO) and Coverage
+- **W10.4-09** — Audit, dashboard, GUI **Traffic Steering** page, BFF rules, R1 route, compose service
+- **W10.4-10** — Integration tests, runbook §27, call flow 25, exit review

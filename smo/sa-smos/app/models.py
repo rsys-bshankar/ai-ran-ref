@@ -43,7 +43,7 @@ class RemedialAction(Base):
 
 
 class O1CmEnactment(Base):
-    """Wave 8 (docs/ROADMAP.md W8-07, decision D-1): one record
+    """Wave 8 (HISTORY.md W8-07, decision D-1): one record
     per Intent the generic O1-CM intent handler enacted — which DME actions
     (and so which RAN NF OAM config jobs) it issued, and the outcome it
     reported back as the Intent's fulfilment."""

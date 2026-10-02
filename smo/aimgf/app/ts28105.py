@@ -1,5 +1,5 @@
 """TS 28.105 AI/ML NRM datatypes (specs/5G_APIs/TS28105_AiMlNrm.yaml) as
-request-validation models — Wave 4, docs/ROADMAP.md decision D-9.
+request-validation models — Wave 4, docs/STANDARDS.md decision D-9.
 
 Each class mirrors one spec datatype with the spec's own camelCase names
 and closed enums; `extra="forbid"` rejects attributes the spec doesn't

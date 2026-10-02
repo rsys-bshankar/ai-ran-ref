@@ -1,5 +1,5 @@
 """Coverage Optimization rApp — the Wave 10.3 reference rApp
-(docs/ROADMAP.md Wave 10.3, W10.3-01..10). A Non-RT RIC rApp that
+(HISTORY.md Wave 10.3, W10.3-01..10). A Non-RT RIC rApp that
 tunes a cluster of cells' digital tilt and transmit power, jointly, from
 weak-coverage, overshoot and pilot-pollution PM, through O1. Like the
 other reference rApps it uses O1 PM data only, and the R1 interface only

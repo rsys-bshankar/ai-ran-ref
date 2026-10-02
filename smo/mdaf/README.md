@@ -42,7 +42,7 @@ Deliberately not realised, or deviating:
   because MDAF has no auto-discovery of the backing models.
 - Report kind (`ANALYTICS` / `PREDICTION` / `DRIFT`) is this build's typing of a report, not a spec attribute.
 
-The compliance matrix is in `../docs/ROADMAP.md` ("TS 28.104").
+The compliance matrix is in `../docs/STANDARDS.md` ("TS 28.104").
 
 ### 1.3 Position in the platform
 
@@ -251,5 +251,5 @@ column behaviour is not exercised (SQLite JSON variant).
 - Call flows: [08 RAN Analytics producer registration to report](../docs/call-flows/08-ran-analytics-data-production.md), [13 MLMF subscription lifecycle](../docs/call-flows/13-mlmf-subscription-lifecycle.md), [22 energy-saving loop](../docs/call-flows/22-energy-saving-closed-loop.md)
 - OpenAPI: [`../docs/openapi/mdaf.json`](../docs/openapi/mdaf.json)
 - Specs: [`TS28104_MdaNrm.yaml`](../../specs/5G_APIs/TS28104_MdaNrm.yaml), [`TS28104_MdaReport.yaml`](../../specs/5G_APIs/TS28104_MdaReport.yaml)
-- Compliance matrix: [`../docs/ROADMAP.md`](../docs/ROADMAP.md) ("TS 28.104"); platform rules: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)
+- Compliance matrix: [`../docs/STANDARDS.md`](../docs/STANDARDS.md) ("TS 28.104"); platform rules: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)
 - Related: [`../ran-analytics/README.md`](../ran-analytics/README.md), [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)
