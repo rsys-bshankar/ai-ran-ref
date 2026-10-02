@@ -63,9 +63,11 @@ def test_the_gateway_probes_need_no_token(loaded_apps):
 def test_compose_probes_ready_on_every_service_built_from_the_shared_dockerfile():
     services = yaml.safe_load((SMO_ROOT / "docker-compose.yml").read_text())["services"]
     built = {name for name, svc in services.items()
-             if isinstance(svc.get("build"), dict) and svc["build"].get("context") == "." and name != "gui-bff"}
+             if isinstance(svc.get("build"), dict) and svc["build"].get("context") == "."
+             and name not in ("gui-bff", "migrate")}      # the BFF is not on smo_shared; migrate is a one-shot, not a server
     assert len(built) >= 20
     for name in built:
         probe = services[name]["healthcheck"]["test"]
         assert "/ready" in " ".join(probe), name
     assert "healthcheck" not in services["gui-bff"]
+    assert "healthcheck" not in services["migrate"] and services["migrate"]["restart"] == "no"   # runs to completion and exits

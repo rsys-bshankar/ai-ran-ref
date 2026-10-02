@@ -64,6 +64,7 @@ services:
     build: { context: ., args: { MODULE: r1-termination } }
     command: ["python", "/srv/scripts/migrate.py"]
     restart: "no"
+    stop_grace_period: 30s
     secrets: [db_password]
     <<: *hardening
     depends_on: { postgres: { condition: service_healthy } }
