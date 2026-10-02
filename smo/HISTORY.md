@@ -936,6 +936,10 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   credential; two instances on different explicit secrets do not accept each other's sessions (the control); an old database
   gains the new tables; the stored-setting, failure-counting and credential operations race on SQLite and real Postgres
   (CI `migration-postgres` job). With the shared key and the credential race handling broken, 5 of its tests fail.
+- **A latent flake, fixed.** `test_a_tampered_session_token_is_rejected` overwrote the last two characters of the signature
+  with `AA`; the last character of a 43-character base64url signature carries only 4 data bits, so about one token in a
+  thousand came out unchanged and still valid (measured: 21 of 20,000). It failed once in this PR's CI. It now changes one whole
+  character in the middle of the signature (0 of 20,000 verify).
 - **Not taken, and still open.** Server-side logout revocation (a JWT stays valid until `exp` or a `token_version` bump;
   `SEC-7.4`). Running several instances on the default SQLite file: it belongs to one instance, so instances need one shared
   `GUI_DATABASE_URL`, which the README now says. A generated admin password with several instances: each writes its own
