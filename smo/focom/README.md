@@ -151,7 +151,7 @@ All routes are under `/focom` through R1. Lists return `{items, total, limit, of
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SMO_DATABASE_URL` | `postgresql+psycopg://smo:smo@postgres:5432/smo` | Database (shared lib) |
+| `SMO_DATABASE_URL` | none; required (the service refuses to start without it) | Database (shared lib) |
 
 No FOCOM-specific variables. Constants: cluster id `phase1-degenerate-cluster`, type `generic`, pool `pool-0`, deployment manager `dm-0`.
 

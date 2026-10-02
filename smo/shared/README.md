@@ -9,7 +9,7 @@
 | Depends on (over R1) | `R1Client` calls R1 Termination (`/bootstrap`) and SME (`/invoker-registrations`, `/oauth2/token`) for its own token; no other module |
 | Called by | Every backend module (imports); the SDK (`sdk/`) and the four sample rApps via `R1Client`. Not imported by `gui-bff` |
 | Database tables | None. Provides `Base`, the engine and sessions that modules' `models.py` use |
-| Unit tests | 146 passed (`tests/`; 40 more are skipped without `SMO_TEST_POSTGRES_URL`) |
+| Unit tests | 153 passed (`tests/`; 40 more are skipped without `SMO_TEST_POSTGRES_URL`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -69,7 +69,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 
 | File | Responsibility |
 |---|---|
-| `smo_shared/db.py` | `DATABASE_URL`, `engine_options()` / `build_engine()` (pool and session limits from `SMO_DB_*`), `engine`, `SessionLocal`, `Base`, `session_scope()`, `get_session()` |
+| `smo_shared/db.py` | `MissingDatabaseUrl`, `resolve_database_url()`, `DATABASE_URL`, `engine_options()` / `build_engine()` (pool and session limits from `SMO_DB_*`), `engine`, `SessionLocal`, `Base`, `session_scope()`, `get_session()` |
 | `smo_shared/single_runner.py` | `run_once_per_interval(name, interval_seconds, fn)`, `advisory_lock(name)` and the `PeriodicRun` model (table `periodic_run`): a periodic task runs on one replica per interval. No caller yet |
 | `smo_shared/health.py` | `install_health(app, checks)`: `/live`, `/ready` and the `/health` alias; `database_check`, `sme_token_check`, `run_checks` |
 | `smo_shared/timeouts.py` | `call_timeout()`, `upstream_timeout()`, `introspect_timeout()`: the platform's outbound HTTP timeouts, read from the environment when asked |
@@ -111,8 +111,8 @@ Used by onboarding, rapp-mgmt, ran-nf-oam, nfo and aimgf for their own tables (e
 
 | Name | Contract |
 |---|---|
-| `DATABASE_URL` | `SMO_DATABASE_URL`, default `postgresql+psycopg://smo:smo@postgres:5432/smo` |
-| `engine`, `SessionLocal` | `create_engine(..., pool_pre_ping=True, future=True)`; `sessionmaker(autoflush=False, autocommit=False)`. Created at import; no connection until used |
+| `DATABASE_URL` | `SMO_DATABASE_URL`, required: no default (the process refuses to start without it) |
+| `engine`, `SessionLocal` | `create_engine(..., pool_pre_ping=True, future=True)`; `sessionmaker(autoflush=False, autocommit=False)`. Created at import (the import fails with `MissingDatabaseUrl` when `SMO_DATABASE_URL` is unset, except under pytest, where it is an in-memory SQLite); no connection until used |
 | `Base` | `DeclarativeBase` shared by all models |
 | `session_scope()` | Context manager: commit on success, rollback and re-raise on exception, always close |
 | `get_session()` | FastAPI dependency: yields a session, always closes; never commits (the route must) |
@@ -215,7 +215,7 @@ No background tasks.
 
 | Variable | Default | Where |
 |---|---|---|
-| `SMO_DATABASE_URL` | `postgresql+psycopg://smo:smo@postgres:5432/smo` | `db.py` |
+| `SMO_DATABASE_URL` | none; required: the process refuses to start without it (under pytest only, an in-memory SQLite) | `db.py` |
 | `SMO_DB_POOL_SIZE`, `SMO_DB_MAX_OVERFLOW`, `SMO_DB_POOL_TIMEOUT_SECONDS`, `SMO_DB_POOL_RECYCLE_SECONDS` | 5, 10, 30, 1800 (recycle 0: never); Postgres only | `db.py`: the per-process connection pool. N replicas x W workers can hold N x W x (size + overflow) connections |
 | `SMO_DB_STATEMENT_TIMEOUT_MS`, `SMO_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | 30000, 300000 (0: off); Postgres only | `db.py`: server-side limits so a stuck query or a leaked transaction cannot hold a connection for ever |
 | `READY_CHECK_TIMEOUT_SECONDS` | 3 | `health.py`: the longest a readiness check may take |
@@ -269,6 +269,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 | `tests/test_versioning.py` | `Versioned` on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres: version starts at 1 and every update bumps it; two sessions firing one transition have exactly one winner; a write to another column also conflicts; the repeat after a conflict is refused as an illegal transition; eight threads racing one transition give one winner; a stale write is a 409 ProblemDetails | 11 (5 need Postgres) |
 | `tests/test_idempotency.py` | `@idempotent` on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres: no header runs every time; a repeat replays the first answer and runs nothing; another payload or path is 422; keys are scoped to the caller; a failed attempt is not stored; a running key is 409; an abandoned reservation is taken over; expired records are purged; invalid keys are 422; six threads racing one key run the command once | 27 (13 need Postgres) |
 | `tests/test_module_identity.py` | The store on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres (first insert wins; replace is a compare-and-swap; eight racing threads give one winner each) and `R1Client` with a fake SME: replicas and restarts of a module share one invoker; modules do not share; a replica that loses the race offboards its duplicate; an invoker SME forgot is replaced once and the others adopt the replacement; a broken store falls back to per-process; no `MODULE`, store off and an environment identity bypass the store | 20 (6 need Postgres) |
+| `tests/test_db_url.py` | The configured URL is used as given; an unset or blank one outside tests is refused with a message naming the variable and `.env.example`; under pytest it is an in-memory SQLite, never a server; a real process without the variable exits non-zero on import, and starts with it | 7 |
 | `tests/test_single_runner.py` | A repeat inside the interval does not run, one after it does; tasks are independent; a failed run gives the interval back; six racing replicas run the task once; on real Postgres: two sessions cannot hold one lock and it is free afterwards, a dead holder frees it, and a run longer than the interval is not started again elsewhere | 16 (10 need Postgres) |
 | `tests/test_health.py` | `/live` and `/health` stay 200 whatever the checks say; `/ready` 200 with all checks passing, 503 naming a failing one without its message; a hung check is `timeout` and does not hang the probe; checks run in parallel; the database check on SQLite and real Postgres, a down database (SQLite path, closed Postgres port) is not ready; the SME token check follows whether a token can be had | 11 (1 needs Postgres) |
 | `tests/test_db_engine.py` | `engine_options`: Postgres defaults, every setting from the environment, 0 turns a limit off, SQLite gets none, the pool settings reach the engine; on real Postgres (`SMO_TEST_POSTGRES_URL`): a statement over the limit is cancelled by the server and the pool survives, a session idle inside a transaction is ended, and the control (no limit, same statement completes); the timeout defaults nest | 10 (3 need Postgres) |

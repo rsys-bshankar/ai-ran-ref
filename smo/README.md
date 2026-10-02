@@ -88,6 +88,7 @@ which obtains its own SME token the same way an rApp does.
 
 ```bash
 cd smo
+cp .env.example .env                     # then set POSTGRES_PASSWORD in .env (there is no default; `openssl rand -hex 24` works)
 export GUI_ADMIN_PASSWORD='choose-one'   # optional; otherwise one is generated
 docker compose up -d --build
 docker compose ps
@@ -112,7 +113,7 @@ cd smo
 pip install -e shared
 (cd onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q)   # one module's unit suite
 PYTHONPATH=shared python -m pytest tests_integration/ -q              # cross-service integration suite
-docker compose config --quiet                                         # compose file is valid
+docker compose --env-file .env.example config --quiet                 # compose file is valid
 ```
 
 The full verification battery is in [`CLAUDE.md`](CLAUDE.md): every module's

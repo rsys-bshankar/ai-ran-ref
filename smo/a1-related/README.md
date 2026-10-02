@@ -176,7 +176,7 @@ All routes are under `/a1-related` through R1. Lists return `{items, total, limi
 | Variable | Default | Meaning |
 |---|---|---|
 | `MOCK_NEAR_RT_RIC_URL` | `http://mock-near-rt-ric:8000` | Near-RT RIC A1-P base URL |
-| `SMO_DATABASE_URL` | `postgresql+psycopg://smo:smo@postgres:5432/smo` | Database (shared lib) |
+| `SMO_DATABASE_URL` | none; required (the service refuses to start without it) | Database (shared lib) |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | R1 gateway for the DME call (shared lib) |
 
 ### 2.7 Error codes

@@ -138,7 +138,14 @@ jobs:
 
       - name: docker-compose.yml is structurally valid
         working-directory: smo
-        run: docker compose config --quiet
+        run: |
+          # no .env yet: compose must refuse to start without a database password (PR-DB-1)
+          if docker compose config --quiet 2>/dev/null; then echo "compose accepted a missing POSTGRES_PASSWORD"; exit 1; fi
+          docker compose --env-file .env.example config --quiet
+
+      - name: Create .env from .env.example
+        working-directory: smo
+        run: cp .env.example .env
 
       - name: docker compose up --build
         working-directory: smo

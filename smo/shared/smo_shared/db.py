@@ -1,4 +1,5 @@
 import os
+import sys
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine
@@ -9,9 +10,35 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 # module_scope on write; queries are expected to filter by it explicitly rather
 # than relying on schema-level isolation, matching the pattern already used for
 # SME/DME/Onboarding/rApp Mgmt in the HLD.
-DATABASE_URL = os.environ.get(
-    "SMO_DATABASE_URL", "postgresql+psycopg://smo:smo@postgres:5432/smo"
-)
+#
+# There is no default URL (PR-DB-1): a default would put a known database password in every image and
+# let a service that lost its configuration quietly talk to whatever answers on `postgres:5432`.
+# `SMO_DATABASE_URL` must be set, or the process refuses to start with a message saying so.
+class MissingDatabaseUrl(RuntimeError):
+    """`SMO_DATABASE_URL` is not set."""
+
+
+# The unit tests build the engine at import without a database (they override the session, or use
+# `testing.make_test_engine()`), so under pytest an unset URL is an in-memory SQLite, never a server.
+TEST_DATABASE_URL = "sqlite://"
+
+
+def resolve_database_url(environ=os.environ, under_pytest: bool | None = None) -> str:
+    url = environ.get("SMO_DATABASE_URL", "").strip()
+    if url:
+        return url
+    if under_pytest is None:
+        under_pytest = "pytest" in sys.modules
+    if under_pytest:
+        return TEST_DATABASE_URL
+    raise MissingDatabaseUrl(
+        "SMO_DATABASE_URL is not set. Set it to the Postgres URL for this deployment, for example "
+        "postgresql+psycopg://<user>:<password>@<host>:5432/<database> (docker compose reads it from "
+        "smo/.env, see .env.example). There is deliberately no default."
+    )
+
+
+DATABASE_URL = resolve_database_url()
 
 
 

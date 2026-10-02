@@ -209,7 +209,7 @@ retry). No background tasks.
 | Variable | Default | Use |
 |---|---|---|
 | `SA_SMOS_O1_CM_HANDLER_URL` | `http://sa-smos:8000/o1-cm-handler/intents` | The `notificationDestination` registered at Intent Service |
-| `SMO_DATABASE_URL` | `postgresql+psycopg://smo:smo@postgres:5432/smo` | Database |
+| `SMO_DATABASE_URL` | none; required (the service refuses to start without it) | Database |
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | Outbound R1 base URL |
 | `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset (self-onboards at SME) | Outbound OAuth2 identity |
 
