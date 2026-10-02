@@ -21,9 +21,9 @@ After the move, a notification is sent after the transaction that caused it comm
 
 | File | Function | Helper | Class | What it tells whom | Moves in |
 |---|---|---|---|---|---|
-| `dme/app/main.py` | `_notify_type_subscribers` | `post_webhook` | A | Every type subscriber: a type was created, changed or removed | MSG-1.5 |
-| `dme/app/main.py` | `terminate_data_offer` | `post_webhook` | A | The offer owner's termination URI: the offer was removed | MSG-1.5 |
-| `dme/app/main.py` | `_push_job_to_producers` | `post_webhook` | A | Each supporting producer's job callback: a data job exists | MSG-1.5 |
+| `dme/app/main.py` | `_notify_type_subscribers` | `enqueue` | A | Every type subscriber: a type was created, changed or removed | moved (MSG-1.5) |
+| `dme/app/main.py` | `terminate_data_offer` | `enqueue` | A | The offer owner's termination URI: the offer was removed | moved (MSG-1.5) |
+| `dme/app/main.py` | `_push_job_to_producers` | `enqueue` | A | Each supporting producer's job callback: a data job exists | moved (MSG-1.5) |
 | `dme/app/main.py` | `_stop_job_at_producers` | `delete_webhook` | B | Each supporting producer: stop this job | open (needs a method column) |
 | `dme/app/main.py` | `_producer_is_healthy` | `get_webhook` | C | A producer's health URL: answers the type's ENABLED/DISABLED status | stays inline |
 | `sme/app/main.py` | `_deliver` | `post_webhook` | A | Event subscribers: a service API became available, changed or went away | MSG-1.6 |

@@ -19,6 +19,7 @@ No release has been tagged yet. Everything below is unreleased.
 - Liveness and readiness probes (`/live`, `/ready`; `/health` kept), single-runner guard for periodic work, idempotency keys on command routes, optimistic concurrency on lifecycle rows, one SME identity per module across replicas, connection pool limits and graceful shutdown (#190–#198).
 
 ### Changed
+- DME's type-change, offer-termination and job-push notifications are written to the transactional outbox in the same transaction as the change and sent after it commits, so a crash no longer loses them; delivery is at least once, so a consumer may see one twice after a crash (#MSG-1.5).
 - **The schema is created and upgraded by a `migrate` service**, which every service waits for; Postgres no longer mounts `001_init.sql`. A kept volume is stamped and upgraded on the next `docker compose up -d --build`; an empty one is built from the baseline. Schema revision `0002` adds the `notification_outbox` table (additive).
 - **Database credentials have no default.** Services refuse to start without `SMO_DATABASE_URL`; compose reads the password from `secrets/db_password` (run `scripts/init_secrets.sh` first). A Postgres volume created with the old default password keeps it: recreate the volume (#199, #205).
 - Containers run as a non-root user with all capabilities dropped; NFO no longer runs privileged and no longer mounts the Docker socket. Volumes created by an earlier stack are root-owned: recreate them (#203).

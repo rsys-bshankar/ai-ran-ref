@@ -26,7 +26,8 @@ from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
-from smo_shared.webhook import delete_webhook, get_webhook, post_webhook
+from smo_shared.outbox import enqueue
+from smo_shared.webhook import delete_webhook, get_webhook
 
 from .models import (
     DELIVERY_METHODS, LIFECYCLE_STAGES, SOURCE_DOMAINS, DataJob, DataOffer, DataRecord, DmeActionRecord,
@@ -152,14 +153,15 @@ def register_dme_type(body: DMETypeRegistration, db: Session = Depends(get_sessi
 
     if db.get(DMEProducerType, (body.producerId, t.dme_type_id)) is None:
         db.add(DMEProducerType(producer_id=body.producerId, dme_type_id=t.dme_type_id))
-    db.commit()
     if is_new_type:
         # ICS's own notifyTypeRegistered fires from putInfoType (the
         # type's own declaration), not from a producer joining an
         # already-known type — an existing type gaining a second
         # producer, or a producer's idempotent re-registration, is
-        # neither event.
+        # neither event. Enqueued in this transaction (PR-MSG-1.5): the
+        # subscribers are told exactly when the type exists.
         _notify_type_subscribers(db, t.dme_type_id, t.data_production_schema, "REGISTERED")
+    db.commit()
     return {"registrationId": str(t.dme_type_id)}
 
 
@@ -241,8 +243,8 @@ def delete_dme_type(dme_type_id: uuid.UUID, db: Session = Depends(get_session)):
     db.query(DataOffer).filter(DataOffer.dme_type_id == dme_type_id).delete()
     schema = t.data_production_schema
     db.delete(t)
-    db.commit()
     _notify_type_subscribers(db, dme_type_id, schema, "DEREGISTERED")
+    db.commit()
 
 
 @app.get("/production-capabilities/{producer_id}/status")
@@ -314,9 +316,9 @@ def _notify_type_subscribers(db: Session, dme_type_id: uuid.UUID, job_data_schem
     notification in this build.
     """
     for sub in db.scalars(select(DMETypeSubscription)).all():
-        post_webhook(sub.notification_destination, json={
+        enqueue(db, sub.notification_destination, {
             "infoTypeId": str(dme_type_id), "jobDataSchema": job_data_schema, "status": status,
-        }, timeout=2.0)
+        })
 
 
 def _subscription_view(s: DMETypeSubscription) -> dict:
@@ -392,10 +394,11 @@ def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
         lifecycle_stage=body.lifecycleStage,
     )
     db.add(job)
-    db.commit()
+    db.flush()  # the job's id, for the producers' payloads
     dme_type = db.get(DMEType, body.dmeTypeId)
     if dme_type is not None:
         _push_job_to_producers(db, dme_type, job)
+    db.commit()
     return {"dataJobId": str(job.data_job_id)}
 
 
@@ -434,13 +437,13 @@ def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, db: Session = 
     job.data_delivery_method = body.dataDeliveryMethod
     job.delivery_details = body.deliveryDetails
     job.lifecycle_stage = body.lifecycleStage
-    db.commit()
     dme_type = db.get(DMEType, job.dme_type_id)
     if dme_type is not None:
         # ICS re-runs startInfoSubscriptionJob on every PUT, new or
         # updated — the producer is re-notified with the new job
         # definition, not just on first creation.
         _push_job_to_producers(db, dme_type, job)
+    db.commit()
     return _job_view(job)
 
 
@@ -522,8 +525,8 @@ def terminate_data_offer(offer_id: uuid.UUID, db: Session = Depends(get_session)
         return
     termination_uri = offer.data_offer_termination_notification_uri
     db.delete(offer)
+    enqueue(db, termination_uri, {"dataOfferId": str(offer_id)})  # normal direction; sent once the deletion has committed
     db.commit()
-    post_webhook(termination_uri, json={"dataOfferId": str(offer_id)}, timeout=5.0)  # normal direction
 
 
 @app.post("/offers/{offer_id}/notify", status_code=204)
@@ -561,14 +564,14 @@ def _push_job_to_producers(db: Session, dme_type: DMEType, job: DataJob) -> None
     reference's own onErrorResume-and-continue behavior.
     """
     for producer in _producers_for_type(db, dme_type.dme_type_id):
-        post_webhook(producer.job_callback_url, json={
+        enqueue(db, producer.job_callback_url, {
             "infoJobIdentity": str(job.data_job_id),
             "infoTypeIdentity": str(dme_type.dme_type_id),
             "infoJobData": job.production_job_definition or {},
             "targetUri": (job.delivery_details or {}).get("targetUri", ""),
             "owner": job.consumer_id,
             "lastUpdated": datetime.datetime.now(datetime.UTC).isoformat(),
-        }, timeout=5.0)
+        })
 
 
 def _stop_job_at_producers(db: Session, dme_type: DMEType, data_job_id: uuid.UUID) -> None:
