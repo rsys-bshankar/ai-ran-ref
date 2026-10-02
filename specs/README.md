@@ -39,6 +39,10 @@ different and complementary ground truth).
   TS28.105's abstract NRM containment tree; audited in
   `smo/SPEC_AUDIT.md`'s own MLMR section), and `TS28541_NrNrm.yaml`/
   `5GcNrm.yaml` (network resource modeling generally).
+- **`MnS/`** — the 3GPP SA5 MnS repository content (YANG modules under `MnS/yang-models/`, OpenAPI under
+  `MnS/OpenAPI/`, `measData.xsd`; each folder's README is 3GPP's own). Of it, `smo/` uses the YANG as a
+  definitions library: `scripts/ingest_yang_schema.py --library MnS/yang-models` resolves the `_3gpp-common-*`
+  groupings the O-RAN modules import (`PR-SB-3`).
 - **`O-RAN-WG10-O1NRM-YANGs/`**, **`O-RAN-WG10-IMDM-YANGs/`** — O-RAN's
   own O1 Network Resource Model and Information/Data Model YANG modules.
   Relevant to RAN NF OAM's `ManagedEntity`/CM write shape and

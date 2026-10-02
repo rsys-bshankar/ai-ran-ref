@@ -4,6 +4,7 @@
 
     cd smo && python scripts/ingest_yang_schema.py \\
         ../specs/O-RAN-WG10-O1NRM-YANGs --name o-ran-wg10-o1nrm \\
+        --library ../specs/MnS/yang-models \\
         --out ran-nf-oam/app/cm_schemas/o-ran-wg10-o1nrm.json
 
 Output: the same descriptor shape `ingest_cm_schema.py` writes (and `POST /ran-nf-oam/cm-schemas`
@@ -16,10 +17,14 @@ accepts), `{"classes": {"<IOC>": {"<attribute>": {"type": ..., "enum"?: [...]}}}
 * `type`: integers -> `integer`, `decimal64` -> `number`, `boolean` and `empty` -> `boolean`,
   `enumeration` -> `string` with `enum`, a `leaf-list` -> `array`; a typedef is followed to its
   base type; everything else (`string`, `identityref`, `leafref`, `union`, `bits`, ...) is `string`.
-* A grouping or typedef is found by name across all the input files. `uses` of a
-  grouping no input file defines (the 3GPP `_3gpp-common-*` modules are not in this repository) is
-  skipped and listed under `unresolved`, so a gap is visible rather than silent; a type
-  that cannot be resolved is `any`.
+* A grouping or typedef is found by name across all the input files, then across the `--library`
+  files. A library is where definitions come from without contributing classes of its own: the 3GPP SA5
+  YANG (`specs/MnS/yang-models`: `_3gpp-common-top`, `-managed-function`, `-ep-rp`, `-yang-types`, ...)
+  that the O-RAN modules import, so the attributes they contribute (`id`, `userLabel`, `EP_Common`, ...)
+  are in the descriptor without every 3GPP IOC being too. A definition in an input file wins over one of
+  the same name in the library. `uses` of a grouping nothing defines is skipped and listed under
+  `unresolved`, so a gap is visible rather than silent; a type that cannot be resolved is `any`. The
+  library files that supplied something are listed under `library` in the descriptor.
 * `revision` is the newest `revision` date across the modules, unless `--revision` is given.
 
 This is a schema reader, not a YANG compiler: it does not evaluate `when` / `must` / `if-feature`,
@@ -119,19 +124,36 @@ class Bundle:
         self.modules: list[tuple] = []
         self.classes: dict[str, dict] = {}
         self.unresolved: set[str] = set()
+        self.library_origin: dict[int, str] = {}  # id(grouping or typedef statement) -> the library file it came from
+        self.library_used: set[str] = set()
 
     def add_module(self, module) -> None:
         self.modules.append(module)
         self._collect(module)
 
-    def _collect(self, stmt) -> None:
+    def add_library_module(self, module, origin: str) -> None:
+        """Its groupings and typedefs can be used; its own data nodes are not classes."""
+        self._collect(module, origin)
+
+    def _collect(self, stmt, origin: str | None = None) -> None:
         for child in stmt[2]:
             if child[0] == "grouping":
-                self.groupings.setdefault(child[1], child)
+                if child[1] not in self.groupings:
+                    self.groupings[child[1]] = child
+                    if origin:
+                        self.library_origin[id(child)] = origin
             elif child[0] == "typedef":
-                self.typedefs.setdefault(child[1], child)
+                if child[1] not in self.typedefs:
+                    self.typedefs[child[1]] = child
+                    if origin:
+                        self.library_origin[id(child)] = origin
             if child[0] in ("grouping", "list", "container", "choice", "case", "augment", "rpc", "notification", "action"):
-                self._collect(child)
+                self._collect(child, origin)
+
+    def _used(self, stmt) -> None:
+        origin = self.library_origin.get(id(stmt))
+        if origin:
+            self.library_used.add(origin)
 
     # type -> descriptor entry
     def type_of(self, type_stmt, depth: int = 0) -> dict:
@@ -148,6 +170,7 @@ class Bundle:
             return {"type": "string"}
         typedef = self.typedefs.get(name)
         if typedef is not None and depth < 10:
+            self._used(typedef)
             inner = _children(typedef, "type")
             return self.type_of(inner[0], depth + 1) if inner else {"type": "any"}
         return {"type": "any"}
@@ -174,6 +197,7 @@ class Bundle:
                 if grouping is None:
                     self.unresolved.add(child[1])
                 elif name not in seen:
+                    self._used(grouping)
                     attrs.update(self.attributes(grouping, seen | {name}))
             elif keyword in ("choice", "case"):
                 attrs.update(self.attributes(child, seen))
@@ -200,12 +224,18 @@ class Bundle:
         return max(dates) if dates else ""
 
 
-def ingest(files: list[Path]) -> Bundle:
+def ingest(files: list[Path], library: list[Path] | None = None) -> Bundle:
+    """`files` are the schema's own modules (their IOCs are the descriptor's classes, their definitions win);
+    `library` modules only supply groupings and typedefs the first can `uses`."""
     bundle = Bundle()
     for path in files:
         for stmt in parse(path.read_text(errors="replace")):
             if stmt[0] in ("module", "submodule"):
                 bundle.add_module(stmt)
+    for path in library or []:
+        for stmt in parse(path.read_text(errors="replace")):
+            if stmt[0] in ("module", "submodule"):
+                bundle.add_library_module(stmt, source_name(path))
     bundle.build()
     return bundle
 
@@ -228,15 +258,19 @@ def main() -> None:
     parser.add_argument("yang", nargs="+", type=Path, help="YANG file(s) or directories")
     parser.add_argument("--name", required=True)
     parser.add_argument("--revision", help="default: the newest revision date of the modules")
+    parser.add_argument("--library", nargs="+", type=Path, default=[], metavar="YANG",
+                        help="YANG file(s) or directories that only supply groupings and typedefs (e.g. the 3GPP common modules)")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     files = yang_files(args.yang)
-    bundle = ingest(files)
+    bundle = ingest(files, yang_files(args.library))
     descriptor = {
         "schemaName": args.name, "revision": args.revision or bundle.revision(), "type": "YANG",
         "source": [source_name(f) for f in files], "classes": {k: dict(sorted(v.items())) for k, v in sorted(bundle.classes.items())},
         "unresolved": sorted(bundle.unresolved),
     }
+    if bundle.library_used:
+        descriptor["library"] = sorted(bundle.library_used)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(descriptor, indent=1, sort_keys=True) + "\n")
     print(f"wrote {args.out}: {len(descriptor['classes'])} IOCs, revision {descriptor['revision']}, "

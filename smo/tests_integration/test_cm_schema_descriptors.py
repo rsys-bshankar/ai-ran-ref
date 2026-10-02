@@ -30,9 +30,14 @@ def test_bundled_descriptor_matches_its_spec_source(path):
         sources = [SMO_ROOT.parent / "specs" / name for name in descriptor["source"]]
         if not all(s.exists() for s in sources):
             pytest.skip("specs/ not checked out")
-        bundle = _ingest_module("ingest_yang_schema").ingest(sources)
+        ingest = _ingest_module("ingest_yang_schema")
+        library = SMO_ROOT.parent / "specs" / "MnS" / "yang-models"  # SB-3: the 3GPP common modules, definitions only
+        if not library.exists():
+            pytest.skip("specs/MnS not checked out")
+        bundle = ingest.ingest(sources, ingest.yang_files([library]))
         assert descriptor["classes"] == {k: dict(sorted(v.items())) for k, v in sorted(bundle.classes.items())}
         assert descriptor["unresolved"] == sorted(bundle.unresolved) and descriptor["revision"] == bundle.revision()
+        assert descriptor.get("library", []) == sorted(bundle.library_used)
         return
     sources = [SPECS / name for name in descriptor["source"]]
     if not all(s.exists() for s in sources):

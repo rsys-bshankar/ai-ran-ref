@@ -1381,3 +1381,18 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   a later drain delivers them); an AUTONOMOUS dispatch's operator notice, RMIH notice and Intent report in one transaction; a create whose commit fails stores no intent, no row, sends nothing. Both fixtures create the outbox table; one
   RAN NF OAM test patched `app.main.post_webhook` and now patches `smo_shared.webhook.post_webhook`.
 - **Left:** `MSG-1.10`, a `method` column so the DME stop-job DELETE can use the outbox. With 1.9 every class-A notification in the platform is durable. Still open for delivery: the sweep (a worker, `MSG-2`), signing and a delivery log (`MSG-5`).
+
+### PR-SB-3 — 3GPP common YANG as a library (SB-3.1–3.5; closes SA-O1-4)
+
+- **Sources (SB-3.1, 3.2).** The 3GPP SA5 YANG set is in `specs/MnS/yang-models/` (134 modules, 3GPP's own README, with `external-yams/ietf-*`), added by the repository owner: the `_3gpp-common-*` modules
+  (`-top`, `-managed-function`, `-managed-element`, `-ep-rp`, `-measurements`, `-yang-types`, `-subnetwork`, ...) and the `_3gpp-nr-nrm-*` and `_3gpp-5gc-nrm-*` modules.
+- **A library mode, not a bigger input (SB-3.3).** `scripts/ingest_yang_schema.py` gained `--library <files or dirs>`: those modules supply groupings and typedefs, but their own lists and containers are **not** classes. Feeding the
+  whole 3GPP set as input would have put every 3GPP IOC (the NR and 5GC NRMs, 134 modules) into every O-RAN descriptor. A definition in the input wins over a library one of the same name (first definition by name is kept, inputs first), and the
+  library files that actually supplied something are recorded under `library` in the descriptor (6 for WG10, 1 each for the O-DU and O-CU). A name-keyed lookup remains the reader's limit: two modules defining one grouping
+  name would be resolved by whichever is read first (none collide across the files used today).
+- **Result (SB-3.4).** The four bundled descriptors (`o-ran-wg10-o1nrm`, `-wg5-du-mp`, `-wg5-cu-mp`, `-wg10-wg5`) are regenerated: `unresolved` goes from 4/4/1/1 entries to none; classes and revisions are unchanged (9, 41, 3 and 53 IOCs).
+  They gain `id` and `userLabel` (`Top_Grp`), the EP and managed-function attributes (28 attributes for WG10, 2 each for the DU and CU), and four port numbers move from `any` to `integer` (`inet:port-number`, found in the
+  library's `external-yams`). Nothing is removed. A vendor writing to those classes may now set `id` and `userLabel`.
+- **Tests (SB-3.5).** The descriptor-vs-source integration test regenerates each YANG descriptor with the library and compares classes, `unresolved`, revision and `library`; two unit tests for the library mode (definitions only
+  and input wins; unresolved without it); no bundled YANG descriptor has an unresolved grouping; `EP_E2` and `NearRTRICFunction` carry `id` and `userLabel`; the `ORU` class assertion now includes `id`.
+- **Not done:** WG4 O-RU YANG (`PR-SB-4`), `when` / `must` evaluation, and the 5GC and NR modules as descriptors of their own.

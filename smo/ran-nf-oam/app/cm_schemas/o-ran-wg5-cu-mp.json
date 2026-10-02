@@ -10,6 +10,9 @@
    "header-compression-enabled": {
     "type": "boolean"
    },
+   "id": {
+    "type": "string"
+   },
    "pdcp-sn-size-dl": {
     "enum": [
      "LEN-12-BITS",
@@ -51,6 +54,9 @@
    "cipheringAlgoPrio": {
     "type": "array"
    },
+   "id": {
+    "type": "string"
+   },
    "integrityProtectAlgoPrio": {
     "type": "array"
    }
@@ -61,6 +67,9 @@
    }
   }
  },
+ "library": [
+  "MnS/yang-models/_3gpp-common-top.yang"
+ ],
  "revision": "2023-11-14",
  "schemaName": "o-ran-wg5-cu-mp",
  "source": [
@@ -69,7 +78,5 @@
   "O-RAN-WG5-O-CU-MP-YANGs/o-ran-pdcp.yang"
  ],
  "type": "YANG",
- "unresolved": [
-  "top3gpp:Top_Grp"
- ]
+ "unresolved": []
 }
