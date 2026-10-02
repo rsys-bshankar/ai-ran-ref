@@ -42,7 +42,7 @@ class PackageValidationFailed(Exception):
 # yaml.YAMLError for the Wave 1 manifest.yaml/capabilities.yaml
 # extension — a malformed one is a validation failure like any other
 # malformed package file, not an unhandled 500.
-ONBOARD_VALIDATION_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, httpx.HTTPError, DescriptorCreationFailed, PackageValidationFailed, yaml.YAMLError, json.JSONDecodeError)
+ONBOARD_VALIDATION_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, httpx.HTTPError, DescriptorCreationFailed, PackageValidationFailed, yaml.YAMLError, json.JSONDecodeError, UnicodeDecodeError)
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -221,7 +221,11 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
     names = z.namelist()
     if "manifest.yaml" in names:
         manifest = yaml.safe_load(z.read("manifest.yaml")) or {}
+        if not isinstance(manifest, dict):
+            raise PackageValidationFailed("manifest.yaml must be a mapping")
         rapp_manifest = manifest.get("rappManifest") or {}
+        if not isinstance(rapp_manifest, dict):
+            raise PackageValidationFailed("manifest.yaml: rappManifest must be a mapping")
         result["manifestVersion"] = rapp_manifest.get("manifestVersion")
         result["aiRuntimeSdkVersion"] = rapp_manifest.get("aiRuntimeSdkVersion")
         # Wave 7 (HISTORY.md W7-03): the AI-runtime part of
@@ -237,7 +241,11 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
             result["runtimeProfiles"] = _validate_runtime_profiles(profiles, result.get("executionModes"))
     if "capabilities.yaml" in names:
         parsed = yaml.safe_load(z.read("capabilities.yaml")) or {}
+        if not isinstance(parsed, dict):
+            raise PackageValidationFailed("capabilities.yaml must be a mapping")
         caps = parsed.get("capabilities") or {}
+        if not isinstance(caps, dict):
+            raise PackageValidationFailed("capabilities.yaml: capabilities must be a mapping")
         result["consumes"] = caps.get("consumes") or []
         result["provides"] = caps.get("provides") or []
     return result or None
