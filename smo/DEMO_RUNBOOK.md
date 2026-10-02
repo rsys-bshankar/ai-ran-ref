@@ -1,4 +1,4 @@
-# Demo runbook — a sample rApp's full lifecycle
+# Demo runbook — the Energy Saving rApp's full lifecycle
 
 A live walk-through of `smo/docs/call-flows/01-rapp-onboarding-to-deployment.md`
 and the rest of the platform against a running `docker compose up` stack:
@@ -13,21 +13,18 @@ and the four `demo.py` scripts (§24–§27) through the in-process mesh on
 every CI run, and the `compose-e2e` job replays the same test file against
 a live `docker compose up` stack (`SMO_E2E_LIVE=1`, `tests_integration/live.py`).
 
-Sections §6–§22 are optional and independent of the sample rApp instance,
+Sections §6–§22 are optional and independent of the rApp instance,
 except where a step says it reuses an id from an earlier step. There is no
 §9.
 
 ## What you'll onboard
 
-`smo/samples/hello-world-rapp.csar` — a valid CSAR package
-(`TOSCA-Metadata/TOSCA.meta`, `Definitions/asd.yaml`,
-`Files/Acm/definition/compositions.json`, a Helm chart artifact, and
-reference SME/DME registration bodies under `Files/Sme/`/`Files/Dme/`),
-adapted from the O-RAN-SC reference's sample package
-(`nonrtric-plt-rappmanager/sample-rapp-generator/rapp-all`). It also
-carries the optional root-level `manifest.yaml`/`capabilities.yaml`
-declaring its AI Platform capabilities. Rebuild it with
-`smo/samples/build_csar.py` after editing `smo/samples/hello-world-rapp/`.
+`smo/samples/energy-saving-rapp.csar` — a valid CSAR package
+(`TOSCA-Metadata/TOSCA.meta`, `Definitions/asd.yaml`, and the optional
+root-level `manifest.yaml`/`capabilities.yaml` declaring its AI Platform
+capabilities) for the EnergySaving_rApp, together with the rApp's own
+source. Rebuild it with
+`smo/samples/build_csar.py` after editing `smo/samples/energy-saving-rapp/`.
 `tests_integration/test_cross_service.py::test_real_demo_csar_onboards_and_deploys`
 onboards and deploys it.
 
@@ -48,17 +45,17 @@ docker compose up -d --build
 docker compose ps   # confirm all services are healthy/running
 ```
 
-## 1. Serve the sample package on the compose network
+## 1. Serve the rApp package on the compose network
 
 Onboarding fetches the package over HTTP, so it needs a URL reachable
 inside the network:
 
 ```bash
-docker compose cp samples/hello-world-rapp.csar r1-termination:/tmp/hello-world-rapp.csar
+docker compose cp samples/energy-saving-rapp.csar r1-termination:/tmp/energy-saving-rapp.csar
 docker compose exec -d r1-termination python3 -m http.server 8899 --directory /tmp
 ```
 
-`http://r1-termination:8899/hello-world-rapp.csar` is now reachable from
+`http://r1-termination:8899/energy-saving-rapp.csar` is now reachable from
 every container.
 
 ## 2. Onboard the package
@@ -67,7 +64,7 @@ every container.
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://onboarding:8000/packages', json={
-    'location': 'http://r1-termination:8899/hello-world-rapp.csar',
+    'location': 'http://r1-termination:8899/energy-saving-rapp.csar',
 })
 print(r.status_code, r.json())
 "
@@ -86,8 +83,7 @@ print(r.json())
 `state` is `AVAILABLE` and `nfDeploymentDescriptorId` is a UUID (NFO's
 `CreateDescriptor`, called once validation passes). If `state` is `FAILED`,
 the CSAR is malformed: re-run `python3 smo/samples/build_csar.py`, re-copy
-it (step 1), and check that `Files/Acm/definition/compositions.json` and
-`TOSCA-Metadata/TOSCA.meta`/`Entry-Definitions` are present.
+it (step 1), and check that `TOSCA-Metadata/TOSCA.meta`/`Entry-Definitions` are present.
 
 **A validation failure.** `_validate_package` rejects a byte-identical
 package that is already onboarded (same content hash). Onboard the same
@@ -97,7 +93,7 @@ CSAR again:
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://onboarding:8000/packages', json={
-    'location': 'http://r1-termination:8899/hello-world-rapp.csar',
+    'location': 'http://r1-termination:8899/energy-saving-rapp.csar',
 })
 print(r.status_code, r.json())
 "
@@ -160,25 +156,25 @@ each with a `tokenEndPoint`/`apiEndPoint` pointing directly at SME (R1
 requires a bearer token on every other route). From here on, continue with
 `docker compose exec r1-termination` — those URIs are container-internal.
 
-Step 5's `bootstrap-complete` also registers the package's own
-`Files/Sme/providers/` + `Files/Sme/serviceapis/` declarations with SME,
-under the instance's own `oauthClientId`. The manual registrations below
-are still needed: later sections use `hello-world-rapp` as the
-producer/requester identity, and only these calls create it.
+This package ships no `Files/Sme/` declarations, so `bootstrap-complete`
+registers nothing with SME. (A package that does ship them has them
+registered under the instance's own `oauthClientId`.) The manual
+registrations below create the `energy-saving-rapp` producer/requester
+identity that later sections use.
 
-**Register as a provider (APF)** — `Files/Sme/providers/provider.json`'s body:
+**Register as a provider (APF):**
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://sme:8000/provider-registrations', json={
-    'apfId': 'hello-world-rapp', 'providerDomainInfo': 'Hello World rApp — demo provider domain',
+    'apfId': 'energy-saving-rapp', 'providerDomainInfo': 'Energy Saving rApp — demo provider domain',
 })
 print(r.status_code, r.json())
 "
 ```
 
-**Register as an invoker** — `Files/Sme/invokers/invoker.json`'s body. As
+**Register as an invoker.** As
 in CAPIF, the client submits only its `apiInvokerPublicKey`; SME generates
 `apiInvokerId` and `onboardingSecret`:
 
@@ -206,33 +202,33 @@ print(r.status_code, r.json())
 "
 ```
 
-**Publish the service API** — `Files/Sme/serviceapis/api-set.json`'s body:
+**Publish the service API:**
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://sme:8000/published-apis/v1/hello-world-rapp/service-apis', json={
-    'serviceName': 'helloworld-api', 'producerId': 'hello-world-rapp',
-    'endpoint': 'http://hello-world-rapp:8080/helloworld/v1', 'version': 'v1',
-    'fullApiVersions': ['v1'], 'moduleScope': 'hello-world-rapp',
+r = httpx.post('http://sme:8000/published-apis/v1/energy-saving-rapp/service-apis', json={
+    'serviceName': 'energy-saving-api', 'producerId': 'energy-saving-rapp',
+    'endpoint': 'http://energy-saving-rapp:8080/energy-saving/v1', 'version': 'v1',
+    'fullApiVersions': ['v1'], 'moduleScope': 'energy-saving-rapp',
 })
 print(r.status_code, r.json())
 "
 ```
 
-Note the returned `serviceId` (§21 uses it as `<helloworldServiceId>`).
+Note the returned `serviceId` (§21 uses it as `<energySavingServiceId>`).
 
-**Register as a DME producer (optional)** — `Files/Dme/infoproducers/producer.json`'s body:
+**Register as a DME producer (optional):**
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://dme:8000/production-capabilities', json={
-    'namespace': 'demo', 'name': 'hello-world-metrics', 'version': '1.0',
-    'typeName': 'hello-world-metrics-v1', 'producerId': 'hello-world-rapp',
+    'namespace': 'demo', 'name': 'energy-saving-metrics', 'version': '1.0',
+    'typeName': 'energy-saving-metrics-v1', 'producerId': 'energy-saving-rapp',
     'dataProductionSchema': {'type': 'object', 'properties': {'greeting': {'type': 'string'}}},
-    'producerHealthCallbackUrl': 'http://hello-world-rapp:8080/health',
-    'jobCallbackUrl': 'http://hello-world-rapp:8080/dme-jobs',
+    'producerHealthCallbackUrl': 'http://energy-saving-rapp:8080/health',
+    'jobCallbackUrl': 'http://energy-saving-rapp:8080/dme-jobs',
 })
 print(r.status_code, r.json())
 "
@@ -248,9 +244,9 @@ print(r.status_code, r.json())
 "
 ```
 
-`state` is now `RUNNING`. Confirm it; `smeServiceIds` holds the serviceId(s)
-from bootstrap-complete's automatic SME registration under the instance's
-`oauthClientId`, separate from the manual `hello-world-rapp` one:
+`state` is now `RUNNING`. Confirm it; `smeServiceIds` is empty, because this
+package bundles no `Files/Sme/` declarations for bootstrap-complete to
+register:
 
 ```bash
 docker compose exec r1-termination python3 -c "
@@ -265,7 +261,7 @@ print(r.json())
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://rapp-mgmt:8000/instances/<instanceId>/performance', json={'greeting': 'hello world', 'requestsServed': 1})
+r = httpx.post('http://rapp-mgmt:8000/instances/<instanceId>/performance', json={'cellsAsleep': 2, 'prbSavedPercent': 12.5})
 print(r.status_code, r.json())
 "
 ```
@@ -305,7 +301,7 @@ print(r.status_code, r.json())
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://ran-nf-oam:8000/config-jobs', json={
-    'requestedBy': 'hello-world-rapp', 'scope': 'cell',
+    'requestedBy': 'energy-saving-rapp', 'scope': 'cell',
     'changes': [{'managedElementRef': 'demo-o-du-1', 'attributeChanges': {'adminState': 'UNLOCKED'}}],
 })
 print(r.status_code, r.json())
@@ -335,7 +331,7 @@ batch touching one registered ME and one never-registered ME:
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://ran-nf-oam:8000/config-jobs', json={
-    'requestedBy': 'hello-world-rapp', 'scope': 'cell',
+    'requestedBy': 'energy-saving-rapp', 'scope': 'cell',
     'changes': [
         {'managedElementRef': 'demo-o-du-1', 'attributeChanges': {'adminState': 'LOCKED'}},
         {'managedElementRef': 'demo-o-du-2-never-registered', 'attributeChanges': {'adminState': 'LOCKED'}},
@@ -505,7 +501,7 @@ docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://intent-service:8000/intents', json={
     'userLabel': 'demo energy intent', 'intentReportControl': [{'observationPeriod': 60}], 'intentExpectations': [{'expectationId': 'e1', 'expectationVerb': 'DELIVER', 'expectationObject': {'objectType': 'RAN_SUBNETWORK'}, 'expectationTargets': [{'targetName': 'RANEnergyConsumption', 'targetCondition': 'IS_LESS_THAN', 'targetValueRange': 500}]}],
-    'rmioId': 'hello-world-rapp', 'rmihId': 'so-smos', 'intentHandlingScope': 'RAN',
+    'rmioId': 'energy-saving-rapp', 'rmihId': 'so-smos', 'intentHandlingScope': 'RAN',
 })
 print(r.status_code, r.json())
 "
@@ -551,7 +547,7 @@ docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://intent-service:8000/intents', json={
     'userLabel': 'demo energy intent', 'intentReportControl': [{'observationPeriod': 60}], 'intentExpectations': [{'expectationId': 'e1', 'expectationVerb': 'DELIVER', 'expectationObject': {'objectType': 'RAN_SUBNETWORK'}, 'expectationTargets': [{'targetName': 'RANEnergyConsumption', 'targetCondition': 'IS_LESS_THAN', 'targetValueRange': 500}]}],
-    'rmioId': 'hello-world-rapp', 'rmihId': 'sa-smos', 'intentHandlingScope': 'RAN',
+    'rmioId': 'energy-saving-rapp', 'rmihId': 'sa-smos', 'intentHandlingScope': 'RAN',
 })
 print(r.status_code, r.json())
 "
@@ -567,7 +563,7 @@ docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://intent-service:8000/intents', json={
     'userLabel': 'demo energy intent', 'intentReportControl': [{'observationPeriod': 60}], 'intentExpectations': [{'expectationId': 'e1', 'expectationVerb': 'DELIVER', 'expectationObject': {'objectType': 'RAN_SUBNETWORK'}, 'expectationTargets': [{'targetName': 'RANEnergyConsumption', 'targetCondition': 'IS_LESS_THAN', 'targetValueRange': 500}]}],
-    'rmioId': 'hello-world-rapp', 'rmihId': 'so-smos', 'intentHandlingScope': 'RAN',
+    'rmioId': 'energy-saving-rapp', 'rmihId': 'so-smos', 'intentHandlingScope': 'RAN',
 })
 print(r.status_code, r.json())
 "
@@ -604,7 +600,7 @@ Register as a supervised service (`pms-api-v3.json`'s `putService`).
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.put('http://a1-related:8000/services', json={'serviceId': 'hello-world-rapp', 'keepAliveIntervalSeconds': 0})
+r = httpx.put('http://a1-related:8000/services', json={'serviceId': 'energy-saving-rapp', 'keepAliveIntervalSeconds': 0})
 print(r.status_code, r.json())
 "
 ```
@@ -628,7 +624,7 @@ import httpx
 r = httpx.post('http://a1-related:8000/policies', json={
     'policyTypeId': 'ORAN_QoSandTSP_6.0.1',
     'policyObject': {'scope': {'cellId': 'demo-cell-1'}, 'qosObjectives': {'gfbr': 100}},
-    'nearRtRicId': 'mock-near-rt-ric-001', 'creatorId': 'hello-world-rapp',
+    'nearRtRicId': 'mock-near-rt-ric-001', 'creatorId': 'energy-saving-rapp',
 })
 print(r.status_code, r.json())
 "
@@ -657,7 +653,7 @@ import httpx
 r = httpx.post('http://a1-related:8000/policies', json={
     'policyTypeId': 'ORAN_QoSandTSP_6.0.1',
     'policyObject': {'scope': {'cellId': 'demo-cell-1'}, 'qosObjectives': {'gfbr': 100}},
-    'nearRtRicId': 'mock-near-rt-ric-001', 'creatorId': 'hello-world-rapp',
+    'nearRtRicId': 'mock-near-rt-ric-001', 'creatorId': 'energy-saving-rapp',
 })
 print(r.status_code, r.json())
 "
@@ -691,7 +687,7 @@ r = httpx.delete('http://a1-related:8000/policies/<policyId>')
 print(r.status_code)
 r2 = httpx.delete('http://a1-related:8000/policies/<duplicatePolicyId>')
 print(r2.status_code)
-r3 = httpx.delete('http://a1-related:8000/services/hello-world-rapp')
+r3 = httpx.delete('http://a1-related:8000/services/energy-saving-rapp')
 print(r3.status_code)
 "
 ```
@@ -709,7 +705,7 @@ docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.put('http://sme:8000/trusted-invokers/<apiInvokerId>', json={
     'notificationDestination': 'http://demo-consumer:9000/security-notify',
-    'securityInfo': [{'aefId': 'hello-world-rapp', 'apiId': 'helloworld-api', 'authenticationInfo': 'demo-auth-info',
+    'securityInfo': [{'aefId': 'energy-saving-rapp', 'apiId': 'energy-saving-api', 'authenticationInfo': 'demo-auth-info',
                        'authorizationInfo': 'demo-authz-info', 'prefSecurityMethods': ['OAUTH']}],
 })
 print(r.status_code, r.json())
@@ -745,7 +741,7 @@ partial removal):
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://sme:8000/trusted-invokers/<apiInvokerId>/delete', json={
-    'aefId': 'hello-world-rapp', 'apiIds': ['helloworld-api'], 'apiInvokerId': '<apiInvokerId>', 'cause': 'UNEXPECTED_REASON',
+    'aefId': 'energy-saving-rapp', 'apiIds': ['energy-saving-api'], 'apiInvokerId': '<apiInvokerId>', 'cause': 'UNEXPECTED_REASON',
 })
 print(r.status_code)
 "
@@ -775,9 +771,9 @@ Register a model (MLMR):
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://mlmr:8000/models', json={
-    'modelType': 'hello-world-anomaly-detector', 'version': '1.0.0',
-    'description': 'Demo anomaly-detection model for the hello-world rApp',
-    'author': 'hello-world-rapp', 'owner': 'hello-world-rapp',
+    'modelType': 'energy-saving-anomaly-detector', 'version': '1.0.0',
+    'description': 'Demo anomaly-detection model for the Energy Saving rApp',
+    'author': 'energy-saving-rapp', 'owner': 'energy-saving-rapp',
     'inputDataType': 'application/json', 'outputDataType': 'application/json',
 })
 print(r.status_code, r.json())
@@ -792,9 +788,9 @@ over R1:
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://aimgf:8000/training-jobs', json={
-    'modelId': '<modelId>', 'producerId': 'hello-world-rapp',
-    'runId': 'demo-run-1', 'trainingDataset': 's3://demo/hello-world-train',
-    'validationDataset': 's3://demo/hello-world-val',
+    'modelId': '<modelId>', 'producerId': 'energy-saving-rapp',
+    'runId': 'demo-run-1', 'trainingDataset': 's3://demo/energy-saving-train',
+    'validationDataset': 's3://demo/energy-saving-val',
 })
 print(r.status_code, r.json())
 "
@@ -817,7 +813,7 @@ print(r.status_code, r.json())
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://mlmr:8000/models/<modelId>/artifact',
-                files={'file': ('hello-world-model.zip', b'demo-model-weights-bytes', 'application/zip')})
+                files={'file': ('energy-saving-model.zip', b'demo-model-weights-bytes', 'application/zip')})
 print(r.status_code, r.json())
 "
 ```
@@ -844,10 +840,10 @@ A, M, who = 'http://aimgf:8000', '<modelId>', {'decided_by': 'noc-operator'}
 def ok(r): assert r.status_code < 300, (r.status_code, r.text); return r.json()
 ok(httpx.post(f'{A}/training-jobs/<trainingJobId>/complete', json={'succeeded': True, 'metrics': {'accuracy': 0.94}}))
 ok(httpx.post(f'{A}/models/{M}/advance', params={'event': 'APPROVE_TRAINING', **who}))
-v = ok(httpx.post(f'{A}/validation-jobs', json={'modelId': M, 'producerId': 'hello-world-rapp'}))
+v = ok(httpx.post(f'{A}/validation-jobs', json={'modelId': M, 'producerId': 'energy-saving-rapp'}))
 ok(httpx.post(f'{A}/validation-jobs/{v[\"validationJobId\"]}/complete', json={'succeeded': True, 'metrics': {}}))
 ok(httpx.post(f'{A}/models/{M}/advance', params={'event': 'APPROVE_VALIDATION', **who}))
-e = ok(httpx.post(f'{A}/emulation-jobs', json={'modelId': M, 'producerId': 'hello-world-rapp'}))
+e = ok(httpx.post(f'{A}/emulation-jobs', json={'modelId': M, 'producerId': 'energy-saving-rapp'}))
 ok(httpx.post(f'{A}/emulation-jobs/{e[\"emulationJobId\"]}/complete', json={'succeeded': True, 'metrics': {}}))
 for event in ['SUBMIT_FOR_APPROVAL', 'APPROVE', 'CERTIFY', 'PROMOTE']:
     ok(httpx.post(f'{A}/models/{M}/advance', params={'event': event, **who}))
@@ -902,13 +898,13 @@ Register an analytics producer (RAN Analytics):
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://ran-analytics:8000/producers',
-                params={'producer_id': 'hello-world-rapp', 'analytics_type': 'coverage-issue-analysis'},
+                params={'producer_id': 'energy-saving-rapp', 'analytics_type': 'coverage-issue-analysis'},
                 json={'dme_input_types': [], 'output_schema': {'type': 'object', 'properties': {'issue': {'type': 'string'}}}})
 print(r.status_code, r.json())
 "
 ```
 
-`hello-world-rapp` was SME-enrolled in step 4; this re-registers the same
+`energy-saving-rapp` was SME-enrolled in step 4; this re-registers the same
 provider (idempotent) and publishes a second service
 (`mdaf.coverage-issue-analysis`). Confirm the registration:
 
@@ -968,7 +964,7 @@ print(r.status_code)
 ## 15. SA SMOS (optional) — a real assurance monitor, a genuine `RECONNECT` heal, and `ROLLBACK` scoping
 
 SA SMOS's remedial-action dispatch (SO/SA SMOS LLD section 2.1).
-`RECONNECT` needs a `RUNNING` `NFDeployment`. The sample rApp's deployment
+`RECONNECT` needs a `RUNNING` `NFDeployment`. The Energy Saving rApp's deployment
 can't be reused (NFO deploys a descriptor only once), so this creates a
 second deployment of the same package through SO SMOS.
 
@@ -1096,7 +1092,7 @@ r = httpx.post('http://so-smos:8000/orders', json={
         {'stepType': 'INFRA', 'targetModule': 'FOCOM', 'spec': {'resourceTypeId': 'gpu-l40', 'description': 'SO SMOS provisioned node'}},
         {'stepType': 'POLICY', 'targetModule': 'A1_RELATED', 'policyTypeId': 'NOT_A_REAL_POLICY_TYPE',
          'policyObject': {'scope': {'cellId': 'demo-cell-1'}}, 'nearRtRicId': 'mock-near-rt-ric-001'},
-        {'stepType': 'TRAINING', 'targetModule': 'AI_ML_WORKFLOW', 'producerId': 'hello-world-rapp'},
+        {'stepType': 'TRAINING', 'targetModule': 'AI_ML_WORKFLOW', 'producerId': 'energy-saving-rapp'},
     ],
 })
 print(r.status_code, r.json())
@@ -1140,7 +1136,7 @@ Subscribe:
 docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://dme:8000/type-subscriptions', json={
-    'notificationDestination': 'http://demo-consumer:9000/dme-type-events', 'owner': 'hello-world-rapp',
+    'notificationDestination': 'http://demo-consumer:9000/dme-type-events', 'owner': 'energy-saving-rapp',
 })
 print(r.status_code, r.json())
 "
@@ -1155,10 +1151,10 @@ docker compose exec r1-termination python3 -c "
 import httpx
 r = httpx.post('http://dme:8000/production-capabilities', json={
     'namespace': 'demo', 'name': 'dme-type-sub-demo', 'version': '1.0',
-    'typeName': 'dme-type-sub-demo-v1', 'producerId': 'hello-world-rapp',
+    'typeName': 'dme-type-sub-demo-v1', 'producerId': 'energy-saving-rapp',
     'dataProductionSchema': {'type': 'object', 'properties': {'reading': {'type': 'number'}}},
-    'producerHealthCallbackUrl': 'http://hello-world-rapp:8080/health',
-    'jobCallbackUrl': 'http://hello-world-rapp:8080/dme-jobs',
+    'producerHealthCallbackUrl': 'http://energy-saving-rapp:8080/health',
+    'jobCallbackUrl': 'http://energy-saving-rapp:8080/dme-jobs',
 })
 print(r.status_code, r.json())
 "
@@ -1168,14 +1164,14 @@ Watch `dme`'s logs for a POST to `http://demo-consumer:9000/dme-type-events`
 with `{infoTypeId, jobDataSchema, status: "REGISTERED"}`.
 
 Deregister the producer. Producer and Type are separate entities (as in
-ICS), so `deregister_producer` removes only `hello-world-rapp`; its types
+ICS), so `deregister_producer` removes only `energy-saving-rapp`; its types
 stay registered but `DISABLED`, and no notification fires (ICS's
 `deleteInfoProducer` never touches info-types):
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.delete('http://dme:8000/production-capabilities', params={'producer_id': 'hello-world-rapp'})
+r = httpx.delete('http://dme:8000/production-capabilities', params={'producer_id': 'energy-saving-rapp'})
 print(r.status_code)
 r = httpx.get('http://dme:8000/dme-types')
 print([(t['typeName'], t['producerIds'], t['typeStatus']) for t in r.json()])
@@ -1183,7 +1179,7 @@ print([(t['typeName'], t['producerIds'], t['typeStatus']) for t in r.json()])
 ```
 
 `dme-type-sub-demo` is still listed (`producerIds: []`,
-`typeStatus: DISABLED`), as is `hello-world-metrics` from step 4. Only
+`typeStatus: DISABLED`), as is `energy-saving-metrics` from step 4. Only
 `delete_dme_type` (ICS's `DELETE /info-types/{id}`) removes a type, and
 only once no producer remains (409 otherwise); it fires the
 `DEREGISTERED` notification:
@@ -1316,7 +1312,7 @@ import httpx
 for i in range(2):
     r = httpx.post('http://mlmr:8000/models', json={
         'modelType': f'demo-coordination-group-model-{i}', 'version': '1.0.0',
-        'author': 'hello-world-rapp', 'owner': 'hello-world-rapp',
+        'author': 'energy-saving-rapp', 'owner': 'energy-saving-rapp',
     })
     print(r.status_code, r.json())
 "
@@ -1380,7 +1376,7 @@ SME's `SubscribeEvents` (the reference's `CAPIFEventFilter`,
 `aefIds` and `apiInvokerIds` (the last for the `API_INVOKER_*` events).
 
 Subscribe two consumers: `consumer-unscoped` gets every
-`SERVICE_API_UPDATE`; `consumer-scoped` only `helloworld-api`'s (its
+`SERVICE_API_UPDATE`; `consumer-scoped` only `energy-saving-api`'s (its
 `serviceId` from step 4):
 
 ```bash
@@ -1393,7 +1389,7 @@ r = httpx.post('http://sme:8000/capif-events/v1/consumer-unscoped/subscriptions'
 print(r.status_code, r.json())
 r = httpx.post('http://sme:8000/capif-events/v1/consumer-scoped/subscriptions', json={
     'subscriberId': 'consumer-scoped', 'eventTypes': ['SERVICE_API_UPDATE'],
-    'callbackUri': 'http://demo-consumer:9000/sme-events-scoped', 'apiIds': ['<helloworldServiceId>'],
+    'callbackUri': 'http://demo-consumer:9000/sme-events-scoped', 'apiIds': ['<energySavingServiceId>'],
 })
 print(r.status_code, r.json())
 "
@@ -1407,14 +1403,14 @@ filter excludes it (`notify_service_change`'s
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://sme:8000/published-apis/v1/hello-world-rapp/service-apis', json={
-    'serviceName': 'other-api', 'producerId': 'hello-world-rapp',
-    'endpoint': 'http://hello-world-rapp:8080/other/v1', 'version': '1.0', 'moduleScope': 'hello-world-rapp',
+r = httpx.post('http://sme:8000/published-apis/v1/energy-saving-rapp/service-apis', json={
+    'serviceName': 'other-api', 'producerId': 'energy-saving-rapp',
+    'endpoint': 'http://energy-saving-rapp:8080/other/v1', 'version': '1.0', 'moduleScope': 'energy-saving-rapp',
 })
 print(r.status_code, r.json())
-r = httpx.post('http://sme:8000/published-apis/v1/hello-world-rapp/service-apis', json={
-    'serviceName': 'other-api', 'producerId': 'hello-world-rapp',
-    'endpoint': 'http://hello-world-rapp:8080/other/v1', 'version': '2.0', 'moduleScope': 'hello-world-rapp',
+r = httpx.post('http://sme:8000/published-apis/v1/energy-saving-rapp/service-apis', json={
+    'serviceName': 'other-api', 'producerId': 'energy-saving-rapp',
+    'endpoint': 'http://energy-saving-rapp:8080/other/v1', 'version': '2.0', 'moduleScope': 'energy-saving-rapp',
 })
 print(r.status_code, r.json())
 "
@@ -1423,16 +1419,16 @@ print(r.status_code, r.json())
 `sme`'s logs show exactly one delivery attempt, to `consumer-unscoped`'s
 callback.
 
-Re-register `helloworld-api` itself (`UPDATE`). This matches
+Re-register `energy-saving-api` itself (`UPDATE`). This matches
 `consumer-scoped`'s filter too, so **both** subscribers are notified:
 
 ```bash
 docker compose exec r1-termination python3 -c "
 import httpx
-r = httpx.post('http://sme:8000/published-apis/v1/hello-world-rapp/service-apis', json={
-    'serviceName': 'helloworld-api', 'producerId': 'hello-world-rapp',
-    'endpoint': 'http://hello-world-rapp:8080/helloworld/v1', 'version': 'v2',
-    'fullApiVersions': ['v1'], 'moduleScope': 'hello-world-rapp',
+r = httpx.post('http://sme:8000/published-apis/v1/energy-saving-rapp/service-apis', json={
+    'serviceName': 'energy-saving-api', 'producerId': 'energy-saving-rapp',
+    'endpoint': 'http://energy-saving-rapp:8080/energy-saving/v1', 'version': 'v2',
+    'fullApiVersions': ['v1'], 'moduleScope': 'energy-saving-rapp',
 })
 print(r.status_code, r.json())
 "
@@ -1524,7 +1520,7 @@ print(r.status_code, r.json())
 
 `state` is now `PRIMED`.
 
-**A deprime refusal.** Try to deprime while the sample rApp's instance
+**A deprime refusal.** Try to deprime while the Energy Saving rApp's instance
 (step 3) is still deployed. This is the reference's `deprimeRapp` guard
 ("Unable to deprime as there are active rapp instances"), backed by a
 query against `PackageUsageRegistration`:
@@ -1574,11 +1570,11 @@ print(r.status_code)
 ```
 
 `204` with an empty body — the instance row is gone. This completes the
-hello-world lifecycle.
+rApp lifecycle.
 
 ## 24. Wave 10.1 — the EnergySaving rApp (Demo 00–11)
 
-Independent of the hello-world package above. The EnergySaving reference
+Continues from the package used above. The EnergySaving reference
 rApp (`samples/energy-saving-rapp/`) runs beside the platform as the
 `energy-saving-rapp` service. Using only O1 PM data, it:
 

@@ -6,7 +6,7 @@ import { FLOWS, flow01, flow02, flow03, flow05, flow06, flow07, flow09, flow10, 
 const statuses = (steps: FlowStep[]) => steps.map((s) => s.status);
 
 const pkg = (state: string, extra: Partial<Package> = {}): Package => ({
-  packageId: "p1", name: "hello", version: "1.0", vendor: null, applicationType: "rApp", state, toscaEntryDefinitions: null,
+  packageId: "p1", name: "EnergySaving_rApp", version: "1.0", vendor: null, applicationType: "rApp", state, toscaEntryDefinitions: null,
   signatureVerified: true, nfDeploymentDescriptorId: state === "AVAILABLE" ? "d1" : null, aiCapabilities: null,
   descriptorId: null, descriptorInvariantId: null, descriptorVersion: null, schemaVersion: null, smeDeclarations: null, ...extra,
 });

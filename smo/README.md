@@ -71,8 +71,7 @@ what each parameter means is in [`docs/RAPP_PACKAGING.md`](docs/RAPP_PACKAGING.m
 
 | rApp | Directory | Use case | R1 route | Call flow |
 |---|---|---|---|---|
-| [Hello World](samples/hello-world-rapp/README.md) | `samples/hello-world-rapp/` | Minimal package for the lifecycle demo (no AI) | none (not a service in compose) | [01](docs/call-flows/01-rapp-onboarding-to-deployment.md) |
-| [Energy Saving](samples/energy-saving-rapp/README.md) | `samples/energy-saving-rapp/` | Cell sleep/wake | `/energy-saving-rapp` | [22](docs/call-flows/22-energy-saving-closed-loop.md) |
+| [Energy Saving](samples/energy-saving-rapp/README.md) | `samples/energy-saving-rapp/` | Cell sleep/wake | `/energy-saving-rapp` | [01](docs/call-flows/01-rapp-onboarding-to-deployment.md), [22](docs/call-flows/22-energy-saving-closed-loop.md) |
 | [Mobility Optimization](samples/mobility-optimization-rapp/README.md) | `samples/mobility-optimization-rapp/` | Per-relation CIO | `/mobility-optimization-rapp` | [23](docs/call-flows/23-mobility-optimization-closed-loop.md) |
 | [Coverage Optimization](samples/coverage-optimization-rapp/README.md) | `samples/coverage-optimization-rapp/` | Joint tilt / power | `/coverage-optimization-rapp` | [24](docs/call-flows/24-coverage-optimization-closed-loop.md) |
 | [Traffic Steering](samples/traffic-steering-rapp/README.md) | `samples/traffic-steering-rapp/` | Idle priority + connected CIO | `/traffic-steering-rapp` | [25](docs/call-flows/25-traffic-steering-closed-loop.md) |
@@ -160,7 +159,7 @@ request or response shape, regenerate the specs with
 smo/
   README.md                 this file
   CLAUDE.md                 working practice and the full verification battery
-  DEMO_RUNBOOK.md           live walk-through: hello-world lifecycle (§0–§23), reference rApps (§24–§27)
+  DEMO_RUNBOOK.md           live walk-through: rApp lifecycle on the Energy Saving package (§0–§23), reference rApps (§24–§27)
   OPEN_ITEMS.md             open items only
   HISTORY.md                audit trail: closed items, spec audit, wave exit reviews (cited by code comments)
   docker-compose.yml        deployment topology, incl. the isolated a1_mock_net network
@@ -180,8 +179,7 @@ smo/
   samples/
     build_csar.py           builds samples/<name>.csar from samples/<name>/
     <name>-rapp/README.md   each sample's README: what it does, design, package, API, tests
-    hello-world-rapp/       minimal sample package used by DEMO_RUNBOOK.md §0–§23
-    energy-saving-rapp/     Wave 10.1 rApp: service, model, decision engine, demo.py (§24)
+    energy-saving-rapp/     Wave 10.1 rApp: service, model, decision engine, demo.py (§24); also the package used by DEMO_RUNBOOK.md §0–§23
     mobility-optimization-rapp/  Wave 10.2 rApp: service, model, MRO engine, demo.py (§25)
     coverage-optimization-rapp/  Wave 10.3 rApp: service, model, joint optimiser, demo.py (§26)
     traffic-steering-rapp/  Wave 10.4 rApp: service, model, pairwise planner, demo.py (§27)

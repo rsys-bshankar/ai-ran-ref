@@ -211,7 +211,7 @@ def test_onboard_resolves_name_version_vendor_from_the_asd(client, monkeypatch):
     asd = (
         "tosca_definitions_version: tosca_simple_yaml_1_3\n"
         "topology_template:\n  node_templates:\n    applicationServiceDescriptor:\n      properties:\n"
-        '        provider: "ai-ran-ref"\n        application_name: hello-world-rapp\n        application_version: "1.1"  # bumped\n'
+        '        provider: "ai-ran-ref"\n        application_name: energy-saving-rapp\n        application_version: "1.1"  # bumped\n'
     )
     _mock_fetch(monkeypatch, _real_package_bytes(definitions=asd))
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
@@ -219,7 +219,7 @@ def test_onboard_resolves_name_version_vendor_from_the_asd(client, monkeypatch):
     package_id = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()["packageId"]
 
     pkg = next(p for p in client.get("/packages").json()["items"] if p["packageId"] == package_id)
-    assert (pkg["state"], pkg["name"], pkg["version"], pkg["vendor"]) == ("AVAILABLE", "hello-world-rapp", "1.1", "ai-ran-ref")
+    assert (pkg["state"], pkg["name"], pkg["version"], pkg["vendor"]) == ("AVAILABLE", "energy-saving-rapp", "1.1", "ai-ran-ref")
 
 
 def test_onboard_captures_the_real_asd_descriptor_identity_fields(client, monkeypatch):
@@ -237,7 +237,7 @@ def test_onboard_captures_the_real_asd_descriptor_identity_fields(client, monkey
         "        descriptor_id: 2cd6a567-2e33-4960-8ef7-1cc519c998c4\n"
         "        descriptor_invariant_id: 3f8a5e1b-68f1-42e5-89d0-47090dd0ef5a\n"
         '        descriptor_version: "1.0"\n        schema_version: "2.0"\n'
-        '        provider: "ai-ran-ref"\n        application_name: hello-world-rapp\n        application_version: "1.0"\n'
+        '        provider: "ai-ran-ref"\n        application_name: energy-saving-rapp\n        application_version: "1.0"\n'
     )
     _mock_fetch(monkeypatch, _real_package_bytes(definitions=asd))
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
@@ -279,7 +279,7 @@ def test_onboard_leaves_ai_capabilities_null_when_neither_file_is_present(client
 
 def test_onboard_parses_manifest_and_capabilities_yaml_when_present(client, monkeypatch):
     """The positive case: a package declaring both root-level files (like
-    samples/hello-world-rapp/ after this pass) has its AI Platform
+    samples/energy-saving-rapp/) has its AI Platform
     capability declaration parsed and stored.
     """
     manifest_yaml = "rappManifest:\n  manifestVersion: \"1.0\"\n  aiRuntimeSdkVersion: \"1.0\"\n"
@@ -287,7 +287,7 @@ def test_onboard_parses_manifest_and_capabilities_yaml_when_present(client, monk
         "capabilities:\n"
         "  provides:\n"
         "    - namespace: data\n"
-        "      description: produces hello-world-metrics\n"
+        "      description: produces energy-saving-metrics\n"
         "  consumes:\n"
         "    - namespace: platform\n"
         "      description: registers as an SME provider\n"
@@ -301,7 +301,7 @@ def test_onboard_parses_manifest_and_capabilities_yaml_when_present(client, monk
     assert pkg["state"] == "AVAILABLE"
     assert pkg["aiCapabilities"] == {
         "manifestVersion": "1.0", "aiRuntimeSdkVersion": "1.0",
-        "provides": [{"namespace": "data", "description": "produces hello-world-metrics"}],
+        "provides": [{"namespace": "data", "description": "produces energy-saving-metrics"}],
         "consumes": [{"namespace": "platform", "description": "registers as an SME provider"}],
     }
 
@@ -361,7 +361,7 @@ def test_onboard_parses_sme_provider_and_service_api_declarations_when_present(c
     Onboarding/rApp Mgmt finding 3).
     """
     provider_json = '{"apiProvDomInfo": "Provider domain", "apiProvFuncs": [{"apiProvFuncRole": "APF"}]}'
-    service_api_json = '{"apiName": "Hello World API Set 1", "aefProfiles": [{"aefId": "aef-1"}]}'
+    service_api_json = '{"apiName": "Energy Saving API Set 1", "aefProfiles": [{"aefId": "aef-1"}]}'
     _mock_fetch(monkeypatch, _real_package_bytes(sme_provider_json=provider_json, sme_service_api_json=service_api_json))
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
 
@@ -371,7 +371,7 @@ def test_onboard_parses_sme_provider_and_service_api_declarations_when_present(c
     assert pkg["state"] == "AVAILABLE"
     assert pkg["smeDeclarations"] == {
         "providers": [{"apiProvDomInfo": "Provider domain", "apiProvFuncs": [{"apiProvFuncRole": "APF"}]}],
-        "serviceApis": [{"apiName": "Hello World API Set 1", "aefProfiles": [{"aefId": "aef-1"}]}],
+        "serviceApis": [{"apiName": "Energy Saving API Set 1", "aefProfiles": [{"aefId": "aef-1"}]}],
     }
 
 
@@ -576,11 +576,11 @@ def test_query_packages_exposes_identity_fields_for_the_gui(client, db_session_f
     """GUI pass: the package list only carried id/state, so an operator
     couldn't tell packages apart by name/version."""
     with db_session_factory() as session:
-        session.add(ApplicationPackage(package_id=uuid.uuid4(), application_type="rApp", name="hello-world", version="1.0.0",
+        session.add(ApplicationPackage(package_id=uuid.uuid4(), application_type="rApp", name="energy-saving", version="1.0.0",
                                         vendor="acme", state="AVAILABLE", manifest_ref="m"))
         session.commit()
     [pkg] = client.get("/packages").json()["items"]
-    assert (pkg["name"], pkg["version"], pkg["vendor"], pkg["applicationType"]) == ("hello-world", "1.0.0", "acme", "rApp")
+    assert (pkg["name"], pkg["version"], pkg["vendor"], pkg["applicationType"]) == ("energy-saving", "1.0.0", "acme", "rApp")
     assert pkg["nfDeploymentDescriptorId"] is None
 
 
