@@ -696,3 +696,27 @@ def test_sa_smos_rollback_returns_a_rapp_to_its_previous_version(mesh, loaded_ap
 
     reconnect = mesh["sa-smos"].post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "RECONNECT"})
     assert reconnect.json()["outcome"] == "RESOLVED"  # heals the current (v1 again) instance's workload
+
+
+def test_an_idempotency_key_makes_a_repeated_nfo_instantiate_one_deployment_even_through_focom(mesh, db_connection):
+    """PR-ST-3, against the shared database and the real FOCOM call NFO makes: the repeat is answered
+    from the stored first answer (so FOCOM is not asked again and no second deployment exists), and the
+    key is scoped to the caller the gateway vouches for."""
+    descriptor_id = mesh["nfo"].post("/descriptors", json={
+        "packageId": str(uuid.uuid4()), "name": "Definitions/main.yaml",
+    }).json()["nfDeploymentDescriptorId"]
+    body = {"nfDeploymentDescriptorId": descriptor_id, "name": "idempotent-deployment", "requiredResourceTypeId": "gpu-l40"}
+
+    first = mesh["nfo"].post("/deployments", json=body, headers={"Idempotency-Key": "it-1", "X-R1-Invoker-Id": "rapp-a"})
+    again = mesh["nfo"].post("/deployments", json=body, headers={"Idempotency-Key": "it-1", "X-R1-Invoker-Id": "rapp-a"})
+    assert first.status_code == again.status_code == 202
+    assert again.json() == first.json() and again.headers["Idempotent-Replayed"] == "true"
+
+    second_descriptor = mesh["nfo"].post("/descriptors", json={
+        "packageId": str(uuid.uuid4()), "name": "Definitions/main.yaml",
+    }).json()["nfDeploymentDescriptorId"]   # NFO deploys a descriptor once, so rApp B brings its own
+    other_caller = mesh["nfo"].post(
+        "/deployments", json={**body, "nfDeploymentDescriptorId": second_descriptor, "name": "idempotent-deployment-b"},
+        headers={"Idempotency-Key": "it-1", "X-R1-Invoker-Id": "rapp-b"})
+    assert other_caller.status_code == 202 and "Idempotent-Replayed" not in other_caller.headers
+    assert other_caller.json()["nfDeploymentId"] != first.json()["nfDeploymentId"]

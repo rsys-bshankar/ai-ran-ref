@@ -121,3 +121,24 @@ def test_propagates_the_current_requests_correlation_id(net):
     finally:
         _current_correlation_id.reset(token)
     assert net.calls[-1][2]["X-Correlation-ID"] == "corr-abc-123"
+
+
+def test_a_callers_own_headers_ride_along_with_the_token(net):
+    """PR-ST-3: the SDK sends `Idempotency-Key` through R1Client."""
+    R1Client(R1).post("/nfo/deployments", json={}, headers={"Idempotency-Key": "k-1"})
+    headers = net.calls[-1][2]
+    assert headers["Idempotency-Key"] == "k-1" and headers["Authorization"] == "Bearer tok-1"
+
+
+def test_a_callers_own_headers_survive_the_401_refresh_retry(net):
+    R1Client(R1).get("/focom/inventory")
+    net.revoked.add("tok-1")
+    R1Client(R1).post("/nfo/deployments", json={}, headers={"Idempotency-Key": "k-2"})
+    retried = [h for m, u, h in net.calls if u.endswith("/nfo/deployments")]
+    assert [h["Idempotency-Key"] for h in retried] == ["k-2", "k-2"]
+    assert retried[-1]["Authorization"] == "Bearer tok-2"
+
+
+def test_the_clients_own_authorization_wins_over_a_callers(net):
+    R1Client(R1).get("/focom/inventory", headers={"Authorization": "Bearer attacker"})
+    assert net.calls[-1][2]["Authorization"] == "Bearer tok-1"

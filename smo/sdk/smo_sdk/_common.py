@@ -9,6 +9,8 @@ method per real platform-service route, so an rApp author calls
 request against `/mlmr/models`.
 """
 
+import uuid
+
 from smo_shared.r1_client import R1Client
 
 
@@ -67,7 +69,9 @@ class _RetryOnConflict:
     illegal transition because the other writer already made the same move); a second conflict is
     returned as is. Reads are never retried, nor are calls that carry `files` (a consumed stream
     cannot be resent). Side effects a route performs before its commit, such as a call to another
-    module, can run twice; the real remedy for that is an idempotency key (PR-ST-3)."""
+    module, can run twice; the real remedy for that is an idempotency key (PR-ST-3), which every POST
+    made through this wrapper carries: the first attempt's key is reused by the repeat, so the platform
+    answers the repeat from the stored first answer if the first attempt did complete."""
 
     _MUTATING = ("post", "put", "patch", "delete")
 
@@ -80,6 +84,11 @@ class _RetryOnConflict:
             return attr
 
         def call(path, *args, **kwargs):
+            if name == "post" and kwargs.get("files") is None:
+                # one key per SDK call, reused by the repeat below (PR-ST-3); a caller's own key wins
+                headers = dict(kwargs.get("headers") or {})
+                headers.setdefault("Idempotency-Key", uuid.uuid4().hex)
+                kwargs["headers"] = headers
             resp = attr(path, *args, **kwargs)
             if kwargs.get("files") is None and _is_concurrent_modification(resp):
                 resp = attr(path, *args, **kwargs)

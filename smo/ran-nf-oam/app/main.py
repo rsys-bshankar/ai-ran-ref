@@ -20,7 +20,7 @@ import time
 import uuid
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import select
@@ -35,6 +35,7 @@ from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.webhook import post_webhook
 from smo_shared.versioning import install_concurrency_handler
+from smo_shared.idempotency import idempotent
 
 from .models import Alarm, CMSchemaCache, FileSubscription, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
@@ -220,7 +221,8 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
 
 
 @app.post("/config-jobs", status_code=202)
-def write_configuration_changes(body: WriteConfigRequest, db: Session = Depends(get_session)):
+@idempotent("ran-nf-oam", status_code=202)
+def write_configuration_changes(body: WriteConfigRequest, request: Request, db: Session = Depends(get_session)):
     """WriteConfigurationChanges — RAN NF OAM LLD section 5.1's full
     sequence: MSAC gate, schema check (cache-or-fetch), decompose into
     sub_changes, PATCH each independently, aggregate.

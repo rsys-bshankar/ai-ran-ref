@@ -15,7 +15,7 @@ now actually drive state transitions instead of being pure stubs.
 import uuid
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -29,6 +29,7 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.versioning import install_concurrency_handler
+from smo_shared.idempotency import idempotent
 
 from .models import LCMOperation, NFDeployment, NFDeploymentDescriptor, NFOCloudResource
 from .statemachine import DeploymentEvent, DeploymentState, NFO_FSM
@@ -86,7 +87,8 @@ def create_descriptor(body: CreateDescriptorRequest, db: Session = Depends(get_s
 
 
 @app.post("/deployments", status_code=202)
-def instantiate(body: InstantiateRequest, db: Session = Depends(get_session)):
+@idempotent("nfo", status_code=202)
+def instantiate(body: InstantiateRequest, request: Request, db: Session = Depends(get_session)):
     """Instantiate — NFO+FOCOM LLD section 4: FOCOM's inventory is queried
     to resolve clusterId before the workload is placed, rather than the
     Phase 1 degenerate cluster being assumed implicitly. HISTORY.md §5: now also enforces the reference's own real guards before
@@ -289,7 +291,8 @@ def heal(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 @app.post("/deployments/{nf_deployment_id}/scale")
-def scale(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
+@idempotent("nfo")
+def scale(nf_deployment_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """HISTORY.md §5: previously a pure stub with no state
     transition of any kind. Scale is a replica-count change, the same
     conceptual operation as the reference's Update (RUNNING->UPDATING),

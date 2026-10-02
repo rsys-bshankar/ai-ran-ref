@@ -1,0 +1,179 @@
+"""Idempotency keys for command routes (PR-ST-3).
+
+A client that times out, or whose first attempt lost a write race (409
+`CONCURRENT_MODIFICATION`, `versioning.py`), cannot tell whether a command ran.
+Repeating a create then makes a second instance, deployment or job. With an
+`Idempotency-Key` header the platform answers the repeat with the first
+attempt's response instead of running the command again.
+
+Use `@idempotent("<module>", status_code=...)` under the route decorator; the
+route must take `request: Request` and `db: Session` parameters:
+
+    @app.post("/instances", status_code=202)
+    @idempotent("rapp-mgmt", status_code=202)
+    def create_instance(body: CreateInstanceRequest, request: Request, db: Session = Depends(get_session)): ...
+
+Behaviour, per (module, caller, key); the caller is the invoker id R1 Termination
+vouches for (`invoker.py`), so two rApps cannot replay or collide on each other's keys:
+
+  no header            the route runs as before.
+  first use            a reservation row is committed, the route runs, and a 2xx
+                       answer is stored with its status code and body.
+  repeat, same request the stored answer is returned, with `Idempotent-Replayed: true`.
+  repeat, other request  422 IDEMPOTENCY_KEY_REUSED: the key was used for a different
+                       method, path or payload (they are hashed together).
+  repeat while running 409 IDEMPOTENCY_KEY_IN_PROGRESS: the first attempt has not finished;
+                       repeat later. A reservation older than IDEMPOTENCY_IN_PROGRESS_SECONDS
+                       (default 300) is treated as abandoned by a crashed replica and taken over.
+  failure              an attempt that raises (any 4xx/5xx, or a conflict) releases its
+                       reservation, so the repeat runs the command again; only 2xx answers
+                       are stored.
+
+Records expire after IDEMPOTENCY_KEY_TTL_SECONDS (default 86400) and are purged when a
+new key is reserved. Known limit: the reservation and the stored answer are committed
+around the route's own commit, not inside it, so a replica that dies between the route's
+commit and the stored answer leaves a reservation that is taken over after the in-progress
+timeout; the command can then run a second time. Sync routes only.
+"""
+
+import datetime
+import functools
+import hashlib
+import inspect
+import json
+import os
+
+from fastapi import Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse, Response
+from sqlalchemy import JSON, DateTime, Integer, String, delete, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Mapped, Session, mapped_column
+
+from .db import Base
+from .errors import FrameworkError, framework_error
+from .invoker import invoker_id
+from .timeutil import as_utc
+
+HEADER_NAME = "Idempotency-Key"
+REPLAY_HEADER = "Idempotent-Replayed"
+MAX_KEY_LENGTH = 255
+IN_PROGRESS, COMPLETED = "IN_PROGRESS", "COMPLETED"
+
+
+def _seconds(env_name: str, default: int) -> int:
+    return int(os.environ.get(env_name, default))
+
+
+def _now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.UTC)
+
+
+class IdempotencyKey(Base):
+    __tablename__ = "idempotency_key"
+
+    module: Mapped[str] = mapped_column(String, primary_key=True)
+    scope: Mapped[str] = mapped_column(String, primary_key=True)   # the caller: invoker id, or "anonymous"
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    request_hash: Mapped[str] = mapped_column(String, nullable=False)
+    state: Mapped[str] = mapped_column(String, nullable=False)     # IN_PROGRESS | COMPLETED
+    response_status: Mapped[int | None] = mapped_column(Integer)
+    response_body: Mapped[dict | list | None] = mapped_column(JSON(none_as_null=True))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+def request_hash(method: str, path: str, payload) -> str:
+    canonical = json.dumps({"method": method, "path": path, "payload": payload}, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _pk(module: str, scope: str, key: str):
+    return (IdempotencyKey.module == module, IdempotencyKey.scope == scope, IdempotencyKey.key == key)
+
+
+def _replay(row: IdempotencyKey) -> JSONResponse:
+    return JSONResponse(status_code=row.response_status, content=row.response_body, headers={REPLAY_HEADER: "true"})
+
+
+def _begin(db: Session, module: str, scope: str, key: str, req_hash: str) -> JSONResponse | None:
+    """None: this request owns the key and must run. A response: replay it. Raises for a reused or running key."""
+    for _ in range(2):  # the second pass only happens when the row vanished between the insert race and the re-read
+        row = db.get(IdempotencyKey, (module, scope, key))
+        if row is None:
+            db.execute(delete(IdempotencyKey).where(
+                IdempotencyKey.created_at < _now() - datetime.timedelta(seconds=_seconds("IDEMPOTENCY_KEY_TTL_SECONDS", 86400))))
+            db.add(IdempotencyKey(module=module, scope=scope, key=key, request_hash=req_hash, state=IN_PROGRESS))
+            try:
+                db.commit()
+                return None
+            except IntegrityError:  # another request reserved the same key first
+                db.rollback()
+                continue
+        if row.request_hash != req_hash:
+            raise framework_error(FrameworkError.IDEMPOTENCY_KEY_REUSED,
+                                  detail="this Idempotency-Key was used for a different request (method, path or payload)")
+        if row.state == COMPLETED:
+            return _replay(row)
+        started = as_utc(row.created_at)
+        if _now() - started > datetime.timedelta(seconds=_seconds("IDEMPOTENCY_IN_PROGRESS_SECONDS", 300)):
+            taken = db.execute(update(IdempotencyKey).where(*_pk(module, scope, key), IdempotencyKey.created_at == row.created_at)
+                               .values(created_at=_now()))
+            db.commit()
+            if taken.rowcount == 1:  # compare-and-swap: exactly one replica takes an abandoned key over
+                return None
+            db.expire_all()
+            continue
+        raise framework_error(FrameworkError.IDEMPOTENCY_KEY_IN_PROGRESS,
+                              detail="the first request with this Idempotency-Key has not finished; repeat later")
+    raise framework_error(FrameworkError.IDEMPOTENCY_KEY_IN_PROGRESS, detail="the Idempotency-Key is being taken over; repeat later")
+
+
+def _release(db: Session, module: str, scope: str, key: str) -> None:
+    db.rollback()
+    db.execute(delete(IdempotencyKey).where(*_pk(module, scope, key), IdempotencyKey.state == IN_PROGRESS))
+    db.commit()
+
+
+def _complete(db: Session, module: str, scope: str, key: str, status_code: int, result) -> None:
+    if isinstance(result, Response):
+        status_code, body = result.status_code, (json.loads(result.body) if result.body else None)
+    else:
+        body = jsonable_encoder(result)
+    db.execute(update(IdempotencyKey).where(*_pk(module, scope, key))
+               .values(state=COMPLETED, response_status=status_code, response_body=body))
+    db.commit()
+
+
+def run_idempotent(request: Request, db: Session, module: str, status_code: int, payload, run):
+    key = request.headers.get(HEADER_NAME)
+    if key is None:
+        return run()
+    if not key or len(key) > MAX_KEY_LENGTH or not key.isprintable():
+        raise framework_error(FrameworkError.IDEMPOTENCY_KEY_INVALID,
+                              detail=f"Idempotency-Key must be 1 to {MAX_KEY_LENGTH} printable characters")
+    scope = invoker_id(request) or "anonymous"
+    replay = _begin(db, module, scope, key, request_hash(request.method, request.url.path, payload))
+    if replay is not None:
+        return replay
+    try:
+        result = run()
+    except BaseException:
+        _release(db, module, scope, key)
+        raise
+    _complete(db, module, scope, key, status_code, result)
+    return result
+
+
+def idempotent(module: str, status_code: int = 200):
+    """Route decorator, see the module docstring. `status_code` is the route's success status, replayed as stored."""
+    def decorate(fn):
+        params = inspect.signature(fn).parameters
+        if "request" not in params or "db" not in params:
+            raise TypeError(f"{fn.__name__}: an @idempotent route needs `request: Request` and `db: Session` parameters")
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            payload = jsonable_encoder({k: v for k, v in kwargs.items() if k not in ("request", "db")})
+            return run_idempotent(kwargs["request"], kwargs["db"], module, status_code, payload, lambda: fn(*args, **kwargs))
+        return wrapper
+    return decorate

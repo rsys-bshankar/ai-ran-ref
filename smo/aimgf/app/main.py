@@ -38,7 +38,7 @@ import uuid
 from typing import Literal
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -53,6 +53,7 @@ from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.webhook import post_webhook
 from smo_shared.versioning import install_concurrency_handler
+from smo_shared.idempotency import idempotent
 
 from .models import (
     AIMLInferenceEmulationFunction, AIMLInferenceFunction, AIMLInferenceReport, CertificationRecord, EmulationJob, FeatureGroup, InferenceJob,
@@ -606,7 +607,8 @@ def _record_training_start(model_id: uuid.UUID, ml_training_type: str, job: Trai
 
 
 @app.post("/training-jobs", status_code=201)
-def request_training(body: RequestTrainingRequest, db: Session = Depends(get_session)):
+@idempotent("aimgf", status_code=201)
+def request_training(body: RequestTrainingRequest, request: Request, db: Session = Depends(get_session)):
     """RequestTraining — exactly one of modelId/modelCoordinationGroupId,
     enforced at the DB layer (exactly_one_target constraint) and checked
     here for a clean error. See `_start_training` for the lifecycle rules.
@@ -895,7 +897,8 @@ def _start_validation(db: Session, *, model_id: uuid.UUID | None, group_id: uuid
 
 
 @app.post("/validation-jobs", status_code=201)
-def request_validation(body: RequestValidationRequest, db: Session = Depends(get_session)):
+@idempotent("aimgf", status_code=201)
+def request_validation(body: RequestValidationRequest, request: Request, db: Session = Depends(get_session)):
     """CreateValidation — see `_start_validation`."""
     job = _start_validation(db, model_id=body.modelId, group_id=None, producer_id=body.producerId,
                             training_job_id=body.trainingJobId, validation_criteria=body.validationCriteria,
@@ -959,7 +962,8 @@ def list_validation_jobs(model_id: uuid.UUID | None = None, status: str | None =
 # ---------------------------------------------------------------- Emulation
 
 @app.post("/emulation-jobs", status_code=201)
-def request_emulation(body: RequestEmulationRequest, db: Session = Depends(get_session)):
+@idempotent("aimgf", status_code=201)
+def request_emulation(body: RequestEmulationRequest, request: Request, db: Session = Depends(get_session)):
     """CreateEmulation — new this wave, split out from Wave 1's flat
     VALIDATION_COMPLETE -> EMULATED transition the same way ValidationJob
     is. Requires the model to have passed validation (VALIDATED) AND an
@@ -1280,7 +1284,8 @@ def update_node_groups(model_id: uuid.UUID, body: UpdateNodeGroupsRequest, db: S
 # ---------------------------------------------------------------- Inference
 
 @app.post("/models/{model_id}/inference-jobs", status_code=201)
-def request_inference(model_id: uuid.UUID, notification_destination: str | None = None,
+@idempotent("aimgf", status_code=201)
+def request_inference(request: Request, model_id: uuid.UUID, notification_destination: str | None = None,
                       aiml_inference_function_id: uuid.UUID | None = None, consumer_ref: str | None = None,
                       timeout_seconds: int | None = None, db: Session = Depends(get_session)):
     """RequestInference — MLEF-hosted (AI/ML Workflow LLD section 3).

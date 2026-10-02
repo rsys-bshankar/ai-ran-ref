@@ -1737,3 +1737,20 @@ CREATE TABLE traffic_decision (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX traffic_decision_instance_cell ON traffic_decision (instance_id, cell_id, created_at DESC);
+
+-- PR-ST-3: Idempotency-Key header on command routes (smo_shared/idempotency.py). One row per
+-- (module, caller, key): reserved IN_PROGRESS before the route runs, COMPLETED with the stored
+-- 2xx answer after. Purged after IDEMPOTENCY_KEY_TTL_SECONDS (default 24 h).
+CREATE TABLE idempotency_key (
+  module           TEXT NOT NULL,
+  scope            TEXT NOT NULL,   -- the caller: the invoker id R1 Termination vouches for, or 'anonymous'
+  key              TEXT NOT NULL,
+  request_hash     TEXT NOT NULL,   -- sha256 over method, path and payload
+  state            TEXT NOT NULL CHECK (state IN ('IN_PROGRESS','COMPLETED')),
+  response_status  INTEGER,
+  response_body    JSONB,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (module, scope, key)
+);
+CREATE INDEX idempotency_key_created_at ON idempotency_key (created_at);
+
