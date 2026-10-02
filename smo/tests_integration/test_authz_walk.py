@@ -32,9 +32,11 @@ BAD_AUTHORIZATIONS = [None, "", "Bearer", "Bearer ", "Bearer not-the-token", "Ba
 
 
 def backend_routes(app: FastAPI):
-    """(method, path template filled with a dummy value) for every API route of `app`, docs routes included."""
+    """(method, path template filled with a dummy value) for every API route of `app`, docs routes included (not `/metrics`)."""
     for route in app.routes:
         path = getattr(route, "path", None)
+        if path == "/metrics":
+            continue          # for the scraper, never reached through the gateway (test_metrics_adoption.py)
         for method in sorted((getattr(route, "methods", None) or set()) & WALKED_METHODS):
             yield method, re.sub(r"\{[^}]+\}", "x", path)
 
