@@ -28,9 +28,9 @@ def main() -> int:
             if BASE_10 not in caps and BASE_11 not in caps:
                 print("FAIL: no base capability in the server's hello", file=sys.stderr)
                 return 1
-            if not any("urn:smo:lab" in c for c in caps):
-                print("FAIL: the server does not advertise the smo-lab model", file=sys.stderr)
-                return 1
+            # A YANG 1.1 module (smo-lab is one) is listed in ietf-yang-library, not in the hello (RFC 7950 section 5.6.4), so
+            # this only reports; the proof that the model is installed is the data that comes back below.
+            print("smo-lab advertised in the hello:", any("urn:smo:lab" in c for c in caps))
             reply = session.rpc(GET_LAB)
     except NetconfSshError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
