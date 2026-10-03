@@ -371,3 +371,19 @@ def send_get_config(adaptor_uri: str, target_ref: str, message_id: str, managed_
     except NetconfSshError as exc:
         log.warning("get-config on %s failed: %s", target_ref, exc)
         return None
+
+
+def send_walk(adaptor_uri: str, message_id: str, credential_ref: str | None = None,
+              host_keys: list[tuple[str, str]] | None = None) -> list[str] | None:
+    """PR-SB-6.2: the managed objects a model-based server reports, as DNs relative to the element root; None when the read failed or the endpoint
+    has no `?model=` (a server without a model has no entries to walk)."""
+    model = yang_payload.model_of(adaptor_uri)
+    if not model:
+        return None
+    profile = yang_payload.PROFILES[model]
+    try:
+        with open_session(adaptor_uri, credential_ref, host_keys) as session:
+            return yang_payload.walk_paths(profile, session.rpc(yang_payload.build_walk_rpc(profile, message_id)))
+    except NetconfSshError as exc:
+        log.warning("walk of %s failed: %s", adaptor_uri.split("?", 1)[0], exc)
+        return None

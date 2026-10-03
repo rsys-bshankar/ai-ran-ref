@@ -26,9 +26,14 @@ class Profile:
     container: str
     list_name: str
     key_leaf: str
+    # PR-SB-6.2: where the list's entries sit in the containment tree, below the element root: the classes of the entries and the RDNs above them
+    rdn_class: str = ""
+    containment: tuple[str, ...] = ()
 
 
-PROFILES = {"smo-lab": Profile("urn:smo:lab", "lab", "cell", "id")}
+# smo-lab is not a 3GPP model: its `cell` entries are mapped onto the 3GPP names the runbook already uses (`GNBDUFunction=1,NRCellDU=<id>`), so
+# a walk of the lab yields the DNs the write routes take.
+PROFILES = {"smo-lab": Profile("urn:smo:lab", "lab", "cell", "id", rdn_class="NRCellDU", containment=("GNBDUFunction=1",))}
 
 
 def model_of(adaptor_uri: str) -> str | None:
@@ -109,3 +114,26 @@ def build_edit_config_rpc(profile: Profile, message_id: str, target_ref: str, at
     return (f'<rpc message-id="{escape(message_id)}" xmlns="{NETCONF_BASE_NS}"><edit-config><target><{target}/></target><config>'
             f'<{profile.container} xmlns="{profile.namespace}"><{profile.list_name} xmlns:nc="{NETCONF_BASE_NS}" nc:operation="{operation}">'
             f"<{profile.key_leaf}>{key}</{profile.key_leaf}>{leaves}</{profile.list_name}></{profile.container}></config></edit-config></rpc>")
+
+
+def build_walk_rpc(profile: Profile, message_id: str) -> str:
+    """A subtree `<get-config>` of the model's whole container: every list entry (PR-SB-6.2)."""
+    return (f'<rpc message-id="{escape(message_id)}" xmlns="{NETCONF_BASE_NS}"><get-config><source><running/></source>'
+            f'<filter type="subtree"><{profile.container} xmlns="{profile.namespace}"/></filter></get-config></rpc>')
+
+
+def walk_paths(profile: Profile, root, ) -> list[str] | None:
+    """The DNs below the element root that a whole-container reply reports, as paths relative to the root (`GNBDUFunction=1,NRCellDU=101`), the
+    containment RDNs first; None when the reply has no `<data>`. Entries without a key are skipped."""
+    local = lambda node: node.tag.rsplit("}", 1)[-1]  # noqa: E731
+    data = next((c for c in root if local(c) == "data"), None)
+    if data is None:
+        return None
+    paths = []
+    for entry in data.iter():
+        if local(entry) != profile.list_name:
+            continue
+        key = next(((child.text or "").strip() for child in entry if local(child) == profile.key_leaf), "")
+        if key:
+            paths.append(",".join((*profile.containment, f"{profile.rdn_class}={key}")))
+    return sorted(set(paths))

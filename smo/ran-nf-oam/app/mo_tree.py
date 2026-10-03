@@ -50,7 +50,10 @@ def ensure(db: Session, managed_element_ref: str, dn: str, source: str) -> None:
     now = datetime.datetime.now(datetime.UTC)
     parent = None
     for path in ancestors(dn):
-        if db.get(ManagedObject, path) is None:
+        existing = db.get(ManagedObject, path)
+        if existing is not None and source == "registry" and existing.source != "registry":
+            existing.source = "registry"                       # something the registry vouches for is not swept away by a later walk
+        if existing is None:
             cls, ident = parse_ldn(path)[-1]
             db.add(ManagedObject(dn=path, parent_dn=parent, object_class=cls, object_id=ident, managed_element_ref=managed_element_ref,
                                  source=source, updated_at=now))
@@ -95,3 +98,28 @@ def subtree(db: Session, dn: str, depth: int) -> tuple[dict, bool]:
         return node
 
     return build(root, 0), truncated[0]
+
+
+def exists(db: Session, dn: str) -> bool:
+    return db.get(ManagedObject, dn) is not None
+
+
+def apply_walk(db: Session, managed_element_ref: str, relative_paths: list[str]) -> dict:
+    """PR-SB-6.2: make the element's walked objects match a server's report. Objects the server reports are added (an existing one is left as it
+    is, so a registry row stays a registry row); objects of `source=walk` it no longer reports are removed with whatever hangs below them
+    (registry rows are never removed, and their ancestors were promoted to registry when they were created)."""
+    root = root_dn(managed_element_ref)
+    wanted = {f"{root},{path}" for path in relative_paths}
+    wanted_with_ancestors = {a for dn in wanted for a in ancestors(dn)}
+    existing = {o.dn: o for o in db.scalars(select(ManagedObject).where(ManagedObject.managed_element_ref == managed_element_ref)).all()}
+    removed = [dn for dn, o in existing.items() if o.source == "walk" and dn not in wanted_with_ancestors]
+    for dn in sorted(removed, key=len, reverse=True):          # leaves first, so no foreign key is ever violated on the way
+        obj = db.get(ManagedObject, dn)
+        if obj is not None:
+            db.delete(obj)
+    db.flush()
+    before = set(existing) - set(removed)
+    for dn in sorted(wanted):
+        ensure(db, managed_element_ref, dn, "walk")
+    after = {o.dn for o in db.scalars(select(ManagedObject).where(ManagedObject.managed_element_ref == managed_element_ref)).all()}
+    return {"added": len(after - before), "removed": len(removed), "unchanged": len(before & after), "total": len(after)}
