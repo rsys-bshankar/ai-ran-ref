@@ -109,9 +109,17 @@ def test_sigterm_lets_the_inflight_request_finish_refuses_new_ones_and_exits_cle
     started = time.monotonic()
     process.send_signal(signal.SIGTERM)
 
-    time.sleep(0.5)
-    with pytest.raises(httpx.TransportError):                 # nothing new is served: refused, or accepted by the kernel and reset
-        httpx.get(f"{base}/health", timeout=2.0)
+    # nothing new is served: refused, or accepted by the kernel and reset. Not at a fixed instant: with several workers uvicorn's
+    # supervisor looks at the stop flag every half second before it signals them, so a probe at exactly 0.5 s could still be answered
+    # (the flake of this test on a loaded runner). The request in flight keeps the drain open for about 2 s after the signal.
+    deadline = time.monotonic() + 2.0
+    while True:
+        try:
+            httpx.get(f"{base}/health", timeout=1.0)
+        except httpx.TransportError:
+            break
+        assert time.monotonic() < deadline, "the service was still answering new requests 2 s after SIGTERM"
+        time.sleep(0.1)
 
     thread.join(timeout=20)
     assert "error" not in outcome, outcome.get("error")
