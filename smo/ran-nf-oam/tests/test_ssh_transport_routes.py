@@ -89,6 +89,20 @@ def test_config_job_and_read_go_over_ssh(client, db_session_factory, lab):
     assert read.status_code == 200 and read.json()["attributes"] == {"administrativeState": "UNLOCKED"}
 
 
+def test_the_config_route_reads_a_model_based_server(client, lab):
+    """PR-SB-1.5: an endpoint registered with ?model=smo-lab gets a subtree get-config and the leaves come back as SMO attributes."""
+    lab.behaviour.data = ('<lab xmlns="urn:smo:lab"><cell><id>101</id><administrative-state>unlocked</administrative-state>'
+                          '<tx-power>40</tx-power></cell></lab>')
+    assert _register(client, lab.uri + "?model=smo-lab", transport="ssh").status_code == 201
+    read = client.get("/managed-entities/ME-1/config", params={"managed_function_ref": "GNBDUFunction=1,NRCellDU=101"})
+    assert read.status_code == 200 and read.json()["attributes"] == {"administrativeState": "unlocked", "txPower": "40"}
+    assert "managed-object" not in lab.behaviour.received[-1]
+
+
+def test_registration_refuses_an_unknown_model(client, lab):
+    assert _register(client, lab.uri + "?model=nope", transport="ssh").status_code in (400, 422)
+
+
 def test_a_rejecting_server_gives_a_rejected_sub_change(client, lab):
     lab.behaviour.edit_reply = "<rpc-error><error-tag>invalid-value</error-tag></rpc-error>"
     _register(client, lab.uri, transport="ssh")
