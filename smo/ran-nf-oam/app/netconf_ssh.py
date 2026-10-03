@@ -214,17 +214,19 @@ def _parse_named(text: str, name: str):
 # Same call shapes as netconf_client.send_edit_config / send_get_config, which is how main.py picks them.
 def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict, message_id: str, operation: str = "merge",
                      managed_function_ref: str | None = None) -> EditResult:
-    if yang_payload.model_of(adaptor_uri):
-        # PR-SB-1.6: the write payload for a real model is not built yet; sending the <managed-object> shape to it would only be refused
-        log.warning("edit-config on %s: a model-based adaptor is read-only until PR-SB-1.6", target_ref)
-        return EditResult(False, "NETCONF_RPC_FAILED")
-    rpc = build_edit_config_rpc(message_id, target_ref, attribute_changes, operation, managed_function_ref)
+    model = yang_payload.model_of(adaptor_uri)
+    try:
+        rpc = (yang_payload.build_edit_config_rpc(yang_payload.PROFILES[model], message_id, target_ref, attribute_changes, operation,
+                                                  managed_function_ref)
+               if model else build_edit_config_rpc(message_id, target_ref, attribute_changes, operation, managed_function_ref))
+    except ValueError as exc:                                      # an operation the model path does not know: nothing is sent
+        return EditResult(False, "NETCONF_RPC_FAILED", str(exc))
     try:
         with NetconfSession(adaptor_uri) as session:
             return edit_outcome(session.rpc(rpc))
     except NetconfSshError as exc:
         log.warning("edit-config on %s failed: %s", target_ref, exc)
-        return EditResult(False, exc.reason)
+        return EditResult(False, exc.reason, exc.detail or None)
 
 
 def send_get_config(adaptor_uri: str, target_ref: str, message_id: str, managed_function_ref: str | None = None) -> dict | None:

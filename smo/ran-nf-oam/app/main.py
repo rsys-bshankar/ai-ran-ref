@@ -135,11 +135,11 @@ def _capture_before(me, endpoint, change: dict, attribute_changes: dict) -> tupl
 
 
 def _dispatch_with_retries(adaptor_uri: str, change: dict, attribute_changes: dict, message_id: str,
-                           operation: str, protocol: str = "NETCONF", transport: str = "http-mock") -> tuple[bool, str | None, int]:
-    """(applied, rejection reason, attempts) for one sub-change. The same
+                           operation: str, protocol: str = "NETCONF", transport: str = "http-mock") -> tuple[bool, str | None, int, str | None]:
+    """(applied, rejection reason, attempts, adaptor detail) for one sub-change. The same
     retry policy for both protocols: only a transient failure is retried, and only within the time budget."""
     send_edit, _, default_reason = _o1_client(protocol, transport)
-    reason, attempts = None, 0
+    reason, attempts, detail = None, 0, None
     started = _monotonic()
     for delay in NETCONF_RETRY_DELAYS:
         if attempts and _monotonic() - started + delay > DISPATCH_RETRY_BUDGET_SECONDS:
@@ -150,11 +150,12 @@ def _dispatch_with_retries(adaptor_uri: str, change: dict, attribute_changes: di
         result = send_edit(adaptor_uri, change["managedElementRef"], attribute_changes, message_id=message_id,
                            operation=operation, managed_function_ref=change.get("managedFunctionRef"))
         if result:
-            return True, None, attempts
+            return True, None, attempts, None
         reason = getattr(result, "reason", None) or default_reason
+        detail = getattr(result, "detail", None)
         if not getattr(result, "retryable", False):
             break
-    return False, reason, attempts
+    return False, reason, attempts, detail
 
 
 def _raise_dispatch_alarm(db: Session, job_id: uuid.UUID, change: dict, reason: str, attempts: int) -> None:
@@ -376,7 +377,7 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
                                          rejection_reason=blocker))
             continue
         before, before_error = _capture_before(me, endpoint, change, attribute_changes) if CM_SNAPSHOTS else (None, None)
-        applied, reason, attempts = _dispatch_with_retries(endpoint.adaptor_uri, change, attribute_changes,
+        applied, reason, attempts, detail = _dispatch_with_retries(endpoint.adaptor_uri, change, attribute_changes,
                                                            str(job.job_id), operation, me.o1_protocol, endpoint.transport)
         if not applied and attempts > 1:
             _raise_dispatch_alarm(db, job.job_id, change, reason, attempts)
@@ -385,7 +386,7 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
                                      managed_function_ref=change.get("managedFunctionRef"),
                                      attribute_changes=attribute_changes, operation=operation,
                                      status="APPLIED" if applied else "REJECTED",
-                                     rejection_reason=reason, attempts=attempts))
+                                     rejection_reason=reason, rejection_detail=detail, attempts=attempts))
         if CM_SNAPSHOTS:
             db.flush()                         # the snapshot's foreign key needs its sub-change row to exist first (Postgres enforces it)
             db.add(CMSnapshot(sub_change_id=sub_change_id, job_id=job.job_id, managed_element_ref=change["managedElementRef"],
@@ -448,7 +449,7 @@ def query_write_config_job_status(job_id: uuid.UUID, db: Session = Depends(get_s
     return {"jobId": str(job.job_id), "status": job.status,
             "subChanges": [{"managedElementRef": sc.managed_element_ref, "managedFunctionRef": sc.managed_function_ref,
                             "operation": sc.operation, "status": sc.status, "rejectionReason": sc.rejection_reason,
-                            "attempts": sc.attempts} for sc in sub_changes]}
+                            "rejectionDetail": sc.rejection_detail, "attempts": sc.attempts} for sc in sub_changes]}
 
 
 @app.get("/alarms")

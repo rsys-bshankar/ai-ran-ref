@@ -14,7 +14,7 @@ NETCONF_SSH_KNOWN_HOSTS=/tmp/lab_known_hosts NETCONF_SSH_PASSWORD=netconf \
 ```
 
 `scripts/netconf_lab_check.py` connects with the session wrapper (`ran-nf-oam/app/netconf_ssh.py`), checks the `<hello>`, and reads the model's
-data with `<get-config>`. CI runs it in the job "NETCONF lab (netopeer2)" of `.github/workflows/smo-tests.yml`.
+data with `<get-config>`, then writes a value through the model path (`?model=smo-lab`), reads it back, restores it, and checks that an out-of-range value is refused with the server's reason. CI runs it in the job "NETCONF lab (netopeer2)" of `.github/workflows/smo-tests.yml`.
 
 This is a lab, not part of the stack: it is only started by its profile, runs as root (the image's supervisor needs to) and publishes its port on
 the loopback interface only. The image is pinned by digest like the others.

@@ -164,11 +164,53 @@ def test_a_model_uri_is_validated_when_it_is_parsed():
             parse_ssh_uri(bad)
 
 
-def test_edit_config_to_a_model_uri_is_refused_until_sb_1_6(lab):
+def test_edit_config_to_a_model_uri_writes_the_list_entry_with_the_operation_on_it(lab):
+    """PR-SB-1.6: the write goes to <lab><cell> with the key and kebab-case leaves, `nc:operation` on the entry, never <managed-object>."""
     server = lab(Behaviour(data=LAB_DATA))
+    uri = server.uri + "?model=smo-lab"
+    result = send_edit_config(uri, "ME-1", {"txPower": 30, "administrativeState": "locked"}, message_id="w1", operation="replace",
+                              managed_function_ref="GNBDUFunction=1,NRCellDU=102")
+    assert result.applied
+    sent = server.behaviour.received[-1]
+    assert "managed-object" not in sent and "<target><running/></target>" in sent
+    assert 'nc:operation="replace"' in sent and "<id>102</id><tx-power>30</tx-power><administrative-state>locked</administrative-state>" in sent
+    send_edit_config(uri, "ME-1", {"txPower": 1}, message_id="w2", operation="delete", managed_function_ref="102")
+    assert 'nc:operation="delete"' in server.behaviour.received[-1] and "tx-power" not in server.behaviour.received[-1]
+
+
+def test_a_value_is_escaped_and_an_unknown_operation_sends_nothing(lab):
+    server = lab(Behaviour(data=LAB_DATA))
+    uri = server.uri + "?model=smo-lab"
+    send_edit_config(uri, "ME-1", {"description": "a<b&c"}, message_id="w3", managed_function_ref="101")
+    assert "a&lt;b&amp;c" in server.behaviour.received[-1]
     before = len(server.behaviour.received)
-    result = send_edit_config(server.uri + "?model=smo-lab", "ME-1", {"txPower": "30"}, message_id="m9", managed_function_ref="101")
-    assert not result and result.reason == "NETCONF_RPC_FAILED" and len(server.behaviour.received) == before
+    result = send_edit_config(uri, "ME-1", {"txPower": 1}, message_id="w4", operation="explode", managed_function_ref="101")
+    assert not result and result.reason == "NETCONF_RPC_FAILED" and "explode" in result.detail and len(server.behaviour.received) == before
+
+
+ERRORS = [
+    ("<rpc-error><error-type>application</error-type><error-tag>invalid-value</error-tag><error-severity>error</error-severity>"
+     "<error-path>/lab/cell/tx-power</error-path><error-message>out of range</error-message></rpc-error>",
+     "invalid-value (a value is not acceptable) at /lab/cell/tx-power: out of range"),
+    ("<rpc-error><error-tag>lock-denied</error-tag></rpc-error>", "lock-denied (the lock is held by another session)"),
+    ("<rpc-error><error-tag>data-missing</error-tag><error-info><bad-element>cell</bad-element></error-info></rpc-error>",
+     "data-missing (the data does not exist) at cell"),
+    ("<rpc-error><error-tag>vendor-specific</error-tag><error-message>x</error-message></rpc-error>", "vendor-specific: x"),
+    ("<rpc-error/>", "rpc-error"),
+    ("<rpc-error><error-tag>operation-failed</error-tag><error-message>" + "y" * 500 + "</error-message></rpc-error>", None),
+]
+
+
+@pytest.mark.parametrize("reply,detail", ERRORS)
+def test_rpc_error_becomes_a_detail_and_the_reason_stays_the_stable_code(lab, reply, detail):
+    """PR-SB-1.7: one unit case per tag family; the code is still NETCONF_RPC_FAILED and still not retryable."""
+    server = lab(Behaviour(edit_reply=reply))
+    result = send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="e1")
+    assert not result and result.reason == "NETCONF_RPC_FAILED" and not result.retryable
+    if detail is None:
+        assert len(result.detail) == 300 and result.detail.startswith("operation-failed (the operation failed): yyy")
+    else:
+        assert result.detail == detail
 
 
 def test_attribute_names_round_trip():

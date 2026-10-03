@@ -30,8 +30,8 @@ class EditResult:
 
     RETRYABLE = {"NETCONF_TIMEOUT", "NETCONF_UNREACHABLE"}
 
-    def __init__(self, applied: bool, reason: str | None = None):
-        self.applied, self.reason = applied, reason
+    def __init__(self, applied: bool, reason: str | None = None, detail: str | None = None):
+        self.applied, self.reason, self.detail = applied, reason, detail
 
     def __bool__(self) -> bool:
         return self.applied
@@ -122,10 +122,41 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
     return edit_outcome(_reply_root(resp))
 
 
+# RFC 6241 appendix A's error-tag values, in a few words each. An unlisted tag is reported as it came.
+RPC_ERROR_TAGS = {
+    "in-use": "the data is locked or in use", "invalid-value": "a value is not acceptable", "too-big": "the request or a response is too big",
+    "missing-attribute": "an attribute is missing", "bad-attribute": "an attribute value is not correct", "unknown-attribute": "an attribute is unknown",
+    "missing-element": "an element is missing", "bad-element": "an element value is not correct", "unknown-element": "an element is unknown",
+    "unknown-namespace": "a namespace is unknown", "access-denied": "access denied", "lock-denied": "the lock is held by another session",
+    "resource-denied": "the server is out of resources", "rollback-failed": "the rollback failed", "data-exists": "the data already exists",
+    "data-missing": "the data does not exist", "operation-not-supported": "the operation is not supported",
+    "operation-failed": "the operation failed", "malformed-message": "the message is malformed",
+}
+
+
+def rpc_error_detail(root) -> str | None:
+    """One line describing the first `<rpc-error>` of a reply (RFC 6241 section 4.3): `invalid-value (the value is not acceptable) at
+    /lab/cell/tx-power: out of range`; None when the reply has no `<rpc-error>`. Bounded in length: it is stored and shown."""
+    local = lambda node: node.tag.rsplit("}", 1)[-1]  # noqa: E731
+    error = next((c for c in root if local(c) == "rpc-error"), None) if root is not None else None
+    if error is None:
+        return None
+    fields = {local(child): (child.text or "").strip() for child in error.iter() if child is not error}
+    tag = fields.get("error-tag", "")
+    text = tag + (f" ({RPC_ERROR_TAGS[tag]})" if tag in RPC_ERROR_TAGS else "") if tag else "rpc-error"
+    where = fields.get("error-path") or fields.get("bad-element")
+    if where:
+        text += f" at {where}"
+    if fields.get("error-message"):
+        text += f": {fields['error-message']}"
+    return text[:300]
+
+
 def edit_outcome(root) -> EditResult:
-    """Applied when the `<rpc-reply>` carries `<ok/>`; anything else is a non-retryable NETCONF_RPC_FAILED."""
+    """Applied when the `<rpc-reply>` carries `<ok/>`; anything else is a non-retryable NETCONF_RPC_FAILED, with the server's
+    `<rpc-error>` (if it sent one) as the detail (PR-SB-1.7)."""
     if root is None or not any(child.tag.rsplit("}", 1)[-1] == "ok" for child in root):
-        return EditResult(False, "NETCONF_RPC_FAILED")
+        return EditResult(False, "NETCONF_RPC_FAILED", rpc_error_detail(root))
     return EditResult(True)
 
 

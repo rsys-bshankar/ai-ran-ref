@@ -4,6 +4,7 @@ without a container. `behaviour` picks what it does: capabilities offered in its
 import re
 import socket
 import threading
+import time
 
 import paramiko
 
@@ -108,6 +109,7 @@ def _converse(channel, b: Behaviour):
     else:
         channel.sendall(hello(b.caps))
     if b.close_after_hello:
+        time.sleep(0.3)             # let the client finish its subsystem request first: closing at once races it into a different error
         channel.close()
         return
     chunked = "urn:ietf:params:netconf:base:1.1" in b.caps
