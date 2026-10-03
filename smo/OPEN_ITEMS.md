@@ -581,13 +581,12 @@ Tag scheme and `CHANGELOG.md` exist (`PR-OPS-4.1`, `HISTORY.md` §10); no tag ha
 | OPS-9.1 | Default CPU and memory requests/limits in `values.yaml` | Pods schedule on kind | OPS-2.2 |
 | OPS-9.2 | Replace guesses by measured values | Table with the load that produced each | QA-1.4 |
 
-#### PR-OPS-10 — Development-sanity pipeline on GitHub Actions (Target 1) (OPS-10.1, 10.2, 10.4 done: `HISTORY.md` §10)
+#### PR-OPS-10 — Development-sanity pipeline on GitHub Actions (Target 1) (OPS-10.1 to 10.4 done: `HISTORY.md` §10)
 
 Purpose: tell the team, on every merge, that the whole stack still comes up and works. Runs on GitHub Actions only (free minutes; no GUI to open, headless checks only). It starts as option (a), *tear down and redeploy the whole stack on every merge to master*, and grows into option (b), *packaging and proper upgrades*, as the `PR-OPS` features below land. Option (a) always starts from empty data, so it cannot catch upgrade bugs; that is what the (b) steps add.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-10.3 | Headless GUI smoke check (Playwright against the GUI port) with screenshots uploaded as an artifact | Artifact holds the login and module-status screens | OPS-10.1 |
 | OPS-10.5 | (b) Upgrade lane: install the previous release, upgrade to the merged commit, replay | Job green; fails on a seeded breaking migration | OPS-1.6, OPS-4.1b, OPS-5.2 |
 | OPS-10.6 | (b) Helm on kind replaces the compose lane as the master gate; compose stays for local use | Master gate runs `OPS-2.8` and `OPS-2.9` | OPS-2.9, OPS-10.5 |
 | OPS-10.7 | (b) Rolling-upgrade lane (mixed versions) added to the master gate | Replay green | OPS-5.3, OPS-10.6 |
@@ -1433,4 +1432,4 @@ Pick any, or mix them. `Needs` is the only constraint.
 5. **First real O1 path:** SB-3, SB-5.1–5.2, SB-1.1–1.2 done; SB-1.3 and 1.5 built and tested in-process; SB-1.4 (the netopeer2 lab) open.
 6. **Safer changes:** done (MGT-1.1–1.4, MGT-3, MGT-8.1); MGT-1.5–1.8 are the follow-on.
 7. **Later:** HA, mesh, federation, vendor profiles.
-8. **Dev sanity and demo:** OPS-10.1, 10.2, 10.4 done (the redeploy gate, `.github/workflows/deploy-on-main.yml`); OPS-10.3 and OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-1.6, OPS-2 and OPS-5.
+8. **Dev sanity and demo:** OPS-10.1–10.4 done (the redeploy gate, `.github/workflows/deploy-on-main.yml`); OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-1.6, OPS-2 and OPS-5.

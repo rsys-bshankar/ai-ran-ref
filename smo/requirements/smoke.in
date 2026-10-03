@@ -1,0 +1,2 @@
+# Headless GUI smoke check (scripts/gui_smoke.py, the deploy gate): Playwright drives Chromium. Recompile: see README in this directory.
+playwright
