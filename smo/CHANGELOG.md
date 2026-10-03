@@ -3,9 +3,17 @@
 All notable changes to the SMO. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning and how a release is cut: `docs/RELEASES.md`.
 Entries are written for an operator: what changed in behaviour, configuration or the schema. The design record is `HISTORY.md`; what is still open is `OPEN_ITEMS.md`.
 
-No release has been tagged yet. Everything below is unreleased.
-
 ## [Unreleased]
+
+## [0.1.0] - 2026-10-03
+
+The first release: source and the docker compose stack. Images are not published yet (OPS-4.2); build them with `docker compose up -d --build`.
+
+### Known limitations
+- A CM job writes each sub-change in its own NETCONF transaction, so a job whose second change fails leaves the first one applied (SB-1.10 will make it one transaction per element).
+- The O-RAN WG4 YANG models are not bundled; model-based endpoints use the `smo-lab` profile (SB-4).
+- No rollback endpoint yet: `GET /managed-entities/{ref}/config-history` records the values, restoring them is manual (MGT-1.6, planned for 0.2.0).
+- The compose replay does not yet run over SSH (SB-1.11), and the rotation runbooks in `docs/SECRETS.md` other than the database password's are untried (SEC-4.8).
 
 ### Added
 - Filling the containment tree from a server: `POST /managed-entities/{ref}/managed-objects/refresh` reads a model-based ssh or tls endpoint (registered with `?model=`) with a whole-container `get-config` and makes the tree match (new objects `source=walk`, objects the server no longer reports removed, registry objects kept) (SB-6.2). `GET /topology` exports the tree in the TEIV adapter wire shape FOCOM already uses (one `ManagedObject` entity per node, a `MANAGEDOBJECT_CHILD_OF_MANAGEDOBJECT` relationship per parent link; optional `managed_element_ref` filter) (SB-6.7). `RAN_NF_OAM_ENFORCE_MO_TREE=true` (off by default) rejects a CM sub-change whose target DN is not in the tree with `MANAGED_OBJECT_NOT_FOUND`, before anything is sent, in dry runs too (SB-6.5).
@@ -54,4 +62,5 @@ No release has been tagged yet. Everything below is unreleased.
 ### Upgrade notes
 - `docker compose up -d --build` runs the migrations (`docker compose logs migrate`); outside compose run `python scripts/migrate.py`. A database created from `001_init.sql` by an earlier stack is stamped at `0001` first. Take a backup (`scripts/db_backup.sh`) before upgrading; `python scripts/migrate.py --downgrade -1` reverses one revision.
 
-[Unreleased]: https://github.com/rsys-bshankar/ai-ran-ref/commits/main
+[Unreleased]: https://github.com/rsys-bshankar/ai-ran-ref/compare/smo-v0.1.0...main
+[0.1.0]: https://github.com/rsys-bshankar/ai-ran-ref/releases/tag/smo-v0.1.0
