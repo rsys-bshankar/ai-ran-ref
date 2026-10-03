@@ -532,7 +532,6 @@ Tag scheme and `CHANGELOG.md` exist (`PR-OPS-4.1`, `HISTORY.md` §10); no tag ha
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-4.1b | Cut the first tag, `smo-v0.1.0` (`docs/RELEASES.md`, "Cutting a release"); a person does this | Tag exists, `CHANGELOG.md` section dated | – |
 | OPS-4.2 | Workflow that builds and pushes images by tag and digest | Images published | OPS-4.1 |
 | OPS-4.3 | Generated release notes from merged PR titles | Notes appear on the tag | OPS-4.1 |
 | OPS-4.4 | `SECURITY.md` supported-versions table updated | Table matches tags | OPS-4.1 |
@@ -580,7 +579,7 @@ Purpose: tell the team, on every merge, that the whole stack still comes up and 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-10.5 | (b) Upgrade lane: install the previous release, upgrade to the merged commit, replay | Job green; fails on a seeded breaking migration | OPS-1.6, OPS-4.1b, OPS-5.2 |
+| OPS-10.5 | (b) Upgrade lane: install the previous release, upgrade to the merged commit, replay | Job green; fails on a seeded breaking migration | OPS-1.6, OPS-5.2 |
 | OPS-10.6 | (b) Helm on kind replaces the compose lane as the master gate; compose stays for local use | Master gate runs `OPS-2.8` and `OPS-2.9` | OPS-2.9, OPS-10.5 |
 | OPS-10.7 | (b) Rolling-upgrade lane (mixed versions) added to the master gate | Replay green | OPS-5.3, OPS-10.6 |
 
@@ -1405,7 +1404,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):** done.
 2. **Safe to expose:** done (SEC-1.6 and SEC-13.2: `HISTORY.md` §10); SEC-13.4 follows the Helm chart.
-3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: OBS-2.8, OPS-4.1b (cutting the first tag). OPS-1.6 done.
+3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: OBS-2.8. OPS-1.6 done; OPS-4.1b done (`smo-v0.1.0`).
 4. **Durable notifications:** MSG-1.1–1.10 done (SA SMOS has no destination call to move; the DME stop-job DELETE moved last, as a `DELETE` row).
 5. **First real O1 path:** SB-3, SB-5.1–5.2, SB-1.1–1.2 done; SB-1.3 to 1.9 done (the netopeer2 lab answers the SSH wrapper, the route's read and a model write in CI).
 6. **Safer changes:** done (MGT-1.1–1.4, MGT-3, MGT-8.1); MGT-1.5–1.8 are the follow-on.

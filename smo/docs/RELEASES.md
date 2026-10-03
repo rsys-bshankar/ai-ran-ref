@@ -34,4 +34,4 @@ A person cuts the tag. It is not something an automated change does on its own.
 
 ## The first tag
 
-`smo-v0.1.0` is proposed for the point at which the production-readiness slices recorded under `CHANGELOG.md`'s first section are in `main`. It has not been cut.
+`smo-v0.1.0` is the point at which the production-readiness slices recorded under `CHANGELOG.md`'s first section were in `main`. It is a source release: images are not built or published by tag until `OPS-4.2`, so a consumer builds them from the tag with `docker compose up -d --build`.
