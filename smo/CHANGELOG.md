@@ -8,6 +8,7 @@ No release has been tagged yet. Everything below is unreleased.
 ## [Unreleased]
 
 ### Added
+- `docker compose --profile netconf-lab up -d netconf-lab`: a real NETCONF-over-SSH server (Netopeer2) with a small model, on `127.0.0.1:8830`, for trying the SSH transport (`netconf-lab/README.md`; development only) (SB-1.4).
 - CM change history: every dispatched write records the values it replaced and the values it wrote (`cm_snapshot`, schema revision `0004`); `GET /managed-entities/{ref}/config-history` lists them. Each write now makes one extra read of the NF first (up to 30 s on an unresponsive one); `RAN_NF_OAM_CM_SNAPSHOTS=false` turns it off (MGT-1.1–1.4).
 - `dryRun: true` on `POST /config-jobs`: every check runs, nothing is sent or stored, and the response says per change whether it would pass (MGT-3).
 - NETCONF over SSH to an O1 adaptor: register it with `transport: ssh` and `adaptorUri` `ssh://user@host[:port]`; CM writes and `GET /managed-entities/{ref}/config` then use RFC 6242 sessions. Set `NETCONF_SSH_KNOWN_HOSTS` and `NETCONF_SSH_PASSWORD` (or `_FILE`) / `NETCONF_SSH_KEY_FILE` for RAN NF OAM. Schema revision `0003` adds `o1_adaptor_endpoint.transport` (default `http-mock`) (SB-1.1–1.3).

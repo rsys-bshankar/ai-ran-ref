@@ -1471,3 +1471,13 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **How it was checked here:** the real GUI build and the real GUI BFF behind a small static-and-proxy stand-in for the nginx container, without the SMO stack: the flow ran end to end (login, dashboard, alarms), the strict mode failed with 0/21 healthy and wrote the failure screenshot, a wrong password failed on the login screen. The compose run itself (all modules healthy) is
   exercised only by the deploy gate.
 - **Not done:** OPS-10.5 onward (upgrade lane, Helm on kind, rolling upgrade).
+
+### PR-SB-1.4 — the netconf-lab profile
+
+- **What.** `docker compose --profile netconf-lab up -d netconf-lab`: the `sysrepo/sysrepo-netopeer2` image (pinned by digest; Netopeer2 on port 830, user `netconf`, password `netconf`, a host key baked into the development image) with one small model, `smo-lab`
+  (`netconf-lab/smo-lab.yang`: a list of cells with `administrative-state` and a ranged `tx-power`) and two seeded cells. `netconf-lab/start.sh` installs the model and its data (startup and running) before it starts the image's own supervisor, so nothing restarts. Published on `127.0.0.1:8830` only.
+  A third-party development image that runs as root: it does not take the hardening anchor, which the hardening test only requires of the images this repository builds. `test_tls_edge.py` now lists the two profiled services.
+- **The check.** `scripts/netconf_lab_check.py` connects with `NetconfSession` (the SSH wrapper), checks the `<hello>` (a base capability, and the `smo-lab` model advertised), reads the model with a subtree `<get-config>` and compares both cells' values. CI job "NETCONF lab (netopeer2)" in `smo-tests.yml`: start the profile, wait for SSH with `ssh-keyscan`
+  (which writes the known_hosts file the wrapper insists on), run the script, dump the lab logs on failure, tear down. The script was run here against the in-process test server (pass; fail when the model is not advertised); the real server is only reachable in CI.
+- **What this proves, and what it does not.** It proves the wrapper's hello, framing and host-key check work against a real Netopeer2. It does **not** make `GET /managed-entities/{ref}/config` work against it: that route still sends the build's own `<managed-object ref=...>` shape, which a real server rejects. Mapping the route to a real model is the open part of SB-1.5.
+- **Not done:** SB-1.5 (above), `edit-config` against the lab (NACM may refuse the lab user; SB-1.6), `<rpc-error>` tags (SB-1.7), candidate datastore (SB-1.8), the runbook step (SB-1.9).
