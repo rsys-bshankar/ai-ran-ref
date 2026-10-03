@@ -34,9 +34,12 @@ carries by calling caller-chosen hostnames at all.
 
 import ipaddress
 import logging
+import time
 from urllib.parse import urlsplit
 
 import httpx
+
+from . import metrics
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +70,26 @@ def is_safe_webhook_destination(destination: str | None) -> bool:
         return False
     return not _is_blocked_literal_ip(host)
 
+def _send(method: str, destination: str | None, **kwargs) -> httpx.Response | None:
+    """The one place a callback leaves the process (PR-OBS-2.6): counted by outcome under the constant target `callback`, never by host
+    (the destination is caller-supplied, so a host label would be unbounded)."""
+    if not is_safe_webhook_destination(destination):
+        if destination and method == "post":
+            log.warning("webhook destination %r rejected by SSRF guard; notification dropped", destination)
+        metrics.record_outbound("webhook", "callback", method, "blocked")
+        return None
+    started = time.perf_counter()
+    try:
+        resp = getattr(httpx, method)(destination, **kwargs)
+    except httpx.TimeoutException:
+        metrics.record_outbound("webhook", "callback", method, "timeout", time.perf_counter() - started)
+        return None
+    except httpx.HTTPError:
+        metrics.record_outbound("webhook", "callback", method, "error", time.perf_counter() - started)
+        return None
+    metrics.record_outbound("webhook", "callback", method, metrics.outcome_of(resp.status_code), time.perf_counter() - started)
+    return resp
+
 
 def post_webhook(destination: str | None, json: dict, timeout: float = 5.0) -> httpx.Response | None:
     """Best-effort POST to a caller-registered notification destination.
@@ -74,26 +97,14 @@ def post_webhook(destination: str | None, json: dict, timeout: float = 5.0) -> h
     httpx.HTTPError: pass` already did for an unreachable destination —
     when the destination is missing or disallowed.
     """
-    if not is_safe_webhook_destination(destination):
-        if destination:
-            log.warning("webhook destination %r rejected by SSRF guard; notification dropped", destination)
-        return None
-    try:
-        return httpx.post(destination, json=json, timeout=timeout)
-    except httpx.HTTPError:
-        return None
+    return _send("post", destination, json=json, timeout=timeout)
 
 
 def get_webhook(destination: str | None, timeout: float = 5.0) -> httpx.Response | None:
     """Best-effort GET against a caller-registered callback destination
     (e.g. a producer health check). Same no-op semantics as post_webhook.
     """
-    if not is_safe_webhook_destination(destination):
-        return None
-    try:
-        return httpx.get(destination, timeout=timeout)
-    except httpx.HTTPError:
-        return None
+    return _send("get", destination, timeout=timeout)
 
 
 def delete_webhook(destination: str | None, timeout: float = 5.0) -> httpx.Response | None:
@@ -101,9 +112,4 @@ def delete_webhook(destination: str | None, timeout: float = 5.0) -> httpx.Respo
     (e.g. telling a producer to stop a job). Same no-op semantics as
     post_webhook.
     """
-    if not is_safe_webhook_destination(destination):
-        return None
-    try:
-        return httpx.delete(destination, timeout=timeout)
-    except httpx.HTTPError:
-        return None
+    return _send("delete", destination, timeout=timeout)
