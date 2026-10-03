@@ -71,7 +71,7 @@
   "paths": {
     "/bootstrap": {
       "get": {
-        "description": "Foundational Platform LLD section 4.1: BootstrapInformation.apiEndpoints\nONLY ever contains service-apis (discovery) and published-apis\n(registration) entries \u2014 never events-subscription. An rApp discovers\nthe subscription endpoint the normal way, via service discovery, once\nit can reach service-apis. No auth (network-isolated), URI-stable\nacross all R1 Termination versions.",
+        "description": "Foundational Platform LLD section 4.1: BootstrapInformation.apiEndpoints\nONLY ever contains service-apis (discovery) and published-apis\n(registration) entries \u2014 never events-subscription. An rApp discovers\nthe subscription endpoint the normal way, via service discovery, once\nit can reach service-apis. No auth (network-isolated), URI-stable\nacross all R1 Termination versions.\n\nInside the compose network the entries name SME directly (`http://sme:8000/...`). With `R1_PUBLIC_BASE_URL` set (PR-SEC-1.6) they\nname this gateway's public address instead: the API entries go through the gateway (`<base>/sme/...`, token required) and the\ntoken endpoint is the one path the TLS edge forwards to SME without a token (`<base>/sme/oauth2/token`), so a consumer that only\nreaches the HTTPS door can complete the whole flow.",
         "operationId": "bootstrap_bootstrap_get",
         "responses": {
           "200": {
