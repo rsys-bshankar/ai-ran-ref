@@ -680,8 +680,8 @@ FOCOM and NFO are model-level.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-4.1 | Add the WG4 M-plane modules to `specs/` | Files merged | – |
-| SB-4.2 | Extend the ingest script for them | Descriptors generated | SB-4.1 |
+| SB-4.1 | Add the WG4 M-plane modules to `specs/` | Files merged | **The files themselves: they come from the O-RAN Alliance under its own licence. The public YangModels mirror does not carry them (checked), and they are not written from memory.** |
+| SB-4.2 | Run the ingest script on them (`scripts/ingest_yang_schema.py` already takes any directory, with the 3GPP library: no code change expected) and commit the descriptor | Descriptors generated | SB-4.1 |
 | SB-4.3 | Register the O-RU managed-function classes in the vendor capability registry | Registry test | SB-4.2 |
 | SB-4.4 | Tests for one O-RU write | Test green | SB-4.3 |
 

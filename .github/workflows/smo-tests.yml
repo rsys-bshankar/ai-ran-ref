@@ -348,17 +348,19 @@ jobs:
           export NETCONF_SSH_KNOWN_HOSTS="$RUNNER_TEMP/lab_known_hosts"
           python scripts/netconf_lab_runbook.py 2>&1 | grep -E "^(ok|FAIL|OK|FAILED|  server said|  pinned)"; test "${PIPESTATUS[0]}" -eq 0
 
-      # TEMPORARY (PR-SB-2.4): what TLS configuration model does the pinned Netopeer2 image have? Printed to read, never fails the job.
-      - name: Inspect the lab server's TLS configuration model
+      # TEMPORARY (PR-SB-2.5): the TLS listener's configuration shape in the pinned Netopeer2 (2.1.49, ietf-netconf-server 2019-07-02): print the
+      # model definitions it is built from, to read, never fails the job. Removed when the listener is configured.
+      - name: Inspect the lab server's TLS models
         continue-on-error: true
         working-directory: smo
         run: |
           docker compose --profile netconf-lab exec -T netconf-lab sh -c '
-            netopeer2-server -V 2>&1 | head -3
-            echo "--- modules"; sysrepoctl -l 2>&1 | grep -iE "netconf-server|keystore|truststore|tls|x509|crypto|cert" 
-            echo "--- netconf-server running"; sysrepocfg -X -d running -m ietf-netconf-server -f xml 2>&1 | head -80
-            echo "--- keystore"; sysrepocfg -X -d running -m ietf-keystore -f xml 2>&1 | head -30
-            echo "--- openssl"; which openssl' || true
+            which yanglint pyang 2>&1 | head -2
+            for m in ietf-netconf-server ietf-tls-server ietf-truststore ietf-keystore ietf-x509-cert-to-name; do
+              f=$(find / \( -name "$m@*.yang" -o -name "$m.yang" \) 2>/dev/null | head -1); echo "=== $m: $f"
+              if which yanglint >/dev/null 2>&1; then yanglint -f tree -p "$(dirname "$f")" "$f" 2>&1 | head -150; else grep -nE "^ *(container|list|leaf|leaf-list|choice|case|uses|grouping|leafref|augment|type) " "$f" | head -150; fi
+            done
+            echo "=== examples"; find / \( -iname "*tls*.xml" -o -iname "*netopeer*" \) -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null | head -20' || true
 
       - name: Dump the lab logs on failure
         if: failure()
