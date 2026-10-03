@@ -198,7 +198,8 @@ class R1Client:
         except httpx.HTTPError:
             metrics.record_outbound("r1", target, method, "error", time.perf_counter() - started)
             raise
-        metrics.record_outbound("r1", target, method, metrics.outcome_of(resp.status_code), time.perf_counter() - started)
+        status = getattr(resp, "status_code", None)
+        metrics.record_outbound("r1", target, method, "error" if status is None else metrics.outcome_of(status), time.perf_counter() - started)
         return resp
 
     def _send(self, send, path: str, method: str = "other", **kwargs) -> httpx.Response:

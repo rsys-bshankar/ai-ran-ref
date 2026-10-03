@@ -87,7 +87,9 @@ def _send(method: str, destination: str | None, **kwargs) -> httpx.Response | No
     except httpx.HTTPError:
         metrics.record_outbound("webhook", "callback", method, "error", time.perf_counter() - started)
         return None
-    metrics.record_outbound("webhook", "callback", method, metrics.outcome_of(resp.status_code), time.perf_counter() - started)
+    status = getattr(resp, "status_code", None)             # a stub in a test may answer with something that is not a response
+    metrics.record_outbound("webhook", "callback", method, "error" if status is None else metrics.outcome_of(status),
+                            time.perf_counter() - started)
     return resp
 
 
