@@ -2471,6 +2471,159 @@
         "summary": "Read Configuration History"
       }
     },
+    "/managed-objects/{dn}": {
+      "get": {
+        "description": "PR-SB-6: one node of the containment tree by its distinguished name (`ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101`).",
+        "operationId": "read_managed_object_managed_objects__dn__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dn",
+            "required": true,
+            "schema": {
+              "title": "Dn",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Managed Object"
+      }
+    },
+    "/managed-objects/{dn}/children": {
+      "get": {
+        "description": "PR-SB-6.3: the direct children of a node (404 `MANAGED_OBJECT_NOT_FOUND` when the node itself is not in the tree), ordered by class then id.",
+        "operationId": "list_managed_object_children_managed_objects__dn__children_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dn",
+            "required": true,
+            "schema": {
+              "title": "Dn",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Managed Object Children"
+      }
+    },
+    "/managed-objects/{dn}/subtree": {
+      "get": {
+        "description": "PR-SB-6.4: a node and its descendants as a nested tree (`children` on each node), down to `depth` levels below it (default and most 16).\nAt most 1000 nodes are returned; `truncated` says when that cut the answer short.",
+        "operationId": "read_managed_object_subtree_managed_objects__dn__subtree_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dn",
+            "required": true,
+            "schema": {
+              "title": "Dn",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "depth",
+            "required": false,
+            "schema": {
+              "default": 16,
+              "maximum": 16,
+              "minimum": 0,
+              "title": "Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Managed Object Subtree"
+      }
+    },
     "/msac/access-rules": {
       "get": {
         "operationId": "list_access_rules_msac_access_rules_get",

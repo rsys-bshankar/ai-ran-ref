@@ -44,6 +44,21 @@ class O1AdaptorHostKey(Base):
                                                           default=lambda: datetime.datetime.now(datetime.UTC))
 
 
+class ManagedObject(Base):
+    """PR-SB-6.1: one node of the managed-object containment tree (`mo_tree.py`), keyed by its distinguished name."""
+    __tablename__ = "managed_object"
+
+    dn: Mapped[str] = mapped_column(String, primary_key=True)
+    parent_dn: Mapped[str | None] = mapped_column(String, ForeignKey("managed_object.dn", ondelete="CASCADE"), index=True)
+    object_class: Mapped[str] = mapped_column(String, nullable=False)
+    object_id: Mapped[str] = mapped_column(String, nullable=False)
+    managed_element_ref: Mapped[str] = mapped_column(String, ForeignKey("managed_entity.managed_element_ref", ondelete="CASCADE"),
+                                                      nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)                     # 'registry' or 'walk'
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                           default=lambda: datetime.datetime.now(datetime.UTC))
+
+
 class ManagedEntity(Base):
     __tablename__ = "managed_entity"
 

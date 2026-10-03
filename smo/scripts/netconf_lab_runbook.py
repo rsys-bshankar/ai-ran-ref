@@ -24,7 +24,7 @@ from smo_shared.outbox import NotificationOutbox
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import (Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, MsacAccessRule, MsacIdentity, MsacRole, O1AdaptorEndpoint,
+from app.models import (ManagedObject, Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, MsacAccessRule, MsacIdentity, MsacRole, O1AdaptorEndpoint,
                         O1AdaptorHostKey, VendorCapability, WriteConfigJob, WriteConfigSubChange)
 
 ME = "SubNetwork=lab,ManagedElement=ME-1"
@@ -44,7 +44,7 @@ def main() -> int:
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
         WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__,
-        MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, O1AdaptorHostKey.__table__])
+        MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, O1AdaptorHostKey.__table__])
     factory = sessionmaker(bind=engine)
 
     def session():
