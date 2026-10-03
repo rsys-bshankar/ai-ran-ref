@@ -16,6 +16,8 @@ from app.models import (Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, O1Adapt
 
 from netconf_ssh_server import Behaviour, NetconfTestServer
 
+CAND_CAPS = ("urn:ietf:params:netconf:base:1.0", "urn:ietf:params:netconf:base:1.1", "urn:ietf:params:netconf:capability:candidate:1.0")
+
 
 @pytest.fixture
 def db_session_factory():
@@ -109,6 +111,18 @@ def test_a_rejected_model_write_reports_what_the_server_said(client, lab):
     sub = client.get(f"/config-jobs/{resp.json()['jobId']}").json()["subChanges"][0]
     assert sub["status"] == "REJECTED" and sub["rejectionReason"] == "NETCONF_RPC_FAILED" and sub["attempts"] == 1
     assert sub["rejectionDetail"] == "invalid-value (a value is not acceptable) at /lab/cell/tx-power: out of range"
+
+
+def test_a_candidate_endpoint_commits_through_the_route_and_reports_a_failed_commit(client, lab):
+    """PR-SB-1.8: the job is APPLIED after lock/edit/commit/unlock; a refused commit is REJECTED with the step in the detail."""
+    lab.behaviour.caps = list(CAND_CAPS)
+    assert _register(client, lab.uri + "?datastore=candidate", transport="ssh").status_code == 201
+    change = {"managedElementRef": "ME-1", "attributeChanges": {"adminState": "UNLOCKED"}}
+    sub = client.get(f"/config-jobs/{client.post('/config-jobs', json={'requestedBy': 'operator', 'scope': 'cell', 'changes': [change]}).json()['jobId']}").json()["subChanges"][0]
+    assert sub["status"] == "APPLIED"
+    lab.behaviour.step_replies = {"commit": "<rpc-error><error-tag>operation-failed</error-tag><error-message>no</error-message></rpc-error>"}
+    sub = client.get(f"/config-jobs/{client.post('/config-jobs', json={'requestedBy': 'operator', 'scope': 'cell', 'changes': [change]}).json()['jobId']}").json()["subChanges"][0]
+    assert sub["status"] == "REJECTED" and sub["rejectionDetail"].startswith("commit: operation-failed")
 
 
 def test_registration_refuses_an_unknown_model(client, lab):

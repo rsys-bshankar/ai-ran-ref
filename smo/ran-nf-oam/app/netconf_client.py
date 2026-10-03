@@ -47,7 +47,7 @@ def _managed_object(target_ref: str, managed_function_ref: str | None, extra: st
 
 
 def build_edit_config_rpc(message_id: str, target_ref: str, attribute_changes: dict, operation: str = "merge",
-                          managed_function_ref: str | None = None) -> str:
+                          managed_function_ref: str | None = None, target: str = "running") -> str:
     """`operation` is RFC 6241 section 7.2's real edit-config attribute
     (merge/replace/create/delete/remove), emitted on the target
     <managed-object> node itself — the node the operation applies to —
@@ -60,7 +60,7 @@ def build_edit_config_rpc(message_id: str, target_ref: str, attribute_changes: d
     obj = _managed_object(target_ref, managed_function_ref, f' operation="{operation}">')
     return (
         f'<rpc message-id="{message_id}" xmlns="{NETCONF_BASE_NS}">'
-        f"<edit-config><target><running/></target>"
+        f"<edit-config><target><{target}/></target>"
         f"<config>{obj}{config_body}</managed-object></config>"
         f"</edit-config></rpc>"
     )

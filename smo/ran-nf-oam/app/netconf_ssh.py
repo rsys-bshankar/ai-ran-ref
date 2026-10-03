@@ -9,7 +9,9 @@ parsers, so the same `EditResult` reasons come out of both transports:
   - NETCONF_RPC_FAILED   host key refused, authentication refused, no netconf subsystem, bad hello, or an `<rpc-error>`
                          (not retryable: repeating it cannot succeed)
 
-The endpoint's `adaptor_uri` is `ssh://user@host[:port]` (default port 830). Host keys are checked against
+The endpoint's `adaptor_uri` is `ssh://user@host[:port]` (default port 830), optionally with `?model=<name>` (a YANG model payload, yang_payload.py)
+and `?datastore=candidate` (each write is one transaction on the candidate datastore, PR-SB-1.8: lock, edit-config, commit, unlock; a failed step
+sends discard-changes first so nothing half-applied is left behind; default `running`). Host keys are checked against
 `NETCONF_SSH_KNOWN_HOSTS` and an unknown or changed key is always refused; the credentials are a stopgap until PR-SB-2 (see the ADR).
 """
 
@@ -51,9 +53,10 @@ def parse_ssh_uri(adaptor_uri: str) -> tuple[str, str, int]:
     except ValueError:
         port = 0
     if parts.scheme != "ssh" or not parts.hostname or not parts.username or not 0 < port < 65536:
-        raise NetconfSshError("NETCONF_RPC_FAILED", "an ssh adaptor URI is ssh://user@host[:port][?model=name]")
+        raise NetconfSshError("NETCONF_RPC_FAILED", "an ssh adaptor URI is ssh://user@host[:port][?model=name][&datastore=candidate]")
     try:
         yang_payload.model_of(adaptor_uri)
+        yang_payload.datastore_of(adaptor_uri)
     except ValueError as exc:
         raise NetconfSshError("NETCONF_RPC_FAILED", str(exc)) from exc
     return parts.username, parts.hostname, port
@@ -211,18 +214,61 @@ def _parse_named(text: str, name: str):
     return root if root.tag.rsplit("}", 1)[-1] == name else None
 
 
+CANDIDATE = "urn:ietf:params:netconf:capability:candidate:1.0"
+
+
+def _step_rpc(message_id: str, name: str, body: str) -> str:
+    return f'<rpc message-id="{message_id}-{name}" xmlns="{NETCONF_BASE_NS}">{body}</rpc>'
+
+
+def candidate_transaction(session: "NetconfSession", message_id: str, edit_rpc: str) -> EditResult:
+    """RFC 6241 sections 8.3 and 7.5-7.8 as one unit: lock the candidate, edit it, commit, unlock. A refused lock changes nothing. A refused
+    edit or commit is followed by discard-changes, so the candidate is left as it was found; the unlock always follows (best effort: a
+    failed unlock after a good commit does not undo the commit). The result is the first failure's, with the step named in the detail."""
+    if CANDIDATE not in session.server_capabilities:
+        return EditResult(False, "NETCONF_RPC_FAILED", "the server does not offer the candidate datastore (:candidate:1.0)")
+
+    def step(name: str, body: str) -> EditResult:
+        outcome = edit_outcome(session.rpc(_step_rpc(message_id, name, body)))
+        return outcome if outcome else EditResult(False, outcome.reason, f"{name}: {outcome.detail or 'refused'}")
+
+    locked = step("lock", "<lock><target><candidate/></target></lock>")
+    if not locked:
+        return locked                                  # nothing was touched: no discard, no unlock
+    try:
+        result = edit_outcome(session.rpc(edit_rpc))
+        if not result:
+            result = EditResult(False, result.reason, f"edit-config: {result.detail or 'refused'}")
+        else:
+            result = step("commit", "<commit/>")
+        if not result:
+            try:
+                step("discard", "<discard-changes/>")
+            except NetconfSshError as exc:
+                log.warning("discard-changes after a failed write: %s", exc)
+        return result
+    finally:
+        try:
+            step("unlock", "<unlock><target><candidate/></target></unlock>")
+        except NetconfSshError as exc:
+            log.warning("unlock of the candidate: %s", exc)
+
+
 # Same call shapes as netconf_client.send_edit_config / send_get_config, which is how main.py picks them.
 def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict, message_id: str, operation: str = "merge",
                      managed_function_ref: str | None = None) -> EditResult:
     model = yang_payload.model_of(adaptor_uri)
+    datastore = yang_payload.datastore_of(adaptor_uri)
     try:
         rpc = (yang_payload.build_edit_config_rpc(yang_payload.PROFILES[model], message_id, target_ref, attribute_changes, operation,
-                                                  managed_function_ref)
-               if model else build_edit_config_rpc(message_id, target_ref, attribute_changes, operation, managed_function_ref))
+                                                  managed_function_ref, datastore)
+               if model else build_edit_config_rpc(message_id, target_ref, attribute_changes, operation, managed_function_ref, datastore))
     except ValueError as exc:                                      # an operation the model path does not know: nothing is sent
         return EditResult(False, "NETCONF_RPC_FAILED", str(exc))
     try:
         with NetconfSession(adaptor_uri) as session:
+            if datastore == "candidate":
+                return candidate_transaction(session, message_id, rpc)
             return edit_outcome(session.rpc(rpc))
     except NetconfSshError as exc:
         log.warning("edit-config on %s failed: %s", target_ref, exc)
