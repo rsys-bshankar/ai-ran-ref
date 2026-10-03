@@ -1499,3 +1499,12 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   **No "waiting" gauge:** SQLAlchemy does not expose the number of callers blocked on the pool; an exhausted pool is `in_use` equal to `smo_db_pool_capacity` (and the callers then fail with the pool timeout, `PR-ST-6`). A pool that is not a `QueuePool` (the SQLite test engines) reports nothing.
 - **Tests.** `shared/tests/test_metrics.py`: transitions counted by machine / state / event / target, a refusal and a guard rejection in the refusal series, the pool gauges following checkouts and returns of a real `QueuePool` (3 out with one overflow, then 2 idle), no series for a pool without those counts, and a service without database credentials installing metrics in a clean subprocess.
 - **Not done:** outbound call metrics (OBS-2.6), the Grafana dashboard (OBS-2.8).
+
+### PR-MSG-1.10 — DELETE rows: the DME stop-job DELETE moves to the outbox
+
+- **Column.** Revision `0005`: `notification_outbox.method TEXT NOT NULL DEFAULT 'POST' CHECK (method IN ('POST','DELETE'))`. Additive; every existing row is a POST, and the previous release ignores the column. `enqueue(db, destination, payload, module=None, method="POST")` refuses any other method; a `DELETE` row carries `{}` as its payload.
+  `_send` calls `delete_webhook` (2 s) for a DELETE row and `post_webhook` for a POST; retries, backoff, lease and DEAD handling are the same for both.
+- **DME.** `_stop_job_at_producers` enqueues one DELETE row per supporting producer (`<jobCallbackUrl>/<jobId>`) **before** the commit that deletes the job; `terminate_data_job` and `terminate_data_jobs_for_consumer` used to commit first and call the producers after, so a crash in between left a producer running a job DME no longer had.
+  The commit now carries the deletion and the stop requests together. The timeout on the producer call is the outbox's 2 s (it was 5 s inline).
+- **Inventory.** The one class-B site is now `enqueue`, class A (`docs/NOTIFICATIONS.md`, guarded by `test_notification_inventory.py`); the only inline calls left are the two class-C reads, which stay inline because the caller needs the answer.
+- **Tests.** Shared: a DELETE row goes out after the commit as a DELETE and never as a POST, a row without a method is a POST, an unknown method is refused, a rolled-back DELETE is never sent, an unreachable one is retried and then DEAD (SQLite and Postgres). DME: deleting a job leaves one PENDING DELETE row per producer and sends nothing until the drain, which then sends them (the crash test pattern).

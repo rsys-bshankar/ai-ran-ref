@@ -13,10 +13,12 @@ only after that transaction commits.
         enqueue(db, destination, {"eventType": "X"})  # inserted in the caller's transaction
         db.commit()                                   # the row exists exactly when the change does; sent right after
 
-  enqueue(db, destination, payload, module=None)
+  enqueue(db, destination, payload, module=None, method="POST")
         Adds a PENDING row to `db`'s transaction (nothing is sent, nothing is flushed). A destination the SSRF guard
         refuses is dropped with a warning, as `post_webhook` always did, and None is returned. `module` defaults to
-        the container's `MODULE`. Rolling the transaction back removes the row.
+        the container's `MODULE`. `method` is `POST` (the payload is the JSON body) or `DELETE` (a command whose answer nothing reads, such as
+        telling a producer to stop a job: the payload is `{}`); the row is sent, retried and killed the same way either way. Rolling
+        the transaction back removes the row.
   drain(engine, ids=None, now=None, limit=100)
         Sends rows that are PENDING and due, oldest first, and records the outcome. With `ids` only those rows (what
         the commit hook below passes); without, every due row (what a worker or a recovery sweep does, MSG-2). A row
@@ -34,7 +36,7 @@ only after that transaction commits.
         `SMO_OUTBOX_INLINE_DRAIN=false` turns the inline drain off (a worker does all the sending, MSG-2.5).
 
 SENT rows are kept for `SMO_OUTBOX_SENT_RETENTION_SECONDS` (default 86400) for the delivery log (MSG-5) and then removed by a
-full drain. The table is created by schema revision `0002`.
+full drain. The table is created by schema revision `0002`; its `method` column by `0005`.
 """
 
 import datetime
@@ -51,6 +53,7 @@ from .db import Base
 log = logging.getLogger(__name__)
 
 PENDING, SENT, DEAD = "PENDING", "SENT", "DEAD"
+METHODS = ("POST", "DELETE")
 MAX_ATTEMPTS = 5
 LEASE_SECONDS = 60
 _BACKOFF_SECONDS = (5, 30, 120, 600)          # after attempt 1, 2, 3, 4
@@ -68,6 +71,7 @@ class NotificationOutbox(Base):
     module: Mapped[str] = mapped_column(String, nullable=False)          # the module that enqueued it
     destination: Mapped[str] = mapped_column(String, nullable=False)     # the caller-supplied URL
     payload: Mapped[dict | list] = mapped_column(JSON, nullable=False)
+    method: Mapped[str] = mapped_column(String, nullable=False, default="POST", server_default="POST")   # POST | DELETE (MSG-1.10)
     status: Mapped[str] = mapped_column(String, nullable=False, default=PENDING)   # PENDING | SENT | DEAD
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     next_attempt_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
@@ -75,14 +79,17 @@ class NotificationOutbox(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
 
 
-def enqueue(db: Session, destination: str | None, payload: dict, module: str | None = None) -> NotificationOutbox | None:
+def enqueue(db: Session, destination: str | None, payload: dict, module: str | None = None,
+            method: str = "POST") -> NotificationOutbox | None:
+    if method not in METHODS:
+        raise ValueError(f"outbox method must be one of {METHODS}, not {method!r}")
     if not webhook.is_safe_webhook_destination(destination):
         if destination:
             log.warning("webhook destination %r rejected by SSRF guard; notification dropped", destination)
         return None
     now = _now()
     row = NotificationOutbox(id=uuid.uuid4(), module=module or os.environ.get("MODULE", "unknown"), destination=destination,
-                             payload=payload, status=PENDING, attempts=0, next_attempt_at=now, created_at=now)
+                             payload=payload, method=method, status=PENDING, attempts=0, next_attempt_at=now, created_at=now)
     db.add(row)
     db.info.setdefault(_PENDING_IDS_KEY, []).append(row.id)
     return row
@@ -103,11 +110,14 @@ def _claim(db: Session, row_id: uuid.UUID, now: datetime.datetime) -> bool:
     return claimed.rowcount == 1
 
 
-def _send(destination: str, payload) -> tuple[bool, str | None, bool]:
+def _send(destination: str, payload, method: str = "POST") -> tuple[bool, str | None, bool]:
     """(delivered, error, retryable). The one place a row goes out, so tests can stand in for the network."""
     if not webhook.is_safe_webhook_destination(destination):
         return False, "destination rejected by the SSRF guard", False
-    response = webhook.post_webhook(destination, json=payload, timeout=2.0)
+    if method == "DELETE":
+        response = webhook.delete_webhook(destination, timeout=2.0)
+    else:
+        response = webhook.post_webhook(destination, json=payload, timeout=2.0)
     if response is None:
         return False, "no answer from the destination", True
     if response.status_code >= 500:
@@ -129,7 +139,7 @@ def drain(engine, ids: list[uuid.UUID] | None = None, now: datetime.datetime | N
             if not _claim(db, row_id, now):
                 continue                                    # another replica took it
             row = db.get(NotificationOutbox, row_id)
-            delivered, error, retryable = _send(row.destination, row.payload)
+            delivered, error, retryable = _send(row.destination, row.payload, row.method)
             if delivered:
                 row.status, row.last_error = SENT, None
                 result["sent"] += 1
