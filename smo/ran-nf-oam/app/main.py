@@ -381,16 +381,17 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
         if not applied and attempts > 1:
             _raise_dispatch_alarm(db, job.job_id, change, reason, attempts)
         sub_change_id = uuid.uuid4()
-        if CM_SNAPSHOTS:
-            db.add(CMSnapshot(sub_change_id=sub_change_id, job_id=job.job_id, managed_element_ref=change["managedElementRef"],
-                              managed_function_ref=change.get("managedFunctionRef"), operation=operation, before=before,
-                              before_error=before_error,
-                              after=attribute_changes if applied and operation not in ("delete", "remove") else None))
         db.add(WriteConfigSubChange(id=sub_change_id, job_id=job.job_id, managed_element_ref=change["managedElementRef"],
                                      managed_function_ref=change.get("managedFunctionRef"),
                                      attribute_changes=attribute_changes, operation=operation,
                                      status="APPLIED" if applied else "REJECTED",
                                      rejection_reason=reason, attempts=attempts))
+        if CM_SNAPSHOTS:
+            db.flush()                         # the snapshot's foreign key needs its sub-change row to exist first (Postgres enforces it)
+            db.add(CMSnapshot(sub_change_id=sub_change_id, job_id=job.job_id, managed_element_ref=change["managedElementRef"],
+                              managed_function_ref=change.get("managedFunctionRef"), operation=operation, before=before,
+                              before_error=before_error,
+                              after=attribute_changes if applied and operation not in ("delete", "remove") else None))
 
     db.flush()
     statuses = [sc.status for sc in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)).all()]

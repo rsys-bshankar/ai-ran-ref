@@ -135,3 +135,52 @@ def test_a_snapshot_belongs_to_exactly_one_sub_change(client, db_session_factory
     assert db.query(CMSnapshot).count() == 1
     assert db.scalar(select(WriteConfigSubChange.id)) == db.scalar(select(CMSnapshot.sub_change_id))
     db.close()
+
+
+def test_snapshots_insert_cleanly_where_foreign_keys_are_enforced(db_session_factory, nf):
+    """Postgres enforces cm_snapshot's foreign keys, the default SQLite test engine does not (the first version inserted the snapshot
+    before its sub-change and only the compose run caught it). Same flow, with SQLite's enforcement on."""
+    from sqlalchemy import event
+    from sqlalchemy.orm import sessionmaker
+    from fastapi.testclient import TestClient
+    from smo_shared.db import Base, get_session
+    from smo_shared.testing import make_test_engine
+    from app.main import app
+    from app.models import (Alarm, CMSchemaCache, ManagedEntity, O1AdaptorEndpoint, VendorCapability, WriteConfigJob, WriteConfigSubChange,
+                            MsacAccessRule, MsacIdentity, MsacRole)
+    from smo_shared.idempotency import IdempotencyKey
+    from smo_shared.outbox import NotificationOutbox
+
+    engine = make_test_engine()
+    event.listen(engine, "connect", lambda dbapi, record: dbapi.execute("PRAGMA foreign_keys=ON"))   # the one shared connection keeps it
+    Base.metadata.create_all(engine, tables=[
+        O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
+        WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__,
+        MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__])
+    factory = sessionmaker(bind=engine)
+
+    def override():
+        session = factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_session] = override
+    try:
+        seed = factory()
+        ep = O1AdaptorEndpoint(managed_element_ref="ME-1", adaptor_uri="http://adaptor:9000/netconf", protocol_support=["NETCONF"])
+        seed.add(ep)
+        seed.flush()
+        seed.add(ManagedEntity(managed_element_ref="ME-1", entity_type="O-DU", o1_protocol="NETCONF", o1_adaptor_endpoint_id=ep.endpoint_id))
+        seed.commit()
+        seed.close()
+        c = TestClient(app)
+        assert _write_with(c, [{"managedElementRef": "ME-1", "attributeChanges": {"a": "1"}}]).json()["status"] == "COMPLETED"
+        assert c.get("/managed-entities/ME-1/config-history").json()["total"] == 1
+    finally:
+        app.dependency_overrides.clear()
+
+
+def _write_with(c, changes):
+    return c.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell", "changes": changes})
