@@ -21,6 +21,7 @@ import base64
 import hashlib
 import re
 import socket
+import ssl
 from urllib.parse import urlsplit
 
 import paramiko
@@ -67,7 +68,8 @@ def _cred_var(ref: str, part: str) -> str:
 
 
 def credential_configured(ref: str) -> bool:
-    return any(os.environ.get(_cred_var(ref, part)) or os.environ.get(_cred_var(ref, part) + "_FILE") for part in ("PASSWORD", "KEY_FILE"))
+    return any(os.environ.get(_cred_var(ref, part)) or os.environ.get(_cred_var(ref, part) + "_FILE")
+               for part in ("PASSWORD", "KEY_FILE", "CERT_FILE"))
 
 
 def credentials_for(ref: str | None) -> tuple[str | None, str | None]:
@@ -216,6 +218,8 @@ class NetconfSession:
             self._channel.sendall(data)
         except TimeoutError as exc:
             raise NetconfSshError("NETCONF_TIMEOUT", "send timed out") from exc
+        except ssl.SSLError as exc:                      # TLS only: the peer refused the session (with TLS 1.3 this is how a rejected client certificate shows)
+            raise NetconfSshError("NETCONF_RPC_FAILED", f"the TLS session was refused: {exc.reason or type(exc).__name__}") from exc
         except OSError as exc:
             raise NetconfSshError("NETCONF_UNREACHABLE", f"send failed: {exc}") from exc
 
@@ -224,6 +228,8 @@ class NetconfSession:
             data = self._channel.recv(65536)
         except (TimeoutError, socket.timeout) as exc:
             raise NetconfSshError("NETCONF_TIMEOUT", "no reply within the timeout") from exc
+        except ssl.SSLError as exc:
+            raise NetconfSshError("NETCONF_RPC_FAILED", f"the TLS session was refused: {exc.reason or type(exc).__name__}") from exc
         except OSError as exc:
             raise NetconfSshError("NETCONF_UNREACHABLE", f"receive failed: {exc}") from exc
         if not data:
@@ -322,6 +328,14 @@ def candidate_transaction(session: "NetconfSession", message_id: str, edit_rpc: 
             log.warning("unlock of the candidate: %s", exc)
 
 
+def open_session(adaptor_uri: str, credential_ref: str | None = None, host_keys: list[tuple[str, str]] | None = None) -> "NetconfSession":
+    """The session for an endpoint's URI: NETCONF over TLS (netconf_tls.py, PR-SB-2.4) for `tls://`, over SSH otherwise."""
+    if adaptor_uri.lower().startswith("tls:"):
+        from .netconf_tls import NetconfTlsSession                  # imported here: that module builds on this one
+        return NetconfTlsSession(adaptor_uri, credential_ref=credential_ref)
+    return NetconfSession(adaptor_uri, credential_ref=credential_ref, host_keys=host_keys)
+
+
 # Same call shapes as netconf_client.send_edit_config / send_get_config, which is how main.py picks them.
 def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict, message_id: str, operation: str = "merge",
                      managed_function_ref: str | None = None, credential_ref: str | None = None,
@@ -335,7 +349,7 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
     except ValueError as exc:                                      # an operation the model path does not know: nothing is sent
         return EditResult(False, "NETCONF_RPC_FAILED", str(exc))
     try:
-        with NetconfSession(adaptor_uri, credential_ref=credential_ref, host_keys=host_keys) as session:
+        with open_session(adaptor_uri, credential_ref, host_keys) as session:
             if datastore == "candidate":
                 return candidate_transaction(session, message_id, rpc)
             return edit_outcome(session.rpc(rpc))
@@ -349,7 +363,7 @@ def send_get_config(adaptor_uri: str, target_ref: str, message_id: str, managed_
     model = yang_payload.model_of(adaptor_uri)
     profile = yang_payload.PROFILES[model] if model else None
     try:
-        with NetconfSession(adaptor_uri, credential_ref=credential_ref, host_keys=host_keys) as session:
+        with open_session(adaptor_uri, credential_ref, host_keys) as session:
             if profile:
                 reply = session.rpc(yang_payload.build_get_config_rpc(profile, message_id, target_ref, managed_function_ref))
                 return yang_payload.config_attributes(profile, reply, target_ref, managed_function_ref)

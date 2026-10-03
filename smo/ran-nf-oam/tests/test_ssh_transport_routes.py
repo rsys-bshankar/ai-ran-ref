@@ -150,7 +150,7 @@ def test_registration_refuses_a_literal_secret_or_an_unknown_name_without_echoin
 
 def test_a_credential_ref_needs_the_ssh_transport(client):
     resp = _register(client, "http://adaptor:8000/x", credentialRef="gnb-1")
-    assert resp.status_code in (400, 422) and "ssh only" in resp.text
+    assert resp.status_code in (400, 422) and "ssh or tls only" in resp.text
 
 
 # --- PR-SB-2.3: pinned host keys ---------------------------------------------------------------------------------------------------------
@@ -244,3 +244,52 @@ def test_an_unreachable_ssh_server_is_retried_then_rejected(client, lab, monkeyp
                                               "changes": [{"managedElementRef": "ME-1", "attributeChanges": {"adminState": "X"}}]})
     sub = client.get(f"/config-jobs/{resp.json()['jobId']}").json()["subChanges"][0]
     assert sub["status"] == "REJECTED" and sub["rejectionReason"] == "NETCONF_UNREACHABLE" and sub["attempts"] > 1
+
+
+# --- PR-SB-2.4: transport tls --------------------------------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def tls_lab(tmp_path, monkeypatch):
+    from netconf_tls_server import NetconfTlsTestServer, Pki
+    ca = Pki(tmp_path)
+    server_cert, server_key = ca.issue("server", server=True)
+    client_cert, client_key = ca.issue("client")
+    server = NetconfTlsTestServer(server_cert, server_key, ca.ca_file)
+    monkeypatch.setenv("NETCONF_CRED_RU_1_CERT_FILE", client_cert)
+    monkeypatch.setenv("NETCONF_CRED_RU_1_KEY_FILE", client_key)
+    monkeypatch.setenv("NETCONF_CRED_RU_1_CA_FILE", ca.ca_file)
+    yield server
+    server.close()
+
+
+def test_a_tls_endpoint_is_registered_written_and_read_through_the_routes(client, tls_lab, db_session_factory):
+    resp = _register(client, tls_lab.uri, transport="tls", credentialRef="ru-1")
+    assert resp.status_code == 201
+    assert client.get("/o1-adaptor-endpoints").json()["items"][0]["transport"] == "tls"
+    sub = _write(client)
+    assert sub["status"] == "APPLIED"
+    assert client.get("/managed-entities/ME-1/config").json()["attributes"] == {"administrativeState": "UNLOCKED"}
+    # host keys are an SSH matter: a TLS endpoint trusts a CA file
+    assert client.get(f"/o1-adaptor-endpoints/{resp.json()['endpointId']}/host-keys").status_code in (400, 422)
+
+
+def test_a_tls_endpoint_whose_certificate_is_refused_is_a_rejected_write(client, tls_lab, monkeypatch, tmp_path):
+    from netconf_tls_server import Pki
+    _register(client, tls_lab.uri, transport="tls", credentialRef="ru-1")
+    cert, key = Pki(tmp_path, name="rogue").issue("client")
+    monkeypatch.setenv("NETCONF_CRED_RU_1_CERT_FILE", cert)
+    monkeypatch.setenv("NETCONF_CRED_RU_1_KEY_FILE", key)
+    sub = _write(client)
+    assert sub["status"] == "REJECTED" and sub["rejectionReason"] == "NETCONF_RPC_FAILED" and "refused" in sub["rejectionDetail"]
+
+
+@pytest.mark.parametrize("uri,extra", [
+    ("ssh://admin@adaptor", {"transport": "tls"}),                   # scheme does not match the transport
+    ("tls://adaptor", {}),                                            # tls:// without transport tls
+    ("tls://admin@adaptor", {"transport": "tls"}),                    # the user comes from the certificate: none in the URI
+    ("tls://adaptor", {"transport": "tls", "o1Protocol": "RESTCONF"}),
+    ("tls://adaptor?model=nope", {"transport": "tls"}),
+])
+def test_registration_refuses_a_mismatched_tls_endpoint(client, uri, extra):
+    assert _register(client, uri, **extra).status_code in (400, 422)
