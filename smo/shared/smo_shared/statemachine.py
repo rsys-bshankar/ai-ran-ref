@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Generic, TypeVar
 
+from .metrics import record_illegal_transition, record_transition
+
 S = TypeVar("S")  # state enum/str type
 E = TypeVar("E")  # event enum/str type
 
@@ -50,13 +52,17 @@ class StateMachine(Generic[S, E]):
         no transition matches at all, or every guard rejects.
         """
         candidates = [t for t in self.transitions if t.from_state == current_state and t.event == event]
+        machine = type(current_state).__name__                       # PR-OBS-2.5: the state enum names the machine
         if not candidates:
+            record_illegal_transition(machine, current_state, event)
             raise IllegalTransition(current_state, event)
         for t in candidates:
             if t.guard is None or t.guard(**context):
                 if t.action is not None:
                     t.action(**context)
+                record_transition(machine, current_state, event, t.to_state)
                 return t.to_state
+        record_illegal_transition(machine, current_state, event)
         raise IllegalTransition(current_state, event)
 
     def legal_events(self, current_state: S) -> list[E]:

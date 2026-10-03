@@ -435,12 +435,10 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10); no OpenTelemetry usage exists in the code (checked). A correlation id exists in
 `smo_shared/correlation.py`. Liveness and readiness are `PR-ST-7`.
 
-#### PR-OBS-2 — Metrics (open: OBS-2.4 onward)
+#### PR-OBS-2 — Metrics (open: OBS-2.6, OBS-2.8; `HISTORY.md` §10 for 2.4 and 2.5)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OBS-2.4 | DB pool gauges (in use, overflow, waiting) | Values change under load | OBS-2.2 |
-| OBS-2.5 | FSM transition counter from one hook in `statemachine.py` | Counter increments per transition | OBS-2.2 |
 | OBS-2.6 | Outbound call metrics in `R1Client` and the webhook helper | Per-destination outcome counts | OBS-2.2 |
 | OBS-2.8 | Committed Grafana dashboard JSON for the golden signals | Imports cleanly | OBS-2.3 |
 
@@ -1411,7 +1409,7 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | QA-4.1 | Upgrade test in CI: previous schema to head, then the replay | Job green | OPS-1.6 |
-| QA-5.1 | 24-hour soak at baseline load | No memory or pool growth | QA-1.4, OBS-2.4 |
+| QA-5.1 | 24-hour soak at baseline load | No memory or pool growth | QA-1.4 (OBS-2.4 done) |
 | QA-5.2 | 72-hour soak | Same | QA-5.1 |
 | QA-6.2 | Role matrix test for the GUI BFF (`rbac.py`) | Every rule has a positive and a negative test | – |
 | QA-7.1 | `mllf` route tests (5 tests today, the CERTIFIED gate) | ≥ 20 route-level tests | – |
@@ -1425,7 +1423,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):** done.
 2. **Safe to expose:** done except SEC-13.2 and SEC-1.6.
-3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: the rest of OBS-2, OPS-4.1b (cutting the first tag). OPS-1.6 done.
+3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: OBS-2.6 and 2.8, OPS-4.1b (cutting the first tag). OPS-1.6 done.
 4. **Durable notifications:** MSG-1.1–1.9 done (SA SMOS has no destination call to move); MSG-1.10 is the one leftover one module at a time.
 5. **First real O1 path:** SB-3, SB-5.1–5.2, SB-1.1–1.2 done; SB-1.3 and 1.4 done (the netopeer2 lab answers the SSH wrapper in CI); SB-1.5's route needs the real-server payload shape.
 6. **Safer changes:** done (MGT-1.1–1.4, MGT-3, MGT-8.1); MGT-1.5–1.8 are the follow-on.

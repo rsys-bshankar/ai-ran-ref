@@ -8,6 +8,17 @@ label set stays bounded) and status code:
   smo_http_requests_total{method,route,status}
   smo_http_request_duration_seconds{method,route,status}   histogram
 
+Two more families come from the shared library itself (PR-OBS-2.4, 2.5):
+
+  smo_fsm_transitions_total{machine,from_state,event,to_state}   every transition a state machine takes
+  smo_fsm_illegal_transitions_total{machine,from_state,event}    every refused one
+  smo_db_pool_connections{state}                                 in_use / idle / overflow, read at scrape time
+  smo_db_pool_capacity                                           pool_size + max_overflow
+
+`machine` is the name of the state enum (`JobState`, `ModelLifecycleState`, ...), so the label set is the declared states and
+events and nothing else. SQLAlchemy does not expose how many callers are waiting for a connection, so there is no "waiting" gauge: a
+pool that is exhausted shows as `in_use` equal to `smo_db_pool_capacity`.
+
 Unmatched paths are one `route="unmatched"` series. Probes and `/metrics` itself are not counted: a scrape every
 15 s would otherwise be most of the traffic.
 
@@ -24,6 +35,7 @@ import time
 
 from fastapi import FastAPI, Response
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
+from prometheus_client.core import GaugeMetricFamily
 
 from .logconfig import PROBE_PATHS
 
@@ -33,6 +45,56 @@ REQUESTS = Counter("smo_http_requests_total", "HTTP requests handled, by method,
                    ["method", "route", "status"])
 DURATION = Histogram("smo_http_request_duration_seconds", "HTTP request duration, by method, route template and status.",
                      ["method", "route", "status"])
+
+
+FSM_TRANSITIONS = Counter("smo_fsm_transitions_total", "State machine transitions taken, by machine, from state, event and to state.",
+                          ["machine", "from_state", "event", "to_state"])
+FSM_ILLEGAL = Counter("smo_fsm_illegal_transitions_total", "State machine transitions refused, by machine, from state and event.",
+                      ["machine", "from_state", "event"])
+
+
+def _name(value) -> str:
+    """An enum member's value (or the plain string): the label, never an object repr."""
+    return str(getattr(value, "value", value))
+
+
+def record_transition(machine: str, from_state, event, to_state) -> None:
+    FSM_TRANSITIONS.labels(machine, _name(from_state), _name(event), _name(to_state)).inc()
+
+
+def record_illegal_transition(machine: str, from_state, event) -> None:
+    FSM_ILLEGAL.labels(machine, _name(from_state), _name(event)).inc()
+
+
+class PoolCollector:
+    """Connection pool gauges, read from the engine's pool when Prometheus scrapes, so the request path pays nothing."""
+
+    def __init__(self, engine_getter):
+        self._engine_getter = engine_getter
+
+    def collect(self):
+        pool = getattr(self._engine_getter(), "pool", None)
+        if not all(hasattr(pool, attr) for attr in ("checkedout", "checkedin", "overflow", "size")):
+            return                                                  # SQLite's test pools are not a QueuePool: no series
+        in_use = GaugeMetricFamily("smo_db_pool_connections", "Database pool connections, by state.", labels=["state"])
+        in_use.add_metric(["in_use"], pool.checkedout())
+        in_use.add_metric(["idle"], pool.checkedin())
+        in_use.add_metric(["overflow"], max(0, pool.overflow()))
+        yield in_use
+        capacity = GaugeMetricFamily("smo_db_pool_capacity", "Most connections the pool may hold: pool_size plus max_overflow.")
+        capacity.add_metric([], pool.size() + getattr(pool, "_max_overflow", 0))
+        yield capacity
+
+
+_pool_collector: PoolCollector | None = None
+
+
+def register_pool_metrics(engine_getter) -> None:
+    """Register the pool gauges once per process; `engine_getter` is called at each scrape."""
+    global _pool_collector
+    if _pool_collector is None:
+        _pool_collector = PoolCollector(engine_getter)
+        REGISTRY.register(_pool_collector)
 
 
 class MetricsMiddleware:
@@ -65,6 +127,8 @@ class MetricsMiddleware:
 def install_metrics(app: FastAPI) -> None:
     """What each service's `main.py` calls, right after `install_logging(app)`."""
     app.add_middleware(MetricsMiddleware)
+    from . import db                                                # the module's own engine, imported when the app is built
+    register_pool_metrics(lambda: db.engine)
 
     @app.get(METRICS_PATH, include_in_schema=False)
     def metrics():

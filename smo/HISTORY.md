@@ -1489,3 +1489,13 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   `check_migration_matches_models.py` against the same database. It catches a revision that only works on a fresh database (a column the previous release already has, a constraint older rows would break). A previous commit without `scripts/migrate.py` (before `OPS-1`), or no previous commit (a shallow clone of one), is reported and skipped.
 - In CI: a step of the `migration-postgres` job (checkout with `fetch-depth: 2`), against a second database `upgrade` created for it. **Not a full upgrade test:** the database is empty (no rows to carry through a data migration), and only schema revisions are exercised, not the previous release's code against the new schema (`OPS-5.2`) or the runbook replay after an upgrade (`QA-4.1`, `OPS-10.5`).
 - Checked here against `HEAD^1` (0004 to 0004) and against the commit where 0002 was head (0002 to 0004).
+
+### PR-OBS-2.4, 2.5 — pool gauges and FSM transition counters
+
+- **FSM counter (OBS-2.5).** One hook in `StateMachine.fire` (`smo_shared/statemachine.py`), so every machine of every module is covered without touching them: `smo_fsm_transitions_total{machine,from_state,event,to_state}` on a taken transition and
+  `smo_fsm_illegal_transitions_total{machine,from_state,event}` on a refusal (no transition, or every guard said no). `machine` is the state enum's class name (`JobState`, `ModelLifecycleState`, ...), `from_state`/`event`/`to_state` are the enum values, so the label set is the declared states
+  and events only. A guard that rejects counts as a refusal, a guard that passes with an action counts after the action ran.
+- **Pool gauges (OBS-2.4).** A collector reads the module's own engine pool at scrape time (no cost on the request path): `smo_db_pool_connections{state="in_use"|"idle"|"overflow"}` and `smo_db_pool_capacity` (pool_size + max_overflow). `install_metrics` registers it once per process.
+  **No "waiting" gauge:** SQLAlchemy does not expose the number of callers blocked on the pool; an exhausted pool is `in_use` equal to `smo_db_pool_capacity` (and the callers then fail with the pool timeout, `PR-ST-6`). A pool that is not a `QueuePool` (the SQLite test engines) reports nothing.
+- **Tests.** `shared/tests/test_metrics.py`: transitions counted by machine / state / event / target, a refusal and a guard rejection in the refusal series, the pool gauges following checkouts and returns of a real `QueuePool` (3 out with one overflow, then 2 idle), no series for a pool without those counts.
+- **Not done:** outbound call metrics (OBS-2.6), the Grafana dashboard (OBS-2.8).
