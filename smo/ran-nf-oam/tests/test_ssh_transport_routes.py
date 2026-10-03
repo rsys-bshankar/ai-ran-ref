@@ -125,6 +125,34 @@ def test_a_candidate_endpoint_commits_through_the_route_and_reports_a_failed_com
     assert sub["status"] == "REJECTED" and sub["rejectionDetail"].startswith("commit: operation-failed")
 
 
+def test_the_endpoint_stores_a_reference_and_connects_with_what_it_names(client, lab, monkeypatch, db_session_factory):
+    """PR-SB-2: register with credentialRef; the row holds the name, the connect uses the named credential (the shared one is wrong here)."""
+    monkeypatch.setenv("NETCONF_SSH_PASSWORD", "wrong")
+    monkeypatch.setenv("NETCONF_CRED_GNB_1_PASSWORD", "secret")
+    assert _register(client, lab.uri, transport="ssh", credentialRef="gnb-1").status_code == 201
+    db = db_session_factory()
+    assert db.query(O1AdaptorEndpoint).one().credential_ref == "gnb-1"
+    db.close()
+    assert client.get("/o1-adaptor-endpoints").json()["items"][0]["credentialRef"] == "gnb-1"
+    assert "secret" not in str(client.get("/o1-adaptor-endpoints").json())
+    resp = client.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell",
+                                              "changes": [{"managedElementRef": "ME-1", "attributeChanges": {"adminState": "UNLOCKED"}}]})
+    assert client.get(f"/config-jobs/{resp.json()['jobId']}").json()["subChanges"][0]["status"] == "APPLIED"
+    assert client.get("/managed-entities/ME-1/config").status_code == 200
+
+
+@pytest.mark.parametrize("ref", ["Tr0ub4dor&3", "correct horse battery staple", "never-configured"])
+def test_registration_refuses_a_literal_secret_or_an_unknown_name_without_echoing_it(client, lab, ref):
+    """PR-SB-2.1: a reference is a name of a configured credential; a pasted password is neither."""
+    resp = _register(client, lab.uri, transport="ssh", credentialRef=ref)
+    assert resp.status_code in (400, 422) and ref not in resp.text
+
+
+def test_a_credential_ref_needs_the_ssh_transport(client):
+    resp = _register(client, "http://adaptor:8000/x", credentialRef="gnb-1")
+    assert resp.status_code in (400, 422) and "ssh only" in resp.text
+
+
 def test_registration_refuses_an_unknown_model(client, lab):
     assert _register(client, lab.uri + "?model=nope", transport="ssh").status_code in (400, 422)
 

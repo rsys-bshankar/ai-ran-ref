@@ -403,6 +403,17 @@
             "title": "Adaptoruri",
             "type": "string"
           },
+          "credentialRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentialref"
+          },
           "entityType": {
             "title": "Entitytype",
             "type": "string"

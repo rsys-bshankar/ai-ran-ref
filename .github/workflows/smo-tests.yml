@@ -342,7 +342,7 @@ jobs:
       - name: Runbook CM write against the lab server
         working-directory: smo
         env:
-          NETCONF_SSH_PASSWORD: netconf
+          NETCONF_CRED_LAB_PASSWORD: netconf          # the endpoint's own credential (PR-SB-2): there is no shared NETCONF_SSH_PASSWORD here
           PYTHONPATH: ran-nf-oam:shared
         run: |
           export NETCONF_SSH_KNOWN_HOSTS="$RUNNER_TEMP/lab_known_hosts"

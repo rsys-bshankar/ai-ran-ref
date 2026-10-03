@@ -323,7 +323,6 @@ are plain HTTP.
 |---|---|---|---|
 | SEC-4.4 | Same for GUI admin password and session key | Same | – |
 | SEC-4.5 | Same for the module invoker secret (`module_identity.invoker_secret`, or `SMO_INVOKER_SECRET`, which already overrides it) | Same | – |
-| SEC-4.6 | Adaptor credentials stored as a secret reference, never a value, in `o1_adaptor_endpoint` | Route accepts a reference only | – |
 | SEC-4.7 | External Secrets or Vault example manifest | Example applies on a lab cluster | OPS-2.3 |
 | SEC-4.8 | Rotation runbook for each secret (the database password's steps are written down in `docs/SECRETS.md`, untried) | Each rotation tried once | – |
 
@@ -670,14 +669,12 @@ FOCOM and NFO are model-level.
 | SB-1.10 | One candidate transaction per **job and element** (lock once, every sub-change for that element, one commit, discard on any failure), instead of one per sub-change | A job whose second sub-change fails leaves the first one uncommitted | SB-1.8 |
 | SB-1.11 | The compose replay (`test_demo_runbook.py`) over SSH: the stack with `ran-nf-oam` holding the lab's host key and password | Replay green against `netconf-lab` | SB-2.2 |
 
-#### PR-SB-2 — Adaptor credentials and trust
+#### PR-SB-2 — Adaptor credentials and trust (SB-2.1, 2.2 done: `HISTORY.md` §10)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-2.1 | `credential_ref` on `o1_adaptor_endpoint` (a reference, never a value) | Route rejects a literal secret | SEC-4.6 |
-| SB-2.2 | Resolve the reference at connect time | Connect works from a mounted secret | SB-2.1, SB-1.3 |
 | SB-2.3 | Known-hosts store and an operator route to pin a host key | Changed key refused | SB-1.3 |
-| SB-2.4 | TLS client certificate option (NETCONF over TLS) | Connects to the lab server with a cert | SB-2.2 |
+| SB-2.4 | TLS client certificate option (NETCONF over TLS) | Connects to the lab server with a cert | SB-2.2 done |
 
 #### PR-SB-4 — WG4 O-RU YANG
 

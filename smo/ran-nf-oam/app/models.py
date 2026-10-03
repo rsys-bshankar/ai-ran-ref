@@ -24,6 +24,9 @@ class O1AdaptorEndpoint(Base):
     supported_services: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
     # PR-SB-1.2: how the adaptor is reached: 'http-mock' (the XML-over-HTTP mock) or 'ssh' (NETCONF over SSH, RFC 6242)
     transport: Mapped[str] = mapped_column(String, nullable=False, default="http-mock", server_default="http-mock")
+    # PR-SB-2.1: the NAME of the credential this adaptor is reached with (resolved at connect time from the service's own secrets,
+    # netconf_ssh.credentials_for); never the secret. NULL: the shared credential of PR-SB-1.
+    credential_ref: Mapped[str | None] = mapped_column(String)
 
 
 class ManagedEntity(Base):

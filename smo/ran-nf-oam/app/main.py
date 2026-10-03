@@ -126,7 +126,7 @@ def _capture_before(me, endpoint, change: dict, attribute_changes: dict) -> tupl
     read = _o1_client(me.o1_protocol, endpoint.transport)[1]
     try:
         current = read(endpoint.adaptor_uri, change["managedElementRef"], message_id=str(uuid.uuid4()),
-                       managed_function_ref=change.get("managedFunctionRef"))
+                       managed_function_ref=change.get("managedFunctionRef"), **_ssh_kwargs(endpoint.transport, endpoint.credential_ref))
     except Exception as exc:                                   # noqa: BLE001 - a client bug must not lose the write itself
         return None, f"before-image read raised {type(exc).__name__}"
     if current is None:
@@ -134,8 +134,14 @@ def _capture_before(me, endpoint, change: dict, attribute_changes: dict) -> tupl
     return ({name: current.get(name) for name in attribute_changes} if attribute_changes else dict(current)), None
 
 
+def _ssh_kwargs(transport: str, credential_ref: str | None) -> dict:
+    """What only the ssh clients take: the endpoint's credential name (the http clients have no such parameter)."""
+    return {"credential_ref": credential_ref} if transport == "ssh" else {}
+
+
 def _dispatch_with_retries(adaptor_uri: str, change: dict, attribute_changes: dict, message_id: str,
-                           operation: str, protocol: str = "NETCONF", transport: str = "http-mock") -> tuple[bool, str | None, int, str | None]:
+                           operation: str, protocol: str = "NETCONF", transport: str = "http-mock",
+                           credential_ref: str | None = None) -> tuple[bool, str | None, int, str | None]:
     """(applied, rejection reason, attempts, adaptor detail) for one sub-change. The same
     retry policy for both protocols: only a transient failure is retried, and only within the time budget."""
     send_edit, _, default_reason = _o1_client(protocol, transport)
@@ -148,7 +154,8 @@ def _dispatch_with_retries(adaptor_uri: str, change: dict, attribute_changes: di
             _sleep(delay)
         attempts += 1
         result = send_edit(adaptor_uri, change["managedElementRef"], attribute_changes, message_id=message_id,
-                           operation=operation, managed_function_ref=change.get("managedFunctionRef"))
+                           operation=operation, managed_function_ref=change.get("managedFunctionRef"),
+                           **_ssh_kwargs(transport, credential_ref))
         if result:
             return True, None, attempts, None
         reason = getattr(result, "reason", None) or default_reason
@@ -227,6 +234,9 @@ class RegisterO1AdaptorEndpointRequest(BaseModel):
     supportedServices: list[MnsService] | None = None
     # PR-SB-1.2: how the adaptor is reached. `ssh`: NETCONF over SSH (RFC 6242), adaptorUri is ssh://user@host[:port].
     transport: Literal["http-mock", "ssh"] = "http-mock"
+    # PR-SB-2.1: the name of the credential to use (never the secret); only for transport ssh, and it must be one this service has been given.
+    # Checked in the route, not here: a validation error of the body model repeats the input, and a pasted secret must not be echoed.
+    credentialRef: str | None = None
 
     @model_validator(mode="after")
     def _transport_matches(self):
@@ -270,6 +280,13 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
     """
     # Wave 9 (W9-04): a registered vendor's endpoint must use a transport
     # (vendor mode) the vendor declared, and can't claim services it lacks.
+    if body.credentialRef is not None:
+        try:
+            if body.transport != "ssh":
+                raise ValueError("credentialRef applies to transport ssh only")
+            netconf_ssh.check_credential_ref(body.credentialRef)
+        except ValueError as exc:
+            raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=str(exc)) from None     # the message never repeats the value
     check_vendor_mode(db, body.vendorName, body.o1Protocol)
     _valid_refs(body.managedElementRef, body.managedFunctionRef)
     cap = db.get(VendorCapability, body.vendorName) if body.vendorName else None
@@ -278,7 +295,7 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
                               detail=f"supportedServices {body.supportedServices} exceed vendor {body.vendorName!r}'s {cap.supported_services}")
     endpoint = O1AdaptorEndpoint(managed_element_ref=body.managedElementRef, adaptor_uri=body.adaptorUri,
                                   protocol_support=body.protocolSupport, health_status=EndpointHealth.DISCOVERED.value,
-                                  supported_services=body.supportedServices, transport=body.transport)
+                                  supported_services=body.supportedServices, transport=body.transport, credential_ref=body.credentialRef)
     db.add(endpoint)
     db.flush()
     me = ManagedEntity(managed_element_ref=body.managedElementRef, managed_function_ref=body.managedFunctionRef,
@@ -378,7 +395,8 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
             continue
         before, before_error = _capture_before(me, endpoint, change, attribute_changes) if CM_SNAPSHOTS else (None, None)
         applied, reason, attempts, detail = _dispatch_with_retries(endpoint.adaptor_uri, change, attribute_changes,
-                                                           str(job.job_id), operation, me.o1_protocol, endpoint.transport)
+                                                           str(job.job_id), operation, me.o1_protocol, endpoint.transport,
+                                                                   endpoint.credential_ref)
         if not applied and attempts > 1:
             _raise_dispatch_alarm(db, job.job_id, change, reason, attempts)
         sub_change_id = uuid.uuid4()
@@ -418,7 +436,7 @@ def read_configuration(managed_element_ref: str, managed_function_ref: str | Non
         raise framework_error(FrameworkError.PROTOCOL_NOT_SUPPORTED,
                               detail=f"{managed_element_ref} is provisioned for {me.o1_protocol}, which has no client")
     attributes = client[1](endpoint.adaptor_uri, managed_element_ref, message_id=str(uuid.uuid4()),
-                           managed_function_ref=managed_function_ref)
+                           managed_function_ref=managed_function_ref, **_ssh_kwargs(endpoint.transport, endpoint.credential_ref))
     if attributes is None:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"configuration read on {managed_element_ref} failed")
     return {"managedElementRef": managed_element_ref, "managedFunctionRef": managed_function_ref, "attributes": attributes}
@@ -961,7 +979,7 @@ def list_o1_adaptor_endpoints(health_status: str | None = None, limit: int = Pag
         stmt = stmt.where(O1AdaptorEndpoint.health_status == health_status)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"endpointId": str(ep.endpoint_id), "managedElementRef": ep.managed_element_ref, "adaptorUri": ep.adaptor_uri,
-             "protocolSupport": ep.protocol_support, "registeredVia": ep.registered_via, "transport": ep.transport, "healthStatus": ep.health_status,
+             "protocolSupport": ep.protocol_support, "registeredVia": ep.registered_via, "transport": ep.transport, "credentialRef": ep.credential_ref, "healthStatus": ep.health_status,
              "lastHeartbeatAt": ep.last_heartbeat_at.isoformat() if ep.last_heartbeat_at else None,
              "supportedServices": ep.supported_services}
             for ep in page["items"]]}
