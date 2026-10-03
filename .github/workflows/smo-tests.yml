@@ -328,13 +328,21 @@ jobs:
           cat "$RUNNER_TEMP/lab_known_hosts"
           [ -s "$RUNNER_TEMP/lab_known_hosts" ]
 
-      - name: get-config over the SSH session wrapper
+      # PR-SB-2.5: the lab also listens for NETCONF over TLS on 6513 with a throwaway PKI it wrote to netconf-lab/pki; the check reads, writes and
+      # gets a refusal over it with the client certificate
+      - name: get-config over the SSH session wrapper, and a read, a write and a refusal over TLS
         working-directory: smo
         env:
           NETCONF_SSH_PASSWORD: netconf
           PYTHONPATH: ran-nf-oam:shared
+          NETCONF_LAB_TLS_URI: tls://127.0.0.1:6513?model=smo-lab
+          NETCONF_CRED_LABTLS_CERT_FILE: netconf-lab/pki/client.crt
+          NETCONF_CRED_LABTLS_KEY_FILE: netconf-lab/pki/client.key
+          NETCONF_CRED_LABTLS_CA_FILE: netconf-lab/pki/ca.crt
         run: |
           export NETCONF_SSH_KNOWN_HOSTS="$RUNNER_TEMP/lab_known_hosts"
+          for i in $(seq 1 30); do (echo > /dev/tcp/127.0.0.1/6513) 2>/dev/null && break; sleep 1; done
+          ls -l netconf-lab/pki
           python scripts/netconf_lab_check.py
 
       # PR-SB-1.9: runbook section 7 (register, heartbeat, CM write, read back, history, partial failure, refusal) through RAN NF OAM's own
@@ -347,17 +355,6 @@ jobs:
         run: |
           export NETCONF_SSH_KNOWN_HOSTS="$RUNNER_TEMP/lab_known_hosts"
           python scripts/netconf_lab_runbook.py 2>&1 | grep -E "^(ok|FAIL|OK|FAILED|  server said|  pinned)"; test "${PIPESTATUS[0]}" -eq 0
-
-      # TEMPORARY (PR-SB-2.5): Netopeer2's own TLS example configuration (in the pinned image), to write the lab's TLS listener from. Read-only, never
-      # fails the job. Removed when the listener is configured.
-      - name: Print the lab server's TLS example configuration
-        continue-on-error: true
-        working-directory: smo
-        run: |
-          docker compose --profile netconf-lab exec -T netconf-lab sh -c '
-            cd /opt/dev/Netopeer2/example_configuration || exit 0
-            ls -la
-            for f in tls_listen.xml tls_keystore.xml tls_truststore.xml; do echo "=== $f"; sed -E "s/(<(private-key|public-key|cert|binary|key-data)>)[A-Za-z0-9+\/=[:space:]]{60,}/\1<...base64...>/" "$f" | head -120; done' || true
 
       - name: Dump the lab logs on failure
         if: failure()

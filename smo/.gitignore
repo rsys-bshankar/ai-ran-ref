@@ -7,3 +7,6 @@ backups/
 
 secrets/
 certs/
+
+# the netconf-lab server writes a throwaway PKI here at start (PR-SB-2.5)
+netconf-lab/pki/

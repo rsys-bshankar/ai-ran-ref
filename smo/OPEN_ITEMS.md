@@ -670,12 +670,11 @@ FOCOM and NFO are model-level.
 | SB-1.10 | One candidate transaction per **job and element** (lock once, every sub-change for that element, one commit, discard on any failure), instead of one per sub-change | A job whose second sub-change fails leaves the first one uncommitted | SB-1.8 |
 | SB-1.11 | The compose replay (`test_demo_runbook.py`) over SSH: the stack with `ran-nf-oam` holding the lab's host key and password | Replay green against `netconf-lab` | SB-2.2 |
 
-#### PR-SB-2 — Adaptor credentials and trust (SB-2.1–2.4 done: `HISTORY.md` §10; open: SB-2.5)
+#### PR-SB-2 — Adaptor credentials and trust (SB-2.1–2.5 done: `HISTORY.md` §10)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 
-| SB-2.5 | A TLS listener in the netconf-lab server (server certificate, the CA that signs client certificates, cert-to-name) and the runbook CM write over it | The lab check connects with a client certificate | SB-2.4 |
 
 #### PR-SB-4 — WG4 O-RU YANG
 
