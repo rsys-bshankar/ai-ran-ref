@@ -337,6 +337,8 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2          # the previous commit is needed by the upgrade check (PR-OPS-1.6)
 
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -380,6 +382,16 @@ jobs:
         run: |
           pip install --require-hashes -r requirements/dev.txt
           PYTHONPATH=shared python -m pytest tests_integration/test_migrations.py -v
+
+      # PR-OPS-1.6: the previous commit's schema (its own scripts/migrate.py, on an empty database) upgrades to this commit's head
+      - name: A database at the previous commit's schema upgrades to this commit's head
+        working-directory: smo
+        env:
+          PGPASSWORD: smo
+          SMO_DATABASE_URL: postgresql+psycopg://smo:smo@localhost:5432/upgrade
+        run: |
+          psql -h localhost -U smo -d smo -c "CREATE DATABASE upgrade"
+          scripts/check_upgrade_from_previous.sh
 
       # PR-ST-2 to -8: the races on a versioned row, on one Idempotency-Key, on a module's shared invoker and on the GUI BFF's shared state, and the server-side statement and idle-transaction limits, on the real database.
       - name: Concurrency, idempotency and shared state under real Postgres
