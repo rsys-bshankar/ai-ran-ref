@@ -144,9 +144,11 @@ def test_the_revision_after_the_baseline_applies_to_a_baseline_database_and_roll
     assert up.returncode == 0 and f"upgraded to {HEAD}" in up.stdout, up.stderr
     assert any(table == "notification_outbox" for table, *_ in _schema(databases["fresh"])["columns"])
 
-    one = _run(MIGRATE, databases["fresh"], "--downgrade", "-1")                          # 0003 -> 0002: the transport column goes
-    assert one.returncode == 0 and "downgraded to 0002" in one.stdout, one.stderr
-    assert not any(table == "o1_adaptor_endpoint" and column == "transport" for table, column, *_ in _schema(databases["fresh"])["columns"])
+    at_head = _schema(databases["fresh"])
+    previous = _scripts().get_revision(HEAD).down_revision                                   # one step down, whatever the head is
+    one = _run(MIGRATE, databases["fresh"], "--downgrade", "-1")
+    assert one.returncode == 0 and f"downgraded to {previous}" in one.stdout, one.stderr
+    assert _schema(databases["fresh"]) != at_head                                             # the head's change is undone
     down = _run(MIGRATE, databases["fresh"], "--downgrade", "0001")
     assert down.returncode == 0 and "downgraded to 0001" in down.stdout, down.stderr
     assert _schema(databases["fresh"]) == at_baseline
