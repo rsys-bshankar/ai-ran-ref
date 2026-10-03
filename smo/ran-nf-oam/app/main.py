@@ -44,6 +44,7 @@ from smo_shared.idempotency import idempotent
 from .models import Alarm, CMSchemaCache, CMSnapshot, FileSubscription, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
+from . import netconf_tls
 from . import restconf_client
 from . import netconf_ssh
 from .netconf_client import NETCONF_TIMEOUT_SECONDS, send_edit_config, send_get_config
@@ -108,7 +109,7 @@ def worst_case_dispatch_seconds() -> float:
 # o1_protocol -> (edit, read, reason for an unexplained failure). Resolved
 # at call time so tests can patch either client function.
 def _o1_client(protocol: str, transport: str = "http-mock"):
-    if protocol == "NETCONF" and transport == "ssh":
+    if protocol == "NETCONF" and transport in ("ssh", "tls"):          # one pair of functions: the URI scheme picks SSH or TLS (PR-SB-2.4)
         return netconf_ssh.send_edit_config, netconf_ssh.send_get_config, "NETCONF_RPC_FAILED"
     if protocol == "NETCONF":
         return send_edit_config, send_get_config, "NETCONF_RPC_FAILED"
@@ -139,6 +140,8 @@ def _capture_before(me, endpoint, change: dict, attribute_changes: dict, ssh_opt
 def _ssh_options(db: Session, endpoint) -> dict:
     """What only the ssh clients take, per endpoint: the name of its credential (PR-SB-2.1) and the host keys an operator pinned for it
     (PR-SB-2.3). Empty for any other transport (the HTTP and RESTCONF clients have no such parameters)."""
+    if endpoint.transport == "tls":
+        return {"credential_ref": endpoint.credential_ref}             # TLS trusts a CA file, not pinned keys
     if endpoint.transport != "ssh":
         return {}
     keys = db.execute(select(O1AdaptorHostKey.key_type, O1AdaptorHostKey.public_key)
@@ -240,7 +243,8 @@ class RegisterO1AdaptorEndpointRequest(BaseModel):
     # its vendor's declared capability (vendors.py)
     supportedServices: list[MnsService] | None = None
     # PR-SB-1.2: how the adaptor is reached. `ssh`: NETCONF over SSH (RFC 6242), adaptorUri is ssh://user@host[:port].
-    transport: Literal["http-mock", "ssh"] = "http-mock"
+    # `tls` (PR-SB-2.4): NETCONF over TLS (RFC 7589), adaptorUri is tls://host[:port], authenticated by a client certificate.
+    transport: Literal["http-mock", "ssh", "tls"] = "http-mock"
     # PR-SB-2.1: the name of the credential to use (never the secret); only for transport ssh, and it must be one this service has been given.
     # Checked in the route, not here: a validation error of the body model repeats the input, and a pasted secret must not be echoed.
     credentialRef: str | None = None
@@ -254,8 +258,17 @@ class RegisterO1AdaptorEndpointRequest(BaseModel):
                 netconf_ssh.parse_ssh_uri(self.adaptorUri)
             except netconf_ssh.NetconfSshError as exc:
                 raise ValueError(exc.detail) from exc
+        elif self.transport == "tls":
+            if self.o1Protocol != "NETCONF":
+                raise ValueError("transport tls carries NETCONF only")
+            try:
+                netconf_tls.parse_tls_uri(self.adaptorUri)
+            except netconf_ssh.NetconfSshError as exc:
+                raise ValueError(exc.detail) from exc
         elif self.adaptorUri.lower().startswith("ssh:"):
             raise ValueError("an ssh:// adaptorUri needs transport ssh")
+        elif self.adaptorUri.lower().startswith("tls:"):
+            raise ValueError("a tls:// adaptorUri needs transport tls")
         return self
 
 
@@ -289,8 +302,8 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
     # (vendor mode) the vendor declared, and can't claim services it lacks.
     if body.credentialRef is not None:
         try:
-            if body.transport != "ssh":
-                raise ValueError("credentialRef applies to transport ssh only")
+            if body.transport not in ("ssh", "tls"):
+                raise ValueError("credentialRef applies to transport ssh or tls only")
             netconf_ssh.check_credential_ref(body.credentialRef)
         except ValueError as exc:
             raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=str(exc)) from None     # the message never repeats the value

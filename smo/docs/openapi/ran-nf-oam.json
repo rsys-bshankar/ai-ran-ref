@@ -495,7 +495,8 @@
             "default": "http-mock",
             "enum": [
               "http-mock",
-              "ssh"
+              "ssh",
+              "tls"
             ],
             "title": "Transport",
             "type": "string"

@@ -348,6 +348,18 @@ jobs:
           export NETCONF_SSH_KNOWN_HOSTS="$RUNNER_TEMP/lab_known_hosts"
           python scripts/netconf_lab_runbook.py 2>&1 | grep -E "^(ok|FAIL|OK|FAILED|  server said|  pinned)"; test "${PIPESTATUS[0]}" -eq 0
 
+      # TEMPORARY (PR-SB-2.4): what TLS configuration model does the pinned Netopeer2 image have? Printed to read, never fails the job.
+      - name: Inspect the lab server's TLS configuration model
+        continue-on-error: true
+        working-directory: smo
+        run: |
+          docker compose --profile netconf-lab exec -T netconf-lab sh -c '
+            netopeer2-server -V 2>&1 | head -3
+            echo "--- modules"; sysrepoctl -l 2>&1 | grep -iE "netconf-server|keystore|truststore|tls|x509|crypto|cert" 
+            echo "--- netconf-server running"; sysrepocfg -X -d running -m ietf-netconf-server -f xml 2>&1 | head -80
+            echo "--- keystore"; sysrepocfg -X -d running -m ietf-keystore -f xml 2>&1 | head -30
+            echo "--- openssl"; which openssl' || true
+
       - name: Dump the lab logs on failure
         if: failure()
         working-directory: smo
