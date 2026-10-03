@@ -11,7 +11,7 @@ from smo_shared.outbox import NotificationOutbox
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import (Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, O1AdaptorEndpoint, VendorCapability, WriteConfigJob, WriteConfigSubChange,
+from app.models import (O1AdaptorHostKey, Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, O1AdaptorEndpoint, VendorCapability, WriteConfigJob, WriteConfigSubChange,
                         MsacAccessRule, MsacIdentity, MsacRole)
 
 from netconf_ssh_server import Behaviour, NetconfTestServer
@@ -25,7 +25,7 @@ def db_session_factory():
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
         WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__, MsacAccessRule.__table__,
-        IdempotencyKey.__table__, NotificationOutbox.__table__])
+        IdempotencyKey.__table__, NotificationOutbox.__table__, O1AdaptorHostKey.__table__])
     return sessionmaker(bind=engine)
 
 
@@ -151,6 +151,73 @@ def test_registration_refuses_a_literal_secret_or_an_unknown_name_without_echoin
 def test_a_credential_ref_needs_the_ssh_transport(client):
     resp = _register(client, "http://adaptor:8000/x", credentialRef="gnb-1")
     assert resp.status_code in (400, 422) and "ssh only" in resp.text
+
+
+# --- PR-SB-2.3: pinned host keys ---------------------------------------------------------------------------------------------------------
+
+
+def _pin(client, endpoint_id, key, by="alice"):
+    return client.put(f"/o1-adaptor-endpoints/{endpoint_id}/host-keys",
+                      json={"keyType": key.get_name(), "publicKey": key.get_base64(), "pinnedBy": by})
+
+
+def _write(client):
+    resp = client.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell",
+                                              "changes": [{"managedElementRef": "ME-1", "attributeChanges": {"adminState": "UNLOCKED"}}]})
+    return client.get(f"/config-jobs/{resp.json()['jobId']}").json()["subChanges"][0]
+
+
+def test_a_pinned_key_is_what_trusts_the_server_and_a_changed_key_is_refused(client, lab, monkeypatch):
+    """No known_hosts file at all: the endpoint's own pinned key is the only trust. Then the server's key changes (here: a different key is
+    pinned): the connection is refused, and only an operator pinning the new key makes it work again."""
+    import paramiko
+    from app.netconf_ssh import host_key_fingerprint
+    monkeypatch.delenv("NETCONF_SSH_KNOWN_HOSTS")
+    endpoint_id = _register(client, lab.uri, transport="ssh").json()["endpointId"]
+    refused = _write(client)
+    assert refused["status"] == "REJECTED" and refused["rejectionReason"] == "NETCONF_RPC_FAILED"        # nothing pinned, nothing trusted
+    pinned = _pin(client, endpoint_id, lab.host_key)
+    assert pinned.status_code == 200 and pinned.json()["fingerprint"] == host_key_fingerprint(lab.host_key) and pinned.json()["replaced"] is False
+    assert _write(client)["status"] == "APPLIED"
+    assert client.get(f"/o1-adaptor-endpoints/{endpoint_id}/host-keys").json()["items"][0]["pinnedBy"] == "alice"
+    # the device's key "changes": pin a different one for the same type; the real server no longer matches
+    other = paramiko.RSAKey.generate(2048)
+    replaced = _pin(client, endpoint_id, other, by="bob")
+    assert replaced.json()["replaced"] is True and replaced.json()["pinnedBy"] == "bob"
+    changed = _write(client)
+    assert changed["status"] == "REJECTED" and "does not match" in changed["rejectionDetail"]
+    assert _pin(client, endpoint_id, lab.host_key).json()["replaced"] is True                         # the operator accepts the real one again
+    assert _write(client)["status"] == "APPLIED"
+
+
+def test_unpinning_removes_the_trust(client, lab, monkeypatch):
+    monkeypatch.delenv("NETCONF_SSH_KNOWN_HOSTS")
+    endpoint_id = _register(client, lab.uri, transport="ssh").json()["endpointId"]
+    _pin(client, endpoint_id, lab.host_key)
+    assert _write(client)["status"] == "APPLIED"
+    assert client.delete(f"/o1-adaptor-endpoints/{endpoint_id}/host-keys/{lab.host_key.get_name()}").status_code == 204
+    assert _write(client)["status"] == "REJECTED"
+    assert client.delete(f"/o1-adaptor-endpoints/{endpoint_id}/host-keys/{lab.host_key.get_name()}").status_code == 404
+
+
+def test_pinning_refuses_junk_a_non_ssh_endpoint_and_an_unknown_endpoint(client, lab):
+    ssh_id = _register(client, lab.uri, transport="ssh").json()["endpointId"]
+    for body in ({"keyType": "ssh-rsa", "publicKey": "not base64!", "pinnedBy": "a"},
+                 {"keyType": "ssh-rsa", "publicKey": "AAAA", "pinnedBy": "a"},
+                 {"keyType": "nonsense", "publicKey": lab.host_key.get_base64(), "pinnedBy": "a"}):
+        assert client.put(f"/o1-adaptor-endpoints/{ssh_id}/host-keys", json=body).status_code in (400, 422)
+    assert client.get(f"/o1-adaptor-endpoints/{ssh_id}/host-keys").json() == {"items": []}
+    client.delete(f"/o1-adaptor-endpoints/{ssh_id}/host-keys/ssh-rsa")
+    mock_id = client.post("/o1-adaptor-endpoints", json={"managedElementRef": "ME-2", "adaptorUri": "http://adaptor:8000/x",
+                                                         "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU"}).json()["endpointId"]
+    assert _pin(client, mock_id, lab.host_key).status_code in (400, 422)
+    assert _pin(client, "00000000-0000-0000-0000-000000000000", lab.host_key).status_code == 404
+
+
+def test_the_known_hosts_file_still_works_and_a_pinned_key_adds_to_it(client, lab, monkeypatch):
+    """The file of PR-SB-1 is untouched: with it and no pin the write works (the fixture's default)."""
+    _register(client, lab.uri, transport="ssh")
+    assert _write(client)["status"] == "APPLIED"
 
 
 def test_registration_refuses_an_unknown_model(client, lab):

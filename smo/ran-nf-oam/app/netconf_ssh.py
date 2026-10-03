@@ -11,12 +11,14 @@ parsers, so the same `EditResult` reasons come out of both transports:
 
 The endpoint's `adaptor_uri` is `ssh://user@host[:port]` (default port 830), optionally with `?model=<name>` (a YANG model payload, yang_payload.py)
 and `?datastore=candidate` (each write is one transaction on the candidate datastore, PR-SB-1.8: lock, edit-config, commit, unlock; a failed step
-sends discard-changes first so nothing half-applied is left behind; default `running`). Host keys are checked against
-`NETCONF_SSH_KNOWN_HOSTS` and an unknown or changed key is always refused; credentials are per endpoint (PR-SB-2): the endpoint's `credential_ref` names them, see `credentials_for`.
+sends discard-changes first so nothing half-applied is left behind; default `running`). Host keys are checked against the keys an operator pinned for the endpoint (PR-SB-2.3) and
+`NETCONF_SSH_KNOWN_HOSTS`, and an unknown or changed key is always refused; credentials are per endpoint (PR-SB-2): the endpoint's `credential_ref` names them, see `credentials_for`.
 """
 
 import logging
 import os
+import base64
+import hashlib
 import re
 import socket
 from urllib.parse import urlsplit
@@ -31,6 +33,7 @@ from .netconf_client import (NETCONF_BASE_NS, NETCONF_TIMEOUT_SECONDS, EditResul
 log = logging.getLogger("ran-nf-oam.netconf-ssh")
 
 DEFAULT_PORT = 830
+DEFAULT_PORT_SSH = 22                   # paramiko names a known_hosts entry for any other port as "[host]:port"
 EOM = b"]]>]]>"
 BASE_10 = "urn:ietf:params:netconf:base:1.0"
 BASE_11 = "urn:ietf:params:netconf:base:1.1"
@@ -102,25 +105,49 @@ def parse_ssh_uri(adaptor_uri: str) -> tuple[str, str, int]:
     return parts.username, parts.hostname, port
 
 
-def _host_key_policy(client: paramiko.SSHClient) -> None:
+def parse_host_key(key_type: str, public_key_b64: str) -> "paramiko.PKey":
+    """The public key an operator pinned (`key_type` as in a known_hosts line, `ssh-ed25519`, `ecdsa-sha2-nistp256`, `ssh-rsa`...; the base64 body of
+    that line). ValueError for anything paramiko cannot read as that type of key."""
+    try:
+        return paramiko.PKey.from_type_string(key_type, base64.b64decode(public_key_b64, validate=True))
+    except Exception as exc:                                    # noqa: BLE001 - bad base64, wrong type, truncated blob: all the same answer
+        raise ValueError(f"not a valid {key_type} public key") from exc
+
+
+def host_key_fingerprint(key: "paramiko.PKey") -> str:
+    """OpenSSH's `SHA256:<unpadded base64>` form, which is what an operator compares against `ssh-keygen -lf` or the device's own label."""
+    return "SHA256:" + base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode().rstrip("=")
+
+
+def _host_key_policy(client: paramiko.SSHClient, host: str, port: int, pinned: list[tuple[str, str]] | None = None) -> None:
+    """Keys to trust: those an operator pinned for this endpoint (`pinned`: (type, base64) pairs, PR-SB-2.3) and the lines of the file named by
+    NETCONF_SSH_KNOWN_HOSTS. Neither: refuse. A key the server presents that is not among them, or differs from the one for its type, is refused:
+    never trust on first use."""
     known_hosts = os.environ.get("NETCONF_SSH_KNOWN_HOSTS", "")
     if known_hosts:
         try:
             client.load_host_keys(known_hosts)
         except OSError as exc:
             raise NetconfSshError("NETCONF_RPC_FAILED", f"NETCONF_SSH_KNOWN_HOSTS cannot be read: {exc.strerror}") from exc
-    if known_hosts:
+    for key_type, public_key in pinned or []:
+        try:
+            key = parse_host_key(key_type, public_key)
+        except ValueError as exc:
+            raise NetconfSshError("NETCONF_RPC_FAILED", f"a pinned host key for {host} is unreadable: {exc}") from exc
+        client.get_host_keys().add(host if port == DEFAULT_PORT_SSH else f"[{host}]:{port}", key.get_name(), key)
+    if known_hosts or pinned:
         client.set_missing_host_key_policy(paramiko.RejectPolicy())     # never trust a key on first use
     else:
-        raise NetconfSshError("NETCONF_RPC_FAILED", "no host keys known: set NETCONF_SSH_KNOWN_HOSTS")
+        raise NetconfSshError("NETCONF_RPC_FAILED", "no host keys known: pin one for the endpoint or set NETCONF_SSH_KNOWN_HOSTS")
 
 
 class NetconfSession:
     """One SSH connection with an established NETCONF session: `with NetconfSession(uri) as s: s.rpc(xml)`."""
 
-    def __init__(self, adaptor_uri: str, timeout: float | None = None, credential_ref: str | None = None):
+    def __init__(self, adaptor_uri: str, timeout: float | None = None, credential_ref: str | None = None,
+                 host_keys: list[tuple[str, str]] | None = None):
         self.user, self.host, self.port = parse_ssh_uri(adaptor_uri)
-        self.credential_ref = credential_ref
+        self.credential_ref, self.host_keys = credential_ref, host_keys
         self.timeout = NETCONF_TIMEOUT_SECONDS if timeout is None else timeout
         self.chunked = False
         self.server_capabilities: list[str] = []
@@ -150,7 +177,7 @@ class NetconfSession:
 
     def _connect(self) -> None:
         client = self._client = paramiko.SSHClient()
-        _host_key_policy(client)
+        _host_key_policy(client, self.host, self.port, self.host_keys)
         password, key_file = credentials_for(self.credential_ref)
         try:
             client.connect(self.host, port=self.port, username=self.user, password=password,
@@ -297,7 +324,8 @@ def candidate_transaction(session: "NetconfSession", message_id: str, edit_rpc: 
 
 # Same call shapes as netconf_client.send_edit_config / send_get_config, which is how main.py picks them.
 def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict, message_id: str, operation: str = "merge",
-                     managed_function_ref: str | None = None, credential_ref: str | None = None) -> EditResult:
+                     managed_function_ref: str | None = None, credential_ref: str | None = None,
+                     host_keys: list[tuple[str, str]] | None = None) -> EditResult:
     model = yang_payload.model_of(adaptor_uri)
     datastore = yang_payload.datastore_of(adaptor_uri)
     try:
@@ -307,7 +335,7 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
     except ValueError as exc:                                      # an operation the model path does not know: nothing is sent
         return EditResult(False, "NETCONF_RPC_FAILED", str(exc))
     try:
-        with NetconfSession(adaptor_uri, credential_ref=credential_ref) as session:
+        with NetconfSession(adaptor_uri, credential_ref=credential_ref, host_keys=host_keys) as session:
             if datastore == "candidate":
                 return candidate_transaction(session, message_id, rpc)
             return edit_outcome(session.rpc(rpc))
@@ -317,11 +345,11 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
 
 
 def send_get_config(adaptor_uri: str, target_ref: str, message_id: str, managed_function_ref: str | None = None,
-                    credential_ref: str | None = None) -> dict | None:
+                    credential_ref: str | None = None, host_keys: list[tuple[str, str]] | None = None) -> dict | None:
     model = yang_payload.model_of(adaptor_uri)
     profile = yang_payload.PROFILES[model] if model else None
     try:
-        with NetconfSession(adaptor_uri, credential_ref=credential_ref) as session:
+        with NetconfSession(adaptor_uri, credential_ref=credential_ref, host_keys=host_keys) as session:
             if profile:
                 reply = session.rpc(yang_payload.build_get_config_rpc(profile, message_id, target_ref, managed_function_ref))
                 return yang_payload.config_attributes(profile, reply, target_ref, managed_function_ref)

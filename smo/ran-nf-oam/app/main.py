@@ -14,6 +14,7 @@ rejected with PROTOCOL_NOT_SUPPORTED rather than silently applied.
 """
 
 import datetime
+import logging
 import json
 import os
 import time
@@ -40,7 +41,7 @@ from smo_shared.outbox import enqueue
 from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 
-from .models import Alarm, CMSchemaCache, CMSnapshot, FileSubscription, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, CMSchemaCache, CMSnapshot, FileSubscription, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
 from . import restconf_client
@@ -63,6 +64,7 @@ from .statemachine import (
 )
 
 app = FastAPI(title="RAN NF OAM SMOS")
+log = logging.getLogger("ran-nf-oam")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
 install_concurrency_handler(app)  # a stale write (PR-ST-2) is a 409, not a 500
@@ -120,13 +122,13 @@ def worst_case_sub_change_seconds() -> float:
     return worst_case_dispatch_seconds() + (NETCONF_TIMEOUT_SECONDS if CM_SNAPSHOTS else 0.0)
 
 
-def _capture_before(me, endpoint, change: dict, attribute_changes: dict) -> tuple[dict | None, str | None]:
+def _capture_before(me, endpoint, change: dict, attribute_changes: dict, ssh_options: dict | None = None) -> tuple[dict | None, str | None]:
     """(before values, error): the NF's current values of the named attributes, or of the whole object when the change names none
     (delete/remove). A failed read does not stop the write; it is recorded so nobody mistakes a missing image for an empty one."""
     read = _o1_client(me.o1_protocol, endpoint.transport)[1]
     try:
         current = read(endpoint.adaptor_uri, change["managedElementRef"], message_id=str(uuid.uuid4()),
-                       managed_function_ref=change.get("managedFunctionRef"), **_ssh_kwargs(endpoint.transport, endpoint.credential_ref))
+                       managed_function_ref=change.get("managedFunctionRef"), **(ssh_options or {}))
     except Exception as exc:                                   # noqa: BLE001 - a client bug must not lose the write itself
         return None, f"before-image read raised {type(exc).__name__}"
     if current is None:
@@ -134,14 +136,19 @@ def _capture_before(me, endpoint, change: dict, attribute_changes: dict) -> tupl
     return ({name: current.get(name) for name in attribute_changes} if attribute_changes else dict(current)), None
 
 
-def _ssh_kwargs(transport: str, credential_ref: str | None) -> dict:
-    """What only the ssh clients take: the endpoint's credential name (the http clients have no such parameter)."""
-    return {"credential_ref": credential_ref} if transport == "ssh" else {}
+def _ssh_options(db: Session, endpoint) -> dict:
+    """What only the ssh clients take, per endpoint: the name of its credential (PR-SB-2.1) and the host keys an operator pinned for it
+    (PR-SB-2.3). Empty for any other transport (the HTTP and RESTCONF clients have no such parameters)."""
+    if endpoint.transport != "ssh":
+        return {}
+    keys = db.execute(select(O1AdaptorHostKey.key_type, O1AdaptorHostKey.public_key)
+                      .where(O1AdaptorHostKey.endpoint_id == endpoint.endpoint_id)).all()
+    return {"credential_ref": endpoint.credential_ref, "host_keys": [(k.key_type, k.public_key) for k in keys]}
 
 
 def _dispatch_with_retries(adaptor_uri: str, change: dict, attribute_changes: dict, message_id: str,
                            operation: str, protocol: str = "NETCONF", transport: str = "http-mock",
-                           credential_ref: str | None = None) -> tuple[bool, str | None, int, str | None]:
+                           ssh_options: dict | None = None) -> tuple[bool, str | None, int, str | None]:
     """(applied, rejection reason, attempts, adaptor detail) for one sub-change. The same
     retry policy for both protocols: only a transient failure is retried, and only within the time budget."""
     send_edit, _, default_reason = _o1_client(protocol, transport)
@@ -155,7 +162,7 @@ def _dispatch_with_retries(adaptor_uri: str, change: dict, attribute_changes: di
         attempts += 1
         result = send_edit(adaptor_uri, change["managedElementRef"], attribute_changes, message_id=message_id,
                            operation=operation, managed_function_ref=change.get("managedFunctionRef"),
-                           **_ssh_kwargs(transport, credential_ref))
+                           **(ssh_options or {}))
         if result:
             return True, None, attempts, None
         reason = getattr(result, "reason", None) or default_reason
@@ -306,6 +313,70 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
     return {"endpointId": str(endpoint.endpoint_id), "managedElementRef": me.managed_element_ref, "healthStatus": endpoint.health_status}
 
 
+class PinHostKeyRequest(BaseModel):
+    keyType: str
+    publicKey: str
+    pinnedBy: str
+
+
+def _ssh_endpoint(db: Session, endpoint_id: uuid.UUID) -> O1AdaptorEndpoint:
+    endpoint = db.get(O1AdaptorEndpoint, endpoint_id)
+    if endpoint is None:
+        raise framework_error(FrameworkError.O1_ENDPOINT_NOT_FOUND, detail=f"no such O1 adaptor endpoint {endpoint_id}")
+    if endpoint.transport != "ssh":
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="host keys apply to endpoints with transport ssh")
+    return endpoint
+
+
+def _host_key_view(row: O1AdaptorHostKey) -> dict:
+    return {"keyType": row.key_type, "fingerprint": row.fingerprint, "pinnedBy": row.pinned_by, "pinnedAt": as_utc(row.pinned_at).isoformat()}
+
+
+@app.put("/o1-adaptor-endpoints/{endpoint_id}/host-keys")
+def pin_host_key(endpoint_id: uuid.UUID, body: PinHostKeyRequest, db: Session = Depends(get_session)):
+    """PR-SB-2.3: pin the SSH host key an ssh endpoint must present (one per key type). The operator supplies the public key from a source
+    they trust (the device's own label, `ssh-keygen -lf`, a signed inventory): this build never learns a key by connecting, so there is no
+    trust on first use. A connection whose server key is not pinned (or differs from the pinned key of its type) is refused. Pinning a
+    different key for a type that already has one replaces it (`replaced: true`): the one way to accept a changed key, by a named operator."""
+    endpoint = _ssh_endpoint(db, endpoint_id)
+    try:
+        key = netconf_ssh.parse_host_key(body.keyType, body.publicKey)
+    except ValueError as exc:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=str(exc)) from None
+    existing = db.scalars(select(O1AdaptorHostKey).where(O1AdaptorHostKey.endpoint_id == endpoint.endpoint_id,
+                                                         O1AdaptorHostKey.key_type == key.get_name())).first()
+    fingerprint = netconf_ssh.host_key_fingerprint(key)
+    replaced = existing is not None and existing.fingerprint != fingerprint
+    if existing is None:
+        existing = O1AdaptorHostKey(endpoint_id=endpoint.endpoint_id, key_type=key.get_name())
+        db.add(existing)
+    existing.public_key, existing.fingerprint, existing.pinned_by = key.get_base64(), fingerprint, body.pinnedBy
+    existing.pinned_at = datetime.datetime.now(datetime.UTC)
+    if replaced:
+        log.warning("host key for endpoint %s (%s) replaced by %s: %s", endpoint_id, key.get_name(), body.pinnedBy, fingerprint)
+    db.commit()
+    return {**_host_key_view(existing), "replaced": replaced}
+
+
+@app.get("/o1-adaptor-endpoints/{endpoint_id}/host-keys")
+def list_host_keys(endpoint_id: uuid.UUID, db: Session = Depends(get_session)):
+    endpoint = _ssh_endpoint(db, endpoint_id)
+    rows = db.scalars(select(O1AdaptorHostKey).where(O1AdaptorHostKey.endpoint_id == endpoint.endpoint_id)
+                      .order_by(O1AdaptorHostKey.key_type)).all()
+    return {"items": [_host_key_view(r) for r in rows]}
+
+
+@app.delete("/o1-adaptor-endpoints/{endpoint_id}/host-keys/{key_type}", status_code=204)
+def unpin_host_key(endpoint_id: uuid.UUID, key_type: str, db: Session = Depends(get_session)):
+    endpoint = _ssh_endpoint(db, endpoint_id)
+    row = db.scalars(select(O1AdaptorHostKey).where(O1AdaptorHostKey.endpoint_id == endpoint.endpoint_id,
+                                                    O1AdaptorHostKey.key_type == key_type)).first()
+    if row is None:
+        raise framework_error(FrameworkError.O1_HOST_KEY_NOT_FOUND, detail=f"no {key_type} host key is pinned for this endpoint")
+    db.delete(row)
+    db.commit()
+
+
 def _dispatch_blocker(db: Session, change: dict):
     """(rejection reason or None, managed entity, endpoint): whether a change can be sent at all, from what is registered now."""
     me = db.get(ManagedEntity, change["managedElementRef"])
@@ -393,10 +464,11 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
                                          attribute_changes=attribute_changes, operation=operation, status="REJECTED",
                                          rejection_reason=blocker))
             continue
-        before, before_error = _capture_before(me, endpoint, change, attribute_changes) if CM_SNAPSHOTS else (None, None)
+        ssh_options = _ssh_options(db, endpoint)
+        before, before_error = (_capture_before(me, endpoint, change, attribute_changes, ssh_options) if CM_SNAPSHOTS else (None, None))
         applied, reason, attempts, detail = _dispatch_with_retries(endpoint.adaptor_uri, change, attribute_changes,
                                                            str(job.job_id), operation, me.o1_protocol, endpoint.transport,
-                                                                   endpoint.credential_ref)
+                                                                   ssh_options)
         if not applied and attempts > 1:
             _raise_dispatch_alarm(db, job.job_id, change, reason, attempts)
         sub_change_id = uuid.uuid4()
@@ -436,7 +508,7 @@ def read_configuration(managed_element_ref: str, managed_function_ref: str | Non
         raise framework_error(FrameworkError.PROTOCOL_NOT_SUPPORTED,
                               detail=f"{managed_element_ref} is provisioned for {me.o1_protocol}, which has no client")
     attributes = client[1](endpoint.adaptor_uri, managed_element_ref, message_id=str(uuid.uuid4()),
-                           managed_function_ref=managed_function_ref, **_ssh_kwargs(endpoint.transport, endpoint.credential_ref))
+                           managed_function_ref=managed_function_ref, **_ssh_options(db, endpoint))
     if attributes is None:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"configuration read on {managed_element_ref} failed")
     return {"managedElementRef": managed_element_ref, "managedFunctionRef": managed_function_ref, "attributes": attributes}

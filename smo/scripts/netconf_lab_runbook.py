@@ -2,7 +2,7 @@
 """Runbook section 7 (a real CM write) against the netconf-lab server, through RAN NF OAM's own routes (PR-SB-1.9).
 
 The compose replay (`tests_integration/test_demo_runbook.py`) drives the mock O1 adaptor. This drives the same routes, in this process, over
-NETCONF-over-SSH to Netopeer2 with the model payload and the candidate datastore: register the adaptor (with its own credential, `credentialRef: lab`), heartbeat it, write a value, read it back,
+NETCONF-over-SSH to Netopeer2 with the model payload and the candidate datastore: register the adaptor (with its own credential, `credentialRef: lab`), pin its host key through the route, heartbeat it, write a value, read it back,
 look at the change history, run a batch with one ME that was never registered (PARTIAL_SUCCESS), and have a value outside the model's range
 refused with the server's own reason. It puts the seeded value back at the end. Exit 0 only when every step holds.
 
@@ -25,7 +25,7 @@ from smo_shared.testing import make_test_engine
 
 from app.main import app
 from app.models import (Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, MsacAccessRule, MsacIdentity, MsacRole, O1AdaptorEndpoint,
-                        VendorCapability, WriteConfigJob, WriteConfigSubChange)
+                        O1AdaptorHostKey, VendorCapability, WriteConfigJob, WriteConfigSubChange)
 
 ME = "SubNetwork=lab,ManagedElement=ME-1"
 CELL = "GNBDUFunction=1,NRCellDU=101"
@@ -44,7 +44,7 @@ def main() -> int:
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
         WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__,
-        MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__])
+        MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, O1AdaptorHostKey.__table__])
     factory = sessionmaker(bind=engine)
 
     def session():
@@ -66,7 +66,16 @@ def main() -> int:
         "managedElementRef": ME, "adaptorUri": f"ssh://netconf@{hostport}?model=smo-lab&datastore=candidate", "transport": "ssh", "credentialRef": "lab",
         "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU"})
     check("register the adaptor (ssh, model, candidate)", r.status_code == 201, r.text)
-    r = client.post(f"/o1-adaptor-endpoints/{r.json()['endpointId']}/heartbeat")
+    endpoint_id = r.json().get("endpointId")
+    # PR-SB-2.3: trust comes from a key an operator pins for this endpoint, not from a known_hosts file: take the key from the file the CI job
+    # recorded (standing in for the operator's out-of-band source), pin it through the route, then drop the file from this process
+    known = os.environ.pop("NETCONF_SSH_KNOWN_HOSTS", "")
+    fields = open(known).read().split() if known else []
+    pin = client.put(f"/o1-adaptor-endpoints/{endpoint_id}/host-keys",
+                     json={"keyType": fields[-2], "publicKey": fields[-1], "pinnedBy": "runbook"}) if len(fields) >= 3 else None
+    check("pin the server's host key through the route (no known_hosts file from here on)", pin is not None and pin.status_code == 200, pin and pin.text)
+    print("  pinned:", pin.json().get("fingerprint") if pin is not None and pin.status_code == 200 else None)
+    r = client.post(f"/o1-adaptor-endpoints/{endpoint_id}/heartbeat")
     check("heartbeat: ACTIVE", r.status_code == 200 and r.json().get("healthStatus") == "ACTIVE", r.text)
 
     before = client.get(f"/managed-entities/{ME}/config", params={"managed_function_ref": CELL}).json()["attributes"]

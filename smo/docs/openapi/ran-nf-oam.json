@@ -240,6 +240,29 @@
         "title": "IdentityAttributes",
         "type": "object"
       },
+      "PinHostKeyRequest": {
+        "properties": {
+          "keyType": {
+            "title": "Keytype",
+            "type": "string"
+          },
+          "pinnedBy": {
+            "title": "Pinnedby",
+            "type": "string"
+          },
+          "publicKey": {
+            "title": "Publickey",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keyType",
+          "publicKey",
+          "pinnedBy"
+        ],
+        "title": "PinHostKeyRequest",
+        "type": "object"
+      },
       "PmFileRequest": {
         "properties": {
           "counterType": {
@@ -3172,6 +3195,133 @@
           }
         },
         "summary": "Endpoint Heartbeat"
+      }
+    },
+    "/o1-adaptor-endpoints/{endpoint_id}/host-keys": {
+      "get": {
+        "operationId": "list_host_keys_o1_adaptor_endpoints__endpoint_id__host_keys_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Host Keys"
+      },
+      "put": {
+        "description": "PR-SB-2.3: pin the SSH host key an ssh endpoint must present (one per key type). The operator supplies the public key from a source\nthey trust (the device's own label, `ssh-keygen -lf`, a signed inventory): this build never learns a key by connecting, so there is no\ntrust on first use. A connection whose server key is not pinned (or differs from the pinned key of its type) is refused. Pinning a\ndifferent key for a type that already has one replaces it (`replaced: true`): the one way to accept a changed key, by a named operator.",
+        "operationId": "pin_host_key_o1_adaptor_endpoints__endpoint_id__host_keys_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinHostKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pin Host Key"
+      }
+    },
+    "/o1-adaptor-endpoints/{endpoint_id}/host-keys/{key_type}": {
+      "delete": {
+        "operationId": "unpin_host_key_o1_adaptor_endpoints__endpoint_id__host_keys__key_type__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key_type",
+            "required": true,
+            "schema": {
+              "title": "Key Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unpin Host Key"
       }
     },
     "/pm-files": {

@@ -346,7 +346,7 @@ jobs:
           PYTHONPATH: ran-nf-oam:shared
         run: |
           export NETCONF_SSH_KNOWN_HOSTS="$RUNNER_TEMP/lab_known_hosts"
-          python scripts/netconf_lab_runbook.py 2>&1 | grep -E "^(ok|FAIL|OK|FAILED|  server said)"; test "${PIPESTATUS[0]}" -eq 0
+          python scripts/netconf_lab_runbook.py 2>&1 | grep -E "^(ok|FAIL|OK|FAILED|  server said|  pinned)"; test "${PIPESTATUS[0]}" -eq 0
 
       - name: Dump the lab logs on failure
         if: failure()
