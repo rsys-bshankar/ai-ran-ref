@@ -181,6 +181,8 @@ All instances in a process share one identity and token (`_identity`).
 |---|---|
 | `install_metrics(app)` | What every `main.py` calls after `install_logging`: `MetricsMiddleware` plus `GET /metrics` (Prometheus text, not in the OpenAPI spec) |
 | `smo_http_requests_total`, `smo_http_request_duration_seconds` | Labels `method`, `route` (template, or `unmatched`) and `status`; probes and `/metrics` not counted; per process |
+| `smo_fsm_transitions_total`, `smo_fsm_illegal_transitions_total` | Every `StateMachine.fire`: labels `machine` (the state enum's name), `from_state`, `event`, and `to_state` for the taken ones |
+| `smo_db_pool_connections{state}`, `smo_db_pool_capacity` | `in_use` / `idle` / `overflow` of the module's pool, read at scrape time; no "waiting" count (SQLAlchemy does not expose it) |
 
 #### Logging (`logconfig.py`)
 

@@ -8,6 +8,7 @@ No release has been tagged yet. Everything below is unreleased.
 ## [Unreleased]
 
 ### Added
+- `/metrics` now also carries `smo_fsm_transitions_total` and `smo_fsm_illegal_transitions_total` (every lifecycle state change, by machine, state and event) and the database pool gauges `smo_db_pool_connections{state}` and `smo_db_pool_capacity` (OBS-2.4, 2.5).
 - `docker compose --profile netconf-lab up -d netconf-lab`: a real NETCONF-over-SSH server (Netopeer2) with a small model, on `127.0.0.1:8830`, for trying the SSH transport (`netconf-lab/README.md`; development only) (SB-1.4).
 - CM change history: every dispatched write records the values it replaced and the values it wrote (`cm_snapshot`, schema revision `0004`); `GET /managed-entities/{ref}/config-history` lists them. Each write now makes one extra read of the NF first (up to 30 s on an unresponsive one); `RAN_NF_OAM_CM_SNAPSHOTS=false` turns it off (MGT-1.1–1.4).
 - `dryRun: true` on `POST /config-jobs`: every check runs, nothing is sent or stored, and the response says per change whether it would pass (MGT-3).
