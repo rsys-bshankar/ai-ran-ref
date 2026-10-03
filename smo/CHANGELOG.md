@@ -8,6 +8,7 @@ No release has been tagged yet. Everything below is unreleased.
 ## [Unreleased]
 
 ### Added
+- `/metrics` now also counts outbound calls: `smo_outbound_calls_total{client,target,method,outcome}` and `smo_outbound_call_duration_seconds{client,target}`. `client=r1` is a call through R1 Termination (`target` is the module, `outcome` is `2xx`..`5xx`, `timeout` or `error`); `client=webhook` is a callback to a registered destination (`target=callback`, plus `outcome=blocked` when the SSRF guard refused it). Callback hosts are deliberately not a label (OBS-2.6).
 - A model-based NETCONF server can be read: register the ssh adaptor with `?model=smo-lab` on its URI (`ssh://netconf@host:830?model=smo-lab`) and `GET /managed-entities/{ref}/config` sends a subtree `get-config` on that YANG model and returns its leaves as camelCase attributes; without `?model=` the `<managed-object>` shape is sent as before. Writes to such an endpoint are refused until SB-1.6 (SB-1.5).
 - `R1_PUBLIC_BASE_URL`: with the TLS profile, set it to the HTTPS door (for example `https://localhost:8443`) and `/bootstrap` advertises `https://.../sme/...` addresses, with the OAuth2 token endpoint forwarded by the edge, instead of `http://sme:8000`; unset, nothing changes (SEC-1.6).
 - `/metrics` now also carries `smo_fsm_transitions_total` and `smo_fsm_illegal_transitions_total` (every lifecycle state change, by machine, state and event) and the database pool gauges `smo_db_pool_connections{state}` and `smo_db_pool_capacity` (OBS-2.4, 2.5).

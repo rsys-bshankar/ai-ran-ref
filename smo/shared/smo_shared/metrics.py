@@ -19,6 +19,17 @@ Two more families come from the shared library itself (PR-OBS-2.4, 2.5):
 events and nothing else. SQLAlchemy does not expose how many callers are waiting for a connection, so there is no "waiting" gauge: a
 pool that is exhausted shows as `in_use` equal to `smo_db_pool_capacity`.
 
+Outbound calls (PR-OBS-2.6) are counted where they leave the process:
+
+  smo_outbound_calls_total{client,target,method,outcome}
+  smo_outbound_call_duration_seconds{client,target}      histogram
+
+`client` is `r1` (a call through R1 Termination, `R1Client`) or `webhook` (a caller-registered callback, `smo_shared.webhook`). `target`
+for `r1` is the module in the path (`sme`, `dme`, ...), a small fixed set; for `webhook` it is the constant `callback`, **never the
+host**: the destination is whatever a caller registered, so a host label would let any caller grow the series without bound. `outcome` is
+`2xx`/`3xx`/`4xx`/`5xx`, `timeout`, `error` (could not connect or any other transport failure) or `blocked` (the SSRF guard refused the
+destination, nothing was sent). R1Client counts each attempt, so the one retry after a 401 shows as two calls.
+
 Unmatched paths are one `route="unmatched"` series. Probes and `/metrics` itself are not counted: a scrape every
 15 s would otherwise be most of the traffic.
 
@@ -31,6 +42,7 @@ Metrics are held per process. With `UVICORN_WORKERS` above 1 each worker answers
 sees one of them; keep one worker per container and scale replicas (the default), or add multiprocess mode first.
 """
 
+import re
 import sys
 import time
 
@@ -65,6 +77,29 @@ def record_transition(machine: str, from_state, event, to_state) -> None:
 
 def record_illegal_transition(machine: str, from_state, event) -> None:
     FSM_ILLEGAL.labels(machine, _name(from_state), _name(event)).inc()
+
+
+OUTBOUND_CALLS = Counter("smo_outbound_calls_total", "Outbound calls, by client (r1 or webhook), target, method and outcome.",
+                         ["client", "target", "method", "outcome"])
+OUTBOUND_DURATION = Histogram("smo_outbound_call_duration_seconds", "Outbound call duration, by client and target.", ["client", "target"])
+
+_TARGET_OK = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+
+
+def r1_target(path: str) -> str:
+    """The module a path through R1 addresses (`/sme/x` is `sme`); anything that is not a module-shaped segment is `other`."""
+    segment = path.lstrip("/").split("/", 1)[0].split("?", 1)[0]
+    return segment if _TARGET_OK.match(segment) else "other"
+
+
+def outcome_of(status: int) -> str:
+    return f"{status // 100}xx"
+
+
+def record_outbound(client: str, target: str, method: str, outcome: str, seconds: float | None = None) -> None:
+    OUTBOUND_CALLS.labels(client, target, method.upper(), outcome).inc()
+    if seconds is not None:
+        OUTBOUND_DURATION.labels(client, target).observe(seconds)
 
 
 class PoolCollector:

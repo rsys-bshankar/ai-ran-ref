@@ -36,6 +36,7 @@ import httpx
 
 from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from .correlation import get_correlation_id
+from . import metrics
 from .timeouts import call_timeout
 
 R1_GATEWAY_URL = os.environ.get("R1_GATEWAY_URL", "http://r1-termination:8000")
@@ -186,29 +187,44 @@ class R1Client:
             headers[CORRELATION_ID_HEADER] = correlation_id
         return headers
 
-    def _send(self, send, path: str, **kwargs) -> httpx.Response:
+    def _call(self, send, method: str, path: str, headers: dict, **kwargs) -> httpx.Response:
+        """One attempt, counted (PR-OBS-2.6): target module, method and outcome; a transport failure is counted and re-raised."""
+        target, started = metrics.r1_target(path), time.perf_counter()
+        try:
+            resp = send(self._url(path), headers=headers, **kwargs)
+        except httpx.TimeoutException:
+            metrics.record_outbound("r1", target, method, "timeout", time.perf_counter() - started)
+            raise
+        except httpx.HTTPError:
+            metrics.record_outbound("r1", target, method, "error", time.perf_counter() - started)
+            raise
+        status = getattr(resp, "status_code", None)
+        metrics.record_outbound("r1", target, method, "error" if status is None else metrics.outcome_of(status), time.perf_counter() - started)
+        return resp
+
+    def _send(self, send, path: str, method: str = "other", **kwargs) -> httpx.Response:
         # A caller's own headers (for example `Idempotency-Key`, PR-ST-3) ride along with the
         # authorization and correlation headers; the client's own win on a clash.
         extra = kwargs.pop("headers", None) or {}
         kwargs.setdefault("timeout", call_timeout())   # never httpx's implicit 5 s (timeouts.py)
-        resp = send(self._url(path), headers={**extra, **self._headers()}, **kwargs)
+        resp = self._call(send, method, path, {**extra, **self._headers()}, **kwargs)
         if resp.status_code == 401 and self._bearer_token is None:
             # expired or revoked at SME since it was cached: one fresh token, one retry
-            resp = send(self._url(path), headers={**extra, **self._headers(refresh=True)}, **kwargs)
+            resp = self._call(send, method, path, {**extra, **self._headers(refresh=True)}, **kwargs)
         return resp
 
     def get(self, path: str, **kwargs) -> httpx.Response:
-        return self._send(httpx.get, path, **kwargs)
+        return self._send(httpx.get, path, method="get", **kwargs)
 
     def post(self, path: str, json: dict | None = None, **kwargs) -> httpx.Response:
-        return self._send(httpx.post, path, json=json, **kwargs)
+        return self._send(httpx.post, path, method="post", json=json, **kwargs)
 
     def put(self, path: str, json: dict | None = None, **kwargs) -> httpx.Response:
-        return self._send(httpx.put, path, json=json, **kwargs)
+        return self._send(httpx.put, path, method="put", json=json, **kwargs)
 
     def patch(self, path: str, json: dict | None = None, **kwargs) -> httpx.Response:
         """PATCH through R1 (e.g. the SDK's Intent admin-state update)."""
-        return self._send(httpx.patch, path, json=json, **kwargs)
+        return self._send(httpx.patch, path, method="patch", json=json, **kwargs)
 
     def delete(self, path: str, **kwargs) -> httpx.Response:
-        return self._send(httpx.delete, path, **kwargs)
+        return self._send(httpx.delete, path, method="delete", **kwargs)

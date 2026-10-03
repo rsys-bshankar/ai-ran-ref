@@ -184,3 +184,79 @@ def test_a_service_without_database_credentials_can_install_metrics():
             "app = FastAPI(); install_metrics(app)\nassert 'smo_shared.db' not in sys.modules\nprint('ok')")
     done = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
     assert done.returncode == 0 and "ok" in done.stdout, done.stderr
+
+
+# --- PR-OBS-2.6: outbound calls ---------------------------------------------------------------------------------------------------------
+
+
+def _calls(client, target, method, outcome) -> float:
+    return _sample("smo_outbound_calls_total", client=client, target=target, method=method, outcome=outcome)
+
+
+def test_r1_target_is_the_module_in_the_path_and_bounded():
+    from smo_shared.metrics import r1_target
+    assert r1_target("/sme/service-apis/v1/x") == "sme" and r1_target("/dme/data-jobs?x=1") == "dme" and r1_target("sme") == "sme"
+    assert r1_target("/") == "other" and r1_target("/Not A Module/x") == "other" and r1_target("/" + "a" * 80) == "other"
+
+
+@pytest.mark.parametrize("behaviour,outcome", [
+    (lambda *a, **k: __import__("httpx").Response(200), "2xx"),
+    (lambda *a, **k: __import__("httpx").Response(404), "4xx"),
+    (lambda *a, **k: __import__("httpx").Response(503), "5xx"),
+])
+def test_r1_client_counts_each_call_by_target_method_and_outcome(monkeypatch, behaviour, outcome):
+    from smo_shared.r1_client import R1Client
+    monkeypatch.setattr("smo_shared.r1_client.httpx.get", behaviour)
+    before = _calls("r1", "dme", "GET", outcome)
+    R1Client(bearer_token="t").get("/dme/data-jobs")
+    assert _calls("r1", "dme", "GET", outcome) == before + 1
+    assert _sample("smo_outbound_call_duration_seconds_count", client="r1", target="dme") >= 1
+
+
+def test_r1_client_counts_a_timeout_and_a_connection_error_and_still_raises(monkeypatch):
+    import httpx
+    from smo_shared.r1_client import R1Client
+
+    def timeout(*a, **k):
+        raise httpx.ReadTimeout("slow")
+
+    def refused(*a, **k):
+        raise httpx.ConnectError("no")
+
+    client = R1Client(bearer_token="t")
+    t0, e0 = _calls("r1", "nfo", "POST", "timeout"), _calls("r1", "nfo", "POST", "error")
+    monkeypatch.setattr("smo_shared.r1_client.httpx.post", timeout)
+    with pytest.raises(httpx.ReadTimeout):
+        client.post("/nfo/jobs", json={})
+    monkeypatch.setattr("smo_shared.r1_client.httpx.post", refused)
+    with pytest.raises(httpx.ConnectError):
+        client.post("/nfo/jobs", json={})
+    assert _calls("r1", "nfo", "POST", "timeout") == t0 + 1 and _calls("r1", "nfo", "POST", "error") == e0 + 1
+
+
+def test_the_retry_after_a_401_is_a_second_counted_call(monkeypatch):
+    import httpx
+    from smo_shared import r1_client
+    answers = iter([httpx.Response(401), httpx.Response(200)])
+    monkeypatch.setattr(r1_client.httpx, "get", lambda *a, **k: next(answers))
+    monkeypatch.setattr(r1_client, "_module_token", lambda base, refresh=False: "tok")
+    f0, o0 = _calls("r1", "mlmr", "GET", "4xx"), _calls("r1", "mlmr", "GET", "2xx")
+    assert r1_client.R1Client().get("/mlmr/models").status_code == 200
+    assert _calls("r1", "mlmr", "GET", "4xx") == f0 + 1 and _calls("r1", "mlmr", "GET", "2xx") == o0 + 1
+
+
+def test_webhooks_are_counted_under_one_constant_target_never_the_host(monkeypatch):
+    import httpx
+    from smo_shared import webhook
+    monkeypatch.setattr(webhook.httpx, "post", lambda url, json=None, timeout=None: httpx.Response(500))
+    monkeypatch.setattr(webhook.httpx, "delete", lambda url, timeout=None: (_ for _ in ()).throw(httpx.ConnectError("x")))
+    p0, d0, b0 = _calls("webhook", "callback", "POST", "5xx"), _calls("webhook", "callback", "DELETE", "error"), _calls("webhook", "callback", "GET", "blocked")
+    webhook.post_webhook("http://consumer.example/cb", {})
+    webhook.delete_webhook("http://consumer.example/cb/1")
+    webhook.get_webhook("http://localhost/cb")                      # the SSRF guard refuses it: nothing sent, counted as blocked
+    assert _calls("webhook", "callback", "POST", "5xx") == p0 + 1
+    assert _calls("webhook", "callback", "DELETE", "error") == d0 + 1
+    assert _calls("webhook", "callback", "GET", "blocked") == b0 + 1
+    exposed = "\n".join(line for line in __import__("prometheus_client").generate_latest(REGISTRY).decode().splitlines()
+                        if line.startswith("smo_outbound_"))
+    assert "consumer.example" not in exposed and "localhost" not in exposed
