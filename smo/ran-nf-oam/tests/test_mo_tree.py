@@ -135,3 +135,19 @@ def test_registering_twice_does_not_duplicate_and_ensure_is_idempotent(client, d
     db.commit()
     assert db.query(ManagedObject).count() == before == 2
     db.close()
+
+
+def test_a_registry_row_is_not_swept_away_by_a_walk_and_promotes_the_walk_rows_above_it(db_session_factory):
+    db = db_session_factory()
+    db.add(ManagedEntity(managed_element_ref="ME-1", entity_type="O-DU", o1_protocol="NETCONF"))
+    db.flush()
+    mo_tree.apply_walk(db, "ME-1", ["GNBDUFunction=1,NRCellDU=101"])                    # the walk made GNBDUFunction=1 and the cell
+    assert db.get(ManagedObject, "ManagedElement=ME-1,GNBDUFunction=1").source == "walk"
+    mo_tree.ensure(db, "ME-1", "ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=105", "registry")         # an operator registered another cell
+    assert db.get(ManagedObject, "ManagedElement=ME-1,GNBDUFunction=1").source == "registry"          # promoted: the walk may no longer drop it
+    summary = mo_tree.apply_walk(db, "ME-1", [])                                                     # the server now reports nothing
+    db.commit()
+    assert {o.dn for o in db.query(ManagedObject)} == {"ManagedElement=ME-1", "ManagedElement=ME-1,GNBDUFunction=1",
+                                                       "ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=105"}
+    assert summary["removed"] == 1                                                                   # only the walked cell 101
+    db.close()

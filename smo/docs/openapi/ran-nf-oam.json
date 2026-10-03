@@ -2471,6 +2471,44 @@
         "summary": "Read Configuration History"
       }
     },
+    "/managed-entities/{managed_element_ref}/managed-objects/refresh": {
+      "post": {
+        "description": "PR-SB-6.2: read the element's server with a whole-container `get-config` and make the containment tree match what it reports: new objects\nare added with `source=walk`, walked objects it no longer reports are removed, and registry objects are kept. Needs an ssh or tls endpoint\nregistered with `?model=` (a server without a model has nothing to walk): 409 `PROTOCOL_NOT_SUPPORTED` otherwise, 503 when the read fails.",
+        "operationId": "refresh_managed_objects_managed_entities__managed_element_ref__managed_objects_refresh_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Managed Objects"
+      }
+    },
     "/managed-objects/{dn}": {
       "get": {
         "description": "PR-SB-6: one node of the containment tree by its distinguished name (`ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101`).",
@@ -3951,6 +3989,51 @@
           }
         },
         "summary": "Advance Software Job"
+      }
+    },
+    "/topology": {
+      "get": {
+        "description": "PR-SB-6.7: the containment tree in the wire shape FOCOM's `/topology` already uses for the TEIV adapter (entities keyed `<prefix>:<Entity>`\nwith `{id, attributes}`; relationships keyed `<prefix>:<A>_<REL>_<B>` with `{id, aSide, bSide, sourceIds}`). One generic `ManagedObject` entity\nper node and one `MANAGEDOBJECT_CHILD_OF_MANAGEDOBJECT` relationship per parent link, the child on the a-side. This is this build's own export\nof what it holds, not the TEIV RAN domain model (which has typed entities such as GNBDUFunction): link-type awareness is MGT-10.2.",
+        "operationId": "export_topology_topology_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Topology"
       }
     },
     "/vendor-capabilities": {

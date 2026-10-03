@@ -103,6 +103,25 @@ def main() -> int:
     final = client.get(f"/managed-entities/{ME}/config", params={"managed_function_ref": CELL}).json()["attributes"]
     check("the refused write left the value as it was (40)", final.get("txPower") == "40", final)
 
+    # PR-SB-6: fill the containment tree from the server, read it, refuse a target that is not in it, export it
+    walked = client.post(f"/managed-entities/{ME}/managed-objects/refresh").json()
+    check("walk: the tree gains the function and both cells", walked.get("added") == 3, walked)
+    kids = [o["id"] for o in client.get(f"/managed-objects/{ME},GNBDUFunction=1/children").json().get("items", [])]    # ME is itself a DN
+    check("children of GNBDUFunction=1: cells 101 and 102", kids == ["101", "102"], kids)
+    os.environ["RAN_NF_OAM_ENFORCE_MO_TREE"] = "true"
+    r, job = write([{"managedElementRef": ME, "managedFunctionRef": "GNBDUFunction=1,NRCellDU=999", "attributeChanges": {"txPower": 41}}])
+    sub = (job.get("subChanges") or [{}])[0]
+    check("enforced: a cell that is not in the tree is REJECTED before anything is sent",
+          sub.get("rejectionReason") == "MANAGED_OBJECT_NOT_FOUND" and sub.get("attempts") == 0, (r.text, job))
+    r, job = write([{"managedElementRef": ME, "managedFunctionRef": CELL, "attributeChanges": {"txPower": 40}}])
+    sub = (job.get("subChanges") or [{}])[0]
+    check("enforced: a walked cell is written", sub.get("status") == "APPLIED", (r.text, job))
+    os.environ.pop("RAN_NF_OAM_ENFORCE_MO_TREE")
+    topology = client.get("/topology").json()
+    nodes = topology["entities"][0]["o-ran-smo-teiv-ran:ManagedObject"]
+    links = topology["relationships"][0]["o-ran-smo-teiv-ran:MANAGEDOBJECT_CHILD_OF_MANAGEDOBJECT"]
+    check("TEIV export: five nodes (SubNetwork, element, function, two cells) and four parent links", len(nodes) == 5 and len(links) == 4, topology)
+
     print("FAILED: " + ", ".join(failures) if failures else "OK: runbook section 7 holds against the lab server")
     return 1 if failures else 0
 

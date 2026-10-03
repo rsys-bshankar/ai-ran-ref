@@ -45,6 +45,7 @@ from .models import Alarm, CMSchemaCache, CMSnapshot, FileSubscription, VendorCa
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
 from . import mo_tree
+from . import yang_payload
 from . import netconf_tls
 from . import restconf_client
 from . import netconf_ssh
@@ -427,6 +428,59 @@ def read_managed_object_subtree(dn: str, depth: int = Query(default=mo_tree.MAX_
     return {"tree": tree, "truncated": truncated}
 
 
+@app.post("/managed-entities/{managed_element_ref}/managed-objects/refresh")
+def refresh_managed_objects(managed_element_ref: str, db: Session = Depends(get_session)):
+    """PR-SB-6.2: read the element's server with a whole-container `get-config` and make the containment tree match what it reports: new objects
+    are added with `source=walk`, walked objects it no longer reports are removed, and registry objects are kept. Needs an ssh or tls endpoint
+    registered with `?model=` (a server without a model has nothing to walk): 409 `PROTOCOL_NOT_SUPPORTED` otherwise, 503 when the read fails."""
+    me = db.get(ManagedEntity, managed_element_ref)
+    if me is None:
+        raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
+    endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id) if me.o1_adaptor_endpoint_id else None
+    if endpoint is None:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"{managed_element_ref} has no registered O1 adaptor")
+    if endpoint.transport not in ("ssh", "tls") or not yang_payload.model_of(endpoint.adaptor_uri):
+        raise framework_error(FrameworkError.PROTOCOL_NOT_SUPPORTED,
+                              detail="a walk needs an ssh or tls endpoint registered with ?model=<name>: only a server with a model reports its objects")
+    paths = netconf_ssh.send_walk(endpoint.adaptor_uri, str(uuid.uuid4()), **_ssh_options(db, endpoint))
+    if paths is None:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"the walk of {managed_element_ref} failed")
+    summary = mo_tree.apply_walk(db, managed_element_ref, paths)
+    db.commit()
+    return {"managedElementRef": managed_element_ref, **summary}
+
+
+TEIV_RAN_PREFIX = "o-ran-smo-teiv-ran"
+TEIV_URN_PREFIX = "urn:oran:smo:teiv"
+
+
+@app.get("/topology")
+def export_topology(managed_element_ref: str | None = None, db: Session = Depends(get_session)):
+    """PR-SB-6.7: the containment tree in the wire shape FOCOM's `/topology` already uses for the TEIV adapter (entities keyed `<prefix>:<Entity>`
+    with `{id, attributes}`; relationships keyed `<prefix>:<A>_<REL>_<B>` with `{id, aSide, bSide, sourceIds}`). One generic `ManagedObject` entity
+    per node and one `MANAGEDOBJECT_CHILD_OF_MANAGEDOBJECT` relationship per parent link, the child on the a-side. This is this build's own export
+    of what it holds, not the TEIV RAN domain model (which has typed entities such as GNBDUFunction): link-type awareness is MGT-10.2."""
+    stmt = select(ManagedObject).order_by(ManagedObject.dn)
+    if managed_element_ref:
+        stmt = stmt.where(ManagedObject.managed_element_ref == managed_element_ref)
+    objects = db.scalars(stmt).all()
+    urn = lambda dn: f"{TEIV_URN_PREFIX}:ManagedObject:{dn}"  # noqa: E731
+    entities = [{f"{TEIV_RAN_PREFIX}:ManagedObject": [
+        {"id": urn(o.dn), "attributes": {"dn": o.dn, "class": o.object_class, "objectId": o.object_id,
+                                          "managedElementRef": o.managed_element_ref, "source": o.source}} for o in objects]}] if objects else []
+    present = {o.dn for o in objects}
+    child_of = [{"id": f"{TEIV_URN_PREFIX}:MANAGEDOBJECT_CHILD_OF_MANAGEDOBJECT:{o.dn}", "aSide": urn(o.dn), "bSide": urn(o.parent_dn),
+                 "sourceIds": [o.dn, o.parent_dn]} for o in objects if o.parent_dn in present]
+    relationships = [{f"{TEIV_RAN_PREFIX}:MANAGEDOBJECT_CHILD_OF_MANAGEDOBJECT": child_of}] if child_of else []
+    return {"entities": entities, "relationships": relationships}
+
+
+def _enforce_mo_tree() -> bool:
+    """PR-SB-6.5: `RAN_NF_OAM_ENFORCE_MO_TREE` (off by default): a sub-change whose target DN is not in the containment tree is rejected with
+    `MANAGED_OBJECT_NOT_FOUND` before anything is sent. Read at each call, so it can be switched with a restart and in tests."""
+    return os.environ.get("RAN_NF_OAM_ENFORCE_MO_TREE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _dispatch_blocker(db: Session, change: dict):
     """(rejection reason or None, managed entity, endpoint): whether a change can be sent at all, from what is registered now."""
     me = db.get(ManagedEntity, change["managedElementRef"])
@@ -442,6 +496,8 @@ def _dispatch_blocker(db: Session, change: dict):
     if _o1_client(me.o1_protocol, endpoint.transport) is None:
         # NETCONF and RESTCONF are dispatched; any other provisioned protocol is rejected rather than silently treated as applied.
         return "PROTOCOL_NOT_SUPPORTED", me, endpoint
+    if _enforce_mo_tree() and not mo_tree.exists(db, mo_tree.target_dn(change["managedElementRef"], change.get("managedFunctionRef"))):
+        return "MANAGED_OBJECT_NOT_FOUND", me, endpoint        # PR-SB-6.5: the target is not in the containment tree
     return None, me, endpoint
 
 

@@ -9,7 +9,7 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 
-from app.netconf_ssh import BASE_10, BASE_11, NetconfSession, NetconfSshError, send_edit_config, send_get_config
+from app.netconf_ssh import BASE_10, BASE_11, NetconfSession, NetconfSshError, send_edit_config, send_get_config, send_walk
 
 NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
 GET_LAB = (f'<rpc message-id="lab-1" xmlns="{NS}"><get-config><source><running/></source>'
@@ -75,6 +75,13 @@ def main() -> int:
         print("FAIL: an out-of-range value was not refused with a reason", file=sys.stderr)
         return 1
     print("OK: a valid write is applied and read back, an out-of-range one is refused with the server's detail")
+    # PR-SB-6.2: a walk of the model's whole container, as the containment tree is filled from it
+    paths = send_walk(model_uri, "lab-walk")
+    print("walk of the lab server:", paths)
+    if paths != ["GNBDUFunction=1,NRCellDU=101", "GNBDUFunction=1,NRCellDU=102"]:
+        print("FAIL: the walk did not report the two seeded cells", file=sys.stderr)
+        return 1
+    print("OK: the walk reports both seeded cells as DNs below the element root")
     return check_tls(me, function)
 
 

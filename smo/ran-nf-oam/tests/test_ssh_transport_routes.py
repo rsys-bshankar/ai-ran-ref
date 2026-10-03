@@ -293,3 +293,90 @@ def test_a_tls_endpoint_whose_certificate_is_refused_is_a_rejected_write(client,
 ])
 def test_registration_refuses_a_mismatched_tls_endpoint(client, uri, extra):
     assert _register(client, uri, **extra).status_code in (400, 422)
+
+
+# --- PR-SB-6.2 / 6.5 / 6.7: the walk, the enforcement flag and the TEIV export ----------------------------------------------------------------
+
+
+def _lab_cells(*ids):
+    return '<lab xmlns="urn:smo:lab">' + "".join(
+        f"<cell><id>{i}</id><administrative-state>unlocked</administrative-state><tx-power>40</tx-power></cell>" for i in ids) + "</lab>"
+
+
+def _ids(client, dn):
+    return [o["id"] for o in client.get(f"/managed-objects/{dn}/children").json()["items"]]
+
+
+def test_a_walk_fills_the_tree_from_the_server_and_follows_it(client, lab):
+    lab.behaviour.data = _lab_cells("101", "102")
+    assert _register(client, lab.uri + "?model=smo-lab", transport="ssh").status_code == 201
+    first = client.post("/managed-entities/ME-1/managed-objects/refresh").json()
+    assert first == {"managedElementRef": "ME-1", "added": 3, "removed": 0, "unchanged": 1, "total": 4}      # the function and two cells, plus the root
+    assert _ids(client, "ManagedElement=ME-1,GNBDUFunction=1") == ["101", "102"]
+    cell = client.get("/managed-objects/ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101").json()
+    assert cell["class"] == "NRCellDU" and cell["source"] == "walk"
+    assert "<lab xmlns=\"urn:smo:lab\"/>" in lab.behaviour.received[-1]                                       # the whole container, no key filter
+    assert client.post("/managed-entities/ME-1/managed-objects/refresh").json()["added"] == 0                 # nothing changed: nothing added
+    lab.behaviour.data = _lab_cells("101", "103")                                                           # the server lost 102 and gained 103
+    again = client.post("/managed-entities/ME-1/managed-objects/refresh").json()
+    assert (again["added"], again["removed"]) == (1, 1) and _ids(client, "ManagedElement=ME-1,GNBDUFunction=1") == ["101", "103"]
+    lab.behaviour.data = _lab_cells()                                                                        # nothing left: the walked function goes too
+    assert client.post("/managed-entities/ME-1/managed-objects/refresh").json()["removed"] == 3
+    assert client.get("/managed-objects/ManagedElement=ME-1").status_code == 200                            # the registry's root stays
+
+
+def test_a_walk_needs_a_model_endpoint_and_reports_a_failed_read(client, lab, monkeypatch):
+    assert client.post("/managed-entities/NOPE/managed-objects/refresh").status_code == 404
+    _register(client, lab.uri, transport="ssh")                                                              # no ?model=
+    resp = client.post("/managed-entities/ME-1/managed-objects/refresh")
+    assert resp.status_code == 409 and "PROTOCOL_NOT_SUPPORTED" in resp.text
+    client2_uri = lab.uri + "?model=smo-lab"
+    _register_other = client.post("/o1-adaptor-endpoints", json={"managedElementRef": "ME-2", "adaptorUri": client2_uri, "transport": "ssh",
+                                                                  "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU"})
+    assert _register_other.status_code == 201
+    monkeypatch.setattr("app.main.netconf_ssh.send_walk", lambda *a, **kw: None)
+    resp = client.post("/managed-entities/ME-2/managed-objects/refresh")
+    assert resp.status_code == 503 and "ENDPOINT_UNREACHABLE" in resp.text
+
+
+def _job(client, function):
+    resp = client.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell", "changes": [
+        {"managedElementRef": "ME-1", "managedFunctionRef": function, "attributeChanges": {"txPower": 41}}]})
+    return client.get(f"/config-jobs/{resp.json()['jobId']}").json()["subChanges"][0]
+
+
+def test_the_flag_rejects_a_target_that_is_not_in_the_tree_and_is_off_by_default(client, lab, monkeypatch):
+    lab.behaviour.data = _lab_cells("101")
+    _register(client, lab.uri + "?model=smo-lab", transport="ssh")
+    unknown = "GNBDUFunction=1,NRCellDU=999"
+    assert _job(client, unknown)["status"] == "APPLIED"                                                      # off: nothing checks the tree
+    monkeypatch.setenv("RAN_NF_OAM_ENFORCE_MO_TREE", "true")
+    refused = _job(client, unknown)
+    assert refused["status"] == "REJECTED" and refused["rejectionReason"] == "MANAGED_OBJECT_NOT_FOUND" and refused["attempts"] == 0
+    assert _job(client, "GNBDUFunction=1,NRCellDU=101")["rejectionReason"] == "MANAGED_OBJECT_NOT_FOUND"     # real, but not walked yet
+    client.post("/managed-entities/ME-1/managed-objects/refresh")
+    assert _job(client, "GNBDUFunction=1,NRCellDU=101")["status"] == "APPLIED"                              # in the tree now
+    dry = client.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell", "dryRun": True, "changes": [
+        {"managedElementRef": "ME-1", "managedFunctionRef": unknown, "attributeChanges": {"txPower": 41}}]}).json()
+    assert dry["changes"][0] == {"managedElementRef": "ME-1", "managedFunctionRef": unknown, "operation": "merge",
+                                 "verdict": "WOULD_REJECT", "reason": "MANAGED_OBJECT_NOT_FOUND"}
+    assert _job(client, None)["status"] == "APPLIED"                                                          # the element root is always in the tree
+
+
+def test_the_topology_export_has_the_nodes_and_the_parent_links(client, lab):
+    assert client.get("/topology").json() == {"entities": [], "relationships": []}
+    lab.behaviour.data = _lab_cells("101")
+    _register(client, lab.uri + "?model=smo-lab", transport="ssh")
+    client.post("/managed-entities/ME-1/managed-objects/refresh")
+    topo = client.get("/topology").json()
+    nodes = topo["entities"][0]["o-ran-smo-teiv-ran:ManagedObject"]
+    assert [n["attributes"]["dn"] for n in nodes] == ["ManagedElement=ME-1", "ManagedElement=ME-1,GNBDUFunction=1",
+                                                       "ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101"]
+    assert nodes[2] == {"id": "urn:oran:smo:teiv:ManagedObject:ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101",
+                        "attributes": {"dn": "ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101", "class": "NRCellDU", "objectId": "101",
+                                       "managedElementRef": "ME-1", "source": "walk"}}
+    links = topo["relationships"][0]["o-ran-smo-teiv-ran:MANAGEDOBJECT_CHILD_OF_MANAGEDOBJECT"]
+    assert len(links) == 2                                                                                    # the root has no parent
+    assert links[1]["aSide"].endswith("NRCellDU=101") and links[1]["bSide"].endswith("ManagedElement=ME-1,GNBDUFunction=1")
+    assert links[1]["sourceIds"] == ["ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101", "ManagedElement=ME-1,GNBDUFunction=1"]
+    assert client.get("/topology", params={"managed_element_ref": "OTHER"}).json() == {"entities": [], "relationships": []}
