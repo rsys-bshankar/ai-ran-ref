@@ -1449,3 +1449,15 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Route (MGT-1.4).** `GET /managed-entities/{ref}/config-history?managed_function_ref=&limit=&offset=`: newest first, each item with `jobId`, `subChangeStatus`, `operation`, `before`, `after`, `beforeError`, `createdAt`. A change rejected before dispatch (endpoint down, no client) and a dry run have no row.
 - **Tests.** `tests/test_cm_history.py` (11): both images, a refused change, a failed and a raising reader, a delete, ordering / filter / paging with each write's before equal to the previous after, nothing for a blocked change or a dry run, the off switch, the 95 s bound; the SSH route test checks the image read over SSH. `tests/conftest.py` stubs the HTTP read so unit tests never touch the network.
 - **Not done:** snapshot diff (MGT-1.5), rollback (MGT-1.6), the changed-since guard (MGT-1.7), retention (MGT-1.8, needs DB-3.2).
+
+### PR-OPS-10 (OPS-10.1, 10.2, 10.4) — the deploy gate on main
+
+- **Workflow (OPS-10.1).** `.github/workflows/deploy-on-main.yml`, triggered by `push` to `main` (the repository's default branch is `main`, not `master`) and by `workflow_dispatch`: create the secrets, `docker compose up -d --build`, check the one-shot migrate service exited 0
+  and the database is at the newest revision, the R1 gate fast check, the demo runbook replay (`tests_integration/test_demo_runbook.py` with `SMO_E2E_LIVE=1`), the GUI proxy check, logs and `docker compose ps` uploaded as the `deploy-gate-logs` artifact on failure, and
+  `docker compose down -v` always. It is the same set of steps as the `compose-e2e` job of `smo-tests.yml` (which also runs on pushes to `main`, and is the required check on pull requests); they are repeated rather than shared because moving that job into a reusable workflow
+  would rename a required check. **Honest note:** this means every merge runs the stack twice; the new workflow earns its place by its own name, concurrency rule, badge and failure notification, and it is the lane that grows into the upgrade and Helm lanes (OPS-10.5 onward).
+- **Concurrency and time (OPS-10.2).** One concurrency group with `cancel-in-progress`, so two quick merges leave one run; `timeout-minutes: 25` (the PR job has 30).
+- **Notification (OPS-10.4).** A `notify` job (`issues: write`, nothing else beyond reading) opens one issue labelled `deploy-gate` when the run fails, comments on it when the next run fails too, and closes it when a run is green; a cancelled run notifies nobody.
+  The maintainers get it through normal issue notifications. `workflow_dispatch` with `seed_break: true` fails on purpose, which is how the notification is proven. The badge is at the top of `smo/README.md`.
+- **Pinned action:** `actions/upload-artifact` v7.0.1 by commit, like the others (the repository pins every action by SHA).
+- **Not done:** the headless GUI smoke check with screenshots (OPS-10.3), the upgrade lane (OPS-10.5), Helm on kind (OPS-10.6), the rolling-upgrade lane (OPS-10.7).

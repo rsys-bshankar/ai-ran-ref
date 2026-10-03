@@ -1,5 +1,7 @@
 # AI-RAN SMO — Reference Implementation
 
+[![Deploy gate (main)](https://github.com/rsys-bshankar/ai-ran-ref/actions/workflows/deploy-on-main.yml/badge.svg?branch=main)](https://github.com/rsys-bshankar/ai-ran-ref/actions/workflows/deploy-on-main.yml)
+
 This directory holds a reference implementation of an O-RAN Service
 Management and Orchestration (SMO) platform. It is built from the design of
 seventeen SMO modules, each documented in its own `README.md`, and checked
