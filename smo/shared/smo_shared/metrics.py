@@ -31,6 +31,7 @@ Metrics are held per process. With `UVICORN_WORKERS` above 1 each worker answers
 sees one of them; keep one worker per container and scale replicas (the default), or add multiprocess mode first.
 """
 
+import sys
 import time
 
 from fastapi import FastAPI, Response
@@ -86,6 +87,13 @@ class PoolCollector:
         yield capacity
 
 
+def _modules_engine():
+    """The module's own engine if this process has one. Never imports `smo_shared.db`: building that engine needs database credentials,
+    and R1 Termination and the mock services have none (importing it here took them down)."""
+    db = sys.modules.get("smo_shared.db")
+    return getattr(db, "engine", None)
+
+
 _pool_collector: PoolCollector | None = None
 
 
@@ -127,8 +135,7 @@ class MetricsMiddleware:
 def install_metrics(app: FastAPI) -> None:
     """What each service's `main.py` calls, right after `install_logging(app)`."""
     app.add_middleware(MetricsMiddleware)
-    from . import db                                                # the module's own engine, imported when the app is built
-    register_pool_metrics(lambda: db.engine)
+    register_pool_metrics(_modules_engine)
 
     @app.get(METRICS_PATH, include_in_schema=False)
     def metrics():

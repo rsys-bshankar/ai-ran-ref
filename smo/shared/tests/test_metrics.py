@@ -170,3 +170,17 @@ def test_a_pool_that_is_not_a_queue_pool_reports_nothing():
 def test_the_scrape_carries_the_pool_and_fsm_families_for_the_modules_own_engine():
     body = TestClient(_app()).get("/metrics").text
     assert "# TYPE smo_fsm_transitions_total counter" in body
+
+
+def test_a_service_without_database_credentials_can_install_metrics():
+    """R1 Termination and the mock services have no database: installing metrics must not import smo_shared.db (the first version did, and
+    the compose stack failed to start with MissingDatabaseUrl)."""
+    import os
+    import subprocess
+    import sys
+    env = {k: v for k, v in os.environ.items() if not k.startswith("SMO_DATABASE") and k != "SMO_ALLOW_INSECURE_DEFAULT_DB"}
+    env["PYTHONPATH"] = os.pathsep.join(sys.path)
+    code = ("import sys\nfrom fastapi import FastAPI\nfrom smo_shared.metrics import install_metrics\n"
+            "app = FastAPI(); install_metrics(app)\nassert 'smo_shared.db' not in sys.modules\nprint('ok')")
+    done = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
+    assert done.returncode == 0 and "ok" in done.stdout, done.stderr
