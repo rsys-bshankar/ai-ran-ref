@@ -1461,3 +1461,13 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   The maintainers get it through normal issue notifications. `workflow_dispatch` with `seed_break: true` fails on purpose, which is how the notification is proven. The badge is at the top of `smo/README.md`.
 - **Pinned action:** `actions/upload-artifact` v7.0.1 by commit, like the others (the repository pins every action by SHA).
 - **Not done:** the headless GUI smoke check with screenshots (OPS-10.3), the upgrade lane (OPS-10.5), Helm on kind (OPS-10.6), the rolling-upgrade lane (OPS-10.7).
+
+### PR-OPS-10.3 — headless GUI smoke check in the deploy gate
+
+- `scripts/gui_smoke.py` (Playwright, Chromium, headless): opens `/login`, signs in as `admin`, waits for the dashboard's "Modules healthy" tile to read `n/n` (up to 60 s: the dashboard polls every 10 s and the stack may just have come up), then opens `/alarms`. Screenshots `01-login.png`,
+  `02-module-status.png` (full page: the module-health grid), `03-alarms.png`, plus `99-failure.png` when something throws, are written even when a check fails. Exit 0 only if every module is healthy. `--allow-unhealthy` skips the `n/n` requirement (used to run the GUI without the stack).
+- In `deploy-on-main.yml` the step installs `requirements/smoke.txt` (Playwright, hash-locked like the other requirement sets), `playwright install --with-deps chromium`, reads the generated admin password from the BFF container's mode-0600 file (it never reaches the log), runs the script against port 3000, and uploads the screenshots as the
+  `gui-smoke-screenshots` artifact (always, 7 days).
+- **How it was checked here:** the real GUI build and the real GUI BFF behind a small static-and-proxy stand-in for the nginx container, without the SMO stack: the flow ran end to end (login, dashboard, alarms), the strict mode failed with 0/21 healthy and wrote the failure screenshot, a wrong password failed on the login screen. The compose run itself (all modules healthy) is
+  exercised only by the deploy gate.
+- **Not done:** OPS-10.5 onward (upgrade lane, Helm on kind, rolling upgrade).

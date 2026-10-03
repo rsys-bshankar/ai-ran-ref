@@ -10,6 +10,7 @@ fails the hash check.
 | `runtime.in` / `runtime.txt` | service images, the migration check |
 | `dev.in` / `dev.txt` | runtime + pytest: unit, integration and live-replay jobs |
 | `lint.in` / `lint.txt` | the `lint` job (ruff) |
+| `smoke.in` / `smoke.txt` | the deploy gate's headless GUI check (`scripts/gui_smoke.py`, Playwright) |
 
 The `.in` files hold the direct dependencies; the `.txt` files are generated and
 must not be edited by hand. Dependabot updates the `.txt` files weekly (its pip
@@ -24,6 +25,7 @@ cd smo/requirements
 pip-compile --generate-hashes --strip-extras --allow-unsafe -o runtime.txt runtime.in
 pip-compile --generate-hashes --strip-extras --allow-unsafe -o dev.txt dev.in
 pip-compile --generate-hashes --strip-extras --allow-unsafe -o lint.txt lint.in
+pip-compile --generate-hashes --strip-extras --allow-unsafe -o smoke.txt smoke.in
 ```
 
 Install locally: `pip install --require-hashes -r requirements/dev.txt && pip install --no-deps -e shared`.
