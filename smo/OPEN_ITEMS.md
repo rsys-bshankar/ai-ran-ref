@@ -415,7 +415,6 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-13.2 | `read_only: true` with `tmpfs` for scratch paths (the runbook `docker compose cp`s CSARs into `r1-termination:/tmp`, which does not work into a tmpfs: serve them from the replay container or a volume first) | Runbook replay green | – |
 | SEC-13.4 | Same settings in the Helm chart | `kubectl` shows them | OPS-2.2 |
 
 #### PR-SEC-14 — Threat model
@@ -1420,7 +1419,7 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):** done.
-2. **Safe to expose:** done except SEC-13.2 (SEC-1.6 done: `HISTORY.md` §10).
+2. **Safe to expose:** done (SEC-1.6 and SEC-13.2: `HISTORY.md` §10); SEC-13.4 follows the Helm chart.
 3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: OBS-2.6 and 2.8, OPS-4.1b (cutting the first tag). OPS-1.6 done.
 4. **Durable notifications:** MSG-1.1–1.10 done (SA SMOS has no destination call to move; the DME stop-job DELETE moved last, as a `DELETE` row).
 5. **First real O1 path:** SB-3, SB-5.1–5.2, SB-1.1–1.2 done; SB-1.3 and 1.4 done (the netopeer2 lab answers the SSH wrapper in CI); SB-1.5's route needs the real-server payload shape.

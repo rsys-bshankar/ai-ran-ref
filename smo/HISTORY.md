@@ -1116,7 +1116,7 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Not taken, still open.** QA-6.2 (the GUI BFF's role matrix). An unknown prefix is answered 404 `NO_ROUTE` before the token check, which tells an
   unauthenticated caller which prefixes exist (they are public in `/bootstrap`-adjacent docs); the walk does not treat that as open since no backend is reached.
 
-### PR-SEC-13 — Container hardening (13.1, 13.3; 13.2 and 13.4 open)
+### PR-SEC-13 — Container hardening (13.1, 13.2, 13.3; 13.4 open)
 
 - **Non-root (SEC-13.1).** Checked first: every service built from the shared `Dockerfile` ran as root. The image now creates user `smo`
   (uid/gid 10001) and ends with `USER 10001:10001`, a numeric id so a runtime policy can verify it. `/srv` (code, the editable shared
@@ -1520,3 +1520,11 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   database-using services moved to a top-level `x-db-env` anchor so SME can add its own variable.
 - **Tests.** Unit: the two bootstrap modes, hostile headers ignored, origin validation (7 cases); integration: the edge forwards only the token path to SME and compose carries the setting. CI (the TLS step): with the setting on, `/bootstrap` over HTTPS names `https://localhost:8443/sme/oauth2/token`, a malformed POST to it is answered by SME (422/400), `/sme/service-apis/...` without a token is 401 from R1, SME's audience is that URL; then the default is restored.
 - **Not done:** the full rApp runbook over HTTPS (the replay still runs against the plain ports); the CI step is the first run against the real edge.
+
+### PR-SEC-13.2 — read-only root filesystem
+
+- **Setting.** The `x-hardening` anchor now also carries `read_only: true` and `tmpfs: ["/tmp"]`, so it covers every service we build and the two nginx services (the unprivileged nginx image keeps its pid file and temp paths under `/tmp`). Postgres keeps its defaults (it writes to its data volume and its own runtime directories).
+- **What still writes.** `/tmp` (memory, empty after a restart), `/data` (GUI BFF), `/srv/packages` (Onboarding) and the new `smo_scratch` volume at `/srv/scratch` on `r1-termination`. The Dockerfile creates `/srv/scratch` owned by the service user, like the other two.
+- **The runbook.** `docker compose cp` cannot write into a tmpfs, so every CSAR and sample directory the runbook serves now goes to `/srv/scratch` (§1, §25-§27) and `http.server` serves that directory; the demo scripts' state files stay in `/tmp`, which is writable. The runbook *replay* (`test_demo_runbook.py` with `SMO_E2E_LIVE=1`) serves packages from the test process, so it exercises the services, not these `cp` lines.
+- **Tests.** `test_container_hardening.py`: every built service and the edge is `read_only` with the `/tmp` tmpfs, the scratch volume is mounted, the runbook has no `/tmp` copy target. The real proof is the compose job in CI (every service starts, passes `/ready`, and the replay runs on the read-only stack).
+- **Not done:** SEC-13.4 (the same settings in the Helm chart, after OPS-2.2).
