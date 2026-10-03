@@ -1,0 +1,12 @@
+<lab xmlns="urn:smo:lab">
+  <cell>
+    <id>101</id>
+    <administrative-state>unlocked</administrative-state>
+    <tx-power>40</tx-power>
+  </cell>
+  <cell>
+    <id>102</id>
+    <administrative-state>locked</administrative-state>
+    <tx-power>33</tx-power>
+  </cell>
+</lab>

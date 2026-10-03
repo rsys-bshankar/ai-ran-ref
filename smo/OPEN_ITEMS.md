@@ -670,13 +670,12 @@ FOCOM and NFO are model-level.
 
 #### O1
 
-#### PR-SB-1 — NETCONF over SSH (SB-1.1, 1.2 done; 1.3 and 1.5 built, lab check open: `HISTORY.md` §10)
+#### PR-SB-1 — NETCONF over SSH (SB-1.1–1.4 done; SB-1.5 open on the payload shape: `HISTORY.md` §10)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-1.3 | SSH session wrapper (built and tested against an in-process SSH server; `HISTORY.md` §10): the check against a netopeer2 container remains | Connects to a netopeer2 container | SB-1.4 |
-| SB-1.4 | Compose profile `netconf-lab` with a NETCONF server and a small YANG model | Server answers `get-config` | – |
-| SB-1.5 ★ | `get-config` over the wrapper, feeding `GET .../config` (wired and tested against an in-process server; `HISTORY.md` §10) | Route returns data from the lab server | SB-1.4 |
+ Compose profile `netconf-lab` with a NETCONF server and a small YANG model | Server answers `get-config` | – |
+| SB-1.5 ★ | `get-config` over the wrapper, feeding `GET .../config`: wired; the lab server answers the wrapper's `get-config` (`HISTORY.md` §10), but the route still sends the build's own `<managed-object>` shape, which a real server does not understand: map it to the lab model (or a real one) | Route returns data from the lab server | – |
 | SB-1.6 | `edit-config` over the wrapper with the same `EditResult` reasons | Applied and rejected cases both tested | SB-1.5 |
 | SB-1.7 | Map `<rpc-error>` tags to `NETCONF_RPC_FAILED` details | Unit tests per tag | SB-1.6 |
 | SB-1.8 | Candidate datastore: `lock`, `commit`, `discard-changes`, `unlock` around a job | Failed sub-change discards | SB-1.6 |
@@ -1429,7 +1428,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 2. **Safe to expose:** done except SEC-13.2 and SEC-1.6.
 3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: the rest of OBS-2, OPS-1.6, OPS-4.1b (cutting the first tag).
 4. **Durable notifications:** MSG-1.1–1.9 done (SA SMOS has no destination call to move); MSG-1.10 is the one leftover one module at a time.
-5. **First real O1 path:** SB-3, SB-5.1–5.2, SB-1.1–1.2 done; SB-1.3 and 1.5 built and tested in-process; SB-1.4 (the netopeer2 lab) open.
+5. **First real O1 path:** SB-3, SB-5.1–5.2, SB-1.1–1.2 done; SB-1.3 and 1.4 done (the netopeer2 lab answers the SSH wrapper in CI); SB-1.5's route needs the real-server payload shape.
 6. **Safer changes:** done (MGT-1.1–1.4, MGT-3, MGT-8.1); MGT-1.5–1.8 are the follow-on.
 7. **Later:** HA, mesh, federation, vendor profiles.
 8. **Dev sanity and demo:** OPS-10.1–10.4 done (the redeploy gate, `.github/workflows/deploy-on-main.yml`); OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-1.6, OPS-2 and OPS-5.

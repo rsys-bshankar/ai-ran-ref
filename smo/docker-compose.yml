@@ -370,6 +370,17 @@ services:
       - gui_bff_data:/data   # GUI users, audit log, the BFF's SME invoker credential
 
   # ---------------------------------------------------------------- TLS edge (profile `tls`, PR-SEC-1)
+  # PR-SB-1.4: a real NETCONF-over-SSH server (Netopeer2) with one small model, for the SSH transport of ran-nf-oam.
+  # Not part of the stack: `docker compose --profile netconf-lab up -d netconf-lab`. See netconf-lab/README.md. It is a third-party
+  # development image and runs as root (its supervisor needs to), so it does not take the *hardening anchor; port on loopback only.
+  netconf-lab:
+    profiles: ["netconf-lab"]
+    image: sysrepo/sysrepo-netopeer2@sha256:36cc1d841c97f118d62f775024d60fb1ce210c3bca6b32135c1a9e5a358a1cc9
+    command: ["/bin/sh", "/lab/start.sh"]
+    ports: ["127.0.0.1:8830:830"]
+    volumes:
+      - ./netconf-lab:/lab:ro
+
   # `docker compose --profile tls up -d` adds an HTTPS door in front of the GUI (:3443) and R1 Termination (:8443).
   # Run scripts/make_dev_certs.sh first. The default stack does not start it and needs no certificate.
   edge-tls:
