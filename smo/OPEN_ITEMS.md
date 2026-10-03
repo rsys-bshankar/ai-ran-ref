@@ -861,16 +861,12 @@ ack and clear routes.
 
 #### Configuration management
 
-#### PR-MGT-1 — CM history and rollback
+#### PR-MGT-1 — CM history and rollback (MGT-1.1–1.4 done: `HISTORY.md` §10)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-1.1 | `cm_snapshot` table: element, function, before, after, job id, time | Migration | – |
-| MGT-1.2 ★ | Capture the before-image (a read of the current values) before each write | Row has `before` after a job | MGT-1.1 |
-| MGT-1.3 | Capture `after` on success | Row complete | MGT-1.2 |
-| MGT-1.4 | `GET` history per element | Route test | MGT-1.3 |
-| MGT-1.5 | Diff endpoint between two snapshots | Route test | MGT-1.3 |
-| MGT-1.6 | Rollback = new write job built from a snapshot, through MSAC | Values restored; audit shows the actor | MGT-1.3 |
+| MGT-1.5 | Diff endpoint between two snapshots | Route test | – |
+| MGT-1.6 | Rollback = new write job built from a snapshot, through MSAC | Values restored; audit shows the actor | – |
 | MGT-1.7 | Guard: refuse if values changed since the snapshot unless forced | Test | MGT-1.6 |
 | MGT-1.8 | Snapshot retention | Purge test | DB-3.2 |
 
@@ -1438,6 +1434,6 @@ Pick any, or mix them. `Needs` is the only constraint.
 3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: the rest of OBS-2, OPS-1.6, OPS-4.1b (cutting the first tag).
 4. **Durable notifications:** MSG-1.1–1.9 done (SA SMOS has no destination call to move); MSG-1.10 is the one leftover one module at a time.
 5. **First real O1 path:** SB-3, SB-5.1–5.2, SB-1.1–1.2 done; SB-1.3 and 1.5 built and tested in-process; SB-1.4 (the netopeer2 lab) open.
-6. **Safer changes:** MGT-3 and MGT-8.1 done; MGT-1.1–1.4 open.
+6. **Safer changes:** done (MGT-1.1–1.4, MGT-3, MGT-8.1); MGT-1.5–1.8 are the follow-on.
 7. **Later:** HA, mesh, federation, vendor profiles.
 8. **Dev sanity and demo:** OPS-10.1–10.4 (master redeploy gate on Actions) and OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-1.6, OPS-2 and OPS-5.

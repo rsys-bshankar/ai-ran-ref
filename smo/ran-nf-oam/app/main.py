@@ -40,7 +40,7 @@ from smo_shared.outbox import enqueue
 from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 
-from .models import Alarm, CMSchemaCache, FileSubscription, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, CMSchemaCache, CMSnapshot, FileSubscription, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
 from . import restconf_client
@@ -92,6 +92,9 @@ NETCONF_RETRY_DELAYS = [float(d) for d in os.environ.get("RAN_NF_OAM_NETCONF_RET
 DISPATCH_RETRY_BUDGET_SECONDS = float(os.environ.get("RAN_NF_OAM_DISPATCH_RETRY_BUDGET_SECONDS", "35"))
 _sleep = time.sleep
 _monotonic = time.monotonic
+# MGT-1: read the current values of what a change names, just before sending it, and keep them with the result (cm_snapshot).
+# The read is one more exchange per sub-change (at most NETCONF_TIMEOUT_SECONDS); set false to skip it and the table.
+CM_SNAPSHOTS = os.environ.get("RAN_NF_OAM_CM_SNAPSHOTS", "true").lower() not in ("0", "false", "no")
 
 
 def worst_case_dispatch_seconds() -> float:
@@ -110,6 +113,25 @@ def _o1_client(protocol: str, transport: str = "http-mock"):
     if protocol == "RESTCONF":
         return restconf_client.send_edit, restconf_client.send_get, "RESTCONF_REQUEST_FAILED"
     return None
+
+
+def worst_case_sub_change_seconds() -> float:
+    """`worst_case_dispatch_seconds()` plus the before-image read, when snapshots are on."""
+    return worst_case_dispatch_seconds() + (NETCONF_TIMEOUT_SECONDS if CM_SNAPSHOTS else 0.0)
+
+
+def _capture_before(me, endpoint, change: dict, attribute_changes: dict) -> tuple[dict | None, str | None]:
+    """(before values, error): the NF's current values of the named attributes, or of the whole object when the change names none
+    (delete/remove). A failed read does not stop the write; it is recorded so nobody mistakes a missing image for an empty one."""
+    read = _o1_client(me.o1_protocol, endpoint.transport)[1]
+    try:
+        current = read(endpoint.adaptor_uri, change["managedElementRef"], message_id=str(uuid.uuid4()),
+                       managed_function_ref=change.get("managedFunctionRef"))
+    except Exception as exc:                                   # noqa: BLE001 - a client bug must not lose the write itself
+        return None, f"before-image read raised {type(exc).__name__}"
+    if current is None:
+        return None, "before-image read failed"
+    return ({name: current.get(name) for name in attribute_changes} if attribute_changes else dict(current)), None
 
 
 def _dispatch_with_retries(adaptor_uri: str, change: dict, attribute_changes: dict, message_id: str,
@@ -353,15 +375,23 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
                                          attribute_changes=attribute_changes, operation=operation, status="REJECTED",
                                          rejection_reason=blocker))
             continue
+        before, before_error = _capture_before(me, endpoint, change, attribute_changes) if CM_SNAPSHOTS else (None, None)
         applied, reason, attempts = _dispatch_with_retries(endpoint.adaptor_uri, change, attribute_changes,
                                                            str(job.job_id), operation, me.o1_protocol, endpoint.transport)
         if not applied and attempts > 1:
             _raise_dispatch_alarm(db, job.job_id, change, reason, attempts)
-        db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
+        sub_change_id = uuid.uuid4()
+        db.add(WriteConfigSubChange(id=sub_change_id, job_id=job.job_id, managed_element_ref=change["managedElementRef"],
                                      managed_function_ref=change.get("managedFunctionRef"),
                                      attribute_changes=attribute_changes, operation=operation,
                                      status="APPLIED" if applied else "REJECTED",
                                      rejection_reason=reason, attempts=attempts))
+        if CM_SNAPSHOTS:
+            db.flush()                         # the snapshot's foreign key needs its sub-change row to exist first (Postgres enforces it)
+            db.add(CMSnapshot(sub_change_id=sub_change_id, job_id=job.job_id, managed_element_ref=change["managedElementRef"],
+                              managed_function_ref=change.get("managedFunctionRef"), operation=operation, before=before,
+                              before_error=before_error,
+                              after=attribute_changes if applied and operation not in ("delete", "remove") else None))
 
     db.flush()
     statuses = [sc.status for sc in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)).all()]
@@ -391,6 +421,24 @@ def read_configuration(managed_element_ref: str, managed_function_ref: str | Non
     if attributes is None:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"configuration read on {managed_element_ref} failed")
     return {"managedElementRef": managed_element_ref, "managedFunctionRef": managed_function_ref, "attributes": attributes}
+
+
+@app.get("/managed-entities/{managed_element_ref}/config-history")
+def read_configuration_history(managed_element_ref: str, managed_function_ref: str | None = None, limit: int = PageLimit,
+                               offset: int = PageOffset, db: Session = Depends(get_session)):
+    """MGT-1.4: what each dispatched write to this element replaced and wrote, newest first (`beforeError` says why a before
+    image is missing). Read from `cm_snapshot`; a write rejected before dispatch has no row."""
+    stmt = select(CMSnapshot).where(CMSnapshot.managed_element_ref == managed_element_ref)
+    if managed_function_ref:
+        stmt = stmt.where(CMSnapshot.managed_function_ref == managed_function_ref)
+    page = paginate(db, stmt.order_by(CMSnapshot.created_at.desc(), CMSnapshot.snapshot_id), limit, offset)
+    statuses = {sc.id: sc.status for sc in db.scalars(
+        select(WriteConfigSubChange).where(WriteConfigSubChange.id.in_([r.sub_change_id for r in page["items"]]))).all()} if page["items"] else {}
+    return {**page, "items": [
+        {"snapshotId": str(r.snapshot_id), "jobId": str(r.job_id), "subChangeStatus": statuses.get(r.sub_change_id),
+         "managedElementRef": r.managed_element_ref, "managedFunctionRef": r.managed_function_ref, "operation": r.operation,
+         "before": r.before, "after": r.after, "beforeError": r.before_error, "createdAt": as_utc(r.created_at).isoformat()}
+        for r in page["items"]]}
 
 
 @app.get("/config-jobs/{job_id}")

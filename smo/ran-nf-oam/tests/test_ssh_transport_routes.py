@@ -11,7 +11,7 @@ from smo_shared.outbox import NotificationOutbox
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import (Alarm, CMSchemaCache, ManagedEntity, O1AdaptorEndpoint, VendorCapability, WriteConfigJob, WriteConfigSubChange,
+from app.models import (Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, O1AdaptorEndpoint, VendorCapability, WriteConfigJob, WriteConfigSubChange,
                         MsacAccessRule, MsacIdentity, MsacRole)
 
 from netconf_ssh_server import Behaviour, NetconfTestServer
@@ -22,7 +22,7 @@ def db_session_factory():
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
-        WriteConfigSubChange.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__, MsacAccessRule.__table__,
+        WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__, MsacAccessRule.__table__,
         IdempotencyKey.__table__, NotificationOutbox.__table__])
     return sessionmaker(bind=engine)
 
@@ -83,6 +83,8 @@ def test_config_job_and_read_go_over_ssh(client, db_session_factory, lab):
     assert resp.status_code == 202 and resp.json()["status"] == "COMPLETED"
     assert client.get(f"/config-jobs/{resp.json()['jobId']}").json()["subChanges"][0]["status"] == "APPLIED"
     assert "<adminState>UNLOCKED</adminState>" in lab.behaviour.received[-1]
+    item = client.get("/managed-entities/ME-1/config-history").json()["items"][0]       # the before image was read over SSH too
+    assert item["before"] == {"adminState": None} and item["after"] == {"adminState": "UNLOCKED"} and item["beforeError"] is None
     read = client.get("/managed-entities/ME-1/config")
     assert read.status_code == 200 and read.json()["attributes"] == {"administrativeState": "UNLOCKED"}
 
