@@ -246,3 +246,23 @@ class SoftwareManagementJob(Versioned, Base):
     ru_instance_id: Mapped[str | None] = mapped_column(String)  # reserved, section 3.4
     phase: Mapped[str] = mapped_column(String, nullable=False, default="DOWNLOAD")
     status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
+
+
+class CMSnapshot(Base):
+    """MGT-1.1: what one dispatched sub-change replaced and wrote. `before` holds the current values of the attributes the change
+    names (the whole object's attributes for a delete/remove), read from the NF just before the write; NULL with `before_error`
+    when that read failed. `after` is what the NF acknowledged: the written values, NULL when the change was not applied or
+    removed the object. One row per dispatched sub-change; removing the sub-change removes it."""
+    __tablename__ = "cm_snapshot"
+
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    sub_change_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("write_config_sub_change.id", ondelete="CASCADE"), nullable=False, unique=True)
+    job_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("write_config_job.job_id", ondelete="CASCADE"), nullable=False)
+    managed_element_ref: Mapped[str] = mapped_column(String, nullable=False)
+    managed_function_ref: Mapped[str | None] = mapped_column(String)
+    operation: Mapped[str] = mapped_column(String, nullable=False)
+    before: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
+    after: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
+    before_error: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                          default=lambda: datetime.datetime.now(datetime.UTC))
