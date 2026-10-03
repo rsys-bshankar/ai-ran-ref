@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, Integer, JSON, String, Uuid
+from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -27,6 +27,21 @@ class O1AdaptorEndpoint(Base):
     # PR-SB-2.1: the NAME of the credential this adaptor is reached with (resolved at connect time from the service's own secrets,
     # netconf_ssh.credentials_for); never the secret. NULL: the shared credential of PR-SB-1.
     credential_ref: Mapped[str | None] = mapped_column(String)
+
+
+class O1AdaptorHostKey(Base):
+    """PR-SB-2.3: a host key an operator pinned for an ssh endpoint (the public key only; at most one per key type)."""
+    __tablename__ = "o1_adaptor_host_key"
+    __table_args__ = (UniqueConstraint("endpoint_id", "key_type"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    endpoint_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("o1_adaptor_endpoint.endpoint_id", ondelete="CASCADE"), nullable=False)
+    key_type: Mapped[str] = mapped_column(String, nullable=False)
+    public_key: Mapped[str] = mapped_column(String, nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String, nullable=False)
+    pinned_by: Mapped[str] = mapped_column(String, nullable=False)
+    pinned_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                          default=lambda: datetime.datetime.now(datetime.UTC))
 
 
 class ManagedEntity(Base):
