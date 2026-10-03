@@ -28,9 +28,25 @@ the MAJOR bump, or an expand/contract split across two MINOR releases (`PR-OPS-5
 1. Everything for the release is merged to `main` and CI is green on it.
 2. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, start a fresh `## [Unreleased]` above it, and update the compare links at the foot. Merge that as its own PR (`Release X.Y.Z`).
 3. Tag the merge commit: `git tag -a smo-vX.Y.Z -m "SMO X.Y.Z" <sha> && git push origin smo-vX.Y.Z`. Tags are never moved or deleted; a bad release is superseded by the next PATCH.
-4. The tag is the release. Building and publishing images by tag and digest (`OPS-4.2`), generated release notes (`OPS-4.3`) and the supported-versions table in `SECURITY.md` (`OPS-4.4`) follow in their own changes.
+4. The tag is the release. Pushing it starts `.github/workflows/release-images.yml` (below). In the same release PR as the changelog, update the supported-versions table in `SECURITY.md`: the newest `0.MINOR` line is supported and the previous one is dropped (a test checks that every line listed has a release).
 
 A person cuts the tag. It is not something an automated change does on its own.
+
+## Publishing images, signatures and notes
+
+`release-images.yml` runs on a pushed `smo-v*` tag, or by hand (`workflow_dispatch`, input `tag`) for a tag that already exists. It
+builds every image the compose file builds (`python scripts/release_images.py names`), pushes
+`ghcr.io/<owner>/<repo>/smo-<module>:<version>`, signs each by digest with cosign (keyless: the signature names this workflow
+as the signer), attaches BuildKit provenance (SLSA, `mode=max`) and an SBOM beside the image, and writes the release notes
+(`scripts/release_notes.py`: the `CHANGELOG.md` section plus the merged PR titles since the previous tag) onto the tag's GitHub release.
+Each image's `name@sha256:...` is in the run's summary.
+
+Verify an image before running it (replace the module, version and repository):
+
+    cosign verify ghcr.io/<owner>/<repo>/smo-ran-nf-oam:0.1.0 \
+      --certificate-identity-regexp '^https://github.com/<owner>/<repo>/\.github/workflows/release-images\.yml@refs/' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com
+    docker buildx imagetools inspect ghcr.io/<owner>/<repo>/smo-ran-nf-oam:0.1.0 --format '{{ json .Provenance }}'
 
 ## The first tag
 

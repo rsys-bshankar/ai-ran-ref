@@ -5,6 +5,12 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Added
+- `.github/workflows/release-images.yml`: pushing a `smo-v*` tag (or running it by hand with an existing tag) builds every service image, pushes `ghcr.io/<owner>/<repo>/smo-<module>:<version>`, signs each by digest with cosign (keyless), attaches build provenance and an SBOM, and writes release notes (this changelog's section plus the merged PR titles) onto the GitHub release. The verification command is in `docs/RELEASES.md` (OPS-4.2, 4.3, SEC-12.3, 12.4).
+
+### Changed
+- `SECURITY.md`: supported versions are the newest `0.MINOR` line and `main` (OPS-4.4).
+
 ## [0.1.0] - 2026-10-03
 
 The first release: source and the docker compose stack. Images are not published yet (OPS-4.2); build them with `docker compose up -d --build`.
