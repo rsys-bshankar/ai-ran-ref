@@ -20,9 +20,10 @@ def hello(caps: list[str]) -> bytes:
 class Behaviour:
     def __init__(self, caps=("urn:ietf:params:netconf:base:1.0", "urn:ietf:params:netconf:base:1.1"), silent=False,
                  edit_reply="<ok/>", data="<managed-object ref='ME-1'><administrativeState>UNLOCKED</administrativeState></managed-object>",
-                 hello_text=None, close_after_hello=False, split=False):
+                 hello_text=None, close_after_hello=False, split=False, step_replies=None):
         self.caps, self.silent, self.edit_reply, self.data = list(caps), silent, edit_reply, data
         self.hello_text, self.close_after_hello, self.split = hello_text, close_after_hello, split
+        self.step_replies = step_replies or {}            # candidate steps ('lock', 'commit', 'discard', 'unlock') -> the inner reply to give
         self.received: list[str] = []
 
 
@@ -142,7 +143,10 @@ def _converse(channel, b: Behaviour):
         if b.silent:
             continue
         mid = re.search(r'message-id="([^"]*)"', text).group(1)
-        if "<edit-config>" in text:
+        step = re.search(r'message-id="[^"]*-(lock|commit|discard|unlock)"', text)
+        if step and step.group(1) in b.step_replies:
+            inner = b.step_replies[step.group(1)]
+        elif "<edit-config>" in text:
             inner = b.edit_reply
         elif "<get-config>" in text:
             inner = f"<data>{b.data}</data>"

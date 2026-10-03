@@ -337,6 +337,17 @@ jobs:
           export NETCONF_SSH_KNOWN_HOSTS="$RUNNER_TEMP/lab_known_hosts"
           python scripts/netconf_lab_check.py
 
+      # PR-SB-1.9: runbook section 7 (register, heartbeat, CM write, read back, history, partial failure, refusal) through RAN NF OAM's own
+      # routes over SSH, with the model payload and the candidate datastore
+      - name: Runbook CM write against the lab server
+        working-directory: smo
+        env:
+          NETCONF_SSH_PASSWORD: netconf
+          PYTHONPATH: ran-nf-oam:shared
+        run: |
+          export NETCONF_SSH_KNOWN_HOSTS="$RUNNER_TEMP/lab_known_hosts"
+          python scripts/netconf_lab_runbook.py 2>&1 | grep -E "^(ok|FAIL|OK|FAILED|  server said)"; test "${PIPESTATUS[0]}" -eq 0
+
       - name: Dump the lab logs on failure
         if: failure()
         working-directory: smo

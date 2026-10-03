@@ -34,14 +34,24 @@ PROFILES = {"smo-lab": Profile("urn:smo:lab", "lab", "cell", "id")}
 def model_of(adaptor_uri: str) -> str | None:
     """The `model` named in the URI's query, or None. ValueError for an unknown model or more than one."""
     query = parse_qs(urlsplit(adaptor_uri).query, keep_blank_values=True)
-    unknown = set(query) - {"model"}
+    unknown = set(query) - {"model", "datastore"}
     if unknown:
-        raise ValueError(f"unknown adaptor URI option {sorted(unknown)[0]!r} (only model=)")
+        raise ValueError(f"unknown adaptor URI option {sorted(unknown)[0]!r} (only model= and datastore=)")
     values = query.get("model", [])
     if not values:
         return None
     if len(values) > 1 or values[0] not in PROFILES:
         raise ValueError(f"unknown model {values[-1]!r}; known: {', '.join(sorted(PROFILES))}")
+    return values[0]
+
+
+def datastore_of(adaptor_uri: str) -> str:
+    """`running` (the default) or `candidate`, from the URI's `datastore` option. ValueError for anything else or a repeat."""
+    values = parse_qs(urlsplit(adaptor_uri).query, keep_blank_values=True).get("datastore", [])
+    if not values:
+        return "running"
+    if len(values) > 1 or values[0] not in ("running", "candidate"):
+        raise ValueError(f"unknown datastore {values[-1]!r}; use running or candidate")
     return values[0]
 
 

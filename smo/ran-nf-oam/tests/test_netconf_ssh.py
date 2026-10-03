@@ -217,3 +217,72 @@ def test_attribute_names_round_trip():
     from app.yang_payload import to_attribute_name, to_yang_name
     for attribute, leaf in (("administrativeState", "administrative-state"), ("txPower", "tx-power"), ("id", "id")):
         assert to_yang_name(attribute) == leaf and to_attribute_name(leaf) == attribute
+
+
+CAND_CAPS = ("urn:ietf:params:netconf:base:1.0", "urn:ietf:params:netconf:base:1.1", "urn:ietf:params:netconf:capability:candidate:1.0")
+ERR = lambda tag, msg="": f"<rpc-error><error-tag>{tag}</error-tag><error-message>{msg}</error-message></rpc-error>"  # noqa: E731
+
+
+def _steps(server):
+    """The RPCs the server received, by name, in order."""
+    import re
+    names = []
+    for text in server.behaviour.received:
+        m = re.search(r'message-id="[^"]*-(lock|commit|discard|unlock)"', text)
+        names.append(m.group(1) if m else ("edit-config" if "<edit-config>" in text else "other"))
+    return names
+
+
+def test_a_candidate_write_is_lock_edit_commit_unlock(lab):
+    """PR-SB-1.8: the edit goes to <candidate/>, then commit, and the lock is always released."""
+    server = lab(Behaviour(caps=CAND_CAPS))
+    result = send_edit_config(server.uri + "?datastore=candidate", "ME-1", {"a": "1"}, message_id="c1")
+    assert result.applied and _steps(server) == ["lock", "edit-config", "commit", "unlock"]
+    assert "<target><candidate/></target>" in server.behaviour.received[1]
+
+
+def test_a_refused_edit_is_discarded_and_unlocked_and_nothing_is_committed(lab):
+    server = lab(Behaviour(caps=CAND_CAPS, edit_reply=ERR("invalid-value", "out of range")))
+    result = send_edit_config(server.uri + "?datastore=candidate", "ME-1", {"a": "1"}, message_id="c2")
+    assert not result and result.reason == "NETCONF_RPC_FAILED" and not result.retryable
+    assert result.detail == "edit-config: invalid-value (a value is not acceptable): out of range"
+    assert _steps(server) == ["lock", "edit-config", "discard", "unlock"]
+
+
+def test_a_refused_commit_is_discarded_and_unlocked(lab):
+    server = lab(Behaviour(caps=CAND_CAPS, step_replies={"commit": ERR("operation-failed", "validation failed")}))
+    result = send_edit_config(server.uri + "?datastore=candidate", "ME-1", {"a": "1"}, message_id="c3")
+    assert not result and result.detail == "commit: operation-failed (the operation failed): validation failed"
+    assert _steps(server) == ["lock", "edit-config", "commit", "discard", "unlock"]
+
+
+def test_a_denied_lock_touches_nothing(lab):
+    server = lab(Behaviour(caps=CAND_CAPS, step_replies={"lock": ERR("lock-denied")}))
+    result = send_edit_config(server.uri + "?datastore=candidate", "ME-1", {"a": "1"}, message_id="c4")
+    assert not result and result.detail == "lock: lock-denied (the lock is held by another session)"
+    assert _steps(server) == ["lock"]
+
+
+def test_a_server_without_a_candidate_datastore_gets_no_rpc(lab):
+    server = lab(Behaviour())
+    result = send_edit_config(server.uri + "?datastore=candidate", "ME-1", {"a": "1"}, message_id="c5")
+    assert not result and "candidate" in result.detail and server.behaviour.received == []
+
+
+def test_a_failed_unlock_after_a_good_commit_does_not_undo_the_write(lab):
+    server = lab(Behaviour(caps=CAND_CAPS, step_replies={"unlock": ERR("operation-failed")}))
+    assert send_edit_config(server.uri + "?datastore=candidate", "ME-1", {"a": "1"}, message_id="c6").applied
+    assert _steps(server) == ["lock", "edit-config", "commit", "unlock"]
+
+
+def test_a_model_write_to_the_candidate_names_the_candidate(lab):
+    server = lab(Behaviour(caps=CAND_CAPS))
+    send_edit_config(server.uri + "?model=smo-lab&datastore=candidate", "ME-1", {"txPower": 30}, message_id="c7", managed_function_ref="101")
+    assert "<target><candidate/></target>" in server.behaviour.received[1] and "<tx-power>30</tx-power>" in server.behaviour.received[1]
+
+
+def test_the_datastore_option_is_validated():
+    assert parse_ssh_uri("ssh://u@h?datastore=candidate") == ("u", "h", 830)
+    for bad in ("ssh://u@h?datastore=startup", "ssh://u@h?datastore=candidate&datastore=running"):
+        with pytest.raises(NetconfSshError):
+            parse_ssh_uri(bad)
