@@ -30,6 +30,11 @@ x-wait-for-schema: &wait_for_schema
   postgres: { condition: service_healthy }
   migrate: { condition: service_completed_successfully }
 
+# The environment every database-using service shares: where the database is, and the file its password is in.
+x-db-env: &db_env
+  SMO_DATABASE_URL: postgresql+psycopg://smo@postgres:5432/smo   # no password here: smo_shared/db.py adds it from the file below
+  SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
+
 services:
   postgres:
     image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
@@ -79,6 +84,9 @@ services:
     healthcheck: *ready_probe
     ports: ["8080:8000"]
     environment:
+      # PR-SEC-1.6: unset, /bootstrap names SME on the compose network; set to the HTTPS door (https://localhost:8443 with the tls
+      # profile) and it names that address instead, so a consumer that only reaches the edge can complete the flow.
+      R1_PUBLIC_BASE_URL: ${R1_PUBLIC_BASE_URL:-}
       SME_URL: http://sme:8000
       DME_URL: http://dme:8000
       ONBOARDING_URL: http://onboarding:8000
@@ -107,9 +115,11 @@ services:
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
-    environment: &db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo@postgres:5432/smo   # no password here: smo_shared/db.py adds it from the file below
-      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
+    environment:
+      <<: *db_env
+      # PR-SEC-1.6: a client assertion's `aud` is the token endpoint /bootstrap advertised; behind the HTTPS door that is
+      # <R1_PUBLIC_BASE_URL>/sme/oauth2/token. Unset (empty), SME uses its own address on the compose network.
+      SME_TOKEN_AUDIENCE: ${R1_PUBLIC_BASE_URL:+${R1_PUBLIC_BASE_URL}/sme/oauth2/token}
 
   dme:
     build: { context: ., args: { MODULE: dme } }
@@ -387,7 +397,7 @@ services:
     profiles: ["tls"]
     image: nginxinc/nginx-unprivileged:1.31-alpine@sha256:26b0bf6fbf07297983cb341998d79c831508787de26627dd2a112321b9c3a4af
     <<: *hardening
-    depends_on: [r1-termination, gui]
+    depends_on: [r1-termination, gui, sme]
     ports: ["3443:3443", "8443:8443"]
     volumes:
       - ./edge/nginx.conf:/etc/nginx/conf.d/default.conf:ro

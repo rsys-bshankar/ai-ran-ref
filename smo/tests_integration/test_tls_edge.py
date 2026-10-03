@@ -164,3 +164,14 @@ def test_the_gui_session_cookie_is_secure_by_default_so_it_is_only_sent_over_the
 
 def test_the_certificate_directory_is_git_ignored():
     assert "certs/" in (SMO_ROOT / ".gitignore").read_text().splitlines()
+
+
+def test_the_edge_forwards_the_token_endpoint_to_sme_without_a_token_and_everything_else_to_r1():
+    """PR-SEC-1.6: /bootstrap advertises <R1_PUBLIC_BASE_URL>/sme/oauth2/token; that one path goes straight to SME, which is where a consumer
+    with no token yet must be able to get one. The edge may not forward any other /sme path around R1's token check."""
+    conf = (SMO_ROOT / "edge" / "nginx.conf").read_text()
+    exact = re.findall(r"location = (/\S+) \{[^}]*proxy_pass ([^;]+);", conf)
+    assert ("/sme/oauth2/token", "http://sme:8000/oauth2/token") in exact
+    to_sme = [path for path, target in exact if "sme:8000" in target]
+    assert to_sme == ["/sme/oauth2/token"], f"the edge forwards these straight to SME, around R1's token check: {to_sme}"
+    assert "R1_PUBLIC_BASE_URL" in (SMO_ROOT / "docker-compose.yml").read_text() and "sme" in _compose()["services"]["edge-tls"]["depends_on"]

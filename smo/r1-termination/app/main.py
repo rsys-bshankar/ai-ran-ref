@@ -12,6 +12,7 @@ stack without an extra infra dependency.
 """
 
 import os
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, Request, Response
@@ -97,6 +98,22 @@ ROUTES = {
 }
 
 
+def _public_base_url() -> str | None:
+    """PR-SEC-1.6: the address consumers outside the compose network reach this gateway by (`R1_PUBLIC_BASE_URL`, for example
+    `https://r1.example:8443` behind the TLS edge), or None. Set by the operator, never taken from request headers: the token endpoint
+    this advertises is where an rApp sends its client credentials, so a Host header an attacker chose must not decide it."""
+    value = os.environ.get("R1_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if not value:
+        return None
+    parts = urlsplit(value)
+    if parts.scheme not in ("http", "https") or not parts.hostname or parts.query or parts.fragment or parts.path not in ("", "/"):
+        raise RuntimeError(f"R1_PUBLIC_BASE_URL must be an origin such as https://host:8443, not {value!r}")
+    return value
+
+
+PUBLIC_BASE_URL = _public_base_url()                 # read once at start: a bad value stops the service, it does not surface per request
+
+
 @app.get("/bootstrap")
 def bootstrap():
     """Foundational Platform LLD section 4.1: BootstrapInformation.apiEndpoints
@@ -105,18 +122,27 @@ def bootstrap():
     the subscription endpoint the normal way, via service discovery, once
     it can reach service-apis. No auth (network-isolated), URI-stable
     across all R1 Termination versions.
+
+    Inside the compose network the entries name SME directly (`http://sme:8000/...`). With `R1_PUBLIC_BASE_URL` set (PR-SEC-1.6) they
+    name this gateway's public address instead: the API entries go through the gateway (`<base>/sme/...`, token required) and the
+    token endpoint is the one path the TLS edge forwards to SME without a token (`<base>/sme/oauth2/token`), so a consumer that only
+    reaches the HTTPS door can complete the whole flow.
     """
+    if PUBLIC_BASE_URL:
+        token, apis = f"{PUBLIC_BASE_URL}/sme/oauth2/token", f"{PUBLIC_BASE_URL}/sme"
+    else:
+        token, apis = f"{ROUTES['/sme']}/oauth2/token", ROUTES["/sme"]
     return {
         "apiEndpoints": [
             {
                 "apiName": "service-apis",
-                "tokenEndPoint": {"uri": f"{ROUTES['/sme']}/oauth2/token"},
-                "apiEndPoint": {"uri": f"{ROUTES['/sme']}/service-apis/v1/allServiceAPIs"},
+                "tokenEndPoint": {"uri": token},
+                "apiEndPoint": {"uri": f"{apis}/service-apis/v1/allServiceAPIs"},
             },
             {
                 "apiName": "published-apis",
-                "tokenEndPoint": {"uri": f"{ROUTES['/sme']}/oauth2/token"},
-                "apiEndPoint": {"uri": f"{ROUTES['/sme']}/published-apis/v1"},
+                "tokenEndPoint": {"uri": token},
+                "apiEndPoint": {"uri": f"{apis}/published-apis/v1"},
             },
         ]
     }

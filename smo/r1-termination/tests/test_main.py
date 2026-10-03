@@ -469,3 +469,42 @@ def test_the_cap_and_its_overrides_come_from_the_environment(monkeypatch):
     monkeypatch.setenv("R1_MAX_BODY_OVERRIDES", "/dme/big=1000")
     assert client.post("/dme/big", headers=AUTH_HEADERS, content=b"a" * 900).status_code == 200
     assert client.post("/dme/x", headers=AUTH_HEADERS, content=b"a" * 900).status_code == 413
+
+
+# --- PR-SEC-1.6: /bootstrap behind the TLS edge --------------------------------------------------------------------------------
+
+def _bootstrap_uris(monkeypatch, value):
+    import app.main as main
+    monkeypatch.setattr(main, "PUBLIC_BASE_URL", value)
+    return {e["apiName"]: (e["tokenEndPoint"]["uri"], e["apiEndPoint"]["uri"]) for e in client.get("/bootstrap").json()["apiEndpoints"]}
+
+
+def test_bootstrap_names_sme_on_the_compose_network_unless_a_public_base_url_is_set(monkeypatch):
+    uris = _bootstrap_uris(monkeypatch, None)
+    assert uris["service-apis"] == ("http://sme:8000/oauth2/token", "http://sme:8000/service-apis/v1/allServiceAPIs")
+    assert uris["published-apis"] == ("http://sme:8000/oauth2/token", "http://sme:8000/published-apis/v1")
+
+
+def test_with_a_public_base_url_bootstrap_advertises_the_https_door(monkeypatch):
+    uris = _bootstrap_uris(monkeypatch, "https://r1.example:8443")
+    assert uris["service-apis"] == ("https://r1.example:8443/sme/oauth2/token", "https://r1.example:8443/sme/service-apis/v1/allServiceAPIs")
+    assert uris["published-apis"] == ("https://r1.example:8443/sme/oauth2/token", "https://r1.example:8443/sme/published-apis/v1")
+
+
+def test_the_public_base_url_comes_from_the_environment_only_never_from_request_headers(monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(main, "PUBLIC_BASE_URL", "https://r1.example:8443")
+    resp = client.get("/bootstrap", headers={"Host": "evil.example", "X-Forwarded-Host": "evil.example", "X-Forwarded-Proto": "http"})
+    assert "evil.example" not in resp.text and "https://r1.example:8443/sme/oauth2/token" in resp.text
+
+
+@pytest.mark.parametrize("value,ok", [("", None), (" https://r1.example:8443/ ", "https://r1.example:8443"), ("http://localhost:8080", "http://localhost:8080"),
+                                      ("r1.example", False), ("ftp://r1.example", False), ("https://r1.example/path", False), ("https://r1.example?x=1", False)])
+def test_the_public_base_url_must_be_an_origin(monkeypatch, value, ok):
+    import app.main as main
+    monkeypatch.setenv("R1_PUBLIC_BASE_URL", value)
+    if ok is False:
+        with pytest.raises(RuntimeError):
+            main._public_base_url()
+    else:
+        assert main._public_base_url() == ok
