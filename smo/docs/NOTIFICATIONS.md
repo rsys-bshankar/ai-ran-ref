@@ -10,12 +10,12 @@ without a row here.
 | Class | Meaning | Where it goes |
 |---|---|---|
 | **A** | A POST whose answer nothing reads: a notification. A lost one means a subscriber never learns of a change | Moves to the outbox (the PR named in the last column) |
-| **B** | A command to a destination (a DELETE) whose answer nothing reads | Stays inline for now: the outbox row carries only a POST body. Needs a method column (a later step) before it can move |
+| **B** | A command to a destination (a DELETE) whose answer nothing reads | Moves to the outbox as a `DELETE` row (`method` column, `PR-MSG-1.10`); there is one such site, and it has moved |
 | **C** | A read whose answer the caller uses to decide something (a health probe, a capability discovery) | Stays inline, always: the caller needs the answer in the request |
 
 Everything classed A ignored the response (`post_webhook` returns it and no caller kept it), including the Intent Service's
 RMIH callback, so no A-class site needed the response: the first sort of site the plan worried about did not occur. All of them have
-moved (`PR-MSG-1.5`–`1.9`); what is left inline is the class-B DELETE and the two class-C reads.
+moved (`PR-MSG-1.5`–`1.9`); `PR-MSG-1.10` moved the one class-B DELETE as a `DELETE` row; what is left inline is the two class-C reads.
 After the move, a notification is sent after the transaction that caused it commits, never before, and a rolled-back change sends nothing.
 
 ## Call sites
@@ -25,7 +25,7 @@ After the move, a notification is sent after the transaction that caused it comm
 | `dme/app/main.py` | `_notify_type_subscribers` | `enqueue` | A | Every type subscriber: a type was created, changed or removed | moved (MSG-1.5) |
 | `dme/app/main.py` | `terminate_data_offer` | `enqueue` | A | The offer owner's termination URI: the offer was removed | moved (MSG-1.5) |
 | `dme/app/main.py` | `_push_job_to_producers` | `enqueue` | A | Each supporting producer's job callback: a data job exists | moved (MSG-1.5) |
-| `dme/app/main.py` | `_stop_job_at_producers` | `delete_webhook` | B | Each supporting producer: stop this job | open (needs a method column) |
+| `dme/app/main.py` | `_stop_job_at_producers` | `enqueue` | A | Each supporting producer: stop this job (a DELETE row) | moved (MSG-1.10) |
 | `dme/app/main.py` | `_producer_is_healthy` | `get_webhook` | C | A producer's health URL: answers the type's ENABLED/DISABLED status | stays inline |
 | `sme/app/main.py` | `_deliver` | `enqueue` | A | Event subscribers: a service API became available, changed or went away | moved (MSG-1.6) |
 | `aimgf/app/main.py` | `_notify_job_completion` | `enqueue` | A | The job's notification URI: a training or inference job finished | moved (MSG-1.7) |

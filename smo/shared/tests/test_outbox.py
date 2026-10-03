@@ -117,7 +117,7 @@ def test_a_crash_between_commit_and_send_leaves_a_pending_row_that_a_later_drain
 
 
 def test_a_crash_during_the_send_is_retried_once_the_lease_runs_out(engine, network, monkeypatch):
-    def die(destination, payload):
+    def die(destination, payload, method="POST"):
         raise SystemExit("process killed mid-send")
 
     real_send = outbox._send
@@ -211,3 +211,63 @@ def test_the_pending_ids_do_not_leak_across_a_rollback(engine, network):
         enqueue(db, "http://kept/cb", {})
         db.commit()
     assert network == [("http://kept/cb", {})]
+
+
+# --- PR-MSG-1.10: DELETE rows -------------------------------------------------------------------------------------------------------
+
+@pytest.fixture
+def deletes(monkeypatch):
+    """Stands in for the destinations of DELETE rows: records every DELETE and answers with `status` (None: unreachable)."""
+    class Sent(list):
+        behaviour = {"status": 200}
+
+    sent = Sent()
+    behaviour = sent.behaviour
+
+    def delete(destination, timeout=5.0):
+        sent.append(destination)
+        status = behaviour["status"]
+        return None if status is None else httpx.Response(status)
+
+    monkeypatch.setattr(webhook, "delete_webhook", delete)
+    return sent
+
+
+def test_a_delete_row_is_sent_as_a_delete_after_the_commit_and_never_as_a_post(engine, network, deletes):
+    with Session(engine) as db:
+        enqueue(db, "http://producer/jobs/1", {}, module="dme", method="DELETE")
+        assert deletes == []                                          # nothing before the commit
+        db.commit()
+    assert deletes == ["http://producer/jobs/1"] and network == []
+    row = rows(engine)[0]
+    assert (row.method, row.status, row.payload) == ("DELETE", SENT, {})
+
+
+def test_a_row_without_a_method_is_a_post(engine, network, deletes):
+    with Session(engine) as db:
+        assert enqueue(db, "http://consumer/x", {"a": 1}, module="dme").method == "POST"
+        db.commit()
+    assert network == [("http://consumer/x", {"a": 1})] and deletes == []
+
+
+def test_an_unknown_method_is_refused_at_enqueue(engine):
+    with Session(engine) as db, pytest.raises(ValueError):
+        enqueue(db, "http://producer/jobs/1", {}, method="PUT")
+
+
+def test_a_delete_row_that_rolls_back_is_never_sent_and_an_unreachable_one_is_retried_then_dead(engine, network, deletes):
+    with Session(engine) as db:
+        enqueue(db, "http://producer/jobs/2", {}, module="dme", method="DELETE")
+        db.rollback()
+    assert rows(engine) == [] and deletes == []
+
+    deletes.behaviour["status"] = None
+    with Session(engine) as db:
+        enqueue(db, "http://producer/jobs/3", {}, module="dme", method="DELETE")
+        db.commit()
+    assert rows(engine)[0].status == PENDING and rows(engine)[0].attempts == 1
+    when = datetime.datetime.now(datetime.UTC)
+    for _ in range(outbox.MAX_ATTEMPTS):                              # each full drain after the backoff is one more attempt
+        when += datetime.timedelta(hours=1)
+        drain(engine, now=when)
+    assert rows(engine)[0].status == DEAD and set(deletes) == {"http://producer/jobs/3"}

@@ -1268,3 +1268,32 @@ def test_nothing_is_announced_when_the_change_does_not_commit(client, monkeypatc
     assert calls == [] and _outbox_rows(client) == []
     with sessionmaker(bind=app.state.test_engine)() as db:
         assert db.query(DMEType).count() == 0                        # the registration itself rolled back too
+
+
+def test_stopping_a_job_at_the_producers_is_a_delete_row_in_the_same_transaction_and_survives_a_crash(client, monkeypatch):
+    """MSG-1.10: the producer's stop-job DELETE was an inline call after the commit, lost if the process died in between."""
+    client.post("/production-capabilities", json=register_type_body(producerId="rapp-1"))
+    client.post("/production-capabilities", json=register_type_body(producerId="rapp-2", jobCallbackUrl="http://rapp-2:8000/jobs"))
+    monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: FakeHealthResponse(200))
+    with sessionmaker(bind=app.state.test_engine)() as db:
+        type_id = db.query(DMEType).one().dme_type_id
+    job = client.post("/data-jobs", json={"dataDeliveryMode": "ONE_TIME", "dmeTypeId": str(type_id), "consumerId": "rapp-x",
+                                          "productionJobDefinition": {}, "dataDeliveryMethod": "PUSH_HTTP", "deliveryDetails": {}}).json()
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")           # the process dies right after the commit
+    monkeypatch.setenv("MODULE", "dme")
+    deleted = []
+    monkeypatch.setattr("smo_shared.webhook.delete_webhook", lambda destination, timeout=5.0: deleted.append(destination) or FakeHealthResponse(204))
+    before = len(_outbox_rows(client))
+
+    assert client.delete(f"/data-jobs/{job['dataJobId']}").status_code == 204
+
+    assert deleted == []                                             # nothing went out before the drain
+    stops = [r for r in _outbox_rows(client)[before:] if r.method == "DELETE"]
+    assert sorted(r.destination for r in stops) == sorted([f"http://ran-nf-oam:8000/dme-jobs/{job['dataJobId']}",
+                                                           f"http://rapp-2:8000/jobs/{job['dataJobId']}"])
+    assert {r.status for r in stops} == {"PENDING"} and {r.payload == {} for r in stops} == {True}
+
+    monkeypatch.delenv("SMO_OUTBOX_INLINE_DRAIN")                    # the restarted process sweeps
+    outbox.drain(app.state.test_engine)
+    assert sorted(deleted) == sorted(r.destination for r in stops)
+    assert {r.status for r in _outbox_rows(client) if r.method == "DELETE"} == {"SENT"}

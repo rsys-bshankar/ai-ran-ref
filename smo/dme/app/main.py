@@ -27,7 +27,7 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.outbox import enqueue
-from smo_shared.webhook import delete_webhook, get_webhook
+from smo_shared.webhook import get_webhook
 
 from .models import (
     DELIVERY_METHODS, LIFECYCLE_STAGES, SOURCE_DOMAINS, DataJob, DataOffer, DataRecord, DmeActionRecord,
@@ -466,9 +466,9 @@ def terminate_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session
         return
     dme_type = db.get(DMEType, job.dme_type_id)
     db.delete(job)
-    db.commit()
     if dme_type is not None:
-        _stop_job_at_producers(db, dme_type, data_job_id)
+        _stop_job_at_producers(db, dme_type, data_job_id)      # enqueued in the transaction that deletes the job (MSG-1.10)
+    db.commit()
 
 
 @app.delete("/data-jobs", status_code=204)
@@ -484,9 +484,9 @@ def terminate_data_jobs_for_consumer(consumer_id: str, db: Session = Depends(get
     for job in jobs:
         dme_type = db.get(DMEType, job.dme_type_id)
         db.delete(job)
-        db.commit()
         if dme_type is not None:
             _stop_job_at_producers(db, dme_type, job.data_job_id)
+        db.commit()
 
 
 @app.post("/offers", status_code=201)
@@ -576,10 +576,11 @@ def _push_job_to_producers(db: Session, dme_type: DMEType, job: DataJob) -> None
 
 def _stop_job_at_producers(db: Session, dme_type: DMEType, data_job_id: uuid.UUID) -> None:
     """ICS's own ProducerCallbacks.stopInfoJob — DELETE to every
-    supporting producer's jobCallbackUrl/{jobId}, best-effort.
+    supporting producer's jobCallbackUrl/{jobId}. A DELETE row in the transactional outbox (MSG-1.10): it exists exactly when the job's
+    deletion does, and survives a crash after the commit; the caller commits.
     """
     for producer in _producers_for_type(db, dme_type.dme_type_id):
-        delete_webhook(f"{producer.job_callback_url}/{data_job_id}", timeout=5.0)
+        enqueue(db, f"{producer.job_callback_url}/{data_job_id}", {}, method="DELETE")
 
 
 def _job_view(j: DataJob) -> dict:
