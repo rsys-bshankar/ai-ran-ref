@@ -2,11 +2,11 @@
 """Runbook section 7 (a real CM write) against the netconf-lab server, through RAN NF OAM's own routes (PR-SB-1.9).
 
 The compose replay (`tests_integration/test_demo_runbook.py`) drives the mock O1 adaptor. This drives the same routes, in this process, over
-NETCONF-over-SSH to Netopeer2 with the model payload and the candidate datastore: register the adaptor, heartbeat it, write a value, read it back,
+NETCONF-over-SSH to Netopeer2 with the model payload and the candidate datastore: register the adaptor (with its own credential, `credentialRef: lab`), heartbeat it, write a value, read it back,
 look at the change history, run a batch with one ME that was never registered (PARTIAL_SUCCESS), and have a value outside the model's range
 refused with the server's own reason. It puts the seeded value back at the end. Exit 0 only when every step holds.
 
-    NETCONF_SSH_KNOWN_HOSTS=... NETCONF_SSH_PASSWORD=netconf PYTHONPATH=ran-nf-oam:shared python scripts/netconf_lab_runbook.py [host:port]
+    NETCONF_SSH_KNOWN_HOSTS=... NETCONF_CRED_LAB_PASSWORD=netconf PYTHONPATH=ran-nf-oam:shared python scripts/netconf_lab_runbook.py [host:port]
 """
 
 import os
@@ -63,7 +63,7 @@ def main() -> int:
         return r, job
 
     r = client.post("/o1-adaptor-endpoints", json={
-        "managedElementRef": ME, "adaptorUri": f"ssh://netconf@{hostport}?model=smo-lab&datastore=candidate", "transport": "ssh",
+        "managedElementRef": ME, "adaptorUri": f"ssh://netconf@{hostport}?model=smo-lab&datastore=candidate", "transport": "ssh", "credentialRef": "lab",
         "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU"})
     check("register the adaptor (ssh, model, candidate)", r.status_code == 201, r.text)
     r = client.post(f"/o1-adaptor-endpoints/{r.json()['endpointId']}/heartbeat")

@@ -286,3 +286,64 @@ def test_the_datastore_option_is_validated():
     for bad in ("ssh://u@h?datastore=startup", "ssh://u@h?datastore=candidate&datastore=running"):
         with pytest.raises(NetconfSshError):
             parse_ssh_uri(bad)
+
+
+# --- PR-SB-2.1/2.2: per-endpoint credentials -----------------------------------------------------------------------------------------------
+
+
+def test_a_credential_ref_is_resolved_at_connect_time_and_wins_over_the_shared_credential(lab, monkeypatch):
+    """The server accepts "secret"; the shared password is wrong, so only the endpoint's own credential can succeed."""
+    server = lab(Behaviour())
+    monkeypatch.setenv("NETCONF_SSH_PASSWORD", "the-shared-one-is-wrong")
+    assert not send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="k1").applied                      # no ref: the shared credential
+    monkeypatch.setenv("NETCONF_CRED_GNB_1_PASSWORD", "secret")
+    assert send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="k2", credential_ref="gnb-1").applied
+    assert send_get_config(server.uri, "ME-1", message_id="k3", credential_ref="gnb-1") is not None
+
+
+def test_a_credential_can_come_from_a_mounted_file(lab, monkeypatch, tmp_path):
+    server = lab(Behaviour())
+    monkeypatch.delenv("NETCONF_SSH_PASSWORD")
+    secret = tmp_path / "gnb2"
+    secret.write_text("secret\n")
+    monkeypatch.setenv("NETCONF_CRED_GNB2_PASSWORD_FILE", str(secret))
+    assert send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="k4", credential_ref="gnb2").applied
+
+
+def test_a_reference_that_resolves_to_nothing_is_refused_not_replaced_by_the_shared_credential(lab, monkeypatch):
+    server = lab(Behaviour())
+    monkeypatch.setenv("NETCONF_SSH_PASSWORD", "secret")                                  # would work, and must not be used
+    result = send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="k5", credential_ref="unconfigured")
+    assert not result and result.reason == "NETCONF_RPC_FAILED" and "not configured" in result.detail and server.behaviour.received == []
+
+
+def test_an_unreadable_secret_file_names_the_variable_never_a_value(lab, monkeypatch):
+    server = lab(Behaviour())
+    monkeypatch.setenv("NETCONF_CRED_BROKEN_PASSWORD_FILE", "/nonexistent/secret")
+    result = send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="k6", credential_ref="broken")
+    assert not result and result.detail == "credential 'broken': SecretFileError"
+
+
+def test_credentials_for_reads_the_key_file_and_the_shared_fallback(monkeypatch, tmp_path):
+    from app.netconf_ssh import credentials_for
+    monkeypatch.setenv("NETCONF_CRED_RU_1_KEY_FILE", "/keys/ru-1")
+    monkeypatch.setenv("NETCONF_SSH_PASSWORD", "shared")
+    monkeypatch.setenv("NETCONF_SSH_KEY_FILE", "/keys/shared")
+    assert credentials_for("ru-1") == (None, "/keys/ru-1")
+    assert credentials_for(None) == ("shared", "/keys/shared")
+
+
+@pytest.mark.parametrize("ref", ["Hunter2!", "p@ssw0rd", "UPPER", "1abc", "has space", "a" * 64, "", "x/y"])
+def test_a_value_that_is_not_shaped_like_a_name_is_refused_without_echoing_it(ref, monkeypatch):
+    from app.netconf_ssh import check_credential_ref
+    with pytest.raises(ValueError) as exc:
+        check_credential_ref(ref)
+    assert ref not in str(exc.value) or ref == ""
+
+
+def test_a_name_that_names_no_configured_credential_is_refused(monkeypatch):
+    from app.netconf_ssh import check_credential_ref
+    with pytest.raises(ValueError, match="no credential configured"):
+        check_credential_ref("never-configured")
+    monkeypatch.setenv("NETCONF_CRED_NOW_CONFIGURED_PASSWORD", "x")
+    check_credential_ref("now-configured")

@@ -12,7 +12,7 @@ parsers, so the same `EditResult` reasons come out of both transports:
 The endpoint's `adaptor_uri` is `ssh://user@host[:port]` (default port 830), optionally with `?model=<name>` (a YANG model payload, yang_payload.py)
 and `?datastore=candidate` (each write is one transaction on the candidate datastore, PR-SB-1.8: lock, edit-config, commit, unlock; a failed step
 sends discard-changes first so nothing half-applied is left behind; default `running`). Host keys are checked against
-`NETCONF_SSH_KNOWN_HOSTS` and an unknown or changed key is always refused; the credentials are a stopgap until PR-SB-2 (see the ADR).
+`NETCONF_SSH_KNOWN_HOSTS` and an unknown or changed key is always refused; credentials are per endpoint (PR-SB-2): the endpoint's `credential_ref` names them, see `credentials_for`.
 """
 
 import logging
@@ -43,6 +43,46 @@ class NetconfSshError(Exception):
     def __init__(self, reason: str, detail: str = ""):
         super().__init__(f"{reason}: {detail}" if detail else reason)
         self.reason, self.detail = reason, detail
+
+
+CREDENTIAL_REF = re.compile(r"^[a-z][a-z0-9_-]{0,62}$")
+
+
+def check_credential_ref(ref: str) -> None:
+    """A credential reference is a lower-case name, not a secret: ValueError (which never repeats the value) when it is not shaped like one,
+    or names no credential this service has been given. Used when an endpoint is registered (PR-SB-2.1)."""
+    if not CREDENTIAL_REF.match(ref):
+        raise ValueError("credentialRef must be a credential name (lower-case letters, digits, '-' and '_', starting with a letter), "
+                         "never the secret itself")
+    if not credential_configured(ref):
+        raise ValueError("credentialRef names no credential configured on this service: it is a name, never the secret itself "
+                         "(see NETCONF_CRED_<NAME>_PASSWORD / _PASSWORD_FILE / _KEY_FILE in docs/SECRETS.md)")
+
+
+def _cred_var(ref: str, part: str) -> str:
+    return f"NETCONF_CRED_{ref.upper().replace('-', '_')}_{part}"
+
+
+def credential_configured(ref: str) -> bool:
+    return any(os.environ.get(_cred_var(ref, part)) or os.environ.get(_cred_var(ref, part) + "_FILE") for part in ("PASSWORD", "KEY_FILE"))
+
+
+def credentials_for(ref: str | None) -> tuple[str | None, str | None]:
+    """(password, private key file) for an endpoint. With a `credential_ref` they are `NETCONF_CRED_<REF>_PASSWORD` (or `_PASSWORD_FILE`, the
+    `*_FILE` convention of smo_shared/secretfile.py) and `NETCONF_CRED_<REF>_KEY_FILE`, from this service's own environment or mounted
+    secrets: the database holds the name, never the value. A reference that resolves to nothing is an error (no fallback to the shared
+    credential: an endpoint that names one must get that one). Without a reference the shared `NETCONF_SSH_PASSWORD` / `NETCONF_SSH_KEY_FILE`
+    of PR-SB-1 apply."""
+    if ref is None:
+        return read_secret("NETCONF_SSH_PASSWORD"), os.environ.get("NETCONF_SSH_KEY_FILE") or None
+    try:
+        password = read_secret(_cred_var(ref, "PASSWORD"))
+    except Exception as exc:                                    # noqa: BLE001 - a missing or conflicting secret file: say which variable, never a value
+        raise NetconfSshError("NETCONF_RPC_FAILED", f"credential {ref!r}: {type(exc).__name__}") from exc
+    key_file = os.environ.get(_cred_var(ref, "KEY_FILE")) or None
+    if password is None and key_file is None:
+        raise NetconfSshError("NETCONF_RPC_FAILED", f"credential {ref!r} is not configured on this service")
+    return password, key_file
 
 
 def parse_ssh_uri(adaptor_uri: str) -> tuple[str, str, int]:
@@ -78,8 +118,9 @@ def _host_key_policy(client: paramiko.SSHClient) -> None:
 class NetconfSession:
     """One SSH connection with an established NETCONF session: `with NetconfSession(uri) as s: s.rpc(xml)`."""
 
-    def __init__(self, adaptor_uri: str, timeout: float | None = None):
+    def __init__(self, adaptor_uri: str, timeout: float | None = None, credential_ref: str | None = None):
         self.user, self.host, self.port = parse_ssh_uri(adaptor_uri)
+        self.credential_ref = credential_ref
         self.timeout = NETCONF_TIMEOUT_SECONDS if timeout is None else timeout
         self.chunked = False
         self.server_capabilities: list[str] = []
@@ -110,9 +151,9 @@ class NetconfSession:
     def _connect(self) -> None:
         client = self._client = paramiko.SSHClient()
         _host_key_policy(client)
-        key_file = os.environ.get("NETCONF_SSH_KEY_FILE") or None
+        password, key_file = credentials_for(self.credential_ref)
         try:
-            client.connect(self.host, port=self.port, username=self.user, password=read_secret("NETCONF_SSH_PASSWORD"),
+            client.connect(self.host, port=self.port, username=self.user, password=password,
                            key_filename=key_file, timeout=self.timeout, banner_timeout=self.timeout,
                            auth_timeout=self.timeout, allow_agent=False, look_for_keys=False)
             channel = self._channel = client.get_transport().open_session(timeout=self.timeout)
@@ -256,7 +297,7 @@ def candidate_transaction(session: "NetconfSession", message_id: str, edit_rpc: 
 
 # Same call shapes as netconf_client.send_edit_config / send_get_config, which is how main.py picks them.
 def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict, message_id: str, operation: str = "merge",
-                     managed_function_ref: str | None = None) -> EditResult:
+                     managed_function_ref: str | None = None, credential_ref: str | None = None) -> EditResult:
     model = yang_payload.model_of(adaptor_uri)
     datastore = yang_payload.datastore_of(adaptor_uri)
     try:
@@ -266,7 +307,7 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
     except ValueError as exc:                                      # an operation the model path does not know: nothing is sent
         return EditResult(False, "NETCONF_RPC_FAILED", str(exc))
     try:
-        with NetconfSession(adaptor_uri) as session:
+        with NetconfSession(adaptor_uri, credential_ref=credential_ref) as session:
             if datastore == "candidate":
                 return candidate_transaction(session, message_id, rpc)
             return edit_outcome(session.rpc(rpc))
@@ -275,11 +316,12 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
         return EditResult(False, exc.reason, exc.detail or None)
 
 
-def send_get_config(adaptor_uri: str, target_ref: str, message_id: str, managed_function_ref: str | None = None) -> dict | None:
+def send_get_config(adaptor_uri: str, target_ref: str, message_id: str, managed_function_ref: str | None = None,
+                    credential_ref: str | None = None) -> dict | None:
     model = yang_payload.model_of(adaptor_uri)
     profile = yang_payload.PROFILES[model] if model else None
     try:
-        with NetconfSession(adaptor_uri) as session:
+        with NetconfSession(adaptor_uri, credential_ref=credential_ref) as session:
             if profile:
                 reply = session.rpc(yang_payload.build_get_config_rpc(profile, message_id, target_ref, managed_function_ref))
                 return yang_payload.config_attributes(profile, reply, target_ref, managed_function_ref)

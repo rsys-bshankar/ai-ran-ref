@@ -21,7 +21,7 @@ considered: ncclient, scrapli-netconf and asyncssh.
 5. **Host keys are checked, with no escape hatch.** A connection is refused unless the host key is in the file named by `NETCONF_SSH_KNOWN_HOSTS`;
    there is no trust-on-first-use and no switch to skip the check (CodeQL flags `AutoAddPolicy`, rightly). The lab compose profile (`SB-1.4`)
    writes a known_hosts file for its own server instead.
-6. **Credentials are a stopgap until `SB-2`:** the user name is part of the registered `ssh://user@host:port` URI; the password
+6. **Credentials (superseded in part by `SB-2.1`/`2.2`, `HISTORY.md` §10):** the stopgap below remains the default for an endpoint without a `credential_ref`; the user name is part of the registered `ssh://user@host:port` URI; the password
    (`NETCONF_SSH_PASSWORD`, `*_FILE` convention, `smo_shared/secretfile.py`) or a private key file (`NETCONF_SSH_KEY_FILE`) comes
    from the module's environment. `SB-2.1`/`2.2` replace this with a per-endpoint `credential_ref`.
 7. **Selection by an explicit `transport` column** on `o1_adaptor_endpoint` (`http-mock` default, `ssh`), not by guessing from the
