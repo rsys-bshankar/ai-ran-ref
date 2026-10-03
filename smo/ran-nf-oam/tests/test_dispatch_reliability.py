@@ -200,7 +200,8 @@ class FakeClock:
             return EditResult(False, "NETCONF_TIMEOUT")
 
         self._monkeypatch.setattr("app.main.send_edit_config", send)
-        return main._dispatch_with_retries("http://adaptor", CHANGE, {"a": 1}, "job-1", "merge")
+        applied, reason, attempts, _detail = main._dispatch_with_retries("http://adaptor", CHANGE, {"a": 1}, "job-1", "merge")
+        return applied, reason, attempts
 
 
 @pytest.fixture

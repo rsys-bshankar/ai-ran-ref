@@ -199,6 +199,8 @@ class WriteConfigSubChange(Base):
     operation: Mapped[str] = mapped_column(String, nullable=False, default="merge")
     status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
     rejection_reason: Mapped[str | None] = mapped_column(String)
+    # PR-SB-1.7: what the adaptor said (its <rpc-error>: tag, path, message), bounded; the reason above stays the stable code
+    rejection_detail: Mapped[str | None] = mapped_column(String)
     # Wave 10.1 (W10-19): edit-config attempts made, retries included
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 

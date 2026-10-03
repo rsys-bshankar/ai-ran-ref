@@ -80,3 +80,22 @@ def config_attributes(profile: Profile, root, target_ref: str, managed_function_
         if leaves.get(profile.key_leaf) == key:
             return {to_attribute_name(name): value for name, value in leaves.items() if name != profile.key_leaf}
     return {}
+
+
+OPERATIONS = ("merge", "replace", "create", "delete", "remove")
+
+
+def build_edit_config_rpc(profile: Profile, message_id: str, target_ref: str, attribute_changes: dict, operation: str = "merge",
+                          managed_function_ref: str | None = None, target: str = "running") -> str:
+    """An `<edit-config>` on the model's list entry (RFC 6241 section 7.2): the `operation` attribute is on the entry, the key leaf
+    names it, and each attribute is a leaf. A delete or remove carries the key only. `target` is `running` or `candidate`."""
+    if operation not in OPERATIONS:
+        raise ValueError(f"unknown edit operation {operation!r}")
+    if target not in ("running", "candidate"):
+        raise ValueError(f"unknown datastore {target!r}")
+    leaves = "" if operation in ("delete", "remove") else "".join(
+        f"<{to_yang_name(name)}>{escape(str(value))}</{to_yang_name(name)}>" for name, value in attribute_changes.items())
+    key = escape(_key(target_ref, managed_function_ref))
+    return (f'<rpc message-id="{escape(message_id)}" xmlns="{NETCONF_BASE_NS}"><edit-config><target><{target}/></target><config>'
+            f'<{profile.container} xmlns="{profile.namespace}"><{profile.list_name} xmlns:nc="{NETCONF_BASE_NS}" nc:operation="{operation}">'
+            f"<{profile.key_leaf}>{key}</{profile.key_leaf}>{leaves}</{profile.list_name}></{profile.container}></config></edit-config></rpc>")

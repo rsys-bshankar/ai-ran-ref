@@ -99,6 +99,18 @@ def test_the_config_route_reads_a_model_based_server(client, lab):
     assert "managed-object" not in lab.behaviour.received[-1]
 
 
+def test_a_rejected_model_write_reports_what_the_server_said(client, lab):
+    """PR-SB-1.6/1.7 through the route: the job is rejected, the reason is the stable code, and the server's rpc-error is the detail."""
+    lab.behaviour.edit_reply = ("<rpc-error><error-tag>invalid-value</error-tag><error-path>/lab/cell/tx-power</error-path>"
+                                "<error-message>out of range</error-message></rpc-error>")
+    assert _register(client, lab.uri + "?model=smo-lab", transport="ssh").status_code == 201
+    resp = client.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell", "changes": [
+        {"managedElementRef": "ME-1", "managedFunctionRef": "GNBDUFunction=1,NRCellDU=101", "attributeChanges": {"txPower": 70000}}]})
+    sub = client.get(f"/config-jobs/{resp.json()['jobId']}").json()["subChanges"][0]
+    assert sub["status"] == "REJECTED" and sub["rejectionReason"] == "NETCONF_RPC_FAILED" and sub["attempts"] == 1
+    assert sub["rejectionDetail"] == "invalid-value (a value is not acceptable) at /lab/cell/tx-power: out of range"
+
+
 def test_registration_refuses_an_unknown_model(client, lab):
     assert _register(client, lab.uri + "?model=nope", transport="ssh").status_code in (400, 422)
 

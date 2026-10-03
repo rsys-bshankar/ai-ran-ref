@@ -8,7 +8,7 @@ model's data with <get-config>. Exit 0 only when the seeded values come back. Se
 import sys
 import xml.etree.ElementTree as ET
 
-from app.netconf_ssh import BASE_10, BASE_11, NetconfSession, NetconfSshError, send_get_config
+from app.netconf_ssh import BASE_10, BASE_11, NetconfSession, NetconfSshError, send_edit_config, send_get_config
 
 NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
 GET_LAB = (f'<rpc message-id="lab-1" xmlns="{NS}"><get-config><source><running/></source>'
@@ -55,6 +55,25 @@ def main() -> int:
         print("FAIL: the model-based read did not return cell 102's seeded values", file=sys.stderr)
         return 1
     print("OK: the route's read (send_get_config with ?model=smo-lab) returns cell 102")
+    # PR-SB-1.6/1.7: a write the way the route makes it, read back, put back; and a value outside the model's range, refused with the
+    # server's own reason
+    model_uri, me, function = uri + "?model=smo-lab", "SubNetwork=lab,ManagedElement=ME-1", "GNBDUFunction=1,NRCellDU=101"
+    done = send_edit_config(model_uri, me, {"txPower": 41}, "lab-3", "merge", function)
+    print("edit-config tx-power 41 on cell 101:", done.applied, done.reason, done.detail)
+    if not done.applied:
+        print("FAIL: the lab server did not apply a valid write", file=sys.stderr)
+        return 1
+    after = send_get_config(model_uri, me, "lab-4", function)
+    send_edit_config(model_uri, me, {"txPower": 40}, "lab-5", "merge", function)   # put the seeded value back
+    if not after or after.get("txPower") != "41":
+        print(f"FAIL: the write is not in the running datastore: {after}", file=sys.stderr)
+        return 1
+    refused = send_edit_config(model_uri, me, {"txPower": 99}, "lab-6", "merge", function)
+    print("edit-config tx-power 99 on cell 101:", refused.applied, refused.reason, refused.detail)
+    if refused.applied or refused.reason != "NETCONF_RPC_FAILED" or not refused.detail:
+        print("FAIL: an out-of-range value was not refused with a reason", file=sys.stderr)
+        return 1
+    print("OK: a valid write is applied and read back, an out-of-range one is refused with the server's detail")
     return 0
 
 
