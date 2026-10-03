@@ -393,9 +393,10 @@ services:
     profiles: ["netconf-lab"]
     image: sysrepo/sysrepo-netopeer2@sha256:36cc1d841c97f118d62f775024d60fb1ce210c3bca6b32135c1a9e5a358a1cc9
     command: ["/bin/sh", "/lab/start.sh"]
-    ports: ["127.0.0.1:8830:830"]
+    ports: ["127.0.0.1:8830:830", "127.0.0.1:6513:6513"]       # SSH, and NETCONF over TLS (PR-SB-2.5)
     volumes:
       - ./netconf-lab:/lab:ro
+      - ./netconf-lab/pki:/pki                                  # the lab's throwaway CA and client certificate, written at start (git-ignored)
 
   # `docker compose --profile tls up -d` adds an HTTPS door in front of the GUI (:3443) and R1 Termination (:8443).
   # Run scripts/make_dev_certs.sh first. The default stack does not start it and needs no certificate.

@@ -2,9 +2,10 @@
 """Check the netconf-lab server with the SSH session wrapper of RAN NF OAM (PR-SB-1.3 and 1.4): connect, exchange <hello>, read the lab
 model's data with <get-config>. Exit 0 only when the seeded values come back. See netconf-lab/README.md.
 
-    NETCONF_SSH_KNOWN_HOSTS=... NETCONF_SSH_PASSWORD=netconf PYTHONPATH=ran-nf-oam:shared python scripts/netconf_lab_check.py [ssh://netconf@127.0.0.1:8830]
+    NETCONF_SSH_KNOWN_HOSTS=... NETCONF_SSH_PASSWORD=netconf [NETCONF_LAB_TLS_URI=... NETCONF_CRED_LABTLS_*=...] PYTHONPATH=ran-nf-oam:shared python scripts/netconf_lab_check.py [ssh://netconf@127.0.0.1:8830]
 """
 
+import os
 import sys
 import xml.etree.ElementTree as ET
 
@@ -74,6 +75,35 @@ def main() -> int:
         print("FAIL: an out-of-range value was not refused with a reason", file=sys.stderr)
         return 1
     print("OK: a valid write is applied and read back, an out-of-range one is refused with the server's detail")
+    return check_tls(me, function)
+
+
+def check_tls(me: str, function: str) -> int:
+    """PR-SB-2.5: the same read, write and refusal over NETCONF-over-TLS with a client certificate, when NETCONF_LAB_TLS_URI names the lab's
+    TLS listener (tls://127.0.0.1:6513?model=smo-lab) and the endpoint's credential `labtls` is configured (NETCONF_CRED_LABTLS_CERT_FILE,
+    _KEY_FILE, _CA_FILE: the files the lab wrote to netconf-lab/pki)."""
+    uri = os.environ.get("NETCONF_LAB_TLS_URI")
+    if not uri:
+        print("(no NETCONF_LAB_TLS_URI: the TLS listener is not checked)")
+        return 0
+    read = send_get_config(uri, me, "tls-1", function, credential_ref="labtls")
+    print("TLS read of cell 101:", read)
+    if not read or read.get("txPower") != "40":
+        print("FAIL: the TLS read did not return cell 101's seeded values", file=sys.stderr)
+        return 1
+    done = send_edit_config(uri, me, {"txPower": 42}, "tls-2", "merge", function, credential_ref="labtls")
+    after = send_get_config(uri, me, "tls-3", function, credential_ref="labtls")
+    send_edit_config(uri, me, {"txPower": 40}, "tls-4", "merge", function, credential_ref="labtls")                 # put the seeded value back
+    print("TLS edit-config tx-power 42:", done.applied, done.reason, done.detail, "| read back:", after)
+    if not done.applied or not after or after.get("txPower") != "42":
+        print("FAIL: the TLS write was not applied and read back", file=sys.stderr)
+        return 1
+    refused = send_edit_config(uri, me, {"txPower": 99}, "tls-5", "merge", function, credential_ref="labtls")
+    print("TLS edit-config tx-power 99:", refused.applied, refused.reason, refused.detail)
+    if refused.applied or refused.reason != "NETCONF_RPC_FAILED" or not refused.detail:
+        print("FAIL: an out-of-range value over TLS was not refused with a reason", file=sys.stderr)
+        return 1
+    print("OK: over TLS with a client certificate, a read, a write and a refusal behave as over SSH")
     return 0
 
 

@@ -9,4 +9,6 @@ sysrepocfg --import=/lab/smo-lab-data.xml --datastore=running --module=smo-lab
 # (PR-SB-1.6 saw `access-denied ... NACM authorization failed`). This is a lab: reads, writes and RPCs are permitted by default.
 sysrepocfg --import=/lab/nacm.xml --datastore=startup --module=ietf-netconf-acm
 sysrepocfg --import=/lab/nacm.xml --datastore=running --module=ietf-netconf-acm
+# PR-SB-2.5: a TLS listener on 6513 with a throwaway PKI (netconf-lab/tls.sh); /pki carries the client files out
+. /lab/tls.sh
 exec /usr/bin/supervisord -c /etc/supervisord.conf
