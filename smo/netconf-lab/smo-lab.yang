@@ -1,0 +1,26 @@
+module smo-lab {
+  yang-version 1.1;
+  namespace "urn:smo:lab";
+  prefix lab;
+
+  organization "SMO reference implementation";
+  description
+    "A small model for the netconf-lab profile (PR-SB-1.4): a list of cells with an administrative state and a transmit power.
+     It exists so a real NETCONF server has something to answer get-config with; it is not a 3GPP or O-RAN model.";
+  revision 2026-10-03 { description "Initial version."; }
+
+  container lab {
+    list cell {
+      key "id";
+      leaf id { type string; }
+      leaf administrative-state {
+        type enumeration { enum locked; enum unlocked; }
+        default unlocked;
+      }
+      leaf tx-power {
+        type uint16 { range "0..46"; }
+        units "dBm";
+      }
+    }
+  }
+}
