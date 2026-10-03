@@ -41,9 +41,10 @@ Each item in sections 1–4: what is missing, why it matters, suggested approach
   `notifyFileReady`). TS 28.532 streaming data reporting is not: there is no streaming transport,
   and `delivery_method=stream` stays a registration (MDAF's `STREAMING` is likewise recorded only,
   `SA-MDA-5`). Approach: a streaming transport shared by RAN NF OAM and MDAF, when a consumer needs one.
-- **SA-RANOAM-4 / SA-O1-1 (containment)** — DN refs are parsed and validated and the IOC class is
-  taken from the last RDN, but `managedElementRef` is still a flat registry key and there is no DN
-  containment tree (the accepted D-9 deviation).
+- **SA-RANOAM-4 / SA-O1-1 (containment)** — DN refs are parsed and validated, the IOC class is
+  taken from the last RDN, and the registry now has a containment tree (`managed_object`, `GET /managed-objects/{dn}/children`, PR-SB-6.1).
+  `managedElementRef` is still a flat registry key (its root DN is `ManagedElement=<ref>`), and the tree holds only what the registry
+  knows until a server walk fills it (SB-6.2).
 - **SA-RANOAM-1 (reach)** — MSAC guards CM writes only. Reads (`GET .../config`) and the other write
   routes are not evaluated. Approach: reuse `msac.authorize` per route.
 
@@ -695,16 +696,12 @@ A CM write's values are checked against the leaf's YANG type, range, length, pat
 | SB-5.4 | Unknown-attribute policy flag: reject or pass | Both modes tested | SB-5.2 |
 | SB-5.5 | `must` constraint support (enum, pattern, length and range are done: `SB-5.1`) | Tests | SB-5.2 done |
 
-#### PR-SB-6 — MO containment tree (`SA-RANOAM-4`)
+#### PR-SB-6 — MO containment tree (`SA-RANOAM-4`; SB-6.1, 6.3, 6.4, 6.6 done: `HISTORY.md` §10)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-6.1 | `managed_object` table: dn, parent_dn, class, element ref | Migration | – |
 | SB-6.2 | Populate it from a `get-config` walk | Tree matches the lab server | SB-6.1 |
-| SB-6.3 | `GET /managed-objects/{dn}/children` | Route test | SB-6.1 |
-| SB-6.4 | Subtree read | Route test | SB-6.3 |
 | SB-6.5 | Reject a sub-change whose target DN is not in the tree (flag, off by default) | Test | SB-6.2 |
-| SB-6.6 | Migration of flat `managedElementRef` rows to root DNs | Existing tests green | SB-6.1 |
 | SB-6.7 | TEIV export built from the tree | Export includes parent links | SB-6.2 |
 
 #### PR-SB-7 — VES event receiver

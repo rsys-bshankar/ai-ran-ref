@@ -41,9 +41,10 @@ from smo_shared.outbox import enqueue
 from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 
-from .models import Alarm, CMSchemaCache, CMSnapshot, FileSubscription, VendorCapability, FMSubscription, ManagedEntity, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, CMSchemaCache, CMSnapshot, FileSubscription, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
+from . import mo_tree
 from . import netconf_tls
 from . import restconf_client
 from . import netconf_ssh
@@ -322,6 +323,8 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
                         entity_type=body.entityType, vendor_name=body.vendorName, o1_protocol=body.o1Protocol,
                         o1_adaptor_endpoint_id=endpoint.endpoint_id)
     db.add(me)
+    db.flush()
+    mo_tree.sync_registry(db, me)              # PR-SB-6: the element's root (and the function it was registered with) join the containment tree
     db.commit()
     return {"endpointId": str(endpoint.endpoint_id), "managedElementRef": me.managed_element_ref, "healthStatus": endpoint.health_status}
 
@@ -388,6 +391,40 @@ def unpin_host_key(endpoint_id: uuid.UUID, key_type: str, db: Session = Depends(
         raise framework_error(FrameworkError.O1_HOST_KEY_NOT_FOUND, detail=f"no {key_type} host key is pinned for this endpoint")
     db.delete(row)
     db.commit()
+
+
+# --- PR-SB-6: the managed-object containment tree -------------------------------------------------------------------------------------------
+
+
+def _managed_object(db: Session, dn: str) -> ManagedObject:
+    obj = db.get(ManagedObject, dn)
+    if obj is None:
+        raise framework_error(FrameworkError.MANAGED_OBJECT_NOT_FOUND, detail=f"no managed object {dn!r} in the tree")
+    return obj
+
+
+@app.get("/managed-objects/{dn}")
+def read_managed_object(dn: str, db: Session = Depends(get_session)):
+    """PR-SB-6: one node of the containment tree by its distinguished name (`ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101`)."""
+    return mo_tree.view(_managed_object(db, dn))
+
+
+@app.get("/managed-objects/{dn}/children")
+def list_managed_object_children(dn: str, limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """PR-SB-6.3: the direct children of a node (404 `MANAGED_OBJECT_NOT_FOUND` when the node itself is not in the tree), ordered by class then id."""
+    _managed_object(db, dn)
+    page = paginate(db, mo_tree.children_stmt(dn), limit, offset)
+    return {**page, "items": [mo_tree.view(o) for o in page["items"]]}
+
+
+@app.get("/managed-objects/{dn}/subtree")
+def read_managed_object_subtree(dn: str, depth: int = Query(default=mo_tree.MAX_SUBTREE_DEPTH, ge=0, le=mo_tree.MAX_SUBTREE_DEPTH),
+                                db: Session = Depends(get_session)):
+    """PR-SB-6.4: a node and its descendants as a nested tree (`children` on each node), down to `depth` levels below it (default and most 16).
+    At most 1000 nodes are returned; `truncated` says when that cut the answer short."""
+    _managed_object(db, dn)
+    tree, truncated = mo_tree.subtree(db, dn, depth)
+    return {"tree": tree, "truncated": truncated}
 
 
 def _dispatch_blocker(db: Session, change: dict):
