@@ -97,7 +97,7 @@ None: stateless.
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
 | GET | `/health` | Liveness of the gateway itself; no auth; an alias of `/live`. A backend's own probes are reached as `/<module>/health`, `/<module>/ready` and is token-gated like any call (the GUI BFF's `GET /modules/status` probes both). | none |
-| GET | `/bootstrap` | `{apiEndpoints: [...]}` with exactly two entries, `service-apis` (discovery) and `published-apis` (registration), each with `tokenEndPoint.uri` and `apiEndPoint.uri`; no auth, URI-stable. | none |
+| GET | `/bootstrap` | `{apiEndpoints: [...]}` with exactly two entries, `service-apis` (discovery) and `published-apis` (registration), each with `tokenEndPoint.uri` and `apiEndPoint.uri`; no auth, URI-stable. The URIs name SME on the compose network, or, with `R1_PUBLIC_BASE_URL` set (an origin, never taken from request headers), `<base>/sme/...` with the token endpoint at `<base>/sme/oauth2/token` (PR-SEC-1.6). | none |
 | GET, POST, PUT, PATCH, DELETE | `/{prefix}/{rest}` | Authenticate, strip `/{prefix}`, forward method, headers, query string and body to `ROUTES[prefix]/{rest}`; return the upstream status, headers and body. | `404 NO_ROUTE` unknown prefix; `401 UNAUTHORIZED` token check failed |
 
 Notes:
@@ -149,6 +149,7 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 |---|---|---|
 | `<NAME>_URL` per route | see the route table | Backend base URL for that prefix. `DME_URL` serves three prefixes. |
 | `R1_UPSTREAM_TIMEOUT_SECONDS` | `60` | How long the gateway waits for the backend it proxies to |
+| `R1_PUBLIC_BASE_URL` | unset | The origin consumers outside the compose network reach the gateway by (`https://localhost:8443` behind the TLS edge): `/bootstrap` advertises it instead of SME's compose address (PR-SEC-1.6). Validated at start |
 | `R1_MAX_BODY_BYTES` | `1048576` | Largest request body any route accepts (413 over it) |
 | `R1_MAX_BODY_OVERRIDES` | `/mlmr/models/*/artifact=52428800` | `<path-pattern>=<bytes>,...` caps that replace the default for matching paths (`*` matches anything); the default is the model artifact upload, 50 MiB like the GUI's nginx. Setting it replaces this default |
 | `R1_RATE_PER_SECOND` | `100` | Requests a second each caller (invoker id) may sustain; `0` turns the limiter off |

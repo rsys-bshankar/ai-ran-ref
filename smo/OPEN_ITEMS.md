@@ -298,7 +298,6 @@ are plain HTTP.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-1.6 | `/bootstrap` advertises `https` URLs under the profile | rApp demo works over HTTPS | – |
 
 #### PR-SEC-2 — mTLS between services
 
@@ -1421,7 +1420,7 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):** done.
-2. **Safe to expose:** done except SEC-13.2 and SEC-1.6.
+2. **Safe to expose:** done except SEC-13.2 (SEC-1.6 done: `HISTORY.md` §10).
 3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: OBS-2.6 and 2.8, OPS-4.1b (cutting the first tag). OPS-1.6 done.
 4. **Durable notifications:** MSG-1.1–1.10 done (SA SMOS has no destination call to move; the DME stop-job DELETE moved last, as a `DELETE` row).
 5. **First real O1 path:** SB-3, SB-5.1–5.2, SB-1.1–1.2 done; SB-1.3 and 1.4 done (the netopeer2 lab answers the SSH wrapper in CI); SB-1.5's route needs the real-server payload shape.
