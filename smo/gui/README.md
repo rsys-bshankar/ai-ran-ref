@@ -195,7 +195,7 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 
 | Screen | What it shows |
 |---|---|
-| [Packages (tab)](docs/screenshots/pages/rapps-packages.png) | Onboarded packages with state, signature and NF descriptor; one FAILED, one PRIMED, the rest AVAILABLE |
+| [Packages (tab)](docs/screenshots/pages/rapps-packages.png) | Onboarded packages with state, signature and NF descriptor; two FAILED (rejected duplicate onboardings), the rest AVAILABLE |
 | [Instances (tab)](docs/screenshots/pages/rapps-instances.png) | rApp instances with state and autonomy mode (SHADOW, ASSIST, AUTONOMOUS) |
 | [Package: failed validation](docs/screenshots/lcm/rapps-package-failed.png) | A package that never became AVAILABLE; nothing to deploy, only Delete |
 | [Onboard a package](docs/screenshots/lcm/rapps-onboard-form.png) | The CSAR location form, filled but not submitted |
