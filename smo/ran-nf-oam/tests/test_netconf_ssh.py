@@ -139,3 +139,39 @@ def test_the_password_file_convention_is_honoured(lab, tmp_path, monkeypatch):
     monkeypatch.delenv("NETCONF_SSH_PASSWORD")
     monkeypatch.setenv("NETCONF_SSH_PASSWORD_FILE", str(secret))
     assert send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="m14").applied
+
+
+LAB_DATA = ('<lab xmlns="urn:smo:lab"><cell><id>101</id><administrative-state>unlocked</administrative-state><tx-power>40</tx-power></cell>'
+            '<cell><id>102</id><administrative-state>locked</administrative-state><tx-power>33</tx-power></cell></lab>')
+
+
+def test_a_model_uri_reads_the_real_data_nodes_not_the_managed_object_shape(lab):
+    """PR-SB-1.5: ?model=smo-lab sends a subtree filter on the lab model's list entry and maps the leaves back to SMO attribute names."""
+    server = lab(Behaviour(data=LAB_DATA))
+    uri = server.uri + "?model=smo-lab"
+    assert send_get_config(uri, "SubNetwork=A,ManagedElement=ME-1", message_id="g2",
+                           managed_function_ref="GNBDUFunction=1,NRCellDU=102") == {"administrativeState": "locked", "txPower": "33"}
+    sent = server.behaviour.received[-1]
+    assert 'type="subtree"' in sent and '<lab xmlns="urn:smo:lab"><cell><id>102</id></cell></lab>' in sent and "managed-object" not in sent
+    assert send_get_config(uri, "ME-1", message_id="g3", managed_function_ref="101") == {"administrativeState": "unlocked", "txPower": "40"}
+    assert send_get_config(uri, "ME-1", message_id="g4", managed_function_ref="NRCellDU=999") == {}
+
+
+def test_a_model_uri_is_validated_when_it_is_parsed():
+    assert parse_ssh_uri("ssh://u@h:830?model=smo-lab") == ("u", "h", 830)
+    for bad in ("ssh://u@h?model=nope", "ssh://u@h?model=smo-lab&model=smo-lab", "ssh://u@h?mode=smo-lab"):
+        with pytest.raises(NetconfSshError):
+            parse_ssh_uri(bad)
+
+
+def test_edit_config_to_a_model_uri_is_refused_until_sb_1_6(lab):
+    server = lab(Behaviour(data=LAB_DATA))
+    before = len(server.behaviour.received)
+    result = send_edit_config(server.uri + "?model=smo-lab", "ME-1", {"txPower": "30"}, message_id="m9", managed_function_ref="101")
+    assert not result and result.reason == "NETCONF_RPC_FAILED" and len(server.behaviour.received) == before
+
+
+def test_attribute_names_round_trip():
+    from app.yang_payload import to_attribute_name, to_yang_name
+    for attribute, leaf in (("administrativeState", "administrative-state"), ("txPower", "tx-power"), ("id", "id")):
+        assert to_yang_name(attribute) == leaf and to_attribute_name(leaf) == attribute

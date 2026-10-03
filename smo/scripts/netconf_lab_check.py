@@ -8,7 +8,7 @@ model's data with <get-config>. Exit 0 only when the seeded values come back. Se
 import sys
 import xml.etree.ElementTree as ET
 
-from app.netconf_ssh import BASE_10, BASE_11, NetconfSession, NetconfSshError
+from app.netconf_ssh import BASE_10, BASE_11, NetconfSession, NetconfSshError, send_get_config
 
 NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
 GET_LAB = (f'<rpc message-id="lab-1" xmlns="{NS}"><get-config><source><running/></source>'
@@ -48,6 +48,13 @@ def main() -> int:
             print(f"FAIL: cell {cell_id}: expected {expected}, got {got}", file=sys.stderr)
             return 1
     print("OK: get-config returned the seeded cells")
+    # PR-SB-1.5: the same read the way the /managed-entities/{ref}/config route makes it, with ?model=smo-lab
+    attributes = send_get_config(uri + "?model=smo-lab", "SubNetwork=lab,ManagedElement=ME-1", "lab-2", "GNBDUFunction=1,NRCellDU=102")
+    print("route-shaped read of cell 102:", attributes)
+    if attributes != {"administrativeState": "locked", "txPower": "33"}:
+        print("FAIL: the model-based read did not return cell 102's seeded values", file=sys.stderr)
+        return 1
+    print("OK: the route's read (send_get_config with ?model=smo-lab) returns cell 102")
     return 0
 
 

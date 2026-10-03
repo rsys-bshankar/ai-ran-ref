@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 import paramiko
 from smo_shared.secretfile import read_secret
 
+from . import yang_payload
 from .netconf_client import (NETCONF_BASE_NS, NETCONF_TIMEOUT_SECONDS, EditResult, build_edit_config_rpc,
                              build_get_config_rpc, config_attributes, edit_outcome, parse_reply)
 
@@ -50,7 +51,11 @@ def parse_ssh_uri(adaptor_uri: str) -> tuple[str, str, int]:
     except ValueError:
         port = 0
     if parts.scheme != "ssh" or not parts.hostname or not parts.username or not 0 < port < 65536:
-        raise NetconfSshError("NETCONF_RPC_FAILED", "an ssh adaptor URI is ssh://user@host[:port]")
+        raise NetconfSshError("NETCONF_RPC_FAILED", "an ssh adaptor URI is ssh://user@host[:port][?model=name]")
+    try:
+        yang_payload.model_of(adaptor_uri)
+    except ValueError as exc:
+        raise NetconfSshError("NETCONF_RPC_FAILED", str(exc)) from exc
     return parts.username, parts.hostname, port
 
 
@@ -209,6 +214,10 @@ def _parse_named(text: str, name: str):
 # Same call shapes as netconf_client.send_edit_config / send_get_config, which is how main.py picks them.
 def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict, message_id: str, operation: str = "merge",
                      managed_function_ref: str | None = None) -> EditResult:
+    if yang_payload.model_of(adaptor_uri):
+        # PR-SB-1.6: the write payload for a real model is not built yet; sending the <managed-object> shape to it would only be refused
+        log.warning("edit-config on %s: a model-based adaptor is read-only until PR-SB-1.6", target_ref)
+        return EditResult(False, "NETCONF_RPC_FAILED")
     rpc = build_edit_config_rpc(message_id, target_ref, attribute_changes, operation, managed_function_ref)
     try:
         with NetconfSession(adaptor_uri) as session:
@@ -219,8 +228,13 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
 
 
 def send_get_config(adaptor_uri: str, target_ref: str, message_id: str, managed_function_ref: str | None = None) -> dict | None:
+    model = yang_payload.model_of(adaptor_uri)
+    profile = yang_payload.PROFILES[model] if model else None
     try:
         with NetconfSession(adaptor_uri) as session:
+            if profile:
+                reply = session.rpc(yang_payload.build_get_config_rpc(profile, message_id, target_ref, managed_function_ref))
+                return yang_payload.config_attributes(profile, reply, target_ref, managed_function_ref)
             return config_attributes(session.rpc(build_get_config_rpc(message_id, target_ref, managed_function_ref)))
     except NetconfSshError as exc:
         log.warning("get-config on %s failed: %s", target_ref, exc)
