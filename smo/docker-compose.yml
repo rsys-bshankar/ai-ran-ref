@@ -19,10 +19,14 @@ x-ready-probe: &ready_probe
 
 # Container hardening for every service we build (PR-SEC-13): no Linux capability (a service binds port 8000 and
 # needs none), and no way to gain one through a setuid binary. Postgres keeps its defaults: its entrypoint
-# drops privileges itself and needs a few.
+# drops privileges itself and needs a few. The root filesystem is read-only (PR-SEC-13.2): a service writes only to /tmp
+# (memory, gone on restart) and to the named volumes it mounts (/data, /srv/packages, /srv/scratch). To put files into a
+# running container (the runbook's CSARs), copy them into the r1-termination volume at /srv/scratch, never into /tmp.
 x-hardening: &hardening
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs: ["/tmp"]
 
 # Every service that uses the database waits for it to be healthy AND for the one-shot `migrate` service to have
 # finished (PR-OPS-1.5): the schema is created and upgraded by the Alembic history, never by the services.
@@ -83,6 +87,8 @@ services:
     <<: *hardening
     healthcheck: *ready_probe
     ports: ["8080:8000"]
+    volumes:
+      - smo_scratch:/srv/scratch   # where the runbook copies the rApp CSARs it serves (`docker compose cp ... r1-termination:/srv/scratch/`)
     environment:
       # PR-SEC-1.6: unset, /bootstrap names SME on the compose network; set to the HTTPS door (https://localhost:8443 with the tls
       # profile) and it names that address instead, so a consumer that only reaches the edge can complete the flow.
@@ -424,5 +430,6 @@ networks:
 
 volumes:
   smo_pgdata:
+  smo_scratch:
   smo_packages:
   gui_bff_data:

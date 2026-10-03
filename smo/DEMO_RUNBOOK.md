@@ -51,8 +51,8 @@ Onboarding fetches the package over HTTP, so it needs a URL reachable
 inside the network:
 
 ```bash
-docker compose cp samples/energy-saving-rapp.csar r1-termination:/tmp/energy-saving-rapp.csar
-docker compose exec -d r1-termination python3 -m http.server 8899 --directory /tmp
+docker compose cp samples/energy-saving-rapp.csar r1-termination:/srv/scratch/energy-saving-rapp.csar
+docker compose exec -d r1-termination python3 -m http.server 8899 --directory /srv/scratch
 ```
 
 `http://r1-termination:8899/energy-saving-rapp.csar` is now reachable from
@@ -1595,16 +1595,16 @@ so "midnight behaviour" reproduces on any day.
 
 ```bash
 python3 samples/build_csar.py energy-saving-rapp      # only after editing the sample
-docker compose cp samples/energy-saving-rapp.csar r1-termination:/tmp/energy-saving-rapp.csar
-docker compose cp samples/energy-saving-rapp r1-termination:/tmp/energy-saving-rapp
-docker compose exec -d r1-termination python3 -m http.server 8899 --directory /tmp   # if §1 isn't already serving
+docker compose cp samples/energy-saving-rapp.csar r1-termination:/srv/scratch/energy-saving-rapp.csar
+docker compose cp samples/energy-saving-rapp r1-termination:/srv/scratch/energy-saving-rapp
+docker compose exec -d r1-termination python3 -m http.server 8899 --directory /srv/scratch   # if §1 isn't already serving
 ```
 
 Then run one step at a time and look at what each prints:
 
 | Step | Command (`docker compose exec r1-termination …`) | What to observe |
 |------|------|------|
-| Demo 00 — prepare the RAN | `python3 /tmp/energy-saving-rapp/demo.py 00` | `gnb-du-demo-01` registered behind `mock-o1-adaptor`, PRB PM subscribed, cell 103 marked EMERGENCY, the Digital Twin dataset and the O1-CM intent handler registered |
+| Demo 00 — prepare the RAN | `python3 /srv/scratch/energy-saving-rapp/demo.py 00` | `gnb-du-demo-01` registered behind `mock-o1-adaptor`, PRB PM subscribed, cell 103 marked EMERGENCY, the Digital Twin dataset and the O1-CM intent handler registered |
 | Demo 01 — onboard | `… demo.py 01` | package `AVAILABLE`; 4 execution modes, 3 autonomy modes; an AUTONOMOUS instance started |
 | Demo 02 — dataset | `… demo.py 02` | 288 PM measurements → DME; datasets TRAINING/INFERENCE = `PRB_UTILIZATION`, EMULATION = `PRB_UTILIZATION_SIM` |
 | Demo 03 — train | `… demo.py 03` | `TRAINING → TRAINED` on the MLTF runtime; RMSE and confidence; artifact stored in MLMR |
@@ -1617,7 +1617,7 @@ Then run one step at a time and look at what each prints:
 | Demo 10 — O1 update | `… demo.py 10` | `NRCellDU=101` read back over NETCONF get-config: `administrativeState: LOCKED`, verification `VERIFIED` |
 | Demo 11 — dashboard | `… demo.py 11` | per cell: state, PRB, predicted PRB, decision, outcome. In the GUI: **Energy Saving** |
 
-`python3 /tmp/energy-saving-rapp/demo.py all` runs every step. Things to
+`python3 /srv/scratch/energy-saving-rapp/demo.py all` runs every step. Things to
 try afterwards:
 
 * **Wake the cell.** Report a load spike and run the loop:
@@ -1658,16 +1658,16 @@ per Demo number. Timestamps are simulation time (handover history
 
 ```bash
 python3 samples/build_csar.py mobility-optimization-rapp      # only after editing the sample
-docker compose cp samples/mobility-optimization-rapp.csar r1-termination:/tmp/mobility-optimization-rapp.csar
-docker compose cp samples/mobility-optimization-rapp r1-termination:/tmp/mobility-optimization-rapp
-docker compose exec -d r1-termination python3 -m http.server 8899 --directory /tmp   # if not already serving
+docker compose cp samples/mobility-optimization-rapp.csar r1-termination:/srv/scratch/mobility-optimization-rapp.csar
+docker compose cp samples/mobility-optimization-rapp r1-termination:/srv/scratch/mobility-optimization-rapp
+docker compose exec -d r1-termination python3 -m http.server 8899 --directory /srv/scratch   # if not already serving
 ```
 
 Then run one step at a time:
 
 | Step | Command (`docker compose exec r1-termination …`) | What to observe |
 |------|------|------|
-| Demo 00 — prepare the RAN | `python3 /tmp/mobility-optimization-rapp/demo.py 00` | `gnb-du-mro-demo-01` registered behind `mock-o1-adaptor`, HO_PERFORMANCE PM subscribed, cell 204 marked EMERGENCY, the Digital Twin dataset and the O1-CM intent handler registered |
+| Demo 00 — prepare the RAN | `python3 /srv/scratch/mobility-optimization-rapp/demo.py 00` | `gnb-du-mro-demo-01` registered behind `mock-o1-adaptor`, HO_PERFORMANCE PM subscribed, cell 204 marked EMERGENCY, the Digital Twin dataset and the O1-CM intent handler registered |
 | Demo 01 — onboard | `… demo.py 01` | package `AVAILABLE`; an AUTONOMOUS instance over four relations started |
 | Demo 02 — dataset | `… demo.py 02` | 288 hourly per-relation counter sets → DME; datasets TRAINING/INFERENCE = `HO_PERFORMANCE`, EMULATION = `HO_PERFORMANCE_SIM` |
 | Demo 03 — train | `… demo.py 03` | `TRAINING → TRAINED`; the regression's weights and RMSE; artifact stored in MLMR |
@@ -1726,16 +1726,16 @@ midnight on the 4th).
 
 ```bash
 python3 samples/build_csar.py coverage-optimization-rapp      # only after editing the sample
-docker compose cp samples/coverage-optimization-rapp.csar r1-termination:/tmp/coverage-optimization-rapp.csar
-docker compose cp samples/coverage-optimization-rapp r1-termination:/tmp/coverage-optimization-rapp
-docker compose exec -d r1-termination python3 -m http.server 8899 --directory /tmp   # if not already serving
+docker compose cp samples/coverage-optimization-rapp.csar r1-termination:/srv/scratch/coverage-optimization-rapp.csar
+docker compose cp samples/coverage-optimization-rapp r1-termination:/srv/scratch/coverage-optimization-rapp
+docker compose exec -d r1-termination python3 -m http.server 8899 --directory /srv/scratch   # if not already serving
 ```
 
 Then run one step at a time:
 
 | Step | Command (`docker compose exec r1-termination …`) | What to observe |
 |------|------|------|
-| Demo 00 — prepare the RAN | `python3 /tmp/coverage-optimization-rapp/demo.py 00` | `gnb-cco-demo-01` registered behind `mock-o1-adaptor`, COVERAGE_PERFORMANCE PM subscribed, the four-cell cluster at 6.0° / 43 dBm |
+| Demo 00 — prepare the RAN | `python3 /srv/scratch/coverage-optimization-rapp/demo.py 00` | `gnb-cco-demo-01` registered behind `mock-o1-adaptor`, COVERAGE_PERFORMANCE PM subscribed, the four-cell cluster at 6.0° / 43 dBm |
 | Demo 01 — onboard | `… demo.py 01` | package `AVAILABLE`; an AUTONOMOUS instance over cells 301–304 started |
 | Demo 02 — dataset | `… demo.py 02` | 288 hourly per-cell windows → DME, with each cell's tilt or power stepped in turn; datasets TRAINING/INFERENCE = `COVERAGE_PERFORMANCE`, EMULATION = `COVERAGE_PERFORMANCE_SIM` |
 | Demo 03 — train | `… demo.py 03` | `TRAINING → TRAINED`; the 12 learned sensitivities (uptilt raises overshoot, power cuts weak coverage, neighbours reaching in raise pollution) |
@@ -1796,16 +1796,16 @@ from noon on the 4th).
 
 ```bash
 python3 samples/build_csar.py traffic-steering-rapp      # only after editing the sample
-docker compose cp samples/traffic-steering-rapp.csar r1-termination:/tmp/traffic-steering-rapp.csar
-docker compose cp samples/traffic-steering-rapp r1-termination:/tmp/traffic-steering-rapp
-docker compose exec -d r1-termination python3 -m http.server 8899 --directory /tmp   # if not already serving
+docker compose cp samples/traffic-steering-rapp.csar r1-termination:/srv/scratch/traffic-steering-rapp.csar
+docker compose cp samples/traffic-steering-rapp r1-termination:/srv/scratch/traffic-steering-rapp
+docker compose exec -d r1-termination python3 -m http.server 8899 --directory /srv/scratch   # if not already serving
 ```
 
 Then run one step at a time:
 
 | Step | Command (`docker compose exec r1-termination …`) | What to observe |
 |------|------|------|
-| Demo 00 — prepare the RAN | `python3 /tmp/traffic-steering-rapp/demo.py 00` | `gnb-mlb-demo-01` registered behind `mock-o1-adaptor`, LOAD_PERFORMANCE PM subscribed; layers F3500 (401, 402) and F2100 (411, 412) |
+| Demo 00 — prepare the RAN | `python3 /srv/scratch/traffic-steering-rapp/demo.py 00` | `gnb-mlb-demo-01` registered behind `mock-o1-adaptor`, LOAD_PERFORMANCE PM subscribed; layers F3500 (401, 402) and F2100 (411, 412) |
 | Demo 01 — onboard | `… demo.py 01` | package `AVAILABLE`; an AUTONOMOUS instance whose region scope names every relation and frequency relation it may write |
 | Demo 02 — dataset | `… demo.py 02` | 288 hourly per-cell windows → DME, with each cell's CIO or priority stepped in turn; datasets TRAINING/INFERENCE = `LOAD_PERFORMANCE`, EMULATION = `LOAD_PERFORMANCE_SIM` |
 | Demo 03 — train | `… demo.py 03` | `TRAINING → TRAINED`; the learned transfer: about 3 % of the source's score per CIO dB, 6 % per priority step |

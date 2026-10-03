@@ -32,7 +32,7 @@ def test_the_image_ends_as_a_numeric_non_root_user_before_it_starts_the_service(
 
 def test_the_two_directories_a_service_writes_exist_and_belong_to_that_user():
     run = " ".join(line for line in _instructions(DOCKERFILE) if line.startswith("RUN "))
-    assert re.search(r"mkdir -p /data /srv/packages", run) and re.search(r"chown smo:smo /data /srv/packages", run)
+    assert re.search(r"mkdir -p /data /srv/packages /srv/scratch", run) and re.search(r"chown smo:smo /data /srv/packages /srv/scratch", run)
     compose = (SMO_ROOT / "docker-compose.yml").read_text()
     assert "gui_bff_data:/data" in compose and "smo_packages:/srv/packages" in compose
 
@@ -44,6 +44,18 @@ def test_every_service_we_build_drops_every_capability_and_cannot_gain_privilege
     for name, svc in built.items():
         assert svc.get("cap_drop") == ["ALL"], f"{name} keeps Linux capabilities"
         assert "no-new-privileges:true" in svc.get("security_opt", []), f"{name} can gain privileges"
+
+
+def test_every_service_we_build_has_a_read_only_root_filesystem_with_memory_scratch_space():
+    """PR-SEC-13.2: nothing a service writes may land in the image layer. /tmp is a tmpfs; the writable places that must survive are volumes."""
+    built = {name: svc for name, svc in _compose().items() if "build" in svc or name == "edge-tls"}
+    for name, svc in built.items():
+        assert svc.get("read_only") is True, f"{name} can write to its root filesystem"
+        assert svc.get("tmpfs") == ["/tmp"], f"{name} has no scratch space"
+    # the runbook copies CSARs into the one volume that is meant for it, not into the tmpfs (docker cp cannot write there)
+    assert "smo_scratch:/srv/scratch" in " ".join(_compose()["r1-termination"]["volumes"])
+    runbook = (SMO_ROOT / "DEMO_RUNBOOK.md").read_text()
+    assert "r1-termination:/tmp" not in runbook and "--directory /tmp" not in runbook
 
 
 def test_no_service_asks_for_more_privilege_than_the_default():
