@@ -1,0 +1,114 @@
+name: Release images
+
+# PR-OPS-4.2/4.3, SEC-12.3/12.4: on a release tag (smo-vX.Y.Z), build every service image, push it to GHCR by tag and
+# digest, sign each by digest (cosign, keyless: the signature names this workflow as the signer) and attach BuildKit
+# provenance (SLSA, in the registry beside the image). Then write the release notes (CHANGELOG section plus merged PR
+# titles) onto the tag's GitHub release.
+#
+# workflow_dispatch takes an existing tag, so a release cut before this workflow existed (smo-v0.1.0) can be published.
+# No third-party actions: docker, git and the GitHub CLI are on the runner; cosign is installed from its pinned module.
+on:
+  push:
+    tags: ["smo-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to publish, for example smo-v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-images-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  COSIGN_MODULE: github.com/sigstore/cosign/v2/cmd/cosign@v2.5.3
+
+jobs:
+  plan:
+    name: Plan (validate the tag, list the images)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+      - id: version
+        run: |
+          [[ "$TAG" =~ ^smo-v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "::error::$TAG is not a release tag"; exit 1; }
+          echo "version=${TAG#smo-v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - id: matrix
+        working-directory: smo
+        run: |
+          pip install --quiet pyyaml
+          echo "matrix=$(python scripts/release_images.py matrix)" >> "$GITHUB_OUTPUT"
+
+  image:
+    name: "Image ${{ matrix.name }}"
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write      # push to GHCR
+      id-token: write      # keyless cosign signature
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and push (by tag and digest, with provenance)
+        id: build
+        working-directory: smo
+        run: |
+          repo="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${repo}/smo-${{ matrix.name }}"
+          args=()
+          [ -n "${{ matrix.module }}" ] && args+=(--build-arg "MODULE=${{ matrix.module }}")
+          docker buildx build "${args[@]}" --provenance=mode=max --sbom=true \
+            --tag "${image}:${{ needs.plan.outputs.version }}" --push \
+            --metadata-file "$RUNNER_TEMP/meta.json" "${{ matrix.context }}"
+          digest="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['containerimage.digest'])" "$RUNNER_TEMP/meta.json")"
+          echo "ref=${image}@${digest}" >> "$GITHUB_OUTPUT"
+          echo "${image}@${digest}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Sign the image by digest (cosign, keyless)
+        run: |
+          go install "$COSIGN_MODULE"
+          "$(go env GOPATH)/bin/cosign" sign --yes "${{ steps.build.outputs.ref }}"
+
+  notes:
+    name: Release notes
+    needs: [plan, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write      # create or edit the GitHub release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+      - name: Write the notes onto the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 smo/scripts/release_notes.py "$TAG" > "$RUNNER_TEMP/notes.md"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$TAG" --verify-tag --title "SMO ${TAG#smo-v}" --notes-file "$RUNNER_TEMP/notes.md"
+          fi

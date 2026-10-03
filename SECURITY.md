@@ -11,13 +11,14 @@ a live RAN.
 
 ## Supported versions
 
-There are no numbered releases. Only the tip of the default branch (`main`) is
-maintained, and security fixes land there. Older commits and forks receive no
-backports.
+Releases are tagged `smo-vX.Y.Z` (`smo/docs/RELEASES.md`). Until `1.0.0`, only the newest `0.MINOR` line and the tip of the
+default branch (`main`) receive security fixes, which land in `main` first and then in a new PATCH release of that line.
+Older lines and forks receive no backports.
 
 | Version | Supported |
 | ------- | --------- |
 | `main` (latest commit) | :white_check_mark: |
+| `0.1.x` | :white_check_mark: |
 | Anything else | :x: |
 
 ## Reporting a vulnerability

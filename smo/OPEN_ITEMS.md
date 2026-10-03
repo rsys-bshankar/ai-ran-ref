@@ -408,8 +408,6 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 |---|---|---|---|
 | SEC-12.1 | SBOM generation per image in CI | Artifact attached | – |
 | SEC-12.2 | Image vulnerability scan with a severity gate | Gate fails on a seeded finding | – |
-| SEC-12.3 | Sign release images (cosign) | Verification command documented | OPS-4.2 |
-| SEC-12.4 | Build provenance attestation | Attestation present | OPS-4.2 |
 
 #### PR-SEC-13 — Container hardening
 
@@ -532,9 +530,6 @@ Tag scheme and `CHANGELOG.md` exist (`PR-OPS-4.1`, `HISTORY.md` §10); no tag ha
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-4.2 | Workflow that builds and pushes images by tag and digest | Images published | OPS-4.1 |
-| OPS-4.3 | Generated release notes from merged PR titles | Notes appear on the tag | OPS-4.1 |
-| OPS-4.4 | `SECURITY.md` supported-versions table updated | Table matches tags | OPS-4.1 |
 
 #### PR-OPS-5 — Rolling upgrade
 
