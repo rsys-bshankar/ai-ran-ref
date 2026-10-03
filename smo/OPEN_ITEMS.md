@@ -504,13 +504,12 @@ HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10); no Op
 
 ### 5.6 Packaging, migrations and release (`PR-OPS`)
 
-#### PR-OPS-1 — Real migrations (open: OPS-1.6)
+#### PR-OPS-1 — Real migrations (all steps done: `HISTORY.md` §10)
 
 Alembic is in place and compose runs it (`docs/adr/0001-schema-migrations.md`, `HISTORY.md` §10): baseline `0001` is `001_init.sql`, revision `0002` is the notification outbox, `scripts/migrate.py` upgrades, stamps or downgrades, and the `migrate` service runs before the modules.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-1.6 | CI: upgrade the previous commit's schema to head | Job green | OPS-1.4 |
 
 #### PR-OPS-2 — Helm chart
 
@@ -1426,9 +1425,9 @@ Pick any, or mix them. `Needs` is the only constraint.
 
 1. **Replica-safe foundation (no new infrastructure):** done.
 2. **Safe to expose:** done except SEC-13.2 and SEC-1.6.
-3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: the rest of OBS-2, OPS-1.6, OPS-4.1b (cutting the first tag).
+3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: the rest of OBS-2, OPS-4.1b (cutting the first tag). OPS-1.6 done.
 4. **Durable notifications:** MSG-1.1–1.9 done (SA SMOS has no destination call to move); MSG-1.10 is the one leftover one module at a time.
 5. **First real O1 path:** SB-3, SB-5.1–5.2, SB-1.1–1.2 done; SB-1.3 and 1.4 done (the netopeer2 lab answers the SSH wrapper in CI); SB-1.5's route needs the real-server payload shape.
 6. **Safer changes:** done (MGT-1.1–1.4, MGT-3, MGT-8.1); MGT-1.5–1.8 are the follow-on.
 7. **Later:** HA, mesh, federation, vendor profiles.
-8. **Dev sanity and demo:** OPS-10.1–10.4 done (the redeploy gate, `.github/workflows/deploy-on-main.yml`); OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-1.6, OPS-2 and OPS-5.
+8. **Dev sanity and demo:** OPS-10.1–10.4 done (the redeploy gate, `.github/workflows/deploy-on-main.yml`); OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-2 and OPS-5 (OPS-1.6 is done).
