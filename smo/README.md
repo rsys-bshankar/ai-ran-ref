@@ -55,7 +55,7 @@ that realises a standard and adds its own behaviour on top says so.
 | Postgres | n/a (infrastructure) | — | `postgres:18-alpine`, schema by the `migrate` one-shot service (Alembic, `migrations/`) | host `5432` |
 
 **Workers.** A module's periodic work runs in its own process of the same image, never inside a request process: `ran-nf-oam-worker`
-(`python -m smo_shared.worker`, tasks in `ran-nf-oam/app/tasks.py`) advances staged CM jobs, publishes scheduled KPIs and purges old refusal
+(`python -m smo_shared.worker`, tasks in `ran-nf-oam/app/tasks.py`) advances staged CM jobs, publishes scheduled KPIs, checks (and, if asked, reverts) KPI guards and purges old refusal
 records. It has no port; run more than one if you like, a task still runs once per interval (`smo_shared/worker.py`).
 
 ### Test doubles, SDK, GUI

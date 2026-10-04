@@ -322,6 +322,11 @@ class WriteConfigJob(Versioned, Base):
     # per-rApp rate limit counts a caller's jobs from these.
     invoker_id: Mapped[str | None] = mapped_column(String, index=True)
     created_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+    # MSG-4: a KPI guard declared with the job: once the observation window has passed the worker runs the check of AI-10.5 (and reverts what regressed
+    # when `revert` is set). `kpi_guard_result` is the last answer; `kpi_guard_checked_at` is set when the verdict is final.
+    kpi_guard: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
+    kpi_guard_result: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
+    kpi_guard_checked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class WriteConfigSubChange(Base):

@@ -105,7 +105,7 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 | `app/netconf_client.py` | RFC 6241 `edit-config` / `get-config` RPC builders, HTTP transport, `EditResult` (reason, retryable) |
 | `app/netconf_ssh.py` | NETCONF over SSH (RFC 6242, `transport = ssh`): paramiko session and `netconf` subsystem, `<hello>`, end-of-message and chunked framing, host-key check, the same `EditResult` reasons; `docs/adr/0002-netconf-over-ssh-client.md` |
 | `app/restconf_client.py` | RFC 8040 client: data-resource URL (percent-encoded keys), `yang-data+json` body, edit `operation` -> PATCH / PUT / POST / DELETE, GET read-back, `RestconfResult` (reason, retryable, `error_tag`); reuses `EditResult` and the 30 s timeout |
-| `app/tasks.py` | The periodic work (`TASKS`), run by the worker `python -m smo_shared.worker` (`PR-MSG-4`): the wave advance, the KPI schedules, the refusal purge |
+| `app/tasks.py` | The periodic work (`TASKS`), run by the worker `python -m smo_shared.worker` (`PR-MSG-4`): the wave advance, the KPI schedules, the KPI guards, the refusal purge |
 | `app/statemachine.py` | Three FSMs: `WriteConfigJob`, `SoftwareManagementJob`, endpoint health; `aggregate_event` |
 | `app/models.py` | SQLAlchemy models |
 | `app/cm_schemas/3gpp-ts28541-nrnrm.json` | Bundled TS 28.541 NR NRM descriptor (default `specSchemaRef`) |
@@ -256,6 +256,7 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 | GET / POST | `/kpi-definitions/standard` | `GET` lists the standard KPI set (`dl_prb_utilization`, `rrc_connected_ues_mean`, `dl_ue_throughput`, `handover_failure_rate`, `handover_success_rate`, `handover_ping_pong_rate`) without writing; `POST` defines each one not defined yet and keeps one that is (idempotent; internal-only at R1). They are over the counters this build carries, not the TS 28.554 definitions (`MGT-11.6`) |
 | POST | `/kpis/{name}/publish` | the query of `GET /kpis/{name}`: computes the KPI and delivers one DME record per group to every data job open on the DME type `RAN.KPI.<name>`, registered here as RAN NF OAM's production capability; an rApp reads it as any DME data. `{kpi, typeName, groups, dataJobs, recordsDelivered}`; internal-only at R1 (`MGT-11.7`) |
 | POST | `/config-jobs/{jobId}/kpi-check` | `requestedBy`, `kpi`, windows, `maxRegressionPercent`, `direction`, `minSamples`, `revert?`, `force?`: the KPI before and after the job per element it changed; `REGRESSED` elements are rolled back when `revert` (`AI-10.5`) |
+| POST | `/config-jobs` (`kpiGuard`) | `kpiGuard {kpi, baselineMinutes?, observationMinutes?, maxRegressionPercent?, direction?, minSamples?, revert?, msacRole?}` on a write job (`PR-MSG-4`): once the observation window has passed the worker runs `kpi-check` with these settings and, with `revert`, rolls back the regressed elements (never forced). `GET /config-jobs/{id}` shows `kpiGuard`, `kpiGuardResult`, `kpiGuardCheckedAt`. 404 `KPI_NOT_FOUND` for an undefined KPI |
 | POST | `/config-jobs/{jobId}/continue` | `requestedBy`, `force?`: run the next wave of a `HALTED` job; 409 `WAVE_PAUSE_NOT_ELAPSED` while its pause runs, unless `force` (`MGT-5.4`) |
 | POST | `/config-jobs/{jobId}/halt` | `requestedBy`: turn a pause into an operator halt, so it does not go on by itself (`MGT-5.4`) |
 | POST | `/config-jobs/{jobId}/abort` | `requestedBy`: end a halted job here; the waves that did not run are `REJECTED` `WAVE_NOT_RUN` (`MGT-5.4`) |
@@ -324,6 +325,7 @@ RPC shape: an `<rpc>` whose `message-id` is the job id, containing `<edit-config
 |---|---|---|
 | `RAN_NF_OAM_NETCONF_RETRY_DELAYS` | `0,5,10,20` | Seconds before each dispatch attempt (4 attempts); applies to NETCONF and RESTCONF alike |
 | `RAN_NF_OAM_KPI_MAX_FILES` | `2000` | The most PM files (newest first) a KPI query reads; more is `truncated` in the answer (`MGT-11`; PM at scale is `MGT-12`) |
+| `RAN_NF_OAM_KPI_GUARD_GRACE_MINUTES` | `60` | How long after its observation window a KPI guard keeps trying when the data is too thin, before the answer is final |
 | `SAFEGUARD_REFUSAL_RETENTION_DAYS` | `0` | Default age for `POST /safeguard-refusals/purge`, and the age the worker purges at daily; `0` keeps refusal records for ever |
 | `SMO_WORKER_TICK_SECONDS`, `SMO_WORKER_FAILURE_BACKOFF_SECONDS` | `5`, `30` | The worker (`ran-nf-oam-worker`): how often it looks for due tasks, and how long it leaves a failed task alone |
 | `RAN_NF_OAM_CM_SNAPSHOT_RETENTION_DAYS` | `0` | Default age for `POST /config-history/purge`, in days; `0` keeps snapshots for ever (nothing deletes on its own) |
