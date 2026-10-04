@@ -36,7 +36,7 @@ The lifecycle follows the O-RAN-SC rApp Manager (`nonrtric-plt-rappmanager`) and
 |---|---|
 | Undeploy and delete are separate: `DEPLOYED → UNDEPLOYING → UNDEPLOYED`, delete only from `UNDEPLOYED` (`RappService.undeployRappInstance` / `deleteRappInstance`) | `TERMINATE` lands in `UNDEPLOYED` with the row kept; `DELETE /instances/{id}` is legal only from there (`RAPP_INSTANCE_NOT_UNDEPLOYED`) |
 | `SmeDeployer.deployRappInstance` / `undeployRappInstance`: SME registration per instance, at deploy time | The package's `sme_declarations` are registered at `bootstrap-complete` and deregistered on terminate or crash |
-| rApp registration assigns an `rAppId` | The instance's `oauth_client_id`, a fresh UUID minted at create, is the `rAppId` used as SME `apfId` and DME `producer_id` |
+| rApp registration assigns an `rAppId` | The instance's `oauth_client_id` is the `rAppId` used as SME `apfId` and DME `producer_id`. It is the id of an SME invoker registered for the instance at create (without the enrollment secret: an rApp's role, PR-SEC-14), so it is also what R1 Termination vouches for as the caller when the workload authenticates with these credentials: limits, the kill switch and the audit trail key on it. `POST /instances/{id}/credentials` issues the pair once (a new invoker, replacing the one made at create) |
 | `UpgradeInstance`: new instance alongside the old, timeout and automatic rollback | Two rows in choreography, `upgradeTimeoutSeconds` (default 300), enforced lazily |
 
 Not standardised, this build's own: `autonomyMode` and `regionScope`, `RAppInstanceVersion` history and `rollback`, and the `lastTeardown` record. Real ACM / Helm / Kubernetes deployment behind NFO is out of scope; `GET /instances/{id}` therefore carries no ACM resource records.
@@ -170,6 +170,7 @@ Upgrade choreography (`upgrade.py`):
 | GET | `/instances/{id}` | Detail: `workloadRef, configuration, pendingUpgradeInstanceId, smeServiceIds, autonomyMode, regionScope, lastTeardown` | 404 `RAPP_INSTANCE_NOT_FOUND` (also for a replacement already rolled back) |
 | POST | `/instances/{id}/bootstrap-complete` | `DEPLOYING → RUNNING`; registers SME declarations | 409 |
 | POST | `/instances/{id}/recover` | `FAULTED → DEPLOYING` | 409 |
+| POST | `/instances/{id}/credentials` | `{instanceId, oauthClientId, oauthClientSecret}`, issued once (`Cache-Control: no-store`, not an idempotent command, the secret is not stored); a new call rotates. DEPLOYING only | 404; 409; 503 (SME) |
 | POST | `/instances/{id}/upgrade` | `{newPackageId}` → `{newInstanceId, oldInstanceState, oauthClientId}` | 409; 404/409 from provisioning |
 | POST | `/instances/{id}/upgrade/resolve?succeeded=` | Commit or roll back; answers `{instanceId, state, packageId}` of the survivor | 404 (none pending); 409 `LIFECYCLE_ILLEGAL_TRANSITION`; 409 `RAPP_UPGRADE_TIMED_OUT` |
 | POST | `/instances/{id}/rollback` | Upgrade back to the newest version not rolled back; `id` may be a superseded instance id. Answers `{instanceId, newInstanceId, oldInstanceState, fromPackageId, toPackageId, rollbackOfVersionId, oauthClientId}` | 404; 409 `ROLLBACK_HISTORY_UNAVAILABLE`; 409 (not `RUNNING`); 404/409 from provisioning |

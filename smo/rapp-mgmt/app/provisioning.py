@@ -57,6 +57,7 @@ def provision_instance(db: Session, package_id: uuid.UUID, configuration: dict |
                         oauth_client_id=str(uuid.uuid4()), autonomy_mode=autonomy_mode, region_scope=region_scope)
     db.add(inst)
     db.flush()
+    register_instance_invoker(inst)          # replaces the placeholder identity; the secret is not kept (see there)
 
     nfo_resp = r1.post("/nfo/deployments", json={
         "nfDeploymentDescriptorId": nf_deployment_descriptor_id,  # the real descriptor, per section 5
@@ -165,6 +166,23 @@ def _sme_service_registration_body(service_api: dict, apf_id: str) -> dict:
         "endpoint": endpoint, "version": first_version.get("apiVersion") or "1.0",
         "moduleScope": "rapp", "aefProfiles": service_api.get("aefProfiles", []),
     }
+
+
+def register_instance_invoker(inst: RAppInstance) -> str:
+    """PR-SEC-14: the instance's own identity at SME. Registered without the enrollment secret, so SME records it as an rApp's (no internal scope,
+    refused on the internal-only routes). Its id is the instance's `oauth_client_id`, which is therefore what R1 Termination vouches for as the
+    caller (`X-R1-Invoker-Id`) when the workload calls with these credentials: the limits, the kill switch and the audit trail key on it. Returns the
+    onboarding secret, which SME keeps only as a hash: it is handed to the workload once (`POST /instances/{id}/credentials`), never stored here."""
+    try:
+        resp = R1Client().post("/sme/invoker-registrations", json={"apiInvokerPublicKey": f"rapp-instance:{inst.instance_id}"})
+        created = resp.status_code == 201
+    except httpx.HTTPError:
+        created = False
+    if not created:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="SME did not register an invoker identity for the rApp instance")
+    body = resp.json()
+    inst.oauth_client_id = body["apiInvokerId"]
+    return body["onboardingSecret"]
 
 
 def onboarding_status(inst: RAppInstance) -> dict:

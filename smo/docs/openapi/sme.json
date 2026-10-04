@@ -699,6 +699,24 @@
       "post": {
         "description": "HISTORY.md \u00a72: API Invoker onboarding\n(`invokermanagement.go`'s `InvokerManager`) \u2014 the real registry the\nSecurity/token API's own `IsInvokerRegistered`/`VerifyInvokerSecret`\ngate needs, entirely absent before this pass.\n\nHISTORY.md \u00a77 SME item 1: the real CAPIF onboarding flow is\npublic-key-based \u2014 the client supplies `apiInvokerPublicKey`; the\nserver *generates* both `apiInvokerId` and `onboardingSecret` and\nreturns them (`apiInvokerId` \"shall not be present\" in the real\nclient request at all). Every call mints a new invoker (the reference\nalways creates, never updates, on onboarding).\n\nSA-SME-1-public-key: a PEM public key is parsed here (422 if it is\nmalformed) and later verifies the invoker's signed token requests;\nany other value is kept as an opaque label. OI-5-sme-filters: emits\nAPI_INVOKER_ONBOARDED.",
         "operationId": "register_invoker_invoker_registrations_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-SMO-Enrollment",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Smo-Enrollment"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

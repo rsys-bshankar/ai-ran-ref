@@ -124,6 +124,7 @@ compose_new up -d --build --wait
 echo "schema revision now: $(host_migrate "$here" --current | tail -1)"
 (cd "$here" && SMO_DATABASE_URL="$url" python scripts/check_migration_matches_models.py)
 compose_new exec -T r1-termination python3 - < "$here/scripts/compose_e2e.py"
+compose_new exec -T sme python3 - < "$here/scripts/compose_e2e_roles.py"       # PR-SEC-14: the roles work on the upgraded stack
 
 echo "== the data survived"
 after="$scratch/after.txt"

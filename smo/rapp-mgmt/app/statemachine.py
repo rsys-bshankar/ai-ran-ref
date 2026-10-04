@@ -10,6 +10,7 @@ and applies the timeout/auto-rollback policy.
 
 from __future__ import annotations
 
+from contextlib import suppress
 from enum import StrEnum
 
 import httpx
@@ -44,6 +45,11 @@ def _revoke_credential(instance: RAppInstance, **_) -> None:
     TerminateInstance — not a separate operation (closes v1.3's RT-3
     red-team finding).
     """
+    if instance.oauth_client_id is not None:
+        # PR-SEC-14: the invoker SME holds for this instance goes with it, and with it every token it was granted. Best-effort, like the
+        # other deregistrations: an unreachable SME must not stop a terminate.
+        with suppress(httpx.HTTPError):
+            R1Client().delete(f"/sme/invoker-registrations/{instance.oauth_client_id}")
     instance.oauth_client_id = None
 
 

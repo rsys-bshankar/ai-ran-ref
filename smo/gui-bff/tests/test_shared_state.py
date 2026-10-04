@@ -279,6 +279,41 @@ def test_two_instances_onboarding_at_once_keep_one_invoker_and_offboard_the_dupl
     assert sme.known == {stored.api_invoker_id}
 
 
+def test_the_bff_presents_the_enrollment_secret_when_it_registers(path, monkeypatch, tmp_path):
+    """PR-SEC-14: the BFF is an SMO module: SME records it as internal only when it presents the secret every module mounts."""
+    secret_file = tmp_path / "enrollment_secret"
+    secret_file.write_text("the-enrollment-secret\n")
+    monkeypatch.setenv("SMO_ENROLLMENT_SECRET_FILE", str(secret_file))
+    sent = []
+
+    class Recording(Sme):
+        async def handler(self, request):
+            if str(request.url) == f"{SME}/invoker-registrations" and request.method == "POST":
+                sent.append(request.headers.get("x-smo-enrollment"))
+            return await super().handler(request)
+
+    sme = Recording()
+    bff, _ = gateway(path, sme)
+    assert asyncio.run(bff.token()) == "tok"
+    assert sent == ["the-enrollment-secret"]
+
+
+def test_without_a_secret_the_bff_sends_no_enrollment_header(path, monkeypatch):
+    monkeypatch.delenv("SMO_ENROLLMENT_SECRET", raising=False)
+    monkeypatch.delenv("SMO_ENROLLMENT_SECRET_FILE", raising=False)
+    sent = []
+
+    class Recording(Sme):
+        async def handler(self, request):
+            if str(request.url) == f"{SME}/invoker-registrations" and request.method == "POST":
+                sent.append(request.headers.get("x-smo-enrollment"))
+            return await super().handler(request)
+
+    bff, _ = gateway(path, Recording())
+    asyncio.run(bff.token())
+    assert sent == [None]
+
+
 def test_an_invoker_sme_forgot_is_replaced_once_and_the_other_instance_adopts_it(path):
     sme = Sme()
     (first, _), (second, db) = gateway(path, sme), gateway(path, sme)

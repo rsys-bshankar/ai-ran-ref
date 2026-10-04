@@ -11,6 +11,7 @@ per the Repo Map blueprint) so the whole SMO can run as one docker-compose
 stack without an extra infra dependency.
 """
 
+import logging
 import os
 from urllib.parse import urlsplit
 
@@ -19,15 +20,18 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from smo_shared.logconfig import install_logging
-from smo_shared.metrics import install_metrics
+from smo_shared.metrics import install_metrics, record_role_refusal
 from smo_shared.bodylimit import MIB, BodySizeLimit, settings_from_env
 from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.health import install_health
+from smo_shared import roles
 from smo_shared.invoker import INVOKER_ID_HEADER
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.ratelimit import TokenBuckets
 from smo_shared.timeouts import introspect_timeout, upstream_timeout
+
+log = logging.getLogger(__name__)
 
 app = FastAPI(title="R1 Termination")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
@@ -172,22 +176,34 @@ async def proxy(full_path: str, request: Request):
     if backend is None:
         return JSONResponse(status_code=404, content={"title": "NO_ROUTE", "status": 404})
 
-    invoker_id = await _introspect(request)
-    if invoker_id is None:
+    caller = await _introspect_token(request)
+    if caller is None:
         return JSONResponse(status_code=401, content={"title": "UNAUTHORIZED", "status": 401})
+    invoker_id, role = caller
     wait = _limiter.take(invoker_id or "anonymous")
     if wait is not None:
         return JSONResponse(status_code=429, headers={"Retry-After": str(wait)}, content={
             "title": "RATE_LIMITED", "status": 429,
             "detail": f"this caller has used its request budget; retry in {wait} s"})
 
+    rest_of_path = segments[1] if len(segments) > 1 else ""
+    if role == roles.ROLE_RAPP and roles.internal_only(prefix, request.method, rest_of_path):
+        # PR-SEC-14: a route that changes what the platform allows rApps to do is not one an rApp may call
+        action = "refused" if roles.enforcement_mode() == "enforce" else "audited"
+        record_role_refusal(prefix, action)
+        if action == "refused":
+            return JSONResponse(status_code=403, content={
+                "title": "ROLE_NOT_PERMITTED", "status": 403,
+                "detail": f"{request.method} {prefix}/{rest_of_path} is for SMO modules and operators, not for an rApp"})
+        log.warning("role audit: rApp %s called %s %s/%s", invoker_id, request.method, prefix, rest_of_path)
+
     # Strip the module prefix before forwarding — no backend service's own
     # routes carry it (e.g. SME's real route is /published-apis/v1/...,
     # never /sme/published-apis/v1/...). Forwarding the prefix through
     # unstripped would 404 against every real backend; caught while
     # building the cross-service integration test harness.
-    rest_of_path = segments[1] if len(segments) > 1 else ""
 
+    # (rest_of_path was worked out above, for the role policy)
     # TLS is terminated at the ingress in front of this container (Phase 1:
     # docker-compose network boundary) — everything past _authorized above
     # is just forwarding the already-authenticated request.
@@ -199,7 +215,8 @@ async def proxy(full_path: str, request: Request):
     # with, so a caller that omitted the header still gets a consistent
     # ID threaded through its own request's whole downstream fan-out.
     forwarded_headers = {k: v for k, v in request.headers.items()
-                          if k.lower() not in ("host", CORRELATION_ID_HEADER.lower(), INVOKER_ID_HEADER.lower())}
+                          if k.lower() not in ("host", CORRELATION_ID_HEADER.lower(), INVOKER_ID_HEADER.lower(), roles.ROLE_HEADER.lower())}
+    forwarded_headers[roles.ROLE_HEADER] = role              # PR-SEC-14: never a value the caller sent (dropped above)
     forwarded_headers[CORRELATION_ID_HEADER] = get_correlation_id()
     # The caller's own id, from the introspected token: any inbound value of
     # this header is dropped above, so a backend can trust it. Empty when the
@@ -226,6 +243,12 @@ async def proxy(full_path: str, request: Request):
 
 
 async def _introspect(request: Request) -> str | None:
+    """The caller's invoker id from the token, None when the token is not good (see `_introspect_token`)."""
+    caller = await _introspect_token(request)
+    return None if caller is None else caller[0]
+
+
+async def _introspect_token(request: Request) -> tuple[str, str] | None:
     """HISTORY.md §2: "No real OAuth2/token enforcement at R1
     Termination — only a comment and a tokenEndPoint URI in the bootstrap
     response; no actual validation code path." This is that path, per
@@ -257,7 +280,11 @@ async def _introspect(request: Request) -> str | None:
             return None
     if resp.status_code != 200 or resp.json().get("active") is not True:
         return None
-    return str(resp.json().get("client_id") or "")
+    body = resp.json()
+    # PR-SEC-14: the role SME records for the invoker. An SME that does not say (the release before this one) is read by the scope, which is
+    # what its own clients ask for: smo-internal / smo-gui is an SMO module, anything else an rApp.
+    role = body.get("role") or (roles.ROLE_INTERNAL if body.get("scope") in roles.INTERNAL_SCOPES else roles.ROLE_RAPP)
+    return str(body.get("client_id") or ""), role
 
 
 async def _authorized(request: Request) -> bool:

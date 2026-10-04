@@ -117,11 +117,12 @@ services:
   sme:
     build: { context: ., args: { MODULE: sme } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       # PR-SEC-1.6: a client assertion's `aud` is the token endpoint /bootstrap advertised; behind the HTTPS door that is
       # <R1_PUBLIC_BASE_URL>/sme/oauth2/token. Unset (empty), SME uses its own address on the compose network.
@@ -130,7 +131,7 @@ services:
   dme:
     build: { context: ., args: { MODULE: dme } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
@@ -139,7 +140,7 @@ services:
   onboarding:
     build: { context: ., args: { MODULE: onboarding } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
@@ -150,22 +151,24 @@ services:
   rapp-mgmt:
     build: { context: ., args: { MODULE: rapp-mgmt } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
   ran-nf-oam:
     build: { context: ., args: { MODULE: ran-nf-oam } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -194,6 +197,7 @@ services:
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -207,6 +211,7 @@ services:
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -220,6 +225,7 @@ services:
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -233,18 +239,20 @@ services:
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
   a1-related:
     build: { context: ., args: { MODULE: a1-related } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     networks: [default, a1_mock_net]
     environment:
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
       MOCK_NEAR_RT_RIC_URL: http://mock-near-rt-ric:8000
@@ -260,11 +268,12 @@ services:
   nfo:
     build: { context: ., args: { MODULE: nfo } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
     # No `privileged: true` and no Docker socket (PR-SEC-13): NFO never started a container (it runs no
@@ -275,7 +284,7 @@ services:
   focom:
     build: { context: ., args: { MODULE: focom } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
@@ -284,7 +293,7 @@ services:
   mlmr:
     build: { context: ., args: { MODULE: mlmr } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
@@ -293,11 +302,12 @@ services:
   aimgf:
     build: { context: ., args: { MODULE: aimgf } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -312,18 +322,19 @@ services:
   ran-analytics:
     build: { context: ., args: { MODULE: ran-analytics } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
   mdaf:
     build: { context: ., args: { MODULE: mdaf } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
@@ -332,7 +343,7 @@ services:
   intent-service:
     build: { context: ., args: { MODULE: intent-service } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
@@ -341,22 +352,24 @@ services:
   so-smos:
     build: { context: ., args: { MODULE: so-smos } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
   sa-smos:
     build: { context: ., args: { MODULE: sa-smos } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -368,8 +381,10 @@ services:
     build: { context: ., args: { MODULE: gui-bff } }
     stop_grace_period: 30s
     <<: *hardening
+    secrets: [enrollment_secret]
     depends_on: [r1-termination, sme]
     environment:
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       R1_URL: http://r1-termination:8000
       GUI_DATABASE_URL: sqlite:////data/gui-bff.db
       GUI_INITIAL_PASSWORD_FILE: /data/initial-admin-password
@@ -419,6 +434,8 @@ services:
 secrets:
   db_password:
     file: ./secrets/db_password   # created by scripts/init_secrets.sh; git-ignored
+  enrollment_secret:              # PR-SEC-14: what an SMO module presents to SME to be recorded as one (never an rApp); same script
+    file: ./secrets/enrollment_secret
   tls_cert:                       # the `tls` profile only; created by scripts/make_dev_certs.sh
     file: ./certs/server.crt
   tls_key:

@@ -24,6 +24,14 @@ gateway mechanics, so it never saw this.
 
 SMO_INVOKER_ID / SMO_INVOKER_SECRET pin a pre-provisioned invoker instead
 of onboarding a fresh one at first use.
+
+PR-SEC-14, who the caller is: an SMO module presents the enrollment secret
+(`SMO_ENROLLMENT_SECRET[_FILE]`, a compose secret) when it registers and asks for
+the `smo-internal` scope; SME records the invoker as `internal`. A process that
+is an rApp (`SMO_IDENTITY_KIND=rapp`, the sample rApps' compose entries) presents
+none, is recorded as `rapp`, asks for `smo-rapp`, and keeps its identity under its
+own key in the module identity store. R1 Termination applies its role policy on
+that record (`roles.py`).
 """
 
 import logging
@@ -37,6 +45,8 @@ import httpx
 from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from .correlation import get_correlation_id
 from . import metrics
+from .roles import ENROLLMENT_HEADER, RAPP_SCOPE
+from .secretfile import read_secret
 from .timeouts import call_timeout
 
 R1_GATEWAY_URL = os.environ.get("R1_GATEWAY_URL", "http://r1-termination:8000")
@@ -44,6 +54,11 @@ R1_GATEWAY_URL = os.environ.get("R1_GATEWAY_URL", "http://r1-termination:8000")
 log = logging.getLogger(__name__)
 
 _EXPIRY_MARGIN_SECONDS = 30
+
+
+def identity_kind() -> str:
+    """`rapp` for a process that is an rApp, else `module` (an SMO service)."""
+    return "rapp" if os.environ.get("SMO_IDENTITY_KIND", "module").strip().lower() == "rapp" else "module"
 
 
 class _ModuleIdentity:
@@ -82,8 +97,13 @@ class _ModuleIdentity:
         # secret, so SME has no key to verify assertions with (an RFC 7523 client
         # assertion needs a PEM key, SA-SME-1-public-key).
         sme = token_endpoint.rsplit("/oauth2/token", 1)[0]
-        label = f"smo-module:{os.environ.get('MODULE', 'unknown')}:{secrets.token_urlsafe(8)}"
-        resp = httpx.post(f"{sme}/invoker-registrations", json={"apiInvokerPublicKey": label}, timeout=5.0)
+        kind = identity_kind()
+        label = f"smo-{'rapp' if kind == 'rapp' else 'module'}:{os.environ.get('MODULE', 'unknown')}:{secrets.token_urlsafe(8)}"
+        headers = {}
+        enrollment = read_secret("SMO_ENROLLMENT_SECRET") if kind == "module" else None
+        if enrollment:
+            headers[ENROLLMENT_HEADER] = enrollment
+        resp = httpx.post(f"{sme}/invoker-registrations", json={"apiInvokerPublicKey": label}, headers=headers, timeout=5.0)
         resp.raise_for_status()
         body = resp.json()
         return body["apiInvokerId"], body["onboardingSecret"]
@@ -94,6 +114,8 @@ class _ModuleIdentity:
         `stale_invoker_id`, which SME refused); otherwise this process registers one and stores it,
         and a replica that loses the race to store discards its own registration and adopts the winner's."""
         module = os.environ.get("MODULE", "unknown")
+        if identity_kind() == "rapp":
+            module = f"rapp:{module}"            # an rApp's identity is not the module's: they are registered differently
         store = self._identity_store()
         if store is not None:
             try:
@@ -130,7 +152,7 @@ class _ModuleIdentity:
     def _grant(self, token_endpoint: str) -> httpx.Response:
         return httpx.post(token_endpoint, json={
             "grant_type": "client_credentials", "client_id": self.invoker_id,
-            "client_secret": self.invoker_secret, "scope": "smo-internal",
+            "client_secret": self.invoker_secret, "scope": RAPP_SCOPE if identity_kind() == "rapp" else "smo-internal",
         }, timeout=5.0)
 
     def token_for(self, base_url: str, refresh: bool = False) -> str | None:

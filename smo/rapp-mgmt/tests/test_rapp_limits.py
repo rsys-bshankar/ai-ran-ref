@@ -23,6 +23,8 @@ def _wire(monkeypatch, limits, put_outcome=200):
             return FakeR1Response(200, {"nfDeploymentId": str(uuid.uuid4())})
         if "/usage/start" in path:
             return FakeR1Response(200, {"registrationId": str(uuid.uuid4())})
+        if path == "/sme/invoker-registrations":
+            return FakeR1Response(201, {"apiInvokerId": f"api-invoker-{uuid.uuid4()}", "onboardingSecret": "s", "role": "rapp"})
         return FakeR1Response(200, {"status": "stopped"})
 
     def put(self, path, json=None, **kw):
@@ -84,3 +86,64 @@ def test_terminate_removes_the_limit(client, monkeypatch):
     client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
     assert client.post(f"/instances/{created['instanceId']}/terminate").status_code == 200
     assert calls["delete"].count(f"/ran-nf-oam/rapp-limits/{created['oauthClientId']}") == 1
+
+
+# ---- PR-SEC-14: the instance's own invoker identity at SME
+
+def _wire_invokers(monkeypatch):
+    seen = {"post": [], "delete": []}
+
+    def post(self, path, json=None, **kw):
+        seen["post"].append((path, json))
+        if path == "/sme/invoker-registrations":
+            return FakeR1Response(201, {"apiInvokerId": f"api-invoker-{len(seen['post'])}", "onboardingSecret": f"secret-{len(seen['post'])}", "role": "rapp"})
+        if "/nfo/deployments" in path:
+            return FakeR1Response(200, {"nfDeploymentId": str(uuid.uuid4())})
+        if "/usage/start" in path:
+            return FakeR1Response(200, {"registrationId": str(uuid.uuid4())})
+        return FakeR1Response(200, {})
+
+    monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"state": "AVAILABLE", "nfDeploymentDescriptorId": str(uuid.uuid4())}))
+    monkeypatch.setattr("app.main.R1Client.post", post)
+    monkeypatch.setattr("app.main.R1Client.delete", lambda self, path, **kw: (seen["delete"].append(path), FakeR1Response(204, {}))[1])
+    return seen
+
+
+def test_an_instance_gets_its_own_sme_invoker_and_that_is_its_client_id(client, monkeypatch):
+    seen = _wire_invokers(monkeypatch)
+    created = _create(client)
+    registration = next(p for p in seen["post"] if p[0] == "/sme/invoker-registrations")
+    assert registration[1] == {"apiInvokerPublicKey": f"rapp-instance:{created['instanceId']}"}      # no enrollment header: SME records an rApp
+    assert created["oauthClientId"].startswith("api-invoker-")
+    assert "oauthClientSecret" not in created                                                          # an idempotent answer is stored: no secret in it
+
+
+def test_creating_an_instance_fails_if_sme_will_not_register_its_identity(client, monkeypatch):
+    seen = _wire_invokers(monkeypatch)
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(503, {}) if path == "/sme/invoker-registrations"
+                        else FakeR1Response(200, {"nfDeploymentId": "x"}))
+    assert client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}}).status_code == 503
+    assert seen["delete"] == []
+
+
+def test_credentials_are_issued_once_replace_the_invoker_and_are_not_cached(client, db_session_factory, monkeypatch):
+    seen = _wire_invokers(monkeypatch)
+    created = _create(client)
+    first = client.post(f"/instances/{created['instanceId']}/credentials")
+    assert first.status_code == 200 and first.headers["cache-control"] == "no-store"
+    body = first.json()
+    assert body["oauthClientId"] != created["oauthClientId"] and body["oauthClientSecret"].startswith("secret-")
+    assert f"/sme/invoker-registrations/{created['oauthClientId']}" in seen["delete"]                   # the one made at create is deregistered
+    with db_session_factory() as session:
+        assert session.get(RAppInstance, uuid.UUID(created["instanceId"])).oauth_client_id == body["oauthClientId"]
+    second = client.post(f"/instances/{created['instanceId']}/credentials").json()                      # rotate
+    assert second["oauthClientId"] not in (created["oauthClientId"], body["oauthClientId"])
+    assert f"/sme/invoker-registrations/{body['oauthClientId']}" in seen["delete"]
+
+
+def test_credentials_are_only_issued_while_the_instance_is_deploying(client, monkeypatch):
+    _wire_invokers(monkeypatch)
+    created = _create(client)
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    assert client.post(f"/instances/{created['instanceId']}/credentials").status_code == 409
+    assert client.post(f"/instances/{uuid.uuid4()}/credentials").status_code == 404

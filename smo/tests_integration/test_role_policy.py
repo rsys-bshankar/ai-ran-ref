@@ -1,0 +1,84 @@
+"""PR-SEC-14: the role policy (`smo_shared/roles.py`) against the apps' real route tables.
+
+The policy is a deny-list of (R1 prefix, methods, path); a list like that rots when a route is renamed. So: every entry must match a route that
+exists, and a walk of every route of every backend through the real gateway app must show an rApp refused on exactly the routes the policy names and
+an SMO module refused on none.
+"""
+
+import re
+from urllib.parse import urlparse
+
+import pytest
+from fastapi.testclient import TestClient
+
+from smo_shared import roles
+
+from mesh import R1_PREFIX_TO_SERVICE
+from test_authz_walk import backend_routes
+
+TOKENS = {"module-token": "internal", "rapp-token": "rapp"}
+
+
+class RoleGateway:
+    """SME's introspection answers by token; the backends record what reached them."""
+
+    def __init__(self, upstream_calls, **_):
+        self.upstream_calls = upstream_calls
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def request(self, method, url, **kwargs):
+        import httpx
+        if urlparse(url).path == "/oauth2/introspect" and "json" in kwargs:
+            role = TOKENS.get(kwargs["json"]["token"])
+            return httpx.Response(200, json={"active": role is not None, "client_id": f"inv-{role}", "role": role})
+        self.upstream_calls.append((method, url))
+        return httpx.Response(200, json={})
+
+
+@pytest.fixture
+def gateway(loaded_apps, monkeypatch):
+    upstream_calls: list = []
+    monkeypatch.setenv("R1_RATE_PER_SECOND", "0")
+    monkeypatch.delenv("SMO_ROLE_ENFORCEMENT", raising=False)
+    r1 = loaded_apps["r1-termination"]
+    monkeypatch.setattr(r1.httpx, "AsyncClient", lambda **kwargs: RoleGateway(upstream_calls, **kwargs))
+    return TestClient(r1.app), upstream_calls
+
+
+def _real_routes(loaded_apps, prefix):
+    return list(backend_routes(loaded_apps[R1_PREFIX_TO_SERVICE[prefix]].app))
+
+
+def test_every_policy_entry_names_a_route_that_exists(loaded_apps):
+    for module, methods, pattern in roles.INTERNAL_ONLY:
+        found = [(m, p) for m, p in _real_routes(loaded_apps, module) if m in methods and pattern.match(p)]
+        assert found, f"{module} {sorted(methods)} {pattern.pattern} matches no route of {R1_PREFIX_TO_SERVICE[module]}: renamed or removed?"
+
+
+def test_an_rapp_is_refused_on_exactly_the_routes_the_policy_names_and_a_module_on_none(loaded_apps, gateway):
+    client, upstream_calls = gateway
+    refused_to_rapp, wrongly_refused_to_module, walked = [], [], 0
+    for prefix in sorted(set(R1_PREFIX_TO_SERVICE) - {"/dme-push", "/dme-pull"}):
+        for method, path in _real_routes(loaded_apps, prefix):
+            walked += 1
+            expected = roles.internal_only(prefix, method, path)
+            rapp = client.request(method, f"{prefix}{path}", headers={"Authorization": "Bearer rapp-token"})
+            module = client.request(method, f"{prefix}{path}", headers={"Authorization": "Bearer module-token"})
+            if (rapp.status_code == 403 and rapp.json().get("title") == "ROLE_NOT_PERMITTED") != expected:
+                refused_to_rapp.append(f"{method} {prefix}{path}: rApp -> {rapp.status_code}, policy says {expected}")
+            if module.status_code == 403:
+                wrongly_refused_to_module.append(f"{method} {prefix}{path}")
+    assert walked > 400
+    assert refused_to_rapp == [] and wrongly_refused_to_module == []
+
+
+def test_the_policy_covers_what_the_per_rapp_limits_and_the_kpi_definitions_depend_on():
+    assert roles.internal_only("/ran-nf-oam", "PUT", "/rapp-limits/x")
+    assert roles.internal_only("/ran-nf-oam", "PUT", "/kpi-definitions/k")
+    assert roles.internal_only("/ran-nf-oam", "POST", "/config-history/purge")
+    assert re.compile(r"^/rapp-limits/[^/]+$").match("/rapp-limits/api-invoker-1")

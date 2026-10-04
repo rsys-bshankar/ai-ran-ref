@@ -107,6 +107,8 @@ def _route_r1_get_post(*, onboarding_status="AVAILABLE", registration_id=None, s
             return FakeR1Response(200, {"nfDeploymentId": str(uuid.uuid4())})
         if "/usage/start" in path:
             return FakeR1Response(200, {"registrationId": str(reg_id)})
+        if path == "/sme/invoker-registrations":          # PR-SEC-14: each instance gets its own invoker identity
+            return FakeR1Response(201, {"apiInvokerId": f"api-invoker-{uuid.uuid4()}", "onboardingSecret": "s3cret", "role": "rapp"})
         if "/usage/" in path and path.endswith("/stop"):
             return FakeR1Response(200, {"status": "stopped"})
         if "/sme/provider-registrations" in path:
@@ -224,6 +226,8 @@ def test_terminate_instance_skips_usage_stop_when_never_registered(client, monke
     def fake_post(self, path, json=None, **kw):
         if "/nfo/deployments" in path:
             return FakeR1Response(200, {"nfDeploymentId": str(uuid.uuid4())})
+        if path == "/sme/invoker-registrations":
+            return FakeR1Response(201, {"apiInvokerId": f"api-invoker-{uuid.uuid4()}", "onboardingSecret": "s3cret", "role": "rapp"})
         if "/usage/start" in path:
             return FakeR1Response(503, {})  # onboarding unreachable
         raise AssertionError(f"unexpected R1 POST to {path}")
@@ -266,10 +270,11 @@ def test_terminate_instance_deregisters_dme_producer(client, monkeypatch):
     resp = client.post(f"/instances/{created['instanceId']}/terminate")
     assert resp.status_code == 200
     workload_ref = client.get(f"/instances/{created['instanceId']}").json()["workloadRef"]
-    assert len(calls) == 3
+    assert len(calls) == 4
     assert calls[0] == ("/dme/production-capabilities", {"producer_id": created["oauthClientId"]})
     assert calls[1] == (f"/sme/provider-registrations/{created['oauthClientId']}", None)
-    assert calls[2] == (f"/nfo/deployments/{workload_ref}", None)  # OI-2-terminate-workload, after DME/SME
+    assert calls[2] == (f"/sme/invoker-registrations/{created['oauthClientId']}", None)   # PR-SEC-14: the instance's invoker goes with its credential
+    assert calls[3] == (f"/nfo/deployments/{workload_ref}", None)  # OI-2-terminate-workload, after DME/SME
 
 
 def test_crash_via_critical_fault_deregisters_dme_producer(client, monkeypatch):
@@ -448,6 +453,7 @@ def test_terminate_instance_deregisters_sme_service_apis_too(client, monkeypatch
         "/dme/production-capabilities",
         f"/sme/published-apis/v1/{created['oauthClientId']}/service-apis/{service_id}",
         f"/sme/provider-registrations/{created['oauthClientId']}",
+        f"/sme/invoker-registrations/{created['oauthClientId']}",      # PR-SEC-14
         f"/nfo/deployments/{workload_ref}",
     ]
 
@@ -834,6 +840,7 @@ def test_upgrade_commit_via_route_releases_the_old_instance(client, monkeypatch,
     assert resp.json()["instanceId"] == upgrade["newInstanceId"] and resp.json()["state"] == "RUNNING"
     assert [p for p, _ in fake_r1_delete] == [
         "/dme/production-capabilities", f"/sme/provider-registrations/{created['oauthClientId']}",
+        f"/sme/invoker-registrations/{created['oauthClientId']}",
         f"/nfo/deployments/{old_workload}",
     ]
     assert f"/onboarding/packages/{package_id}/usage/{reg_id}/stop" in posts

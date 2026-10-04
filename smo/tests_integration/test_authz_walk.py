@@ -74,7 +74,7 @@ class FakeGateway:
         import httpx
         if urlparse(url).path == "/oauth2/introspect" and "json" in kwargs:   # the gateway's own call, not a proxied SME route
             active = kwargs["json"]["token"] == GOOD_TOKEN
-            return httpx.Response(200, json={"active": active, "client_id": "walker" if active else None})
+            return httpx.Response(200, json={"active": active, "client_id": "walker" if active else None, "role": "internal"})   # a token's role is test_role_policy.py's subject
         self.upstream_calls.append((method, url))
         return httpx.Response(200, json={})
 

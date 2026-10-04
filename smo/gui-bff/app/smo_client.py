@@ -16,6 +16,7 @@ users authenticate to the BFF, the BFF authenticates to the SMO.
 """
 
 import asyncio
+import os
 import secrets
 import time
 from contextlib import suppress
@@ -23,6 +24,19 @@ from contextlib import suppress
 import httpx
 
 from .db import Database, SmoCredential
+
+# smo_shared/roles.py's header, and `read_secret` for this one value: the BFF's image does not install smo_shared (see main.py).
+ENROLLMENT_HEADER = "X-SMO-Enrollment"
+
+
+def _enrollment_secret() -> str | None:
+    """PR-SEC-14: the secret every SMO module mounts, from `SMO_ENROLLMENT_SECRET` or the file named by `SMO_ENROLLMENT_SECRET_FILE`."""
+    value, path = os.environ.get("SMO_ENROLLMENT_SECRET", ""), os.environ.get("SMO_ENROLLMENT_SECRET_FILE", "")
+    if path and not value:
+        with open(path, encoding="utf-8") as handle:
+            value = handle.read().removesuffix("\n")
+    return value or None
+
 
 _EXPIRY_MARGIN_SECONDS = 30
 
@@ -75,8 +89,12 @@ class R1Gateway:
         # its onboarding secret, so SME has no key to verify assertions with
         # (an RFC 7523 client assertion needs a PEM key, SA-SME-1-public-key).
         sme = self._sme_base(token_endpoint)
+        # PR-SEC-14: the BFF is an SMO module, so it presents the enrollment secret and SME records it as internal; the operator's authority
+        # is the BFF's own login and RBAC (rbac.py), and R1 sees the BFF.
+        enrollment = _enrollment_secret()
         resp = await self._client.post(f"{sme}/invoker-registrations",
-                                       json={"apiInvokerPublicKey": f"smo-gui-bff:{secrets.token_urlsafe(16)}"})
+                                       json={"apiInvokerPublicKey": f"smo-gui-bff:{secrets.token_urlsafe(16)}"},
+                                       headers={ENROLLMENT_HEADER: enrollment} if enrollment else {})
         if resp.status_code != 201:
             raise SmoAuthError(f"SME invoker onboarding returned {resp.status_code}")
         body = resp.json()

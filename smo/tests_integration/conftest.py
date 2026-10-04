@@ -27,6 +27,10 @@ from loader import load_app_module  # noqa: E402
 from mesh import ServiceMesh, install as install_mesh  # noqa: E402
 import live  # noqa: E402
 
+# PR-SEC-14: the in-process SME has no enrollment secret, so (as in its own unit tests) it records every invoker as internal. The roles are exercised
+# by test_role_policy.py, `compose_e2e_roles.py` on the real stack, and the unit suites of SME, R1 Termination and R1Client.
+os.environ.setdefault("SME_ALLOW_OPEN_ENROLLMENT", "true")
+
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
     "a1-related", "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",

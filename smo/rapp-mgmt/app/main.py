@@ -6,9 +6,11 @@ and UpgradeInstance's auto-rollback made precise (upgrade.py).
 """
 
 import uuid
+from contextlib import suppress
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+import httpx
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -28,7 +30,7 @@ from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 
 from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
-from .provisioning import (DEPLOYABLE_PACKAGE_STATES, apply_rapp_limits, onboarding_status, provision_instance, register_sme_declarations,  # noqa: F401
+from .provisioning import (DEPLOYABLE_PACKAGE_STATES, apply_rapp_limits, onboarding_status, provision_instance, register_instance_invoker, register_sme_declarations,  # noqa: F401
                            release_instance_resources)
 from .statemachine import RAPP_INSTANCE_FSM, InstanceEvent, InstanceState
 from .upgrade import (current_instance_id, expire_overdue_upgrade, resolve_upgrade, rollback_target, start_rollback,
@@ -137,6 +139,28 @@ def _on_bootstrap(inst) -> None:
     status = onboarding_status(inst)
     apply_rapp_limits(inst, status)
     register_sme_declarations(inst, status)
+
+
+@app.post("/instances/{instance_id}/credentials")
+def issue_instance_credentials(instance_id: uuid.UUID, response: Response, db: Session = Depends(get_session)):
+    """PR-SEC-14: the OAuth client credentials the instance's workload authenticates with, issued once. SME keeps only a hash of the secret, so
+    this registers a NEW invoker for the instance (it replaces the one made at create and deregisters it) and returns its id and secret in this
+    answer and nowhere else; call it again to rotate. The id is the instance's `oauthClientId`, so call it before the workload bootstraps:
+    409 once the instance is RUNNING (the SME and DME registrations made at bootstrap are under the old id). It is not an idempotent
+    command: a replayed answer would be a stored secret. Give the pair to the workload as SMO_INVOKER_ID / SMO_INVOKER_SECRET with
+    SMO_IDENTITY_KIND=rapp."""
+    inst = _load_instance(db, instance_id)
+    if InstanceState(inst.state) != InstanceState.DEPLOYING:
+        raise illegal_transition_error(IllegalTransition(InstanceState(inst.state), InstanceEvent.BOOTSTRAP_OK),
+                                       f"RAppInstance {instance_id}: credentials are issued while it is DEPLOYING")
+    previous = inst.oauth_client_id
+    secret = register_instance_invoker(inst)
+    db.commit()
+    if previous:
+        with suppress(httpx.HTTPError):
+            R1Client().delete(f"/sme/invoker-registrations/{previous}")
+    response.headers["Cache-Control"] = "no-store"
+    return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id, "oauthClientSecret": secret}
 
 
 @app.post("/instances/{instance_id}/bootstrap-complete")
