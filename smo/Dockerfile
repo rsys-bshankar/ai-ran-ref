@@ -16,6 +16,14 @@ RUN pip install --no-cache-dir --require-hashes -r /srv/requirements.txt
 
 COPY shared /srv/shared
 RUN pip install --no-cache-dir --no-deps -e /srv/shared
+
+# Image vulnerability scan (PR-SEC-12.2): take the Debian security fix for pcre2 that the pinned base predates, and
+# drop pip/setuptools/wheel, which nothing needs at run time and whose vendored copies of msgpack, urllib3 and
+# setuptools carried the other findings. Remove this once a newer base digest has both fixed.
+RUN apt-get update \
+ && apt-get install -y --only-upgrade --no-install-recommends libpcre2-8-0 \
+ && rm -rf /var/lib/apt/lists/* \
+ && pip uninstall -y pip setuptools wheel
 # The AI Runtime SDK (smo_sdk) — what a sample rApp (MODULE=samples/...)
 # builds on; the SMO modules themselves never import it.
 COPY sdk /srv/sdk
