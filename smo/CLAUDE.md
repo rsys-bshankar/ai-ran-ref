@@ -118,8 +118,13 @@ column, index or constraint:
 
 1. Write a revision in `migrations/versions/` (next number, `down_revision` = the current head, a real `downgrade()`), and change
    the ORM model in the same PR. Never edit `001_init.sql` or an earlier revision: a database that already ran it will not see the change.
-2. Keep it compatible with the previous release's code where you can (add before use, remove in a later release): `docs/RELEASES.md`,
-   "What each number means".
+2. **Expand, then contract.** Within a MINOR release a revision is additive: a new table, a nullable column or one with a default, a new
+   index. The previous release's code must keep working on the upgraded database, because during a rolling upgrade both run at once.
+   Removing, renaming or narrowing something (a column, a constraint, a type) takes two releases: release N stops using it and keeps it,
+   release N+1 drops it (and says so under `### Changed` in `CHANGELOG.md`). CI proves it: the job "Previous release's code runs on the
+   new schema" builds the newest `smo-v*` tag, starts it on the database this commit's `scripts/migrate.py` produces and replays that
+   release's demo runbook (`scripts/check_previous_release_code.sh`; it runs when a PR touches `migrations/`, and on every push to `main`).
+   If it fails, the revision is a contract step done too early: split it. `docs/RELEASES.md`, "What each number means".
 3. Run `python scripts/migrate.py` then `python scripts/check_migration_matches_models.py` against Postgres (step 4 below), and raise
    `HEAD` in `tests_integration/test_migrations.py`.
 4. Add a line under `[Unreleased]` in `CHANGELOG.md`.
