@@ -245,7 +245,7 @@ Done (`HISTORY.md` §10): `smo_shared/outbox.py` (table, `enqueue`, `drain`, inl
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MSG-2.1 | `ROLE=worker` entrypoint (same image) and a compose service | Worker starts and idles | MSG-1.2 |
+| MSG-2.1 | `ROLE=worker` entrypoint (same image) and a compose service (done as `smo_shared.worker`, MSG-4; it now also runs the outbox sweep) | Worker starts and idles | MSG-1.2 |
 | MSG-2.2 ★ | Claim rows with `FOR UPDATE SKIP LOCKED` | Two workers never send the same row (test) | MSG-2.1 |
 | MSG-2.3 | Back-off schedule 0 / 5 / 10 / 20 s as in `STANDARDS.md`, then `DEAD` | Fake-clock test | MSG-2.2 |
 | MSG-2.4 | Admin routes: list by status, requeue a `DEAD` row | Route tests | MSG-2.3 |
@@ -619,7 +619,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| HA-4.1 | Kill the delivery worker mid-batch | No lost notification; duplicates only where at-least-once allows | MSG-2.2 |
+| HA-4.1 | Kill the delivery worker mid-batch (done: the sweep of `MSG-2` was missing and is built here; CI job `helm`) | No lost notification; duplicates only where at-least-once allows | MSG-2.2 |
 | HA-4.2 | Kill the job runner mid-job | Job resumes (`MSG-4.4`) | MSG-4.4 |
 
 #### PR-HA-5 — Placement

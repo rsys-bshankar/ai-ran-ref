@@ -19,6 +19,11 @@ crash, so it does its work in committed steps and finds what is due from the dat
 The worker has no HTTP port. It touches `SMO_WORKER_HEARTBEAT_FILE` (default `/tmp/worker-heartbeat`) on every tick, and the compose healthcheck
 fails when that file is older than a minute. It stops on SIGTERM or SIGINT after the task in hand.
 
+Every worker also runs the **delivery sweep** (PR-MSG-2, `outbox-sweep`): `outbox.drain(engine)` over the shared `notification_outbox`, so a notification whose
+first send failed, or whose sender died mid-send, is delivered by whichever worker is up (at least once: a row claimed by a process that died is due again when its
+lease, `outbox.LEASE_SECONDS`, runs out). It is one task for the whole database, not one per module, and runs every `SMO_OUTBOX_SWEEP_SECONDS` (default 5);
+`SMO_OUTBOX_SWEEP=false` leaves it out of a worker.
+
   tick(tasks, ...)   offer every task once; returns {name: "ran" | "skipped" | "failed"}. The loop's body, and what the tests call.
 """
 
@@ -47,10 +52,11 @@ class Task:
     name: str
     interval_seconds: float
     fn: Callable[[], None]
+    shared: bool = False       # one claim for the whole database, whichever module's worker offers it
 
 
 def _qualified(module: str, task: Task) -> str:
-    return f"{module}:{task.name}"
+    return task.name if task.shared else f"{module}:{task.name}"
 
 
 def tick(tasks: Iterable[Task], *, module: str = "", skip: Iterable[str] = (), session_factory=None, engine=None,
@@ -90,11 +96,27 @@ def _seconds(variable: str, default: float) -> float:
         return default
 
 
+def outbox_sweep_task() -> Task | None:
+    """The delivery sweep, or None when `SMO_OUTBOX_SWEEP` turns it off."""
+    if os.environ.get("SMO_OUTBOX_SWEEP", "true").strip().lower() in ("0", "false", "no", "off"):
+        return None
+
+    def sweep() -> None:
+        from . import outbox
+        from .db import engine
+        outbox.drain(engine)
+
+    return Task("outbox-sweep", _seconds("SMO_OUTBOX_SWEEP_SECONDS", 5.0), sweep, shared=True)
+
+
 def main(tasks: list[Task] | None = None, *, module: str | None = None, stop: threading.Event | None = None) -> int:
     from .logconfig import configure_logging
     module = module or os.environ.get("MODULE", "")
     configure_logging(f"{module}-worker")
     tasks = load_tasks() if tasks is None else tasks
+    sweep = outbox_sweep_task()
+    if sweep is not None and all(t.name != sweep.name for t in tasks):
+        tasks = [*tasks, sweep]
     stop = stop or threading.Event()
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, lambda *_: stop.set())

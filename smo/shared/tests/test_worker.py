@@ -105,3 +105,49 @@ def test_the_loop_touches_the_heartbeat_backs_off_a_failure_and_stops_on_the_eve
     assert worker.main([Task("bad", 1, lambda: None)], module="m", stop=stop) == 0
     assert (tmp_path / "beat").exists()
     assert offered == [[], ["bad"], ["bad"]]                   # offered once, then skipped for the back-off
+
+
+# --- the delivery sweep (PR-MSG-2) -------------------------------------------------------------------------------------------------------------
+
+def test_the_sweep_is_one_task_for_the_whole_database_whichever_module_offers_it(db):
+    calls = []
+    sweep = Task("outbox-sweep", 5, lambda: calls.append(1), shared=True)
+    engine, factory = db
+    assert tick([sweep], module="sme", session_factory=factory, engine=engine, now=at(0)) == {"outbox-sweep": "ran"}
+    assert tick([sweep], module="dme", session_factory=factory, engine=engine, now=at(1)) == {"outbox-sweep": "skipped"}   # same claim
+    assert len(calls) == 1
+
+
+def test_a_task_that_is_not_shared_is_claimed_per_module(db):
+    calls = []
+    task = Task("t", 60, lambda: calls.append(1))
+    engine, factory = db
+    assert tick([task], module="a", session_factory=factory, engine=engine, now=at(0)) == {"t": "ran"}
+    assert tick([task], module="b", session_factory=factory, engine=engine, now=at(0)) == {"t": "ran"}
+
+
+def test_the_sweep_sends_what_a_dead_sender_left_and_what_failed_before(tmp_path, monkeypatch):
+    import httpx
+
+    from smo_shared import outbox, webhook
+    engine = create_engine(f"sqlite:///{tmp_path / 'sweep.db'}", future=True)
+    Base.metadata.create_all(engine, tables=[PeriodicRun.__table__, outbox.NotificationOutbox.__table__])
+    sent = []
+    monkeypatch.setattr(webhook, "post_webhook", lambda destination, json, timeout=5.0: sent.append(destination) or httpx.Response(200))
+    monkeypatch.setattr("smo_shared.db.engine", engine)
+    monkeypatch.delenv("SMO_OUTBOX_SWEEP", raising=False)
+    with sessionmaker(bind=engine)() as session:
+        session.add_all([outbox.NotificationOutbox(module="m", destination=f"http://consumer/{i}", payload={"i": i}) for i in range(3)])
+        session.commit()
+    sweep = worker.outbox_sweep_task()
+    assert sweep is not None and sweep.shared
+    assert tick([sweep], module="m", session_factory=sessionmaker(bind=engine), engine=engine) == {"outbox-sweep": "ran"}
+    assert sorted(sent) == [f"http://consumer/{i}" for i in range(3)]
+
+
+def test_the_sweep_can_be_turned_off_and_is_added_once(monkeypatch):
+    monkeypatch.setenv("SMO_OUTBOX_SWEEP", "false")
+    assert worker.outbox_sweep_task() is None
+    monkeypatch.setenv("SMO_OUTBOX_SWEEP", "true")
+    monkeypatch.setenv("SMO_OUTBOX_SWEEP_SECONDS", "7")
+    assert worker.outbox_sweep_task().interval_seconds == 7.0

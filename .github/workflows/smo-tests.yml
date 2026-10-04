@@ -673,7 +673,8 @@ jobs:
           helm history smo -n smo
           for d in $(kubectl -n smo get deploy -o name); do kubectl -n smo rollout status "$d" --timeout=120s; done
           kubectl -n smo get pods
-          [ "$(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed' | wc -l)" = "0" ]
+          # an old pod the rollout has replaced is still Terminating for its preStop delay and its drain (about 25 s); that is the rollout working, not a failed pod
+          [ "$(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed|Terminating' | wc -l)" = "0" ]
           kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
 
       - name: Two replicas of every module that can have them, and the stack still answers (PR-HA-1)
@@ -702,6 +703,33 @@ jobs:
           kubectl -n smo exec probe -- touch /tmp/stop
           kubectl -n smo wait --for=jsonpath='{.status.phase}'=Succeeded pod/probe --timeout=90s || { kubectl -n smo logs probe; exit 1; }
           kubectl -n smo logs probe
+
+      - name: Kill the delivery workers in the middle of a batch; no notification is lost (PR-HA-4.1)
+        working-directory: smo
+        run: |
+          kubectl -n smo run sink --image=local/smo-sme:ci --image-pull-policy=Never --restart=Never --port=9000 -- python3 -c "$(cat scripts/k8s_delivery_sink.py)"
+          kubectl -n smo wait --for=condition=Ready pod/sink --timeout=120s
+          kubectl -n smo expose pod sink --port 9000
+          # 100 notifications, all due now, for a destination that takes 0.3 s each: about 30 s of work for the sweep
+          kubectl -n smo exec postgres-0 -- psql -U smo -d smo -c "INSERT INTO notification_outbox (module, destination, payload, status, attempts, next_attempt_at) SELECT 'ci-failover', 'http://sink:9000/n/' || g, jsonb_build_object('i', g), 'PENDING', 0, now() FROM generate_series(1, 100) g"
+          count() { kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "SELECT count(*) FROM notification_outbox WHERE module = 'ci-failover' AND status = '$1'"; }
+          received() { kubectl -n smo exec sink -- python3 -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:9000/count').read().decode())"; }
+          for i in $(seq 1 60); do
+            [ "$(received | cut -d' ' -f1)" -ge 10 ] && break
+            sleep 1
+          done
+          echo "sink has: $(received); still pending: $(count PENDING)"
+          [ "$(count PENDING)" -gt 0 ] || { echo "::error::the batch was already finished, so killing the workers proves nothing"; exit 1; }
+          kubectl -n smo delete pod -l app.kubernetes.io/name=ran-nf-oam-worker --force --grace-period=0
+          for i in $(seq 1 72); do
+            [ "$(count PENDING)" = "0" ] && break
+            sleep 5
+          done
+          echo "sent: $(count SENT), pending: $(count PENDING), dead: $(count DEAD)"
+          read -r total distinct <<<"$(received)"
+          echo "the sink received $total posts for $distinct distinct notifications ($((total - distinct)) duplicates, which at-least-once allows)"
+          [ "$(count SENT)" = "100" ] && [ "$distinct" = "100" ]
+          kubectl -n smo exec postgres-0 -- psql -U smo -d smo -c "DELETE FROM notification_outbox WHERE module = 'ci-failover'"
 
       - name: What the cluster says, when it went wrong
         if: failure()
