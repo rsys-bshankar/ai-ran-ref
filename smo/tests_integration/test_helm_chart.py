@@ -104,6 +104,14 @@ def test_the_default_install_renders_a_deployment_per_module_and_no_rapp_mounts_
 
 
 @helm
+def test_no_pod_gets_a_service_account_token():
+    # the token mounts under /var/run/secrets, which is inside the /run/secrets mount of a read-only root filesystem: the pod would not start
+    for d in _render():
+        if d["kind"] in ("Deployment", "StatefulSet", "Job"):
+            assert d["spec"]["template"]["spec"]["automountServiceAccountToken"] is False, d["metadata"]["name"]
+
+
+@helm
 def test_every_module_with_a_database_waits_for_the_schema():
     for d in _render():
         if d["kind"] != "Deployment":

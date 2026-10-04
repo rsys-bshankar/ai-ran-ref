@@ -36,6 +36,7 @@ spec:
         {{- $labels | nindent 8 }}
         app.kubernetes.io/name: postgres
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 60
       securityContext:
         runAsNonRoot: true

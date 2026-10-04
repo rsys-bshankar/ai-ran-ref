@@ -86,6 +86,8 @@ podSecurityContext:
   runAsNonRoot: true
   runAsUser: 10001
   runAsGroup: 10001
+  fsGroup: 10001                     # the volumes (Onboarding's packages, the GUI backend's /data) are made writable for this group
+  fsGroupChangePolicy: OnRootMismatch
   seccompProfile: { type: RuntimeDefault }
 containerSecurityContext:
   allowPrivilegeEscalation: false

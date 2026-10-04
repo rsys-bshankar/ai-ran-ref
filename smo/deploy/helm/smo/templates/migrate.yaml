@@ -30,6 +30,7 @@ spec:
         {{- include "smo.labels" (dict "root" .) | nindent 8 }}
         app.kubernetes.io/name: migrate
     spec:
+      automountServiceAccountToken: false
       restartPolicy: OnFailure
       {{- include "smo.pullSecrets" . | nindent 6 }}
       securityContext:

@@ -38,6 +38,9 @@ spec:
       {{- include "smo.pullSecrets" $ | nindent 6 }}
       securityContext:
         {{- toYaml (default $.Values.podSecurityContext $m.podSecurityContext) | nindent 8 }}
+      # no pod here calls the Kubernetes API, so none gets a token; the token's mount point also sits inside /run/secrets, which a read-only root filesystem
+      # cannot create
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       {{- if $m.database }}
       initContainers:
