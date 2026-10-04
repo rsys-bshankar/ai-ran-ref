@@ -92,12 +92,16 @@ services:
   r1-termination:
     build: { context: ., args: { MODULE: r1-termination } }
     stop_grace_period: 30s
+    secrets: [db_password]    # PR-SEC-11: the gateway adds a row to the audit chain for every authenticated change (it keeps no other state)
     <<: *hardening
     healthcheck: *ready_probe
+    depends_on: *wait_for_schema
     ports: ["8080:8000"]
     volumes:
       - smo_scratch:/srv/scratch   # where the runbook copies the rApp CSARs it serves (`docker compose cp ... r1-termination:/srv/scratch/`)
     environment:
+      <<: *db_env
+      R1_AUDIT: ${R1_AUDIT:-on}    # off: no audit rows (the gateway then needs no database)
       # PR-SEC-1.6: unset, /bootstrap names SME on the compose network; set to the HTTPS door (https://localhost:8443 with the tls
       # profile) and it names that address instead, so a consumer that only reaches the edge can complete the flow.
       R1_PUBLIC_BASE_URL: ${R1_PUBLIC_BASE_URL:-}

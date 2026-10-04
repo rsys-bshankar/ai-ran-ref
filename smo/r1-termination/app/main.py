@@ -18,12 +18,14 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from starlette.background import BackgroundTask
 
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics, record_role_refusal
 from smo_shared.bodylimit import MIB, BodySizeLimit, settings_from_env
 from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
+from smo_shared.audit import audit_enabled, write_audit
 from smo_shared.health import install_health
 from smo_shared import roles
 from smo_shared.invoker import INVOKER_ID_HEADER, ON_BEHALF_OF_HEADER
@@ -63,8 +65,8 @@ _limiter = TokenBuckets(rate=lambda: float(os.environ.get("R1_RATE_PER_SECOND", 
 # R1 Termination's own probes, declared ahead of the catch-all proxy route so they are answered here,
 # unauthenticated, rather than 404ing as an unknown prefix. Every backend module's own probes are
 # reached through the proxy as /<module>/health, /<module>/ready (token-gated like any proxied call);
-# the GUI BFF's GET /modules/status probes both. The gateway keeps no state and has no database, so
-# it is ready whenever it is live; SME being down shows as 401s on proxied calls and as the modules'
+# the GUI BFF's GET /modules/status probes both. The gateway keeps no state of its own (the audit rows of PR-SEC-11 go to the shared database, and a database that
+# is down fails no call), so it is ready whenever it is live; SME being down shows as 401s on proxied calls and as the modules'
 # own /ready failing.
 install_health(app)
 
@@ -167,6 +169,19 @@ async def proxy(full_path: str, request: Request):
     this build, so pinning it to a fixed string is a pure stability fix,
     not a behavior change.
     """
+    response = await _proxy(full_path, request)
+    audited = getattr(request.state, "audit", None)          # set once the caller is known: an unauthenticated or rate-limited call is not recorded
+    if audited is not None and request.method in roles.CHANGES and audit_enabled():
+        invoker, role, refused, on_behalf_of = audited
+        result = f"REFUSED:{refused}" if refused else str(response.status_code)
+        task = BackgroundTask(write_audit, actor=invoker or "unknown", role=role, action=request.method, target="/" + full_path, result=result,
+                              correlation_id=get_correlation_id(), detail={"onBehalfOf": on_behalf_of} if on_behalf_of else None)
+        response.background = task
+    return response
+
+
+async def _proxy(full_path: str, request: Request):
+    """The proxy itself (`proxy` above adds the audit record): authenticates, applies the role policy, forwards."""
     segments = full_path.split("/", 1)
     prefix = "/" + segments[0]
     if segments[1:] == ["metrics"]:
@@ -180,6 +195,7 @@ async def proxy(full_path: str, request: Request):
     if caller is None:
         return JSONResponse(status_code=401, content={"title": "UNAUTHORIZED", "status": 401})
     invoker_id, role = caller
+    request.state.audit = (invoker_id, role, None, request.headers.get(ON_BEHALF_OF_HEADER) if role == roles.ROLE_INTERNAL else None)
     wait = _limiter.take(invoker_id or "anonymous")
     if wait is not None:
         return JSONResponse(status_code=429, headers={"Retry-After": str(wait)}, content={
@@ -194,6 +210,7 @@ async def proxy(full_path: str, request: Request):
         action = "refused" if roles.enforcement_mode() == "enforce" else "audited"
         record_role_refusal(prefix, action)
         if action == "refused":
+            request.state.audit = (invoker_id, role, "ROLE_NOT_PERMITTED", None)
             return JSONResponse(status_code=403, content={
                 "title": "ROLE_NOT_PERMITTED", "status": 403,
                 "detail": f"{request.method} {prefix}/{rest_of_path} is for SMO modules and operators, not for an rApp"})

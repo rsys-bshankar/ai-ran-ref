@@ -155,6 +155,7 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 | `R1_RATE_PER_SECOND` | `100` | Requests a second each caller (invoker id) may sustain; `0` turns the limiter off |
 | `R1_RATE_BURST` | `200` | Requests a caller may make at once before it is held to the rate |
 | `SMO_ROLE_ENFORCEMENT` | `enforce` | `enforce`: an rApp is refused on the internal-only routes; `audit`: the same decision is counted (`smo_role_refusals_total`) and logged, then allowed (a rolling upgrade from a release with no enrollment). Anything else is `enforce` |
+| `R1_AUDIT` | `on` | `off` records nothing in the audit chain (PR-SEC-11). On, the gateway needs `SMO_DATABASE_URL` like a module does; a write that fails is logged and counted (`smo_audit_writes_total{outcome="failed"}`) and never fails the call |
 | `R1_INTROSPECT_TIMEOUT_SECONDS` | `5` | How long it waits for SME's token introspection (a timeout fails closed: 401) |
 
 `SME_URL` is also the target of introspection and of the URIs in `/bootstrap`.
@@ -214,3 +215,7 @@ cd smo/r1-termination && PYTHONPATH=.:../shared python -m pytest tests/ -q
 ## What an rApp may change (PR-SEC-14)
 
 For a caller with the `rapp` role the gateway applies two lists from `shared/smo_shared/roles.py`: `INTERNAL_ONLY` (refused in any method) and `RAPP_MAY_CHANGE`, an allow-list for POST, PUT, PATCH and DELETE per module. A change that is not on it is refused with 403 `ROLE_NOT_PERMITTED` before a backend is called; `SMO_ROLE_ENFORCEMENT=audit` counts and logs it and lets it through. Reads are not decided by the allow-list. The list is what `smo_sdk` calls plus the consumer-facing request routes of the AI/ML services; `sdk/tests/conftest.py` fails any SDK test whose call is off it, so adding an SDK call means adding the route. An SMO module (the `internal` role) is never refused by either list.
+
+## Audit (PR-SEC-11)
+
+After it answers, the gateway adds one row to the audit hash chain (`smo_shared/audit.py`) for every authenticated POST, PUT, PATCH and DELETE, including the ones it refuses for the caller's role. Reads, calls with no good token and calls held by the rate limiter are not recorded (an attacker without a token must not be able to write to the database), and the body and query are never recorded. `python -m smo_shared.audit verify` and `export` run in any image of the stack: `docker compose exec r1-termination python -m smo_shared.audit verify`.

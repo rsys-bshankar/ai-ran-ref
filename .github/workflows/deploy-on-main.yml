@@ -69,6 +69,14 @@ jobs:
         working-directory: smo
         run: docker compose exec -T sme python3 - < scripts/compose_e2e_roles.py
 
+      - name: The audit trail holds those calls and its chain verifies (PR-SEC-11)
+        working-directory: smo
+        run: |
+          rows=$(docker compose exec -T postgres psql -U smo -d smo -Atc "SELECT count(*) FROM audit_log")
+          echo "audit rows: $rows"
+          [ "$rows" -gt 0 ]
+          docker compose exec -T r1-termination python -m smo_shared.audit verify
+
       - name: Replay DEMO_RUNBOOK against the live stack
         working-directory: smo
         run: |
