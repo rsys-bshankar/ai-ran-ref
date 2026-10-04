@@ -240,6 +240,91 @@
         "title": "IdentityAttributes",
         "type": "object"
       },
+      "KpiCheckRequest": {
+        "properties": {
+          "accessScope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessscope"
+          },
+          "baselineMinutes": {
+            "default": 60,
+            "maximum": 10080.0,
+            "minimum": 1.0,
+            "title": "Baselineminutes",
+            "type": "integer"
+          },
+          "direction": {
+            "default": "higher",
+            "enum": [
+              "higher",
+              "lower"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "kpi": {
+            "title": "Kpi",
+            "type": "string"
+          },
+          "maxRegressionPercent": {
+            "default": 10.0,
+            "minimum": 0.0,
+            "title": "Maxregressionpercent",
+            "type": "number"
+          },
+          "minSamples": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Minsamples",
+            "type": "integer"
+          },
+          "msacRole": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Msacrole"
+          },
+          "observationMinutes": {
+            "default": 60,
+            "maximum": 10080.0,
+            "minimum": 1.0,
+            "title": "Observationminutes",
+            "type": "integer"
+          },
+          "requestedBy": {
+            "title": "Requestedby",
+            "type": "string"
+          },
+          "revert": {
+            "default": false,
+            "title": "Revert",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "requestedBy",
+          "kpi"
+        ],
+        "title": "KpiCheckRequest",
+        "type": "object"
+      },
       "KpiCounter": {
         "properties": {
           "aggregation": {
@@ -2087,6 +2172,55 @@
           }
         },
         "summary": "Halt Configuration Job"
+      }
+    },
+    "/config-jobs/{job_id}/kpi-check": {
+      "post": {
+        "description": "AI-10.5: did a KPI regress where this job wrote? For each element the job applied changes to, the KPI over the window before the job\n(`baselineMinutes`) is compared with the KPI over the window from the job on (`observationMinutes`); a worse result than\n`maxRegressionPercent` is REGRESSED. With `revert`, the regressed elements are rolled back with the rollback of MGT-1.6 (a new job,\nMSAC, the changed-since guard); where the data is too thin the verdict is INSUFFICIENT_DATA and nothing is reverted. This is a check\nto call, by an rApp, the SMO's autonomy or a scheduler, once the observation window has some data: nothing here runs on its own.",
+        "operationId": "check_configuration_job_kpi_config_jobs__job_id__kpi_check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KpiCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Configuration Job Kpi"
       }
     },
     "/config-jobs/{job_id}/rollback": {

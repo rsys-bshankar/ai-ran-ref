@@ -864,12 +864,15 @@ class RollbackRequest(BaseModel):
     dryRun: bool = False
 
 
-def _rollback_plan(db: Session, job: WriteConfigJob) -> tuple[list[dict], dict, list[str]]:
+def _rollback_plan(db: Session, job: WriteConfigJob, elements: set[str] | None = None) -> tuple[list[dict], dict, list[str]]:
     """(changes that undo the job, in reverse order; the values each target should hold now if nothing touched it since (None: absent);
-    problems that make an undo impossible). Only sub-changes that were applied, and only what the snapshots recorded, can be undone."""
-    rows = db.execute(select(CMSnapshot).join(WriteConfigSubChange, WriteConfigSubChange.id == CMSnapshot.sub_change_id)
-                      .where(CMSnapshot.job_id == job.job_id, WriteConfigSubChange.status == "APPLIED")
-                      .order_by(CMSnapshot.created_at, CMSnapshot.snapshot_id)).scalars().all()
+    problems that make an undo impossible). Only sub-changes that were applied, and only what the snapshots recorded, can be undone. `elements`
+    limits the plan to those elements (a revert on a KPI regression undoes only where the KPI regressed)."""
+    stmt = (select(CMSnapshot).join(WriteConfigSubChange, WriteConfigSubChange.id == CMSnapshot.sub_change_id)
+            .where(CMSnapshot.job_id == job.job_id, WriteConfigSubChange.status == "APPLIED").order_by(CMSnapshot.created_at, CMSnapshot.snapshot_id))
+    if elements is not None:
+        stmt = stmt.where(CMSnapshot.managed_element_ref.in_(elements))
+    rows = db.execute(stmt).scalars().all()
     problems: list[str] = []
     if not rows:
         return [], {}, ["the job applied nothing that has a snapshot (nothing was applied, snapshots are off, or they were purged)"]
@@ -957,6 +960,69 @@ def rollback_configuration_job(job_id: uuid.UUID, body: RollbackRequest, request
     request_body = WriteConfigRequest(requestedBy=body.requestedBy, accessScope=body.accessScope or job.scope, msacRole=body.msacRole, changes=changes)
     result = _execute_write(request_body, db, rollback_of=job_id, rollback_forced=bool(changed))
     return {**result, "rollbackOf": str(job_id), "forced": bool(changed)}
+
+
+class KpiCheckRequest(BaseModel):
+    requestedBy: str
+    kpi: str
+    baselineMinutes: int = Field(default=60, ge=1, le=10080)             # the KPI over this long before the job ran
+    observationMinutes: int = Field(default=60, ge=1, le=10080)          # ... and over this long from when it ran
+    maxRegressionPercent: float = Field(default=10.0, ge=0)
+    direction: Literal["higher", "lower"] = "higher"                      # which way is better: a drop (higher) or a rise (lower) is a regression
+    minSamples: int = Field(default=1, ge=1)                              # per window and element: fewer is INSUFFICIENT_DATA, never a verdict
+    revert: bool = False
+    accessScope: str | None = None
+    msacRole: str | None = None
+    force: bool = False                                                   # revert although values changed since (MGT-1.7)
+
+
+@app.post("/config-jobs/{job_id}/kpi-check")
+def check_configuration_job_kpi(job_id: uuid.UUID, body: KpiCheckRequest, db: Session = Depends(get_session)):
+    """AI-10.5: did a KPI regress where this job wrote? For each element the job applied changes to, the KPI over the window before the job
+    (`baselineMinutes`) is compared with the KPI over the window from the job on (`observationMinutes`); a worse result than
+    `maxRegressionPercent` is REGRESSED. With `revert`, the regressed elements are rolled back with the rollback of MGT-1.6 (a new job,
+    MSAC, the changed-since guard); where the data is too thin the verdict is INSUFFICIENT_DATA and nothing is reverted. This is a check
+    to call, by an rApp, the SMO's autonomy or a scheduler, once the observation window has some data: nothing here runs on its own."""
+    job = db.get(WriteConfigJob, job_id)
+    if job is None:
+        raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"no configuration job {job_id}")
+    definition = _kpi_or_404(db, body.kpi)
+    anchor = as_utc(job.schema_validated_at) if job.schema_validated_at else datetime.datetime.now(datetime.UTC)
+    before_window = (anchor - datetime.timedelta(minutes=body.baselineMinutes), anchor)
+    after_window = (anchor, anchor + datetime.timedelta(minutes=body.observationMinutes))
+    elements = sorted({r.managed_element_ref for r in db.scalars(select(WriteConfigSubChange).where(
+        WriteConfigSubChange.job_id == job_id, WriteConfigSubChange.status == "APPLIED")).all()})
+    results = []
+    for element in elements:
+        base = kpi.compute(db, definition, *before_window, "all", element)["items"][0]
+        seen = kpi.compute(db, definition, *after_window, "all", element)["items"][0]
+        entry = {"managedElementRef": element, "baseline": base["value"], "observed": seen["value"],
+                 "baselineSamples": base["samples"], "observedSamples": seen["samples"], "changePercent": None}
+        if base["samples"] < body.minSamples or seen["samples"] < body.minSamples or base["value"] is None or seen["value"] is None:
+            entry["verdict"], entry["reason"] = "INSUFFICIENT_DATA", "NOT_ENOUGH_SAMPLES_OR_UNDEFINED"
+        elif base["value"] == 0:
+            entry["verdict"], entry["reason"] = "INSUFFICIENT_DATA", "BASELINE_ZERO"
+        else:
+            worse = (base["value"] - seen["value"]) if body.direction == "higher" else (seen["value"] - base["value"])
+            entry["changePercent"] = round(-100.0 * worse / abs(base["value"]), 4)         # signed like the KPI: negative is a drop
+            entry["verdict"] = "REGRESSED" if 100.0 * worse / abs(base["value"]) > body.maxRegressionPercent else "OK"
+        results.append(entry)
+    regressed = [r["managedElementRef"] for r in results if r["verdict"] == "REGRESSED"]
+    verdict = "REGRESSED" if regressed else ("INSUFFICIENT_DATA" if any(r["verdict"] == "INSUFFICIENT_DATA" for r in results) or not results else "OK")
+    answer = {"jobId": str(job_id), "kpi": body.kpi, "verdict": verdict, "elements": results, "reverted": False, "revertJobId": None}
+    if regressed and body.revert:
+        changes, expected, problems = _rollback_plan(db, job, set(regressed))
+        if problems:
+            raise framework_error(FrameworkError.ROLLBACK_NOT_POSSIBLE, detail="; ".join(problems))
+        changed = _changed_since(db, expected)
+        if changed and not body.force:
+            raise framework_error(FrameworkError.CONFIG_CHANGED_SINCE,
+                                  detail=f"{len(changed)} value(s) differ from what job {job_id} wrote; the KPI regressed on {', '.join(regressed)} "
+                                         "but the revert would overwrite a later change; send force=true to restore anyway")
+        undo = _execute_write(WriteConfigRequest(requestedBy=body.requestedBy, accessScope=body.accessScope or job.scope, msacRole=body.msacRole,
+                                                 changes=changes), db, rollback_of=job_id, rollback_forced=bool(changed))
+        answer.update(reverted=undo["status"] == "COMPLETED", revertJobId=undo["jobId"], revertStatus=undo["status"])
+    return answer
 
 
 class WaveActionRequest(BaseModel):

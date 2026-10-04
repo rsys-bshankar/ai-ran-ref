@@ -1154,7 +1154,6 @@ Current state, checked: AIMgF training, validation, emulation and inference jobs
 | AI-10.2 ★ | Enforce rate limit per rApp on config jobs | 429-style refusal in test | AI-10.1 |
 | AI-10.3 | Enforce magnitude and blast radius | Refusal tests | AI-10.1 |
 | AI-10.4 | Per-rApp kill switch (operator action) | Writes refused after use | – |
-| AI-10.5 | Revert on KPI regression | Values restored in test | AI-10.2, MGT-1.6, MGT-11.5 |
 | AI-10.6 | Events for each refusal | Event delivered | AI-10.2, MSG-1.4 |
 
 #### PR-AI-11 — Human approval of rApp actions
