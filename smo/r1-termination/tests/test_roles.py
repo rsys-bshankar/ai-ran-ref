@@ -79,7 +79,8 @@ def test_an_smo_module_is_not_refused_there(gateway, method, path):
 
 
 @pytest.mark.parametrize("method, path", [("GET", "/ran-nf-oam/rapp-limits/x"), ("GET", "/ran-nf-oam/rapp-kill/x"), ("GET", "/ran-nf-oam/kpi-definitions"), ("GET", "/ran-nf-oam/kpi-definitions/standard"), ("GET", "/ran-nf-oam/kpis/k"),
-                                          ("POST", "/ran-nf-oam/config-jobs"), ("PUT", "/ran-nf-oam/rapp-limits/x/y"), ("PUT", "/sme/rapp-limits/x")])
+                                          ("POST", "/ran-nf-oam/config-jobs"), ("POST", "/ran-nf-oam/config-jobs/j/rollback"), ("POST", "/dme/actions"), ("POST", "/aimgf/training-jobs"),
+                                          ("DELETE", "/sme/provider-registrations/a"), ("GET", "/onboarding/packages"), ("GET", "/rapp-mgmt/instances"), ("GET", "/sme/trusted-invokers")])
 def test_other_routes_are_open_to_an_rapp_as_before(gateway, method, path):
     assert client.request(method, path, headers=AUTH).status_code == 200
 
@@ -140,3 +141,43 @@ def test_a_module_that_names_nobody_forwards_nothing(gateway):
     gateway["sme_says"] = {"active": True, "client_id": "dme-client", "role": "internal"}
     client.get("/ran-nf-oam/health", headers=AUTH)
     assert "x-r1-on-behalf-of" not in _forwarded(gateway)
+
+
+# --- the rApp change allow-list -------------------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("method, path", [
+    ("POST", "/onboarding/packages"), ("DELETE", "/onboarding/packages/p"), ("POST", "/rapp-mgmt/instances"), ("POST", "/rapp-mgmt/instances/i/terminate"),
+    ("POST", "/nfo/deployments"), ("POST", "/focom/provisioning-requests"), ("POST", "/so-smos/anything"), ("POST", "/energy-saving-rapp/instances/i/start"),
+    ("PUT", "/sme/invoker-registrations/x"), ("DELETE", "/sme/invoker-registrations/x"), ("POST", "/sme/invoker-registrations/purge-stale"),
+    ("PUT", "/sme/trusted-invokers/x"), ("POST", "/aimgf/ml-training-functions"), ("POST", "/aimgf/execution-timeouts/sweep"),
+    ("POST", "/aimgf/models/m/runtime/terminate"), ("POST", "/mlmr/storages"), ("POST", "/mdaf/mda-functions"), ("PUT", "/ran-nf-oam/rapp-limits/x"),
+    ("POST", "/ran-nf-oam/config-jobs/j/abort"), ("PUT", "/ran-nf-oam/kpi-schedules/s"), ("POST", "/ran-nf-oam/managed-elements"),
+])
+def test_an_rapp_may_not_change_what_it_does_not_use(gateway, method, path):
+    resp = client.request(method, path, headers=AUTH)
+    assert resp.status_code == 403 and resp.json()["title"] == "ROLE_NOT_PERMITTED"
+    assert gateway["forwarded"] == []
+
+
+@pytest.mark.parametrize("method, path", [
+    ("POST", "/ran-nf-oam/config-jobs"), ("POST", "/dme/actions"), ("PUT", "/dme/data-jobs/j"), ("POST", "/aimgf/models/m/advance"),
+    ("POST", "/aimgf/ml-training-requests"), ("PATCH", "/intent-service/intents/i/admin-state"), ("POST", "/sme/oauth2/token"),
+    ("POST", "/mlmr/models/m/artifact"), ("POST", "/a1-related/policies"), ("DELETE", "/mdaf/subscriptions/s"),
+])
+def test_an_rapp_may_change_what_it_uses(gateway, method, path):
+    assert client.request(method, path, headers=AUTH).status_code == 200
+
+
+def test_every_change_is_decided_for_an_internal_module_too_and_it_is_never_refused(gateway):
+    gateway["sme_says"]["role"] = roles.ROLE_INTERNAL
+    assert client.post("/onboarding/packages", headers=AUTH).status_code == 200
+
+
+def test_audit_mode_lets_an_unlisted_change_through(gateway, monkeypatch):
+    monkeypatch.setenv("SMO_ROLE_ENFORCEMENT", "audit")
+    assert client.post("/onboarding/packages", headers=AUTH).status_code == 200
+
+
+def test_the_allow_list_names_only_modules_the_gateway_routes_to():
+    from app.main import ROUTES
+    assert set(roles.RAPP_MAY_CHANGE) <= set(ROUTES)

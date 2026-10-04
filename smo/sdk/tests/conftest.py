@@ -6,6 +6,8 @@ for e.g. nfo/tests/test_main.py's own FOCOM double.
 
 import pytest
 
+from smo_shared import roles
+
 
 class FakeResponse:
     def __init__(self, status_code=200, payload=None, content=b"", text=""):
@@ -27,6 +29,9 @@ class RecordingR1Client:
         self._next_response = FakeResponse(status_code, payload, content, text)
 
     def _record(self, verb, path, **kwargs):
+        # PR-SEC-14: every change the SDK makes must be one the gateway lets an rApp make (roles.RAPP_MAY_CHANGE)
+        prefix, _, rest = "/" + path.lstrip("/").partition("/")[0], "/", path.lstrip("/").partition("/")[2]
+        assert roles.rapp_may_change(prefix, verb, rest), f"the SDK calls {verb.upper()} {path}, which the gateway refuses an rApp"
         self.calls.append({"verb": verb, "path": path, **kwargs})
         return self._next_response
 

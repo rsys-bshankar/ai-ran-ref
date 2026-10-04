@@ -8,7 +8,10 @@ anything reaches a backend. The invoker id is `X-R1-Invoker-Id` (invoker.py).
 Enforcement (`SMO_ROLE_ENFORCEMENT`, read by SME and R1 Termination, default `enforce`):
   enforce  an rApp is refused on an internal-only route (403 `ROLE_NOT_PERMITTED`) and is not granted an internal scope
   audit    the same decision is made, counted and logged, and then allowed: for a rolling upgrade from a release that has no enrollment
-The policy is a deny-list: a route not listed is open to every valid token, as before. Add a route here, with the test that proves it exists.
+Two lists decide what an rApp may call. `INTERNAL_ONLY` is a deny-list (any method, so it also covers reads): a route listed is refused. `RAPP_MAY_CHANGE` is
+an allow-list for *changes* (POST, PUT, PATCH, DELETE): an rApp may change only what the SDK and the 3GPP consumer-facing routes need, and a change anywhere
+else (onboarding, instance management, orchestration, the other modules' administration) is refused with the same 403 `ROLE_NOT_PERMITTED`. Reads are
+open to every valid token, as before; scoping them per tenant is PR-SEC-10. Add a route to either list with the test that proves it exists.
 """
 
 import hmac
@@ -46,6 +49,86 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("POST",), r"^/safeguard-refusals/purge$"),
         ("/ran-nf-oam", ("PUT", "DELETE"), r"^/kpi-schedules/[^/]+$"),
     ))
+
+
+CHANGES = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+# module prefix at R1 -> the changes an rApp may make there, as (methods, path regex); `None` is every change (a module that is an rApp's own surface).
+# Derived from what `smo_sdk` calls (tests/test_roles.py in r1-termination proves every SDK call is on it) plus the consumer-facing request routes
+# of the 3GPP services that an rApp that does not use the SDK would call. What is left out is what administers a service rather than uses it:
+# registering functions, repositories and storages, runtime scaling and termination, sweeps, trusted invokers, purging, and every route of the
+# modules an operator drives (onboarding, instance management, orchestration, the sample rApps' own APIs).
+RAPP_MAY_CHANGE: dict[str, tuple[tuple[frozenset[str], re.Pattern], ...] | None] = {
+    prefix: None if rules is None else tuple((frozenset(m), re.compile(rx)) for m, rx in rules) for prefix, rules in {
+        "/sme": (
+            (("POST",), r"^/(provider-registrations|invoker-registrations|oauth2/(token|introspect))$"),
+            (("DELETE",), r"^/provider-registrations/[^/]+$"),
+            (("POST",), r"^/published-apis/v1/[^/]+/service-apis$"),
+            (("DELETE",), r"^/published-apis/v1/[^/]+/service-apis/[^/]+$"),
+            (("POST",), r"^/capif-events/v1/[^/]+/subscriptions$"),
+            (("DELETE",), r"^/capif-events/v1/[^/]+/subscriptions/[^/]+$"),
+        ),
+        "/dme": (
+            (("POST",), r"^/(actions|production-capabilities|data-jobs|offers|type-subscriptions)$"),
+            (("DELETE",), r"^/(production-capabilities|data-jobs)$"),
+            (("PUT", "DELETE"), r"^/data-jobs/[^/]+$"),
+            (("POST",), r"^/data-jobs/[^/]+/records$"),
+            (("DELETE",), r"^/(dme-types|offers|type-subscriptions)/[^/]+$"),
+            (("POST",), r"^/offers/[^/]+/notify$"),
+        ),
+        "/aimgf": (
+            (("POST",), r"^/(training-jobs|validation-jobs|emulation-jobs|feature-groups|mlmf/subscriptions|ml-(training|testing|update|model-loading)-requests|aiml-inference-reports)$"),
+            (("DELETE",), r"^/(training-jobs|feature-groups|mlmf/subscriptions|ml-training-requests)/[^/]+$"),
+            (("PATCH",), r"^/ml-(training|testing|update|model-loading)-requests/[^/]+$"),
+            (("POST",), r"^/training-jobs/[^/]+/(suspend|resume|progress|model-metrics|complete)$"),
+            (("POST",), r"^/(validation|emulation)-jobs/[^/]+/complete$"),
+            (("POST",), r"^/mlmf/subscriptions/[^/]+/reports$"),
+            (("POST",), r"^/models/[^/]+/(advance|inference-jobs|runtime/deploy|runtime/activate)$"),
+            (("POST",), r"^/inference-jobs/[^/]+/resolve$"),
+        ),
+        "/mlmr": (
+            (("POST",), r"^/(models|coordination-groups)$"),
+            (("PUT", "DELETE"), r"^/models/[^/]+$"),
+            (("POST",), r"^/models/[^/]+/artifact$"),
+            (("PATCH",), r"^/models/[^/]+/phase-info$"),
+        ),
+        "/mllf": ((("POST",), r"^/models/[^/]+/deploy$"),),
+        "/mdaf": (
+            (("POST",), r"^/(subscriptions|mda-requests|mda-reports|reports)$"),
+            (("DELETE",), r"^/(subscriptions|mda-requests)/[^/]+$"),
+        ),
+        "/intent-service": (
+            (("POST",), r"^/(intents|intent-reports|intent-handling-functions|autonomy-dispatches)$"),
+            (("DELETE",), r"^/(intents|intent-handling-functions)/[^/]+$"),
+            (("PATCH",), r"^/intents/[^/]+/admin-state$"),
+            (("POST",), r"^/intents/[^/]+/negotiation-feedback$"),
+            (("POST",), r"^/autonomy-dispatches/[^/]+/(resolve|reject)$"),
+        ),
+        # CM writes by an rApp are checked by its own safeguards (AI-10); undoing its job is the same path
+        "/ran-nf-oam": (
+            (("POST",), r"^/config-jobs$"),
+            (("POST",), r"^/config-jobs/[^/]+/rollback$"),
+        ),
+        # an rApp's own data-producer and A1 surfaces, which the SDK does not wrap
+        "/ran-analytics": None,
+        "/a1-related": None,
+        "/dme-push": None,
+        "/dme-pull": None,
+    }.items()
+}
+
+
+def rapp_may_change(module: str, method: str, path: str) -> bool:
+    """Whether an rApp may make this *change*; a read is always `True` here. A module that is not in `RAPP_MAY_CHANGE` is not for rApps to change."""
+    if method.upper() not in CHANGES:
+        return True
+    if module not in RAPP_MAY_CHANGE:
+        return False
+    rules = RAPP_MAY_CHANGE[module]
+    if rules is None:
+        return True
+    path = "/" + path.lstrip("/")
+    return any(method.upper() in methods and pattern.match(path) for methods, pattern in rules)
 
 
 def enforcement_mode() -> str:

@@ -33,12 +33,20 @@ BAD_AUTHORIZATIONS = [None, "", "Bearer", "Bearer ", "Bearer not-the-token", "Ba
 
 def backend_routes(app: FastAPI):
     """(method, path template filled with a dummy value) for every API route of `app`, docs routes included (not `/metrics`)."""
+    seen = set()
     for route in app.routes:
         path = getattr(route, "path", None)
         if path == "/metrics":
             continue          # for the scraper, never reached through the gateway (test_metrics_adoption.py)
         for method in sorted((getattr(route, "methods", None) or set()) & WALKED_METHODS):
-            yield method, re.sub(r"\{[^}]+\}", "x", path)
+            seen.add((method, re.sub(r"\{[^}]+\}", "x", path)))
+    # A router added with `include_router` is one opaque entry in `app.routes` in newer FastAPI (no `path`, no `methods`), so the loop above
+    # misses every route of it; the OpenAPI document lists them all, with their prefix.
+    for path, operations in app.openapi().get("paths", {}).items():
+        for method in operations:
+            if method.upper() in WALKED_METHODS and path != "/metrics":
+                seen.add((method.upper(), re.sub(r"\{[^}]+\}", "x", path)))
+    yield from sorted(seen)
 
 
 def unauthenticated_routes(client: TestClient, routes, upstream_calls: list) -> list[str]:
