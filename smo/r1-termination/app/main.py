@@ -19,6 +19,7 @@ import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics, record_role_refusal
@@ -27,7 +28,7 @@ from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.audit import audit_enabled, write_audit
 from smo_shared.health import install_health
-from smo_shared import roles
+from smo_shared import killswitch, roles
 from smo_shared.invoker import INVOKER_ID_HEADER, ON_BEHALF_OF_HEADER
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.ratelimit import TokenBuckets
@@ -215,6 +216,23 @@ async def _proxy(full_path: str, request: Request):
                 "title": "ROLE_NOT_PERMITTED", "status": 403,
                 "detail": f"{request.method} {prefix}/{rest_of_path} is for SMO modules and operators, not for an rApp"})
         log.warning("role audit: rApp %s called %s %s/%s", invoker_id, request.method, prefix, rest_of_path)
+
+    # AI-10.4, extended: a stopped rApp (or a module acting for one) changes nothing through the gateway (smo_shared/killswitch.py)
+    stopped = invoker_id if role == roles.ROLE_RAPP else request.headers.get(ON_BEHALF_OF_HEADER) if role == roles.ROLE_INTERNAL else None
+    if stopped and request.method in roles.CHANGES and killswitch.enforced() and not killswitch.exempt(prefix, request.method, rest_of_path):
+        try:
+            killed = await run_in_threadpool(killswitch.is_killed, stopped)
+        except killswitch.KillSwitchUnavailable:
+            record_role_refusal(prefix, "kill-unavailable")
+            return JSONResponse(status_code=503, content={
+                "title": "KILL_SWITCH_UNAVAILABLE", "status": 503,
+                "detail": "the gateway cannot tell whether this rApp has been stopped, so it does not let the change through"})
+        if killed:
+            record_role_refusal(prefix, "killed")
+            request.state.audit = (invoker_id, role, "RAPP_KILLED", request.headers.get(ON_BEHALF_OF_HEADER) if role == roles.ROLE_INTERNAL else None)
+            return JSONResponse(status_code=403, content={
+                "title": "RAPP_KILLED", "status": 403,
+                "detail": f"{stopped} has been stopped by an operator: it may not change anything until the switch is lifted"})
 
     # Strip the module prefix before forwarding — no backend service's own
     # routes carry it (e.g. SME's real route is /published-apis/v1/...,

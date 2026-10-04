@@ -72,6 +72,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | `smo_shared/db.py` | `MissingDatabaseUrl`, `resolve_database_url()`, `DATABASE_URL`, `engine_options()` / `build_engine()` (pool and session limits from `SMO_DB_*`), `engine`, `SessionLocal`, `Base`, `session_scope()`, `get_session()` |
 | `smo_shared/worker.py` | `Task`, `tick`, and `python -m smo_shared.worker`: the process that runs a module's `app/tasks.py` through `run_once_per_interval` (`PR-MSG-4`) |
 | `smo_shared/single_runner.py` | `run_once_per_interval(name, interval_seconds, fn)`, `advisory_lock(name)` and the `PeriodicRun` model (table `periodic_run`): a periodic task runs on one replica per interval. No caller yet |
+| `smo_shared/killswitch.py` | `is_killed(invoker_id)`, `exempt(module, method, path)`: what the gateway reads of the per-rApp kill switch (`rapp_kill`), with a short cache and a stale-answer window (AI-10.4, extended) |
 | `smo_shared/audit.py` | `AuditEntry`, `AuditHead`, `record(db, ...)`, `verify(db)`, `export(...)`, `write_audit(...)`: the tamper-evident hash chain of changes made through the gateway, and `python -m smo_shared.audit verify\|export` (PR-SEC-11) |
 | `smo_shared/outbox.py` | `NotificationOutbox`, `enqueue(db, destination, payload)`, `drain(engine, ids=None)`: notifications written in the caller's transaction and sent after it commits, at least once (`docs/NOTIFICATIONS.md`) |
 | `smo_shared/metrics.py` | `install_metrics(app)`, `MetricsMiddleware`: request count and latency series by route template, and `GET /metrics` |

@@ -92,7 +92,7 @@ function StopDialog({ instanceId, onClose }: { instanceId: string; onClose: () =
   const action = useSmoAction();
   return (
     <Modal title="Stop this rApp" onClose={onClose}>
-      <p className="muted small">Its config jobs (dry runs too) are refused from now on. The instance itself keeps running.</p>
+      <p className="muted small">Its config jobs (dry runs too) are refused at once, and every other change it makes through the gateway is refused within a few seconds. It can still read, withdraw what it made (delete) and undo its own config jobs. The instance itself keeps running.</p>
       <Field label="Reason" hint="Shown to everyone who looks, and in the refusal events">
         <input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} autoFocus />
       </Field>
