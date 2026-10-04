@@ -217,6 +217,18 @@ class WriteConfigJob(Versioned, Base):
     # requester went ahead anyway: the audit trail of an override.
     rollback_of: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     rollback_forced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # MGT-5.1: staged rollout. `wave_size` is how many elements go in one wave (NULL: one wave, the job as before); the waves are made when the
+    # job is created, `current_wave` counts the ones that have run, `next_wave_at` is when a paused job may go on, `halted_reason` why a HALTED job
+    # stopped (GATE_FAILED, OPERATOR_HALT, WAVE_PAUSE, REVERT_REFUSED). The gate (MGT-5.3) and what happens when it fails (MGT-5.5) are settings too.
+    wave_size: Mapped[int | None] = mapped_column(Integer)
+    wave_pause_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    wave_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    current_wave: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    gate_max_new_alarms: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    on_gate_failure: Mapped[str] = mapped_column(String, nullable=False, default="halt", server_default="halt")
+    next_wave_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    halted_reason: Mapped[str | None] = mapped_column(String)
+    halted_detail: Mapped[str | None] = mapped_column(String)
 
 
 class WriteConfigSubChange(Base):
@@ -240,6 +252,9 @@ class WriteConfigSubChange(Base):
     rejection_detail: Mapped[str | None] = mapped_column(String)
     # Wave 10.1 (W10-19): edit-config attempts made, retries included
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # MGT-5.2: the request order of the sub-change and the wave it belongs to (1 for a job without waves)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    wave: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
 
 class PMSubscription(Base):

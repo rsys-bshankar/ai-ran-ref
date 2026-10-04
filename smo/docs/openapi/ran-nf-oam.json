@@ -827,6 +827,24 @@
         "title": "VendorOnboardingBody",
         "type": "object"
       },
+      "WaveActionRequest": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "requestedBy": {
+            "title": "Requestedby",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestedBy"
+        ],
+        "title": "WaveActionRequest",
+        "type": "object"
+      },
       "WriteConfigRequest": {
         "properties": {
           "accessScope": {
@@ -853,6 +871,12 @@
             "title": "Dryrun",
             "type": "boolean"
           },
+          "gateMaxNewAlarms": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Gatemaxnewalarms",
+            "type": "integer"
+          },
           "msacRole": {
             "anyOf": [
               {
@@ -863,6 +887,15 @@
               }
             ],
             "title": "Msacrole"
+          },
+          "onGateFailure": {
+            "default": "halt",
+            "enum": [
+              "halt",
+              "revert"
+            ],
+            "title": "Ongatefailure",
+            "type": "string"
           },
           "requestedBy": {
             "title": "Requestedby",
@@ -878,6 +911,24 @@
               }
             ],
             "title": "Scope"
+          },
+          "wavePauseSeconds": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Wavepauseseconds",
+            "type": "integer"
+          },
+          "waveSize": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wavesize"
           }
         },
         "required": [
@@ -1750,6 +1801,23 @@
         "summary": "Write Configuration Changes"
       }
     },
+    "/config-jobs/advance-due": {
+      "post": {
+        "description": "MGT-5.1: for a scheduler. Runs the next wave of every job whose pause between waves has elapsed; a job halted for any other reason is left\nfor an operator. Returns what each advanced job did.",
+        "operationId": "advance_due_configuration_jobs_config_jobs_advance_due_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Advance Due Configuration Jobs"
+      }
+    },
     "/config-jobs/{job_id}": {
       "get": {
         "operationId": "query_write_config_job_status_config_jobs__job_id__get",
@@ -1786,6 +1854,153 @@
           }
         },
         "summary": "Query Write Config Job Status"
+      }
+    },
+    "/config-jobs/{job_id}/abort": {
+      "post": {
+        "description": "MGT-5.4: end a halted job here. The waves that have run stay as they are (undo them with the rollback route); the waves that have not run\nare rejected `WAVE_NOT_RUN`, and the job ends `PARTIAL_SUCCESS` or `FAILED` from what it did.",
+        "operationId": "abort_configuration_job_config_jobs__job_id__abort_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaveActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Abort Configuration Job"
+      }
+    },
+    "/config-jobs/{job_id}/continue": {
+      "post": {
+        "description": "MGT-5.4: run the next wave of a halted job. A job held by its wave pause goes on only once the pause has elapsed, unless `force`; after a\nfailed gate or an operator's halt, calling this is the operator's decision to go on.",
+        "operationId": "continue_configuration_job_config_jobs__job_id__continue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaveActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Continue Configuration Job"
+      }
+    },
+    "/config-jobs/{job_id}/halt": {
+      "post": {
+        "description": "MGT-5.4: stop a job that is waiting between waves from going on by itself (a pause becomes an operator halt). A job already halted for\nanother reason stays as it is. A job is only ever between waves while HALTED, so any other state is 409.",
+        "operationId": "halt_configuration_job_config_jobs__job_id__halt_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaveActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Halt Configuration Job"
       }
     },
     "/config-jobs/{job_id}/rollback": {

@@ -292,7 +292,7 @@ def test_a_dry_run_runs_every_check_and_sends_nothing(client, dispatched, db_ses
 
     ok = _dry(client, className="EP_D2C", attributeChanges={"localPortNumber": 8080})
     assert ok.status_code == 200
-    assert ok.json() == {"dryRun": True, "status": "VALIDATED", "changes": [
+    assert ok.json() == {"dryRun": True, "status": "VALIDATED", "waves": [["ME-A"]], "changes": [
         {"managedElementRef": "ME-A", "managedFunctionRef": None, "operation": "merge", "verdict": "PASS", "reason": None}]}
 
     too_big = _dry(client, className="EP_D2C", attributeChanges={"localPortNumber": 70000})          # MGT-3.3: the YANG check applies

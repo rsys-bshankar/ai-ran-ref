@@ -23,8 +23,10 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict, model_validator
-from sqlalchemy import delete, select
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from smo_shared.errors import illegal_transition_error
+from smo_shared.statemachine import IllegalTransition
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from smo_shared.logconfig import install_logging
@@ -251,6 +253,14 @@ class WriteConfigRequest(BaseModel):
     msacRole: str | None = None
     # MGT-3.1: run every check (MSAC, service presence, data model incl. YANG leaf constraints) and send nothing
     dryRun: bool = False
+    # MGT-5.1: a staged rollout. The elements of the job go in waves of `waveSize` elements (all the changes of one element in one wave); after each
+    # wave but the last the health gate runs (MGT-5.3): a rejected sub-change, or more than `gateMaxNewAlarms` new critical or major alarms on the
+    # wave's elements since it started, fails it. A failed gate halts the job (`onGateFailure` "halt", MGT-5.4) or undoes the applied waves ("revert",
+    # MGT-5.5). `wavePauseSeconds` holds the job between waves until that time has passed. No `waveSize`: one wave, as before.
+    waveSize: int | None = Field(default=None, ge=1)
+    wavePauseSeconds: int = Field(default=0, ge=0)
+    gateMaxNewAlarms: int = Field(default=0, ge=0)
+    onGateFailure: Literal["halt", "revert"] = "halt"
 
     @model_validator(mode="after")
     def _scope_and_refs(self):
@@ -572,6 +582,9 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
         problems.extend(schema_problems(db, change))
     if problems:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="; ".join(problems))
+    elements = list(dict.fromkeys(c["managedElementRef"] for c in body.changes))
+    size = body.waveSize or len(elements) or 1
+    wave_of = {element: index // size + 1 for index, element in enumerate(elements)}
     if body.dryRun:
         # MGT-3.1/3.2: the checks above passed; each change's verdict adds what the dispatch loop would decide from the registry
         # (no endpoint, endpoint down, no client for its protocol). No job row, no southbound call, no outbox row.
@@ -583,10 +596,13 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
                              "verdict": "PASS" if blocker is None else "WOULD_REJECT", "reason": blocker})
         return JSONResponse(status_code=200, content={
             "dryRun": True, "status": "VALIDATED" if all(v["verdict"] == "PASS" for v in verdicts) else "WOULD_REJECT_SOME",
+            "waves": [[e for e in elements if wave_of[e] == w] for w in range(1, max(wave_of.values(), default=1) + 1)],
             "changes": verdicts})
 
     job = WriteConfigJob(requested_by=body.requestedBy, scope=body.accessScope, msac_role=body.msacRole, rollback_of=rollback_of,
-                         rollback_forced=rollback_forced)
+                         rollback_forced=rollback_forced, wave_size=body.waveSize, wave_pause_seconds=body.wavePauseSeconds,
+                         wave_count=max(wave_of.values(), default=1), gate_max_new_alarms=body.gateMaxNewAlarms,
+                         on_gate_failure=body.onGateFailure)
     db.add(job)
     db.flush()
 
@@ -595,9 +611,37 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
     job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.PENDING, JobEvent.PRECHECK_PASS)
     db.flush()
 
+    # MGT-5.2: every sub-change exists from the start, PENDING, with its place in the request and its wave; a wave dispatches its own.
+    # HISTORY.md §7 item 3: `operation` is RFC 6241 section 7.2's real edit-config attribute — a delete/remove legitimately carries no
+    # attributeChanges at all, so this does not assume the key is always present the way a merge-only model could.
+    for index, change in enumerate(body.changes):
+        db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
+                                     managed_function_ref=change.get("managedFunctionRef"),
+                                     attribute_changes=change.get("attributeChanges", {}), operation=change.get("operation", "merge"),
+                                     status="PENDING", position=index, wave=wave_of[change["managedElementRef"]]))
+    db.flush()
+    _advance(db, job)
+    db.commit()
+    return _job_summary(job)
+
+
+def _job_summary(job: WriteConfigJob) -> dict:
+    return {"jobId": str(job.job_id), "status": job.status, "wave": job.current_wave, "waveCount": job.wave_count,
+            "haltedReason": job.halted_reason}
+
+
+def _wave_rows(db: Session, job: WriteConfigJob, wave: int) -> list[WriteConfigSubChange]:
+    return list(db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id, WriteConfigSubChange.wave == wave)
+                           .order_by(WriteConfigSubChange.position)).all())
+
+
+def _dispatch_wave(db: Session, job: WriteConfigJob, rows: list[WriteConfigSubChange]) -> None:
+    """Dispatch the sub-changes of one wave and record each outcome on its row (and its snapshot)."""
+    changes = [{"managedElementRef": r.managed_element_ref, "managedFunctionRef": r.managed_function_ref,
+                "attributeChanges": r.attribute_changes, "operation": r.operation} for r in rows]
     # PR-SB-1.10: the sub-changes of one element behind a `?datastore=candidate` endpoint are one candidate transaction (lock once, every
     # edit, one commit): they all take effect or none does. A lone sub-change for an element is the same transaction of one.
-    checks = [_dispatch_blocker(db, c) for c in body.changes]
+    checks = [_dispatch_blocker(db, c) for c in changes]
     members: dict[str, list[int]] = {}
     for index, (blocker, me, endpoint) in enumerate(checks):
         key = _transaction_group_key(me, endpoint) if blocker is None else None
@@ -606,27 +650,19 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
     grouped = {i: key for key, indexes in members.items() if len(indexes) > 1 for i in indexes}
     group_outcomes: dict[int, tuple] = {}
 
-    for index, change in enumerate(body.changes):
-        # HISTORY.md §7 item 3: `operation` is RFC 6241 section 7.2's real
-        # edit-config attribute — a delete/remove legitimately carries no
-        # attributeChanges at all, so this no longer assumes the key is
-        # always present the way a merge-only model could.
-        attribute_changes = change.get("attributeChanges", {})
-        operation = change.get("operation", "merge")
+    for index, (row, change) in enumerate(zip(rows, changes)):
+        attribute_changes, operation = change["attributeChanges"], change["operation"]
         blocker, me, endpoint = checks[index]
         if blocker is not None:
-            db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
-                                         managed_function_ref=change.get("managedFunctionRef"),
-                                         attribute_changes=attribute_changes, operation=operation, status="REJECTED",
-                                         rejection_reason=blocker))
+            row.status, row.rejection_reason = "REJECTED", blocker
             continue
         ssh_options = _ssh_options(db, endpoint)
         if index in grouped:
             if index not in group_outcomes:
                 indexes = members[grouped[index]]
-                befores = {i: (_capture_before(me, endpoint, body.changes[i], body.changes[i].get("attributeChanges", {}), ssh_options)
+                befores = {i: (_capture_before(me, endpoint, changes[i], changes[i]["attributeChanges"], ssh_options)
                                if CM_SNAPSHOTS else (None, None)) for i in indexes}
-                outcomes = _dispatch_group_with_retries(endpoint.adaptor_uri, [body.changes[i] for i in indexes], str(job.job_id), ssh_options)
+                outcomes = _dispatch_group_with_retries(endpoint.adaptor_uri, [changes[i] for i in indexes], str(job.job_id), ssh_options)
                 group_outcomes.update({i: (*befores[i], *outcome) for i, outcome in zip(indexes, outcomes)})
             before, before_error, applied, reason, attempts, detail = group_outcomes[index]
         else:
@@ -636,24 +672,97 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
                                                                        ssh_options)
         if not applied and attempts > 1:
             _raise_dispatch_alarm(db, job.job_id, change, reason, attempts)
-        sub_change_id = uuid.uuid4()
-        db.add(WriteConfigSubChange(id=sub_change_id, job_id=job.job_id, managed_element_ref=change["managedElementRef"],
-                                     managed_function_ref=change.get("managedFunctionRef"),
-                                     attribute_changes=attribute_changes, operation=operation,
-                                     status="APPLIED" if applied else "REJECTED",
-                                     rejection_reason=reason, rejection_detail=detail, attempts=attempts))
+        row.status, row.rejection_reason, row.rejection_detail, row.attempts = ("APPLIED" if applied else "REJECTED"), reason, detail, attempts
         if CM_SNAPSHOTS:
             db.flush()                         # the snapshot's foreign key needs its sub-change row to exist first (Postgres enforces it)
-            db.add(CMSnapshot(sub_change_id=sub_change_id, job_id=job.job_id, managed_element_ref=change["managedElementRef"],
-                              managed_function_ref=change.get("managedFunctionRef"), operation=operation, before=before,
+            db.add(CMSnapshot(sub_change_id=row.id, job_id=job.job_id, managed_element_ref=row.managed_element_ref,
+                              managed_function_ref=row.managed_function_ref, operation=operation, before=before,
                               before_error=before_error,
                               after=attribute_changes if applied and operation not in ("delete", "remove") else None))
-
     db.flush()
+
+
+# MGT-5.3: the health gate hook. Each gate looks at the wave that just ran and returns why it fails, or None. A gate that reads KPIs
+# (MGT-11) is another function in this list.
+def _gate_rejections(db: Session, job: WriteConfigJob, rows: list[WriteConfigSubChange], started: datetime.datetime) -> str | None:
+    rejected = [r for r in rows if r.status == "REJECTED"]
+    if rejected:
+        first = rejected[0]
+        return (f"{len(rejected)} sub-change(s) of wave {rows[0].wave} were rejected (first: "
+                f"{first.managed_function_ref or first.managed_element_ref}: {first.rejection_reason})")
+    return None
+
+
+def _gate_alarms(db: Session, job: WriteConfigJob, rows: list[WriteConfigSubChange], started: datetime.datetime) -> str | None:
+    elements = {r.managed_element_ref for r in rows}
+    raised = db.scalar(select(func.count()).select_from(Alarm).where(
+        Alarm.managed_element_ref.in_(elements), Alarm.raised_at >= started, Alarm.severity.in_(("critical", "major")))) or 0
+    if raised > job.gate_max_new_alarms:
+        return f"{raised} new critical or major alarm(s) on the elements of wave {rows[0].wave} (limit {job.gate_max_new_alarms})"
+    return None
+
+
+HEALTH_GATES = [_gate_rejections, _gate_alarms]
+
+
+def _finish(db: Session, job: WriteConfigJob) -> None:
     statuses = [sc.status for sc in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)).all()]
-    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.PROCESSING, aggregate_event(statuses))
-    db.commit()
-    return {"jobId": str(job.job_id), "status": job.status}
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), aggregate_event(statuses))
+    job.next_wave_at = None
+
+
+def _halt(db: Session, job: WriteConfigJob, reason: str, detail: str | None, next_at: datetime.datetime | None = None) -> None:
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState(job.status), JobEvent.HALT)
+    job.halted_reason, job.halted_detail, job.next_wave_at = reason, detail, next_at
+    log.warning("config job %s halted after wave %s of %s: %s %s", job.job_id, job.current_wave, job.wave_count, reason, detail or "")
+
+
+def _advance(db: Session, job: WriteConfigJob) -> None:
+    """Run the waves of a job from the next one until it ends or halts (MGT-5.2 to 5.5)."""
+    while True:
+        wave = job.current_wave + 1
+        started = datetime.datetime.now(datetime.UTC)
+        rows = _wave_rows(db, job, wave)
+        _dispatch_wave(db, job, rows)
+        job.current_wave = wave
+        db.flush()
+        if wave >= job.wave_count:
+            _finish(db, job)
+            return
+        failure = next((f for f in (gate(db, job, rows, started) for gate in HEALTH_GATES) if f), None)
+        if failure:
+            if job.on_gate_failure == "revert":
+                _auto_revert(db, job, failure)
+            else:
+                _halt(db, job, "GATE_FAILED", failure)
+            return
+        if job.wave_pause_seconds > 0:
+            _halt(db, job, "WAVE_PAUSE", None, datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=job.wave_pause_seconds))
+            return
+
+
+def _auto_revert(db: Session, job: WriteConfigJob, failure: str) -> None:
+    """MGT-5.5: undo what the waves so far applied, with the rollback of MGT-1.6 (a new job, the same checks, the changed-since guard). If
+    the revert cannot be made safely, or does not complete, the job halts and says so: nothing is left half-undone in silence."""
+    changes, expected, problems = _rollback_plan(db, job)
+    changed = _changed_since(db, expected) if not problems else []
+    if problems or changed:
+        why = "; ".join(problems) if problems else f"{len(changed)} value(s) changed since the waves wrote them"
+        _halt(db, job, "REVERT_REFUSED", f"{failure}; not reverted: {why}")
+        return
+    db.flush()
+    undo = _execute_write(WriteConfigRequest(requestedBy=job.requested_by, accessScope=job.scope, msacRole=job.msac_role, changes=changes),
+                          db, rollback_of=job.job_id)
+    if undo["status"] != "COMPLETED":
+        _halt(db, job, "REVERT_REFUSED", f"{failure}; the revert job {undo['jobId']} ended {undo['status']}")
+        return
+    for row in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job.job_id)).all():
+        if row.status == "APPLIED":
+            row.status = "REVERTED"
+        elif row.status == "PENDING":
+            row.status, row.rejection_reason = "REJECTED", "WAVE_NOT_RUN"
+    job.halted_reason, job.halted_detail = "GATE_FAILED", f"{failure}; reverted by job {undo['jobId']}"
+    _finish(db, job)
 
 
 @app.get("/managed-entities/{managed_element_ref}/config")
@@ -849,13 +958,87 @@ def rollback_configuration_job(job_id: uuid.UUID, body: RollbackRequest, request
     return {**result, "rollbackOf": str(job_id), "forced": bool(changed)}
 
 
+class WaveActionRequest(BaseModel):
+    requestedBy: str
+    force: bool = False                       # continue: go on although the pause has not elapsed
+
+
+def _halted_job(db: Session, job_id: uuid.UUID, event: JobEvent) -> WriteConfigJob:
+    job = db.get(WriteConfigJob, job_id)
+    if job is None:
+        raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"no configuration job {job_id}")
+    if job.status != JobState.HALTED:
+        raise illegal_transition_error(IllegalTransition(JobState(job.status), event), f"configuration job {job_id}")
+    return job
+
+
+def _resume(db: Session, job: WriteConfigJob) -> dict:
+    job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.HALTED, JobEvent.RESUME)
+    job.halted_reason = job.halted_detail = job.next_wave_at = None
+    db.flush()
+    _advance(db, job)
+    db.commit()
+    return _job_summary(job)
+
+
+@app.post("/config-jobs/{job_id}/continue", status_code=202)
+def continue_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, db: Session = Depends(get_session)):
+    """MGT-5.4: run the next wave of a halted job. A job held by its wave pause goes on only once the pause has elapsed, unless `force`; after a
+    failed gate or an operator's halt, calling this is the operator's decision to go on."""
+    job = _halted_job(db, job_id, JobEvent.RESUME)
+    if job.halted_reason == "WAVE_PAUSE" and job.next_wave_at and as_utc(job.next_wave_at) > datetime.datetime.now(datetime.UTC) and not body.force:
+        raise framework_error(FrameworkError.WAVE_PAUSE_NOT_ELAPSED,
+                              detail=f"the pause between waves ends at {as_utc(job.next_wave_at).isoformat()}; send force=true to go on now")
+    log.info("config job %s continued by %s after %s", job_id, body.requestedBy, job.halted_reason)
+    return _resume(db, job)
+
+
+@app.post("/config-jobs/{job_id}/halt")
+def halt_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, db: Session = Depends(get_session)):
+    """MGT-5.4: stop a job that is waiting between waves from going on by itself (a pause becomes an operator halt). A job already halted for
+    another reason stays as it is. A job is only ever between waves while HALTED, so any other state is 409."""
+    job = _halted_job(db, job_id, JobEvent.HALT)
+    if job.halted_reason == "WAVE_PAUSE":
+        job.halted_reason, job.halted_detail, job.next_wave_at = "OPERATOR_HALT", f"halted by {body.requestedBy}", None
+        db.commit()
+    return _job_summary(job)
+
+
+@app.post("/config-jobs/{job_id}/abort")
+def abort_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, db: Session = Depends(get_session)):
+    """MGT-5.4: end a halted job here. The waves that have run stay as they are (undo them with the rollback route); the waves that have not run
+    are rejected `WAVE_NOT_RUN`, and the job ends `PARTIAL_SUCCESS` or `FAILED` from what it did."""
+    job = _halted_job(db, job_id, JobEvent.AGGREGATE_MIXED)
+    for row in db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job_id, WriteConfigSubChange.status == "PENDING")).all():
+        row.status, row.rejection_reason = "REJECTED", "WAVE_NOT_RUN"
+    db.flush()
+    job.halted_detail = f"aborted by {body.requestedBy} ({job.halted_reason})"
+    _finish(db, job)
+    db.commit()
+    return _job_summary(job)
+
+
+@app.post("/config-jobs/advance-due")
+def advance_due_configuration_jobs(db: Session = Depends(get_session)):
+    """MGT-5.1: for a scheduler. Runs the next wave of every job whose pause between waves has elapsed; a job halted for any other reason is left
+    for an operator. Returns what each advanced job did."""
+    now = datetime.datetime.now(datetime.UTC)
+    due = db.scalars(select(WriteConfigJob).where(WriteConfigJob.status == JobState.HALTED, WriteConfigJob.halted_reason == "WAVE_PAUSE",
+                                                  WriteConfigJob.next_wave_at <= now).order_by(WriteConfigJob.next_wave_at)).all()
+    return {"advanced": [_resume(db, job) for job in due]}
+
+
 @app.get("/config-jobs/{job_id}")
 def query_write_config_job_status(job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(WriteConfigJob, job_id)
-    sub_changes = db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job_id)).all()
+    sub_changes = db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job_id).order_by(WriteConfigSubChange.position)).all()
     return {"jobId": str(job.job_id), "status": job.status, "requestedBy": job.requested_by,
             "rollbackOf": str(job.rollback_of) if job.rollback_of else None, "rollbackForced": job.rollback_forced,
-            "subChanges": [{"managedElementRef": sc.managed_element_ref, "managedFunctionRef": sc.managed_function_ref,
+            "waveSize": job.wave_size, "waveCount": job.wave_count, "currentWave": job.current_wave,
+            "wavePauseSeconds": job.wave_pause_seconds, "onGateFailure": job.on_gate_failure, "gateMaxNewAlarms": job.gate_max_new_alarms,
+            "haltedReason": job.halted_reason, "haltedDetail": job.halted_detail,
+            "nextWaveAt": as_utc(job.next_wave_at).isoformat() if job.next_wave_at else None,
+            "subChanges": [{"managedElementRef": sc.managed_element_ref, "wave": sc.wave, "managedFunctionRef": sc.managed_function_ref,
                             "operation": sc.operation, "status": sc.status, "rejectionReason": sc.rejection_reason,
                             "rejectionDetail": sc.rejection_detail, "attempts": sc.attempts} for sc in sub_changes]}
 
