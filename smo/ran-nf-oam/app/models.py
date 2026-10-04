@@ -185,6 +185,18 @@ class RAppLimit(Base):
                                                           onupdate=lambda: datetime.datetime.now(datetime.UTC))
 
 
+class RAppKill(Base):
+    """AI-10.4: an operator stopped this rApp (by invoker id). While a row exists the rApp's config jobs are refused (`RAPP_KILLED`), and a job it
+    started that is waiting between waves does not go on. Undoing is not refused: rollbacks and reverts, and halting or aborting a job, still work."""
+    __tablename__ = "rapp_kill"
+
+    invoker_id: Mapped[str] = mapped_column(String, primary_key=True)
+    reason: Mapped[str | None] = mapped_column(String)
+    killed_by: Mapped[str] = mapped_column(String, nullable=False)
+    killed_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                          default=lambda: datetime.datetime.now(datetime.UTC))
+
+
 class FileSubscription(Base):
     """A File Data Reporting MnS subscription: notifyFileReady goes to `consumer_reference`."""
     __tablename__ = "file_subscription"

@@ -163,6 +163,47 @@ def issue_instance_credentials(instance_id: uuid.UUID, response: Response, db: S
     return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id, "oauthClientSecret": secret}
 
 
+class KillRequest(BaseModel):
+    requestedBy: str
+    reason: str | None = None
+
+
+def _kill_call(inst, call):
+    """The operator thinks in instances; RAN NF OAM keys the switch on the invoker id, which is the instance's `oauth_client_id`."""
+    if inst.oauth_client_id is None:
+        raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail=f"RAppInstance {inst.instance_id} has no credential (terminated)")
+    try:
+        resp = call()
+    except httpx.HTTPError:
+        resp = None
+    if resp is None or resp.status_code not in (200, 204):
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="RAN NF OAM did not accept the kill switch change; nothing was changed")
+    return resp
+
+
+@app.put("/instances/{instance_id}/kill")
+def kill_instance(instance_id: uuid.UUID, body: KillRequest, db: Session = Depends(get_session)):
+    """AI-10.4, the per-rApp kill switch, as an operator action: stop this instance's writes at RAN NF OAM (its config jobs are refused until
+    `DELETE`). The instance itself keeps running; terminate it to remove it. 503 when RAN NF OAM cannot be told: a switch that may not have
+    been thrown is reported as such, never as done."""
+    inst = _load_instance(db, instance_id)
+    resp = _kill_call(inst, lambda: R1Client().put(f"/ran-nf-oam/rapp-kill/{inst.oauth_client_id}", json={"requestedBy": body.requestedBy, "reason": body.reason}))
+    return {"instanceId": str(inst.instance_id), "killed": True, **{k: v for k, v in resp.json().items() if k in ("killedBy", "reason", "killedAt")}}
+
+
+@app.delete("/instances/{instance_id}/kill")
+def lift_instance_kill(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """AI-10.4: let the instance write again. Idempotent: lifting a switch that was not thrown is fine."""
+    inst = _load_instance(db, instance_id)
+    try:
+        resp = R1Client().delete(f"/ran-nf-oam/rapp-kill/{inst.oauth_client_id}") if inst.oauth_client_id else None
+    except httpx.HTTPError:
+        resp = None
+    if inst.oauth_client_id is not None and (resp is None or resp.status_code not in (204, 404)):
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="RAN NF OAM did not accept the change; nothing was changed")
+    return {"instanceId": str(inst.instance_id), "killed": False}
+
+
 @app.post("/instances/{instance_id}/bootstrap-complete")
 def bootstrap_complete(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """Called once the rApp container has bootstrapped via R1 Termination

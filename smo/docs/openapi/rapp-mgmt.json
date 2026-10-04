@@ -56,6 +56,30 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "KillRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "requestedBy": {
+            "title": "Requestedby",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestedBy"
+        ],
+        "title": "KillRequest",
+        "type": "object"
+      },
       "UpgradeRequest": {
         "properties": {
           "newPackageId": {
@@ -608,6 +632,92 @@
           }
         },
         "summary": "List Fault Reports"
+      }
+    },
+    "/instances/{instance_id}/kill": {
+      "delete": {
+        "description": "AI-10.4: let the instance write again. Idempotent: lifting a switch that was not thrown is fine.",
+        "operationId": "lift_instance_kill_instances__instance_id__kill_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Lift Instance Kill"
+      },
+      "put": {
+        "description": "AI-10.4, the per-rApp kill switch, as an operator action: stop this instance's writes at RAN NF OAM (its config jobs are refused until\n`DELETE`). The instance itself keeps running; terminate it to remove it. 503 when RAN NF OAM cannot be told: a switch that may not have\nbeen thrown is reported as such, never as done.",
+        "operationId": "kill_instance_instances__instance_id__kill_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KillRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Kill Instance"
       }
     },
     "/instances/{instance_id}/performance": {

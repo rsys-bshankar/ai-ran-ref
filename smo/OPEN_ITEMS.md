@@ -1149,7 +1149,6 @@ Current state, checked: AIMgF training, validation, emulation and inference jobs
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | AI-10.3 | Enforce magnitude and blast radius (the manifest's `limits` takes only `configJobsPerHour` today; AI-10.1 validated that one) | Refusal tests | AI-10.1 |
-| AI-10.4 | Per-rApp kill switch (operator action) | Writes refused after use | – |
 | AI-10.6 | Events for each refusal | Event delivered | AI-10.2, MSG-1.4 |
 
 #### PR-AI-11 — Human approval of rApp actions

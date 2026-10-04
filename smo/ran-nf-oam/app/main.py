@@ -44,7 +44,7 @@ from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 from smo_shared.invoker import invoker_id
 
-from .models import Alarm, RAppLimit, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, RAppKill, RAppLimit, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
 from . import mo_tree
@@ -576,11 +576,20 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
     sub_changes, PATCH each independently, aggregate.
     """
     caller = invoker_id(request)
+    _refuse_if_killed(db, caller)
     _enforce_rapp_limit(db, caller)
     return _execute_write(body, db, invoker=caller)
 
 
 RATE_WINDOW = datetime.timedelta(hours=1)
+
+
+def _refuse_if_killed(db: Session, caller: str | None) -> None:
+    """AI-10.4: 403 `RAPP_KILLED` for a caller an operator stopped (`PUT /rapp-kill/{invoker_id}`). Not for a caller R1 did not identify."""
+    kill = db.get(RAppKill, caller) if caller else None
+    if kill is not None:
+        raise framework_error(FrameworkError.RAPP_KILLED, detail=f"{caller} was stopped by {kill.killed_by} at {as_utc(kill.killed_at).isoformat()}"
+                              + (f": {kill.reason}" if kill.reason else ""))
 
 
 def _enforce_rapp_limit(db: Session, caller: str | None) -> None:
@@ -1099,6 +1108,7 @@ def continue_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, db: S
     """MGT-5.4: run the next wave of a halted job. A job held by its wave pause goes on only once the pause has elapsed, unless `force`; after a
     failed gate or an operator's halt, calling this is the operator's decision to go on."""
     job = _halted_job(db, job_id, JobEvent.RESUME)
+    _refuse_if_killed(db, job.invoker_id)               # AI-10.4: a stopped rApp's job does not go on to its next wave
     if job.halted_reason == "WAVE_PAUSE" and job.next_wave_at and as_utc(job.next_wave_at) > datetime.datetime.now(datetime.UTC) and not body.force:
         raise framework_error(FrameworkError.WAVE_PAUSE_NOT_ELAPSED,
                               detail=f"the pause between waves ends at {as_utc(job.next_wave_at).isoformat()}; send force=true to go on now")
@@ -1255,6 +1265,56 @@ def delete_rapp_limit(invoker_id_: str, request: Request, db: Session = Depends(
     _not_own_limit(request, invoker_id_)
     db.delete(_limit_or_404(db, invoker_id_))
     db.commit()
+    return Response(status_code=204)
+
+
+class RAppKillRequest(BaseModel):
+    requestedBy: str = Field(min_length=1)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+def _kill_view(row: RAppKill) -> dict:
+    return {"invokerId": row.invoker_id, "killedBy": row.killed_by, "reason": row.reason, "killedAt": row.killed_at}
+
+
+@app.put("/rapp-kill/{invoker_id_}")
+def kill_rapp(invoker_id_: str, body: RAppKillRequest, db: Session = Depends(get_session)):
+    """AI-10.4: stop an rApp (by its invoker id): from now its config jobs are refused with 403 `RAPP_KILLED`, and a job of its that waits
+    between waves does not go on. Undoing changes is not refused (rollback, revert, halt, abort). Repeating it updates the reason and keeps the time
+    of the first. Reversed by `DELETE`."""
+    row = db.get(RAppKill, invoker_id_)
+    if row is None:
+        db.add(RAppKill(invoker_id=invoker_id_, killed_by=body.requestedBy, reason=body.reason))
+        log.warning("rApp %s stopped by %s: %s", invoker_id_, body.requestedBy, body.reason)
+    else:
+        row.reason, row.killed_by = body.reason, body.requestedBy
+    db.commit()
+    return _kill_view(db.get(RAppKill, invoker_id_))
+
+
+@app.get("/rapp-kill")
+def list_killed_rapps(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    page = paginate(db, select(RAppKill).order_by(RAppKill.killed_at.desc(), RAppKill.invoker_id), limit, offset)
+    return {**page, "items": [_kill_view(r) for r in page["items"]]}
+
+
+@app.get("/rapp-kill/{invoker_id_}")
+def read_rapp_kill(invoker_id_: str, db: Session = Depends(get_session)):
+    row = db.get(RAppKill, invoker_id_)
+    if row is None:
+        raise framework_error(FrameworkError.RAPP_KILL_NOT_FOUND, detail=f"{invoker_id_} is not stopped")
+    return _kill_view(row)
+
+
+@app.delete("/rapp-kill/{invoker_id_}", status_code=204)
+def lift_rapp_kill(invoker_id_: str, db: Session = Depends(get_session)):
+    """AI-10.4: let a stopped rApp write again."""
+    row = db.get(RAppKill, invoker_id_)
+    if row is None:
+        raise framework_error(FrameworkError.RAPP_KILL_NOT_FOUND, detail=f"{invoker_id_} is not stopped")
+    db.delete(row)
+    db.commit()
+    log.warning("rApp %s allowed to write again", invoker_id_)
     return Response(status_code=204)
 
 
