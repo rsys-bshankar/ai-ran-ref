@@ -826,15 +826,6 @@ ack and clear routes.
 
 #### Configuration management
 
-#### PR-MGT-1 — CM history and rollback (MGT-1.1–1.4 done: `HISTORY.md` §10)
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| MGT-1.5 | Diff endpoint between two snapshots | Route test | – |
-| MGT-1.6 | Rollback = new write job built from a snapshot, through MSAC | Values restored; audit shows the actor | – |
-| MGT-1.7 | Guard: refuse if values changed since the snapshot unless forced | Test | MGT-1.6 |
-| MGT-1.8 | Snapshot retention | Purge test | DB-3.2 |
-
 #### PR-MGT-2 — MSAC beyond writes (`SA-RANOAM-1` reach)
 
 | Step | What | Done when | Needs |
@@ -1399,6 +1390,6 @@ Pick any, or mix them. `Needs` is the only constraint.
 3. **Operable:** done (OBS-1, OBS-2.1–2.3, OPS-1.1–1.5 and 1.7, OPS-4.1); open: OBS-2.8. OPS-1.6 done; OPS-4.1b done (`smo-v0.1.0`).
 4. **Durable notifications:** MSG-1.1–1.10 done (SA SMOS has no destination call to move; the DME stop-job DELETE moved last, as a `DELETE` row).
 5. **First real O1 path:** SB-3, SB-5.1–5.2, SB-1.1–1.2 done; SB-1.3 to 1.9 done (the netopeer2 lab answers the SSH wrapper, the route's read and a model write in CI).
-6. **Safer changes:** done (MGT-1.1–1.4, MGT-3, MGT-8.1); MGT-1.5–1.8 are the follow-on.
+6. **Safer changes:** done (MGT-1.1–1.8, MGT-3, MGT-8.1).
 7. **Later:** HA, mesh, federation, vendor profiles.
 8. **Dev sanity and demo:** OPS-10.1–10.4 done (the redeploy gate, `.github/workflows/deploy-on-main.yml`); OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-2 and OPS-5 (OPS-1.6 is done).

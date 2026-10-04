@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid
+from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -213,6 +213,10 @@ class WriteConfigJob(Versioned, Base):
     status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
     conflict_resolution: Mapped[str | None] = mapped_column(String)
     msac_role: Mapped[str | None] = mapped_column(String)
+    # MGT-1.6: set on a job that undoes another one. `rollback_forced` is true when the guard (MGT-1.7) found values changed since and the
+    # requester went ahead anyway: the audit trail of an override.
+    rollback_of: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    rollback_forced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
 
 class WriteConfigSubChange(Base):

@@ -545,6 +545,51 @@
         "title": "RoleAttributes",
         "type": "object"
       },
+      "RollbackRequest": {
+        "properties": {
+          "accessScope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessscope"
+          },
+          "dryRun": {
+            "default": false,
+            "title": "Dryrun",
+            "type": "boolean"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "msacRole": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Msacrole"
+          },
+          "requestedBy": {
+            "title": "Requestedby",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestedBy"
+        ],
+        "title": "RollbackRequest",
+        "type": "object"
+      },
       "SchemaRef": {
         "additionalProperties": false,
         "properties": {
@@ -1554,6 +1599,51 @@
         "summary": "Get Cm Schema"
       }
     },
+    "/config-history/purge": {
+      "post": {
+        "description": "MGT-1.8: delete the snapshots older than `older_than_days` (default `RAN_NF_OAM_CM_SNAPSHOT_RETENTION_DAYS`; 422 when neither is set, so\na purge never runs with no age). The jobs and their sub-changes stay; a job whose snapshots are gone can no longer be rolled back.",
+        "operationId": "purge_configuration_history_config_history_purge_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "older_than_days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Older Than Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Purge Configuration History"
+      }
+    },
     "/config-jobs": {
       "get": {
         "operationId": "list_write_config_jobs_config_jobs_get",
@@ -1696,6 +1786,55 @@
           }
         },
         "summary": "Query Write Config Job Status"
+      }
+    },
+    "/config-jobs/{job_id}/rollback": {
+      "post": {
+        "description": "MGT-1.6: undo a job with a new write job built from its snapshots (reverse order, the recorded before values), which goes through MSAC,\nthe schema check and dispatch like any other write: `requestedBy` is the actor and the new job names `rollbackOf`. MGT-1.7: if what the job\nwrote has been changed since, 409 `CONFIG_CHANGED_SINCE` unless `force`; `dryRun` returns the plan and the differences without writing.",
+        "operationId": "rollback_configuration_job_config_jobs__job_id__rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback Configuration Job"
       }
     },
     "/dme-jobs": {
@@ -2469,6 +2608,64 @@
           }
         },
         "summary": "Read Configuration History"
+      }
+    },
+    "/managed-entities/{managed_element_ref}/config-history/diff": {
+      "get": {
+        "description": "MGT-1.5: how the attributes two snapshots of one managed object touched differ. Each snapshot's image is `before` with `after` laid\nover it (`_image`); the diff is over the attributes either image holds. Only attributes a write named are ever known, so an attribute\nneither snapshot touched is not reported as unchanged.",
+        "operationId": "diff_configuration_snapshots_managed_entities__managed_element_ref__config_history_diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_snapshot",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "From Snapshot",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_snapshot",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "To Snapshot",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Diff Configuration Snapshots"
       }
     },
     "/managed-entities/{managed_element_ref}/managed-objects/refresh": {
