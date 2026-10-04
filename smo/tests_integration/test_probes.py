@@ -66,8 +66,13 @@ def test_compose_probes_ready_on_every_service_built_from_the_shared_dockerfile(
              if isinstance(svc.get("build"), dict) and svc["build"].get("context") == "."
              and name not in ("gui-bff", "migrate")}      # the BFF is not on smo_shared; migrate is a one-shot, not a server
     assert len(built) >= 20
-    for name in built:
+    workers = {name for name in built if "smo_shared.worker" in " ".join(services[name].get("command") or [])}
+    assert workers == {"ran-nf-oam-worker"}                  # PR-MSG-4: a worker has no port, so no /ready
+    for name in built - workers:
         probe = services[name]["healthcheck"]["test"]
         assert "/ready" in " ".join(probe), name
+    for name in workers:                                     # it is healthy while it keeps touching its heartbeat file
+        probe = " ".join(services[name]["healthcheck"]["test"])
+        assert "/tmp/worker-heartbeat" in probe and "/ready" not in probe, name
     assert "healthcheck" not in services["gui-bff"]
     assert "healthcheck" not in services["migrate"] and services["migrate"]["restart"] == "no"   # runs to completion and exits
