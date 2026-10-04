@@ -1,0 +1,121 @@
+"""The periodic-work entrypoint of a module (PR-MSG-4: the scheduler part).
+
+A request process never runs periodic work (`scripts/check_statelessness.py` refuses a scheduler inside one). A module that has some
+declares it in `app/tasks.py` and the same image runs it as a separate process:
+
+    # <module>/app/tasks.py
+    TASKS = [Task("advance-waves", 15, advance_waves), Task("purge", 3600, purge)]
+
+    python -m smo_shared.worker          # the compose service `<module>-worker`; MODULE says which app/tasks.py
+
+Every worker replica ticks every `SMO_WORKER_TICK_SECONDS` (default 5) and offers each task to `run_once_per_interval`, so across any number of
+workers a task runs at most once per interval, a worker that dies mid-task frees its claim (the advisory lock goes with its connection) and
+another picks the task up on its next tick, and no worker is a leader. A task is named `<module>:<name>` in the shared `periodic_run` table.
+
+A task that raises is logged and skipped for `SMO_WORKER_FAILURE_BACKOFF_SECONDS` (default 30) by that worker, so a persistent failure is
+retried, not hammered; the claim is given back, so another worker may try it sooner. A task is idempotent by contract: it may run again after a
+crash, so it does its work in committed steps and finds what is due from the database, never from memory.
+
+The worker has no HTTP port. It touches `SMO_WORKER_HEARTBEAT_FILE` (default `/tmp/worker-heartbeat`) on every tick, and the compose healthcheck
+fails when that file is older than a minute. It stops on SIGTERM or SIGINT after the task in hand.
+
+  tick(tasks, ...)   offer every task once; returns {name: "ran" | "skipped" | "failed"}. The loop's body, and what the tests call.
+"""
+
+import datetime
+import importlib
+import logging
+import os
+import signal
+import sys
+import threading
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+from pathlib import Path
+
+from .single_runner import run_once_per_interval
+
+log = logging.getLogger("smo.worker")
+
+DEFAULT_TICK_SECONDS = 5.0
+DEFAULT_FAILURE_BACKOFF_SECONDS = 30.0
+DEFAULT_HEARTBEAT_FILE = "/tmp/worker-heartbeat"  # noqa: S108 (a tmpfs inside the container; compose's healthcheck reads it)
+
+
+@dataclass(frozen=True)
+class Task:
+    name: str
+    interval_seconds: float
+    fn: Callable[[], None]
+
+
+def _qualified(module: str, task: Task) -> str:
+    return f"{module}:{task.name}"
+
+
+def tick(tasks: Iterable[Task], *, module: str = "", skip: Iterable[str] = (), session_factory=None, engine=None,
+         now: datetime.datetime | None = None) -> dict[str, str]:
+    """Offer every task not in `skip` to `run_once_per_interval`. One task failing does not stop the others."""
+    outcome: dict[str, str] = {}
+    skipped = set(skip)
+    for task in tasks:
+        if task.name in skipped:
+            outcome[task.name] = "skipped"
+            continue
+        try:
+            ran = run_once_per_interval(_qualified(module, task), task.interval_seconds, task.fn, session_factory=session_factory,
+                                        engine=engine, now=now)
+        except Exception:                                      # noqa: BLE001 (the loop must outlive any one task)
+            log.exception("worker task failed", extra={"task": task.name})
+            outcome[task.name] = "failed"
+        else:
+            outcome[task.name] = "ran" if ran else "skipped"
+            if ran:
+                log.info("worker task ran", extra={"task": task.name})
+    return outcome
+
+
+def load_tasks(import_path: str = "app.tasks") -> list[Task]:
+    tasks = list(importlib.import_module(import_path).TASKS)
+    names = [t.name for t in tasks]
+    if len(names) != len(set(names)):
+        raise ValueError(f"{import_path}: duplicate task names in {names}")
+    return tasks
+
+
+def _seconds(variable: str, default: float) -> float:
+    try:
+        return max(0.1, float(os.environ.get(variable, default)))
+    except ValueError:
+        return default
+
+
+def main(tasks: list[Task] | None = None, *, module: str | None = None, stop: threading.Event | None = None) -> int:
+    from .logconfig import configure_logging
+    module = module or os.environ.get("MODULE", "")
+    configure_logging(f"{module}-worker")
+    tasks = load_tasks() if tasks is None else tasks
+    stop = stop or threading.Event()
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(signum, lambda *_: stop.set())
+    heartbeat = Path(os.environ.get("SMO_WORKER_HEARTBEAT_FILE", DEFAULT_HEARTBEAT_FILE))
+    tick_seconds = _seconds("SMO_WORKER_TICK_SECONDS", DEFAULT_TICK_SECONDS)
+    backoff = datetime.timedelta(seconds=_seconds("SMO_WORKER_FAILURE_BACKOFF_SECONDS", DEFAULT_FAILURE_BACKOFF_SECONDS))
+    retry_after: dict[str, datetime.datetime] = {}
+    log.info("worker started", extra={"tasks": [t.name for t in tasks], "tick_seconds": tick_seconds})
+    while not stop.is_set():
+        now = datetime.datetime.now(datetime.UTC)
+        outcome = tick(tasks, module=module, skip=[n for n, until in retry_after.items() if until > now])
+        for name, result in outcome.items():
+            if result == "failed":
+                retry_after[name] = now + backoff
+            elif result == "ran":
+                retry_after.pop(name, None)
+        heartbeat.touch()
+        stop.wait(tick_seconds)
+    log.info("worker stopped")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

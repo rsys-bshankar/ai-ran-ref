@@ -174,6 +174,27 @@ class KpiDefinition(Base):
                                                           onupdate=lambda: datetime.datetime.now(datetime.UTC))
 
 
+class KpiSchedule(Base):
+    """MSG-4: publish a KPI to DME on a timer. The worker (`app/tasks.py`) computes `kpi` over the last `lookback_seconds` every `interval_seconds` and
+    delivers it as `POST /kpis/{name}/publish` does. `last_*` say what the previous run did; a run that fails is recorded, not retried before the next
+    interval, so a KPI that cannot be computed is visible here and is not hammered."""
+    __tablename__ = "kpi_schedule"
+
+    schedule_id: Mapped[str] = mapped_column(String, primary_key=True)
+    kpi: Mapped[str] = mapped_column(String, nullable=False)
+    interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    lookback_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    group_by: Mapped[str] = mapped_column(String, nullable=False, default="cell")
+    managed_element_ref: Mapped[str | None] = mapped_column(String)
+    cell_id: Mapped[str | None] = mapped_column(String)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_run_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_status: Mapped[str | None] = mapped_column(String)
+    last_detail: Mapped[str | None] = mapped_column(String)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC),
+                                                          onupdate=lambda: datetime.datetime.now(datetime.UTC))
+
+
 class RAppLimit(Base):
     """AI-10.1/10.2: what one rApp (by invoker id, its OAuth client id) may do through this module, taken from the `limits` of its manifest and pushed
     here by rApp Management when the instance finishes bootstrapping. `max_config_jobs_per_hour` caps the CM write jobs it may start in any rolling hour."""

@@ -993,6 +993,28 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   stays in `OPEN_ITEMS.md` as one function to add to `install_health`'s list. Gating `depends_on` on `service_healthy` for the
   modules: the start-up order is not a problem today, and a not-ready SME would stall the whole stack.
 
+### PR-MSG-4 (scheduler part) — the worker
+
+- **What.** `smo_shared/worker.py`: `Task(name, interval_seconds, fn)`, `tick(tasks, ...)` (offers every task once to `run_once_per_interval`, one
+  failing task does not stop the others) and `python -m smo_shared.worker`, the loop (`SMO_WORKER_TICK_SECONDS`, a per-worker back-off for a task that
+  failed, a heartbeat file, stop on SIGTERM after the task in hand). A module declares `TASKS` in `app/tasks.py`. Compose runs it as
+  `ran-nf-oam-worker` (same image, `command` overridden, same secrets and so the same module identity as the API, ST-4); the healthcheck is the
+  heartbeat file's age. This is the first caller of `PR-ST-8` (ST-8.3, adoption, for RAN NF OAM).
+- **First users.** The wave advance (`advance_due`, which `POST /config-jobs/advance-due` now also calls), `kpi_schedule` (a table and
+  `PUT/GET/DELETE /kpi-schedules`; revision 0019) and the refusal purge (`SAFEGUARD_REFUSAL_RETENTION_DAYS`, default keep). Each task finds what is
+  due from the database and commits in steps, so a crash and a rerun do no harm. A failing KPI schedule is marked `ERROR` and waits for its next
+  interval.
+- **Chosen over the plan's generic `job` table (MSG-4.1) for these users:** all of them are periodic or due-by-timestamp, not queued work with a
+  payload, progress and a cancel flag, and the claim of ST-8 already gives "at most once per interval, a dead holder frees it". The `job` table,
+  cancel and lease-resume (MSG-4.1 to 4.4) are still open for the queue-shaped users (MSG-4.5 southbound sub-changes, MSG-4.6 software
+  management).
+- **Not taken.** `kpi-check` on a timer: a check needs a job id, a KPI and a revert decision per job, so scheduling it means a field on the job
+  (a guard declared at `POST /config-jobs`); left for a follow-up. The worker exports no metrics (it has no port). A worker is not started by anything
+  but compose: the Helm chart (OPS-2) gets its own Deployment.
+- **Proof.** `shared/tests/test_worker.py` (once per interval, two workers, one failing task, per-module names, the loop's back-off, heartbeat and
+  stop), `ran-nf-oam/tests/test_tasks.py` (schedules end to end against a fake DME, the purge, the wave advance as the worker runs it, the task
+  list) and a real run of the worker against Postgres: three tasks ran, a schedule with no KPI recorded `ERROR`, SIGTERM stopped it.
+
 ### PR-ST-8 — Single-runner guard
 
 - **The helper (ST-8.1, ST-8.2).** `smo_shared/single_runner.py` `run_once_per_interval(name, interval_seconds, fn)`: across any number of
@@ -1011,7 +1033,7 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   independent tasks, a failure gives the interval back, six racing replicas run once; Postgres-only: two sessions and one lock, a dead
   holder frees it, and a long run is not started twice. Dropping the lock check or the interval condition fails the Postgres tests. The
   `periodic_run` table is in `migrations/001_init.sql` and in the migration-vs-models check.
-- **Not taken, still open.** ST-8.3, adoption: there is still no periodic task (ST-1.4), so no caller. Who ticks (a Kubernetes CronJob, an
+- **Not taken, still open.** ST-8.3, adoption: RAN NF OAM adopted it through the worker (PR-MSG-4); any later periodic task does the same. Who ticks (a Kubernetes CronJob, an
   external scheduler) stays a deployment choice for the feature that needs it. Clock skew between replicas shifts a firing by the skew,
   which is fine for intervals of seconds and up.
 

@@ -153,7 +153,7 @@ GUI BFF's per-process login lockout, and module-level dicts in the two mocks (te
 |---|---|---|---|
 | ST-7.4 | Check: schema at expected head (a function passed to `install_health`, as `database_check` is) | Mismatch → not ready | OPS-1.2 |
 
-#### PR-ST-8 — Single-runner guard (open: adoption; `ST-1.4` found no periodic task today, needed when `SB-18.2`, `MGT-6.4`, `MGT-8.6` or `MGT-12.1` lands)
+#### PR-ST-8 — Single-runner guard (adopted by the RAN NF OAM worker, `HISTORY.md` PR-MSG-4; open for each later periodic task: `SB-18.2`, `MGT-6.4`, `MGT-8.6`, `MGT-12.1`)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
@@ -263,7 +263,7 @@ Done (`HISTORY.md` §10): `smo_shared/outbox.py` (table, `enqueue`, `drain`, inl
 | MSG-3.5 | Publish FSM state-change events from one hook in `smo_shared/statemachine.py` | Event seen for `rapp_instance` transitions | MSG-3.2 |
 | MSG-3.6 | Publish alarm raised / cleared events | Event seen | MSG-3.2 |
 
-#### PR-MSG-4 — Durable job runner
+#### PR-MSG-4 — Durable job runner (the periodic part is done: `HISTORY.md` PR-MSG-4, the worker; open: the generic `job` table and its queue-shaped users)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|

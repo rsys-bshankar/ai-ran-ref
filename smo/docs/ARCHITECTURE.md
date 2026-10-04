@@ -155,8 +155,12 @@ The lazy sweeps above write to the database from a read, so two replicas can
 both run the same sweep; that is another reason `PR-ST-2` matters.
 
 A feature that needs a real periodic task (an alarm-aging sweep, a PM
-collector, a drift check) must not add a thread or `create_task`: it needs the
-single-runner helper of `PR-ST-8` or the job runner of `PR-MSG-4`.
+collector, a drift check) must not add a thread or `create_task`: it lists the
+task in its module's `app/tasks.py` (`Task(name, interval_seconds, fn)`) and the
+worker (`python -m smo_shared.worker`, a separate process of the same image,
+`PR-MSG-4`) runs it through the single-runner claim of `PR-ST-8`: at most once per
+interval across any number of workers. RAN NF OAM is the first user
+(`ran-nf-oam/app/tasks.py`).
 
 ## Service map
 
