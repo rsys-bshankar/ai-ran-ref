@@ -6,6 +6,8 @@ name: Release images
 # titles) onto the tag's GitHub release.
 #
 # workflow_dispatch takes an existing tag, so a release cut before this workflow existed (smo-v0.1.0) can be published.
+# The images are built from the tag's own source; the tooling that plans the build and writes the notes (smo/scripts/release_*.py) comes from the
+# commit the workflow runs at, so a tag cut before that tooling existed (smo-v0.1.0) can still be published.
 # No third-party actions: docker, git and the GitHub CLI are on the runner; cosign is installed from its pinned module.
 on:
   push:
@@ -39,10 +41,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+          fetch-tags: true
       - id: version
         run: |
           [[ "$TAG" =~ ^smo-v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "::error::$TAG is not a release tag"; exit 1; }
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || { echo "::error::the tag $TAG does not exist in this repository"; exit 1; }
           echo "version=${TAG#smo-v}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -75,6 +79,8 @@ jobs:
         id: build
         working-directory: smo
         run: |
+          # attestations (provenance, SBOM) need a builder that is not the runner's default docker driver
+          docker buildx create --name release --driver docker-container --use >/dev/null
           repo="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
           image="ghcr.io/${repo}/smo-${{ matrix.name }}"
           args=()
@@ -100,8 +106,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ env.TAG }}
           fetch-depth: 0
+          fetch-tags: true
       - name: Write the notes onto the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
