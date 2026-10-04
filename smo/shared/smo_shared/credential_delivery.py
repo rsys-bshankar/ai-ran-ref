@@ -38,7 +38,7 @@ def mode(environ=os.environ) -> str:
     return value if value in ("none", "kubernetes") else "none"
 
 
-def secret_name(instance_id) -> str:
+def object_name(instance_id) -> str:
     return f"rapp-{instance_id}-credentials"
 
 
@@ -62,33 +62,33 @@ def deliver(instance_id, invoker_id: str, secret: str, environ=os.environ, clien
     """Writes the instance's credentials to its Secret (created, or replaced when it exists). None when delivery is off; else {"kubernetesSecret": name}."""
     if mode(environ) != "kubernetes":
         return None
-    name = secret_name(instance_id)
+    target = object_name(instance_id)
     body = {"apiVersion": "v1", "kind": "Secret", "type": "Opaque",
-            "metadata": {"name": name, "labels": {LABEL: MANAGER, "smo/rapp-instance": str(instance_id)}},
+            "metadata": {"name": target, "labels": {LABEL: MANAGER, "smo/rapp-instance": str(instance_id)}},
             "stringData": {"SMO_INVOKER_ID": invoker_id, "SMO_INVOKER_SECRET": secret, "SMO_IDENTITY_KIND": "rapp"}}
     client, namespace = (client_factory or _client)(environ)
     try:
         with client:
             resp = client.post(f"/api/v1/namespaces/{namespace}/secrets", json=body)
             if resp.status_code == 409:                   # rotated: replace what is there
-                resp = client.put(f"/api/v1/namespaces/{namespace}/secrets/{name}", json=body)
+                resp = client.put(f"/api/v1/namespaces/{namespace}/secrets/{target}", json=body)
             if resp.status_code not in (200, 201):
-                raise DeliveryFailed(f"the Kubernetes API answered {resp.status_code} writing the Secret {name}")
+                raise DeliveryFailed(f"the Kubernetes API answered {resp.status_code} writing the credentials object {target}")
     except httpx.HTTPError as exc:
         raise DeliveryFailed(f"the Kubernetes API could not be reached: {exc}") from exc
-    return {"kubernetesSecret": name}
+    return {"kubernetesSecret": target}
 
 
 def withdraw(instance_id, environ=os.environ, client_factory=None) -> str:
     """Deletes the instance's Secret; a Secret that is already gone is done. Returns "DONE", "SKIPPED: ..." or "FAILED: ..." (it never raises: teardown goes on)."""
     if mode(environ) != "kubernetes":
         return "SKIPPED: credential delivery is off"
-    name = secret_name(instance_id)
+    target = object_name(instance_id)
     try:
         client, namespace = (client_factory or _client)(environ)
         with client:
-            resp = client.delete(f"/api/v1/namespaces/{namespace}/secrets/{name}")
+            resp = client.delete(f"/api/v1/namespaces/{namespace}/secrets/{target}")
         return "DONE" if resp.status_code in (200, 202, 404) else f"FAILED: the Kubernetes API answered {resp.status_code}"
     except (DeliveryFailed, httpx.HTTPError) as exc:
-        log.warning("could not delete the Secret %s: %s", name, exc)
+        log.warning("could not delete the credentials object of instance %s (%s)", instance_id, type(exc).__name__)
         return f"FAILED: {exc}"

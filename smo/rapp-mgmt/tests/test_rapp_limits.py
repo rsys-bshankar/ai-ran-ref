@@ -224,7 +224,7 @@ def _wire_delivery(monkeypatch, fail=False):
         if fail:
             raise credential_delivery.DeliveryFailed("the Kubernetes API answered 403")
         delivered["put"].append((str(instance_id), invoker_id, secret))
-        return {"kubernetesSecret": credential_delivery.secret_name(instance_id)}
+        return {"kubernetesSecret": credential_delivery.object_name(instance_id)}
 
     monkeypatch.setattr("app.provisioning.credential_delivery.deliver", deliver)
     monkeypatch.setattr("app.provisioning.credential_delivery.withdraw", lambda instance_id, **kw: (delivered["withdrawn"].append(str(instance_id)), "DONE")[1])
