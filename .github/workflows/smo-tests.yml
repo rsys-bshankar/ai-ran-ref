@@ -599,6 +599,13 @@ jobs:
           helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 \
             --set networkPolicy.enabled=true --set podDisruptionBudget.enabled=true --set autoscaling.enabled=true \
             --set ingress.enabled=true --set ingress.gui.host=gui.example.com --set ingress.r1.host=r1.example.com >/dev/null
+          # placement (PR-HA-5): soft by default, hard on request, none when off, and a mode that is not one of these is refused
+          helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'whenUnsatisfiable: ScheduleAnyway'
+          ! helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'DoNotSchedule'
+          helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set placement.mode=hard | grep -q 'whenUnsatisfiable: DoNotSchedule'
+          helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set placement.zoneKey=topology.kubernetes.io/zone | grep -q 'topologyKey: topology.kubernetes.io/zone'
+          [ "$(helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set placement.mode=off | grep -c topologySpreadConstraints)" = "0" ]
+          ! helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set placement.mode=sideways >/dev/null 2>&1
 
       - name: Build the images from this checkout
         working-directory: smo

@@ -113,7 +113,9 @@ try:
         r = call("POST", "/rapp-mgmt/instances", rapp_tok, json={})
         check("an rApp cannot change what it does not use: creating an instance is 403 ROLE_NOT_PERMITTED", r.status_code == 403 and r.json().get("title") == "ROLE_NOT_PERMITTED", (r.status_code, r.text[:200]))
         r = call("POST", "/dme/data-jobs", rapp_tok, json={})
-        check("what it does use is not refused by the role policy (a DME data job reaches DME: not 403 ROLE_NOT_PERMITTED)", r.status_code != 403, (r.status_code, r.text[:200]))
+        # this rApp is stopped at this point, and whether a gateway replica has noticed yet depends on its cache (3 s) and on how many replicas
+        # there are, so what is asked is only that the role policy does not refuse it; "stopped" is the next check's business
+        check("what it does use is not refused by the role policy (a DME data job is not 403 ROLE_NOT_PERMITTED)", "ROLE_NOT_PERMITTED" not in r.text, (r.status_code, r.text[:200]))
         # the gateway refuses every change of a stopped rApp, not only its config jobs (it re-reads the switch every 3 s)
         time.sleep(4)
         r = call("POST", "/dme/data-jobs", rapp_tok, json={})
