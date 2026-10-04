@@ -282,11 +282,11 @@ jobs:
           [ "$(count module_identity)" = "$before" ]
 
       # PR-SB-1.11: the same stack, with RAN NF OAM holding the lab server's credential, writes a value through a real NETCONF-over-SSH
-      # server and reads it back. Runs last: the lab publishes loopback ports, which the published-ports check must not see, and the steps above expect the stack as `up` left it.
+      # server and reads it back. The whole stack is brought up again first (the steps before it leave some services stopped). Runs last: the lab publishes loopback ports, which the published-ports check must not see, and the steps above expect the stack as `up` left it.
       - name: Runbook CM write over NETCONF/SSH through the stack (netconf-lab)
         working-directory: smo
         run: |
-          docker compose -f docker-compose.yml -f netconf-lab/compose.replay.yml --profile netconf-lab up -d --wait ran-nf-oam netconf-lab
+          docker compose -f docker-compose.yml -f netconf-lab/compose.replay.yml --profile netconf-lab up -d --wait
           docker run --rm --network smo_default \
             -e SMO_E2E_LIVE=1 -e SMO_LAB_HOST=netconf-lab -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
             -v "$PWD/..:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c '
