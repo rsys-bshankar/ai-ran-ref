@@ -244,6 +244,7 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 | GET | `/managed-entities/{ref}/config-history/diff` | `from_snapshot`, `to_snapshot`: attributes whose values differ between two snapshots of one managed object, and those only one touched (`MGT-1.5`) |
 | PUT / GET / DELETE | `/kpi-definitions/{name}` (GET `/kpi-definitions`) | a KPI: `formula`, `counters` (`counter`, `variable`, `aggregation`), `unit`, `description`; the formula is refused (422) unless `kpi_formula.py` accepts it (`MGT-11.1`, `11.2`) |
 | GET | `/kpis/{name}` | `from_time`, `to_time?`, `group_by?` (`cell`, `element`, `sectorGroup`, `incidentZone`, `all`), `managed_element_ref?`, `cell_id?`: the KPI per group, from the stored PM files (`MGT-11.3`-`11.5`) |
+| POST | `/config-jobs/{jobId}/kpi-check` | `requestedBy`, `kpi`, windows, `maxRegressionPercent`, `direction`, `minSamples`, `revert?`, `force?`: the KPI before and after the job per element it changed; `REGRESSED` elements are rolled back when `revert` (`AI-10.5`) |
 | POST | `/config-jobs/{jobId}/continue` | `requestedBy`, `force?`: run the next wave of a `HALTED` job; 409 `WAVE_PAUSE_NOT_ELAPSED` while its pause runs, unless `force` (`MGT-5.4`) |
 | POST | `/config-jobs/{jobId}/halt` | `requestedBy`: turn a pause into an operator halt, so it does not go on by itself (`MGT-5.4`) |
 | POST | `/config-jobs/{jobId}/abort` | `requestedBy`: end a halted job here; the waves that did not run are `REJECTED` `WAVE_NOT_RUN` (`MGT-5.4`) |

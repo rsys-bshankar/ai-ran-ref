@@ -89,7 +89,7 @@ def test_a_kpi_is_computed_per_cell_from_the_counters_summed_over_the_period(cli
     client.put("/kpi-definitions/ho_success", json=HO_SUCCESS)
     items = {(i["group"]["managedElementRef"], i["group"]["cellId"]): i for i in _query(client, "ho_success").json()["items"]}
     assert items[("ME-A", "1")]["value"] == 80.0 and items[("ME-A", "1")]["counters"] == {"att": 200.0, "fail": 40.0}
-    assert items[("ME-A", "2")]["value"] == 100.0 and items[("ME-B", "3")]["value"] == 90.0 and items[("ME-A", "1")]["samples"] == 4
+    assert items[("ME-A", "2")]["value"] == 100.0 and items[("ME-B", "3")]["value"] == 90.0 and items[("ME-A", "1")]["samples"] == 2
 
 
 def test_the_period_is_half_open_and_filters_apply(client, pm):

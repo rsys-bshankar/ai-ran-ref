@@ -159,7 +159,8 @@ def compute(db: Session, definition: KpiDefinition, start: datetime.datetime, en
         counters = {c["variable"]: _combine(c["aggregation"], [s for s in group_samples if s.counter == c["counter"]]) for c in table}
         value = kpi_formula.evaluate(definition.formula, counters)
         reason = None if value is not None else ("NO_DATA" if any(v is None for v in counters.values()) else "UNDEFINED")
-        items.append({"group": _group_view(group_by, key), "value": value, "samples": len(group_samples), "counters": counters, "reason": reason})
+        observations = len({(smp.element, smp.cell, smp.at) for smp in group_samples})        # a measurement with several counters is one observation
+        items.append({"group": _group_view(group_by, key), "value": value, "samples": observations, "counters": counters, "reason": reason})
     if group_by == "all" and not items:                                # one question, one answer: "no data" rather than an empty list
         items.append({"group": {}, "value": None, "samples": 0, "counters": {c["variable"]: None for c in table}, "reason": "NO_DATA"})
     return {"kpi": definition.name, "unit": definition.unit, "from": start.isoformat(), "to": end.isoformat(), "groupBy": group_by,
