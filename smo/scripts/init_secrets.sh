@@ -3,6 +3,8 @@
 #
 #   scripts/init_secrets.sh
 #
+# smo/secrets/enrollment_secret  what every SMO module presents to SME when it registers, so SME can tell it from an rApp (PR-SEC-14);
+#                           mounted by every module except the sample rApps, never given to an rApp
 # smo/secrets/db_password   the Postgres password: a random 48-hex-character value, never printed. An existing
 #                           file is left alone, so running this again does not lock the stack out of its own
 #                           database. To rotate it, see docs/SECRETS.md.
@@ -16,15 +18,20 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dir="$here/secrets"
-file="$dir/db_password"
 
 umask 077
 mkdir -p "$dir"
 chmod 700 "$dir"
-if [ -s "$file" ]; then
-  echo "kept: $file (already exists)"
-  exit 0
-fi
-python3 -c 'import secrets; print(secrets.token_hex(24), end="")' > "$file"
-chmod 644 "$file"
-echo "created: $file"
+# create_secret NAME: a random 48-hex-character value in $dir/NAME, 0644, kept if it exists
+create_secret() {
+  local path="$dir/$1"
+  if [ -s "$path" ]; then
+    echo "kept: $path (already exists)"
+    return
+  fi
+  python3 -c 'import secrets; print(secrets.token_hex(24), end="")' > "$path"
+  chmod 644 "$path"
+  echo "created: $path"
+}
+create_secret db_password
+create_secret enrollment_secret

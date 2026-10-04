@@ -175,6 +175,10 @@ jobs:
         working-directory: smo
         run: docker compose exec -T r1-termination python3 - < scripts/compose_e2e.py
 
+      - name: Caller roles through the gateway (PR-SEC-14)
+        working-directory: smo
+        run: docker compose exec -T sme python3 - < scripts/compose_e2e_roles.py
+
       - name: Replay DEMO_RUNBOOK §2-§27 against the live stack
         working-directory: smo
         # The same test file the in-process suite runs, with SMO_E2E_LIVE=1: a

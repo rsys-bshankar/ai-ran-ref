@@ -79,6 +79,14 @@ def record_illegal_transition(machine: str, from_state, event) -> None:
     FSM_ILLEGAL.labels(machine, _name(from_state), _name(event)).inc()
 
 
+ROLE_REFUSALS = Counter("smo_role_refusals_total", "Calls an rApp made to a route only SMO modules may call (PR-SEC-14), by R1 module and what was done.",
+                        ["module", "action"])
+
+
+def record_role_refusal(module: str, action: str) -> None:
+    ROLE_REFUSALS.labels(r1_target(module), action).inc()
+
+
 OUTBOUND_CALLS = Counter("smo_outbound_calls_total", "Outbound calls, by client (r1 or webhook), target, method and outcome.",
                          ["client", "target", "method", "outcome"])
 OUTBOUND_DURATION = Histogram("smo_outbound_call_duration_seconds", "Outbound call duration, by client and target.", ["client", "target"])

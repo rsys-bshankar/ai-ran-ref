@@ -89,7 +89,7 @@ which obtains its own SME token the same way an rApp does.
 
 ```bash
 cd smo
-scripts/init_secrets.sh                  # once: writes the database password to secrets/db_password (no default)
+scripts/init_secrets.sh                  # once: writes the database password and the enrollment secret to secrets/ (no defaults)
 export GUI_ADMIN_PASSWORD='choose-one'   # optional; otherwise one is generated
 docker compose up -d --build
 docker compose ps

@@ -111,6 +111,10 @@ class InvokerRegistration(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.UTC))
     last_token_issued_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    # PR-SEC-14: 'internal' for an invoker that presented the enrollment secret (an SMO module or the GUI), 'rapp' for every other. Introspection
+    # reports it as the token's `role`. The column default is 'internal' because the release before this one inserts rows without it and its
+    # invokers are SMO modules (a rolling upgrade); this code always sets it.
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="internal", server_default="internal")
 
 
 class IssuedAccessToken(Base):

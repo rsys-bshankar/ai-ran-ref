@@ -40,7 +40,7 @@ Python (with `httpx`) inside the `r1-termination` container:
 
 ```bash
 cd smo
-scripts/init_secrets.sh   # once: creates the database password secret (no default)
+scripts/init_secrets.sh   # once: creates the database password and enrollment secrets (no defaults)
 docker compose up -d --build
 docker compose ps   # confirm all services are healthy/running
 ```

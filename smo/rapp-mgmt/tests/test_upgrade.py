@@ -54,6 +54,8 @@ class FakeR1:
             return FakeResponse(202, {"nfDeploymentId": str(uuid.uuid4())})
         if path.endswith("/usage/start"):
             return FakeResponse(200, {"registrationId": str(uuid.uuid4())})
+        if path == "/sme/invoker-registrations":
+            return FakeResponse(201, {"apiInvokerId": f"api-invoker-{uuid.uuid4()}", "onboardingSecret": "s", "role": "rapp"})
         return FakeResponse(200, {})
 
     def delete(self, _self, path, **kw):
@@ -199,6 +201,7 @@ def test_upgrade_success_commits_and_retires_old_row_like_terminate(db, r1):
         ("DELETE", "/dme/production-capabilities"),
         ("DELETE", "/sme/published-apis/v1/cred-123/service-apis/svc-1"),
         ("DELETE", "/sme/provider-registrations/cred-123"),
+        ("DELETE", "/sme/invoker-registrations/cred-123"),            # PR-SEC-14: the retired instance's own invoker
         ("DELETE", "/nfo/deployments/nf-old"),
         ("POST", f"/onboarding/packages/{old_package}/usage/{old_registration}/stop"),
     ]

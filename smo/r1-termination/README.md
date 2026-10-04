@@ -66,7 +66,7 @@ It calls only SME (introspection) and the chosen backend. It never reads a datab
 | `/bootstrap` and the probes (`/health`, `/live`, `/ready`) are unauthenticated | Bootstrap must work before a token exists, and an orchestrator probes without a token; all are assumed network-isolated. The probes are declared ahead of the catch-all, so it is answered locally and not treated as an unknown prefix. |
 | Unknown prefix is `404 NO_ROUTE` before any token check | Nothing is forwarded, nothing is learned about backends. |
 | Prefix is stripped before forwarding | No backend carries its own prefix in its routes. |
-| `X-Correlation-ID` is overridden with the request's own id (the caller's, or the one the middleware just assigned); `X-R1-Invoker-Id` is set to the introspected token's `client_id` (any inbound value is dropped; omitted when the token carries none); all other headers except `Host` are forwarded verbatim | One id threads the whole downstream fan-out of an inbound call (call flow 14). |
+| `X-Correlation-ID` is overridden with the request's own id (the caller's, or the one the middleware just assigned); `X-R1-Invoker-Id` is set to the introspected token's `client_id` (any inbound value is dropped; omitted when the token carries none) and `X-R1-Role` to the `role` SME records for that invoker, `internal` (an SMO module or the GUI, which presented the enrollment secret) or `rapp` (`PR-SEC-14`; an SME that reports none is read by the token's scope); all other headers except `Host` are forwarded verbatim | One id threads the whole downstream fan-out of an inbound call (call flow 14). |
 | `/dme-push` and `/dme-pull` both route to DME | Reserved aliases for the push and pull delivery transports; DME has no routes of its own under those names, so after prefix stripping they are the same as `/dme`. |
 | `/a1-related` is routed but marked reserved | Inert until a Near-RT RIC exists. |
 | Explicit `operation_id="proxy"` on the catch-all | FastAPI's auto id depended on set iteration order of the five methods and made the committed OpenAPI spec check flaky. |
@@ -154,6 +154,7 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 | `R1_MAX_BODY_OVERRIDES` | `/mlmr/models/*/artifact=52428800` | `<path-pattern>=<bytes>,...` caps that replace the default for matching paths (`*` matches anything); the default is the model artifact upload, 50 MiB like the GUI's nginx. Setting it replaces this default |
 | `R1_RATE_PER_SECOND` | `100` | Requests a second each caller (invoker id) may sustain; `0` turns the limiter off |
 | `R1_RATE_BURST` | `200` | Requests a caller may make at once before it is held to the rate |
+| `SMO_ROLE_ENFORCEMENT` | `enforce` | `enforce`: an rApp is refused on the internal-only routes; `audit`: the same decision is counted (`smo_role_refusals_total`) and logged, then allowed (a rolling upgrade from a release with no enrollment). Anything else is `enforce` |
 | `R1_INTROSPECT_TIMEOUT_SECONDS` | `5` | How long it waits for SME's token introspection (a timeout fails closed: 401) |
 
 `SME_URL` is also the target of introspection and of the URIs in `/bootstrap`.
@@ -168,6 +169,7 @@ The gateway answers with `JSONResponse` bodies of the form `{"title": ..., "stat
 | `UNAUTHORIZED` | 401 | No `Authorization` header, not `Bearer`, empty token, SME unreachable, or token not active |
 | `PAYLOAD_TOO_LARGE` | 413 | The request body is larger than the cap for that path (`Content-Length`, or counted while streaming); the backend is not called |
 | `RATE_LIMITED` | 429 | The caller has used its request budget; `Retry-After` is the whole seconds to wait. Counted after authentication, so a refused unauthenticated request spends nobody's budget |
+| `ROLE_NOT_PERMITTED` | 403 | The caller's role is `rapp` and the route is one only SMO modules and operators may call (`smo_shared/roles.py` `INTERNAL_ONLY`: setting or removing a per-rApp limit, defining or removing a KPI, purging CM history); the backend is not called |
 | `UPSTREAM_TIMEOUT` | 504 | The backend did not answer within `R1_UPSTREAM_TIMEOUT_SECONDS` (`detail` names the route prefix) |
 | `UPSTREAM_UNAVAILABLE` | 502 | The backend could not be reached (connection refused, DNS failure, reset) |
 

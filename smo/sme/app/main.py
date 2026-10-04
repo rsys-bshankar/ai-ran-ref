@@ -10,6 +10,7 @@ section 2.3).
 
 import datetime
 import hashlib
+import logging
 import os
 import secrets
 import uuid
@@ -18,7 +19,7 @@ from typing import Literal
 import httpx
 import jwt
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -34,15 +35,19 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.outbox import enqueue
+from smo_shared import roles
+from smo_shared.secretfile import read_secret
 
 from .models import (API_INVOKER_EVENTS, EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration,
                      ServiceAuthzPolicy, ServiceEventSubscription, ServiceProfile, TrustedInvoker, UsedClientAssertion)
+
+log = logging.getLogger(__name__)
 
 ACCESS_TOKEN_TTL_SECONDS = 3600
 # OI-2-oauth2-scope: the scopes SMO's own clients request — every module's
 # R1Client (smo_shared/r1_client.py) and the GUI BFF. Granted as-is; they
 # name no published API, so there is nothing to check them against.
-INTERNAL_SCOPES = frozenset({"smo-internal", "smo-gui"})
+INTERNAL_SCOPES = roles.INTERNAL_SCOPES | {roles.RAPP_SCOPE}      # PR-SEC-14: the internal two need an enrolled invoker (`_check_scope`); `smo-rapp` is for anyone
 CAPIF_SCOPE_PREFIX = "3gpp#"
 # SA-SME-1-public-key: RFC 7523 client authentication by a signed JWT.
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
@@ -172,13 +177,32 @@ def _pem_public_key(value: str):
         return None
 
 
+def _enrolled(presented: str | None) -> str:
+    """PR-SEC-14: the kind of a new invoker. `internal` when the caller presents the enrollment secret every SMO module mounts, `rapp` when it
+    presents none. A secret that does not match is refused (403), never quietly downgraded: a module with the wrong secret is a misconfiguration
+    to see. With no secret configured SME will not tell the two apart: 503, unless `SME_ALLOW_OPEN_ENROLLMENT` is set (development and tests),
+    which makes every invoker `internal`, as before this existed."""
+    expected = read_secret("SMO_ENROLLMENT_SECRET")
+    if not expected:
+        if os.environ.get("SME_ALLOW_OPEN_ENROLLMENT", "").strip().lower() in ("1", "true", "yes", "on"):
+            return roles.ROLE_INTERNAL
+        raise framework_error(FrameworkError.ENROLLMENT_NOT_CONFIGURED,
+                              detail="SME has no enrollment secret (SMO_ENROLLMENT_SECRET[_FILE]): it cannot tell an SMO module from an rApp")
+    if presented is None:
+        return roles.ROLE_RAPP
+    if not roles.enrollment_secret_valid(presented, expected):
+        raise framework_error(FrameworkError.ENROLLMENT_REFUSED, detail="the enrollment secret presented is not the one SME holds")
+    return roles.ROLE_INTERNAL
+
+
 def _check_public_key(value: str) -> None:
     if value.lstrip().startswith("-----BEGIN") and _pem_public_key(value) is None:
         raise framework_error(FrameworkError.SECURITY_CONTEXT_INVALID, detail="apiInvokerPublicKey is not a valid PEM public key")
 
 
 @app.post("/invoker-registrations", status_code=201)
-def register_invoker(body: InvokerRegistrationRequest, db: Session = Depends(get_session)):
+def register_invoker(body: InvokerRegistrationRequest, db: Session = Depends(get_session),
+                     enrollment: str | None = Header(default=None, alias=roles.ENROLLMENT_HEADER)):
     """HISTORY.md §2: API Invoker onboarding
     (`invokermanagement.go`'s `InvokerManager`) — the real registry the
     Security/token API's own `IsInvokerRegistered`/`VerifyInvokerSecret`
@@ -197,14 +221,15 @@ def register_invoker(body: InvokerRegistrationRequest, db: Session = Depends(get
     API_INVOKER_ONBOARDED.
     """
     _check_public_key(body.apiInvokerPublicKey)
+    kind = _enrolled(enrollment)                                  # PR-SEC-14: `X-SMO-Enrollment` makes the invoker an SMO module's
     api_invoker_id = f"api-invoker-{uuid.uuid4()}"
     onboarding_secret = secrets.token_urlsafe(32)
     inv = InvokerRegistration(api_invoker_id=api_invoker_id, public_key=body.apiInvokerPublicKey,
-                               onboarding_secret_hash=_hash_secret(onboarding_secret))
+                               onboarding_secret_hash=_hash_secret(onboarding_secret), kind=kind)
     db.add(inv)
     notify_invoker_change(db, api_invoker_id, "API_INVOKER_ONBOARDED")  # enqueued in this transaction (PR-MSG-1.6)
     db.commit()
-    return {"apiInvokerId": inv.api_invoker_id, "onboardingSecret": onboarding_secret,
+    return {"apiInvokerId": inv.api_invoker_id, "onboardingSecret": onboarding_secret, "role": kind,
             "keyAuthentication": _pem_public_key(inv.public_key) is not None}
 
 
@@ -335,7 +360,7 @@ def _visible_to(service: ServiceProfile, api_invoker_id: str) -> bool:
             or api_invoker_id in policy.allowed_consumers)
 
 
-def _check_scope(db: Session, scope: str | None, api_invoker_id: str) -> str | None:
+def _check_scope(db: Session, scope: str | None, api_invoker_id: str, kind: str = roles.ROLE_INTERNAL) -> str | None:
     """OI-2-oauth2-scope: None when the requested scope may be granted,
     else why not. Absent, or one of INTERNAL_SCOPES: granted. Otherwise it
     must be TS 29.222's `3gpp#aefId:apiName[,apiName...][;aefId:...]`, and
@@ -344,6 +369,12 @@ def _check_scope(db: Session, scope: str | None, api_invoker_id: str) -> str | N
     checks as the reference's `IsFunctionRegistered`/`IsAPIPublished`,
     plus discovery's visibility gate, so a token never names an API the
     invoker could not discover."""
+    if scope in roles.INTERNAL_SCOPES and kind != roles.ROLE_INTERNAL:
+        # PR-SEC-14: an rApp does not get the scopes the SMO's own clients use. In audit mode it is granted and counted.
+        if roles.enforcement_mode() == "enforce":
+            return f"scope {scope!r} is for SMO modules: this invoker did not enroll"
+        log.warning("role audit: rApp invoker %s was granted internal scope %r", api_invoker_id, scope)
+        return None
     if not scope or scope in INTERNAL_SCOPES:
         return None
     if not scope.startswith(CAPIF_SCOPE_PREFIX):
@@ -396,7 +427,7 @@ def issue_access_token(body: AccessTokenRequest, db: Session = Depends(get_sessi
             return _token_error("invalid_client", problem)
     elif not _verify_secret(body.client_secret or "", inv.onboarding_secret_hash):
         return _token_error("unauthorized_client", "onboarding secret not valid")
-    problem = _check_scope(db, body.scope, inv.api_invoker_id)
+    problem = _check_scope(db, body.scope, inv.api_invoker_id, inv.kind)
     if problem is not None:
         db.rollback()
         return _token_error("invalid_scope", problem)
@@ -428,7 +459,9 @@ def introspect_token(body: IntrospectRequest, db: Session = Depends(get_session)
     rec = db.get(IssuedAccessToken, _hash_token(body.token))
     if rec is None or as_utc(rec.expires_at) <= datetime.datetime.now(datetime.UTC):
         return {"active": False}
-    view = {"active": True, "client_id": rec.api_invoker_id, "exp": int(as_utc(rec.expires_at).timestamp())}
+    registration = db.get(InvokerRegistration, rec.api_invoker_id)
+    view = {"active": True, "client_id": rec.api_invoker_id, "exp": int(as_utc(rec.expires_at).timestamp()),
+            "role": registration.kind if registration is not None else roles.ROLE_RAPP}     # PR-SEC-14: what R1 Termination applies its role policy on
     if rec.scope:
         view["scope"] = rec.scope
     return view

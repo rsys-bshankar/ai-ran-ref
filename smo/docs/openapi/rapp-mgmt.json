@@ -447,6 +447,45 @@
         "summary": "Set Config"
       }
     },
+    "/instances/{instance_id}/credentials": {
+      "post": {
+        "description": "PR-SEC-14: the OAuth client credentials the instance's workload authenticates with, issued once. SME keeps only a hash of the secret, so\nthis registers a NEW invoker for the instance (it replaces the one made at create and deregisters it) and returns its id and secret in this\nanswer and nowhere else; call it again to rotate. The id is the instance's `oauthClientId`, so call it before the workload bootstraps:\n409 once the instance is RUNNING (the SME and DME registrations made at bootstrap are under the old id). It is not an idempotent\ncommand: a replayed answer would be a stored secret. Give the pair to the workload as SMO_INVOKER_ID / SMO_INVOKER_SECRET with\nSMO_IDENTITY_KIND=rapp.",
+        "operationId": "issue_instance_credentials_instances__instance_id__credentials_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Instance Credentials"
+      }
+    },
     "/instances/{instance_id}/fault": {
       "post": {
         "description": "Records every fault report; severity=critical additionally fires\nCRASH (RUNNING -> FAULTED). A critical fault on an instance that is not\nRUNNING is refused with 409 and not recorded.",
