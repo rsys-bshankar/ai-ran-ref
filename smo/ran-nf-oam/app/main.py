@@ -40,11 +40,12 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.outbox import enqueue
+from smo_shared.webhook import is_safe_webhook_destination
 from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 from smo_shared.invoker import invoker_id
 
-from .models import Alarm, RAppKill, RAppLimit, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, RAppKill, RAppLimit, SafeguardRefusal, SafeguardSubscription, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
 from . import mo_tree
@@ -576,8 +577,8 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
     sub_changes, PATCH each independently, aggregate.
     """
     caller = invoker_id(request)
-    _refuse_if_killed(db, caller)
-    _enforce_rapp_limit(db, caller)
+    _refuse_if_killed(db, caller, body.requestedBy)
+    _enforce_rapp_limit(db, caller, body.requestedBy)
     _enforce_change_limits(db, body, caller)
     return _execute_write(body, db, invoker=caller)
 
@@ -585,15 +586,43 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
 RATE_WINDOW = datetime.timedelta(hours=1)
 
 
-def _refuse_if_killed(db: Session, caller: str | None) -> None:
+SAFEGUARD_EVENT_MIN_INTERVAL = datetime.timedelta(seconds=int(os.environ.get("SAFEGUARD_EVENT_MIN_INTERVAL_SECONDS", "60") or 0))
+
+
+def _refuse(db: Session, caller: str, requested_by: str | None, error) -> None:
+    """AI-10.6: every refusal of an rApp by a safeguard (a kill switch, the rate, blast-radius or magnitude limit) is recorded in
+    `safeguard_refusal` and announced: an event goes through the outbox to each subscriber of `/safeguard-subscriptions` that wants that code.
+    The same refusal of the same rApp is announced at most once per `SAFEGUARD_EVENT_MIN_INTERVAL_SECONDS` (default 60; 0: every one) so an
+    rApp that keeps trying cannot flood its watchers, but every one is recorded. Committed before the error is raised, which would roll it back."""
+    code, detail = error.detail["title"], error.detail.get("detail")
+    now = datetime.datetime.now(datetime.UTC)
+    repeat = SAFEGUARD_EVENT_MIN_INTERVAL.total_seconds() > 0 and db.scalar(
+        select(func.count()).select_from(SafeguardRefusal).where(SafeguardRefusal.invoker_id == caller, SafeguardRefusal.code == code,
+                                                                  SafeguardRefusal.notified.is_(True),
+                                                                  SafeguardRefusal.occurred_at >= now - SAFEGUARD_EVENT_MIN_INTERVAL))
+    row = SafeguardRefusal(invoker_id=caller, requested_by=requested_by, code=code, detail=detail, occurred_at=now, notified=not repeat)
+    db.add(row)
+    db.flush()
+    if not repeat:
+        event = {"href": "/ran-nf-oam/safeguard-subscriptions", "eventType": "RAPP_SAFEGUARD_REFUSAL", "refusalId": str(row.refusal_id),
+                 "refusal": code, "invokerId": caller, "requestedBy": requested_by, "detail": detail, "occurredAt": now.isoformat()}
+        for sub in db.scalars(select(SafeguardSubscription)).all():
+            if not sub.refusals or code in sub.refusals:
+                enqueue(db, sub.callback_uri, event)
+    db.commit()
+    raise error
+
+
+def _refuse_if_killed(db: Session, caller: str | None, requested_by: str | None = None) -> None:
     """AI-10.4: 403 `RAPP_KILLED` for a caller an operator stopped (`PUT /rapp-kill/{invoker_id}`). Not for a caller R1 did not identify."""
     kill = db.get(RAppKill, caller) if caller else None
     if kill is not None:
-        raise framework_error(FrameworkError.RAPP_KILLED, detail=f"{caller} was stopped by {kill.killed_by} at {as_utc(kill.killed_at).isoformat()}"
-                              + (f": {kill.reason}" if kill.reason else ""))
+        _refuse(db, caller, requested_by, framework_error(
+            FrameworkError.RAPP_KILLED, detail=f"{caller} was stopped by {kill.killed_by} at {as_utc(kill.killed_at).isoformat()}"
+            + (f": {kill.reason}" if kill.reason else "")))
 
 
-def _enforce_rapp_limit(db: Session, caller: str | None) -> None:
+def _enforce_rapp_limit(db: Session, caller: str | None, requested_by: str | None = None) -> None:
     """AI-10.2: 429 when `caller` (the invoker id R1 vouches for) has already started as many write jobs in the last hour as its limit
     (`PUT /rapp-limits/{invoker_id}`, from the manifest of the rApp) allows. A caller with no limit, or none that R1 identified, is not counted.
     Rollbacks and automatic reverts do not pass here: undoing a change must never be refused because the rApp used its budget."""
@@ -606,7 +635,7 @@ def _enforce_rapp_limit(db: Session, caller: str | None) -> None:
         error = framework_error(FrameworkError.RAPP_RATE_LIMITED,
                                 detail=f"{caller} has started {used} config jobs in the last hour; its limit is {limit.max_config_jobs_per_hour}")
         error.headers = {"Retry-After": "60"}
-        raise error
+        _refuse(db, caller, requested_by, error)
 
 
 def _number(value) -> float | None:
@@ -633,8 +662,9 @@ def _enforce_change_limits(db: Session, body: WriteConfigRequest, caller: str | 
         return
     elements = list(dict.fromkeys(c["managedElementRef"] for c in body.changes))
     if limit.max_elements_per_job is not None and len(elements) > limit.max_elements_per_job:
-        raise framework_error(FrameworkError.RAPP_BLAST_RADIUS_EXCEEDED,
-                              detail=f"{caller} may change {limit.max_elements_per_job} managed elements in one job; this one names {len(elements)}")
+        _refuse(db, caller, body.requestedBy, framework_error(
+            FrameworkError.RAPP_BLAST_RADIUS_EXCEEDED,
+            detail=f"{caller} may change {limit.max_elements_per_job} managed elements in one job; this one names {len(elements)}"))
     if limit.max_change_percent is None:
         return
     for change in body.changes:
@@ -647,15 +677,15 @@ def _enforce_change_limits(db: Session, body: WriteConfigRequest, caller: str | 
         for name, new in wanted.items():
             current = _number((before or {}).get(name))
             if current is None:
-                raise framework_error(FrameworkError.RAPP_MAGNITUDE_EXCEEDED, detail=(
+                _refuse(db, caller, body.requestedBy, framework_error(FrameworkError.RAPP_MAGNITUDE_EXCEEDED, detail=(
                     f"{change['managedElementRef']} {name}: its current value cannot be checked against maxChangePercent="
-                    f"{limit.max_change_percent:g} ({error or 'it is not a number'})"))
+                    f"{limit.max_change_percent:g} ({error or 'it is not a number'})")))
             moved = abs(_number(new) - current)
             percent = 0.0 if moved == 0 else float("inf") if current == 0 else moved / abs(current) * 100
             if percent > limit.max_change_percent:
-                raise framework_error(FrameworkError.RAPP_MAGNITUDE_EXCEEDED, detail=(
+                _refuse(db, caller, body.requestedBy, framework_error(FrameworkError.RAPP_MAGNITUDE_EXCEEDED, detail=(
                     f"{change['managedElementRef']} {name}: {current:g} to {_number(new):g} is a change of "
-                    f"{'more than any' if percent == float('inf') else f'{percent:.1f}%'}; {caller} may change a value by {limit.max_change_percent:g}% at most"))
+                    f"{'more than any' if percent == float('inf') else f'{percent:.1f}%'}; {caller} may change a value by {limit.max_change_percent:g}% at most")))
 
 
 def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID | None = None, rollback_forced: bool = False,
@@ -1158,7 +1188,7 @@ def continue_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, db: S
     """MGT-5.4: run the next wave of a halted job. A job held by its wave pause goes on only once the pause has elapsed, unless `force`; after a
     failed gate or an operator's halt, calling this is the operator's decision to go on."""
     job = _halted_job(db, job_id, JobEvent.RESUME)
-    _refuse_if_killed(db, job.invoker_id)               # AI-10.4: a stopped rApp's job does not go on to its next wave
+    _refuse_if_killed(db, job.invoker_id, body.requestedBy)               # AI-10.4: a stopped rApp's job does not go on to its next wave
     if job.halted_reason == "WAVE_PAUSE" and job.next_wave_at and as_utc(job.next_wave_at) > datetime.datetime.now(datetime.UTC) and not body.force:
         raise framework_error(FrameworkError.WAVE_PAUSE_NOT_ELAPSED,
                               detail=f"the pause between waves ends at {as_utc(job.next_wave_at).isoformat()}; send force=true to go on now")
@@ -1377,6 +1407,60 @@ def lift_rapp_kill(invoker_id_: str, db: Session = Depends(get_session)):
     db.commit()
     log.warning("rApp %s allowed to write again", invoker_id_)
     return Response(status_code=204)
+
+
+class SafeguardSubscriptionRequest(BaseModel):
+    callbackUri: str = Field(min_length=1, max_length=2000)
+    refusals: list[Literal["RAPP_KILLED", "RAPP_RATE_LIMITED", "RAPP_BLAST_RADIUS_EXCEEDED", "RAPP_MAGNITUDE_EXCEEDED"]] = []
+
+
+def _subscription_view(sub: SafeguardSubscription) -> dict:
+    return {"subscriptionId": str(sub.subscription_id), "callbackUri": sub.callback_uri, "refusals": sub.refusals or [], "createdAt": sub.created_at}
+
+
+@app.post("/safeguard-subscriptions", status_code=201)
+def subscribe_to_safeguard_refusals(body: SafeguardSubscriptionRequest, db: Session = Depends(get_session)):
+    """AI-10.6: be told (a POST to `callbackUri`, through the outbox) each time the platform refuses an rApp: `refusals` narrows it to those codes,
+    empty means all four. A destination the SSRF guard refuses is a 422 here rather than a silent drop later."""
+    if not is_safe_webhook_destination(body.callbackUri):
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="callbackUri is not an acceptable destination")
+    sub = SafeguardSubscription(callback_uri=body.callbackUri, refusals=sorted(set(body.refusals)))
+    db.add(sub)
+    db.commit()
+    return _subscription_view(sub)
+
+
+@app.get("/safeguard-subscriptions")
+def list_safeguard_subscriptions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    page = paginate(db, select(SafeguardSubscription).order_by(SafeguardSubscription.created_at), limit, offset)
+    return {**page, "items": [_subscription_view(s) for s in page["items"]]}
+
+
+@app.delete("/safeguard-subscriptions/{subscription_id}", status_code=204)
+def unsubscribe_from_safeguard_refusals(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    sub = db.get(SafeguardSubscription, subscription_id)
+    if sub is None:
+        raise framework_error(FrameworkError.SAFEGUARD_SUBSCRIPTION_NOT_FOUND, detail=f"no subscription {subscription_id}")
+    db.delete(sub)
+    db.commit()
+    return Response(status_code=204)
+
+
+@app.get("/safeguard-refusals")
+def list_safeguard_refusals(invoker_id_: str | None = Query(default=None, alias="invoker_id"), code: str | None = None,
+                            since: datetime.datetime | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                            db: Session = Depends(get_session)):
+    """AI-10.6: the refusals recorded, newest first, whether or not anyone was subscribed. Narrow by rApp (`invoker_id`), `code` and `since`."""
+    stmt = select(SafeguardRefusal).order_by(SafeguardRefusal.occurred_at.desc(), SafeguardRefusal.refusal_id)
+    if invoker_id_:
+        stmt = stmt.where(SafeguardRefusal.invoker_id == invoker_id_)
+    if code:
+        stmt = stmt.where(SafeguardRefusal.code == code)
+    if since:
+        stmt = stmt.where(SafeguardRefusal.occurred_at >= as_utc(since))
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [{"refusalId": str(r.refusal_id), "occurredAt": r.occurred_at, "invokerId": r.invoker_id, "requestedBy": r.requested_by,
+                               "refusal": r.code, "detail": r.detail, "announced": r.notified} for r in page["items"]]}
 
 
 @app.get("/kpis/{name}")

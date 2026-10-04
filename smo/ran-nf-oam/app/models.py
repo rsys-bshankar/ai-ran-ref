@@ -201,6 +201,33 @@ class RAppKill(Base):
                                                           default=lambda: datetime.datetime.now(datetime.UTC))
 
 
+class SafeguardSubscription(Base):
+    """AI-10.6: who is told when the platform refuses an rApp (a kill switch, a rate, blast-radius or magnitude limit): `callback_uri` receives each
+    refusal event (through the outbox), narrowed to the codes in `refusals` when that is not empty."""
+    __tablename__ = "safeguard_subscription"
+
+    subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    callback_uri: Mapped[str] = mapped_column(String, nullable=False)
+    refusals: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                           default=lambda: datetime.datetime.now(datetime.UTC))
+
+
+class SafeguardRefusal(Base):
+    """AI-10.6: one refusal of an rApp by a safeguard, kept whether or not anyone subscribed. `notified` is whether events went out for it: a
+    repeat of the same refusal for the same rApp within `SAFEGUARD_EVENT_MIN_INTERVAL_SECONDS` is recorded but not announced again."""
+    __tablename__ = "safeguard_refusal"
+
+    refusal_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    occurred_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True,
+                                                            default=lambda: datetime.datetime.now(datetime.UTC))
+    invoker_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    requested_by: Mapped[str | None] = mapped_column(String)
+    code: Mapped[str] = mapped_column(String, nullable=False)
+    detail: Mapped[str | None] = mapped_column(String)
+    notified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
 class FileSubscription(Base):
     """A File Data Reporting MnS subscription: notifyFileReady goes to `consumer_reference`."""
     __tablename__ = "file_subscription"
