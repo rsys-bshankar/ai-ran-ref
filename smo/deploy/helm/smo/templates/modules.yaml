@@ -101,6 +101,13 @@ spec:
             {{- end }}
             {{- end }}
           {{- if eq $m.kind "service" }}
+          {{- if $m.preStopSeconds }}
+          # PR-HA-2: stay up for a few seconds after the pod is marked terminating, so the Service and the other pods stop sending to it
+          # before the server is told to stop (the endpoint update and SIGTERM race otherwise, and a request lands on a closing pod)
+          lifecycle:
+            preStop:
+              exec: { command: ["sleep", {{ $m.preStopSeconds | quote }}] }
+          {{- end }}
           startupProbe:
             httpGet: { path: /live, port: http }
             periodSeconds: 3

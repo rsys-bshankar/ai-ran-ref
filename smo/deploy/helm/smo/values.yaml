@@ -108,6 +108,7 @@ moduleDefaults:
   kind: service              # service: an HTTP server on port 8000 with /live and /ready; worker: no port, a heartbeat file; static: plain TCP probe
   port: 8000
   replicas: 1
+  preStopSeconds: 5          # service kind: wait this long before SIGTERM so traffic has moved away (0 turns it off); must stay under terminationGracePeriodSeconds less the server's own drain (20)
   database: true             # gets the database URL and password
   enrollment: true           # presents the enrollment secret to SME, so it is recorded as an SMO module
   env: {}
