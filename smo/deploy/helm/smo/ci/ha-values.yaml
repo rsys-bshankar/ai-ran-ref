@@ -1,0 +1,27 @@
+# Two replicas of every module that can have them (PR-HA-1.1). Used on top of kind-values.yaml by the CI job `helm`.
+# Left at one replica, and why:
+#   onboarding, gui-bff   a volume only one pod may hold (the package store, the BFF's SQLite file); they roll with Recreate, so a restart is a gap
+#   mock-o1-adaptor, mock-near-rt-ric   test doubles that keep their state in memory
+modules:
+  r1-termination: { replicas: 2 }
+  sme: { replicas: 2 }
+  dme: { replicas: 2 }
+  rapp-mgmt: { replicas: 2 }
+  ran-nf-oam: { replicas: 2 }
+  ran-nf-oam-worker: { replicas: 2 }
+  a1-related: { replicas: 2 }
+  nfo: { replicas: 2 }
+  focom: { replicas: 2 }
+  mlmr: { replicas: 2 }
+  aimgf: { replicas: 2 }
+  mllf: { replicas: 2 }
+  ran-analytics: { replicas: 2 }
+  mdaf: { replicas: 2 }
+  intent-service: { replicas: 2 }
+  so-smos: { replicas: 2 }
+  sa-smos: { replicas: 2 }
+  energy-saving-rapp: { replicas: 2 }
+  mobility-optimization-rapp: { replicas: 2 }
+  coverage-optimization-rapp: { replicas: 2 }
+  traffic-steering-rapp: { replicas: 2 }
+  gui: { replicas: 2 }

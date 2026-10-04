@@ -597,7 +597,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| HA-1.1 | Two replicas per module in compose (`deploy.replicas`) or Helm | All start | – |
+| HA-1.1 | Two replicas per module in compose (`deploy.replicas`) or Helm (done in Helm: `ci/ha-values.yaml`, CI job `helm`; Onboarding, GUI backend and the mocks stay at one) | All start | – |
 | HA-1.2 | Replay the runbook against the replicas | Green | HA-1.1 |
 | HA-1.3 | Fix list from failures in HA-1.2, one PR each | List empty | HA-1.2 |
 
@@ -605,7 +605,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| HA-2.1 | Restart one replica at a time during a replay | No failed calls beyond retries | HA-1.2 |
+| HA-2.1 | Restart one replica at a time during a replay (done with a health probe, not yet the runbook: `scripts/k8s_rolling_probe.py`) | No failed calls beyond retries | HA-1.2 |
 | HA-2.2 | Same for the gateway | Same | HA-2.1 |
 
 #### PR-HA-3 — Database failover
