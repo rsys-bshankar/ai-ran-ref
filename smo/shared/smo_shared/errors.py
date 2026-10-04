@@ -106,6 +106,7 @@ class FrameworkError:
     # MGT-1.5..1.7: CM history, diff and rollback in RAN NF OAM
     CONFIG_JOB_NOT_FOUND = ("CONFIG_JOB_NOT_FOUND", 404)
     CM_SNAPSHOT_NOT_FOUND = ("CM_SNAPSHOT_NOT_FOUND", 404)
+    KPI_NOT_FOUND = ("KPI_NOT_FOUND", 404)
     ROLLBACK_NOT_POSSIBLE = ("ROLLBACK_NOT_POSSIBLE", 422)
     CONFIG_CHANGED_SINCE = ("CONFIG_CHANGED_SINCE", 409)
     # MGT-5: staged rollout of a CM job

@@ -43,11 +43,12 @@ from smo_shared.outbox import enqueue
 from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 
-from .models import Alarm, CMSchemaCache, CMSnapshot, FileSubscription, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
 from . import mo_tree
 from . import yang_payload
+from . import kpi, kpi_formula
 from . import netconf_tls
 from . import restconf_client
 from . import netconf_ssh
@@ -1026,6 +1027,86 @@ def advance_due_configuration_jobs(db: Session = Depends(get_session)):
     due = db.scalars(select(WriteConfigJob).where(WriteConfigJob.status == JobState.HALTED, WriteConfigJob.halted_reason == "WAVE_PAUSE",
                                                   WriteConfigJob.next_wave_at <= now).order_by(WriteConfigJob.next_wave_at)).all()
     return {"advanced": [_resume(db, job) for job in due]}
+
+
+# ---------------------------------------------------------------- KPIs (PR-MGT-11)
+
+
+class KpiCounter(BaseModel):
+    counter: str
+    variable: str | None = None
+    aggregation: Literal["sum", "avg", "min", "max", "last", "count"] = "sum"
+
+
+class KpiDefinitionRequest(BaseModel):
+    formula: str
+    counters: list[KpiCounter] | None = None
+    unit: str | None = None
+    description: str | None = None
+
+
+def _kpi_view(row: KpiDefinition) -> dict:
+    return {"name": row.name, "formula": row.formula, "counters": row.counters, "unit": row.unit, "description": row.description}
+
+
+def _kpi_or_404(db: Session, name: str) -> KpiDefinition:
+    row = db.get(KpiDefinition, name)
+    if row is None:
+        raise framework_error(FrameworkError.KPI_NOT_FOUND, detail=f"no KPI {name!r}")
+    return row
+
+
+@app.put("/kpi-definitions/{name}")
+def define_kpi(name: str, body: KpiDefinitionRequest, db: Session = Depends(get_session)):
+    """MGT-11.1: create or replace a KPI: a formula over named counters (`kpi_formula.py`: arithmetic, comparisons, a few functions, nothing else)
+    and the counter table that says which PM counter feeds which variable and how its samples are combined. Refused (422) when the formula is not
+    acceptable or the table does not match it."""
+    if not kpi.NAME.match(name):
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="a KPI name starts with a letter and uses letters, digits, '_', '.', '-' (64 at most)")
+    try:
+        table = kpi.normalise_counters(body.formula, [c.model_dump() for c in body.counters] if body.counters else None)
+    except kpi_formula.FormulaError as exc:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=str(exc)) from None
+    row = db.get(KpiDefinition, name)
+    if row is None:
+        row = KpiDefinition(name=name)
+        db.add(row)
+    row.formula, row.counters, row.unit, row.description = body.formula.strip(), table, body.unit, body.description
+    db.commit()
+    return _kpi_view(row)
+
+
+@app.get("/kpi-definitions")
+def list_kpi_definitions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    page = paginate(db, select(KpiDefinition).order_by(KpiDefinition.name), limit, offset)
+    return {**page, "items": [_kpi_view(r) for r in page["items"]]}
+
+
+@app.get("/kpi-definitions/{name}")
+def read_kpi_definition(name: str, db: Session = Depends(get_session)):
+    return _kpi_view(_kpi_or_404(db, name))
+
+
+@app.delete("/kpi-definitions/{name}", status_code=204)
+def delete_kpi_definition(name: str, db: Session = Depends(get_session)):
+    db.delete(_kpi_or_404(db, name))
+    db.commit()
+    return Response(status_code=204)
+
+
+@app.get("/kpis/{name}")
+def compute_kpi(name: str, from_time: datetime.datetime, to_time: datetime.datetime | None = None, group_by: Literal[
+                "cell", "element", "sectorGroup", "incidentZone", "all"] = "cell", managed_element_ref: str | None = None,
+                cell_id: str | None = None, db: Session = Depends(get_session)):
+    """MGT-11.3/11.4/11.5: the KPI over [from_time, to_time) (to_time: now), per cell, per element, per sector group or incident zone (the cell
+    guards of the registry), or over everything asked for. A ratio is computed from the group's summed counters, not from its cells' ratios.
+    `managed_element_ref` and `cell_id` narrow what is read. A group without data has a null `value` and a `reason`."""
+    definition = _kpi_or_404(db, name)
+    start = from_time if from_time.tzinfo else from_time.replace(tzinfo=datetime.UTC)
+    end = (to_time if to_time is None or to_time.tzinfo else to_time.replace(tzinfo=datetime.UTC)) or datetime.datetime.now(datetime.UTC)
+    if end <= start:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="to_time must be after from_time")
+    return kpi.compute(db, definition, start, end, group_by, managed_element_ref, cell_id)
 
 
 @app.get("/config-jobs/{job_id}")

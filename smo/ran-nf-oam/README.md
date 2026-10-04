@@ -242,6 +242,8 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 | POST | `/alarms/ingest` | Query parameters: `source_alarm_id`, `managed_element_ref`, `severity`, optional `managed_function_ref` (the cell or other function it is about) and fault fields. Returns `{alarmId}`. 409 `O1_SERVICE_NOT_SUPPORTED` (FM) |
 | GET | `/alarms` | List; filters `managed_element_ref`, `managed_function_ref` (flat, full DN, or an RDN ending a stored DN), `severity` (any case; `cleared` isolates history; 422 outside `PerceivedSeverity`) |
 | GET | `/managed-entities/{ref}/config-history/diff` | `from_snapshot`, `to_snapshot`: attributes whose values differ between two snapshots of one managed object, and those only one touched (`MGT-1.5`) |
+| PUT / GET / DELETE | `/kpi-definitions/{name}` (GET `/kpi-definitions`) | a KPI: `formula`, `counters` (`counter`, `variable`, `aggregation`), `unit`, `description`; the formula is refused (422) unless `kpi_formula.py` accepts it (`MGT-11.1`, `11.2`) |
+| GET | `/kpis/{name}` | `from_time`, `to_time?`, `group_by?` (`cell`, `element`, `sectorGroup`, `incidentZone`, `all`), `managed_element_ref?`, `cell_id?`: the KPI per group, from the stored PM files (`MGT-11.3`-`11.5`) |
 | POST | `/config-jobs/{jobId}/continue` | `requestedBy`, `force?`: run the next wave of a `HALTED` job; 409 `WAVE_PAUSE_NOT_ELAPSED` while its pause runs, unless `force` (`MGT-5.4`) |
 | POST | `/config-jobs/{jobId}/halt` | `requestedBy`: turn a pause into an operator halt, so it does not go on by itself (`MGT-5.4`) |
 | POST | `/config-jobs/{jobId}/abort` | `requestedBy`: end a halted job here; the waves that did not run are `REJECTED` `WAVE_NOT_RUN` (`MGT-5.4`) |
@@ -309,6 +311,7 @@ RPC shape: an `<rpc>` whose `message-id` is the job id, containing `<edit-config
 | Variable | Default | Meaning |
 |---|---|---|
 | `RAN_NF_OAM_NETCONF_RETRY_DELAYS` | `0,5,10,20` | Seconds before each dispatch attempt (4 attempts); applies to NETCONF and RESTCONF alike |
+| `RAN_NF_OAM_KPI_MAX_FILES` | `2000` | The most PM files (newest first) a KPI query reads; more is `truncated` in the answer (`MGT-11`; PM at scale is `MGT-12`) |
 | `RAN_NF_OAM_CM_SNAPSHOT_RETENTION_DAYS` | `0` | Default age for `POST /config-history/purge`, in days; `0` keeps snapshots for ever (nothing deletes on its own) |
 | `RAN_NF_OAM_CM_SNAPSHOTS` | `true` | Read each object before writing it and keep the before / after images (`cm_snapshot`); `false`: no read, no rows |
 | `RAN_NF_OAM_DISPATCH_RETRY_BUDGET_SECONDS` | `35` | The most time one sub-change may spend waiting between attempts (and in earlier attempts) before no further retry starts; worst case per sub-change is this plus the 30 s exchange timeout |

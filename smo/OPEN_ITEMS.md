@@ -912,11 +912,6 @@ Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-11.1 | `kpi_definition` table: name, formula, counters, aggregation | Migration | – |
-| MGT-11.2 | Safe formula evaluator (no `eval`; arithmetic and a few functions) | Unit tests incl. hostile input | – |
-| MGT-11.3 | Compute one KPI for one cell and period | Test | MGT-11.2 |
-| MGT-11.4 | Aggregate by region | Test | MGT-11.3 |
-| MGT-11.5 | `GET /kpis/{name}` with filters | Route test | MGT-11.3 |
 | MGT-11.6 | Seed a standard KPI set | Seed test | MGT-11.5 |
 | MGT-11.7 | Expose results as a DME data type | rApp can read it | MGT-11.5 |
 
