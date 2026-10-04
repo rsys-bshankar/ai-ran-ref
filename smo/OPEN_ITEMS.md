@@ -406,7 +406,7 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | SEC-12.1 | SBOM generation per image in CI | Artifact attached | – |
-| SEC-12.2 | Image vulnerability scan with a severity gate | Gate fails on a seeded finding | – |
+| SEC-12.2 | Image vulnerability scan with a severity gate (built in `image-scan.yml`; not yet shown to fail on a seeded finding in CI: `tests_integration/test_scan_summary.py` shows the gate on Trivy-shaped results) | Gate fails on a seeded finding | – |
 
 #### PR-SEC-13 — Container hardening
 

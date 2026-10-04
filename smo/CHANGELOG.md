@@ -5,6 +5,9 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Added
+- **Image vulnerability scan (PR-SEC-12.2).** `.github/workflows/image-scan.yml` builds every image the release publishes from the checkout and scans it with Trivy for HIGH and CRITICAL findings that have a fix (`--ignore-unfixed`). It runs when a Dockerfile or a dependency lock changes, every Monday, and by hand (`report_only` to read the findings without failing), writes a report to the job summary (one row per image, then each distinct finding once with where it is) and fails when there is any. An accepted finding goes in `smo/.trivyignore` with its reason. It is not a required check, so a new advisory does not block an unrelated pull request.
+
 ## [0.3.0] - 2026-10-04
 
 Safer rApps and a second way to run it. An rApp that writes through DME is held by its own safeguards (this was not the case in 0.2.0), the gateway lets an rApp change only what it uses and refuses everything from a stopped one, every change is in a tamper-evident audit chain, a Helm chart installs the stack on Kubernetes, and the operator GUI manages change jobs, KPIs and safeguards. Docker Compose stays the way to run it on one machine.

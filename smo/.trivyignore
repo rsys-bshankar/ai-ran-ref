@@ -1,0 +1,2 @@
+# Findings of the image scan (.github/workflows/image-scan.yml) that are accepted, one per line:  <CVE id>  # why it is safe here, and when to look again
+# An entry is a decision: say what makes the finding unreachable (a package that is installed but never run, a path the service does not expose).
