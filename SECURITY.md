@@ -18,7 +18,7 @@ Older lines and forks receive no backports.
 | Version | Supported |
 | ------- | --------- |
 | `main` (latest commit) | :white_check_mark: |
-| `0.1.x` | :white_check_mark: |
+| `0.2.x` | :white_check_mark: |
 | Anything else | :x: |
 
 ## Reporting a vulnerability

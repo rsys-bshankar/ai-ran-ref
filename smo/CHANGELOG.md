@@ -5,6 +5,18 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-04
+
+Rollback, staged rollouts and KPIs, and the safeguards an rApp is held to: who may call what, how much it may change, and a record of every refusal. The schema moves from revision 0001 to `0018`, all additive.
+
+### Known limitations
+- The gateway's caller-role policy is a short deny-list (per-rApp limits, KPI definitions, history purge, the kill switch, safeguard events and refusals, KPI standard/publish); a route not on it is open to every valid token.
+- The compose sample rApps are static services with module identities. They are not deployed through `POST /instances`, so manifest limits do not reach them.
+- Delivering an instance's credentials to its workload is not built; the credential is issued once through `POST /instances/{id}/credentials`.
+- The kill switch stops an rApp's writes through RAN NF OAM only. Safeguard refusals are not purged.
+- The seeded KPIs are over this build's own counters, not the TS 28.554 definitions, and nothing publishes a KPI on a schedule.
+- The O-RAN WG4 YANG models are not bundled (SB-4).
+
 ### Added
 - Standard KPIs and KPIs in DME (MGT-11.6, 11.7): `POST /ran-nf-oam/kpi-definitions/standard` defines six KPIs that are not defined yet (`dl_prb_utilization`, `rrc_connected_ues_mean`, `dl_ue_throughput`, `handover_failure_rate`, `handover_success_rate`, `handover_ping_pong_rate`) and keeps one an operator has edited; `GET` lists them without writing. They are over the counters this build carries, not the TS 28.554 definitions, which are not reproduced. `POST /kpis/{name}/publish` computes a KPI as `GET /kpis/{name}` does and delivers one record per group to every DME data job open on the type `RAN.KPI.<name>` (registered as RAN NF OAM's production capability), so an rApp reads a KPI as it reads any other data. Nothing runs it on a schedule. Both are internal-only at the gateway. A KPI cannot be named `standard`.
 - Events for refusals (AI-10.6): every time the platform refuses an rApp (the kill switch, the rate, the blast radius or the magnitude limit) the refusal is recorded (`GET /ran-nf-oam/safeguard-refusals`, filters `invoker_id`, `code`, `since`) and announced through the outbox to each subscriber of `POST /ran-nf-oam/safeguard-subscriptions` (`callbackUri`, optional `refusals` to narrow it): `eventType` `RAPP_SAFEGUARD_REFUSAL` with `refusal`, `invokerId`, `requestedBy`, `detail`, `occurredAt`. The same refusal of the same rApp is announced once per `SAFEGUARD_EVENT_MIN_INTERVAL_SECONDS` (default 60; 0 announces every one) but every one is recorded, so a looping rApp cannot flood its watchers. Subscriptions and the record are internal-only at the gateway (they name other rApps). Schema revision `0018` (`safeguard_subscription`, `safeguard_refusal`). Refusals are not purged yet.
@@ -86,5 +98,6 @@ The first release: source and the docker compose stack. Images are not published
 ### Upgrade notes
 - `docker compose up -d --build` runs the migrations (`docker compose logs migrate`); outside compose run `python scripts/migrate.py`. A database created from `001_init.sql` by an earlier stack is stamped at `0001` first. Take a backup (`scripts/db_backup.sh`) before upgrading; `python scripts/migrate.py --downgrade -1` reverses one revision.
 
-[Unreleased]: https://github.com/rsys-bshankar/ai-ran-ref/compare/smo-v0.1.0...main
+[Unreleased]: https://github.com/rsys-bshankar/ai-ran-ref/compare/smo-v0.2.0...main
+[0.2.0]: https://github.com/rsys-bshankar/ai-ran-ref/compare/smo-v0.1.0...smo-v0.2.0
 [0.1.0]: https://github.com/rsys-bshankar/ai-ran-ref/releases/tag/smo-v0.1.0
