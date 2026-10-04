@@ -34,6 +34,7 @@ def test_the_release_workflow_takes_its_image_list_from_compose_and_pushes_nothi
     assert "release_images.py matrix" in text
     assert re.search(r"^\s+tags: \[\"smo-v\*\"\]", text, re.M)
     assert "cosign" in text and "--provenance" in text and "id-token: write" in text
+    assert "--driver docker-container" in text, "provenance and SBOM attestations are not supported by the default docker driver"
 
 
 def test_previous_tag_skips_release_candidates_of_later_versions_and_unrelated_tags():
@@ -66,3 +67,13 @@ def test_the_supported_versions_in_security_md_are_released_versions():
         if match:
             minor = match.group(1)
             assert any(v.startswith(minor + ".") for v in released), f"SECURITY.md lists {minor}.x, which has no release"
+
+
+def test_the_release_workflow_builds_from_the_tag_but_takes_its_tooling_from_its_own_commit():
+    """A tag cut before the tooling existed (smo-v0.1.0) must still be publishable: only the image builds check out the tag."""
+    text = (REPO_ROOT / ".github" / "workflows" / "release-images.yml").read_text()
+    jobs = text.split("\njobs:\n", 1)[1]
+    plan, image, notes = (jobs.split("\n  image:\n")[0], jobs.split("\n  image:\n")[1].split("\n  notes:\n")[0], jobs.split("\n  notes:\n")[1])
+    assert "refs/tags/" not in plan.replace("refs/tags/$TAG", "") and "fetch-tags: true" in plan
+    assert "ref: refs/tags/${{ env.TAG }}" in image
+    assert "ref: refs/tags/" not in notes and "fetch-tags: true" in notes
