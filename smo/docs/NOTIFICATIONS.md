@@ -39,6 +39,7 @@ After the move, a notification is sent after the transaction that caused it comm
 | `intent-service/app/main.py` | `_create_intent_row` | `enqueue` | A | The RMIH's notification destination: an intent was created | moved (MSG-1.9) |
 | `intent-service/app/main.py` | `_deliver_report` | `enqueue` | A | Each report recipient of an intent: a report is available | moved (MSG-1.9) |
 | `intent-service/app/main.py` | `_notify_autonomy_operator` | `enqueue` | A | The operator's destination: an autonomy dispatch outcome | moved (MSG-1.9) |
+| `ran-nf-oam/app/main.py` | `_refuse` | `enqueue` | A | Safeguard subscribers: an rApp's request was refused (one per subscriber, in the same commit as the refusal record; throttled per invoker and code) | moved (AI-10.6) |
 | `ran-nf-oam/app/main.py` | `report_pm_file` | `enqueue` | A | File subscribers: a PM file is ready (one per subscriber, after the commit already) | moved (MSG-1.9) |
 | `ran-nf-oam/app/vendors.py` | `onboard_vendor` | `get_webhook` | C | The adaptor's `/capabilities`: the answer fills the vendor profile | stays inline |
 
