@@ -641,6 +641,13 @@ jobs:
         working-directory: smo
         run: kubectl -n smo exec -i deploy/sme -- python3 - < scripts/compose_e2e_roles.py
 
+      - name: The audit trail holds those calls and its chain verifies (PR-SEC-11)
+        run: |
+          rows=$(kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "SELECT count(*) FROM audit_log")
+          echo "audit rows: $rows"
+          [ "$rows" -gt 0 ]
+          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
+
       - name: A pod of the rApps does not hold the enrollment secret
         run: |
           for rapp in energy-saving-rapp mobility-optimization-rapp coverage-optimization-rapp traffic-steering-rapp; do
