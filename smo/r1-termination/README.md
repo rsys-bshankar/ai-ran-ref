@@ -155,6 +155,8 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 | `R1_RATE_PER_SECOND` | `100` | Requests a second each caller (invoker id) may sustain; `0` turns the limiter off |
 | `R1_RATE_BURST` | `200` | Requests a caller may make at once before it is held to the rate |
 | `SMO_ROLE_ENFORCEMENT` | `enforce` | `enforce`: an rApp is refused on the internal-only routes; `audit`: the same decision is counted (`smo_role_refusals_total`) and logged, then allowed (a rolling upgrade from a release with no enrollment). Anything else is `enforce` |
+| `R1_KILL_SWITCH` | `on` | `off`: the gateway does not refuse changes by a stopped rApp (RAN NF OAM still refuses its config jobs). On, it reads the `rapp_kill` table; see "The kill switch" below |
+| `R1_KILL_CACHE_SECONDS` | `3` | How long the gateway keeps what it read about one rApp: the delay between throwing the switch and the gateway acting on it |
 | `R1_AUDIT` | `on` | `off` records nothing in the audit chain (PR-SEC-11). On, the gateway needs `SMO_DATABASE_URL` like a module does; a write that fails is logged and counted (`smo_audit_writes_total{outcome="failed"}`) and never fails the call |
 | `R1_INTROSPECT_TIMEOUT_SECONDS` | `5` | How long it waits for SME's token introspection (a timeout fails closed: 401) |
 
@@ -219,3 +221,7 @@ For a caller with the `rapp` role the gateway applies two lists from `shared/smo
 ## Audit (PR-SEC-11)
 
 After it answers, the gateway adds one row to the audit hash chain (`smo_shared/audit.py`) for every authenticated POST, PUT, PATCH and DELETE, including the ones it refuses for the caller's role. Reads, calls with no good token and calls held by the rate limiter are not recorded (an attacker without a token must not be able to write to the database), and the body and query are never recorded. `python -m smo_shared.audit verify` and `export` run in any image of the stack: `docker compose exec r1-termination python -m smo_shared.audit verify`.
+
+## The kill switch (AI-10.4)
+
+An operator stops an rApp instance (`PUT /rapp-mgmt/instances/{id}/kill`, or the Stop button on the GUI's Safeguards page). RAN NF OAM refuses its config jobs at once; the gateway refuses every other *change* it makes, and every change an SMO module makes on its behalf, with 403 `RAPP_KILLED`. Left open so it can be wound down: reads, DELETE, the token endpoint and rolling back its own config job. See `smo_shared/killswitch.py` for the failure behaviour.

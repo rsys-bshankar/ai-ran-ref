@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
-from smo_shared import audit
+from smo_shared import audit, killswitch
 from smo_shared.db import Base
 from smo_shared.testing import make_test_engine
 
@@ -37,6 +37,7 @@ def fresh_rate_limiter():
 def gateway(monkeypatch):
     engine = make_test_engine()
     Base.metadata.create_all(engine)
+    killswitch.METADATA.create_all(engine)
     sessions = sessionmaker(bind=engine, autoflush=False, future=True)
     monkeypatch.setattr("smo_shared.db.SessionLocal", sessions)
     monkeypatch.delenv("R1_AUDIT", raising=False)
@@ -120,6 +121,8 @@ def test_the_switch_turns_it_off(gateway, monkeypatch):
     assert rows(gateway) == []
 
 
-def test_an_unreachable_database_does_not_fail_the_call(gateway, monkeypatch):
+def test_an_unreachable_database_does_not_fail_the_call_the_audit_describes(gateway, monkeypatch):
+    # an SMO module's change needs no kill-switch lookup, so only the audit write fails, and it is logged and counted, not raised
+    gateway["sme_says"] = {"active": True, "client_id": "dme-module", "role": "internal"}
     monkeypatch.setattr("smo_shared.db.SessionLocal", lambda: (_ for _ in ()).throw(RuntimeError("database down")))
     assert client.post("/dme/data-jobs", headers=AUTH).status_code == 201

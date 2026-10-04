@@ -15,6 +15,8 @@ Exits 1 on the first group of failures; removes what it made.
 
 import sys
 
+import time
+
 import httpx
 
 SME, R1 = "http://sme:8000", "http://r1-termination:8000"
@@ -112,10 +114,19 @@ try:
         check("an rApp cannot change what it does not use: creating an instance is 403 ROLE_NOT_PERMITTED", r.status_code == 403 and r.json().get("title") == "ROLE_NOT_PERMITTED", (r.status_code, r.text[:200]))
         r = call("POST", "/dme/data-jobs", rapp_tok, json={})
         check("what it does use is not refused by the role policy (a DME data job reaches DME: not 403 ROLE_NOT_PERMITTED)", r.status_code != 403, (r.status_code, r.text[:200]))
+        # the gateway refuses every change of a stopped rApp, not only its config jobs (it re-reads the switch every 3 s)
+        time.sleep(4)
+        r = call("POST", "/dme/data-jobs", rapp_tok, json={})
+        check("a stopped rApp's change anywhere is refused at the gateway (403 RAPP_KILLED)", r.status_code == 403 and "RAPP_KILLED" in r.text, (r.status_code, r.text[:200]))
+        r = call("DELETE", "/dme/data-jobs/e2e-none", rapp_tok)
+        check("a stopped rApp may still withdraw (a DELETE is not refused as stopped)", "RAPP_KILLED" not in r.text, (r.status_code, r.text[:200]))
         r = call("DELETE", kill, rapp_tok)
         check("an rApp cannot lift it (403)", r.status_code == 403, r.status_code)
         r = call("DELETE", kill, internal_tok)
         check("an SMO module can lift it", r.status_code == 204, r.status_code)
+        time.sleep(4)
+        r = call("POST", "/dme/data-jobs", rapp_tok, json={})
+        check("once lifted the rApp's change is no longer refused as stopped", "RAPP_KILLED" not in r.text, (r.status_code, r.text[:200]))
 finally:
     for invoker in made:
         try:
