@@ -81,6 +81,20 @@ try:
 
         r = call("DELETE", probe, internal_tok)
         check("an SMO module can remove it", r.status_code == 204, r.status_code)
+
+        # AI-10.4: the kill switch
+        kill = f"/ran-nf-oam/rapp-kill/{rapp['apiInvokerId']}"
+        r = call("PUT", kill, rapp_tok, json={"requestedBy": "e2e"})
+        check("an rApp cannot stop an rApp (403)", r.status_code == 403, (r.status_code, r.text[:120]))
+        r = call("PUT", kill, internal_tok, json={"requestedBy": "e2e-roles", "reason": "end-to-end check"})
+        check("an SMO module can stop one", r.status_code == 200, (r.status_code, r.text[:200]))
+        r = call("POST", "/ran-nf-oam/config-jobs", rapp_tok, json=job)
+        check("a stopped rApp's config job is refused (403 RAPP_KILLED)", r.status_code == 403 and "RAPP_KILLED" in r.text, (r.status_code, r.text[:200]))
+        check("a caller that was not stopped is not affected", call("POST", "/ran-nf-oam/config-jobs", internal_tok, json=job).status_code in (200, 202))
+        r = call("DELETE", kill, rapp_tok)
+        check("an rApp cannot lift it (403)", r.status_code == 403, r.status_code)
+        r = call("DELETE", kill, internal_tok)
+        check("an SMO module can lift it", r.status_code == 204, r.status_code)
 finally:
     for invoker in made:
         try:

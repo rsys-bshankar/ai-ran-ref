@@ -33,6 +33,10 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("PUT", "DELETE"), r"^/kpi-definitions/[^/]+$"),
         # MGT-1.8: removing CM history
         ("/ran-nf-oam", ("POST",), r"^/config-history/purge$"),
+        # AI-10.4: stopping an rApp, lifting it, and who is stopped (an rApp may read whether it is stopped itself)
+        ("/ran-nf-oam", ("PUT", "DELETE"), r"^/rapp-kill/[^/]+$"),
+        ("/ran-nf-oam", ("GET",), r"^/rapp-kill$"),
+        ("/rapp-mgmt", ("PUT", "DELETE"), r"^/instances/[^/]+/kill$"),
     ))
 
 

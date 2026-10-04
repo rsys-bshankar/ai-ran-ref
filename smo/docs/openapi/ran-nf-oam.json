@@ -591,6 +591,32 @@
         "title": "PmReportRequest",
         "type": "object"
       },
+      "RAppKillRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "requestedBy": {
+            "minLength": 1,
+            "title": "Requestedby",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestedBy"
+        ],
+        "title": "RAppKillRequest",
+        "type": "object"
+      },
       "RAppLimitRequest": {
         "properties": {
           "maxConfigJobsPerHour": {
@@ -4729,6 +4755,175 @@
           }
         },
         "summary": "Unsubscribe Pm"
+      }
+    },
+    "/rapp-kill": {
+      "get": {
+        "operationId": "list_killed_rapps_rapp_kill_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Killed Rapps"
+      }
+    },
+    "/rapp-kill/{invoker_id_}": {
+      "delete": {
+        "description": "AI-10.4: let a stopped rApp write again.",
+        "operationId": "lift_rapp_kill_rapp_kill__invoker_id___delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoker_id_",
+            "required": true,
+            "schema": {
+              "title": "Invoker Id ",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Lift Rapp Kill"
+      },
+      "get": {
+        "operationId": "read_rapp_kill_rapp_kill__invoker_id___get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoker_id_",
+            "required": true,
+            "schema": {
+              "title": "Invoker Id ",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Rapp Kill"
+      },
+      "put": {
+        "description": "AI-10.4: stop an rApp (by its invoker id): from now its config jobs are refused with 403 `RAPP_KILLED`, and a job of its that waits\nbetween waves does not go on. Undoing changes is not refused (rollback, revert, halt, abort). Repeating it updates the reason and keeps the time\nof the first. Reversed by `DELETE`.",
+        "operationId": "kill_rapp_rapp_kill__invoker_id___put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoker_id_",
+            "required": true,
+            "schema": {
+              "title": "Invoker Id ",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RAppKillRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Kill Rapp"
       }
     },
     "/rapp-limits/{invoker_id_}": {

@@ -147,3 +147,53 @@ def test_credentials_are_only_issued_while_the_instance_is_deploying(client, mon
     client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
     assert client.post(f"/instances/{created['instanceId']}/credentials").status_code == 409
     assert client.post(f"/instances/{uuid.uuid4()}/credentials").status_code == 404
+
+
+# ---- AI-10.4: the kill switch as an operator action on an instance
+
+def _wire_kill(monkeypatch, outcome=200):
+    seen = _wire_invokers(monkeypatch)
+    seen["put"] = []
+
+    def put(self, path, json=None, **kw):
+        seen["put"].append((path, json))
+        if isinstance(outcome, Exception):
+            raise outcome
+        return FakeR1Response(outcome, {"invokerId": "x", "killedBy": json["requestedBy"], "reason": json["reason"], "killedAt": "2026-10-04T00:00:00Z"})
+
+    monkeypatch.setattr("app.main.R1Client.put", put)
+    return seen
+
+
+def test_killing_an_instance_stops_its_invoker_at_ran_nf_oam(client, monkeypatch):
+    seen = _wire_kill(monkeypatch)
+    created = _create(client)
+    resp = client.put(f"/instances/{created['instanceId']}/kill", json={"requestedBy": "alice", "reason": "oscillating"})
+    assert resp.status_code == 200 and resp.json()["killed"] is True and resp.json()["killedBy"] == "alice"
+    assert seen["put"] == [(f"/ran-nf-oam/rapp-kill/{created['oauthClientId']}", {"requestedBy": "alice", "reason": "oscillating"})]
+
+
+@pytest.mark.parametrize("outcome", [500, httpx.ConnectError("down")])
+def test_a_switch_that_could_not_be_thrown_is_reported_not_done(client, monkeypatch, outcome):
+    _wire_kill(monkeypatch, outcome)
+    created = _create(client)
+    resp = client.put(f"/instances/{created['instanceId']}/kill", json={"requestedBy": "alice"})
+    assert resp.status_code == 503 and "nothing was changed" in resp.json()["detail"]["detail"]
+
+
+def test_lifting_is_idempotent_and_goes_to_the_same_key(client, monkeypatch):
+    seen = _wire_kill(monkeypatch)
+    created = _create(client)
+    seen["delete"].clear()
+    resp = client.delete(f"/instances/{created['instanceId']}/kill")
+    assert resp.status_code == 200 and resp.json()["killed"] is False
+    assert seen["delete"] == [f"/ran-nf-oam/rapp-kill/{created['oauthClientId']}"]
+
+
+def test_an_unknown_instance_is_404_and_a_terminated_one_has_nothing_to_kill(client, monkeypatch):
+    _wire_kill(monkeypatch)
+    assert client.put(f"/instances/{uuid.uuid4()}/kill", json={"requestedBy": "a"}).status_code == 404
+    created = _create(client)
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    client.post(f"/instances/{created['instanceId']}/terminate")
+    assert client.put(f"/instances/{created['instanceId']}/kill", json={"requestedBy": "a"}).status_code == 404
