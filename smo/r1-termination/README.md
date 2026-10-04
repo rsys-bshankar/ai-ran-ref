@@ -81,7 +81,7 @@ Failure behaviour: a backend that does not answer within `R1_UPSTREAM_TIMEOUT_SE
 |---|---|
 | `app/main.py` | The whole module: `ROUTES`, the probes, `/bootstrap`, the catch-all `proxy`, `_authorized` (introspection call). |
 | `../shared/smo_shared/openapi_security.py` | `apply_r1_gateway_security(app, public_paths={"/health", "/live", "/ready", "/bootstrap"})`: adds the `r1BearerAuth` scheme to the OpenAPI document and marks those paths as unauthenticated. |
-| `../shared/smo_shared/invoker.py` | `INVOKER_ID_HEADER` and `invoker_id(request)`: the caller id a backend reads (MLMR's `storeDiscReqs`). |
+| `../shared/smo_shared/invoker.py` | `INVOKER_ID_HEADER`, `ON_BEHALF_OF_HEADER` and `invoker_id(request)`: the caller id a backend reads (MLMR's `storeDiscReqs`, and the per-rApp safeguards at RAN NF OAM, which apply to the rApp an SMO module is acting for). R1 Termination forwards `X-R1-On-Behalf-Of` only from an `internal` caller and drops an rApp's own value. |
 | `../shared/smo_shared/correlation.py` | `apply_correlation_id(app)`: middleware assigning `X-Correlation-ID` when absent; `get_correlation_id()`. |
 
 ### 2.2 Data model

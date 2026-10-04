@@ -115,3 +115,28 @@ def test_refusals_are_counted(gateway):
     before = REGISTRY.get_sample_value("smo_role_refusals_total", {"module": "ran-nf-oam", "action": "refused"}) or 0
     client.put("/ran-nf-oam/rapp-limits/x", headers=AUTH)
     assert REGISTRY.get_sample_value("smo_role_refusals_total", {"module": "ran-nf-oam", "action": "refused"}) == before + 1
+
+
+def _forwarded(gateway):
+    return {k.lower(): v for k, v in gateway["forwarded"][0][2].items()}
+
+
+def test_an_internal_module_may_say_whom_it_acts_for(gateway):
+    """X-R1-On-Behalf-Of: DME acting for an rApp tells RAN NF OAM, so the rApp's own safeguards apply to what DME writes."""
+    gateway["sme_says"] = {"active": True, "client_id": "dme-client", "role": "internal"}
+    client.get("/ran-nf-oam/health", headers={**AUTH, "X-R1-On-Behalf-Of": "es-client"})
+    headers = _forwarded(gateway)
+    assert headers["x-r1-on-behalf-of"] == "es-client" and headers["x-r1-invoker-id"] == "dme-client" and headers[roles.ROLE_HEADER.lower()] == "internal"
+
+
+def test_an_rapp_cannot_pose_as_another_rapp(gateway):
+    """The default caller is an rApp: its own claim of whom it acts for is dropped, not forwarded."""
+    client.get("/ran-nf-oam/health", headers={**AUTH, "X-R1-On-Behalf-Of": "someone-else"})
+    headers = _forwarded(gateway)
+    assert "x-r1-on-behalf-of" not in headers and headers["x-r1-invoker-id"] == "inv-1"
+
+
+def test_a_module_that_names_nobody_forwards_nothing(gateway):
+    gateway["sme_says"] = {"active": True, "client_id": "dme-client", "role": "internal"}
+    client.get("/ran-nf-oam/health", headers=AUTH)
+    assert "x-r1-on-behalf-of" not in _forwarded(gateway)

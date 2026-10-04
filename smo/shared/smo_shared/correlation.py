@@ -53,7 +53,13 @@ def apply_correlation_id(app: FastAPI) -> None:
     inbound request's whole cross-service fan-out shares one ID — and
     echoed back on the response so a caller that didn't send one can
     still see what got assigned.
+
+    Every service calls this, so it also installs the invoker context
+    (smo_shared/invoker.py): who the request is really for, which R1Client
+    passes on the same way.
     """
+    from .invoker import apply_invoker_context
+    apply_invoker_context(app)
 
     @app.middleware("http")
     async def _correlation_id_middleware(request: Request, call_next):
