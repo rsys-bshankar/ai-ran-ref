@@ -580,3 +580,101 @@ jobs:
         env:
           REQUIRE_PREVIOUS_RELEASE: "1"        # a release exists: not finding its tag is a failure, never a skip
         run: scripts/check_upgrade_from_previous_release.sh
+
+  # PR-OPS-2.8/2.9: the Helm chart installs on a real cluster (kind), the stack answers, and an upgrade rolls every module without a failed pod.
+  # The images are built from the checkout and loaded into the cluster, so the chart is proved against the code in the pull request, not a release.
+  helm:
+    name: Helm chart installs on kind and upgrades
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: helm lint, and the chart renders with its options on
+        working-directory: smo
+        run: |
+          helm version --short
+          helm lint deploy/helm/smo --kube-version 1.30.0
+          helm lint deploy/helm/smo --kube-version 1.30.0 -f deploy/helm/smo/ci/kind-values.yaml
+          helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 \
+            --set networkPolicy.enabled=true --set podDisruptionBudget.enabled=true --set autoscaling.enabled=true \
+            --set ingress.enabled=true --set ingress.gui.host=gui.example.com --set ingress.r1.host=r1.example.com >/dev/null
+
+      - name: Build the images from this checkout
+        working-directory: smo
+        run: |
+          pip install --quiet pyyaml
+          python scripts/release_images.py matrix | jq -c '.include[]' | while read -r row; do
+            name=$(jq -r .name <<<"$row"); context=$(jq -r .context <<<"$row"); module=$(jq -r .module <<<"$row")
+            echo "::group::smo-$name"
+            if [ -n "$module" ]; then
+              docker build --quiet -t "local/smo-$name:ci" --build-arg "MODULE=$module" "$context"
+            else
+              docker build --quiet -t "local/smo-$name:ci" "$context"
+            fi
+            echo "::endgroup::"
+          done
+          docker image ls 'local/smo-*'
+
+      - name: Create the cluster and load the images
+        run: |
+          kind create cluster --name smo --wait 120s
+          images=$(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
+          kind load docker-image --name smo $images
+
+      - name: helm install (the migration Job runs, every pod waits for the schema, every pod becomes ready)
+        working-directory: smo
+        run: |
+          helm install smo deploy/helm/smo -n smo --create-namespace -f deploy/helm/smo/ci/kind-values.yaml --wait --timeout 12m
+          kubectl -n smo get pods
+          kubectl -n smo wait --for=condition=complete job/migrate --timeout=60s
+          head=$(ls migrations/versions | grep -oE '^[0-9]+' | sort | tail -1)
+          at=$(kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "SELECT version_num FROM alembic_version")
+          echo "database at $at, repository head $head"
+          [ "$at" = "$head" ]
+
+      - name: Every service up, R1 gate answers
+        working-directory: smo
+        run: kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+
+      - name: Caller roles through the gateway (PR-SEC-14)
+        working-directory: smo
+        run: kubectl -n smo exec -i deploy/sme -- python3 - < scripts/compose_e2e_roles.py
+
+      - name: The audit trail holds those calls and its chain verifies (PR-SEC-11)
+        run: |
+          rows=$(kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "SELECT count(*) FROM audit_log")
+          echo "audit rows: $rows"
+          [ "$rows" -gt 0 ]
+          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
+
+      - name: A pod of the rApps does not hold the enrollment secret
+        run: |
+          for rapp in energy-saving-rapp mobility-optimization-rapp coverage-optimization-rapp traffic-steering-rapp; do
+            if kubectl -n smo exec "deploy/$rapp" -- ls /run/secrets/enrollment_secret 2>/dev/null; then
+              echo "::error::$rapp can read the enrollment secret"; exit 1
+            fi
+          done
+
+      - name: helm upgrade rolls every module with the old pods serving, and the database stays
+        working-directory: smo
+        run: |
+          kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "SELECT count(*) FROM alembic_version"
+          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --set moduleDefaults.resources.requests.cpu=60m --wait --timeout 12m
+          helm history smo -n smo
+          for d in $(kubectl -n smo get deploy -o name); do kubectl -n smo rollout status "$d" --timeout=120s; done
+          kubectl -n smo get pods
+          [ "$(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed' | wc -l)" = "0" ]
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+
+      - name: What the cluster says, when it went wrong
+        if: failure()
+        run: |
+          kubectl -n smo get pods,jobs,events --sort-by=.lastTimestamp | tail -80 || true
+          for pod in $(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed' | cut -d' ' -f1); do
+            echo "::group::$pod"; kubectl -n smo describe pod "$pod" | tail -40; kubectl -n smo logs "$pod" --all-containers --tail=60 || true; echo "::endgroup::"
+          done
+          kubectl -n smo logs job/migrate --tail=80 || true
+
+      - name: helm uninstall
+        run: helm uninstall smo -n smo

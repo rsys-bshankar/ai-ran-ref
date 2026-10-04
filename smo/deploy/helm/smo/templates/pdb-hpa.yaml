@@ -1,0 +1,39 @@
+{{- /* Off by default (PR-OPS-2.7): a budget on a single replica would block every node drain, and an autoscaler needs a module that can run more than one. */}}
+{{- range $name, $_ := .Values.modules }}
+{{- $m := include "smo.module" (dict "root" $ "name" $name) | fromYaml }}
+{{- if and $m.enabled (eq $m.kind "service") (not $m.persistence) }}
+{{- if $.Values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "smo.labels" (dict "root" $) | nindent 4 }}
+spec:
+  minAvailable: {{ $.Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/name: {{ $name }}
+{{- end }}
+{{- if $.Values.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "smo.labels" (dict "root" $) | nindent 4 }}
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: {{ $name }} }
+  minReplicas: {{ $.Values.autoscaling.minReplicas }}
+  maxReplicas: {{ $.Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ $.Values.autoscaling.targetCPUUtilizationPercentage }} }
+{{- end }}
+{{- end }}
+{{- end }}

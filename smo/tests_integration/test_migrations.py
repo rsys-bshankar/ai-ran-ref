@@ -155,3 +155,34 @@ def test_the_revision_after_the_baseline_applies_to_a_baseline_database_and_roll
 
     assert _run(MIGRATE, databases["fresh"]).returncode == 0           # and forward again
     assert _run(MIGRATE, databases["fresh"], "--current").stdout.strip() == HEAD
+
+
+# --- PR-OPS-3.2: a pod does not start on an older schema ----------------------------------------------------------------------------
+
+def _migrate_module():
+    spec = importlib.util.spec_from_file_location("migrate_script", MIGRATE)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("db, expected", [
+    (None, False),                                  # no schema yet
+    ("0001", False), ("0019", False),               # older than the image's head: wait for the migration
+    ("0020", True),                                 # at the head
+    ("0021", True),                                 # past it (this image is the previous release): it runs on the newer schema
+    ("9999", True),
+])
+def test_the_schema_is_current_when_the_database_is_at_or_past_the_head(db, expected):
+    assert _migrate_module().schema_is_current(db, ["0020", "0019", "0018", "0001"]) is expected
+
+
+@needs_postgres
+def test_wait_returns_when_the_schema_is_current_and_fails_when_it_is_not(databases):
+    url = databases["fresh"]
+    assert _run(MIGRATE, url, "--wait", "1").returncode == 1                  # an empty database: no schema, the wait runs out
+    assert _run(MIGRATE, url, "--revision", "0001").returncode == 0           # the baseline only: older than head
+    assert _run(MIGRATE, url, "--wait", "1").returncode == 1
+    assert _run(MIGRATE, url).returncode == 0
+    waited = _run(MIGRATE, url, "--wait", "5")
+    assert waited.returncode == 0 and "current" in waited.stdout

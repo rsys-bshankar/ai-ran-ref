@@ -1,0 +1,60 @@
+# AI-RAN SMO Helm chart
+
+Installs the SMO on Kubernetes: R1 Termination and every module of `docker-compose.yml`, the four reference rApps, the operator GUI, and (by default) a Postgres of its own. Docker Compose stays the way to run it on one machine; the chart is the same stack on a cluster. `tests_integration/test_helm_chart.py` keeps the two in step (every compose service is a chart module, with the same image, the same secrets, the same environment).
+
+## Install
+
+```
+helm install smo deploy/helm/smo -n smo --create-namespace
+```
+
+Use a namespace of its own: the Services are named as in compose (`sme`, `dme`, `postgres`, ...), which is what the modules and the GUI's nginx address each other by, so there is one release per namespace.
+
+The images are `ghcr.io/rsys-bshankar/ai-ran-ref/smo-<module>:<appVersion>`, the ones the release workflow publishes (`image.registry`, `image.prefix`, `image.tag`). A private registry needs `image.pullSecrets`.
+
+Reach it:
+
+```
+kubectl -n smo port-forward svc/gui 3000:8080            # the operator GUI
+kubectl -n smo port-forward svc/r1-termination 8080:8000 # the gateway rApps call: GET /bootstrap
+```
+
+or set `ingress.enabled` with `ingress.gui.host` and `ingress.r1.host` (and `ingress.r1.publicBaseUrl`, what `/bootstrap` advertises to rApps outside the cluster).
+
+## The database
+
+| | |
+|---|---|
+| Bundled (default) | One Postgres pod (StatefulSet, volume `pgdata-postgres-0`). A lab or trial. |
+| External | `--set postgres.enabled=false --set postgres.external.host=db.example.com` (and `port`, `database`, `user`, `sslmode`). Run a managed or HA Postgres; the password goes in the Secret below. |
+
+Kubernetes keeps a StatefulSet's volume when the release is uninstalled. To reinstall from nothing, delete it too: `kubectl -n smo delete pvc pgdata-postgres-0` (the new install makes a new password, which the old data would not accept).
+
+## Secrets
+
+The chart makes the Secret `smo-secrets` with the database password and the enrollment secret (PR-SEC-14) and keeps their values across upgrades. To bring your own, create a Secret with the keys `db-password` and `enrollment-secret` and set `secrets.existingSecret`; the chart then never touches it. Each pod is mounted only what it needs, as files under `/run/secrets` (the `*_FILE` convention of `docs/SECRETS.md`): an rApp never gets the enrollment secret, which is what would make it an SMO module.
+
+The GUI backend's own settings (`GUI_JWT_SECRET`, `GUI_ADMIN_PASSWORD`, ...) go in `gui.env`; left empty they are generated on first start.
+
+## Migrations and upgrades
+
+The schema is brought to the release's by one Job (`scripts/migrate.py`, the same as compose's `migrate` service):
+
+* **install**: a plain Job `migrate`. The bundled database is part of the same release, so a pre-install hook would run before it exists.
+* **upgrade**: a `pre-upgrade` hook Job, so it has finished, once, before any Deployment is touched; if it fails the upgrade is aborted and every old pod keeps serving. `kubectl -n smo logs job/migrate-<revision>` says what it did.
+
+Every module that uses the database has an init container, `wait-for-schema`, that blocks until the database is at (or past) the head revision of its own image. A new pod never serves on an older schema, and a rolling update (`maxUnavailable: 0`) leaves the old pods in service until the new ones are ready. Because schema changes follow the expand/contract rule (`smo/CLAUDE.md`), the old pods run on the new schema in between.
+
+`modules.<name>.replicas`, `podDisruptionBudget.enabled` and `autoscaling.enabled` are in the chart, off by default: running a module with more than one replica is the work of the HA release (`OPEN_ITEMS.md`, `PR-HA`). The GUI backend and Onboarding hold a volume and stay at one replica (they use the `Recreate` strategy).
+
+## What is not in the chart
+
+`netconf-lab` (a throwaway lab server) and `edge-tls` (the compose TLS terminator: use `ingress` with a TLS secret instead). `networkPolicy.enabled` adds the isolation compose has: the mock Near-RT RIC reachable only from `a1-related` and with no way out; it needs a CNI that enforces NetworkPolicy.
+
+## Values
+
+`values.yaml` is commented. The modules are one map (`modules`) and one template; a module is described by `image`, `kind` (`service` with `/live` and `/ready`, `worker` with a heartbeat file, `static` with a TCP probe), `database`, `enrollment`, `env`, `persistence`, `resources`; `moduleDefaults` is what each starts from. Every pod runs as the unprivileged user, with no capability, no privilege escalation and a read-only root filesystem (PR-SEC-13).
+
+## CI
+
+`.github/workflows/smo-tests.yml`, job `helm`: lint, render with the options on, build the images from the checkout, install on kind, check the database is at the head revision, run the compose smoke scripts inside the cluster (`compose_e2e.py`, `compose_e2e_roles.py`), check no rApp can read the enrollment secret, upgrade (every module rolls, no pod fails), uninstall.
