@@ -177,6 +177,35 @@ def _dispatch_with_retries(adaptor_uri: str, change: dict, attribute_changes: di
     return False, reason, attempts, detail
 
 
+def _transaction_group_key(me, endpoint) -> str | None:
+    """PR-SB-1.10: the element a change is grouped under for a candidate transaction, or None when its endpoint does not take part (an
+    ssh or tls NETCONF endpoint registered with `?datastore=candidate`; everything else is dispatched one sub-change at a time)."""
+    if me is None or endpoint is None or me.o1_protocol != "NETCONF" or endpoint.transport not in ("ssh", "tls"):
+        return None
+    return me.managed_element_ref if yang_payload.datastore_of(endpoint.adaptor_uri) == "candidate" else None
+
+
+def _dispatch_group_with_retries(adaptor_uri: str, changes: list[dict], message_id: str, ssh_options: dict | None
+                                 ) -> list[tuple[bool, str | None, int, str | None]]:
+    """One candidate transaction for several sub-changes of one element, with the retry policy of `_dispatch_with_retries` applied to
+    the whole unit (only a transient failure of the connection is retried). One (applied, reason, attempts, detail) per change."""
+    edits = [{"target_ref": c["managedElementRef"], "attribute_changes": c.get("attributeChanges", {}),
+              "operation": c.get("operation", "merge"), "managed_function_ref": c.get("managedFunctionRef")} for c in changes]
+    results, attempts = [], 0
+    started = _monotonic()
+    for delay in NETCONF_RETRY_DELAYS:
+        if attempts and _monotonic() - started + delay > DISPATCH_RETRY_BUDGET_SECONDS:
+            break
+        if delay:
+            _sleep(delay)
+        attempts += 1
+        results = netconf_ssh.send_edit_configs(adaptor_uri, edits, message_id, **(ssh_options or {}))
+        if all(results) or not any(getattr(r, "retryable", False) for r in results):
+            break
+    return [(bool(r), None if r else (getattr(r, "reason", None) or "NETCONF_RPC_FAILED"), attempts,
+             None if r else getattr(r, "detail", None)) for r in results]
+
+
 def _raise_dispatch_alarm(db: Session, job_id: uuid.UUID, change: dict, reason: str, attempts: int) -> None:
     target = change.get("managedFunctionRef") or change["managedElementRef"]
     db.add(Alarm(source_alarm_id=f"o1-config:{job_id}:{target}", managed_element_ref=change["managedElementRef"],
@@ -556,14 +585,25 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
     job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.PENDING, JobEvent.PRECHECK_PASS)
     db.flush()
 
-    for change in body.changes:
+    # PR-SB-1.10: the sub-changes of one element behind a `?datastore=candidate` endpoint are one candidate transaction (lock once, every
+    # edit, one commit): they all take effect or none does. A lone sub-change for an element is the same transaction of one.
+    checks = [_dispatch_blocker(db, c) for c in body.changes]
+    members: dict[str, list[int]] = {}
+    for index, (blocker, me, endpoint) in enumerate(checks):
+        key = _transaction_group_key(me, endpoint) if blocker is None else None
+        if key is not None:
+            members.setdefault(key, []).append(index)
+    grouped = {i: key for key, indexes in members.items() if len(indexes) > 1 for i in indexes}
+    group_outcomes: dict[int, tuple] = {}
+
+    for index, change in enumerate(body.changes):
         # HISTORY.md §7 item 3: `operation` is RFC 6241 section 7.2's real
         # edit-config attribute — a delete/remove legitimately carries no
         # attributeChanges at all, so this no longer assumes the key is
         # always present the way a merge-only model could.
         attribute_changes = change.get("attributeChanges", {})
         operation = change.get("operation", "merge")
-        blocker, me, endpoint = _dispatch_blocker(db, change)
+        blocker, me, endpoint = checks[index]
         if blocker is not None:
             db.add(WriteConfigSubChange(job_id=job.job_id, managed_element_ref=change["managedElementRef"],
                                          managed_function_ref=change.get("managedFunctionRef"),
@@ -571,10 +611,19 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
                                          rejection_reason=blocker))
             continue
         ssh_options = _ssh_options(db, endpoint)
-        before, before_error = (_capture_before(me, endpoint, change, attribute_changes, ssh_options) if CM_SNAPSHOTS else (None, None))
-        applied, reason, attempts, detail = _dispatch_with_retries(endpoint.adaptor_uri, change, attribute_changes,
-                                                           str(job.job_id), operation, me.o1_protocol, endpoint.transport,
-                                                                   ssh_options)
+        if index in grouped:
+            if index not in group_outcomes:
+                indexes = members[grouped[index]]
+                befores = {i: (_capture_before(me, endpoint, body.changes[i], body.changes[i].get("attributeChanges", {}), ssh_options)
+                               if CM_SNAPSHOTS else (None, None)) for i in indexes}
+                outcomes = _dispatch_group_with_retries(endpoint.adaptor_uri, [body.changes[i] for i in indexes], str(job.job_id), ssh_options)
+                group_outcomes.update({i: (*befores[i], *outcome) for i, outcome in zip(indexes, outcomes)})
+            before, before_error, applied, reason, attempts, detail = group_outcomes[index]
+        else:
+            before, before_error = (_capture_before(me, endpoint, change, attribute_changes, ssh_options) if CM_SNAPSHOTS else (None, None))
+            applied, reason, attempts, detail = _dispatch_with_retries(endpoint.adaptor_uri, change, attribute_changes,
+                                                               str(job.job_id), operation, me.o1_protocol, endpoint.transport,
+                                                                       ssh_options)
         if not applied and attempts > 1:
             _raise_dispatch_alarm(db, job.job_id, change, reason, attempts)
         sub_change_id = uuid.uuid4()

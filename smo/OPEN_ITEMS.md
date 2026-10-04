@@ -660,7 +660,6 @@ FOCOM and NFO are model-level.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-1.10 | One candidate transaction per **job and element** (lock once, every sub-change for that element, one commit, discard on any failure), instead of one per sub-change | A job whose second sub-change fails leaves the first one uncommitted | SB-1.8 |
 
 #### PR-SB-2 — Adaptor credentials and trust (SB-2.1–2.5 done: `HISTORY.md` §10)
 
