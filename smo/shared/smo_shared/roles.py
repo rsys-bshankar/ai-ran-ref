@@ -37,6 +37,9 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("PUT", "DELETE"), r"^/rapp-kill/[^/]+$"),
         ("/ran-nf-oam", ("GET",), r"^/rapp-kill$"),
         ("/rapp-mgmt", ("PUT", "DELETE"), r"^/instances/[^/]+/kill$"),
+        # MGT-11.6/11.7: seeding the standard KPIs, and pushing results to DME (the reads stay open)
+        ("/ran-nf-oam", ("POST",), r"^/kpi-definitions/standard$"),
+        ("/ran-nf-oam", ("POST",), r"^/kpis/[^/]+/publish$"),
         # AI-10.6: who is told about refusals, and the record of them (it names other rApps)
         ("/ran-nf-oam", ("GET", "POST", "DELETE"), r"^/safeguard-subscriptions(/[^/]+)?$"),
         ("/ran-nf-oam", ("GET",), r"^/safeguard-refusals$"),

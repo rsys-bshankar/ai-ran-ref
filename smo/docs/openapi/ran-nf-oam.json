@@ -2843,6 +2843,38 @@
         "summary": "List Kpi Definitions"
       }
     },
+    "/kpi-definitions/standard": {
+      "get": {
+        "description": "MGT-11.6: the KPIs `POST /kpi-definitions/standard` seeds, as they would be defined. They are over the counters this build carries; they are\nnot the TS 28.554 definitions (see `kpi.py`). Nothing is written.",
+        "operationId": "standard_kpi_set_kpi_definitions_standard_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Standard Kpi Set"
+      },
+      "post": {
+        "description": "MGT-11.6: define each standard KPI that is not defined yet; one that is (possibly edited by an operator) is kept as it is. Idempotent.\nInternal-only at R1.",
+        "operationId": "seed_standard_kpi_set_kpi_definitions_standard_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Seed Standard Kpi Set"
+      }
+    },
     "/kpi-definitions/{name}": {
       "delete": {
         "operationId": "delete_kpi_definition_kpi_definitions__name__delete",
@@ -3068,6 +3100,120 @@
           }
         },
         "summary": "Compute Kpi"
+      }
+    },
+    "/kpis/{name}/publish": {
+      "post": {
+        "description": "MGT-11.7: compute the KPI as `GET /kpis/{name}` does and deliver one DME record per group to every data job open on its DME type\n`RAN.KPI.<name>` (registered here, idempotently, as RAN NF OAM's own production capability, like the PM counters). An rApp reads KPIs the way\nit reads any other data: a data job on that type, never this module. Nothing runs this on a schedule: a scheduler or an operator calls it.\nInternal-only at R1.",
+        "operationId": "publish_kpi_kpis__name__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_time",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "From Time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_time",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "default": "cell",
+              "enum": [
+                "cell",
+                "element",
+                "sectorGroup",
+                "incidentZone",
+                "all"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cell_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cell Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Kpi"
       }
     },
     "/live": {

@@ -1258,11 +1258,29 @@ def _kpi_or_404(db: Session, name: str) -> KpiDefinition:
     return row
 
 
+@app.get("/kpi-definitions/standard")
+def standard_kpi_set():
+    """MGT-11.6: the KPIs `POST /kpi-definitions/standard` seeds, as they would be defined. They are over the counters this build carries; they are
+    not the TS 28.554 definitions (see `kpi.py`). Nothing is written."""
+    return {"items": kpi.STANDARD_KPIS}
+
+
+@app.post("/kpi-definitions/standard")
+def seed_standard_kpi_set(db: Session = Depends(get_session)):
+    """MGT-11.6: define each standard KPI that is not defined yet; one that is (possibly edited by an operator) is kept as it is. Idempotent.
+    Internal-only at R1."""
+    created, kept = kpi.seed_standard_kpis(db)
+    db.commit()
+    return {"created": created, "kept": kept}
+
+
 @app.put("/kpi-definitions/{name}")
 def define_kpi(name: str, body: KpiDefinitionRequest, db: Session = Depends(get_session)):
     """MGT-11.1: create or replace a KPI: a formula over named counters (`kpi_formula.py`: arithmetic, comparisons, a few functions, nothing else)
     and the counter table that says which PM counter feeds which variable and how its samples are combined. Refused (422) when the formula is not
     acceptable or the table does not match it."""
+    if name == "standard":
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="'standard' is the name of the seeded set, not of a KPI")
     if not kpi.NAME.match(name):
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="a KPI name starts with a letter and uses letters, digits, '_', '.', '-' (64 at most)")
     try:
@@ -1471,11 +1489,58 @@ def compute_kpi(name: str, from_time: datetime.datetime, to_time: datetime.datet
     guards of the registry), or over everything asked for. A ratio is computed from the group's summed counters, not from its cells' ratios.
     `managed_element_ref` and `cell_id` narrow what is read. A group without data has a null `value` and a `reason`."""
     definition = _kpi_or_404(db, name)
+    start, end = _kpi_window(from_time, to_time)
+    return kpi.compute(db, definition, start, end, group_by, managed_element_ref, cell_id)
+
+
+def _kpi_window(from_time: datetime.datetime, to_time: datetime.datetime | None) -> tuple[datetime.datetime, datetime.datetime]:
     start = from_time if from_time.tzinfo else from_time.replace(tzinfo=datetime.UTC)
     end = (to_time if to_time is None or to_time.tzinfo else to_time.replace(tzinfo=datetime.UTC)) or datetime.datetime.now(datetime.UTC)
     if end <= start:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="to_time must be after from_time")
-    return kpi.compute(db, definition, start, end, group_by, managed_element_ref, cell_id)
+    return start, end
+
+
+KPI_RESULT_SCHEMA = {"type": "object", "properties": {
+    "kpi": {"type": "string"}, "unit": {"type": ["string", "null"]}, "groupBy": {"type": "string"}, "group": {"type": "object"},
+    "value": {"type": ["number", "null"]}, "samples": {"type": "integer"}, "reason": {"type": ["string", "null"]},
+    "windowStart": {"type": "string", "format": "date-time"}, "windowEnd": {"type": "string", "format": "date-time"}}}
+
+
+@app.post("/kpis/{name}/publish")
+def publish_kpi(name: str, from_time: datetime.datetime, to_time: datetime.datetime | None = None, group_by: Literal[
+                "cell", "element", "sectorGroup", "incidentZone", "all"] = "cell", managed_element_ref: str | None = None,
+                cell_id: str | None = None, db: Session = Depends(get_session)):
+    """MGT-11.7: compute the KPI as `GET /kpis/{name}` does and deliver one DME record per group to every data job open on its DME type
+    `RAN.KPI.<name>` (registered here, idempotently, as RAN NF OAM's own production capability, like the PM counters). An rApp reads KPIs the way
+    it reads any other data: a data job on that type, never this module. Nothing runs this on a schedule: a scheduler or an operator calls it.
+    Internal-only at R1."""
+    definition = _kpi_or_404(db, name)
+    start, end = _kpi_window(from_time, to_time)
+    result = kpi.compute(db, definition, start, end, group_by, managed_element_ref, cell_id)
+    db.commit()                                              # end the read transaction before calling DME (nothing of ours is written)
+    jobs, delivered = _publish_kpi_to_dme(definition, result)
+    return {"kpi": name, "typeName": f"RAN.KPI.{name}", "groups": len(result["items"]), "dataJobs": jobs, "recordsDelivered": delivered}
+
+
+def _publish_kpi_to_dme(definition: KpiDefinition, result: dict) -> tuple[int, int]:
+    """(open data jobs, records delivered) for a computed KPI; registers the DME type first."""
+    r1 = R1Client()
+    type_name = f"RAN.KPI.{definition.name}"
+    r1.post("/dme/production-capabilities", json={
+        "namespace": "RAN", "name": f"KPI.{definition.name}", "version": "1.0.0", "typeName": type_name, "producerId": "ran-nf-oam",
+        "dataProductionSchema": KPI_RESULT_SCHEMA, "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
+        "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs"})
+    dme_type = next((t for t in r1.get("/dme/dme-types", params={"data_category": "RAN"}).json() if t["typeName"] == type_name), None)
+    jobs = r1.get("/dme/data-jobs", params={"dme_type_id": dme_type["dmeTypeId"], "limit": 500}).json()["items"] if dme_type else []
+    delivered = 0
+    for item in result["items"]:
+        payload = {"kpi": definition.name, "unit": definition.unit, "groupBy": result["groupBy"], "group": item["group"], "value": item["value"],
+                   "samples": item["samples"], "reason": item["reason"], "windowStart": result["from"], "windowEnd": result["to"]}
+        for job in jobs:
+            r1.post(f"/dme/data-jobs/{job['dataJobId']}/records", json={"payload": payload})
+            delivered += 1
+    return len(jobs), delivered
 
 
 @app.get("/config-jobs/{job_id}")
