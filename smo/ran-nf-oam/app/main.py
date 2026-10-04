@@ -48,6 +48,7 @@ from .models import Alarm, RAppLimit, CMSchemaCache, CMSnapshot, FileSubscriptio
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
 from . import mo_tree
+from . import topology
 from . import yang_payload
 from . import kpi, kpi_formula
 from . import netconf_tls
@@ -503,7 +504,7 @@ def export_topology(managed_element_ref: str | None = None, db: Session = Depend
     """PR-SB-6.7: the containment tree in the wire shape FOCOM's `/topology` already uses for the TEIV adapter (entities keyed `<prefix>:<Entity>`
     with `{id, attributes}`; relationships keyed `<prefix>:<A>_<REL>_<B>` with `{id, aSide, bSide, sourceIds}`). One generic `ManagedObject` entity
     per node and one `MANAGEDOBJECT_CHILD_OF_MANAGEDOBJECT` relationship per parent link, the child on the a-side. This is this build's own export
-    of what it holds, not the TEIV RAN domain model (which has typed entities such as GNBDUFunction): link-type awareness is MGT-10.2."""
+    of what it holds, not the TEIV RAN domain model (which has typed entities such as GNBDUFunction). Link types: `/topology/links`, `/topology/relation` (MGT-10.2)."""
     stmt = select(ManagedObject).order_by(ManagedObject.dn)
     if managed_element_ref:
         stmt = stmt.where(ManagedObject.managed_element_ref == managed_element_ref)
@@ -517,6 +518,28 @@ def export_topology(managed_element_ref: str | None = None, db: Session = Depend
                  "sourceIds": [o.dn, o.parent_dn]} for o in objects if o.parent_dn in present]
     relationships = [{f"{TEIV_RAN_PREFIX}:MANAGEDOBJECT_CHILD_OF_MANAGEDOBJECT": child_of}] if child_of else []
     return {"entities": entities, "relationships": relationships}
+
+
+@app.get("/topology/links")
+def topology_links(managed_element_ref: str | None = None, link_type: Literal["INTRA_ELEMENT", "INTER_ELEMENT", "AMBIGUOUS", "EXTERNAL"] | None = None,
+                   db: Session = Depends(get_session)):
+    """PR-MGT-10.2: the neighbour relations declared in the cell guards, each with its link type (`topology.py`): both cells on one element
+    (`INTRA_ELEMENT`), on different elements (`INTER_ELEMENT`), a cell id several elements claim (`AMBIGUOUS`) or none does (`EXTERNAL`), and whether
+    the other side declares the relation back (`reciprocal`). `managed_element_ref` keeps the links with that element at either end."""
+    return {"items": topology.cell_links(db, managed_element_ref, link_type)}
+
+
+@app.get("/topology/relation")
+def topology_relation(a: str, b: str, db: Session = Depends(get_session)):
+    """PR-MGT-10.2: how the managed object `a` (a DN) stands to `b` in the containment tree: SAME, ANCESTOR (a contains b), DESCENDANT, SIBLING,
+    SAME_ELEMENT or DIFFERENT_ELEMENT. 404 when either is not in the tree."""
+    objects = []
+    for dn in (a, b):
+        obj = db.get(ManagedObject, dn)
+        if obj is None:
+            raise framework_error(FrameworkError.MANAGED_OBJECT_NOT_FOUND, detail=f"{dn!r} is not in the containment tree")
+        objects.append(obj)
+    return {"a": a, "b": b, "relation": topology.containment_relation(db, *objects)}
 
 
 def _enforce_mo_tree() -> bool:
