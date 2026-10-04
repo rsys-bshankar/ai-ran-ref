@@ -618,17 +618,48 @@
         "type": "object"
       },
       "RAppLimitRequest": {
+        "description": "What one rApp may do here; at least one of the three. A `PUT` replaces the whole set: a limit not named is removed.",
         "properties": {
+          "maxChangePercent": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 10000.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxchangepercent"
+          },
           "maxConfigJobsPerHour": {
-            "maximum": 100000.0,
-            "minimum": 1.0,
-            "title": "Maxconfigjobsperhour",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxconfigjobsperhour"
+          },
+          "maxElementsPerJob": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxelementsperjob"
           }
         },
-        "required": [
-          "maxConfigJobsPerHour"
-        ],
         "title": "RAppLimitRequest",
         "type": "object"
       },

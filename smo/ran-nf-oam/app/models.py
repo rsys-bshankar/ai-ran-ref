@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid, false
+from sqlalchemy import ARRAY, Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -180,7 +180,11 @@ class RAppLimit(Base):
     __tablename__ = "rapp_limit"
 
     invoker_id: Mapped[str] = mapped_column(String, primary_key=True)
-    max_config_jobs_per_hour: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_config_jobs_per_hour: Mapped[int | None] = mapped_column(Integer)
+    # AI-10.3: how many managed elements one job may touch (blast radius), and how far one attribute may move from its current value in one write,
+    # in percent of that value (magnitude). NULL: no such limit. At least one of the three is set.
+    max_elements_per_job: Mapped[int | None] = mapped_column(Integer)
+    max_change_percent: Mapped[float | None] = mapped_column(Float)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC),
                                                           onupdate=lambda: datetime.datetime.now(datetime.UTC))
 
