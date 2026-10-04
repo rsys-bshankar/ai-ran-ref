@@ -903,7 +903,6 @@ Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | MGT-10.1 | Parent-child suppression using the containment tree | Child alarms point at the parent's alarm | SB-6.4, MGT-9.2 |
-| MGT-10.2 | Link-type awareness from the TEIV topology | Test | SB-6.7 done |
 | MGT-10.3 | Candidate scoring and the evaluation script from MGT-9.7 | Improvement shown on the traces | MGT-10.1 |
 
 #### Performance management
