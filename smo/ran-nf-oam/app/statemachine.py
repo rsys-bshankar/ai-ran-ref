@@ -20,6 +20,7 @@ from smo_shared.statemachine import StateMachine
 class JobState(StrEnum):
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
+    HALTED = "HALTED"                   # MGT-5: a staged job waiting between waves (a pause, a failed gate, an operator's halt)
     COMPLETED = "COMPLETED"
     PARTIAL_SUCCESS = "PARTIAL_SUCCESS"
     FAILED = "FAILED"
@@ -31,6 +32,8 @@ class JobEvent(StrEnum):
     AGGREGATE_ALL_APPLIED = "AGGREGATE_ALL_APPLIED"
     AGGREGATE_ALL_REJECTED = "AGGREGATE_ALL_REJECTED"
     AGGREGATE_MIXED = "AGGREGATE_MIXED"
+    HALT = "HALT"                       # MGT-5.3/5.4: stop between waves
+    RESUME = "RESUME"                   # MGT-5.4: go on with the next wave
 
 
 def aggregate_event(sub_change_statuses: list[str]) -> JobEvent:
@@ -55,6 +58,12 @@ def build_write_config_job_fsm() -> StateMachine[JobState, JobEvent]:
     fsm.add(JobState.PROCESSING, JobEvent.AGGREGATE_ALL_APPLIED, JobState.COMPLETED)
     fsm.add(JobState.PROCESSING, JobEvent.AGGREGATE_ALL_REJECTED, JobState.FAILED)
     fsm.add(JobState.PROCESSING, JobEvent.AGGREGATE_MIXED, JobState.PARTIAL_SUCCESS)
+    # MGT-5: a staged job stops between waves and either goes on or ends with what it has (an abort, or the end of an automatic revert)
+    fsm.add(JobState.PROCESSING, JobEvent.HALT, JobState.HALTED)
+    fsm.add(JobState.HALTED, JobEvent.RESUME, JobState.PROCESSING)
+    fsm.add(JobState.HALTED, JobEvent.AGGREGATE_ALL_APPLIED, JobState.COMPLETED)
+    fsm.add(JobState.HALTED, JobEvent.AGGREGATE_ALL_REJECTED, JobState.FAILED)
+    fsm.add(JobState.HALTED, JobEvent.AGGREGATE_MIXED, JobState.PARTIAL_SUCCESS)
     return fsm
 
 

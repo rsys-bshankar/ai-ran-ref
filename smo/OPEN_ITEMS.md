@@ -851,16 +851,6 @@ No steps open.
 | MGT-4.4 | Start at the window | Job starts once across replicas | MGT-4.1, MSG-4.2 |
 | MGT-4.5 | Expire after `window_end` | Job moves to `EXPIRED` | MGT-4.4 |
 
-#### PR-MGT-5 — Canary rollout
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| MGT-5.1 | Wave settings on a job (size, pause between waves) | Migration | – |
-| MGT-5.2 | Split sub-changes into waves | Unit test | MGT-5.1 |
-| MGT-5.3 | Health gate hook between waves (alarm count first, KPI later) | Gate failure halts | MGT-5.2 |
-| MGT-5.4 | Halt and continue routes | Test | MGT-5.3 |
-| MGT-5.5 | Automatic revert of applied waves | Values restored | MGT-5.3, MGT-1.6 |
-
 #### PR-MGT-6 — Drift detection
 
 | Step | What | Done when | Needs |
@@ -967,7 +957,7 @@ Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | MGT-15.1 | Campaign object over many software-management jobs | Migration | – |
-| MGT-15.2 | Waves with a health gate | Gate failure halts | MGT-15.1, MGT-5.3 |
+| MGT-15.2 | Waves with a health gate | Gate failure halts | MGT-15.1 (the wave machinery is `MGT-5`, done) |
 | MGT-15.3 | Campaign rollback | Test | MGT-15.1 |
 | MGT-15.4 | Campaign report | Route test | MGT-15.1 |
 
