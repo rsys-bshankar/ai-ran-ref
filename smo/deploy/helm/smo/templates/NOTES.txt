@@ -1,0 +1,15 @@
+The AI-RAN SMO {{ include "smo.tag" . }} is installing into the namespace {{ .Release.Namespace }}.
+
+  kubectl -n {{ .Release.Namespace }} get pods                         every module, and the migration Job
+  kubectl -n {{ .Release.Namespace }} logs job/{{ ternary "migrate" (printf "migrate-%d" .Release.Revision) .Release.IsInstall }}   what it did to the database
+
+The operator GUI: kubectl -n {{ .Release.Namespace }} port-forward svc/gui 3000:8080   then http://localhost:3000
+The R1 gateway:   kubectl -n {{ .Release.Namespace }} port-forward svc/r1-termination 8080:8000   then GET /bootstrap
+{{- if not .Values.secrets.existingSecret }}
+
+The database password and the enrollment secret are in the Secret smo-secrets (made by this chart, kept across upgrades).
+{{- end }}
+{{- if .Values.postgres.enabled }}
+
+The database is the bundled one-pod Postgres, for a lab or trial. For production use postgres.enabled=false with postgres.external.*.
+{{- end }}

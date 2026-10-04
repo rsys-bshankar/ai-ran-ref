@@ -1,0 +1,61 @@
+{{- /*
+PR-OPS-3.1: the schema is brought to this release's by one Job, in front of any pod of the release:
+  - on install a plain Job (the database it needs is part of the same release, so a pre-install hook would run before it exists; the pods wait for the schema
+    in an init container, which is also why a Job that fails shows as pods stuck in Init rather than as a half-working platform);
+  - on upgrade a pre-upgrade hook, so it has finished, once, before the Deployments are touched, and a failed migration aborts the upgrade with every old pod
+    still serving. Its name carries the revision so a finished Job of an earlier upgrade is never in the way.
+Either runs `scripts/migrate.py`, which is idempotent: an up-to-date database is left alone.
+*/}}
+{{- $name := ternary "migrate" (printf "migrate-%d" .Release.Revision) .Release.IsInstall }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "smo.labels" (dict "root" .) | nindent 4 }}
+    app.kubernetes.io/name: migrate
+  {{- if .Release.IsUpgrade }}
+  annotations:
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  {{- end }}
+spec:
+  backoffLimit: {{ .Values.migrate.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrate.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        {{- include "smo.labels" (dict "root" .) | nindent 8 }}
+        app.kubernetes.io/name: migrate
+    spec:
+      restartPolicy: OnFailure
+      {{- include "smo.pullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          # any service image carries the migrations; this is the R1 Termination build, as in docker-compose.yml's `migrate`
+          image: {{ include "smo.image" (dict "root" . "name" (index .Values.modules "r1-termination" "image")) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "/srv/scripts/migrate.py"]
+          env:
+            {{- include "smo.dbEnv" (dict "root" .) | nindent 12 }}
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: secrets, mountPath: /run/secrets, readOnly: true }
+      volumes:
+        - name: tmp
+          emptyDir: { medium: Memory }
+        - name: secrets
+          secret:
+            secretName: {{ include "smo.secretName" . }}
+            defaultMode: 0444
+            items:
+              - { key: db-password, path: db_password }

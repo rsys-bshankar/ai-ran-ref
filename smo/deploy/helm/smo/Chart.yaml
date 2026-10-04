@@ -1,0 +1,10 @@
+apiVersion: v2
+name: smo
+description: "The AI-RAN SMO (service management and orchestration) platform: the R1 gateway, SME, DME, the AI/ML and RAN management modules, and the operator GUI"
+type: application
+# The chart's own version moves when the chart changes; appVersion is the SMO release whose images it installs
+# (ghcr.io/<owner>/<repo>/smo-<module>:<appVersion>). The release PR of docs/RELEASES.md raises both.
+version: 0.3.0
+appVersion: "0.2.0"
+kubeVersion: ">=1.27.0-0"
+keywords: [smo, o-ran, r1, rapp]

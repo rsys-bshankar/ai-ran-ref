@@ -91,6 +91,8 @@ which obtains its own SME token the same way an rApp does.
 
 ## Quickstart
 
+On one machine, with Docker Compose (below). On a cluster, with the Helm chart: `helm install smo deploy/helm/smo -n smo --create-namespace`, see [`deploy/helm/smo/README.md`](deploy/helm/smo/README.md).
+
 ```bash
 cd smo
 scripts/init_secrets.sh                  # once: writes the database password and the enrollment secret to secrets/ (no defaults)

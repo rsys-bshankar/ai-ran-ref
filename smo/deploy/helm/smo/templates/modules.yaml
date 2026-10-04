@@ -1,0 +1,204 @@
+{{- /* One Deployment and one Service per enabled module, from one template (PR-OPS-2.2). */}}
+{{- range $name, $_ := .Values.modules }}
+{{- $m := include "smo.module" (dict "root" $ "name" $name) | fromYaml }}
+{{- if $m.enabled }}
+{{- $labels := include "smo.labels" (dict "root" $) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  {{- if not $.Values.autoscaling.enabled }}
+  replicas: {{ $m.replicas }}
+  {{- end }}
+  {{- if $m.persistence }}
+  strategy: { type: Recreate }       # a volume that only one pod may hold at a time
+  {{- else }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/name: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- $labels | nindent 8 }}
+        app.kubernetes.io/name: {{ $name }}
+      annotations:
+        {{- /* a changed secret or value that the pod reads at start rolls the pod */}}
+        checksum/config: {{ toYaml $m | sha256sum }}
+    spec:
+      {{- include "smo.pullSecrets" $ | nindent 6 }}
+      securityContext:
+        {{- toYaml (default $.Values.podSecurityContext $m.podSecurityContext) | nindent 8 }}
+      terminationGracePeriodSeconds: 30
+      {{- if $m.database }}
+      initContainers:
+        # PR-OPS-3.2: a pod of this release does not start on an older schema. It waits for the migration (the Job of migrate.yaml) and, if the
+        # schema never arrives, fails and is restarted, so a bad migration shows as a pod stuck here and old pods keep serving.
+        - name: wait-for-schema
+          image: {{ include "smo.image" (dict "root" $ "name" $m.image) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: ["python", "/srv/scripts/migrate.py", "--wait", "{{ $.Values.migrate.schemaWaitSeconds }}"]
+          env:
+            {{- include "smo.dbEnv" (dict "root" $) | nindent 12 }}
+          securityContext:
+            {{- toYaml $.Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - { name: secrets, mountPath: /run/secrets, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "smo.image" (dict "root" $ "name" $m.image) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          {{- if eq $m.kind "worker" }}
+          command: ["python", "-m", "smo_shared.worker"]
+          {{- else }}
+          ports:
+            - { name: http, containerPort: {{ $m.port }} }
+          {{- end }}
+          env:
+            {{- if $m.database }}
+            {{- include "smo.dbEnv" (dict "root" $) | nindent 12 }}
+            {{- end }}
+            {{- if $m.enrollment }}
+            - { name: SMO_ENROLLMENT_SECRET_FILE, value: /run/secrets/enrollment_secret }
+            {{- end }}
+            {{- if eq $name "r1-termination" }}
+            {{- with $.Values.ingress.r1.publicBaseUrl }}
+            - { name: R1_PUBLIC_BASE_URL, value: {{ . | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- range $k, $v := $m.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- if eq $name "gui-bff" }}
+            {{- range $k, $v := $.Values.gui.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- end }}
+          {{- if eq $m.kind "service" }}
+          startupProbe:
+            httpGet: { path: /live, port: http }
+            periodSeconds: 3
+            failureThreshold: 40
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /live, port: http }
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- else if eq $m.kind "worker" }}
+          # no port: the worker touches a file on every tick, and is unhealthy when it is a minute old (docker-compose.yml's x-worker-probe)
+          startupProbe:
+            exec: &heartbeat
+              command: ["python", "-c", "import os, sys, time; sys.exit(0 if time.time() - os.path.getmtime('/tmp/worker-heartbeat') < 60 else 1)"]
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            exec: *heartbeat
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+          {{- else }}
+          readinessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 20
+            failureThreshold: 3
+          {{- end }}
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml $.Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            {{- if or $m.database $m.enrollment }}
+            - { name: secrets, mountPath: /run/secrets, readOnly: true }
+            {{- end }}
+            {{- if $m.persistence }}
+            - { name: data, mountPath: {{ $m.persistence.mountPath }} }
+            {{- end }}
+            {{- if $m.scratch }}
+            - { name: scratch, mountPath: {{ $m.scratch }} }
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: { medium: Memory }
+        {{- if or $m.database $m.enrollment }}
+        - name: secrets
+          secret:
+            secretName: {{ include "smo.secretName" $ }}
+            defaultMode: 0444
+            # only what the module needs: an rApp must never be able to read the enrollment secret (PR-SEC-14)
+            items:
+              {{- if $m.database }}
+              - { key: db-password, path: db_password }
+              {{- end }}
+              {{- if $m.enrollment }}
+              - { key: enrollment-secret, path: enrollment_secret }
+              {{- end }}
+        {{- end }}
+        {{- if $m.persistence }}
+        - name: data
+          {{- if $.Values.persistence.enabled }}
+          persistentVolumeClaim: { claimName: {{ $name }}-data }
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        {{- if $m.scratch }}
+        - name: scratch
+          emptyDir: {}
+        {{- end }}
+{{- if and $m.persistence $.Values.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-data
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with $.Values.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $m.persistence.size }}
+{{- end }}
+{{- if ne $m.kind "worker" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+    - { name: http, port: {{ $m.port }}, targetPort: http }
+{{- end }}
+{{- end }}
+{{- end }}

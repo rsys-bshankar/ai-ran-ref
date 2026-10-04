@@ -77,6 +77,11 @@ before this check: `python scripts/generate_openapi_specs.py`.
 cd smo && docker compose config --quiet
 ```
 
+A service added to (or changed in) `docker-compose.yml` is also a module of the Helm chart
+(`deploy/helm/smo/values.yaml`): `tests_integration/test_helm_chart.py` fails when the two disagree about a
+service's image, secrets, worker command or environment. With `helm` installed, `helm lint deploy/helm/smo
+--kube-version 1.30.0` and that test file also render the chart.
+
 **4. Every ORM model's columns actually exist in the migrated schema, with
 matching nullability — against a real Postgres, not SQLite** (SQLite's
 unit-test runs don't catch a `CHECK` constraint or a nullable/NOT NULL

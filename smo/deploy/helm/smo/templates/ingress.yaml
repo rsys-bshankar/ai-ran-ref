@@ -1,0 +1,38 @@
+{{- if .Values.ingress.enabled }}
+{{- $labels := include "smo.labels" (dict "root" .) }}
+{{- range $key, $target := dict "gui" (dict "service" "gui" "port" 8080) "r1" (dict "service" "r1-termination" "port" 8000) }}
+{{- $cfg := get $.Values.ingress $key }}
+{{- if $cfg.host }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $key }}
+  labels:
+    {{- $labels | nindent 4 }}
+  {{- with $.Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $.Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if $cfg.tlsSecretName }}
+  tls:
+    - hosts: [{{ $cfg.host | quote }}]
+      secretName: {{ $cfg.tlsSecretName }}
+  {{- end }}
+  rules:
+    - host: {{ $cfg.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $target.service }}
+                port: { number: {{ $target.port }} }
+{{- end }}
+{{- end }}
+{{- end }}

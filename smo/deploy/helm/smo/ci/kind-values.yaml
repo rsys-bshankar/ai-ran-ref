@@ -1,0 +1,8 @@
+# The CI install on kind (.github/workflows/smo-tests.yml, job `helm`): images built from the checkout and loaded into the cluster, so nothing is pulled.
+image:
+  registry: local
+  tag: ci
+  pullPolicy: Never
+gui:
+  env:
+    GUI_COOKIE_SECURE: "false"          # no TLS in front of the GUI in CI
