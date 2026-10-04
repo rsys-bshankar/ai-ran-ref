@@ -132,6 +132,15 @@ def test_install_runs_the_migration_as_a_job_and_upgrade_as_a_pre_upgrade_hook()
 
 
 @helm
+def test_the_pull_policy_of_the_smo_images_does_not_reach_the_database_image():
+    docs = _render("--set", "image.pullPolicy=Never")
+    postgres = next(d for d in docs if d["kind"] == "StatefulSet")
+    assert postgres["spec"]["template"]["spec"]["containers"][0]["imagePullPolicy"] == "IfNotPresent"
+    sme = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "sme")
+    assert sme["spec"]["template"]["spec"]["containers"][0]["imagePullPolicy"] == "Never"
+
+
+@helm
 def test_an_external_database_drops_the_bundled_one_and_needs_a_host():
     docs = _render("--set", "postgres.enabled=false", "--set", "postgres.external.host=db.example.com", "--set", "postgres.external.sslmode=require")
     assert not [d for d in docs if d["kind"] == "StatefulSet"]

@@ -18,6 +18,7 @@ image:
 postgres:
   enabled: true
   image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+  pullPolicy: IfNotPresent                     # its own: image.pullPolicy is for the SMO images (CI sets it to Never for the ones it built)
   storage: 10Gi
   storageClassName: ""
   resources:
