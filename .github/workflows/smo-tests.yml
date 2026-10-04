@@ -518,5 +518,7 @@ jobs:
       - name: Build the previous release, start it on this commit's schema, replay its runbook
         if: steps.gate.outputs.run == 'true'
         working-directory: smo
+        env:
+          REQUIRE_PREVIOUS_RELEASE: "1"        # a release exists: not finding its tag is a failure, never a skip
         run: scripts/check_previous_release_code.sh
 

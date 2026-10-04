@@ -14,8 +14,13 @@ set -euo pipefail
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
 repo="$(git -C "$here" rev-parse --show-toplevel)"
-tag="${1:-$(git -C "$repo" tag --list 'smo-v*' --sort=-version:refname | grep -v -- '-' | head -1 || true)}"
-if [ -z "$tag" ]; then echo "no release tag to test against (git fetch --tags?): skipped"; exit 0; fi
+# the newest final release: a release candidate (`smo-vX.Y.Z-rc.N`) is not what a rolling upgrade starts from
+tag="${1:-$(git -C "$repo" tag --list 'smo-v*' --sort=-version:refname | grep -v -- '-rc\.' | head -1 || true)}"
+if [ -z "$tag" ]; then
+  # CI sets REQUIRE_PREVIOUS_RELEASE: once a release exists, "no tag found" means the checkout lacks the tags, and a silent skip would be a false green
+  if [ -n "${REQUIRE_PREVIOUS_RELEASE:-}" ]; then echo "no release tag found, and one is required (does the checkout fetch tags?)" >&2; exit 1; fi
+  echo "no release tag to test against: skipped"; exit 0
+fi
 rel="${here#"$repo"/}"
 scratch="$(mktemp -d)"
 prev_smo="$scratch/prev/$rel"
