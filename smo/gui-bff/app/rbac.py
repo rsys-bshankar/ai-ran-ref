@@ -167,6 +167,17 @@ RULES: list[Rule] = [
     # operator's entire-RAN write is refused by RAN NF OAM's own MSAC gate)
     _rule("POST", "/ran-nf-oam/config-jobs", O,
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}", "msacRole": "admin" if u.role == Role.ADMIN else None}),
+    # Undoing a job and driving a staged one are CM actions too: attributed to the GUI user, and an admin holds the MSAC tier (as for a new write)
+    _rule("POST", "/ran-nf-oam/config-jobs/{id}/rollback", O,
+          json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}", "msacRole": "admin" if u.role == Role.ADMIN else None}),
+    _rule("POST", "/ran-nf-oam/config-jobs/{id}/(continue|halt|abort)", O,
+          json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
+    # KPI definitions and their schedules are platform configuration (internal-only at R1): admin
+    _rule("PUT", "/ran-nf-oam/kpi-definitions/{id}", A),
+    _rule("DELETE", "/ran-nf-oam/kpi-definitions/{id}", A),
+    _rule("POST", "/ran-nf-oam/kpi-definitions/standard", A),
+    _rule("PUT", "/ran-nf-oam/kpi-schedules/{id}", A),
+    _rule("DELETE", "/ran-nf-oam/kpi-schedules/{id}", A),
     _rule("POST", "/ran-nf-oam/(pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)", O),
     _rule("POST", "/ran-nf-oam/software-management-jobs/{id}/advance", O),
     _rule("POST", "/ran-nf-oam/o1-adaptor-endpoints/{id}/heartbeat", A),   # what the ME's adaptor sends: simulation

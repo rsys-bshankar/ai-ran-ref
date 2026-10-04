@@ -2,12 +2,13 @@ import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
 import type {
-  ConfigJob, ConfigJobSummary, DeploymentManager, InventorySubscription, LcmOperation, Model, NfDeployment, NfDescriptor, NfResource, O1Endpoint, OCloudResource, ResourcePool,
+  ConfigJobSummary, DeploymentManager, InventorySubscription, KpiDef, LcmOperation, Model, NfDeployment, NfDescriptor, NfResource, O1Endpoint, OCloudResource, ResourcePool,
   ResourceType, ServiceOrder, SwmJob, Topology,
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { ConfigJobDrawer } from "../components/ConfigJobDrawer";
 import { ActionButton, Can, Card, DataTable, Drawer, ErrorBox, Field, Id, Json, KeyValue, Modal, PageHeader, StateBadge, Tabs, useHashTab } from "../components/ui";
-import { formatTime, parseJsonObject, splitList } from "../lib/domain";
+import { formatTime, parseJsonObject, splitList, stagedPayload, type GuardForm, type StagedForm } from "../lib/domain";
 
 const TABS = ["nfo", "ocloud", "topology", "o1", "orders"] as const;
 
@@ -277,7 +278,7 @@ function O1() {
       </Card>
       {registering && <RegisterEndpoint onClose={() => setRegistering(false)} />}
       {writing && <ConfigWrite endpoints={endpoints.data ?? []} onClose={() => setWriting(false)} />}
-      {job && <ConfigJobDetail id={job} onClose={() => setJob(null)} />}
+      {job && <ConfigJobDrawer id={job} onClose={() => setJob(null)} />}
     </>
   );
 }
@@ -314,14 +315,19 @@ function ConfigWrite({ endpoints, onClose }: { endpoints: O1Endpoint[]; onClose:
   const [attrs, setAttrs] = useState('{"administrativeState": "UNLOCKED"}');
   const parsed = parseJsonObject(attrs);
   const action = useSmoAction();
+  const kpis = useSmo<KpiDef[]>("/ran-nf-oam/kpi-definitions");
+  const [staged, setStaged] = useState<StagedForm>({ waveSize: "", wavePauseSeconds: "", gateMaxNewAlarms: "0", onGateFailure: "halt" });
+  const [guardOn, setGuardOn] = useState(false);
+  const [guard, setGuard] = useState<GuardForm>({ kpi: "", baselineMinutes: "60", observationMinutes: "60", maxRegressionPercent: "10", direction: "higher", revert: false });
+  const extra = stagedPayload(staged, guardOn ? guard : null);
   return (
     <Modal title="New CM write" onClose={onClose}>
       <form className="form" onSubmit={(e) => {
         e.preventDefault();
-        if (!parsed.ok) return;
+        if (!parsed.ok || !extra.ok) return;
         // requestedBy and msacRole are set by the BFF from your GUI identity
         action.mutate({ method: "POST", path: "/ran-nf-oam/config-jobs", success: "Config job submitted",
-          json: { scope, changes: mes.map((m) => ({ managedElementRef: m, attributeChanges: parsed.value, operation })) } }, { onSuccess: onClose });
+          json: { scope, changes: mes.map((m) => ({ managedElementRef: m, attributeChanges: parsed.value, operation })), ...extra.body } }, { onSuccess: onClose });
       }}>
         <p className="muted small">One job, decomposed into one NETCONF &lt;edit-config&gt; per managed element; mixed results aggregate to PARTIAL_SUCCESS (call flow 03).</p>
         <div className="grid cols-3 tight">
@@ -336,25 +342,39 @@ function ConfigWrite({ endpoints, onClose }: { endpoints: O1Endpoint[]; onClose:
           <Field label="Operation"><select value={operation} onChange={(e) => setOperation(e.target.value)}>{["merge", "replace", "create", "delete", "remove"].map((o) => <option key={o}>{o}</option>)}</select></Field>
         </div>
         <Field label="Attribute changes (JSON, applied to each)" hint={parsed.ok ? undefined : <span className="text-bad">{parsed.error}</span>}><textarea rows={4} value={attrs} onChange={(e) => setAttrs(e.target.value)} spellCheck={false} /></Field>
-        <div className="row gap end"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!parsed.ok || mes.length === 0 || action.isPending}>Submit</button></div>
+        <details>
+          <summary>Staged rollout</summary>
+          <p className="muted small">Go in waves of this many elements, and check health between them. Leave the wave size blank to write everything at once.</p>
+          <div className="grid cols-3 tight">
+            <Field label="Wave size" hint="Elements per wave"><input inputMode="numeric" value={staged.waveSize} onChange={(e) => setStaged({ ...staged, waveSize: e.target.value })} /></Field>
+            <Field label="Pause between waves, seconds"><input inputMode="numeric" value={staged.wavePauseSeconds} onChange={(e) => setStaged({ ...staged, wavePauseSeconds: e.target.value })} /></Field>
+            <Field label="New critical/major alarms allowed" hint="More than this on a wave's elements fails the gate"><input inputMode="numeric" value={staged.gateMaxNewAlarms} onChange={(e) => setStaged({ ...staged, gateMaxNewAlarms: e.target.value })} /></Field>
+          </div>
+          <Field label="If the gate fails"><select value={staged.onGateFailure} onChange={(e) => setStaged({ ...staged, onGateFailure: e.target.value as "halt" | "revert" })}>
+            <option value="halt">Halt (an operator decides)</option><option value="revert">Undo the waves already applied</option></select></Field>
+        </details>
+        <details>
+          <summary>KPI guard</summary>
+          <label className="row gap small"><input type="checkbox" checked={guardOn} onChange={(e) => setGuardOn(e.target.checked)} /> Check a KPI after this job</label>
+          {guardOn && <>
+            <div className="grid cols-3 tight">
+              <Field label="KPI" hint={kpis.data?.length === 0 ? "Define one on the KPIs page first" : undefined}>
+                <select value={guard.kpi} onChange={(e) => setGuard({ ...guard, kpi: e.target.value })}>
+                  <option value="">Choose…</option>{kpis.data?.map((k) => <option key={k.name} value={k.name}>{k.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Baseline, minutes before"><input inputMode="numeric" value={guard.baselineMinutes} onChange={(e) => setGuard({ ...guard, baselineMinutes: e.target.value })} /></Field>
+              <Field label="Observe, minutes after"><input inputMode="numeric" value={guard.observationMinutes} onChange={(e) => setGuard({ ...guard, observationMinutes: e.target.value })} /></Field>
+              <Field label="Regression allowed, %"><input inputMode="decimal" value={guard.maxRegressionPercent} onChange={(e) => setGuard({ ...guard, maxRegressionPercent: e.target.value })} /></Field>
+              <Field label="Better is"><select value={guard.direction} onChange={(e) => setGuard({ ...guard, direction: e.target.value as "higher" | "lower" })}><option value="higher">Higher</option><option value="lower">Lower</option></select></Field>
+            </div>
+            <label className="row gap small"><input type="checkbox" checked={guard.revert} onChange={(e) => setGuard({ ...guard, revert: e.target.checked })} /> Roll back the elements that regressed (never over a later change)</label>
+          </>}
+        </details>
+        {!extra.ok && <div className="error-box" role="alert">{extra.error}</div>}
+        <div className="row gap end"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!parsed.ok || !extra.ok || mes.length === 0 || action.isPending || (guardOn && !guard.kpi)}>Submit</button></div>
       </form>
     </Modal>
-  );
-}
-
-function ConfigJobDetail({ id, onClose }: { id: string; onClose: () => void }) {
-  const job = useSmo<ConfigJob>(`/ran-nf-oam/config-jobs/${id}`);
-  return (
-    <Drawer title={<>Config job <Id value={id} /></>} onClose={onClose}>
-      <ErrorBox error={job.error} />
-      {job.data && <>
-        <StateBadge state={job.data.status} />
-        <DataTable rows={job.data.subChanges} rowKey={(s) => `${s.managedElementRef}/${s.operation}`} empty="No sub-changes." columns={[
-          { header: "Managed element", render: (s) => s.managedElementRef }, { header: "Operation", render: (s) => s.operation },
-          { header: "Status", render: (s) => <StateBadge state={s.status} /> }, { header: "Rejection", render: (s) => s.rejectionReason ?? "—" },
-        ]} />
-      </>}
-    </Drawer>
   );
 }
 

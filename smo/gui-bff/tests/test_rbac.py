@@ -107,6 +107,19 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/ran-nf-oam/safeguard-subscriptions", "admin"),
     ("DELETE", "/ran-nf-oam/safeguard-subscriptions/s", "admin"),
     ("POST", "/ran-nf-oam/safeguard-refusals/purge", "admin"),
+    # change management: rollback, staged jobs, KPIs
+    ("POST", "/ran-nf-oam/config-jobs/j/rollback", "operator"),
+    ("POST", "/ran-nf-oam/config-jobs/j/continue", "operator"),
+    ("POST", "/ran-nf-oam/config-jobs/j/halt", "operator"),
+    ("POST", "/ran-nf-oam/config-jobs/j/abort", "operator"),
+    ("GET", "/ran-nf-oam/config-jobs/j", "viewer"),
+    ("GET", "/ran-nf-oam/kpi-definitions", "viewer"),
+    ("GET", "/ran-nf-oam/kpi-schedules", "viewer"),
+    ("PUT", "/ran-nf-oam/kpi-definitions/k", "admin"),
+    ("DELETE", "/ran-nf-oam/kpi-definitions/k", "admin"),
+    ("POST", "/ran-nf-oam/kpi-definitions/standard", "admin"),
+    ("PUT", "/ran-nf-oam/kpi-schedules/s", "admin"),
+    ("DELETE", "/ran-nf-oam/kpi-schedules/s", "admin"),
     # Wave 10.3: the Coverage Optimization rApp
     ("GET", "/coverage-optimization-rapp/instances/i/dashboard", "viewer"),
     ("POST", "/coverage-optimization-rapp/instances/i/evaluate", "operator"),
@@ -169,3 +182,17 @@ def test_spa_permissions_fixture_matches_the_live_table():
 def test_the_gui_cannot_stop_an_rapp_as_somebody_else():
     decision = decide("PUT", "/rapp-mgmt/instances/i/kill", {}, Role.OPERATOR)
     assert decision.allowed and decision.rule.json_overrides(type("U", (), {"username": "alice", "role": Role.OPERATOR})()) == {"requestedBy": "smo-gui:alice"}
+
+
+@pytest.mark.parametrize("path", ["/ran-nf-oam/config-jobs/j/rollback", "/ran-nf-oam/config-jobs/j/continue", "/ran-nf-oam/config-jobs/j/halt", "/ran-nf-oam/config-jobs/j/abort"])
+def test_a_job_action_is_always_attributed_to_the_gui_user_and_an_admin_holds_the_msac_tier(path):
+    rule = decide("POST", path, {}, Role.OPERATOR).rule
+    user = lambda role: type("U", (), {"username": "alice", "role": role})()  # noqa: E731
+    assert rule.json_overrides(user(Role.OPERATOR))["requestedBy"] == "smo-gui:alice"
+    if path.endswith("rollback"):
+        assert rule.json_overrides(user(Role.OPERATOR))["msacRole"] is None and rule.json_overrides(user(Role.ADMIN))["msacRole"] == "admin"
+
+
+def test_kpi_check_and_publish_are_not_exposed_to_the_gui():
+    for path in ("/ran-nf-oam/config-jobs/j/kpi-check", "/ran-nf-oam/kpis/k/publish", "/ran-nf-oam/config-jobs/advance-due"):
+        assert not decide("POST", path, {}, Role.ADMIN).allowed
