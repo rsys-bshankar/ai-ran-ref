@@ -45,7 +45,7 @@ from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 from smo_shared.invoker import invoker_id
 
-from .models import Alarm, RAppKill, RAppLimit, SafeguardRefusal, SafeguardSubscription, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, RAppKill, RAppLimit, SafeguardRefusal, SafeguardSubscription, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, KpiSchedule, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
 from . import mo_tree
@@ -1225,10 +1225,15 @@ def abort_configuration_job(job_id: uuid.UUID, body: WaveActionRequest, db: Sess
 def advance_due_configuration_jobs(db: Session = Depends(get_session)):
     """MGT-5.1: for a scheduler. Runs the next wave of every job whose pause between waves has elapsed; a job halted for any other reason is left
     for an operator. Returns what each advanced job did."""
+    return {"advanced": advance_due(db)}
+
+
+def advance_due(db: Session) -> list[dict]:
+    """The body of `advance-due`, also what the worker's `advance-waves` task runs (`app/tasks.py`)."""
     now = datetime.datetime.now(datetime.UTC)
     due = db.scalars(select(WriteConfigJob).where(WriteConfigJob.status == JobState.HALTED, WriteConfigJob.halted_reason == "WAVE_PAUSE",
                                                   WriteConfigJob.next_wave_at <= now).order_by(WriteConfigJob.next_wave_at)).all()
-    return {"advanced": [_resume(db, job) for job in due]}
+    return [_resume(db, job) for job in due]
 
 
 # ---------------------------------------------------------------- KPIs (PR-MGT-11)
@@ -1481,6 +1486,28 @@ def list_safeguard_refusals(invoker_id_: str | None = Query(default=None, alias=
                                "refusal": r.code, "detail": r.detail, "announced": r.notified} for r in page["items"]]}
 
 
+SAFEGUARD_REFUSAL_RETENTION_DAYS = int(os.environ.get("SAFEGUARD_REFUSAL_RETENTION_DAYS", "0") or 0)
+
+
+def purge_safeguard_refusals(db: Session, older_than_days: int) -> int:
+    """Delete the refusal records older than `older_than_days` days; returns how many. Subscriptions are not touched."""
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=older_than_days)
+    deleted = db.execute(delete(SafeguardRefusal).where(SafeguardRefusal.occurred_at < cutoff)).rowcount
+    db.commit()
+    return deleted
+
+
+@app.post("/safeguard-refusals/purge")
+def purge_refusals(older_than_days: int | None = None, db: Session = Depends(get_session)):
+    """MSG-4: delete the refusal records older than `older_than_days` (default `SAFEGUARD_REFUSAL_RETENTION_DAYS`; 422 when neither is set, so a
+    purge never runs with no age). The worker runs the same purge daily when the variable is set. Internal-only at R1."""
+    days = older_than_days if older_than_days is not None else SAFEGUARD_REFUSAL_RETENTION_DAYS
+    if days <= 0:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                              detail="older_than_days is required (and positive) unless SAFEGUARD_REFUSAL_RETENTION_DAYS is set")
+    return {"deleted": purge_safeguard_refusals(db, days), "olderThanDays": days}
+
+
 @app.get("/kpis/{name}")
 def compute_kpi(name: str, from_time: datetime.datetime, to_time: datetime.datetime | None = None, group_by: Literal[
                 "cell", "element", "sectorGroup", "incidentZone", "all"] = "cell", managed_element_ref: str | None = None,
@@ -1541,6 +1568,96 @@ def _publish_kpi_to_dme(definition: KpiDefinition, result: dict) -> tuple[int, i
             r1.post(f"/dme/data-jobs/{job['dataJobId']}/records", json={"payload": payload})
             delivered += 1
     return len(jobs), delivered
+
+
+# ---------------------------------------------------------------- KPI schedules (PR-MSG-4)
+
+
+class KpiScheduleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kpi: str
+    intervalSeconds: int = Field(ge=60, le=86400)
+    lookbackSeconds: int | None = Field(default=None, ge=60, le=604800)       # default: the interval, so consecutive windows meet
+    groupBy: Literal["cell", "element", "sectorGroup", "incidentZone", "all"] = "cell"
+    managedElementRef: str | None = None
+    cellId: str | None = None
+    enabled: bool = True
+
+
+def _schedule_view(row: KpiSchedule) -> dict:
+    last = as_utc(row.last_run_at) if row.last_run_at else None
+    return {"scheduleId": row.schedule_id, "kpi": row.kpi, "intervalSeconds": row.interval_seconds, "lookbackSeconds": row.lookback_seconds,
+            "groupBy": row.group_by, "managedElementRef": row.managed_element_ref, "cellId": row.cell_id, "enabled": row.enabled,
+            "lastRunAt": last, "lastStatus": row.last_status, "lastDetail": row.last_detail,
+            "nextRunAt": (last + datetime.timedelta(seconds=row.interval_seconds)) if (last and row.enabled) else None}
+
+
+@app.put("/kpi-schedules/{schedule_id}")
+def put_kpi_schedule(schedule_id: str, body: KpiScheduleRequest, db: Session = Depends(get_session)):
+    """MSG-4: publish `kpi` to DME every `intervalSeconds` (over the last `lookbackSeconds`), as `POST /kpis/{name}/publish` does. The worker runs it
+    (`ran-nf-oam-worker`); with no worker nothing happens. 404 for a KPI that is not defined. Replaces the schedule of that id (its `last*` stay).
+    Internal-only at R1."""
+    _kpi_or_404(db, body.kpi)
+    row = db.get(KpiSchedule, schedule_id) or KpiSchedule(schedule_id=schedule_id)
+    row.kpi, row.interval_seconds, row.group_by = body.kpi, body.intervalSeconds, body.groupBy
+    row.lookback_seconds = body.lookbackSeconds or body.intervalSeconds
+    row.managed_element_ref, row.cell_id, row.enabled = body.managedElementRef, body.cellId, body.enabled
+    db.add(row)
+    db.commit()
+    return _schedule_view(row)
+
+
+@app.get("/kpi-schedules")
+def list_kpi_schedules(db: Session = Depends(get_session)):
+    return {"items": [_schedule_view(r) for r in db.scalars(select(KpiSchedule).order_by(KpiSchedule.schedule_id)).all()]}
+
+
+@app.get("/kpi-schedules/{schedule_id}")
+def get_kpi_schedule(schedule_id: str, db: Session = Depends(get_session)):
+    row = db.get(KpiSchedule, schedule_id)
+    if row is None:
+        raise framework_error(FrameworkError.KPI_SCHEDULE_NOT_FOUND, detail=f"no KPI schedule {schedule_id!r}")
+    return _schedule_view(row)
+
+
+@app.delete("/kpi-schedules/{schedule_id}", status_code=204)
+def delete_kpi_schedule(schedule_id: str, db: Session = Depends(get_session)):
+    row = db.get(KpiSchedule, schedule_id)
+    if row is None:
+        raise framework_error(FrameworkError.KPI_SCHEDULE_NOT_FOUND, detail=f"no KPI schedule {schedule_id!r}")
+    db.delete(row)
+    db.commit()
+    return Response(status_code=204)
+
+
+def run_due_kpi_schedules(db: Session, now: datetime.datetime | None = None) -> list[dict]:
+    """What the worker's `publish-kpis` task runs: every enabled schedule whose interval has passed computes its KPI over its look-back window and
+    publishes it to DME. A schedule that fails is marked (`lastStatus` ERROR, `lastDetail`) and waits for its next interval; the others still run."""
+    now = now or datetime.datetime.now(datetime.UTC)
+    ran = []
+    for schedule_id in db.scalars(select(KpiSchedule.schedule_id).where(KpiSchedule.enabled.is_(True)).order_by(KpiSchedule.schedule_id)).all():
+        row = db.get(KpiSchedule, schedule_id)
+        last = as_utc(row.last_run_at) if row.last_run_at else None
+        if last and last + datetime.timedelta(seconds=row.interval_seconds) > now:
+            continue
+        status, detail = "OK", None
+        try:
+            definition = db.get(KpiDefinition, row.kpi)
+            if definition is None:
+                raise LookupError(f"no KPI {row.kpi!r}")
+            result = kpi.compute(db, definition, now - datetime.timedelta(seconds=row.lookback_seconds), now, row.group_by,
+                                 row.managed_element_ref, row.cell_id)
+            db.commit()                                      # end the read transaction before calling DME
+            jobs, delivered = _publish_kpi_to_dme(definition, result)
+            detail = f"{len(result['items'])} groups, {delivered} records to {jobs} data jobs"
+        except Exception as exc:                             # noqa: BLE001 (one schedule must not stop the others)
+            db.rollback()
+            status, detail = "ERROR", f"{type(exc).__name__}: {exc}"[:500]
+        row = db.get(KpiSchedule, schedule_id)
+        row.last_run_at, row.last_status, row.last_detail = now, status, detail
+        db.commit()
+        ran.append({"scheduleId": schedule_id, "status": status, "detail": detail})
+    return ran
 
 
 @app.get("/config-jobs/{job_id}")

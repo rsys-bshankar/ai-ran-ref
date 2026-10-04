@@ -10,6 +10,14 @@
 # Every service built from the shared Dockerfile answers GET /ready (smo_shared/health.py, PR-ST-7): 200 when its
 # database and SME answer, 503 otherwise, so `docker compose ps` shows what can take traffic. The gui-bff is not
 # one of them. The probe is Python because the image has no curl.
+# A worker (`python -m smo_shared.worker`) has no HTTP port: it touches a file on every tick, and is unhealthy when that file is a minute old.
+x-worker-probe: &worker_probe
+  test: ["CMD", "python", "-c", "import os, sys, time; sys.exit(0 if time.time() - os.path.getmtime('/tmp/worker-heartbeat') < 60 else 1)"]
+  interval: 15s
+  timeout: 5s
+  retries: 4
+  start_period: 30s
+
 x-ready-probe: &ready_probe
   test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=4)"]
   interval: 10s
@@ -175,6 +183,24 @@ services:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       R1_GATEWAY_URL: http://r1-termination:8000
+      SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
+
+  # PR-MSG-4: the same image, run as a worker. It does RAN NF OAM's periodic work (the wave advance of staged CM jobs, KPI schedules,
+  # the refusal purge; ran-nf-oam/app/tasks.py), so no request process ever runs a timer. Run as many as you like: a task runs at most
+  # once per interval across all of them, and a worker that dies frees its tasks for another.
+  ran-nf-oam-worker:
+    build: { context: ., args: { MODULE: ran-nf-oam } }
+    command: ["python", "-m", "smo_shared.worker"]
+    stop_grace_period: 30s
+    secrets: [db_password, enrollment_secret]
+    <<: *hardening
+    healthcheck: *worker_probe
+    depends_on: *wait_for_schema
+    environment:
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: the worker is the same SMO module (one identity, ST-4)
+      <<: *db_env
+      R1_GATEWAY_URL: http://r1-termination:8000
+      SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
 
   mock-o1-adaptor:
     build: { context: ., args: { MODULE: mock-o1-adaptor } }

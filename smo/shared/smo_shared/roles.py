@@ -43,6 +43,8 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         # AI-10.6: who is told about refusals, and the record of them (it names other rApps)
         ("/ran-nf-oam", ("GET", "POST", "DELETE"), r"^/safeguard-subscriptions(/[^/]+)?$"),
         ("/ran-nf-oam", ("GET",), r"^/safeguard-refusals$"),
+        ("/ran-nf-oam", ("POST",), r"^/safeguard-refusals/purge$"),
+        ("/ran-nf-oam", ("PUT", "DELETE"), r"^/kpi-schedules/[^/]+$"),
     ))
 
 

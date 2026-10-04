@@ -5,6 +5,11 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Added
+- A worker for periodic work (PR-MSG-4): `python -m smo_shared.worker` runs a module's `app/tasks.py` as its own process (the same image; compose service `ran-nf-oam-worker`), so a request process never runs a timer. Run as many workers as you like: a task runs at most once per interval across all of them, and a worker that dies frees its tasks for another. A task that fails is logged and retried after `SMO_WORKER_FAILURE_BACKOFF_SECONDS` (default 30); `SMO_WORKER_TICK_SECONDS` (default 5) is how often a worker looks. It has no port: its healthcheck reads a heartbeat file. RAN NF OAM's worker does three things: it **advances staged CM jobs** whose pause between waves has elapsed (what `POST /config-jobs/advance-due` did when called), **publishes scheduled KPIs**, and **purges old refusal records**. Without a worker none of these happens by itself; the routes still work when called.
+- KPI schedules: `PUT /ran-nf-oam/kpi-schedules/{id}` (`kpi`, `intervalSeconds` 60 to 86400, `lookbackSeconds` default the interval, `groupBy`, `managedElementRef`, `cellId`, `enabled`) publishes a KPI to DME every interval, as `POST /kpis/{name}/publish` does; `GET` lists them and says what the last run did (`lastRunAt`, `lastStatus`, `lastDetail`, `nextRunAt`); `DELETE` removes one. A run that fails is marked `ERROR` on the schedule and waits for its next interval. `PUT`/`DELETE` are internal-only at the gateway. Schema revision `0019` (`kpi_schedule`).
+- Refusal records can be purged: `POST /ran-nf-oam/safeguard-refusals/purge` (`older_than_days`, or `SAFEGUARD_REFUSAL_RETENTION_DAYS`; 422 with neither, so a purge never runs without an age) and the worker purges daily when the variable is set. Default `0` keeps everything. Internal-only at the gateway.
+
 ## [0.2.0] - 2026-10-04
 
 Rollback, staged rollouts and KPIs, and the safeguards an rApp is held to: who may call what, how much it may change, and a record of every refusal. The schema moves from revision 0001 to `0018`, all additive.
