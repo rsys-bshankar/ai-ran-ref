@@ -60,7 +60,7 @@ def gateway(monkeypatch):
 INTERNAL_ONLY_CALLS = [("PUT", "/ran-nf-oam/rapp-limits/x"), ("DELETE", "/ran-nf-oam/rapp-limits/x"), ("PUT", "/ran-nf-oam/kpi-definitions/k"),
                        ("DELETE", "/ran-nf-oam/kpi-definitions/k"), ("POST", "/ran-nf-oam/config-history/purge"), ("PUT", "/ran-nf-oam/rapp-kill/x"),
                        ("DELETE", "/ran-nf-oam/rapp-kill/x"), ("GET", "/ran-nf-oam/rapp-kill"), ("PUT", "/rapp-mgmt/instances/i/kill"),
-                       ("DELETE", "/rapp-mgmt/instances/i/kill"), ("GET", "/ran-nf-oam/safeguard-refusals"), ("GET", "/ran-nf-oam/safeguard-subscriptions"),
+                       ("DELETE", "/rapp-mgmt/instances/i/kill"), ("POST", "/ran-nf-oam/kpi-definitions/standard"), ("POST", "/ran-nf-oam/kpis/k/publish"), ("GET", "/ran-nf-oam/safeguard-refusals"), ("GET", "/ran-nf-oam/safeguard-subscriptions"),
                        ("POST", "/ran-nf-oam/safeguard-subscriptions"), ("DELETE", "/ran-nf-oam/safeguard-subscriptions/s")]
 
 
@@ -78,7 +78,7 @@ def test_an_smo_module_is_not_refused_there(gateway, method, path):
     assert len(gateway["forwarded"]) == 1
 
 
-@pytest.mark.parametrize("method, path", [("GET", "/ran-nf-oam/rapp-limits/x"), ("GET", "/ran-nf-oam/rapp-kill/x"), ("GET", "/ran-nf-oam/kpi-definitions"), ("GET", "/ran-nf-oam/kpis/k"),
+@pytest.mark.parametrize("method, path", [("GET", "/ran-nf-oam/rapp-limits/x"), ("GET", "/ran-nf-oam/rapp-kill/x"), ("GET", "/ran-nf-oam/kpi-definitions"), ("GET", "/ran-nf-oam/kpi-definitions/standard"), ("GET", "/ran-nf-oam/kpis/k"),
                                           ("POST", "/ran-nf-oam/config-jobs"), ("PUT", "/ran-nf-oam/rapp-limits/x/y"), ("PUT", "/sme/rapp-limits/x")])
 def test_other_routes_are_open_to_an_rapp_as_before(gateway, method, path):
     assert client.request(method, path, headers=AUTH).status_code == 200

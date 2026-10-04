@@ -165,3 +165,51 @@ def compute(db: Session, definition: KpiDefinition, start: datetime.datetime, en
         items.append({"group": {}, "value": None, "samples": 0, "counters": {c["variable"]: None for c in table}, "reason": "NO_DATA"})
     return {"kpi": definition.name, "unit": definition.unit, "from": start.isoformat(), "to": end.isoformat(), "groupBy": group_by,
             "filesScanned": scanned, "truncated": truncated or len(grouped) > MAX_GROUPS, "items": items}
+
+
+# MGT-11.6: the KPIs this service seeds. They are defined over the PM counters this build carries (the names its sample rApps read and its mock NF
+# reports, TS 28.552 style), with the usual shape of the KPI: a ratio is the group's summed counters divided, a level is the mean of its samples.
+# They are NOT the TS 28.554 definitions, which are not reproduced here: an operator who needs those defines them (`PUT /kpi-definitions/{name}`)
+# over the counters their NFs report.
+HO_FAILURES = "(fail_too_late + fail_too_early + fail_wrong_cell)"
+STANDARD_KPIS = [
+    {"name": "dl_prb_utilization", "unit": "percent", "formula": "prb",
+     "description": "Mean downlink PRB utilisation (RRU.PrbTotDl is reported as a percentage per sample)",
+     "counters": [{"counter": "RRU.PrbTotDl", "variable": "prb", "aggregation": "avg"}]},
+    {"name": "rrc_connected_ues_mean", "unit": "ues", "formula": "ues",
+     "description": "Mean number of RRC-connected UEs",
+     "counters": [{"counter": "RRC.ConnMean", "variable": "ues", "aggregation": "avg"}]},
+    {"name": "dl_ue_throughput", "unit": "Mbit/s", "formula": "thp",
+     "description": "Mean downlink UE throughput",
+     "counters": [{"counter": "DRB.UEThpDl", "variable": "thp", "aggregation": "avg"}]},
+    {"name": "handover_failure_rate", "unit": "percent", "formula": f"100 * {HO_FAILURES} / att",
+     "description": "Handovers that failed too late, too early or to the wrong cell, of the handovers attempted",
+     "counters": [{"counter": "MM.HoExeAtt", "variable": "att", "aggregation": "sum"},
+                  {"counter": "MM.HoFailTooLate", "variable": "fail_too_late", "aggregation": "sum"},
+                  {"counter": "MM.HoFailTooEarly", "variable": "fail_too_early", "aggregation": "sum"},
+                  {"counter": "MM.HoFailWrongCell", "variable": "fail_wrong_cell", "aggregation": "sum"}]},
+    {"name": "handover_success_rate", "unit": "percent", "formula": f"100 * (att - {HO_FAILURES}) / att",
+     "description": "Handovers that did not fail too late, too early or to the wrong cell, of the handovers attempted",
+     "counters": [{"counter": "MM.HoExeAtt", "variable": "att", "aggregation": "sum"},
+                  {"counter": "MM.HoFailTooLate", "variable": "fail_too_late", "aggregation": "sum"},
+                  {"counter": "MM.HoFailTooEarly", "variable": "fail_too_early", "aggregation": "sum"},
+                  {"counter": "MM.HoFailWrongCell", "variable": "fail_wrong_cell", "aggregation": "sum"}]},
+    {"name": "handover_ping_pong_rate", "unit": "percent", "formula": "100 * ping_pong / att",
+     "description": "Handovers that bounced straight back, of the handovers attempted",
+     "counters": [{"counter": "MM.HoExeAtt", "variable": "att", "aggregation": "sum"},
+                  {"counter": "MM.HoPingPong", "variable": "ping_pong", "aggregation": "sum"}]},
+]
+
+
+def seed_standard_kpis(db: Session) -> tuple[list[str], list[str]]:
+    """(created, kept): inserts each standard KPI that is not defined yet and leaves one that is (an operator's own edit of it stays). Idempotent."""
+    created, kept = [], []
+    for spec in STANDARD_KPIS:
+        if db.get(KpiDefinition, spec["name"]) is not None:
+            kept.append(spec["name"])
+            continue
+        table = normalise_counters(spec["formula"], spec["counters"])              # the seed is held to the same rules as any definition
+        db.add(KpiDefinition(name=spec["name"], formula=spec["formula"], counters=table, unit=spec["unit"], description=spec["description"]))
+        created.append(spec["name"])
+    return created, kept
+

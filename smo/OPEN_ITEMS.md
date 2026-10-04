@@ -910,8 +910,6 @@ Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-11.6 | Seed a standard KPI set | Seed test | MGT-11.5 |
-| MGT-11.7 | Expose results as a DME data type | rApp can read it | MGT-11.5 |
 
 #### PR-MGT-12 — PM collection at scale
 
