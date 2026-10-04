@@ -1,7 +1,7 @@
 // Pure domain helpers shared by pages: state machines as the modules define
 // them, alarm severity handling, and turning reports into chart series.
 
-import type { Alarm } from "../api/types";
+import type { Alarm, ConfigJob, KpiCounterSpec, KpiGuardResult, RollbackPreview } from "../api/types";
 
 // ---------------------------------------------------------------- AI/ML model FSMs
 // aimgf/app/statemachine.py — Wave 2 split ModelLifecycle (a model's own
@@ -264,4 +264,141 @@ export function limitsPayload(form: LimitsForm): { ok: true; body: Record<string
 export function limitsForm(limits: LimitsLike | null | undefined): LimitsForm {
   const text = (n: number | null | undefined) => (n == null ? "" : String(n));
   return { jobsPerHour: text(limits?.maxConfigJobsPerHour), elementsPerJob: text(limits?.maxElementsPerJob), changePercent: text(limits?.maxChangePercent) };
+}
+
+// ---------------------------------------------------------------- change management (staged jobs, rollback, KPI guard)
+
+
+export type WaveAction = "continue" | "halt" | "abort";
+
+/** What an operator may do to a CM job between waves. Only a HALTED job can be driven; a pause that has not elapsed goes on only when forced. */
+export function waveActions(job: Pick<ConfigJob, "status" | "haltedReason" | "nextWaveAt">, now: Date = new Date()): { action: WaveAction; force: boolean }[] {
+  if (job.status !== "HALTED") return [];
+  if (job.haltedReason === "WAVE_PAUSE") {
+    const waiting = job.nextWaveAt != null && new Date(job.nextWaveAt).getTime() > now.getTime();
+    return [{ action: "continue", force: waiting }, { action: "halt", force: false }, { action: "abort", force: false }];
+  }
+  return [{ action: "continue", force: false }, { action: "abort", force: false }];
+}
+
+/** "Wave 2 of 4", or "One wave" for a job that was not staged. */
+export function waveProgress(job: Pick<ConfigJob, "waveCount" | "currentWave" | "waveSize">): string {
+  const count = job.waveCount ?? 1;
+  return count <= 1 ? "One wave" : `Wave ${Math.min(job.currentWave ?? 0, count)} of ${count}`;
+}
+
+export const HALT_MEANING: Record<string, string> = {
+  WAVE_PAUSE: "Waiting between waves",
+  GATE_FAILED: "The health gate failed after a wave",
+  OPERATOR_HALT: "Halted by an operator",
+  REVERT_REFUSED: "The automatic revert could not be done safely",
+};
+
+/** A job can be undone when it applied something; a job that only had rejections has nothing to restore. */
+export function canRollback(job: Pick<ConfigJob, "subChanges">): boolean {
+  return job.subChanges.some((s) => s.status === "APPLIED");
+}
+
+/** The differences of a rollback preview in words: "ME-1 txPower: expected 20, found 99". */
+export function describeDifferences(preview: Pick<RollbackPreview, "changedSince">): string[] {
+  return preview.changedSince.map((d) => `${d.managedFunctionRef ?? d.managedElementRef} ${d.attribute}: expected ${JSON.stringify(d.expected)}, found ${JSON.stringify(d.actual)}`);
+}
+
+/** One line for the KPI guard's last answer. */
+export function describeGuardResult(result: KpiGuardResult | null | undefined, checkedAt: string | null | undefined): string {
+  if (!result) return "Not checked yet";
+  const pending = checkedAt ? "" : " (will be tried again)";
+  switch (result.verdict) {
+    case "OK": return "The KPI held";
+    case "REGRESSED": return result.reverted ? "The KPI regressed; the regressed elements were rolled back"
+      : `The KPI regressed; not reverted${result.error ? `: ${result.error}` : ""}`;
+    case "INSUFFICIENT_DATA": return `Too little data to say${pending}`;
+    default: return `The check failed${result.error ? `: ${result.error}` : ""}${pending}`;
+  }
+}
+
+/** 600 -> "10 min", 3600 -> "1 h", 90 -> "90 s", 172800 -> "2 d". */
+export function describeSeconds(seconds: number): string {
+  if (seconds % 86_400 === 0) return `${seconds / 86_400} d`;
+  if (seconds % 3_600 === 0) return `${seconds / 3_600} h`;
+  if (seconds % 60 === 0) return `${seconds / 60} min`;
+  return `${seconds} s`;
+}
+
+/** The counters text of the define-a-KPI form: an array of {counter, variable?, aggregation?}, or the problem to show. */
+export function parseCounters(text: string): { ok: true; value: KpiCounterSpec[] } | { ok: false; error: string } {
+  let raw: unknown;
+  try { raw = JSON.parse(text); } catch (e) { return { ok: false, error: `Not valid JSON: ${(e as Error).message}` }; }
+  if (!Array.isArray(raw)) return { ok: false, error: "Counters must be a JSON array" };
+  const aggregations = ["sum", "avg", "min", "max", "last", "count"];
+  const out: KpiCounterSpec[] = [];
+  for (const [i, item] of raw.entries()) {
+    if (!item || typeof item !== "object" || typeof (item as { counter?: unknown }).counter !== "string" || !(item as { counter: string }).counter) {
+      return { ok: false, error: `Counter ${i + 1} needs a "counter" name` };
+    }
+    const { counter, variable, aggregation } = item as { counter: string; variable?: unknown; aggregation?: unknown };
+    if (aggregation !== undefined && !aggregations.includes(String(aggregation))) return { ok: false, error: `Counter ${i + 1}: aggregation must be one of ${aggregations.join(", ")}` };
+    out.push({ counter, variable: typeof variable === "string" ? variable : null, aggregation: (aggregation as KpiCounterSpec["aggregation"]) ?? "sum" });
+  }
+  return { ok: true, value: out };
+}
+
+export interface StagedForm { waveSize: string; wavePauseSeconds: string; gateMaxNewAlarms: string; onGateFailure: "halt" | "revert" }
+export interface GuardForm { kpi: string; baselineMinutes: string; observationMinutes: string; maxRegressionPercent: string; direction: "higher" | "lower"; revert: boolean }
+
+/** The optional staged-rollout and KPI-guard fields of POST /config-jobs from the form; blank staged fields are left out so a plain job stays plain. */
+export function stagedPayload(staged: StagedForm, guard: GuardForm | null): { ok: true; body: Record<string, unknown> } | { ok: false; error: string } {
+  const body: Record<string, unknown> = {};
+  const whole = (text: string, name: string, min: number, key: string): string | null => {
+    const raw = text.trim();
+    if (raw === "") return null;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < min) return `${name} must be a whole number, at least ${min}`;
+    body[key] = n;
+    return null;
+  };
+  const problem = whole(staged.waveSize, "Wave size", 1, "waveSize") ?? whole(staged.wavePauseSeconds, "Pause between waves", 0, "wavePauseSeconds")
+    ?? whole(staged.gateMaxNewAlarms, "New alarms allowed", 0, "gateMaxNewAlarms");
+  if (problem) return { ok: false, error: problem };
+  if (body.waveSize !== undefined) body.onGateFailure = staged.onGateFailure;
+  if (guard && guard.kpi) {
+    const minutes = (text: string, name: string): number | string => { const n = Number(text); return Number.isInteger(n) && n >= 1 && n <= 10_080 ? n : `${name} must be a whole number of minutes, 1 to 10080`; };
+    const baseline = minutes(guard.baselineMinutes, "Baseline");
+    const observation = minutes(guard.observationMinutes, "Observation");
+    const percent = Number(guard.maxRegressionPercent);
+    if (typeof baseline === "string") return { ok: false, error: baseline };
+    if (typeof observation === "string") return { ok: false, error: observation };
+    if (!Number.isFinite(percent) || percent < 0) return { ok: false, error: "Allowed regression must be a number, 0 or more" };
+    body.kpiGuard = { kpi: guard.kpi, baselineMinutes: baseline, observationMinutes: observation, maxRegressionPercent: percent, direction: guard.direction, revert: guard.revert };
+  }
+  return { ok: true, body };
+}
+
+// ---------------------------------------------------------------- KPI definitions and schedules
+
+/** The name rule of RAN NF OAM (`kpi.NAME`), plus "standard", which names the seeded set. */
+export function kpiNameProblem(name: string): string | null {
+  if (!/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(name)) return "A KPI name starts with a letter and uses letters, digits, _ . - (64 at most)";
+  if (name === "standard") return "'standard' names the seeded set, not a KPI";
+  return null;
+}
+
+export interface ScheduleForm {
+  kpi: string; intervalSeconds: string; lookbackSeconds: string; groupBy: string; managedElementRef: string; cellId: string; enabled: boolean;
+}
+
+/** The body of PUT /kpi-schedules/{id}; the bounds are RAN NF OAM's. A blank look-back means "the interval". */
+export function schedulePayload(f: ScheduleForm): { ok: true; body: Record<string, unknown> } | { ok: false; error: string } {
+  if (!f.kpi) return { ok: false, error: "Choose a KPI" };
+  const interval = Number(f.intervalSeconds);
+  if (!Number.isInteger(interval) || interval < 60 || interval > 86_400) return { ok: false, error: "The interval must be a whole number of seconds, 60 to 86400" };
+  const body: Record<string, unknown> = { kpi: f.kpi, intervalSeconds: interval, groupBy: f.groupBy, enabled: f.enabled };
+  if (f.lookbackSeconds.trim() !== "") {
+    const look = Number(f.lookbackSeconds);
+    if (!Number.isInteger(look) || look < 60 || look > 604_800) return { ok: false, error: "The look-back must be a whole number of seconds, 60 to 604800" };
+    body.lookbackSeconds = look;
+  }
+  if (f.managedElementRef.trim()) body.managedElementRef = f.managedElementRef.trim();
+  if (f.cellId.trim()) body.cellId = f.cellId.trim();
+  return { ok: true, body };
 }

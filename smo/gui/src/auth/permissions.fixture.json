@@ -323,6 +323,48 @@
   },
   {
     "method": "POST",
+    "pattern": "^/ran-nf-oam/config-jobs/[^/]+/rollback$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/config-jobs/[^/]+/(continue|halt|abort)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/ran-nf-oam/kpi-definitions/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/kpi-definitions/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/kpi-definitions/standard$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/ran-nf-oam/kpi-schedules/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/kpi-schedules/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/ran-nf-oam/(pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)$",
     "role": "operator",
     "queryMatch": {}

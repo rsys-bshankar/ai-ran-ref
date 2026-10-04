@@ -114,7 +114,36 @@ export interface PmSubscription { subscriptionId: string; managedElementRef: str
 export interface FmSubscription { subscriptionId: string; managedElementRef: string; deliveryMethod: string; southboundEngine: string }
 export interface O1Endpoint { endpointId: string; managedElementRef: string; adaptorUri: string; protocolSupport: string[]; registeredVia: string; healthStatus: string; lastHeartbeatAt: string | null }
 export interface ConfigJobSummary { jobId: string; requestedBy: string; scope: string; status: string; msacRole: string | null }
-export interface ConfigJob { jobId: string; status: string; subChanges: { managedElementRef: string; operation: string; status: string; rejectionReason: string | null }[] }
+export interface KpiGuardSettings {
+  kpi: string; baselineMinutes: number; observationMinutes: number; maxRegressionPercent: number; direction: "higher" | "lower"; minSamples: number;
+  revert: boolean; msacRole: string | null;
+}
+export interface KpiGuardResult {
+  verdict: "OK" | "REGRESSED" | "INSUFFICIENT_DATA" | "ERROR"; reverted?: boolean; revertJobId?: string | null; error?: string; checkedAt?: string;
+  elements?: { managedElementRef: string; verdict: string; baseline: number | null; observed: number | null; changePercent: number | null }[];
+}
+export interface ConfigSubChange {
+  managedElementRef: string; managedFunctionRef?: string | null; operation: string; status: string; rejectionReason: string | null;
+  rejectionDetail?: string | null; wave?: number; attempts?: number;
+}
+export interface ConfigJob {
+  jobId: string; status: string; requestedBy?: string; rollbackOf?: string | null; rollbackForced?: boolean;
+  waveSize?: number | null; waveCount?: number; currentWave?: number; wavePauseSeconds?: number; onGateFailure?: string; gateMaxNewAlarms?: number;
+  haltedReason?: string | null; haltedDetail?: string | null; nextWaveAt?: string | null;
+  kpiGuard?: KpiGuardSettings | null; kpiGuardResult?: KpiGuardResult | null; kpiGuardCheckedAt?: string | null;
+  subChanges: ConfigSubChange[];
+}
+/** POST /config-jobs/{id}/rollback with dryRun: what would be written, and what has changed since the job wrote it. */
+export interface RollbackPreview {
+  dryRun: true; rollbackOf: string; status: "VALIDATED" | "CHANGED_SINCE"; changes: unknown[];
+  changedSince: { managedElementRef: string; managedFunctionRef: string | null; attribute: string; expected: unknown; actual: unknown }[];
+}
+export interface KpiCounterSpec { counter: string; variable?: string | null; aggregation: "sum" | "avg" | "min" | "max" | "last" | "count" }
+export interface KpiDef { name: string; formula: string; counters: KpiCounterSpec[]; unit: string | null; description: string | null }
+export interface KpiScheduleRow {
+  scheduleId: string; kpi: string; intervalSeconds: number; lookbackSeconds: number; groupBy: string; managedElementRef: string | null; cellId: string | null;
+  enabled: boolean; lastRunAt: string | null; lastStatus: "OK" | "ERROR" | null; lastDetail: string | null; nextRunAt: string | null;
+}
 export interface SwmJob { jobId: string; managedElementRef: string; ruInstanceId: string | null; phase: string; status: string }
 
 // ---- A1 Related / Intent Service

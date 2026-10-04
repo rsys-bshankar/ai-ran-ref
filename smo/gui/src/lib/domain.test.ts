@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { completionRoute, countBySeverity, describeLimits, limitsForm, limitsPayload, keepAliveRemaining, metricSeries, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
+import { completionRoute, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describeSeconds, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, waveProgress, keepAliveRemaining, metricSeries, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
 
 describe("model lifecycle", () => {
   it("maps each state to the FSM's next legal action", () => {
@@ -117,5 +117,109 @@ describe("rApp limits", () => {
   it("starts the form from the limits in force", () => {
     expect(limitsForm({ maxConfigJobsPerHour: 20, maxElementsPerJob: null, maxChangePercent: 10 })).toEqual({ jobsPerHour: "20", elementsPerJob: "", changePercent: "10" });
     expect(limitsForm(null)).toEqual({ jobsPerHour: "", elementsPerJob: "", changePercent: "" });
+  });
+});
+
+describe("staged CM jobs", () => {
+  const now = new Date("2026-10-04T12:00:00Z");
+  it("offers the wave actions only to a halted job, and forces a pause that has not elapsed", () => {
+    expect(waveActions({ status: "COMPLETED", haltedReason: null, nextWaveAt: null }, now)).toEqual([]);
+    expect(waveActions({ status: "PROCESSING", haltedReason: null, nextWaveAt: null }, now)).toEqual([]);
+    expect(waveActions({ status: "HALTED", haltedReason: "WAVE_PAUSE", nextWaveAt: "2026-10-04T13:00:00Z" }, now)).toEqual([
+      { action: "continue", force: true }, { action: "halt", force: false }, { action: "abort", force: false }]);
+    expect(waveActions({ status: "HALTED", haltedReason: "WAVE_PAUSE", nextWaveAt: "2026-10-04T11:00:00Z" }, now)[0]).toEqual({ action: "continue", force: false });
+  });
+  it("offers continue and abort, not halt, after a failed gate or an operator halt", () => {
+    for (const reason of ["GATE_FAILED", "OPERATOR_HALT", "REVERT_REFUSED"]) {
+      expect(waveActions({ status: "HALTED", haltedReason: reason, nextWaveAt: null }, now).map((a) => a.action)).toEqual(["continue", "abort"]);
+    }
+  });
+  it("shows the wave progress", () => {
+    expect(waveProgress({ waveCount: 4, currentWave: 2, waveSize: 2 })).toBe("Wave 2 of 4");
+    expect(waveProgress({ waveCount: 1, currentWave: 1, waveSize: null })).toBe("One wave");
+    expect(waveProgress({})).toBe("One wave");
+    expect(waveProgress({ waveCount: 3, currentWave: 9, waveSize: 1 })).toBe("Wave 3 of 3");
+  });
+  it("lets a job be rolled back only when it applied something", () => {
+    expect(canRollback({ subChanges: [{ managedElementRef: "a", operation: "merge", status: "REJECTED", rejectionReason: "x" }] })).toBe(false);
+    expect(canRollback({ subChanges: [{ managedElementRef: "a", operation: "merge", status: "APPLIED", rejectionReason: null }] })).toBe(true);
+    expect(canRollback({ subChanges: [] })).toBe(false);
+  });
+});
+
+describe("rollback and the KPI guard in words", () => {
+  it("lists what changed since the job wrote it", () => {
+    expect(describeDifferences({ changedSince: [{ managedElementRef: "ME-1", managedFunctionRef: null, attribute: "txPower", expected: 20, actual: "99" }] }))
+      .toEqual(['ME-1 txPower: expected 20, found "99"']);
+    expect(describeDifferences({ changedSince: [] })).toEqual([]);
+  });
+  it("says what the guard found", () => {
+    expect(describeGuardResult(null, null)).toBe("Not checked yet");
+    expect(describeGuardResult({ verdict: "OK" }, "t")).toBe("The KPI held");
+    expect(describeGuardResult({ verdict: "REGRESSED", reverted: true }, "t")).toContain("rolled back");
+    expect(describeGuardResult({ verdict: "REGRESSED", reverted: false, error: "2 value(s) differ" }, "t")).toBe("The KPI regressed; not reverted: 2 value(s) differ");
+    expect(describeGuardResult({ verdict: "INSUFFICIENT_DATA" }, null)).toContain("tried again");
+    expect(describeGuardResult({ verdict: "INSUFFICIENT_DATA" }, "t")).not.toContain("tried again");
+    expect(describeGuardResult({ verdict: "ERROR", error: "boom" }, "t")).toBe("The check failed: boom");
+  });
+  it("writes intervals the way an operator reads them", () => {
+    expect([90, 600, 3600, 7200, 172800, 61].map(describeSeconds)).toEqual(["90 s", "10 min", "1 h", "2 h", "2 d", "61 s"]);
+  });
+});
+
+describe("KPI definition and staged-job forms", () => {
+  it("checks the counters text before it is sent", () => {
+    expect(parseCounters('[{"counter":"ok","variable":"ok","aggregation":"sum"}]')).toEqual({ ok: true, value: [{ counter: "ok", variable: "ok", aggregation: "sum" }] });
+    expect(parseCounters('[{"counter":"ok"}]')).toEqual({ ok: true, value: [{ counter: "ok", variable: null, aggregation: "sum" }] });
+    expect(parseCounters("{}")).toMatchObject({ ok: false, error: "Counters must be a JSON array" });
+    expect(parseCounters("[1]")).toMatchObject({ ok: false });
+    expect(parseCounters('[{"counter":"ok","aggregation":"median"}]')).toMatchObject({ ok: false, error: expect.stringContaining("aggregation") });
+    expect(parseCounters("not json")).toMatchObject({ ok: false, error: expect.stringContaining("Not valid JSON") });
+  });
+  const blank = { waveSize: "", wavePauseSeconds: "", gateMaxNewAlarms: "", onGateFailure: "halt" as const };
+  const guard = { kpi: "succ", baselineMinutes: "60", observationMinutes: "60", maxRegressionPercent: "10", direction: "higher" as const, revert: true };
+  it("leaves a plain job plain", () => {
+    expect(stagedPayload(blank, null)).toEqual({ ok: true, body: {} });
+    expect(stagedPayload(blank, { ...guard, kpi: "" })).toEqual({ ok: true, body: {} });
+  });
+  it("builds the staged and guard fields", () => {
+    expect(stagedPayload({ waveSize: "2", wavePauseSeconds: "300", gateMaxNewAlarms: "0", onGateFailure: "revert" }, guard)).toEqual({ ok: true, body: {
+      waveSize: 2, wavePauseSeconds: 300, gateMaxNewAlarms: 0, onGateFailure: "revert",
+      kpiGuard: { kpi: "succ", baselineMinutes: 60, observationMinutes: 60, maxRegressionPercent: 10, direction: "higher", revert: true } } });
+  });
+  it("refuses what the backend would refuse", () => {
+    expect(stagedPayload({ ...blank, waveSize: "0" }, null)).toMatchObject({ ok: false });
+    expect(stagedPayload({ ...blank, waveSize: "1.5" }, null)).toMatchObject({ ok: false });
+    expect(stagedPayload({ ...blank, wavePauseSeconds: "-1" }, null)).toMatchObject({ ok: false });
+    expect(stagedPayload(blank, { ...guard, observationMinutes: "0" })).toMatchObject({ ok: false });
+    expect(stagedPayload(blank, { ...guard, baselineMinutes: "10081" })).toMatchObject({ ok: false });
+    expect(stagedPayload(blank, { ...guard, maxRegressionPercent: "-5" })).toMatchObject({ ok: false });
+    expect(stagedPayload(blank, { ...guard, maxRegressionPercent: "abc" })).toMatchObject({ ok: false });
+  });
+});
+
+describe("KPI names and schedules", () => {
+  it("applies the backend's name rule", () => {
+    expect(kpiNameProblem("dl_prb_utilization")).toBeNull();
+    expect(kpiNameProblem("a.b-c_1")).toBeNull();
+    expect(kpiNameProblem("1abc")).not.toBeNull();
+    expect(kpiNameProblem("has space")).not.toBeNull();
+    expect(kpiNameProblem("")).not.toBeNull();
+    expect(kpiNameProblem("a".repeat(65))).not.toBeNull();
+    expect(kpiNameProblem("standard")).toContain("seeded");
+  });
+  const form = { kpi: "succ", intervalSeconds: "600", lookbackSeconds: "", groupBy: "cell", managedElementRef: "", cellId: "", enabled: true };
+  it("builds the schedule body and leaves blanks out", () => {
+    expect(schedulePayload(form)).toEqual({ ok: true, body: { kpi: "succ", intervalSeconds: 600, groupBy: "cell", enabled: true } });
+    expect(schedulePayload({ ...form, lookbackSeconds: "3600", managedElementRef: " ME-1 ", cellId: "7", enabled: false })).toEqual({
+      ok: true, body: { kpi: "succ", intervalSeconds: 600, lookbackSeconds: 3600, groupBy: "cell", enabled: false, managedElementRef: "ME-1", cellId: "7" } });
+  });
+  it("refuses what the backend would refuse", () => {
+    expect(schedulePayload({ ...form, kpi: "" })).toMatchObject({ ok: false });
+    expect(schedulePayload({ ...form, intervalSeconds: "59" })).toMatchObject({ ok: false });
+    expect(schedulePayload({ ...form, intervalSeconds: "86401" })).toMatchObject({ ok: false });
+    expect(schedulePayload({ ...form, intervalSeconds: "60.5" })).toMatchObject({ ok: false });
+    expect(schedulePayload({ ...form, lookbackSeconds: "30" })).toMatchObject({ ok: false });
+    expect(schedulePayload({ ...form, lookbackSeconds: "604801" })).toMatchObject({ ok: false });
   });
 });

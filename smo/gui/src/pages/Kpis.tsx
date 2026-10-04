@@ -9,8 +9,9 @@ import { Sparkline } from "../components/charts";
 import { ActionButton, Can, Card, DataTable, Field, Id, Json, Modal, PageHeader, StateBadge, Tabs, useHashTab } from "../components/ui";
 import { formatTime, metricSeries, numericMetricKeys, parseJsonObject } from "../lib/domain";
 import { Mlmf } from "./Aiml";
+import { KpiDefinitions } from "./KpiDefinitions";
 
-const TABS = ["rapp", "pm", "mlmf", "analytics", "assurance", "ocloud"] as const;
+const TABS = ["rapp", "pm", "definitions", "mlmf", "analytics", "assurance", "ocloud"] as const;
 
 export function Kpis() {
   const [tab, setTab] = useHashTab(TABS, "rapp");
@@ -18,11 +19,12 @@ export function Kpis() {
     <>
       <PageHeader title="KPIs & Assurance" subtitle="rApp, RAN, model and O-Cloud performance, plus SA SMOS closed-loop assurance" />
       <Tabs value={tab} onChange={setTab} tabs={[
-        { id: "rapp", label: "rApp performance" }, { id: "pm", label: "PM subscriptions" }, { id: "mlmf", label: "Model KPIs (MLMF)" },
+        { id: "rapp", label: "rApp performance" }, { id: "pm", label: "PM subscriptions" }, { id: "definitions", label: "KPI definitions" }, { id: "mlmf", label: "Model KPIs (MLMF)" },
         { id: "analytics", label: "RAN Analytics" }, { id: "assurance", label: "Assurance (SA SMOS)" }, { id: "ocloud", label: "O-Cloud performance" },
       ]} />
       {tab === "rapp" && <RappPerformance />}
       {tab === "pm" && <PmSubscriptions />}
+      {tab === "definitions" && <KpiDefinitions />}
       {tab === "mlmf" && <Mlmf />}
       {tab === "analytics" && <Analytics />}
       {tab === "assurance" && <Assurance />}
