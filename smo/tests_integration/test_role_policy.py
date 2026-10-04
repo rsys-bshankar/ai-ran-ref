@@ -1,6 +1,6 @@
 """PR-SEC-14: the role policy (`smo_shared/roles.py`) against the apps' real route tables.
 
-The policy is a deny-list of (R1 prefix, methods, path); a list like that rots when a route is renamed. So: every entry must match a route that
+The policy is a deny-list of (R1 prefix, methods, path) plus an allow-list of the changes an rApp may make (`RAPP_MAY_CHANGE`); lists like that rot when a route is renamed. So: every entry must match a route that
 exists, and a walk of every route of every backend through the real gateway app must show an rApp refused on exactly the routes the policy names and
 an SMO module refused on none.
 """
@@ -60,13 +60,22 @@ def test_every_policy_entry_names_a_route_that_exists(loaded_apps):
         assert found, f"{module} {sorted(methods)} {pattern.pattern} matches no route of {R1_PREFIX_TO_SERVICE[module]}: renamed or removed?"
 
 
+def test_every_allow_list_rule_names_a_route_that_exists(loaded_apps):
+    for module, rules in roles.RAPP_MAY_CHANGE.items():
+        if rules is None:
+            continue
+        for methods, pattern in rules:
+            found = [(m, p) for m, p in _real_routes(loaded_apps, module) if m in methods and pattern.match(p)]
+            assert found, f"{module} {sorted(methods)} {pattern.pattern} allows an rApp a route that does not exist in {R1_PREFIX_TO_SERVICE[module]}"
+
+
 def test_an_rapp_is_refused_on_exactly_the_routes_the_policy_names_and_a_module_on_none(loaded_apps, gateway):
     client, upstream_calls = gateway
     refused_to_rapp, wrongly_refused_to_module, walked = [], [], 0
     for prefix in sorted(set(R1_PREFIX_TO_SERVICE) - {"/dme-push", "/dme-pull"}):
         for method, path in _real_routes(loaded_apps, prefix):
             walked += 1
-            expected = roles.internal_only(prefix, method, path)
+            expected = roles.internal_only(prefix, method, path) or not roles.rapp_may_change(prefix, method, path)
             rapp = client.request(method, f"{prefix}{path}", headers={"Authorization": "Bearer rapp-token"})
             module = client.request(method, f"{prefix}{path}", headers={"Authorization": "Bearer module-token"})
             if (rapp.status_code == 403 and rapp.json().get("title") == "ROLE_NOT_PERMITTED") != expected:
