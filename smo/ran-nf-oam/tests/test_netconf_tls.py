@@ -134,3 +134,21 @@ def test_nothing_listening_is_unreachable_and_a_silent_server_times_out(lab, mon
     server = lab(Behaviour(silent=True))
     monkeypatch.setattr(netconf_ssh, "NETCONF_TIMEOUT_SECONDS", 0.5)
     assert send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="t13", credential_ref="ru-1").reason == "NETCONF_TIMEOUT"
+
+
+def test_a_rotated_client_certificate_is_used_by_the_next_connect_without_a_restart(lab, pki, tmp_path):
+    """PR-SEC-4.8: the runbook replaces the certificate and key files; the next connect uses them. The rogue pair in between is what a half-done rotation
+    looks like (the new files from a CA the element does not trust): refused until the right pair is in place."""
+    ca, _, (client_cert, client_key) = pki
+    server = lab(Behaviour())
+    assert send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="t20", credential_ref="ru-1").applied
+    old_cert, old_key = open(client_cert).read(), open(client_key).read()
+    rogue_cert, rogue_key = Pki(tmp_path, name="rogue").issue("client")
+    open(client_cert, "w").write(open(rogue_cert).read())
+    open(client_key, "w").write(open(rogue_key).read())
+    assert not send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="t21", credential_ref="ru-1").applied
+    new_cert, new_key = ca.issue("client-2")                                              # the rotated pair, from the CA the element trusts
+    open(client_cert, "w").write(open(new_cert).read())
+    open(client_key, "w").write(open(new_key).read())
+    assert (open(client_cert).read(), open(client_key).read()) != (old_cert, old_key)
+    assert send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="t22", credential_ref="ru-1").applied

@@ -325,7 +325,6 @@ are plain HTTP.
 | SEC-4.4 | Same for GUI admin password and session key | Same | – |
 | SEC-4.5 | Same for the module invoker secret (`module_identity.invoker_secret`, or `SMO_INVOKER_SECRET`, which already overrides it) | Same | – |
 | SEC-4.7 | External Secrets or Vault example manifest | Example applies on a lab cluster | OPS-2.3 |
-| SEC-4.8 | Rotation runbook for each secret (the database password's steps are written down in `docs/SECRETS.md`, untried) | Each rotation tried once | – |
 
 #### PR-SEC-5 — Signing keys and token caching
 

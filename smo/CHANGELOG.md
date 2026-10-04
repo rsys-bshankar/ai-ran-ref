@@ -6,6 +6,7 @@ Entries are written for an operator: what changed in behaviour, configuration or
 ## [Unreleased]
 
 ### Added
+- `scripts/rotate_db_password.sh` rotates the compose stack's database password (new value, `ALTER ROLE`, `secrets/db_password`, recreate every service); `docs/SECRETS.md` has a rotation runbook for each secret an operator can rotate (database password, O1 adaptor credentials and client certificates, a module's SME invoker secret, the GUI signing key), each tried once in CI or a test (SEC-4.8).
 - `.github/workflows/release-images.yml`: pushing a `smo-v*` tag (or running it by hand with an existing tag) builds every service image, pushes `ghcr.io/<owner>/<repo>/smo-<module>:<version>`, signs each by digest with cosign (keyless), attaches build provenance and an SBOM, and writes release notes (this changelog's section plus the merged PR titles) onto the GitHub release. The verification command is in `docs/RELEASES.md` (OPS-4.2, 4.3, SEC-12.3, 12.4).
 
 ### Changed

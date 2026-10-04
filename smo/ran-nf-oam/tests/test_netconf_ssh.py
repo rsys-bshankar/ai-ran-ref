@@ -347,3 +347,22 @@ def test_a_name_that_names_no_configured_credential_is_refused(monkeypatch):
         check_credential_ref("never-configured")
     monkeypatch.setenv("NETCONF_CRED_NOW_CONFIGURED_PASSWORD", "x")
     check_credential_ref("now-configured")
+
+
+# --- PR-SEC-4.8: rotating an element's credential --------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("variable,ref", [("NETCONF_SSH_PASSWORD_FILE", None), ("NETCONF_CRED_GNB_7_PASSWORD_FILE", "gnb-7")])
+def test_a_rotated_password_file_is_used_by_the_next_connect_without_a_restart(lab, monkeypatch, tmp_path, variable, ref):
+    """The rotation runbook (docs/SECRETS.md): change the password on the element, then replace the mounted file. Between the two the old value is
+    refused; once the file holds the new one the next connect succeeds, in the same process."""
+    server = lab(Behaviour())
+    monkeypatch.delenv("NETCONF_SSH_PASSWORD")
+    secret = tmp_path / "pw"
+    secret.write_text("secret\n")
+    monkeypatch.setenv(variable, str(secret))
+    assert send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="r1", credential_ref=ref).applied
+    server.password = "rotated"                                                                 # step 1: the element's password changes
+    assert not send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="r2", credential_ref=ref).applied   # the file still holds the old one
+    secret.write_text("rotated\n")                                                              # step 2: the mounted file is replaced
+    assert send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="r3", credential_ref=ref).applied

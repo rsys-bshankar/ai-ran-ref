@@ -281,6 +281,20 @@ jobs:
           scripts/db_restore.sh --compose --yes /tmp/smo-ci.dump
           [ "$(count module_identity)" = "$before" ]
 
+      # PR-SEC-4.8: the database password's rotation runbook, tried once: the script rotates it, the old value is refused by the database,
+      # and the stack (every service, through the fast gate) comes back on the new one.
+      - name: Rotate the database password (PR-SEC-4.8)
+        working-directory: smo
+        run: |
+          old="$(cat secrets/db_password)"
+          scripts/rotate_db_password.sh
+          [ "$(cat secrets/db_password)" != "$old" ]
+          if docker compose run --rm --no-deps -T --entrypoint psql -e PGPASSWORD="$old" postgres -h postgres -U smo -d smo -c 'SELECT 1' >/dev/null 2>&1; then
+            echo "::error::the old database password still works"; exit 1
+          fi
+          docker compose run --rm --no-deps -T --entrypoint psql -e PGPASSWORD="$(cat secrets/db_password)" postgres -h postgres -U smo -d smo -Atc 'SELECT 1' | grep -qx 1
+          docker compose exec -T r1-termination python3 - < scripts/compose_e2e.py
+
       # PR-SB-1.11: the same stack, with RAN NF OAM holding the lab server's credential, writes a value through a real NETCONF-over-SSH
       # server and reads it back. The whole stack is brought up again first (the steps before it leave some services stopped). Runs last: the lab publishes loopback ports, which the published-ports check must not see, and the steps above expect the stack as `up` left it.
       - name: Runbook CM write over NETCONF/SSH through the stack (netconf-lab)

@@ -225,3 +225,18 @@ def test_an_identity_from_the_environment_needs_no_store_and_no_registration(sme
     monkeypatch.setenv("SMO_INVOKER_SECRET", "from-a-secret-store")
     assert replica(store).token_for(R1)
     assert sme.registrations == 0 and store.load("aimgf") is None
+
+
+def test_deleting_the_stored_invoker_makes_the_next_start_register_a_new_one(sme, store, engine):
+    """PR-SEC-4.8, the rotation runbook for a module's SME invoker secret: delete its row, restart, and the module registers a fresh invoker that
+    every replica then shares."""
+    first = replica(store)
+    assert first.token_for(R1) and first.invoker_id == "api-invoker-1"
+    with sessionmaker(bind=engine)() as db:
+        db.query(ModuleIdentityRow).delete()
+        db.commit()
+    restarted = replica(store)
+    assert restarted.token_for(R1) and restarted.invoker_id == "api-invoker-2"
+    other = replica(store)
+    assert other.token_for(R1) and other.invoker_id == "api-invoker-2"
+    assert sme.registrations == 2
