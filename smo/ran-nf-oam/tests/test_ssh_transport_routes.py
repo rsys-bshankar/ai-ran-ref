@@ -380,3 +380,60 @@ def test_the_topology_export_has_the_nodes_and_the_parent_links(client, lab):
     assert links[1]["aSide"].endswith("NRCellDU=101") and links[1]["bSide"].endswith("ManagedElement=ME-1,GNBDUFunction=1")
     assert links[1]["sourceIds"] == ["ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101", "ManagedElement=ME-1,GNBDUFunction=1"]
     assert client.get("/topology", params={"managed_element_ref": "OTHER"}).json() == {"entities": [], "relationships": []}
+
+
+# --- PR-SB-1.10: one candidate transaction per job and element --------------------------------------------------------------------------
+
+
+def _steps_of(lab):
+    import re
+    return [(m.group(1) if (m := re.search(r'message-id="[^"]*-(lock|commit|discard|unlock)"', t)) else ("edit-config" if "<edit-config>" in t else "get-config"))
+            for t in lab.behaviour.received]
+
+
+def _two_changes(client, second=None):
+    changes = [{"managedElementRef": "ME-1", "attributeChanges": {"adminState": "UNLOCKED"}},
+               {"managedElementRef": "ME-1", "attributeChanges": second or {"txPower": 30}}]
+    resp = client.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell", "changes": changes})
+    assert resp.status_code == 202, resp.text
+    return client.get(f"/config-jobs/{resp.json()['jobId']}").json()
+
+
+def test_two_sub_changes_of_one_element_are_one_transaction(client, lab, monkeypatch):
+    monkeypatch.setattr("app.main.CM_SNAPSHOTS", False)                       # the before-image reads would be steps of their own
+    lab.behaviour.caps = list(CAND_CAPS)
+    assert _register(client, lab.uri + "?datastore=candidate", transport="ssh").status_code == 201
+    job = _two_changes(client)
+    assert job["status"] == "COMPLETED" and [s["status"] for s in job["subChanges"]] == ["APPLIED", "APPLIED"]
+    assert _steps_of(lab) == ["lock", "edit-config", "edit-config", "commit", "unlock"]
+
+
+def test_a_refused_second_sub_change_leaves_the_first_uncommitted(client, lab, monkeypatch):
+    """The point of SB-1.10: before, the first sub-change was already committed when the second one failed."""
+    monkeypatch.setattr("app.main.CM_SNAPSHOTS", False)
+    lab.behaviour.caps = list(CAND_CAPS)
+    lab.behaviour.edit_replies = ["<ok/>", "<rpc-error><error-tag>invalid-value</error-tag><error-message>out of range</error-message></rpc-error>"]
+    assert _register(client, lab.uri + "?datastore=candidate", transport="ssh").status_code == 201
+    job = _two_changes(client, {"txPower": 70000})
+    first, second = job["subChanges"]
+    assert job["status"] == "FAILED" and first["status"] == second["status"] == "REJECTED"
+    assert first["rejectionReason"] == "NETCONF_TRANSACTION_ABORTED" and "sub-change 2 of 2 was refused" in first["rejectionDetail"]
+    assert second["rejectionReason"] == "NETCONF_RPC_FAILED" and second["rejectionDetail"].startswith("edit-config: invalid-value")
+    assert _steps_of(lab) == ["lock", "edit-config", "edit-config", "discard", "unlock"]               # no commit
+
+
+def test_the_history_records_each_sub_change_of_a_transaction(client, lab):
+    lab.behaviour.caps = list(CAND_CAPS)
+    assert _register(client, lab.uri + "?datastore=candidate", transport="ssh").status_code == 201
+    _two_changes(client)
+    items = client.get("/managed-entities/ME-1/config-history").json()["items"]
+    assert len(items) == 2 and {tuple(i["after"]) for i in items} == {("adminState",), ("txPower",)}
+    assert all(i["subChangeStatus"] == "APPLIED" for i in items)
+
+
+def test_a_lone_sub_change_and_a_non_candidate_endpoint_are_dispatched_as_before(client, lab, monkeypatch):
+    monkeypatch.setattr("app.main.CM_SNAPSHOTS", False)
+    assert _register(client, lab.uri, transport="ssh").status_code == 201                  # no ?datastore=candidate: one edit-config each
+    job = _two_changes(client)
+    assert [s["status"] for s in job["subChanges"]] == ["APPLIED", "APPLIED"]
+    assert _steps_of(lab) == ["edit-config", "edit-config"]

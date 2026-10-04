@@ -103,6 +103,26 @@ def main() -> int:
     final = client.get(f"/managed-entities/{ME}/config", params={"managed_function_ref": CELL}).json()["attributes"]
     check("the refused write left the value as it was (40)", final.get("txPower") == "40", final)
 
+    # PR-SB-1.10: the sub-changes of one element are one candidate transaction against the real server: both take effect, or neither
+    cell2 = "GNBDUFunction=1,NRCellDU=102"
+    r, job = write([{"managedElementRef": ME, "managedFunctionRef": CELL, "attributeChanges": {"txPower": 41}},
+                    {"managedElementRef": ME, "managedFunctionRef": cell2, "attributeChanges": {"txPower": 34}}])
+    check("two cells in one job: both APPLIED", job.get("status") == "COMPLETED" and [s["status"] for s in job.get("subChanges", [])] == ["APPLIED", "APPLIED"], (r.text, job))
+    values = [client.get(f"/managed-entities/{ME}/config", params={"managed_function_ref": c}).json()["attributes"].get("txPower") for c in (CELL, cell2)]
+    check("both values are in the server (41, 34)", values == ["41", "34"], values)
+    r, job = write([{"managedElementRef": ME, "managedFunctionRef": CELL, "attributeChanges": {"txPower": 40}},
+                    {"managedElementRef": ME, "managedFunctionRef": cell2, "attributeChanges": {"txPower": 33}}])
+    check("restored: 40 and 33", job.get("status") == "COMPLETED", (r.text, job))
+    r, job = write([{"managedElementRef": ME, "managedFunctionRef": CELL, "attributeChanges": {"txPower": 41}},
+                    {"managedElementRef": ME, "managedFunctionRef": cell2, "attributeChanges": {"txPower": 99}}])
+    subs = job.get("subChanges", [])
+    check("a refused second sub-change rejects the first too (ABORTED), with the server's reason on the second",
+          job.get("status") == "FAILED" and [x.get("rejectionReason") for x in subs] == ["NETCONF_TRANSACTION_ABORTED", "NETCONF_RPC_FAILED"]
+          and bool(subs[1].get("rejectionDetail")), (r.text, job))
+    print("  server said:", subs[1].get("rejectionDetail") if len(subs) > 1 else None)
+    left = client.get(f"/managed-entities/{ME}/config", params={"managed_function_ref": CELL}).json()["attributes"]
+    check("the first change was not left committed: cell 101 is still 40", left.get("txPower") == "40", left)
+
     # PR-SB-6: fill the containment tree from the server, read it, refuse a target that is not in it, export it
     walked = client.post(f"/managed-entities/{ME}/managed-objects/refresh").json()
     check("walk: the tree gains the function and both cells", walked.get("added") == 3, walked)

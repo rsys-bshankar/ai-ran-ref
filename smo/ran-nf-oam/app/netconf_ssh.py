@@ -295,12 +295,16 @@ def _step_rpc(message_id: str, name: str, body: str) -> str:
     return f'<rpc message-id="{message_id}-{name}" xmlns="{NETCONF_BASE_NS}">{body}</rpc>'
 
 
-def candidate_transaction(session: "NetconfSession", message_id: str, edit_rpc: str) -> EditResult:
-    """RFC 6241 sections 8.3 and 7.5-7.8 as one unit: lock the candidate, edit it, commit, unlock. A refused lock changes nothing. A refused
-    edit or commit is followed by discard-changes, so the candidate is left as it was found; the unlock always follows (best effort: a
-    failed unlock after a good commit does not undo the commit). The result is the first failure's, with the step named in the detail."""
+def candidate_edits(session: "NetconfSession", message_id: str, edit_rpcs: list[str]) -> list[EditResult]:
+    """RFC 6241 sections 8.3 and 7.5-7.8 as one unit for one or more edits: lock the candidate, apply every edit, commit once, unlock. A refused
+    lock changes nothing. A refused edit or commit is followed by discard-changes, so the candidate is left as it was found and none of the
+    edits takes effect; the unlock always follows (best effort: a failed unlock after a good commit does not undo the commit).
+
+    One result per edit, in order. A refused edit carries the server's reason; the others in the unit are `NETCONF_TRANSACTION_ABORTED`
+    (rolled back, or never sent) and name it. A refused commit is every edit's result, with the step named in the detail."""
+    n = len(edit_rpcs)
     if CANDIDATE not in session.server_capabilities:
-        return EditResult(False, "NETCONF_RPC_FAILED", "the server does not offer the candidate datastore (:candidate:1.0)")
+        return [EditResult(False, "NETCONF_RPC_FAILED", "the server does not offer the candidate datastore (:candidate:1.0)")] * n
 
     def step(name: str, body: str) -> EditResult:
         outcome = edit_outcome(session.rpc(_step_rpc(message_id, name, body)))
@@ -308,24 +312,40 @@ def candidate_transaction(session: "NetconfSession", message_id: str, edit_rpc: 
 
     locked = step("lock", "<lock><target><candidate/></target></lock>")
     if not locked:
-        return locked                                  # nothing was touched: no discard, no unlock
+        return [locked] * n                            # nothing was touched: no discard, no unlock
     try:
-        result = edit_outcome(session.rpc(edit_rpc))
-        if not result:
-            result = EditResult(False, result.reason, f"edit-config: {result.detail or 'refused'}")
+        results: list[EditResult] = []
+        for index, edit_rpc in enumerate(edit_rpcs):
+            outcome = edit_outcome(session.rpc(edit_rpc))
+            if not outcome:
+                refused = EditResult(False, outcome.reason, f"edit-config: {outcome.detail or 'refused'}")
+                if n == 1:
+                    results = [refused]
+                else:
+                    why = f"rolled back: sub-change {index + 1} of {n} was refused ({refused.detail})"
+                    aborted = EditResult(False, "NETCONF_TRANSACTION_ABORTED", why)
+                    results = [aborted] * index + [refused] + [aborted] * (n - index - 1)
+                break
+            results.append(outcome)
         else:
-            result = step("commit", "<commit/>")
-        if not result:
+            committed = step("commit", "<commit/>")
+            results = [committed] * n
+        if not all(results):
             try:
                 step("discard", "<discard-changes/>")
             except NetconfSshError as exc:
                 log.warning("discard-changes after a failed write: %s", exc)
-        return result
+        return results
     finally:
         try:
             step("unlock", "<unlock><target><candidate/></target></unlock>")
         except NetconfSshError as exc:
             log.warning("unlock of the candidate: %s", exc)
+
+
+def candidate_transaction(session: "NetconfSession", message_id: str, edit_rpc: str) -> EditResult:
+    """One edit as a candidate transaction (PR-SB-1.8): `candidate_edits` of a single RPC."""
+    return candidate_edits(session, message_id, [edit_rpc])[0]
 
 
 def open_session(adaptor_uri: str, credential_ref: str | None = None, host_keys: list[tuple[str, str]] | None = None) -> "NetconfSession":
@@ -356,6 +376,30 @@ def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict,
     except NetconfSshError as exc:
         log.warning("edit-config on %s failed: %s", target_ref, exc)
         return EditResult(False, exc.reason, exc.detail or None)
+
+
+def send_edit_configs(adaptor_uri: str, edits: list[dict], message_id: str, credential_ref: str | None = None,
+                      host_keys: list[tuple[str, str]] | None = None) -> list[EditResult]:
+    """PR-SB-1.10: several edits of one element as one candidate transaction (`?datastore=candidate` only). Each edit is
+    `{target_ref, attribute_changes, operation, managed_function_ref}`; the result list has one entry per edit, in order, and
+    either every entry is applied or none is. A failure of the connection is every entry's result."""
+    model = yang_payload.model_of(adaptor_uri)
+    if yang_payload.datastore_of(adaptor_uri) != "candidate":
+        raise ValueError("a transaction of several edits needs ?datastore=candidate")
+    rpcs = []
+    try:
+        for index, edit in enumerate(edits):
+            rpc_id = f"{message_id}-e{index + 1}"
+            args = (rpc_id, edit["target_ref"], edit["attribute_changes"], edit.get("operation", "merge"), edit.get("managed_function_ref"), "candidate")
+            rpcs.append(yang_payload.build_edit_config_rpc(yang_payload.PROFILES[model], *args) if model else build_edit_config_rpc(*args))
+    except ValueError as exc:                                      # an operation the model path does not know: nothing is sent
+        return [EditResult(False, "NETCONF_RPC_FAILED", str(exc))] * len(edits)
+    try:
+        with open_session(adaptor_uri, credential_ref, host_keys) as session:
+            return candidate_edits(session, message_id, rpcs)
+    except NetconfSshError as exc:
+        log.warning("edit-config transaction on %s failed: %s", edits[0]["target_ref"], exc)
+        return [EditResult(False, exc.reason, exc.detail or None)] * len(edits)
 
 
 def send_get_config(adaptor_uri: str, target_ref: str, message_id: str, managed_function_ref: str | None = None,

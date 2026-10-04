@@ -10,6 +10,7 @@ Entries are written for an operator: what changed in behaviour, configuration or
 - `.github/workflows/release-images.yml`: pushing a `smo-v*` tag (or running it by hand with an existing tag) builds every service image, pushes `ghcr.io/<owner>/<repo>/smo-<module>:<version>`, signs each by digest with cosign (keyless), attaches build provenance and an SBOM, and writes release notes (this changelog's section plus the merged PR titles) onto the GitHub release. The verification command is in `docs/RELEASES.md` (OPS-4.2, 4.3, SEC-12.3, 12.4).
 
 ### Changed
+- **A CM job writes the sub-changes of one element as one candidate transaction** when its endpoint is ssh or tls NETCONF registered with `?datastore=candidate`: lock once, every edit, one commit, unlock. A job whose second change for an element is refused no longer leaves the first one applied: all of that element's sub-changes are `REJECTED`, the refused one with the server's reason and the others `NETCONF_TRANSACTION_ABORTED` naming it. Changes to different elements stay independent (`PARTIAL_SUCCESS` as before), and so does everything without `?datastore=candidate` (SB-1.10).
 - `SECURITY.md`: supported versions are the newest `0.MINOR` line and `main` (OPS-4.4).
 
 ## [0.1.0] - 2026-10-03

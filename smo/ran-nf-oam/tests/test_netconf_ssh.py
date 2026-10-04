@@ -3,7 +3,7 @@
 import pytest
 
 from app import netconf_ssh
-from app.netconf_ssh import NetconfSession, NetconfSshError, parse_ssh_uri, send_edit_config, send_get_config
+from app.netconf_ssh import NetconfSession, NetconfSshError, parse_ssh_uri, send_edit_config, send_edit_configs, send_get_config
 
 from netconf_ssh_server import Behaviour, NetconfTestServer
 
@@ -366,3 +366,58 @@ def test_a_rotated_password_file_is_used_by_the_next_connect_without_a_restart(l
     assert not send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="r2", credential_ref=ref).applied   # the file still holds the old one
     secret.write_text("rotated\n")                                                              # step 2: the mounted file is replaced
     assert send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="r3", credential_ref=ref).applied
+
+
+# --- PR-SB-1.10: several edits of one element as one candidate transaction -----------------------------------------------------------------
+
+
+EDITS = [{"target_ref": "ME-1", "attribute_changes": {"a": "1"}}, {"target_ref": "ME-1", "attribute_changes": {"b": "2"}},
+         {"target_ref": "ME-1", "attribute_changes": {"c": "3"}}]
+
+
+def test_several_edits_are_locked_once_and_committed_once(lab):
+    server = lab(Behaviour(caps=CAND_CAPS))
+    results = send_edit_configs(server.uri + "?datastore=candidate", EDITS, message_id="t1")
+    assert [r.applied for r in results] == [True, True, True]
+    assert _steps(server) == ["lock", "edit-config", "edit-config", "edit-config", "commit", "unlock"]
+
+
+def test_a_refused_edit_rolls_back_the_ones_before_it_and_skips_the_ones_after(lab):
+    server = lab(Behaviour(caps=CAND_CAPS, edit_replies=["<ok/>", ERR("invalid-value", "out of range")]))
+    results = send_edit_configs(server.uri + "?datastore=candidate", EDITS, message_id="t2")
+    assert [r.applied for r in results] == [False, False, False]
+    assert [r.reason for r in results] == ["NETCONF_TRANSACTION_ABORTED", "NETCONF_RPC_FAILED", "NETCONF_TRANSACTION_ABORTED"]
+    assert results[1].detail == "edit-config: invalid-value (a value is not acceptable): out of range"
+    assert "sub-change 2 of 3 was refused" in results[0].detail and "sub-change 2 of 3 was refused" in results[2].detail
+    assert not any(r.retryable for r in results)
+    assert _steps(server) == ["lock", "edit-config", "edit-config", "discard", "unlock"]       # the third was never sent, and nothing was committed
+
+
+def test_a_refused_commit_is_every_edits_result(lab):
+    server = lab(Behaviour(caps=CAND_CAPS, step_replies={"commit": ERR("operation-failed", "validation failed")}))
+    results = send_edit_configs(server.uri + "?datastore=candidate", EDITS[:2], message_id="t3")
+    assert [r.applied for r in results] == [False, False]
+    assert {r.detail for r in results} == {"commit: operation-failed (the operation failed): validation failed"}
+    assert _steps(server) == ["lock", "edit-config", "edit-config", "commit", "discard", "unlock"]
+
+
+def test_a_refused_lock_changes_nothing_for_any_edit(lab):
+    server = lab(Behaviour(caps=CAND_CAPS, step_replies={"lock": ERR("lock-denied", "held by another session")}))
+    results = send_edit_configs(server.uri + "?datastore=candidate", EDITS[:2], message_id="t4")
+    assert [r.applied for r in results] == [False, False] and _steps(server) == ["lock"]
+
+
+def test_a_server_that_cannot_be_reached_fails_every_edit_the_same_retryable_way(tmp_path, monkeypatch):
+    monkeypatch.setenv("NETCONF_SSH_PASSWORD", "secret")
+    (tmp_path / "known_hosts").write_text("")
+    monkeypatch.setenv("NETCONF_SSH_KNOWN_HOSTS", str(tmp_path / "known_hosts"))
+    results = send_edit_configs("ssh://netconf@127.0.0.1:1?datastore=candidate", EDITS[:2], message_id="t5")
+    assert [r.applied for r in results] == [False, False] and {r.reason for r in results} == {"NETCONF_UNREACHABLE"}
+    assert all(r.retryable for r in results)
+
+
+def test_a_transaction_needs_the_candidate_datastore_in_the_uri(lab):
+    server = lab(Behaviour(caps=CAND_CAPS))
+    with pytest.raises(ValueError):
+        send_edit_configs(server.uri, EDITS[:2], message_id="t6")
+    assert server.behaviour.received == []
