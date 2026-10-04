@@ -591,6 +591,21 @@
         "title": "PmReportRequest",
         "type": "object"
       },
+      "RAppLimitRequest": {
+        "properties": {
+          "maxConfigJobsPerHour": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Maxconfigjobsperhour",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "maxConfigJobsPerHour"
+        ],
+        "title": "RAppLimitRequest",
+        "type": "object"
+      },
       "RegisterO1AdaptorEndpointRequest": {
         "properties": {
           "adaptorUri": {
@@ -4714,6 +4729,120 @@
           }
         },
         "summary": "Unsubscribe Pm"
+      }
+    },
+    "/rapp-limits/{invoker_id_}": {
+      "delete": {
+        "operationId": "delete_rapp_limit_rapp_limits__invoker_id___delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoker_id_",
+            "required": true,
+            "schema": {
+              "title": "Invoker Id ",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Rapp Limit"
+      },
+      "get": {
+        "description": "The limit set for an rApp, and how many config jobs it has started in the last hour.",
+        "operationId": "read_rapp_limit_rapp_limits__invoker_id___get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoker_id_",
+            "required": true,
+            "schema": {
+              "title": "Invoker Id ",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Rapp Limit"
+      },
+      "put": {
+        "description": "AI-10.1/10.2: set what one rApp (by its OAuth client id) may do here. Called by rApp Management when the instance finishes bootstrapping,\nwith the limits its manifest declares.",
+        "operationId": "set_rapp_limit_rapp_limits__invoker_id___put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoker_id_",
+            "required": true,
+            "schema": {
+              "title": "Invoker Id ",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RAppLimitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Rapp Limit"
       }
     },
     "/ready": {

@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Uuid, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -32,6 +32,8 @@ class RAppInstance(Versioned, Base):
     # Deregistered (best-effort) on TERMINATE/CRASH, same as oauth_client_id
     # is used as this instance's own SME apfId throughout.
     sme_service_ids: Mapped[list[str] | None] = mapped_column(JSON)
+    # AI-10.2: true once the limits the package declares were put in force at RAN NF OAM (under oauth_client_id); the limit is removed on teardown.
+    rapp_limits_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     # HISTORY.md OI-6.3 — rApp Autonomy Modes: a per-instance
     # property fixed at onboarding (CreateInstance), not something chosen
     # per-inference-call. Defaults to SHADOW — the safest, no-enforcement

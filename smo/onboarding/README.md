@@ -42,7 +42,7 @@ The package format and lifecycle are modelled on the O-RAN-SC rApp Manager (`non
 Internal extension (not in any standard): two optional files at the CSAR root, read in addition to the above.
 
 - `capabilities.yaml` declares which of the SDK's six namespaces (data, analytics, models, lifecycle, intent, platform) the rApp consumes or provides.
-- `manifest.yaml` declares `executionModes`, `autonomyModes`, `requiredServices` and per-mode `runtimeProfiles` (cpu, memory, gpu).
+- `manifest.yaml` declares `executionModes`, `autonomyModes`, `requiredServices` and per-mode `runtimeProfiles` (cpu, memory, gpu), and may declare `limits` (`configJobsPerHour`: how many CM write jobs the rApp may start in an hour; an unknown limit or a bad value fails onboarding). rApp Management puts the limit in force at RAN NF OAM when the instance bootstraps (`AI-10.1`/`10.2`).
 
 The result is stored as `application_package.ai_capabilities` and exposed on the status and package views. A package without either file onboards unchanged. The full layout, every field and what fails onboarding are specified in [`../docs/RAPP_PACKAGING.md`](../docs/RAPP_PACKAGING.md); this README does not repeat it.
 

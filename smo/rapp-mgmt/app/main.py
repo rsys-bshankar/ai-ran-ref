@@ -28,7 +28,7 @@ from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 
 from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
-from .provisioning import (DEPLOYABLE_PACKAGE_STATES, provision_instance, register_sme_declarations,  # noqa: F401
+from .provisioning import (DEPLOYABLE_PACKAGE_STATES, apply_rapp_limits, onboarding_status, provision_instance, register_sme_declarations,  # noqa: F401
                            release_instance_resources)
 from .statemachine import RAPP_INSTANCE_FSM, InstanceEvent, InstanceState
 from .upgrade import (current_instance_id, expire_overdue_upgrade, resolve_upgrade, rollback_target, start_rollback,
@@ -131,6 +131,14 @@ def create_instance(body: CreateInstanceRequest, request: Request, db: Session =
     return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id}
 
 
+def _on_bootstrap(inst) -> None:
+    """What happens when an instance's bootstrap is accepted: the limits its manifest declares are put in force (fail-closed: AI-10.2), then
+    its SME declarations are registered (best-effort)."""
+    status = onboarding_status(inst)
+    apply_rapp_limits(inst, status)
+    register_sme_declarations(inst, status)
+
+
 @app.post("/instances/{instance_id}/bootstrap-complete")
 def bootstrap_complete(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """Called once the rApp container has bootstrapped via R1 Termination
@@ -141,7 +149,7 @@ def bootstrap_complete(instance_id: uuid.UUID, db: Session = Depends(get_session
     if InstanceState(inst.state) != InstanceState.DEPLOYING:
         raise illegal_transition_error(IllegalTransition(InstanceState(inst.state), InstanceEvent.BOOTSTRAP_OK),
                                        f"RAppInstance {instance_id}")
-    register_sme_declarations(inst)
+    _on_bootstrap(inst)
     inst.state = _fire(inst, InstanceEvent.BOOTSTRAP_OK)
     db.commit()
     return {"instanceId": str(inst.instance_id), "state": inst.state}
@@ -215,7 +223,7 @@ def resolve_upgrade_outcome(instance_id: uuid.UUID, succeeded: bool, db: Session
         return {"instanceId": str(old.instance_id), "state": old.state, "packageId": str(old.package_id)}
     new = _get_or_404(db, old.pending_upgrade_instance_id)
     try:
-        resolve_upgrade(db, old, new, new_bootstrap_succeeded=succeeded, register_identity=register_sme_declarations)
+        resolve_upgrade(db, old, new, new_bootstrap_succeeded=succeeded, register_identity=_on_bootstrap)
     except IllegalTransition as exc:
         raise illegal_transition_error(exc, f"upgrade of RAppInstance {instance_id}")
     db.commit()

@@ -87,9 +87,21 @@ def _reconsider_sme_registration(instance: RAppInstance, **_) -> None:
         pass
 
 
+def _reconsider_rapp_limits(instance: RAppInstance, **_) -> None:
+    """AI-10.2: drop the limit RAN NF OAM holds for this instance's client id (set at bootstrap-complete). Best-effort: a limit left behind
+    limits a client id that is revoked next. An instance whose package declared none has nothing to delete."""
+    if instance.oauth_client_id is None or not instance.rapp_limits_set:
+        return
+    try:
+        R1Client().delete(f"/ran-nf-oam/rapp-limits/{instance.oauth_client_id}")
+    except httpx.HTTPError:
+        pass
+
+
 def _reconsider_registrations(instance: RAppInstance, **_) -> None:
     _reconsider_dme_registration(instance)
     _reconsider_sme_registration(instance)
+    _reconsider_rapp_limits(instance)
 
 
 def _terminate_side_effects(instance: RAppInstance, **_) -> None:

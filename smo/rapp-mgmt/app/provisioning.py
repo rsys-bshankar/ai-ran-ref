@@ -167,7 +167,34 @@ def _sme_service_registration_body(service_api: dict, apf_id: str) -> dict:
     }
 
 
-def register_sme_declarations(inst: RAppInstance) -> None:
+def onboarding_status(inst: RAppInstance) -> dict:
+    """What Onboarding says about this instance's package ({} when it cannot say)."""
+    resp = R1Client().get(f"/onboarding/packages/{inst.package_id}/onboarding-status")
+    return resp.json() if resp.status_code == 200 else {}
+
+
+def apply_rapp_limits(inst: RAppInstance, status: dict | None = None) -> None:
+    """AI-10.1/10.2: hand the limits the package declares in its manifest (`limits.configJobsPerHour`, read by Onboarding) to RAN NF OAM, which
+    enforces them against this instance's own invoker id (its OAuth client id). Runs when the instance finishes bootstrapping, before it is
+    allowed to go RUNNING, and fails closed: a package that declares a limit does not run without it, so an unreachable RAN NF OAM or a refused
+    push is a 503 and the instance stays DEPLOYING (bootstrap-complete can be called again). A package with no limits needs no call."""
+    status = onboarding_status(inst) if status is None else status
+    limits = (status.get("aiCapabilities") or {}).get("limits") or {}
+    per_hour = limits.get("configJobsPerHour")
+    if per_hour is None:
+        return
+    try:
+        resp = R1Client().put(f"/ran-nf-oam/rapp-limits/{inst.oauth_client_id}", json={"maxConfigJobsPerHour": per_hour})
+        pushed = resp.status_code == 200
+    except httpx.HTTPError:
+        pushed = False
+    if not pushed:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE,
+                              detail=f"the package declares limits.configJobsPerHour={per_hour} but RAN NF OAM did not accept it; the instance stays DEPLOYING")
+    inst.rapp_limits_set = True
+
+
+def register_sme_declarations(inst: RAppInstance, status: dict | None = None) -> None:
     """HISTORY.md §7's Onboarding/rApp Mgmt finding 3 (SME auto-
     registration): real O-RAN SC rApp Manager behavior
     (SmeDeployer.deployRappInstance) registers a package's CSAR-bundled
@@ -185,8 +212,7 @@ def register_sme_declarations(inst: RAppInstance) -> None:
     operation" precedent used throughout this build.
     """
     r1 = R1Client()
-    pkg_resp = r1.get(f"/onboarding/packages/{inst.package_id}/onboarding-status")
-    declarations = pkg_resp.json().get("smeDeclarations") if pkg_resp.status_code == 200 else None
+    declarations = (onboarding_status(inst) if status is None else status).get("smeDeclarations")
     if not declarations:
         return
     apf_id = inst.oauth_client_id
