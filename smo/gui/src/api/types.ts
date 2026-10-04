@@ -304,3 +304,17 @@ export interface TsCell {
   scoreTrend: { t: string; v: number }[]; latestDecision: TsDecision | null;
 }
 export interface TsDashboard { instance: TsInstance; cells: TsCell[] }
+
+// ---------------------------------------------------------------- rApp safeguards (AI-10.x)
+export interface RappLimits {
+  invokerId: string; maxConfigJobsPerHour: number | null; maxElementsPerJob: number | null; maxChangePercent: number | null;
+  updatedAt: string; configJobsLastHour: number;
+}
+export interface RappKill { invokerId: string; killedBy: string; reason: string | null; killedAt: string }
+/** GET /rapp-mgmt/instances/{id}/safeguards: what holds one instance in check at RAN NF OAM. `invokerId` is null once it is terminated. */
+export interface InstanceSafeguards { instanceId: string; invokerId: string | null; killed: boolean; kill: RappKill | null; limits: RappLimits | null }
+export type RefusalCode = "RAPP_KILLED" | "RAPP_RATE_LIMITED" | "RAPP_BLAST_RADIUS_EXCEEDED" | "RAPP_MAGNITUDE_EXCEEDED";
+export interface SafeguardRefusal {
+  refusalId: string; occurredAt: string; invokerId: string; requestedBy: string | null; refusal: RefusalCode; detail: string | null; announced: boolean;
+}
+export interface SafeguardSubscription { subscriptionId: string; callbackUri: string; refusals: RefusalCode[]; createdAt: string }

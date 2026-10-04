@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { completionRoute, countBySeverity, keepAliveRemaining, metricSeries, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
+import { completionRoute, countBySeverity, describeLimits, limitsForm, limitsPayload, keepAliveRemaining, metricSeries, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
 
 describe("model lifecycle", () => {
   it("maps each state to the FSM's next legal action", () => {
@@ -85,4 +85,37 @@ describe("keepAliveRemaining", () => {
   it("is null for an unsupervised service", () => expect(keepAliveRemaining({ keepAliveIntervalSeconds: 0, timeSinceLastActivitySeconds: 99 })).toBeNull());
   it("counts down from the interval", () => expect(keepAliveRemaining({ keepAliveIntervalSeconds: 30, timeSinceLastActivitySeconds: 12 })).toBe(18));
   it("floors at zero once lapsed", () => expect(keepAliveRemaining({ keepAliveIntervalSeconds: 5, timeSinceLastActivitySeconds: 9 })).toBe(0));
+});
+
+describe("rApp limits", () => {
+  it("describes what is in force, with the hourly use", () => {
+    expect(describeLimits({ maxConfigJobsPerHour: 20, maxElementsPerJob: 5, maxChangePercent: 10, configJobsLastHour: 3 })).toBe("20/h (3 used) · ≤5 elements · ≤10%");
+    expect(describeLimits({ maxConfigJobsPerHour: null, maxElementsPerJob: 5, maxChangePercent: null })).toBe("≤5 elements");
+    expect(describeLimits(null)).toBe("No limits");
+    expect(describeLimits({ maxConfigJobsPerHour: null, maxElementsPerJob: null, maxChangePercent: null })).toBe("No limits");
+  });
+
+  it("builds the PUT body from the form and leaves a blank field out", () => {
+    expect(limitsPayload({ jobsPerHour: "20", elementsPerJob: "", changePercent: "12.5" })).toEqual({ ok: true, body: { maxConfigJobsPerHour: 20, maxChangePercent: 12.5 } });
+    expect(limitsPayload({ jobsPerHour: " 7 ", elementsPerJob: "3", changePercent: "" })).toEqual({ ok: true, body: { maxConfigJobsPerHour: 7, maxElementsPerJob: 3 } });
+  });
+
+  it("refuses what RAN NF OAM would refuse, before sending it", () => {
+    const bad = (f: Partial<{ jobsPerHour: string; elementsPerJob: string; changePercent: string }>) => limitsPayload({ jobsPerHour: "", elementsPerJob: "", changePercent: "", ...f });
+    expect(bad({})).toMatchObject({ ok: false, error: expect.stringContaining("at least one") });
+    expect(bad({ jobsPerHour: "0" })).toMatchObject({ ok: false });
+    expect(bad({ jobsPerHour: "100001" })).toMatchObject({ ok: false });
+    expect(bad({ jobsPerHour: "2.5" })).toMatchObject({ ok: false, error: expect.stringContaining("whole number") });
+    expect(bad({ elementsPerJob: "10001" })).toMatchObject({ ok: false });
+    expect(bad({ changePercent: "0" })).toMatchObject({ ok: false });
+    expect(bad({ changePercent: "10001" })).toMatchObject({ ok: false });
+    expect(bad({ changePercent: "abc" })).toMatchObject({ ok: false });
+    expect(bad({ changePercent: "NaN" })).toMatchObject({ ok: false });
+    expect(bad({ changePercent: "Infinity" })).toMatchObject({ ok: false });
+  });
+
+  it("starts the form from the limits in force", () => {
+    expect(limitsForm({ maxConfigJobsPerHour: 20, maxElementsPerJob: null, maxChangePercent: 10 })).toEqual({ jobsPerHour: "20", elementsPerJob: "", changePercent: "10" });
+    expect(limitsForm(null)).toEqual({ jobsPerHour: "", elementsPerJob: "", changePercent: "" });
+  });
 });

@@ -96,6 +96,17 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/mobility-optimization-rapp/instances/i/evaluate", "operator"),
     ("POST", "/mobility-optimization-rapp/instances/i/lifecycle/deploy", "operator"),
     ("POST", "/mobility-optimization-rapp/sim-producer/publish", "admin"),
+    # AI-10.x: the safeguards of an rApp
+    ("GET", "/rapp-mgmt/instances/i/safeguards", "viewer"),
+    ("GET", "/ran-nf-oam/safeguard-refusals", "viewer"),
+    ("GET", "/ran-nf-oam/rapp-kill", "viewer"),
+    ("PUT", "/rapp-mgmt/instances/i/kill", "operator"),
+    ("DELETE", "/rapp-mgmt/instances/i/kill", "admin"),
+    ("PUT", "/ran-nf-oam/rapp-limits/i", "admin"),
+    ("DELETE", "/ran-nf-oam/rapp-limits/i", "admin"),
+    ("POST", "/ran-nf-oam/safeguard-subscriptions", "admin"),
+    ("DELETE", "/ran-nf-oam/safeguard-subscriptions/s", "admin"),
+    ("POST", "/ran-nf-oam/safeguard-refusals/purge", "admin"),
     # Wave 10.3: the Coverage Optimization rApp
     ("GET", "/coverage-optimization-rapp/instances/i/dashboard", "viewer"),
     ("POST", "/coverage-optimization-rapp/instances/i/evaluate", "operator"),
@@ -153,3 +164,8 @@ def test_spa_permissions_fixture_matches_the_live_table():
     """smo/gui's Vitest suite checks the SPA's evaluator against this
     snapshot of the table; it must be the real one."""
     assert json.loads(FIXTURE.read_text()) == export(), "stale fixture: run scripts/export_permissions.py"
+
+
+def test_the_gui_cannot_stop_an_rapp_as_somebody_else():
+    decision = decide("PUT", "/rapp-mgmt/instances/i/kill", {}, Role.OPERATOR)
+    assert decision.allowed and decision.rule.json_overrides(type("U", (), {"username": "alice", "role": Role.OPERATOR})()) == {"requestedBy": "smo-gui:alice"}

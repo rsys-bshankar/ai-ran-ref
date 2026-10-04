@@ -204,6 +204,31 @@ def lift_instance_kill(instance_id: uuid.UUID, db: Session = Depends(get_session
     return {"instanceId": str(inst.instance_id), "killed": False}
 
 
+@app.get("/instances/{instance_id}/safeguards")
+def instance_safeguards(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """What holds this instance in check at RAN NF OAM, in one read (for the operator GUI, which thinks in instances while RAN NF OAM keys on the
+    invoker id, the instance's `oauthClientId`): whether it is stopped (and by whom and why), and its limits with the number of config jobs it has
+    started in the last hour. A terminated instance has no credential, so no invoker id and nothing to show. 503 when RAN NF OAM cannot answer: a
+    stop that cannot be read is not reported as "not stopped"."""
+    inst = _load_instance(db, instance_id)
+    answer = {"instanceId": str(inst.instance_id), "invokerId": inst.oauth_client_id, "killed": False, "kill": None, "limits": None}
+    if inst.oauth_client_id is None:
+        return answer
+    r1 = R1Client()
+    try:
+        kill = r1.get(f"/ran-nf-oam/rapp-kill/{inst.oauth_client_id}")
+        limits = r1.get(f"/ran-nf-oam/rapp-limits/{inst.oauth_client_id}")
+    except httpx.HTTPError:
+        kill = limits = None
+    if kill is None or limits is None or kill.status_code not in (200, 404) or limits.status_code not in (200, 404):
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="RAN NF OAM did not answer; the safeguards of this instance could not be read")
+    if kill.status_code == 200:
+        answer.update(killed=True, kill=kill.json())
+    if limits.status_code == 200:
+        answer["limits"] = limits.json()
+    return answer
+
+
 @app.post("/instances/{instance_id}/bootstrap-complete")
 def bootstrap_complete(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """Called once the rApp container has bootstrapped via R1 Termination

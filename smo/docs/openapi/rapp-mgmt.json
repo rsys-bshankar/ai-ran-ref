@@ -912,6 +912,45 @@
         "summary": "Rollback Instance"
       }
     },
+    "/instances/{instance_id}/safeguards": {
+      "get": {
+        "description": "What holds this instance in check at RAN NF OAM, in one read (for the operator GUI, which thinks in instances while RAN NF OAM keys on the\ninvoker id, the instance's `oauthClientId`): whether it is stopped (and by whom and why), and its limits with the number of config jobs it has\nstarted in the last hour. A terminated instance has no credential, so no invoker id and nothing to show. 503 when RAN NF OAM cannot answer: a\nstop that cannot be read is not reported as \"not stopped\".",
+        "operationId": "instance_safeguards_instances__instance_id__safeguards_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Instance Safeguards"
+      }
+    },
     "/instances/{instance_id}/terminate": {
       "post": {
         "description": "TerminateInstance \u2014 Annex A.1.2.3. Legal from RUNNING, FAULTED (a\ncrashed instance is retired without recovering it first) and DEPLOYING\n(one whose container never bootstrapped); 409 otherwise, and 409 for an\nupgrade's pending replacement (resolve the upgrade instead).\n\nCredential revocation is part of this transition itself\n(statemachine.py's _revoke_credential action), not a separate step\n(closes RT-3), after the DME/SME deregistration keyed on that\ncredential. Then the workload itself: NFO Terminate for workloadRef\n(the nfDeploymentId CreateInstance received) and usage/stop for the\nPackageUsageRegistration that Onboarding's deprime and cascade-delete\nguards read. Both are best-effort \u2014 an unreachable NFO or Onboarding\nnever blocks the teardown \u2014 but their outcome is recorded in\nlastTeardown.\n\nHISTORY.md \u00a75: this used to delete the instance row\noutright, in the same call \u2014 undeploy and delete collapsed into one\nirreversible step, with no way to observe an instance post-teardown\nor to delete one that was already torn down some other way (e.g.\nCRASH). The reference's own split (`RappService.undeployRappInstance`/\n`deleteRappInstance`, DEPLOYED -> UNDEPLOYING -> UNDEPLOYED, delete\nonly legal from UNDEPLOYED) is adopted here: TERMINATE now only tears\nthe workload down (this action) and lands in the terminal UNDEPLOYED\nstate with the row still present; removing the row itself is the\nseparate `delete_instance` below.",
