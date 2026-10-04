@@ -187,8 +187,10 @@ async def proxy(full_path: str, request: Request):
             "detail": f"this caller has used its request budget; retry in {wait} s"})
 
     rest_of_path = segments[1] if len(segments) > 1 else ""
-    if role == roles.ROLE_RAPP and roles.internal_only(prefix, request.method, rest_of_path):
-        # PR-SEC-14: a route that changes what the platform allows rApps to do is not one an rApp may call
+    if role == roles.ROLE_RAPP and (roles.internal_only(prefix, request.method, rest_of_path)
+                                    or not roles.rapp_may_change(prefix, request.method, rest_of_path)):
+        # PR-SEC-14: a route that changes what the platform allows rApps to do is not one an rApp may call, and an rApp changes only what
+        # roles.RAPP_MAY_CHANGE lists
         action = "refused" if roles.enforcement_mode() == "enforce" else "audited"
         record_role_refusal(prefix, action)
         if action == "refused":

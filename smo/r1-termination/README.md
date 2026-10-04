@@ -210,3 +210,7 @@ cd smo/r1-termination && PYTHONPATH=.:../shared python -m pytest tests/ -q
 - Call flows: [01 onboarding to deployment](../docs/call-flows/01-rapp-onboarding-to-deployment.md) (bootstrap), [14 correlation id](../docs/call-flows/14-correlation-id-propagation.md), [18 SME security lifecycle](../docs/call-flows/18-sme-trusted-invokers-lifecycle.md) (token and introspection)
 - OpenAPI: [`../docs/openapi/r1-termination.json`](../docs/openapi/r1-termination.json)
 - Related READMEs: [SME](../sme/README.md) (issues and introspects tokens), [DME](../dme/README.md)
+
+## What an rApp may change (PR-SEC-14)
+
+For a caller with the `rapp` role the gateway applies two lists from `shared/smo_shared/roles.py`: `INTERNAL_ONLY` (refused in any method) and `RAPP_MAY_CHANGE`, an allow-list for POST, PUT, PATCH and DELETE per module. A change that is not on it is refused with 403 `ROLE_NOT_PERMITTED` before a backend is called; `SMO_ROLE_ENFORCEMENT=audit` counts and logs it and lets it through. Reads are not decided by the allow-list. The list is what `smo_sdk` calls plus the consumer-facing request routes of the AI/ML services; `sdk/tests/conftest.py` fails any SDK test whose call is off it, so adding an SDK call means adding the route. An SMO module (the `internal` role) is never refused by either list.

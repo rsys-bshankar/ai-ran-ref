@@ -213,11 +213,11 @@ def _install_recording_client(monkeypatch, next_status=200):
 
 def test_proxy_forwards_method_body_and_query_params(monkeypatch):
     recorder = _install_recording_client(monkeypatch)
-    resp = client.post("/sme/published-apis/v1", params={"foo": "bar"}, json={"serviceName": "x"}, headers=AUTH_HEADERS)
+    resp = client.post("/sme/published-apis/v1/apf/service-apis", params={"foo": "bar"}, json={"serviceName": "x"}, headers=AUTH_HEADERS)
     assert resp.status_code == 200
     call = recorder.calls[0]
     assert call["method"] == "POST"
-    assert call["url"] == f"{ROUTES['/sme']}/published-apis/v1"
+    assert call["url"] == f"{ROUTES['/sme']}/published-apis/v1/apf/service-apis"
     assert call["params"]["foo"] == "bar"
     assert b"serviceName" in call["content"]
 
@@ -464,11 +464,11 @@ def test_the_model_artifact_upload_route_accepts_a_larger_body_and_only_that_rou
 def test_the_cap_and_its_overrides_come_from_the_environment(monkeypatch):
     _backend_that_accepts_any_token(monkeypatch)
     monkeypatch.setenv("R1_MAX_BODY_BYTES", "100")
-    assert client.post("/dme/x", headers=AUTH_HEADERS, content=b"a" * 101).status_code == 413
-    assert client.post("/dme/x", headers=AUTH_HEADERS, content=b"a" * 100).status_code == 200
-    monkeypatch.setenv("R1_MAX_BODY_OVERRIDES", "/dme/big=1000")
-    assert client.post("/dme/big", headers=AUTH_HEADERS, content=b"a" * 900).status_code == 200
-    assert client.post("/dme/x", headers=AUTH_HEADERS, content=b"a" * 900).status_code == 413
+    assert client.post("/dme/offers", headers=AUTH_HEADERS, content=b"a" * 101).status_code == 413
+    assert client.post("/dme/offers", headers=AUTH_HEADERS, content=b"a" * 100).status_code == 200
+    monkeypatch.setenv("R1_MAX_BODY_OVERRIDES", "/dme/data-jobs=1000")
+    assert client.post("/dme/data-jobs", headers=AUTH_HEADERS, content=b"a" * 900).status_code == 200
+    assert client.post("/dme/offers", headers=AUTH_HEADERS, content=b"a" * 900).status_code == 413
 
 
 # --- PR-SEC-1.6: /bootstrap behind the TLS edge --------------------------------------------------------------------------------
