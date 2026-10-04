@@ -87,6 +87,13 @@ def record_role_refusal(module: str, action: str) -> None:
     ROLE_REFUSALS.labels(r1_target(module), action).inc()
 
 
+AUDIT_WRITES = Counter("smo_audit_writes_total", "Rows the gateway tried to add to the audit chain (PR-SEC-11), by outcome (ok or failed).", ["outcome"])
+
+
+def record_audit_write(outcome: str) -> None:
+    AUDIT_WRITES.labels(outcome).inc()
+
+
 OUTBOUND_CALLS = Counter("smo_outbound_calls_total", "Outbound calls, by client (r1 or webhook), target, method and outcome.",
                          ["client", "target", "method", "outcome"])
 OUTBOUND_DURATION = Histogram("smo_outbound_call_duration_seconds", "Outbound call duration, by client and target.", ["client", "target"])
