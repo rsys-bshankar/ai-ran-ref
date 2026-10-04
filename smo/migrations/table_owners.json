@@ -1,0 +1,179 @@
+{
+ "_comment": "Which module owns each table (PR-DB-2.1). A module owns a table when its own app/models.py declares it; the tables the shared library declares for every module (smo_shared) are under `shared`. tests_integration/test_table_owners.py fails when a table is missing here, listed twice, or listed under a module that does not declare it; scripts/check_migration_matches_models.py fails when the migrated Postgres has a table that is not here. Add a table here in the same change that adds it.",
+ "shared": [
+  "audit_head",
+  "audit_log",
+  "idempotency_key",
+  "module_identity",
+  "notification_outbox",
+  "periodic_run"
+ ],
+ "r1-termination": [],
+ "sme": [
+  "invoker_registration",
+  "issued_access_token",
+  "provider_registration",
+  "service_authz_policy",
+  "service_event_subscription",
+  "service_profile",
+  "trusted_invoker",
+  "used_client_assertion"
+ ],
+ "dme": [
+  "data_job",
+  "data_offer",
+  "data_record",
+  "dme_action_record",
+  "dme_delivery_schema",
+  "dme_producer",
+  "dme_producer_type",
+  "dme_type",
+  "dme_type_subscription"
+ ],
+ "onboarding": [
+  "application_package",
+  "artifact",
+  "package_usage_registration"
+ ],
+ "rapp-mgmt": [
+  "rapp_fault_report",
+  "rapp_instance",
+  "rapp_instance_version",
+  "rapp_performance_report"
+ ],
+ "ran-nf-oam": [
+  "alarm",
+  "cm_schema_cache",
+  "cm_snapshot",
+  "file_subscription",
+  "fm_subscription",
+  "kpi_definition",
+  "kpi_schedule",
+  "managed_entity",
+  "managed_object",
+  "msac_access_rule",
+  "msac_identity",
+  "msac_role",
+  "o1_adaptor_endpoint",
+  "o1_adaptor_host_key",
+  "pm_file",
+  "pm_subscription",
+  "rapp_kill",
+  "rapp_limit",
+  "safeguard_refusal",
+  "safeguard_subscription",
+  "software_management_job",
+  "vendor_capability",
+  "write_config_job",
+  "write_config_sub_change"
+ ],
+ "a1-related": [
+  "a1_ei_type",
+  "a1_policy",
+  "a1_service_registration",
+  "policy_status_subscription"
+ ],
+ "nfo": [
+  "lcm_operation",
+  "nf_deployment",
+  "nf_deployment_descriptor",
+  "nf_ocloud_resource"
+ ],
+ "focom": [
+  "deployment_manager",
+  "inventory_subscription",
+  "o2ims_object",
+  "ocloud_alarm",
+  "ocloud_alarm_subscription",
+  "ocloud_location",
+  "ocloud_performance_job",
+  "ocloud_performance_metric",
+  "ocloud_performance_subscription",
+  "ocloud_site",
+  "resource",
+  "resource_pool",
+  "resource_type"
+ ],
+ "aimgf": [
+  "aiml_inference_emulation_function",
+  "aiml_inference_function",
+  "aiml_inference_report",
+  "certification_record",
+  "emulation_job",
+  "feature_group",
+  "inference_job",
+  "lifecycle_transition",
+  "ml_model_loading_policy",
+  "ml_model_loading_process",
+  "ml_model_loading_request",
+  "ml_testing_function",
+  "ml_testing_report",
+  "ml_training_function",
+  "ml_training_process",
+  "ml_training_report",
+  "ml_update_function",
+  "ml_update_process",
+  "ml_update_report",
+  "ml_update_request",
+  "mlmf_subscription",
+  "model_lifecycle",
+  "performance_report",
+  "training_job",
+  "validation_job"
+ ],
+ "mlmr": [
+  "aiml_model",
+  "ml_model_coordination_group",
+  "ml_model_profile",
+  "ml_model_repository",
+  "ml_models_storage",
+  "model_artifact",
+  "model_change_subscription"
+ ],
+ "mllf": [],
+ "ran-analytics": [
+  "mdaf_producer"
+ ],
+ "mdaf": [
+  "mda_function",
+  "mda_report_delivery",
+  "mda_request",
+  "mda_subscription",
+  "mdaf_report"
+ ],
+ "intent-service": [
+  "autonomy_dispatch",
+  "intent",
+  "intent_handling_function",
+  "intent_report",
+  "intent_utility_formula"
+ ],
+ "so-smos": [
+  "service_order"
+ ],
+ "sa-smos": [
+  "assurance_monitor",
+  "o1_cm_enactment",
+  "remedial_action"
+ ],
+ "samples/energy-saving-rapp": [
+  "energy_saving_cell",
+  "energy_saving_decision",
+  "energy_saving_instance"
+ ],
+ "samples/mobility-optimization-rapp": [
+  "mobility_decision",
+  "mobility_instance",
+  "mobility_relation"
+ ],
+ "samples/coverage-optimization-rapp": [
+  "coverage_cell",
+  "coverage_decision",
+  "coverage_instance"
+ ],
+ "samples/traffic-steering-rapp": [
+  "traffic_cell",
+  "traffic_decision",
+  "traffic_instance"
+ ]
+}

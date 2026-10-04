@@ -28,6 +28,7 @@ docs/adr/0001-schema-migrations.md), and the check fails until the database,
 migrated to head, has the column. Run from the migration-postgres CI job.
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -106,6 +107,20 @@ def main() -> None:
                     f"{table.name}.{column.name}: ORM says nullable={column.nullable}, "
                     f"schema says nullable={real_nullable}"
                 )
+
+    # PR-DB-2: every table has an owner in migrations/table_owners.json, and no foreign key reaches into another module's table
+    owners = {table: owner for owner, tables in json.loads((SMO_ROOT / "migrations" / "table_owners.json").read_text()).items()
+              if owner != "_comment" for table in tables}
+    for table in sorted(real_tables - set(owners) - {"alembic_version"}):
+        errors.append(f"table {table!r}: in the migrated schema but not in migrations/table_owners.json")
+    for table in sorted(set(owners) - real_tables):
+        errors.append(f"table {table!r}: in migrations/table_owners.json but not in the migrated schema")
+    for table in sorted(real_tables & set(owners)):
+        for fk in inspector.get_foreign_keys(table):
+            target = fk["referred_table"]
+            if owners.get(target) not in (None, owners[table]):
+                errors.append(f"foreign key {fk['name']}: {table} ({owners[table]}) -> {target} ({owners[target]}) crosses a module boundary; "
+                              "keep the column as a plain id (PR-DB-2.4)")
 
     if errors:
         print(f"Schema mismatches between the migrated schema and the ORM models ({len(errors)}):")
