@@ -626,7 +626,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| HA-5.1 | Anti-affinity and topology spread in the chart | Pods land on different nodes | OPS-2.7 |
+| HA-5.1 | Anti-affinity and topology spread in the chart (done as topology spread; rendering checked in CI, placement on several nodes not yet: the CI cluster has one node) | Pods land on different nodes | OPS-2.7 |
 
 #### PR-HA-6 — Disaster recovery
 

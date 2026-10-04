@@ -1,4 +1,7 @@
 {{- /* One Deployment and one Service per enabled module, from one template (PR-OPS-2.2). */}}
+{{- if not (has .Values.placement.mode (list "soft" "hard" "off")) }}
+{{- fail (printf "placement.mode must be soft, hard or off, not %q" .Values.placement.mode) }}
+{{- end }}
 {{- range $name, $_ := .Values.modules }}
 {{- $m := include "smo.module" (dict "root" $ "name" $name) | fromYaml }}
 {{- if $m.enabled }}
@@ -45,6 +48,26 @@ spec:
       serviceAccountName: rapp-mgmt       # the one pod with Kubernetes access (rapp-credentials.yaml); its token is projected below, not auto-mounted
       {{- end }}
       terminationGracePeriodSeconds: 30
+      {{- if ne $.Values.placement.mode "off" }}
+      {{- $when := ternary "DoNotSchedule" "ScheduleAnyway" (eq $.Values.placement.mode "hard") }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: {{ $when }}
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+              app.kubernetes.io/name: {{ $name }}
+        {{- if $.Values.placement.zoneKey }}
+        - maxSkew: 1
+          topologyKey: {{ $.Values.placement.zoneKey }}
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+              app.kubernetes.io/name: {{ $name }}
+        {{- end }}
+      {{- end }}
       {{- if $m.database }}
       initContainers:
         # PR-OPS-3.2: a pod of this release does not start on an older schema. It waits for the migration (the Job of migrate.yaml) and, if the

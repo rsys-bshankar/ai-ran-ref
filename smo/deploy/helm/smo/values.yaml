@@ -72,6 +72,15 @@ networkPolicy:
 rappCredentials:
   delivery: none
 
+# Where the replicas of a module land (PR-HA-5). Every module's pods are spread over nodes, so one node lost takes at most its share of a module.
+#   soft  prefer different nodes (topology spread, maxSkew 1, ScheduleAnyway): pods still start when there are fewer nodes than replicas (a one-node cluster, kind)
+#   hard  require them (DoNotSchedule): a replica that cannot go on another node stays Pending
+#   off   no constraint
+# `zoneKey` adds the same rule over zones (topology.kubernetes.io/zone) when set; a cluster without that label ignores a soft one.
+placement:
+  mode: soft
+  zoneKey: ""
+
 # Per-module PodDisruptionBudget and HorizontalPodAutoscaler templates, off until a module runs more than one replica (PR-HA).
 podDisruptionBudget:
   enabled: false

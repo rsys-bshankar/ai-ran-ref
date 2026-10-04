@@ -60,3 +60,8 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 ## CI
 
 `.github/workflows/smo-tests.yml`, job `helm`: lint, render with the options on, build the images from the checkout, install on kind, check the database is at the head revision, run the compose smoke scripts inside the cluster (`compose_e2e.py`, `compose_e2e_roles.py`), check no rApp can read the enrollment secret, upgrade (every module rolls, no pod fails), uninstall.
+
+## Where the replicas land
+
+With more than one replica of a module (`modules.<name>.replicas`, or `ci/ha-values.yaml` as an example), `placement.mode` decides how the pods are spread: `soft` (default) prefers different nodes and still starts on a cluster with fewer nodes than replicas, `hard` requires different nodes (a replica that cannot be placed stays Pending), `off` sets nothing. `placement.zoneKey: topology.kubernetes.io/zone` adds a preference across zones. The chart's CI checks that each mode renders as described; it runs on one node, so it does not show pods landing on different nodes.
+
