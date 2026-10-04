@@ -34,6 +34,8 @@ Kubernetes keeps a StatefulSet's volume when the release is uninstalled. To rein
 
 The chart makes the Secret `smo-secrets` with the database password and the enrollment secret (PR-SEC-14) and keeps their values across upgrades. To bring your own, create a Secret with the keys `db-password` and `enrollment-secret` and set `secrets.existingSecret`; the chart then never touches it. Each pod is mounted only what it needs, as files under `/run/secrets` (the `*_FILE` convention of `docs/SECRETS.md`): an rApp never gets the enrollment secret, which is what would make it an SMO module.
 
+**rApp credentials.** An rApp instance's credentials are made when the instance is created. With `--set rappCredentials.delivery=kubernetes` rApp Management writes them to a Secret `rapp-<instanceId>-credentials` in the release's namespace, so the workload NFO deploys can take them with `envFrom: [{secretRef: {name: rapp-<instanceId>-credentials}}]` (`SMO_INVOKER_ID`, `SMO_INVOKER_SECRET`, `SMO_IDENTITY_KIND=rapp`); the Secret is replaced when the credentials are rotated and deleted when the instance is terminated, and no person sees the secret. This is the one pod with Kubernetes access: a service account whose Role can create, update and delete Secrets in the namespace and read none. Off by default (`none`).
+
 The GUI backend's own settings (`GUI_JWT_SECRET`, `GUI_ADMIN_PASSWORD`, ...) go in `gui.env`; left empty they are generated on first start.
 
 ## Migrations and upgrades

@@ -170,3 +170,29 @@ def test_the_optional_templates_render_when_switched_on():
     r1 = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "r1-termination")
     assert {"name": "R1_PUBLIC_BASE_URL", "value": "https://r1.example.com"} in r1["spec"]["template"]["spec"]["containers"][0]["env"]
     assert not [d for d in docs if d["kind"] == "PodDisruptionBudget" and d["metadata"]["name"] in ("onboarding", "gui-bff")]     # a volume holds one pod
+
+
+@helm
+def test_credential_delivery_is_off_by_default_and_gives_no_pod_a_service_account():
+    docs = _render()
+    assert not [d for d in docs if d["kind"] in ("ServiceAccount", "Role", "RoleBinding")]
+    rapp_mgmt = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "rapp-mgmt")
+    env = {e["name"] for e in rapp_mgmt["spec"]["template"]["spec"]["containers"][0]["env"]}
+    assert "RAPP_CREDENTIAL_DELIVERY" not in env and "serviceAccountName" not in rapp_mgmt["spec"]["template"]["spec"]
+
+
+@helm
+def test_credential_delivery_gives_only_rapp_mgmt_a_token_and_a_role_that_cannot_read_secrets():
+    docs = _render("--set", "rappCredentials.delivery=kubernetes")
+    pods = {d["metadata"]["name"]: d["spec"]["template"]["spec"] for d in docs if d["kind"] == "Deployment"}
+    assert [n for n, p in pods.items() if p.get("serviceAccountName")] == ["rapp-mgmt"]
+    assert all(p["automountServiceAccountToken"] is False for p in pods.values())          # the token is projected into one pod, never auto-mounted
+    volume = next(v for v in pods["rapp-mgmt"]["volumes"] if v["name"] == "k8s-access")
+    assert {"serviceAccountToken", "configMap"} == {k for source in volume["projected"]["sources"] for k in source}
+    mounts = {m["name"]: m["mountPath"] for m in pods["rapp-mgmt"]["containers"][0]["volumeMounts"]}
+    assert mounts["k8s-access"] == "/var/run/smo-k8s" and not mounts["k8s-access"].startswith(mounts["secrets"])          # not inside the secrets mount
+    env = {e["name"]: e.get("value") for e in pods["rapp-mgmt"]["containers"][0]["env"]}
+    assert env["RAPP_CREDENTIAL_DELIVERY"] == "kubernetes" and env["RAPP_K8S_TOKEN_FILE"] == "/var/run/smo-k8s/token"
+    role = next(d for d in docs if d["kind"] == "Role")
+    verbs = {v for rule in role["rules"] for v in rule["verbs"]}
+    assert verbs == {"create", "update", "delete"} and role["rules"][0]["resources"] == ["secrets"]

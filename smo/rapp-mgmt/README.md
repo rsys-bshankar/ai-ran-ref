@@ -172,7 +172,7 @@ Upgrade choreography (`upgrade.py`):
 | POST | `/instances/{id}/recover` | `FAULTED → DEPLOYING` | 409 |
 | GET | `/instances/{id}/safeguards` | what holds this instance in check at RAN NF OAM, in one read, for the GUI: `{instanceId, invokerId, killed, kill?, limits?}` (limits include `configJobsLastHour`); a terminated instance has `invokerId` null; 503 when RAN NF OAM cannot answer, never reported as "not stopped" | 404; 503 |
 | PUT / DELETE | `/instances/{id}/kill` | `{requestedBy, reason?}`: throws / lifts the per-rApp kill switch at RAN NF OAM for this instance's `oauthClientId` (`AI-10.4`); the instance keeps running; 503 if RAN NF OAM cannot be told, 404 once terminated. Internal-only at R1 | 404; 503 |
-| POST | `/instances/{id}/credentials` | `{instanceId, oauthClientId, oauthClientSecret}`, issued once (`Cache-Control: no-store`, not an idempotent command, the secret is not stored); a new call rotates. DEPLOYING only | 404; 409; 503 (SME) |
+| POST | `/instances/{id}/credentials` | `{instanceId, oauthClientId, oauthClientSecret}`, issued once (`Cache-Control: no-store`, not an idempotent command, the secret is not stored); a new call rotates. DEPLOYING only. With `RAPP_CREDENTIAL_DELIVERY=kubernetes` the secret goes to the instance's Kubernetes Secret instead and the answer is `{instanceId, oauthClientId, credentialSecret: <name>}` | 404; 409; 503 (SME) |
 | POST | `/instances/{id}/upgrade` | `{newPackageId}` → `{newInstanceId, oldInstanceState, oauthClientId}` | 409; 404/409 from provisioning |
 | POST | `/instances/{id}/upgrade/resolve?succeeded=` | Commit or roll back; answers `{instanceId, state, packageId}` of the survivor | 404 (none pending); 409 `LIFECYCLE_ILLEGAL_TRANSITION`; 409 `RAPP_UPGRADE_TIMED_OUT` |
 | POST | `/instances/{id}/rollback` | Upgrade back to the newest version not rolled back; `id` may be a superseded instance id. Answers `{instanceId, newInstanceId, oldInstanceState, fromPackageId, toPackageId, rollbackOfVersionId, oauthClientId}` | 404; 409 `ROLLBACK_HISTORY_UNAVAILABLE`; 409 (not `RUNNING`); 404/409 from provisioning |
@@ -202,7 +202,7 @@ No inbound callbacks and no background tasks.
 
 ### 2.6 Configuration
 
-rApp Management reads no environment variable of its own. Through `smo_shared`: `SMO_DATABASE_URL` (required, no default), `R1_GATEWAY_URL` (default `http://r1-termination:8000`), and optionally `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET`. In code: `DEPLOYABLE_PACKAGE_STATES = ("AVAILABLE", "PRIMED")`; `upgrade_timeout_seconds` column default 300.
+rApp Management reads one environment variable of its own: `RAPP_CREDENTIAL_DELIVERY` (`none`, the default, or `kubernetes`: write each instance's credentials to a Secret `rapp-<instanceId>-credentials` in its namespace, created with the invoker at create and on rotation, deleted on terminate; it also reads `RAPP_K8S_NAMESPACE`, `RAPP_K8S_TOKEN_FILE`, `RAPP_K8S_CA_FILE` and `KUBERNETES_SERVICE_HOST`/`PORT`, which the Helm chart sets; `smo_shared/credential_delivery.py`). Through `smo_shared`: `SMO_DATABASE_URL` (required, no default), `R1_GATEWAY_URL` (default `http://r1-termination:8000`), and optionally `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET`. In code: `DEPLOYABLE_PACKAGE_STATES = ("AVAILABLE", "PRIMED")`; `upgrade_timeout_seconds` column default 300.
 
 ### 2.7 Error codes
 

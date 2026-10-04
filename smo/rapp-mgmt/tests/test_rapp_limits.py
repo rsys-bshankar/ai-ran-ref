@@ -212,3 +212,56 @@ def test_an_unknown_instance_is_404_and_a_terminated_one_has_nothing_to_kill(cli
     client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
     client.post(f"/instances/{created['instanceId']}/terminate")
     assert client.put(f"/instances/{created['instanceId']}/kill", json={"requestedBy": "a"}).status_code == 404
+
+
+# ---- delivering the credentials to the workload (kubernetes mode)
+
+def _wire_delivery(monkeypatch, fail=False):
+    from smo_shared import credential_delivery
+    delivered = {"put": [], "withdrawn": []}
+
+    def deliver(instance_id, invoker_id, secret, **kw):
+        if fail:
+            raise credential_delivery.DeliveryFailed("the Kubernetes API answered 403")
+        delivered["put"].append((str(instance_id), invoker_id, secret))
+        return {"kubernetesSecret": credential_delivery.secret_name(instance_id)}
+
+    monkeypatch.setattr("app.provisioning.credential_delivery.deliver", deliver)
+    monkeypatch.setattr("app.provisioning.credential_delivery.withdraw", lambda instance_id, **kw: (delivered["withdrawn"].append(str(instance_id)), "DONE")[1])
+    return delivered
+
+
+def test_with_delivery_on_the_secret_goes_to_the_workload_at_create_and_is_not_in_any_answer(client, monkeypatch):
+    seen = _wire_invokers(monkeypatch)
+    delivered = _wire_delivery(monkeypatch)
+    created = _create(client)
+    assert len(delivered["put"]) == 1
+    instance_id, invoker_id, secret = delivered["put"][0]
+    assert instance_id == created["instanceId"] and invoker_id == created["oauthClientId"] and secret.startswith("secret-")
+    assert secret not in str(created)
+
+
+def test_with_delivery_on_rotating_replaces_the_secret_and_answers_with_its_name_not_the_secret(client, monkeypatch):
+    _wire_invokers(monkeypatch)
+    delivered = _wire_delivery(monkeypatch)
+    created = _create(client)
+    body = client.post(f"/instances/{created['instanceId']}/credentials").json()
+    assert body["credentialSecret"] == f"rapp-{created['instanceId']}-credentials" and "oauthClientSecret" not in body
+    assert delivered["put"][-1][1] == body["oauthClientId"] and delivered["put"][-1][2] not in str(body)
+
+
+def test_creating_an_instance_fails_and_the_invoker_is_withdrawn_if_the_secret_cannot_be_written(client, monkeypatch):
+    seen = _wire_invokers(monkeypatch)
+    _wire_delivery(monkeypatch, fail=True)
+    resp = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}})
+    assert resp.status_code == 503 and "could not be delivered" in resp.text
+    assert any(path.startswith("/sme/invoker-registrations/api-invoker-") for path in seen["delete"])
+
+
+def test_terminating_the_instance_deletes_its_secret(client, monkeypatch):
+    _wire_invokers(monkeypatch)
+    delivered = _wire_delivery(monkeypatch)
+    created = _create(client)
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    assert client.post(f"/instances/{created['instanceId']}/terminate").status_code == 200
+    assert delivered["withdrawn"] == [created["instanceId"]]

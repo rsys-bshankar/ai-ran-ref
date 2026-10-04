@@ -65,6 +65,13 @@ ingress:
 networkPolicy:
   enabled: false
 
+# How an rApp instance's credentials reach its workload (PR-SEC-14). `none`: rApp Management does not deliver them; an operator fetches them once from
+# POST /instances/{id}/credentials. `kubernetes`: rApp Management writes them to a Secret `rapp-<instanceId>-credentials` in this namespace (the workload
+# takes it with envFrom), replaces it on rotation and deletes it on terminate; nobody sees the secret. This gives the rApp Management pod (only) a service
+# account whose Role can create, update and delete Secrets in this namespace, and read none.
+rappCredentials:
+  delivery: none
+
 # Per-module PodDisruptionBudget and HorizontalPodAutoscaler templates, off until a module runs more than one replica (PR-HA).
 podDisruptionBudget:
   enabled: false

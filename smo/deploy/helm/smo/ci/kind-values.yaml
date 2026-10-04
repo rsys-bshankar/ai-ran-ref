@@ -6,3 +6,5 @@ image:
 gui:
   env:
     GUI_COOKIE_SECURE: "false"          # no TLS in front of the GUI in CI
+rappCredentials:
+  delivery: kubernetes                  # exercised by the "credentials reach a Secret" step

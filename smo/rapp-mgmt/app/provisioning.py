@@ -15,10 +15,12 @@ not repeated here.
 
 import datetime
 import uuid
+from contextlib import suppress
 
 import httpx
 from sqlalchemy.orm import Session
 
+from smo_shared import credential_delivery
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 
@@ -57,7 +59,7 @@ def provision_instance(db: Session, package_id: uuid.UUID, configuration: dict |
                         oauth_client_id=str(uuid.uuid4()), autonomy_mode=autonomy_mode, region_scope=region_scope)
     db.add(inst)
     db.flush()
-    register_instance_invoker(inst)          # replaces the placeholder identity; the secret is not kept (see there)
+    deliver_credentials(inst, register_instance_invoker(inst))   # replaces the placeholder identity; the secret goes to the workload's Secret (or nowhere: see there)
 
     nfo_resp = r1.post("/nfo/deployments", json={
         "nfDeploymentDescriptorId": nf_deployment_descriptor_id,  # the real descriptor, per section 5
@@ -104,6 +106,7 @@ def release_instance_resources(inst: RAppInstance, reason: str) -> dict:
     else:
         usage = "SKIPPED: no usage registration"
     return {"instanceId": str(inst.instance_id), "reason": reason, "nfoTerminate": nfo, "usageStop": usage,
+            "credentialSecret": credential_delivery.withdraw(inst.instance_id),
             "at": datetime.datetime.now(datetime.UTC).isoformat()}
 
 
@@ -183,6 +186,17 @@ def register_instance_invoker(inst: RAppInstance) -> str:
     body = resp.json()
     inst.oauth_client_id = body["apiInvokerId"]
     return body["onboardingSecret"]
+
+
+def deliver_credentials(inst: RAppInstance, secret: str) -> dict | None:
+    """Puts the instance's credentials where its workload will read them, when this deployment says how (`smo_shared/credential_delivery.py`; None when
+    it does not). A workload that cannot get its credentials is no use, so a failure is a 503 and the invoker just made is deregistered again."""
+    try:
+        return credential_delivery.deliver(inst.instance_id, inst.oauth_client_id, secret)
+    except credential_delivery.DeliveryFailed as exc:
+        with suppress(httpx.HTTPError):
+            R1Client().delete(f"/sme/invoker-registrations/{inst.oauth_client_id}")
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"the instance's credentials could not be delivered to its workload: {exc}")
 
 
 def onboarding_status(inst: RAppInstance) -> dict:

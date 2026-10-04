@@ -648,6 +648,15 @@ jobs:
           [ "$rows" -gt 0 ]
           kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
 
+      - name: rApp credentials reach a Secret, are replaced on rotation and deleted, and the pod cannot read Secrets back
+        working-directory: smo
+        run: |
+          kubectl -n smo exec -i deploy/rapp-mgmt -- python3 - deliver < scripts/k8s_credential_delivery_check.py
+          [ "$(kubectl -n smo get secret rapp-ci-check-credentials -o jsonpath='{.data.SMO_INVOKER_SECRET}' | base64 -d)" = "secret-two" ]
+          [ "$(kubectl -n smo get secret rapp-ci-check-credentials -o jsonpath='{.data.SMO_IDENTITY_KIND}' | base64 -d)" = "rapp" ]
+          kubectl -n smo exec -i deploy/rapp-mgmt -- python3 - withdraw < scripts/k8s_credential_delivery_check.py
+          ! kubectl -n smo get secret rapp-ci-check-credentials
+
       - name: A pod of the rApps does not hold the enrollment secret
         run: |
           for rapp in energy-saving-rapp mobility-optimization-rapp coverage-optimization-rapp traffic-steering-rapp; do

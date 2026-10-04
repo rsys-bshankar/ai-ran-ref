@@ -31,7 +31,7 @@ from smo_shared.idempotency import idempotent
 
 from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
 from .provisioning import (DEPLOYABLE_PACKAGE_STATES, apply_rapp_limits, onboarding_status, provision_instance, register_instance_invoker, register_sme_declarations,  # noqa: F401
-                           release_instance_resources)
+                           release_instance_resources, deliver_credentials)
 from .statemachine import RAPP_INSTANCE_FSM, InstanceEvent, InstanceState
 from .upgrade import (current_instance_id, expire_overdue_upgrade, resolve_upgrade, rollback_target, start_rollback,
                       start_upgrade, version_history)
@@ -155,11 +155,14 @@ def issue_instance_credentials(instance_id: uuid.UUID, response: Response, db: S
                                        f"RAppInstance {instance_id}: credentials are issued while it is DEPLOYING")
     previous = inst.oauth_client_id
     secret = register_instance_invoker(inst)
+    delivered = deliver_credentials(inst, secret)
     db.commit()
     if previous:
         with suppress(httpx.HTTPError):
             R1Client().delete(f"/sme/invoker-registrations/{previous}")
     response.headers["Cache-Control"] = "no-store"
+    if delivered:       # with delivery on, the secret went to the workload's Secret and goes nowhere else, not even into this answer
+        return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id, "credentialSecret": delivered["kubernetesSecret"]}
     return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id, "oauthClientSecret": secret}
 
 
