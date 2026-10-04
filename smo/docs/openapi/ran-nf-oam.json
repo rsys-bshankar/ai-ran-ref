@@ -833,6 +833,35 @@
         "title": "RollbackRequest",
         "type": "object"
       },
+      "SafeguardSubscriptionRequest": {
+        "properties": {
+          "callbackUri": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Callbackuri",
+            "type": "string"
+          },
+          "refusals": {
+            "default": [],
+            "items": {
+              "enum": [
+                "RAPP_KILLED",
+                "RAPP_RATE_LIMITED",
+                "RAPP_BLAST_RADIUS_EXCEEDED",
+                "RAPP_MAGNITUDE_EXCEEDED"
+              ],
+              "type": "string"
+            },
+            "title": "Refusals",
+            "type": "array"
+          }
+        },
+        "required": [
+          "callbackUri"
+        ],
+        "title": "SafeguardSubscriptionRequest",
+        "type": "object"
+      },
       "SchemaRef": {
         "additionalProperties": false,
         "properties": {
@@ -5089,6 +5118,234 @@
         "tags": [
           "health"
         ]
+      }
+    },
+    "/safeguard-refusals": {
+      "get": {
+        "description": "AI-10.6: the refusals recorded, newest first, whether or not anyone was subscribed. Narrow by rApp (`invoker_id`), `code` and `since`.",
+        "operationId": "list_safeguard_refusals_safeguard_refusals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "invoker_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Invoker Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Safeguard Refusals"
+      }
+    },
+    "/safeguard-subscriptions": {
+      "get": {
+        "operationId": "list_safeguard_subscriptions_safeguard_subscriptions_get",
+        "parameters": [
+          {
+            "description": "Max rows to return (1-500).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Max rows to return (1-500).",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Safeguard Subscriptions"
+      },
+      "post": {
+        "description": "AI-10.6: be told (a POST to `callbackUri`, through the outbox) each time the platform refuses an rApp: `refusals` narrows it to those codes,\nempty means all four. A destination the SSRF guard refuses is a 422 here rather than a silent drop later.",
+        "operationId": "subscribe_to_safeguard_refusals_safeguard_subscriptions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SafeguardSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Subscribe To Safeguard Refusals"
+      }
+    },
+    "/safeguard-subscriptions/{subscription_id}": {
+      "delete": {
+        "operationId": "unsubscribe_from_safeguard_refusals_safeguard_subscriptions__subscription_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unsubscribe From Safeguard Refusals"
       }
     },
     "/software-management-jobs": {

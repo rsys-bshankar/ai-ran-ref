@@ -1148,7 +1148,6 @@ Current state, checked: AIMgF training, validation, emulation and inference jobs
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| AI-10.6 | Events for each refusal | Event delivered | AI-10.2, MSG-1.4 |
 
 #### PR-AI-11 — Human approval of rApp actions
 

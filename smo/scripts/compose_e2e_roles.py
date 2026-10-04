@@ -102,6 +102,12 @@ try:
         r = call("POST", "/ran-nf-oam/config-jobs", rapp_tok, json=job)
         check("a stopped rApp's config job is refused (403 RAPP_KILLED)", r.status_code == 403 and "RAPP_KILLED" in r.text, (r.status_code, r.text[:200]))
         check("a caller that was not stopped is not affected", call("POST", "/ran-nf-oam/config-jobs", internal_tok, json=job).status_code in (200, 202))
+        # AI-10.6: every refusal is recorded, and only SMO modules may read the record
+        r = call("GET", f"/ran-nf-oam/safeguard-refusals?invoker_id={rapp['apiInvokerId']}", internal_tok)
+        codes = [i["refusal"] for i in r.json().get("items", [])] if r.status_code == 200 else []
+        check("the refusals of the rApp were recorded (blast radius, then the kill switch)", "RAPP_KILLED" in codes and "RAPP_BLAST_RADIUS_EXCEEDED" in codes, (r.status_code, codes))
+        check("an rApp cannot read the record of refusals (403)", call("GET", "/ran-nf-oam/safeguard-refusals", rapp_tok).status_code == 403)
+        check("an rApp cannot list who is told about them (403)", call("GET", "/ran-nf-oam/safeguard-subscriptions", rapp_tok).status_code == 403)
         r = call("DELETE", kill, rapp_tok)
         check("an rApp cannot lift it (403)", r.status_code == 403, r.status_code)
         r = call("DELETE", kill, internal_tok)

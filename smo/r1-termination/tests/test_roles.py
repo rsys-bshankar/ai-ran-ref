@@ -60,7 +60,8 @@ def gateway(monkeypatch):
 INTERNAL_ONLY_CALLS = [("PUT", "/ran-nf-oam/rapp-limits/x"), ("DELETE", "/ran-nf-oam/rapp-limits/x"), ("PUT", "/ran-nf-oam/kpi-definitions/k"),
                        ("DELETE", "/ran-nf-oam/kpi-definitions/k"), ("POST", "/ran-nf-oam/config-history/purge"), ("PUT", "/ran-nf-oam/rapp-kill/x"),
                        ("DELETE", "/ran-nf-oam/rapp-kill/x"), ("GET", "/ran-nf-oam/rapp-kill"), ("PUT", "/rapp-mgmt/instances/i/kill"),
-                       ("DELETE", "/rapp-mgmt/instances/i/kill")]
+                       ("DELETE", "/rapp-mgmt/instances/i/kill"), ("GET", "/ran-nf-oam/safeguard-refusals"), ("GET", "/ran-nf-oam/safeguard-subscriptions"),
+                       ("POST", "/ran-nf-oam/safeguard-subscriptions"), ("DELETE", "/ran-nf-oam/safeguard-subscriptions/s")]
 
 
 @pytest.mark.parametrize("method, path", INTERNAL_ONLY_CALLS)
