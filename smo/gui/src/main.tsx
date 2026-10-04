@@ -23,6 +23,7 @@ import { Mobility } from "./pages/Mobility";
 import { Coverage } from "./pages/Coverage";
 import { TrafficSteering } from "./pages/TrafficSteering";
 import { Rapps } from "./pages/Rapps";
+import { Safeguards } from "./pages/Safeguards";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -57,6 +58,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route index element={<Dashboard />} />
                 <Route path="flows" element={<Flows />} />
                 <Route path="rapps" element={<Rapps />} />
+                <Route path="safeguards" element={<Safeguards />} />
                 <Route path="aiml" element={<Aiml />} />
                 <Route path="alarms" element={<Alarms />} />
                 <Route path="kpis" element={<Kpis />} />

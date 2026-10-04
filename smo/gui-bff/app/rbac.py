@@ -103,6 +103,10 @@ RULES: list[Rule] = [
     _rule("POST", "/rapp-mgmt/instances", O),
     _rule("PUT", "/rapp-mgmt/instances/{id}/config", O),
     _rule("POST", "/rapp-mgmt/instances/{id}/(upgrade|upgrade/resolve|rollback|recover|bootstrap-complete)", O),
+    # AI-10.4: stopping an rApp is an emergency action, so an operator may do it (and it is attributed to them); letting it write again is admin
+    _rule("PUT", "/rapp-mgmt/instances/{id}/kill", O,
+          json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
+    _rule("DELETE", "/rapp-mgmt/instances/{id}/kill", A),
     _rule("POST", "/rapp-mgmt/instances/{id}/terminate", A),
     _rule("DELETE", "/rapp-mgmt/instances/{id}", A),
     _rule("POST", "/rapp-mgmt/instances/{id}/(performance|fault)", A),   # test-data injection
@@ -173,6 +177,13 @@ RULES: list[Rule] = [
     _rule("DELETE", "/ran-nf-oam/vendor-capabilities/{id}", A),
     _rule("PUT", "/ran-nf-oam/managed-entities/{id}/cells/{id}/guards", A),
     _rule("DELETE", "/ran-nf-oam/managed-entities/{id}/cells/{id}/guards", A),
+
+    # AI-10.2/10.3, AI-10.6: what an rApp may do (its limits) and who is told when it is refused are administrative decisions
+    _rule("PUT", "/ran-nf-oam/rapp-limits/{id}", A),
+    _rule("DELETE", "/ran-nf-oam/rapp-limits/{id}", A),
+    _rule("POST", "/ran-nf-oam/safeguard-subscriptions", A),
+    _rule("DELETE", "/ran-nf-oam/safeguard-subscriptions/{id}", A),
+    _rule("POST", "/ran-nf-oam/safeguard-refusals/purge", A),
 
     # --- A1 Related
     _rule("POST", "/a1-related/policies", O),

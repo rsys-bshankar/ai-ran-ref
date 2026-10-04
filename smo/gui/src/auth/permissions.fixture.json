@@ -72,6 +72,18 @@
     "queryMatch": {}
   },
   {
+    "method": "PUT",
+    "pattern": "^/rapp-mgmt/instances/[^/]+/kill$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/rapp-mgmt/instances/[^/]+/kill$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
     "method": "POST",
     "pattern": "^/rapp-mgmt/instances/[^/]+/terminate$",
     "role": "admin",
@@ -354,6 +366,36 @@
   {
     "method": "DELETE",
     "pattern": "^/ran-nf-oam/managed-entities/[^/]+/cells/[^/]+/guards$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/ran-nf-oam/rapp-limits/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/rapp-limits/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/safeguard-subscriptions$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/safeguard-subscriptions/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/safeguard-refusals/purge$",
     "role": "admin",
     "queryMatch": {}
   },

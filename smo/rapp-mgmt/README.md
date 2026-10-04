@@ -170,6 +170,7 @@ Upgrade choreography (`upgrade.py`):
 | GET | `/instances/{id}` | Detail: `workloadRef, configuration, pendingUpgradeInstanceId, smeServiceIds, autonomyMode, regionScope, lastTeardown` | 404 `RAPP_INSTANCE_NOT_FOUND` (also for a replacement already rolled back) |
 | POST | `/instances/{id}/bootstrap-complete` | `DEPLOYING → RUNNING`; registers SME declarations | 409 |
 | POST | `/instances/{id}/recover` | `FAULTED → DEPLOYING` | 409 |
+| GET | `/instances/{id}/safeguards` | what holds this instance in check at RAN NF OAM, in one read, for the GUI: `{instanceId, invokerId, killed, kill?, limits?}` (limits include `configJobsLastHour`); a terminated instance has `invokerId` null; 503 when RAN NF OAM cannot answer, never reported as "not stopped" | 404; 503 |
 | PUT / DELETE | `/instances/{id}/kill` | `{requestedBy, reason?}`: throws / lifts the per-rApp kill switch at RAN NF OAM for this instance's `oauthClientId` (`AI-10.4`); the instance keeps running; 503 if RAN NF OAM cannot be told, 404 once terminated. Internal-only at R1 | 404; 503 |
 | POST | `/instances/{id}/credentials` | `{instanceId, oauthClientId, oauthClientSecret}`, issued once (`Cache-Control: no-store`, not an idempotent command, the secret is not stored); a new call rotates. DEPLOYING only | 404; 409; 503 (SME) |
 | POST | `/instances/{id}/upgrade` | `{newPackageId}` → `{newInstanceId, oldInstanceState, oauthClientId}` | 409; 404/409 from provisioning |

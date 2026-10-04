@@ -208,3 +208,60 @@ export function parseJsonObject(text: string): { ok: true; value: Record<string,
 export function splitList(text: string): string[] {
   return text.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 }
+
+// ---------------------------------------------------------------- rApp safeguards (AI-10.x)
+
+export const REFUSAL_CODES = ["RAPP_KILLED", "RAPP_RATE_LIMITED", "RAPP_BLAST_RADIUS_EXCEEDED", "RAPP_MAGNITUDE_EXCEEDED"] as const;
+
+/** What a refusal code means, in the operator's words. */
+export const REFUSAL_MEANING: Record<(typeof REFUSAL_CODES)[number], string> = {
+  RAPP_KILLED: "The rApp was stopped by an operator",
+  RAPP_RATE_LIMITED: "It started too many config jobs in the last hour",
+  RAPP_BLAST_RADIUS_EXCEEDED: "One job touched more managed elements than allowed",
+  RAPP_MAGNITUDE_EXCEEDED: "A value moved further than allowed in one write",
+};
+
+export interface LimitsLike {
+  maxConfigJobsPerHour: number | null; maxElementsPerJob: number | null; maxChangePercent: number | null; configJobsLastHour?: number;
+}
+
+/** One line for a limits row: "20/h (3 used) · ≤5 elements · ≤10%"; "No limits" when none is set. */
+export function describeLimits(limits: LimitsLike | null | undefined): string {
+  if (!limits) return "No limits";
+  const parts: string[] = [];
+  if (limits.maxConfigJobsPerHour != null) {
+    parts.push(`${limits.maxConfigJobsPerHour}/h${limits.configJobsLastHour != null ? ` (${limits.configJobsLastHour} used)` : ""}`);
+  }
+  if (limits.maxElementsPerJob != null) parts.push(`≤${limits.maxElementsPerJob} elements`);
+  if (limits.maxChangePercent != null) parts.push(`≤${limits.maxChangePercent}%`);
+  return parts.length ? parts.join(" · ") : "No limits";
+}
+
+export interface LimitsForm { jobsPerHour: string; elementsPerJob: string; changePercent: string }
+
+/** The body of PUT /ran-nf-oam/rapp-limits/{id} from the three form fields, or the problem to show. A blank field is "no such limit"; the
+ * bounds are the ones RAN NF OAM enforces (it replaces the whole set, so a blank removes that limit). */
+export function limitsPayload(form: LimitsForm): { ok: true; body: Record<string, number> } | { ok: false; error: string } {
+  const body: Record<string, number> = {};
+  const read = (text: string, name: string, key: string, integer: boolean, min: number, max: number): string | null => {
+    const raw = text.trim();
+    if (raw === "") return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || (integer && !Number.isInteger(n))) return `${name} must be ${integer ? "a whole number" : "a number"}`;
+    if (n < min || n > max) return `${name} must be between ${min} and ${max}`;
+    body[key] = n;
+    return null;
+  };
+  const problem = read(form.jobsPerHour, "Config jobs per hour", "maxConfigJobsPerHour", true, 1, 100_000)
+    ?? read(form.elementsPerJob, "Elements per job", "maxElementsPerJob", true, 1, 10_000)
+    ?? read(form.changePercent, "Change percent", "maxChangePercent", false, 0.0001, 10_000);
+  if (problem) return { ok: false, error: problem };
+  if (Object.keys(body).length === 0) return { ok: false, error: "Set at least one limit (to remove them all, use Remove limits)" };
+  return { ok: true, body };
+}
+
+/** The form's starting values from the limits in force. */
+export function limitsForm(limits: LimitsLike | null | undefined): LimitsForm {
+  const text = (n: number | null | undefined) => (n == null ? "" : String(n));
+  return { jobsPerHour: text(limits?.maxConfigJobsPerHour), elementsPerJob: text(limits?.maxElementsPerJob), changePercent: text(limits?.maxChangePercent) };
+}
