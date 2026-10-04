@@ -160,6 +160,20 @@ class PMFile(Base):
     file_expiration_time: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class KpiDefinition(Base):
+    """MGT-11.1: a KPI as a formula over counters. `counters` is a list of {counter, variable, aggregation}: which PM counter feeds which variable of
+    the formula, and how that counter's samples are combined over the period (and over the cells of a group): sum, avg, min, max, last or count."""
+    __tablename__ = "kpi_definition"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    formula: Mapped[str] = mapped_column(String, nullable=False)
+    counters: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    unit: Mapped[str | None] = mapped_column(String)
+    description: Mapped[str | None] = mapped_column(String)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC),
+                                                          onupdate=lambda: datetime.datetime.now(datetime.UTC))
+
+
 class FileSubscription(Base):
     """A File Data Reporting MnS subscription: notifyFileReady goes to `consumer_reference`."""
     __tablename__ = "file_subscription"
