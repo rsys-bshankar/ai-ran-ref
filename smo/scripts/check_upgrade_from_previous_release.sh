@@ -47,9 +47,10 @@ trap cleanup EXIT
 git -C "$repo" worktree add --detach "$scratch/prev" "refs/tags/$tag" >/dev/null
 echo "== upgrade from $tag ($(git -C "$repo" rev-parse --short "refs/tags/$tag")) to this commit ($(git -C "$repo" rev-parse --short HEAD))"
 
-# one database password for both stacks: they share the database volume
+# one set of secrets for both stacks: they share the database volume, and the previous release mounts whichever of these files it declares
+# (0.1.0 only db_password; 0.2.0 also enrollment_secret). A file it does not declare is simply not mounted.
 (cd "$here" && scripts/init_secrets.sh >/dev/null)
-mkdir -p "$prev_smo/secrets" && cp "$here/secrets/db_password" "$prev_smo/secrets/db_password"
+mkdir -p "$prev_smo/secrets" && cp "$here"/secrets/* "$prev_smo/secrets/"
 [ -f "$here/.env" ] || { cp "$here/.env.example" "$here/.env"; made_env=1; }
 cp "$prev_smo/.env.example" "$prev_smo/.env"
 url="postgresql+psycopg://smo:$(cat "$here/secrets/db_password")@localhost:5432/smo"
