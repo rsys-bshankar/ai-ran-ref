@@ -44,6 +44,7 @@ import httpx
 
 from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from .correlation import get_correlation_id
+from .invoker import ON_BEHALF_OF_HEADER, get_originator
 from . import metrics
 from .roles import ENROLLMENT_HEADER, RAPP_SCOPE
 from .secretfile import read_secret
@@ -207,6 +208,11 @@ class R1Client:
         correlation_id = get_correlation_id()
         if correlation_id:
             headers[CORRELATION_ID_HEADER] = correlation_id
+        # Who this call is for (smo_shared/invoker.py): when the request being handled came from an rApp, the safeguards at the next module must
+        # still see that rApp, not this module. Nothing is added when the module acts on its own account.
+        originator = get_originator()
+        if originator:
+            headers[ON_BEHALF_OF_HEADER] = originator
         return headers
 
     def _call(self, send, method: str, path: str, headers: dict, **kwargs) -> httpx.Response:

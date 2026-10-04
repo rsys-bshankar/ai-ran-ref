@@ -84,7 +84,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | `smo_shared/errors.py` | `ProblemDetails`, `problem()`, `FrameworkError`, `framework_error()`, `illegal_transition_error()` |
 | `smo_shared/pagination.py` | `paginate()`, `PageLimit`, `PageOffset`, `DEFAULT_LIMIT`, `MAX_LIMIT` |
 | `smo_shared/correlation.py` | `apply_correlation_id()`, `get_correlation_id()`, `HEADER_NAME` |
-| `smo_shared/invoker.py` | `INVOKER_ID_HEADER` (`X-R1-Invoker-Id`), `invoker_id(request)`: the caller id R1 Termination forwards |
+| `smo_shared/invoker.py` | `INVOKER_ID_HEADER` (`X-R1-Invoker-Id`), `ON_BEHALF_OF_HEADER` (`X-R1-On-Behalf-Of`), `invoker_id(request)` (the rApp an internal module is acting for, else the caller's own id), `get_originator()` and `apply_invoker_context(app)` (installed by `apply_correlation_id`, so every service has it); `R1Client` adds the header to onward calls |
 | `smo_shared/webhook.py` | `post_webhook`, `get_webhook`, `delete_webhook`, `is_safe_webhook_destination` |
 | `smo_shared/r1_client.py` | `R1Client` (a caller's own `headers=` are merged with the authorization and correlation headers; the client's win), `R1_GATEWAY_URL`, per-process `_ModuleIdentity` token cache |
 | `smo_shared/openapi_security.py` | `apply_r1_gateway_security()`, `BEARER_SCHEME_NAME`, `R1_CONTRACT_VERSION` |

@@ -61,6 +61,10 @@ class ServiceMesh:
 
     def dispatch(self, verb: str, url: str, *, json=None, params=None, headers=None, content=None, timeout=None, **kwargs):
         client, rest_path = self.resolve(url)
+        if urlparse(url).hostname == "r1-termination":
+            # a call through R1 from R1Client is an SMO module's: R1 Termination would stamp it with the internal role (PR-SEC-14), which is what
+            # lets a backend trust the X-R1-On-Behalf-Of header the module passed on
+            headers = {**(headers or {}), "X-R1-Role": "internal"}
         method = getattr(client, verb)
         # httpx's own GET/DELETE signatures have no `json` parameter at all
         # (only POST/PUT/PATCH do) — passing it unconditionally raises

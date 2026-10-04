@@ -26,7 +26,7 @@ from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.health import install_health
 from smo_shared import roles
-from smo_shared.invoker import INVOKER_ID_HEADER
+from smo_shared.invoker import INVOKER_ID_HEADER, ON_BEHALF_OF_HEADER
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.ratelimit import TokenBuckets
 from smo_shared.timeouts import introspect_timeout, upstream_timeout
@@ -215,7 +215,8 @@ async def proxy(full_path: str, request: Request):
     # with, so a caller that omitted the header still gets a consistent
     # ID threaded through its own request's whole downstream fan-out.
     forwarded_headers = {k: v for k, v in request.headers.items()
-                          if k.lower() not in ("host", CORRELATION_ID_HEADER.lower(), INVOKER_ID_HEADER.lower(), roles.ROLE_HEADER.lower())}
+                          if k.lower() not in ("host", CORRELATION_ID_HEADER.lower(), INVOKER_ID_HEADER.lower(), roles.ROLE_HEADER.lower(),
+                                               ON_BEHALF_OF_HEADER.lower())}
     forwarded_headers[roles.ROLE_HEADER] = role              # PR-SEC-14: never a value the caller sent (dropped above)
     forwarded_headers[CORRELATION_ID_HEADER] = get_correlation_id()
     # The caller's own id, from the introspected token: any inbound value of
@@ -223,6 +224,11 @@ async def proxy(full_path: str, request: Request):
     # token carries no client id.
     if invoker_id:
         forwarded_headers[INVOKER_ID_HEADER] = invoker_id
+    # Who an SMO module is acting for (smo_shared/invoker.py). Only a module may say it: an rApp's own value was dropped above, so an rApp cannot
+    # pose as another rApp (to escape its own limits, or to spend another's).
+    on_behalf_of = request.headers.get(ON_BEHALF_OF_HEADER)
+    if on_behalf_of and role == roles.ROLE_INTERNAL:
+        forwarded_headers[ON_BEHALF_OF_HEADER] = on_behalf_of
     try:
         async with httpx.AsyncClient(timeout=upstream_timeout()) as client:
             upstream = await client.request(
