@@ -534,8 +534,6 @@ Tag scheme and `CHANGELOG.md` exist (`PR-OPS-4.1`, `HISTORY.md` §10); no tag ha
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-5.1 | Expand/contract rule for schema changes in `CLAUDE.md` | Rule merged | OPS-1.7 |
-| OPS-5.2 | CI: previous release's code against the new schema | Job green | OPS-1.6, OPS-4.1 |
 | OPS-5.3 | Mixed-version run (two versions side by side) through the replay | Replay green | OPS-5.2, HA-1.1 |
 
 #### PR-OPS-6 — GitOps example
@@ -573,7 +571,7 @@ Purpose: tell the team, on every merge, that the whole stack still comes up and 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-10.5 | (b) Upgrade lane: install the previous release, upgrade to the merged commit, replay | Job green; fails on a seeded breaking migration | OPS-1.6, OPS-5.2 |
+| OPS-10.5 | (b) Upgrade lane: install the previous release, upgrade to the merged commit, replay | Job green; fails on a seeded breaking migration | OPS-1.6 |
 | OPS-10.6 | (b) Helm on kind replaces the compose lane as the master gate; compose stays for local use | Master gate runs `OPS-2.8` and `OPS-2.9` | OPS-2.9, OPS-10.5 |
 | OPS-10.7 | (b) Rolling-upgrade lane (mixed versions) added to the master gate | Replay green | OPS-5.3, OPS-10.6 |
 

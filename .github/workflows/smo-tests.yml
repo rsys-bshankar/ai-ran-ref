@@ -477,3 +477,48 @@ jobs:
           pip install --require-hashes -r ../requirements/dev.txt
           PYTHONPATH=. python -m pytest tests/test_versioning.py tests/test_idempotency.py tests/test_module_identity.py tests/test_db_engine.py tests/test_health.py tests/test_single_runner.py -v
           (cd ../gui-bff && PYTHONPATH=.:../shared python -m pytest tests/test_shared_state.py -v)
+
+  # PR-OPS-5.2: the previous release's code on this commit's schema. A rolling upgrade runs both versions against one database, so a revision that
+  # removes or renames something the last release uses breaks it. Heavy (builds the previous release), so on a pull request it runs only when
+  # the PR changes smo/migrations; on a push to main and by hand it always runs. Where it does not run it is a passing job, not a missing one.
+  previous-release-compat:
+    name: Previous release's code runs on the new schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Does this change touch the schema?
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] && git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- smo/migrations; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "smo/migrations is unchanged in this pull request: nothing to prove"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.gate.outputs.run == 'true'
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: smo/requirements/*.txt
+
+      - name: Install the runtime dependencies (migrate.py runs on the host)
+        if: steps.gate.outputs.run == 'true'
+        working-directory: smo
+        run: |
+          pip install --require-hashes -r requirements/runtime.txt
+          pip install --no-deps -e shared
+
+      - name: Build the previous release, start it on this commit's schema, replay its runbook
+        if: steps.gate.outputs.run == 'true'
+        working-directory: smo
+        env:
+          REQUIRE_PREVIOUS_RELEASE: "1"        # a release exists: not finding its tag is a failure, never a skip
+        run: scripts/check_previous_release_code.sh
+
