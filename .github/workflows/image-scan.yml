@@ -1,0 +1,96 @@
+name: Image scan
+
+# PR-SEC-12.2: every image the release publishes is built from the checkout and scanned with Trivy for HIGH and CRITICAL findings that have a fix.
+# It runs when a Dockerfile or a dependency lock changes, every Monday (a base image or a package gets a new advisory without any change here), and by
+# hand. Run by hand with `report_only` to read the findings without failing; the gate is on for the other runs. An accepted finding goes in
+# smo/.trivyignore with its reason. It is not a required check: a new advisory must not block an unrelated pull request.
+on:
+  pull_request:
+    paths:
+      - smo/Dockerfile
+      - smo/requirements/**
+      - smo/gui/Dockerfile
+      - smo/gui/package.json
+      - smo/gui/package-lock.json
+      - smo/.trivyignore
+      - smo/scripts/scan_summary.py
+      - .github/workflows/image-scan.yml
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      report_only:
+        description: "Report the findings but do not fail on them"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-scan-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TRIVY_VERSION: v0.75.0
+  # Trivy's vulnerability database: the AWS mirror first, GitHub's registry as the fallback (the latter rate-limits anonymous pulls)
+  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
+  TRIVY_SKIP_JAVA_DB_UPDATE: "true"
+
+jobs:
+  scan:
+    name: Scan every image for HIGH and CRITICAL findings
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Trivy (built from its tagged source)
+        run: |
+          GOBIN="$HOME/bin" go install "github.com/aquasecurity/trivy/cmd/trivy@${TRIVY_VERSION}"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch the vulnerability database
+        run: trivy image --download-db-only
+
+      - name: Build the images from this checkout
+        working-directory: smo
+        run: |
+          pip install --quiet pyyaml
+          python scripts/release_images.py matrix | jq -c '.include[]' | while read -r row; do
+            name=$(jq -r .name <<<"$row"); context=$(jq -r .context <<<"$row"); module=$(jq -r .module <<<"$row")
+            echo "::group::smo-$name"
+            if [ -n "$module" ]; then
+              docker build --quiet -t "local/smo-$name:scan" --build-arg "MODULE=$module" "$context"
+            else
+              docker build --quiet -t "local/smo-$name:scan" "$context"
+            fi
+            echo "::endgroup::"
+          done
+
+      - name: Scan each image
+        working-directory: smo
+        run: |
+          mkdir -p ../scan-results
+          for image in $(docker image ls 'local/smo-*' --format '{{.Repository}}'); do
+            name=${image#local/smo-}
+            trivy image --skip-db-update --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --ignorefile .trivyignore \
+              --format json --output "../scan-results/$name.json" "$image:scan"
+          done
+          ls ../scan-results | wc -l
+
+      - name: Report
+        working-directory: smo
+        run: python scripts/scan_summary.py ../scan-results | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: image-scan-results
+          path: scan-results/
+          retention-days: 30
+
+      - name: Gate on HIGH and CRITICAL findings that have a fix
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.report_only) }}
+        working-directory: smo
+        run: python scripts/scan_summary.py ../scan-results --gate >/dev/null
