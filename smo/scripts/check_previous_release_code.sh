@@ -26,10 +26,15 @@ scratch="$(mktemp -d)"
 prev_smo="$scratch/prev/$rel"
 project="prevrel"
 compose() { (cd "$prev_smo" && GUI_COOKIE_SECURE=false docker compose -p "$project" -f docker-compose.yml -f docker-compose.skipmigrate.yml "$@"); }
+# Cleanup must never decide the result: the replay container runs as root and leaves root-owned files (egg-info, bytecode) in the worktree it mounts,
+# which a plain `rm` cannot remove. On a CI runner the directory is thrown away anyway; elsewhere sudo (if there is any) finishes the job.
 cleanup() {
-  [ -d "$prev_smo" ] && compose down -v --remove-orphans >/dev/null 2>&1 || true
+  status=$?
+  [ -d "$prev_smo" ] && { compose down -v --remove-orphans >/dev/null 2>&1 || true; }
   git -C "$repo" worktree remove --force "$scratch/prev" >/dev/null 2>&1 || true
-  rm -rf "$scratch"
+  rm -rf "$scratch" >/dev/null 2>&1 || sudo rm -rf "$scratch" >/dev/null 2>&1 || true
+  git -C "$repo" worktree prune >/dev/null 2>&1 || true
+  exit "$status"
 }
 trap cleanup EXIT
 
@@ -54,7 +59,7 @@ fresh_stack() {
 }
 replay() {
   docker run --rm --network "${project}_default" --network-alias demo-consumer \
-    -e SMO_E2E_LIVE=1 -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
+    -e SMO_E2E_LIVE=1 -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
     -v "$scratch/prev:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c "
       pip install -q --require-hashes -r requirements/dev.txt &&
       pip install -q --no-deps -e shared &&
