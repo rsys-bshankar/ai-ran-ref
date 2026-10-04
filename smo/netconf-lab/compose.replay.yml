@@ -1,0 +1,8 @@
+# PR-SB-1.11: compose override that gives the stack's RAN NF OAM the lab server's credential, for the runbook replay over SSH.
+#   docker compose -f docker-compose.yml -f netconf-lab/compose.replay.yml --profile netconf-lab up -d --wait ran-nf-oam netconf-lab
+# Development only: the password is the lab image's own, and it is a password in the environment on purpose (the credential is named
+# `lab`, the endpoint says `credentialRef: lab`; docs/SECRETS.md has the production way: a mounted file).
+services:
+  ran-nf-oam:
+    environment:
+      NETCONF_CRED_LAB_PASSWORD: netconf
