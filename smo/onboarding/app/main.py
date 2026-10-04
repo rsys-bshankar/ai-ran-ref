@@ -239,6 +239,10 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
         profiles = result.get("runtimeProfiles")
         if profiles is not None:
             result["runtimeProfiles"] = _validate_runtime_profiles(profiles, result.get("executionModes"))
+        # AI-10.1: what this rApp may do on the network, declared by the package and enforced by the platform (`limits.configJobsPerHour`).
+        limits = rapp_manifest.get("limits", manifest.get("limits"))
+        if limits is not None:
+            result["limits"] = _validate_limits(limits)
     if "capabilities.yaml" in names:
         parsed = yaml.safe_load(z.read("capabilities.yaml")) or {}
         if not isinstance(parsed, dict):
@@ -280,6 +284,25 @@ def _validate_runtime_profiles(profiles, execution_modes) -> dict:
         if "memory" in profile:
             clean["memory"] = str(profile["memory"])
         out[mode] = clean
+    return out
+
+
+LIMIT_KEYS = {"configJobsPerHour": 100_000}      # key -> largest value accepted
+
+
+def _validate_limits(limits) -> dict:
+    """AI-10.1: `limits` maps a limit name to a positive whole number. An unknown name, a non-integer (a bool is not one) or a value out of range is a
+    packaging error (the package fails onboarding): a limit the platform cannot enforce must not be silently ignored. Today: `configJobsPerHour`,
+    how many CM write jobs the rApp may start in any hour (enforced by RAN NF OAM, AI-10.2)."""
+    if not isinstance(limits, dict):
+        raise PackageValidationFailed("limits must be a mapping of limit name -> number")
+    out = {}
+    for name, value in limits.items():
+        if name not in LIMIT_KEYS:
+            raise PackageValidationFailed(f"limits: unknown limit {name!r} (known: {', '.join(sorted(LIMIT_KEYS))})")
+        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= LIMIT_KEYS[name]:
+            raise PackageValidationFailed(f"limits.{name} must be a whole number from 1 to {LIMIT_KEYS[name]}")
+        out[name] = value
     return out
 
 

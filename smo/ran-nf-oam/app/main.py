@@ -42,8 +42,9 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.outbox import enqueue
 from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
+from smo_shared.invoker import invoker_id
 
-from .models import Alarm, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, RAppLimit, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
 from . import mo_tree
@@ -551,10 +552,32 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
     sequence: MSAC gate, schema check (cache-or-fetch), decompose into
     sub_changes, PATCH each independently, aggregate.
     """
-    return _execute_write(body, db)
+    caller = invoker_id(request)
+    _enforce_rapp_limit(db, caller)
+    return _execute_write(body, db, invoker=caller)
 
 
-def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID | None = None, rollback_forced: bool = False):
+RATE_WINDOW = datetime.timedelta(hours=1)
+
+
+def _enforce_rapp_limit(db: Session, caller: str | None) -> None:
+    """AI-10.2: 429 when `caller` (the invoker id R1 vouches for) has already started as many write jobs in the last hour as its limit
+    (`PUT /rapp-limits/{invoker_id}`, from the manifest of the rApp) allows. A caller with no limit, or none that R1 identified, is not counted.
+    Rollbacks and automatic reverts do not pass here: undoing a change must never be refused because the rApp used its budget."""
+    limit = db.get(RAppLimit, caller) if caller else None
+    if limit is None:
+        return
+    since = datetime.datetime.now(datetime.UTC) - RATE_WINDOW
+    used = db.scalar(select(func.count()).select_from(WriteConfigJob).where(WriteConfigJob.invoker_id == caller, WriteConfigJob.created_at >= since)) or 0
+    if used >= limit.max_config_jobs_per_hour:
+        error = framework_error(FrameworkError.RAPP_RATE_LIMITED,
+                                detail=f"{caller} has started {used} config jobs in the last hour; its limit is {limit.max_config_jobs_per_hour}")
+        error.headers = {"Retry-After": "60"}
+        raise error
+
+
+def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID | None = None, rollback_forced: bool = False,
+                   invoker: str | None = None):
     """The body of `POST /config-jobs`, shared with the rollback route (MGT-1.6), which builds the same request from a recorded job and so
     goes through the same MSAC, schema, dispatch and snapshot steps as any other write."""
     # SA-RANOAM-1: TS 28.319 role-based access control, per sub-change, before
@@ -603,7 +626,7 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
     job = WriteConfigJob(requested_by=body.requestedBy, scope=body.accessScope, msac_role=body.msacRole, rollback_of=rollback_of,
                          rollback_forced=rollback_forced, wave_size=body.waveSize, wave_pause_seconds=body.wavePauseSeconds,
                          wave_count=max(wave_of.values(), default=1), gate_max_new_alarms=body.gateMaxNewAlarms,
-                         on_gate_failure=body.onGateFailure)
+                         on_gate_failure=body.onGateFailure, invoker_id=invoker)
     db.add(job)
     db.flush()
 
@@ -1156,6 +1179,58 @@ def read_kpi_definition(name: str, db: Session = Depends(get_session)):
 @app.delete("/kpi-definitions/{name}", status_code=204)
 def delete_kpi_definition(name: str, db: Session = Depends(get_session)):
     db.delete(_kpi_or_404(db, name))
+    db.commit()
+    return Response(status_code=204)
+
+
+class RAppLimitRequest(BaseModel):
+    maxConfigJobsPerHour: int = Field(ge=1, le=100_000)
+
+
+def _limit_view(row: RAppLimit) -> dict:
+    return {"invokerId": row.invoker_id, "maxConfigJobsPerHour": row.max_config_jobs_per_hour, "updatedAt": row.updated_at}
+
+
+def _limit_or_404(db: Session, invoker: str) -> RAppLimit:
+    row = db.get(RAppLimit, invoker)
+    if row is None:
+        raise framework_error(FrameworkError.RAPP_LIMIT_NOT_FOUND, detail=f"no limit is set for {invoker}")
+    return row
+
+
+def _not_own_limit(request: Request, invoker: str) -> None:
+    """An rApp may not change its own limit. (Any valid token reaches every route behind R1 today; this at least keeps a caller from lifting its own cap.)"""
+    if invoker_id(request) == invoker:
+        raise framework_error(FrameworkError.RAPP_LIMIT_SELF_CHANGE, detail="a caller cannot change its own limit")
+
+
+@app.put("/rapp-limits/{invoker_id_}")
+def set_rapp_limit(invoker_id_: str, body: RAppLimitRequest, request: Request, db: Session = Depends(get_session)):
+    """AI-10.1/10.2: set what one rApp (by its OAuth client id) may do here. Called by rApp Management when the instance finishes bootstrapping,
+    with the limits its manifest declares."""
+    _not_own_limit(request, invoker_id_)
+    row = db.get(RAppLimit, invoker_id_)
+    if row is None:
+        row = RAppLimit(invoker_id=invoker_id_)
+        db.add(row)
+    row.max_config_jobs_per_hour = body.maxConfigJobsPerHour
+    db.commit()
+    return _limit_view(row)
+
+
+@app.get("/rapp-limits/{invoker_id_}")
+def read_rapp_limit(invoker_id_: str, db: Session = Depends(get_session)):
+    """The limit set for an rApp, and how many config jobs it has started in the last hour."""
+    row = _limit_or_404(db, invoker_id_)
+    since = datetime.datetime.now(datetime.UTC) - RATE_WINDOW
+    used = db.scalar(select(func.count()).select_from(WriteConfigJob).where(WriteConfigJob.invoker_id == invoker_id_, WriteConfigJob.created_at >= since)) or 0
+    return {**_limit_view(row), "configJobsLastHour": used}
+
+
+@app.delete("/rapp-limits/{invoker_id_}", status_code=204)
+def delete_rapp_limit(invoker_id_: str, request: Request, db: Session = Depends(get_session)):
+    _not_own_limit(request, invoker_id_)
+    db.delete(_limit_or_404(db, invoker_id_))
     db.commit()
     return Response(status_code=204)
 

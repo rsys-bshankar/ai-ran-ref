@@ -174,6 +174,17 @@ class KpiDefinition(Base):
                                                           onupdate=lambda: datetime.datetime.now(datetime.UTC))
 
 
+class RAppLimit(Base):
+    """AI-10.1/10.2: what one rApp (by invoker id, its OAuth client id) may do through this module, taken from the `limits` of its manifest and pushed
+    here by rApp Management when the instance finishes bootstrapping. `max_config_jobs_per_hour` caps the CM write jobs it may start in any rolling hour."""
+    __tablename__ = "rapp_limit"
+
+    invoker_id: Mapped[str] = mapped_column(String, primary_key=True)
+    max_config_jobs_per_hour: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC),
+                                                          onupdate=lambda: datetime.datetime.now(datetime.UTC))
+
+
 class FileSubscription(Base):
     """A File Data Reporting MnS subscription: notifyFileReady goes to `consumer_reference`."""
     __tablename__ = "file_subscription"
@@ -243,6 +254,10 @@ class WriteConfigJob(Versioned, Base):
     next_wave_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     halted_reason: Mapped[str | None] = mapped_column(String)
     halted_detail: Mapped[str | None] = mapped_column(String)
+    # AI-10.2: who asked, as R1 Termination vouches for it (the token's client id; NULL for a call that did not come through R1), and when. The
+    # per-rApp rate limit counts a caller's jobs from these.
+    invoker_id: Mapped[str | None] = mapped_column(String, index=True)
+    created_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
 
 class WriteConfigSubChange(Base):

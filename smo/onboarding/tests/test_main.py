@@ -683,6 +683,31 @@ def test_onboard_fails_on_an_invalid_runtime_profile(client, monkeypatch, profil
     assert pkg["state"] == "FAILED"
 
 
+# ---------------------------------------------------------------- AI-10.1: limits in the manifest
+
+def test_onboard_reads_the_limits_of_the_manifest(client, monkeypatch):
+    pkg = _onboard_with_manifest(client, monkeypatch, "rappManifest:\n  manifestVersion: \"1.0\"\n  limits:\n    configJobsPerHour: 12\n")
+    assert pkg["state"] == "AVAILABLE"
+    assert pkg["aiCapabilities"]["limits"] == {"configJobsPerHour": 12}
+
+
+def test_limits_are_accepted_at_the_top_level_and_are_optional(client, monkeypatch):
+    assert _onboard_with_manifest(client, monkeypatch, "limits: {configJobsPerHour: 3}\n")["aiCapabilities"]["limits"] == {"configJobsPerHour": 3}
+
+
+@pytest.mark.parametrize("limits", [
+    "limits: {configJobsPerHour: 0}\n",             # not positive
+    "limits: {configJobsPerHour: 1.5}\n",           # not whole
+    "limits: {configJobsPerHour: true}\n",          # a bool is not a number
+    "limits: {configJobsPerHour: 100001}\n",        # above the largest accepted
+    "limits: {configJobsPerHour: '5'}\n",           # a string
+    "limits: {blastRadius: 5}\n",                   # a limit the platform does not enforce
+    "limits: [1, 2]\n",                             # not a mapping
+])
+def test_onboard_fails_on_an_invalid_limit(client, monkeypatch, limits):
+    assert _onboard_with_manifest(client, monkeypatch, limits)["state"] == "FAILED"
+
+
 # ---------------------------------------------------------------- OI-2-package-redeploy
 
 @pytest.mark.parametrize("earlier_state", ["DELETING", "FAILED"])
