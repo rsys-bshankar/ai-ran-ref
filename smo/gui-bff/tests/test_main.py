@@ -482,3 +482,20 @@ def test_permissions_endpoint_exposes_the_rbac_table(app):
     body = login(app, "viewer").get("/api/permissions").json()
     assert body["role"] == "viewer"
     assert {"method": "POST", "pattern": "^/rapp-mgmt/instances/[^/]+/terminate$", "role": "admin", "queryMatch": {}} in body["rules"]
+
+
+def test_rotating_the_signing_key_ends_every_session_and_a_new_login_works(cfg, db, smo):
+    """PR-SEC-4.8: change GUI_JWT_SECRET and restart: sessions signed with the old key are refused, signing in again works."""
+    def start(secret):
+        rotated = Settings(r1_url=R1, jwt_secret=secret, cookie_secure=False, admin_password=PASSWORDS["admin"],
+                           operator_password=PASSWORDS["operator"], viewer_password=PASSWORDS["viewer"])
+        seed_users(db, rotated)
+        return create_app(rotated, db=db, gateway=R1Gateway(R1, db, transport=httpx.MockTransport(smo.handler)))
+
+    old = login(start("the-old-key"), "viewer")
+    assert old.get("/api/me").status_code == 200
+    new_app = start("the-new-key")
+    carried = TestClient(new_app)
+    carried.cookies.update(old.cookies)
+    assert carried.get("/api/me").status_code == 401                          # the old session does not survive the rotation
+    assert login(new_app, "viewer").get("/api/me").json()["role"] == "viewer"
