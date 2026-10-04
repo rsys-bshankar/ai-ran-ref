@@ -198,17 +198,19 @@ def apply_rapp_limits(inst: RAppInstance, status: dict | None = None) -> None:
     push is a 503 and the instance stays DEPLOYING (bootstrap-complete can be called again). A package with no limits needs no call."""
     status = onboarding_status(inst) if status is None else status
     limits = (status.get("aiCapabilities") or {}).get("limits") or {}
-    per_hour = limits.get("configJobsPerHour")
-    if per_hour is None:
+    # the manifest's names -> RAN NF OAM's request fields (AI-10.2 rate, AI-10.3 blast radius and magnitude)
+    body = {field: limits[name] for name, field in (("configJobsPerHour", "maxConfigJobsPerHour"), ("maxElementsPerJob", "maxElementsPerJob"),
+                                                     ("maxChangePercent", "maxChangePercent")) if limits.get(name) is not None}
+    if not body:
         return
     try:
-        resp = R1Client().put(f"/ran-nf-oam/rapp-limits/{inst.oauth_client_id}", json={"maxConfigJobsPerHour": per_hour})
+        resp = R1Client().put(f"/ran-nf-oam/rapp-limits/{inst.oauth_client_id}", json=body)
         pushed = resp.status_code == 200
     except httpx.HTTPError:
         pushed = False
     if not pushed:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE,
-                              detail=f"the package declares limits.configJobsPerHour={per_hour} but RAN NF OAM did not accept it; the instance stays DEPLOYING")
+                              detail=f"the package declares limits {limits} but RAN NF OAM did not accept them; the instance stays DEPLOYING")
     inst.rapp_limits_set = True
 
 

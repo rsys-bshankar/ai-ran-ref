@@ -82,6 +82,17 @@ try:
         r = call("DELETE", probe, internal_tok)
         check("an SMO module can remove it", r.status_code == 204, r.status_code)
 
+        # AI-10.3: the blast radius the platform holds an rApp to (checked before anything is sent, so it needs no element on the stack)
+        r = call("PUT", probe, internal_tok, json={"maxElementsPerJob": 1})
+        check("an SMO module can set a blast radius", r.status_code == 200 and r.json().get("maxElementsPerJob") == 1, (r.status_code, r.text[:200]))
+        wide = {"requestedBy": "e2e-roles", "scope": "cell", "changes": [
+            {"managedElementRef": "e2e-no-such-element-a", "attributeChanges": {"x": 1}}, {"managedElementRef": "e2e-no-such-element-b", "attributeChanges": {"x": 1}}]}
+        r = call("POST", "/ran-nf-oam/config-jobs", rapp_tok, json=wide)
+        check("a job over the rApp's blast radius is refused (403)", r.status_code == 403 and "RAPP_BLAST_RADIUS_EXCEEDED" in r.text, (r.status_code, r.text[:200]))
+        check("the same job from an SMO module is not", call("POST", "/ran-nf-oam/config-jobs", internal_tok, json=wide).status_code in (200, 202))
+        check("a limit that names none is refused (422)", call("PUT", probe, internal_tok, json={}).status_code == 422)
+        call("DELETE", probe, internal_tok)
+
         # AI-10.4: the kill switch
         kill = f"/ran-nf-oam/rapp-kill/{rapp['apiInvokerId']}"
         r = call("PUT", kill, rapp_tok, json={"requestedBy": "e2e"})

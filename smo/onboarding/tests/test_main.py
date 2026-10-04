@@ -695,13 +695,33 @@ def test_limits_are_accepted_at_the_top_level_and_are_optional(client, monkeypat
     assert _onboard_with_manifest(client, monkeypatch, "limits: {configJobsPerHour: 3}\n")["aiCapabilities"]["limits"] == {"configJobsPerHour": 3}
 
 
+def test_onboard_reads_blast_radius_and_magnitude_limits(client, monkeypatch):
+    pkg = _onboard_with_manifest(client, monkeypatch, "limits: {configJobsPerHour: 4, maxElementsPerJob: 3, maxChangePercent: 12.5}\n")
+    assert pkg["state"] == "AVAILABLE"
+    assert pkg["aiCapabilities"]["limits"] == {"configJobsPerHour": 4, "maxElementsPerJob": 3, "maxChangePercent": 12.5}
+
+
+@pytest.mark.parametrize("limits", [
+    "limits: {maxElementsPerJob: 2.5}\n",             # elements are whole
+    "limits: {maxElementsPerJob: 10001}\n",
+    "limits: {maxChangePercent: 0}\n",
+    "limits: {maxChangePercent: -1}\n",
+    "limits: {maxChangePercent: 10001}\n",
+    "limits: {maxChangePercent: true}\n",
+    "limits: {maxChangePercent: '20'}\n",
+    "limits: {maxChangePercent: .nan}\n",
+])
+def test_onboard_fails_on_an_invalid_blast_radius_or_magnitude(client, monkeypatch, limits):
+    assert _onboard_with_manifest(client, monkeypatch, limits)["state"] == "FAILED"
+
+
 @pytest.mark.parametrize("limits", [
     "limits: {configJobsPerHour: 0}\n",             # not positive
     "limits: {configJobsPerHour: 1.5}\n",           # not whole
     "limits: {configJobsPerHour: true}\n",          # a bool is not a number
     "limits: {configJobsPerHour: 100001}\n",        # above the largest accepted
     "limits: {configJobsPerHour: '5'}\n",           # a string
-    "limits: {blastRadius: 5}\n",                   # a limit the platform does not enforce
+    "limits: {blastRadius: 5}\n",                   # a limit the platform does not know
     "limits: [1, 2]\n",                             # not a mapping
 ])
 def test_onboard_fails_on_an_invalid_limit(client, monkeypatch, limits):

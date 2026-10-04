@@ -578,6 +578,7 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
     caller = invoker_id(request)
     _refuse_if_killed(db, caller)
     _enforce_rapp_limit(db, caller)
+    _enforce_change_limits(db, body, caller)
     return _execute_write(body, db, invoker=caller)
 
 
@@ -597,7 +598,7 @@ def _enforce_rapp_limit(db: Session, caller: str | None) -> None:
     (`PUT /rapp-limits/{invoker_id}`, from the manifest of the rApp) allows. A caller with no limit, or none that R1 identified, is not counted.
     Rollbacks and automatic reverts do not pass here: undoing a change must never be refused because the rApp used its budget."""
     limit = db.get(RAppLimit, caller) if caller else None
-    if limit is None:
+    if limit is None or limit.max_config_jobs_per_hour is None:
         return
     since = datetime.datetime.now(datetime.UTC) - RATE_WINDOW
     used = db.scalar(select(func.count()).select_from(WriteConfigJob).where(WriteConfigJob.invoker_id == caller, WriteConfigJob.created_at >= since)) or 0
@@ -606,6 +607,55 @@ def _enforce_rapp_limit(db: Session, caller: str | None) -> None:
                                 detail=f"{caller} has started {used} config jobs in the last hour; its limit is {limit.max_config_jobs_per_hour}")
         error.headers = {"Retry-After": "60"}
         raise error
+
+
+def _number(value) -> float | None:
+    """A value as a number, or None when it is not one (a bool is not; a string of digits, as a NETCONF read returns them, is)."""
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number and abs(number) != float("inf") else None
+
+
+def _enforce_change_limits(db: Session, body: WriteConfigRequest, caller: str | None) -> None:
+    """AI-10.3: the limits a manifest declares on what one job may do, for a caller R1 identified (a rollback or revert has none: undoing is not limited).
+
+    Blast radius, `maxElementsPerJob`: more distinct managed elements than that is 403 `RAPP_BLAST_RADIUS_EXCEEDED`.
+    Magnitude, `maxChangePercent`: for every numeric value a change sets, |new - current| / |current| in percent may not exceed the limit (a current
+    value of 0 allows only 0). The current value is read from the NF now (the before-image read); one that cannot be read, or is not a number, cannot
+    be measured and is refused as well: a limit that is skipped when it is inconvenient is not a limit. Both are checked before anything is
+    recorded or sent, for a dry run too."""
+    limit = db.get(RAppLimit, caller) if caller else None
+    if limit is None:
+        return
+    elements = list(dict.fromkeys(c["managedElementRef"] for c in body.changes))
+    if limit.max_elements_per_job is not None and len(elements) > limit.max_elements_per_job:
+        raise framework_error(FrameworkError.RAPP_BLAST_RADIUS_EXCEEDED,
+                              detail=f"{caller} may change {limit.max_elements_per_job} managed elements in one job; this one names {len(elements)}")
+    if limit.max_change_percent is None:
+        return
+    for change in body.changes:
+        wanted = {name: new for name, new in (change.get("attributeChanges") or {}).items() if _number(new) is not None}
+        if not wanted:
+            continue
+        _, me, endpoint = _dispatch_blocker(db, change)
+        before, error = (None, "the element has no usable endpoint") if me is None or endpoint is None else _capture_before(
+            me, endpoint, change, wanted, _ssh_options(db, endpoint))
+        for name, new in wanted.items():
+            current = _number((before or {}).get(name))
+            if current is None:
+                raise framework_error(FrameworkError.RAPP_MAGNITUDE_EXCEEDED, detail=(
+                    f"{change['managedElementRef']} {name}: its current value cannot be checked against maxChangePercent="
+                    f"{limit.max_change_percent:g} ({error or 'it is not a number'})"))
+            moved = abs(_number(new) - current)
+            percent = 0.0 if moved == 0 else float("inf") if current == 0 else moved / abs(current) * 100
+            if percent > limit.max_change_percent:
+                raise framework_error(FrameworkError.RAPP_MAGNITUDE_EXCEEDED, detail=(
+                    f"{change['managedElementRef']} {name}: {current:g} to {_number(new):g} is a change of "
+                    f"{'more than any' if percent == float('inf') else f'{percent:.1f}%'}; {caller} may change a value by {limit.max_change_percent:g}% at most"))
 
 
 def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID | None = None, rollback_forced: bool = False,
@@ -1217,11 +1267,21 @@ def delete_kpi_definition(name: str, db: Session = Depends(get_session)):
 
 
 class RAppLimitRequest(BaseModel):
-    maxConfigJobsPerHour: int = Field(ge=1, le=100_000)
+    """What one rApp may do here; at least one of the three. A `PUT` replaces the whole set: a limit not named is removed."""
+    maxConfigJobsPerHour: int | None = Field(default=None, ge=1, le=100_000)
+    maxElementsPerJob: int | None = Field(default=None, ge=1, le=10_000)
+    maxChangePercent: float | None = Field(default=None, gt=0, le=10_000, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _at_least_one(self):
+        if self.maxConfigJobsPerHour is None and self.maxElementsPerJob is None and self.maxChangePercent is None:
+            raise ValueError("name at least one limit: maxConfigJobsPerHour, maxElementsPerJob or maxChangePercent")
+        return self
 
 
 def _limit_view(row: RAppLimit) -> dict:
-    return {"invokerId": row.invoker_id, "maxConfigJobsPerHour": row.max_config_jobs_per_hour, "updatedAt": row.updated_at}
+    return {"invokerId": row.invoker_id, "maxConfigJobsPerHour": row.max_config_jobs_per_hour, "maxElementsPerJob": row.max_elements_per_job,
+            "maxChangePercent": row.max_change_percent, "updatedAt": row.updated_at}
 
 
 def _limit_or_404(db: Session, invoker: str) -> RAppLimit:
@@ -1246,7 +1306,8 @@ def set_rapp_limit(invoker_id_: str, body: RAppLimitRequest, request: Request, d
     if row is None:
         row = RAppLimit(invoker_id=invoker_id_)
         db.add(row)
-    row.max_config_jobs_per_hour = body.maxConfigJobsPerHour
+    row.max_config_jobs_per_hour, row.max_elements_per_job, row.max_change_percent = (
+        body.maxConfigJobsPerHour, body.maxElementsPerJob, body.maxChangePercent)
     db.commit()
     return _limit_view(row)
 

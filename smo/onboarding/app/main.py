@@ -287,21 +287,26 @@ def _validate_runtime_profiles(profiles, execution_modes) -> dict:
     return out
 
 
-LIMIT_KEYS = {"configJobsPerHour": 100_000}      # key -> largest value accepted
+# name -> (whole numbers only?, largest value). Every limit is positive. Enforced by RAN NF OAM (AI-10.2, AI-10.3).
+LIMIT_SPECS = {"configJobsPerHour": (True, 100_000), "maxElementsPerJob": (True, 10_000), "maxChangePercent": (False, 10_000)}
 
 
 def _validate_limits(limits) -> dict:
-    """AI-10.1: `limits` maps a limit name to a positive whole number. An unknown name, a non-integer (a bool is not one) or a value out of range is a
-    packaging error (the package fails onboarding): a limit the platform cannot enforce must not be silently ignored. Today: `configJobsPerHour`,
-    how many CM write jobs the rApp may start in any hour (enforced by RAN NF OAM, AI-10.2)."""
+    """AI-10.1/10.3: `limits` maps a limit name to a positive number. An unknown name, a value that is not a number (a bool is not one), one out of
+    range, or a fraction where a whole number is needed is a packaging error (the package fails onboarding): a limit the platform cannot enforce
+    must not be silently ignored. `configJobsPerHour`: how many CM write jobs the rApp may start in any hour; `maxElementsPerJob`: how many managed
+    elements one job may touch (blast radius); `maxChangePercent`: how far, in percent of its current value, a numeric value may move in one write
+    (magnitude)."""
     if not isinstance(limits, dict):
         raise PackageValidationFailed("limits must be a mapping of limit name -> number")
     out = {}
     for name, value in limits.items():
-        if name not in LIMIT_KEYS:
-            raise PackageValidationFailed(f"limits: unknown limit {name!r} (known: {', '.join(sorted(LIMIT_KEYS))})")
-        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= LIMIT_KEYS[name]:
-            raise PackageValidationFailed(f"limits.{name} must be a whole number from 1 to {LIMIT_KEYS[name]}")
+        if name not in LIMIT_SPECS:
+            raise PackageValidationFailed(f"limits: unknown limit {name!r} (known: {', '.join(sorted(LIMIT_SPECS))})")
+        whole, largest = LIMIT_SPECS[name]
+        number = isinstance(value, int) if whole else isinstance(value, (int, float))
+        if not number or isinstance(value, bool) or not 0 < value <= largest or value != value:
+            raise PackageValidationFailed(f"limits.{name} must be a {'whole number' if whole else 'number'} above 0 and at most {largest}")
         out[name] = value
     return out
 

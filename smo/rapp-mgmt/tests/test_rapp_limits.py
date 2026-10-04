@@ -54,6 +54,21 @@ def test_bootstrap_pushes_the_declared_limit_under_the_instance_client_id(client
     assert calls["put"] == [(f"/ran-nf-oam/rapp-limits/{created['oauthClientId']}", {"maxConfigJobsPerHour": 7})]
 
 
+def test_every_declared_limit_is_pushed(client, monkeypatch):
+    calls = _wire(monkeypatch, {"configJobsPerHour": 7, "maxElementsPerJob": 3, "maxChangePercent": 12.5})
+    created = _create(client)
+    assert client.post(f"/instances/{created['instanceId']}/bootstrap-complete").status_code == 200
+    assert calls["put"] == [(f"/ran-nf-oam/rapp-limits/{created['oauthClientId']}",
+                             {"maxConfigJobsPerHour": 7, "maxElementsPerJob": 3, "maxChangePercent": 12.5})]
+
+
+def test_only_the_declared_limits_are_pushed(client, monkeypatch):
+    calls = _wire(monkeypatch, {"maxElementsPerJob": 2})
+    created = _create(client)
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    assert calls["put"][0][1] == {"maxElementsPerJob": 2}
+
+
 def test_a_package_without_limits_makes_no_call(client, monkeypatch):
     calls = _wire(monkeypatch, None)
     created = _create(client)
