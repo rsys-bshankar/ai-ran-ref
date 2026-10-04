@@ -673,7 +673,8 @@ jobs:
           helm history smo -n smo
           for d in $(kubectl -n smo get deploy -o name); do kubectl -n smo rollout status "$d" --timeout=120s; done
           kubectl -n smo get pods
-          [ "$(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed' | wc -l)" = "0" ]
+          # an old pod the rollout has replaced is still Terminating for its preStop delay and its drain (about 25 s); that is the rollout working, not a failed pod
+          [ "$(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed|Terminating' | wc -l)" = "0" ]
           kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
 
       - name: Two replicas of every module that can have them, and the stack still answers (PR-HA-1)
