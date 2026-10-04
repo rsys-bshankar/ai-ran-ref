@@ -124,7 +124,10 @@ column, index or constraint:
    release N+1 drops it (and says so under `### Changed` in `CHANGELOG.md`). CI proves it: the job "Previous release's code runs on the
    new schema" builds the newest `smo-v*` tag, starts it on the database this commit's `scripts/migrate.py` produces and replays that
    release's demo runbook (`scripts/check_previous_release_code.sh`; it runs when a PR touches `migrations/`, and on every push to `main`).
-   If it fails, the revision is a contract step done too early: split it. `docs/RELEASES.md`, "What each number means".
+   If it fails, the revision is a contract step done too early: split it. The job "Upgrade from the previous release keeps its data"
+   (`scripts/check_upgrade_from_previous_release.sh`, same triggers) is the operator's side: the previous release is installed and given data, then this
+   commit's `migrate` service upgrades that database; a revision that works on an empty schema but not on rows (a NOT NULL column with no default)
+   fails there. `docs/RELEASES.md`, "What each number means".
 3. Run `python scripts/migrate.py` then `python scripts/check_migration_matches_models.py` against Postgres (step 4 below), and raise
    `HEAD` in `tests_integration/test_migrations.py`.
 4. Add a line under `[Unreleased]` in `CHANGELOG.md`.
