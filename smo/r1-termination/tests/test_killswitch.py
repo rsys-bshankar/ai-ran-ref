@@ -66,7 +66,7 @@ def lift(gateway, invoker="inv-1"):
 
 
 CHANGES = [("POST", "/dme/data-jobs"), ("PUT", "/dme/data-jobs/j"), ("POST", "/aimgf/training-jobs"), ("PATCH", "/intent-service/intents/i/admin-state"),
-           ("POST", "/ran-nf-oam/config-jobs"), ("POST", "/dme/actions")]
+           ("POST", "/dme/actions")]
 
 
 @pytest.mark.parametrize("method, path", CHANGES)
@@ -80,6 +80,7 @@ def test_a_stopped_rapp_changes_nothing_and_no_backend_is_called(gateway, method
 @pytest.mark.parametrize("method, path", [
     ("DELETE", "/dme/data-jobs/j"), ("DELETE", "/intent-service/intents/i"),                            # withdrawing what it made
     ("POST", "/sme/oauth2/token"), ("POST", "/ran-nf-oam/config-jobs/j/rollback"),                       # authenticating, undoing
+    ("POST", "/ran-nf-oam/config-jobs"),                                                                 # refused, and recorded, by RAN NF OAM itself
     ("GET", "/dme/data-jobs"), ("GET", "/ran-nf-oam/config-jobs")])                                      # reading
 def test_a_stopped_rapp_can_still_withdraw_authenticate_undo_and_read(gateway, method, path):
     stop(gateway)
@@ -101,9 +102,9 @@ def test_another_rapp_is_not_affected(gateway):
 def test_a_module_acting_for_a_stopped_rapp_is_refused_and_for_another_is_not(gateway):
     gateway["sme_says"] = {"active": True, "client_id": "dme-module", "role": "internal"}
     stop(gateway, "api-invoker-7")
-    assert client.post("/ran-nf-oam/config-jobs", headers={**AUTH, "X-R1-On-Behalf-Of": "api-invoker-7"}).status_code == 403
-    assert client.post("/ran-nf-oam/config-jobs", headers={**AUTH, "X-R1-On-Behalf-Of": "api-invoker-8"}).status_code == 201
-    assert client.post("/ran-nf-oam/config-jobs", headers=AUTH).status_code == 201                       # acting for no one
+    assert client.post("/dme/data-jobs", headers={**AUTH, "X-R1-On-Behalf-Of": "api-invoker-7"}).status_code == 403
+    assert client.post("/dme/data-jobs", headers={**AUTH, "X-R1-On-Behalf-Of": "api-invoker-8"}).status_code == 201
+    assert client.post("/dme/data-jobs", headers=AUTH).status_code == 201                       # acting for no one
     assert client.delete("/dme/data-jobs/j", headers={**AUTH, "X-R1-On-Behalf-Of": "api-invoker-7"}).status_code == 201
 
 

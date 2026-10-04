@@ -9,6 +9,9 @@ before any backend is called. What it does not refuse, so that a stopped rApp ca
   - the token endpoint (`/sme/oauth2/*`), so it can still authenticate;
   - rolling back a config job (`/ran-nf-oam/config-jobs/{id}/rollback`), as at RAN NF OAM (halting and aborting are operator actions, never an rApp's).
 
+A config job (`POST /ran-nf-oam/config-jobs`) is not refused here either: RAN NF OAM refuses it with the same 403 `RAPP_KILLED` and, unlike the gateway, records the
+refusal (`safeguard_refusals`) and tells those subscribed to it (AI-10.6). Refused here first, a stopped rApp's attempt would leave no record.
+
 Reads are not refused: a stopped rApp that cannot read would only spin; what it can read is the question of PR-SEC-10.
 
 The gateway looks the invoker up in the database, at most once per `R1_KILL_CACHE_SECONDS` (default 3) for each invoker, so a switch thrown at RAN NF
@@ -33,6 +36,7 @@ MAX_CACHED = 10_000
 _EXEMPT = (
     ("POST", "/sme", re.compile(r"^/oauth2/(token|introspect)$")),
     ("POST", "/ran-nf-oam", re.compile(r"^/config-jobs/[^/]+/rollback$")),
+    ("POST", "/ran-nf-oam", re.compile(r"^/config-jobs$")),          # refused, and recorded, by RAN NF OAM itself (see above)
 )
 
 _cache: dict[str, tuple[float, bool]] = {}
@@ -48,7 +52,7 @@ def enforced(environ=os.environ) -> bool:
 
 
 def exempt(module: str, method: str, path: str) -> bool:
-    """A change a stopped rApp may still make: withdrawing (DELETE), authenticating, and undoing a config job."""
+    """A change the gateway does not refuse as stopped: withdrawing (DELETE), authenticating, undoing a config job, and the config job RAN NF OAM refuses itself."""
     method = method.upper()
     if method == "DELETE":
         return True
