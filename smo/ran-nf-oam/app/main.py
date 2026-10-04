@@ -24,7 +24,7 @@ from typing import Literal
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, model_validator
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from smo_shared.logconfig import install_logging
@@ -100,6 +100,9 @@ _monotonic = time.monotonic
 # MGT-1: read the current values of what a change names, just before sending it, and keep them with the result (cm_snapshot).
 # The read is one more exchange per sub-change (at most NETCONF_TIMEOUT_SECONDS); set false to skip it and the table.
 CM_SNAPSHOTS = os.environ.get("RAN_NF_OAM_CM_SNAPSHOTS", "true").lower() not in ("0", "false", "no")
+# MGT-1.8 / DB-3.2: how long a snapshot is kept before `POST /config-history/purge` may delete it, in days; 0 keeps them for ever (the default,
+# so nothing is deleted by an upgrade). The purge runs when an operator or a scheduler calls it; nothing in the service deletes on its own.
+CM_SNAPSHOT_RETENTION_DAYS = int(os.environ.get("RAN_NF_OAM_CM_SNAPSHOT_RETENTION_DAYS", "0") or 0)
 
 
 def worst_case_dispatch_seconds() -> float:
@@ -537,6 +540,12 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
     sequence: MSAC gate, schema check (cache-or-fetch), decompose into
     sub_changes, PATCH each independently, aggregate.
     """
+    return _execute_write(body, db)
+
+
+def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID | None = None, rollback_forced: bool = False):
+    """The body of `POST /config-jobs`, shared with the rollback route (MGT-1.6), which builds the same request from a recorded job and so
+    goes through the same MSAC, schema, dispatch and snapshot steps as any other write."""
     # SA-RANOAM-1: TS 28.319 role-based access control, per sub-change, before
     # anything is dispatched. A requester with a registered Identity or a
     # defined Role is evaluated against its AccessRules; any other requester
@@ -576,7 +585,8 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
             "dryRun": True, "status": "VALIDATED" if all(v["verdict"] == "PASS" for v in verdicts) else "WOULD_REJECT_SOME",
             "changes": verdicts})
 
-    job = WriteConfigJob(requested_by=body.requestedBy, scope=body.accessScope, msac_role=body.msacRole)
+    job = WriteConfigJob(requested_by=body.requestedBy, scope=body.accessScope, msac_role=body.msacRole, rollback_of=rollback_of,
+                         rollback_forced=rollback_forced)
     db.add(job)
     db.flush()
 
@@ -687,11 +697,164 @@ def read_configuration_history(managed_element_ref: str, managed_function_ref: s
         for r in page["items"]]}
 
 
+def _snapshot_or_404(db: Session, managed_element_ref: str, snapshot_id: uuid.UUID) -> CMSnapshot:
+    row = db.get(CMSnapshot, snapshot_id)
+    if row is None or row.managed_element_ref != managed_element_ref:
+        raise framework_error(FrameworkError.CM_SNAPSHOT_NOT_FOUND, detail=f"no snapshot {snapshot_id} of {managed_element_ref}")
+    return row
+
+
+def _image(row: CMSnapshot) -> dict:
+    """The values of the attributes a snapshot's write touched, as they stood just after it: what was there before, with what the NF
+    acknowledged laid over it (a write that was not applied leaves the before image)."""
+    image = dict(row.before or {})
+    if row.after is not None:
+        image.update(row.after)
+    return image
+
+
+@app.get("/managed-entities/{managed_element_ref}/config-history/diff")
+def diff_configuration_snapshots(managed_element_ref: str, from_snapshot: uuid.UUID, to_snapshot: uuid.UUID, db: Session = Depends(get_session)):
+    """MGT-1.5: how the attributes two snapshots of one managed object touched differ. Each snapshot's image is `before` with `after` laid
+    over it (`_image`); the diff is over the attributes either image holds. Only attributes a write named are ever known, so an attribute
+    neither snapshot touched is not reported as unchanged."""
+    first, second = (_snapshot_or_404(db, managed_element_ref, from_snapshot), _snapshot_or_404(db, managed_element_ref, to_snapshot))
+    if first.managed_function_ref != second.managed_function_ref:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                              detail=f"the snapshots are of different managed functions ({first.managed_function_ref!r} and {second.managed_function_ref!r})")
+    before_image, after_image = _image(first), _image(second)
+    changed = [{"attribute": k, "from": before_image[k], "to": after_image[k]}
+               for k in sorted(before_image.keys() & after_image.keys()) if str(before_image[k]) != str(after_image[k])]
+    return {"managedElementRef": managed_element_ref, "managedFunctionRef": first.managed_function_ref,
+            "fromSnapshot": str(first.snapshot_id), "toSnapshot": str(second.snapshot_id),
+            "changed": changed,
+            "onlyInFrom": {k: before_image[k] for k in sorted(before_image.keys() - after_image.keys())},
+            "onlyInTo": {k: after_image[k] for k in sorted(after_image.keys() - before_image.keys())}}
+
+
+@app.post("/config-history/purge")
+def purge_configuration_history(older_than_days: int | None = None, db: Session = Depends(get_session)):
+    """MGT-1.8: delete the snapshots older than `older_than_days` (default `RAN_NF_OAM_CM_SNAPSHOT_RETENTION_DAYS`; 422 when neither is set, so
+    a purge never runs with no age). The jobs and their sub-changes stay; a job whose snapshots are gone can no longer be rolled back."""
+    days = older_than_days if older_than_days is not None else CM_SNAPSHOT_RETENTION_DAYS
+    if days <= 0:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
+                              detail="older_than_days is required (and positive) unless RAN_NF_OAM_CM_SNAPSHOT_RETENTION_DAYS is set")
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
+    deleted = db.execute(delete(CMSnapshot).where(CMSnapshot.created_at < cutoff)).rowcount
+    db.commit()
+    return {"deleted": deleted, "olderThan": cutoff.isoformat()}
+
+
+class RollbackRequest(BaseModel):
+    requestedBy: str
+    accessScope: str | None = None            # default: the scope of the job being undone
+    msacRole: str | None = None
+    force: bool = False                       # MGT-1.7: go ahead although values changed since the job wrote them
+    dryRun: bool = False
+
+
+def _rollback_plan(db: Session, job: WriteConfigJob) -> tuple[list[dict], dict, list[str]]:
+    """(changes that undo the job, in reverse order; the values each target should hold now if nothing touched it since (None: absent);
+    problems that make an undo impossible). Only sub-changes that were applied, and only what the snapshots recorded, can be undone."""
+    rows = db.execute(select(CMSnapshot).join(WriteConfigSubChange, WriteConfigSubChange.id == CMSnapshot.sub_change_id)
+                      .where(CMSnapshot.job_id == job.job_id, WriteConfigSubChange.status == "APPLIED")
+                      .order_by(CMSnapshot.created_at, CMSnapshot.snapshot_id)).scalars().all()
+    problems: list[str] = []
+    if not rows:
+        return [], {}, ["the job applied nothing that has a snapshot (nothing was applied, snapshots are off, or they were purged)"]
+    expected: dict[tuple, dict | None] = {}
+    undo: list[dict] = []
+    for row in rows:
+        target = (row.managed_element_ref, row.managed_function_ref)
+        label = row.managed_function_ref or row.managed_element_ref
+        base = {"managedElementRef": row.managed_element_ref, **({"managedFunctionRef": row.managed_function_ref} if row.managed_function_ref else {})}
+        after = row.after or {}
+        if row.operation in ("merge", "replace"):
+            if row.before is None:
+                problems.append(f"{label}: no before image ({row.before_error or 'not recorded'})")
+                continue
+            absent = sorted(k for k in after if row.before.get(k) is None)       # the before image holds None for an attribute that was not there
+            if absent:
+                problems.append(f"{label}: {', '.join(absent)} had no value before the write, which cannot be restored")
+                continue
+            undo.append({**base, "operation": "merge", "attributeChanges": {k: row.before[k] for k in after}})
+            expected[target] = {**(expected.get(target) or {}), **after}
+        elif row.operation == "create":
+            undo.append({**base, "operation": "delete", "attributeChanges": {}})
+            expected[target] = {**(expected.get(target) or {}), **after}
+        elif row.operation in ("delete", "remove"):
+            if not row.before:
+                problems.append(f"{label}: the deleted object's values were not recorded")
+                continue
+            undo.append({**base, "operation": "create", "attributeChanges": dict(row.before)})
+            expected[target] = None
+        else:
+            problems.append(f"{label}: no way to undo a {row.operation!r} write")
+    undo.reverse()
+    return undo, expected, problems
+
+
+def _changed_since(db: Session, expected: dict) -> list[dict]:
+    """MGT-1.7: read each target now and list what no longer matches what the job left there."""
+    found = []
+    for (element, function), want in expected.items():
+        me = db.get(ManagedEntity, element)
+        endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id) if me and me.o1_adaptor_endpoint_id else None
+        client = _o1_client(me.o1_protocol, endpoint.transport) if endpoint is not None else None
+        if client is None:
+            found.append({"managedElementRef": element, "managedFunctionRef": function, "attribute": None, "expected": want, "actual": None,
+                          "error": "the element has no reachable O1 adaptor to read"})
+            continue
+        try:
+            current = client[1](endpoint.adaptor_uri, element, message_id=str(uuid.uuid4()), managed_function_ref=function, **_ssh_options(db, endpoint))
+        except Exception:                                          # noqa: BLE001 - a client bug must not become a silent "unchanged"
+            current = None
+        if current is None:
+            found.append({"managedElementRef": element, "managedFunctionRef": function, "attribute": None, "expected": want, "actual": None,
+                          "error": "the current values could not be read"})
+        elif want is None:
+            if current:
+                found.append({"managedElementRef": element, "managedFunctionRef": function, "attribute": None, "expected": None, "actual": current})
+        else:
+            found.extend({"managedElementRef": element, "managedFunctionRef": function, "attribute": k, "expected": v, "actual": current.get(k)}
+                         for k, v in want.items() if str(current.get(k)) != str(v))
+    return found
+
+
+@app.post("/config-jobs/{job_id}/rollback", status_code=202)
+@idempotent("ran-nf-oam", status_code=202)
+def rollback_configuration_job(job_id: uuid.UUID, body: RollbackRequest, request: Request, db: Session = Depends(get_session)):
+    """MGT-1.6: undo a job with a new write job built from its snapshots (reverse order, the recorded before values), which goes through MSAC,
+    the schema check and dispatch like any other write: `requestedBy` is the actor and the new job names `rollbackOf`. MGT-1.7: if what the job
+    wrote has been changed since, 409 `CONFIG_CHANGED_SINCE` unless `force`; `dryRun` returns the plan and the differences without writing."""
+    job = db.get(WriteConfigJob, job_id)
+    if job is None:
+        raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"no configuration job {job_id}")
+    changes, expected, problems = _rollback_plan(db, job)
+    if problems:
+        raise framework_error(FrameworkError.ROLLBACK_NOT_POSSIBLE, detail="; ".join(problems))
+    changed = _changed_since(db, expected)
+    if body.dryRun:
+        return JSONResponse(status_code=200, content={"dryRun": True, "rollbackOf": str(job_id), "changes": changes, "changedSince": changed,
+                                                      "status": "CHANGED_SINCE" if changed else "VALIDATED"})
+    if changed and not body.force:
+        first = changed[0]
+        raise framework_error(FrameworkError.CONFIG_CHANGED_SINCE,
+                              detail=f"{len(changed)} value(s) differ from what job {job_id} wrote, for example "
+                                     f"{first['managedFunctionRef'] or first['managedElementRef']} {first['attribute']}: expected {first['expected']!r}, "
+                                     f"found {first['actual']!r}; send force=true to restore anyway")
+    request_body = WriteConfigRequest(requestedBy=body.requestedBy, accessScope=body.accessScope or job.scope, msacRole=body.msacRole, changes=changes)
+    result = _execute_write(request_body, db, rollback_of=job_id, rollback_forced=bool(changed))
+    return {**result, "rollbackOf": str(job_id), "forced": bool(changed)}
+
+
 @app.get("/config-jobs/{job_id}")
 def query_write_config_job_status(job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(WriteConfigJob, job_id)
     sub_changes = db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job_id)).all()
-    return {"jobId": str(job.job_id), "status": job.status,
+    return {"jobId": str(job.job_id), "status": job.status, "requestedBy": job.requested_by,
+            "rollbackOf": str(job.rollback_of) if job.rollback_of else None, "rollbackForced": job.rollback_forced,
             "subChanges": [{"managedElementRef": sc.managed_element_ref, "managedFunctionRef": sc.managed_function_ref,
                             "operation": sc.operation, "status": sc.status, "rejectionReason": sc.rejection_reason,
                             "rejectionDetail": sc.rejection_detail, "attempts": sc.attempts} for sc in sub_changes]}

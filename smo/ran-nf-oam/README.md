@@ -241,6 +241,9 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 |---|---|---|
 | POST | `/alarms/ingest` | Query parameters: `source_alarm_id`, `managed_element_ref`, `severity`, optional `managed_function_ref` (the cell or other function it is about) and fault fields. Returns `{alarmId}`. 409 `O1_SERVICE_NOT_SUPPORTED` (FM) |
 | GET | `/alarms` | List; filters `managed_element_ref`, `managed_function_ref` (flat, full DN, or an RDN ending a stored DN), `severity` (any case; `cleared` isolates history; 422 outside `PerceivedSeverity`) |
+| GET | `/managed-entities/{ref}/config-history/diff` | `from_snapshot`, `to_snapshot`: attributes whose values differ between two snapshots of one managed object, and those only one touched (`MGT-1.5`) |
+| POST | `/config-jobs/{jobId}/rollback` | `requestedBy`, `accessScope?`, `msacRole?`, `force?`, `dryRun?`: a new write job that restores the recorded before values (`rollbackOf` names the original); 409 `CONFIG_CHANGED_SINCE` when values changed since unless `force`; 422 `ROLLBACK_NOT_POSSIBLE` (`MGT-1.6`, `1.7`) |
+| POST | `/config-history/purge` | `older_than_days?`: delete snapshots older than that (default `RAN_NF_OAM_CM_SNAPSHOT_RETENTION_DAYS`; refuses to run with no age) (`MGT-1.8`) |
 | GET | `/managed-entities/{ref}/config-history` | `managed_function_ref?`, `limit`, `offset`: before / after images of each dispatched write, newest first (`MGT-1`) |
 | PATCH | `/alarms/{id}/ack` | `new_state` (`ACKNOWLEDGED` or `UNACKNOWLEDGED`), `ack_user_id?`; 404 `ALARM_NOT_FOUND` |
 | PATCH | `/alarms/{id}/clear` | Sets `severity=cleared` (`perceivedSeverity` `CLEARED`), `cleared_at`, `clear_user_id?`; alarm stays listed |
@@ -300,6 +303,7 @@ RPC shape: an `<rpc>` whose `message-id` is the job id, containing `<edit-config
 | Variable | Default | Meaning |
 |---|---|---|
 | `RAN_NF_OAM_NETCONF_RETRY_DELAYS` | `0,5,10,20` | Seconds before each dispatch attempt (4 attempts); applies to NETCONF and RESTCONF alike |
+| `RAN_NF_OAM_CM_SNAPSHOT_RETENTION_DAYS` | `0` | Default age for `POST /config-history/purge`, in days; `0` keeps snapshots for ever (nothing deletes on its own) |
 | `RAN_NF_OAM_CM_SNAPSHOTS` | `true` | Read each object before writing it and keep the before / after images (`cm_snapshot`); `false`: no read, no rows |
 | `RAN_NF_OAM_DISPATCH_RETRY_BUDGET_SECONDS` | `35` | The most time one sub-change may spend waiting between attempts (and in earlier attempts) before no further retry starts; worst case per sub-change is this plus the 30 s exchange timeout |
 | `SMO_DATABASE_URL` | none; required (the service refuses to start without it) | Database (shared lib) |
