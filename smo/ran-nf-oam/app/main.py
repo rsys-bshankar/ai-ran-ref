@@ -21,7 +21,7 @@ import time
 import uuid
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from smo_shared.errors import illegal_transition_error
@@ -246,6 +246,21 @@ def _valid_refs(*refs: str | None) -> None:
             raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=str(exc)) from exc
 
 
+class KpiGuard(BaseModel):
+    """MSG-4: check a KPI where this job wrote, once `observationMinutes` have passed since it ran, and (with `revert`) roll back what regressed. The
+    worker runs the check of `POST /config-jobs/{id}/kpi-check` with these settings; an unrelated later change is never overwritten (the revert is
+    not forced: a value that differs from what the job wrote leaves the job unreverted and says so)."""
+    model_config = ConfigDict(extra="forbid")
+    kpi: str
+    baselineMinutes: int = Field(default=60, ge=1, le=10080)
+    observationMinutes: int = Field(default=60, ge=1, le=10080)
+    maxRegressionPercent: float = Field(default=10.0, ge=0)
+    direction: Literal["higher", "lower"] = "higher"
+    minSamples: int = Field(default=1, ge=1)
+    revert: bool = False
+    msacRole: str | None = None
+
+
 class WriteConfigRequest(BaseModel):
     requestedBy: str
     # SA-RANOAM-2: `scope` collides with the ProvMnS ScopeType, so the access
@@ -265,6 +280,8 @@ class WriteConfigRequest(BaseModel):
     wavePauseSeconds: int = Field(default=0, ge=0)
     gateMaxNewAlarms: int = Field(default=0, ge=0)
     onGateFailure: Literal["halt", "revert"] = "halt"
+    # MSG-4: a KPI guard, checked by the worker after the job (ignored by a dry run)
+    kpiGuard: KpiGuard | None = None
 
     @model_validator(mode="after")
     def _scope_and_refs(self):
@@ -718,6 +735,8 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
         problems.extend(schema_problems(db, change))
     if problems:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="; ".join(problems))
+    if body.kpiGuard is not None:
+        _kpi_or_404(db, body.kpiGuard.kpi)                                 # a guard on a KPI that is not defined is refused up front
     elements = list(dict.fromkeys(c["managedElementRef"] for c in body.changes))
     size = body.waveSize or len(elements) or 1
     wave_of = {element: index // size + 1 for index, element in enumerate(elements)}
@@ -738,7 +757,8 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
     job = WriteConfigJob(requested_by=body.requestedBy, scope=body.accessScope, msac_role=body.msacRole, rollback_of=rollback_of,
                          rollback_forced=rollback_forced, wave_size=body.waveSize, wave_pause_seconds=body.wavePauseSeconds,
                          wave_count=max(wave_of.values(), default=1), gate_max_new_alarms=body.gateMaxNewAlarms,
-                         on_gate_failure=body.onGateFailure, invoker_id=invoker)
+                         on_gate_failure=body.onGateFailure, invoker_id=invoker,
+                         kpi_guard=body.kpiGuard.model_dump() if body.kpiGuard else None)
     db.add(job)
     db.flush()
 
@@ -1117,10 +1137,16 @@ def check_configuration_job_kpi(job_id: uuid.UUID, body: KpiCheckRequest, db: Se
     (`baselineMinutes`) is compared with the KPI over the window from the job on (`observationMinutes`); a worse result than
     `maxRegressionPercent` is REGRESSED. With `revert`, the regressed elements are rolled back with the rollback of MGT-1.6 (a new job,
     MSAC, the changed-since guard); where the data is too thin the verdict is INSUFFICIENT_DATA and nothing is reverted. This is a check
-    to call, by an rApp, the SMO's autonomy or a scheduler, once the observation window has some data: nothing here runs on its own."""
+    to call, by an rApp, the SMO's autonomy or a scheduler, once the observation window has some data. A job that declared a `kpiGuard`
+    is checked by the worker without anyone calling this (`run_due_kpi_guards`)."""
     job = db.get(WriteConfigJob, job_id)
     if job is None:
         raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"no configuration job {job_id}")
+    return _kpi_check(db, job, body)
+
+
+def _kpi_check(db: Session, job: WriteConfigJob, body: KpiCheckRequest) -> dict:
+    job_id = job.job_id
     definition = _kpi_or_404(db, body.kpi)
     anchor = as_utc(job.schema_validated_at) if job.schema_validated_at else datetime.datetime.now(datetime.UTC)
     before_window = (anchor - datetime.timedelta(minutes=body.baselineMinutes), anchor)
@@ -1158,6 +1184,49 @@ def check_configuration_job_kpi(job_id: uuid.UUID, body: KpiCheckRequest, db: Se
                                                  changes=changes), db, rollback_of=job_id, rollback_forced=bool(changed))
         answer.update(reverted=undo["status"] == "COMPLETED", revertJobId=undo["jobId"], revertStatus=undo["status"])
     return answer
+
+
+KPI_GUARD_GRACE_MINUTES = int(os.environ.get("RAN_NF_OAM_KPI_GUARD_GRACE_MINUTES", "60") or 0)
+
+
+def run_due_kpi_guards(db: Session, now: datetime.datetime | None = None) -> list[dict]:
+    """What the worker's `run-kpi-guards` task runs: every finished job with a `kpiGuard` whose observation window has passed is checked as
+    `POST /config-jobs/{id}/kpi-check` would, with the job's own settings. A final verdict (OK, REGRESSED, or a revert that was refused) is kept
+    and the job is not checked again. Too little data (INSUFFICIENT_DATA) or a transient failure is kept as the latest answer and tried again on
+    the next run until `RAN_NF_OAM_KPI_GUARD_GRACE_MINUTES` (default 60) after the window; then it is final too, so a KPI that never has data
+    does not make the worker look for ever. The revert is never forced."""
+    now = now or datetime.datetime.now(datetime.UTC)
+    ran = []
+    ids = db.scalars(select(WriteConfigJob.job_id).where(
+        WriteConfigJob.kpi_guard.is_not(None), WriteConfigJob.kpi_guard_checked_at.is_(None),
+        WriteConfigJob.status.in_([JobState.COMPLETED, JobState.PARTIAL_SUCCESS])).order_by(WriteConfigJob.created_at)).all()
+    for job_id in ids:
+        job = db.get(WriteConfigJob, job_id)
+        guard = job.kpi_guard
+        anchor = as_utc(job.schema_validated_at) if job.schema_validated_at else as_utc(job.created_at)
+        window_ends = anchor + datetime.timedelta(minutes=guard["observationMinutes"])
+        if now < window_ends:
+            continue
+        body = KpiCheckRequest(requestedBy=f"kpi-guard:{job.requested_by}", kpi=guard["kpi"], baselineMinutes=guard["baselineMinutes"],
+                               observationMinutes=guard["observationMinutes"], maxRegressionPercent=guard["maxRegressionPercent"],
+                               direction=guard["direction"], minSamples=guard["minSamples"], revert=guard["revert"], accessScope=job.scope,
+                               msacRole=guard.get("msacRole") or job.msac_role, force=False)
+        try:
+            result = _kpi_check(db, job, body)
+        except HTTPException as exc:                      # the check or the revert was refused (no such KPI, rollback impossible, values changed since)
+            db.rollback()
+            result = {"verdict": "REGRESSED" if exc.status_code in (409, 422) and guard["revert"] else "ERROR", "reverted": False,
+                      "error": str(exc.detail.get("detail") if isinstance(exc.detail, dict) else exc.detail)[:500]}
+        except Exception as exc:                          # noqa: BLE001 (transient: the next run tries again; one job must not stop the others)
+            db.rollback()
+            result = {"verdict": "ERROR", "reverted": False, "error": f"{type(exc).__name__}: {exc}"[:500]}
+        final = result["verdict"] in ("OK", "REGRESSED") or (now >= window_ends + datetime.timedelta(minutes=KPI_GUARD_GRACE_MINUTES))
+        job = db.get(WriteConfigJob, job_id)
+        job.kpi_guard_result = {**result, "checkedAt": now.isoformat()}
+        job.kpi_guard_checked_at = now if final else None
+        db.commit()
+        ran.append({"jobId": str(job_id), "verdict": result["verdict"], "final": final, "reverted": result.get("reverted", False)})
+    return ran
 
 
 class WaveActionRequest(BaseModel):
@@ -1669,6 +1738,8 @@ def query_write_config_job_status(job_id: uuid.UUID, db: Session = Depends(get_s
             "waveSize": job.wave_size, "waveCount": job.wave_count, "currentWave": job.current_wave,
             "wavePauseSeconds": job.wave_pause_seconds, "onGateFailure": job.on_gate_failure, "gateMaxNewAlarms": job.gate_max_new_alarms,
             "haltedReason": job.halted_reason, "haltedDetail": job.halted_detail,
+            "kpiGuard": job.kpi_guard, "kpiGuardResult": job.kpi_guard_result,
+            "kpiGuardCheckedAt": as_utc(job.kpi_guard_checked_at).isoformat() if job.kpi_guard_checked_at else None,
             "nextWaveAt": as_utc(job.next_wave_at).isoformat() if job.next_wave_at else None,
             "subChanges": [{"managedElementRef": sc.managed_element_ref, "wave": sc.wave, "managedFunctionRef": sc.managed_function_ref,
                             "operation": sc.operation, "status": sc.status, "rejectionReason": sc.rejection_reason,

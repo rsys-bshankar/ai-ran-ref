@@ -411,6 +411,72 @@
         "title": "KpiDefinitionRequest",
         "type": "object"
       },
+      "KpiGuard": {
+        "additionalProperties": false,
+        "description": "MSG-4: check a KPI where this job wrote, once `observationMinutes` have passed since it ran, and (with `revert`) roll back what regressed. The\nworker runs the check of `POST /config-jobs/{id}/kpi-check` with these settings; an unrelated later change is never overwritten (the revert is\nnot forced: a value that differs from what the job wrote leaves the job unreverted and says so).",
+        "properties": {
+          "baselineMinutes": {
+            "default": 60,
+            "maximum": 10080.0,
+            "minimum": 1.0,
+            "title": "Baselineminutes",
+            "type": "integer"
+          },
+          "direction": {
+            "default": "higher",
+            "enum": [
+              "higher",
+              "lower"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "kpi": {
+            "title": "Kpi",
+            "type": "string"
+          },
+          "maxRegressionPercent": {
+            "default": 10.0,
+            "minimum": 0.0,
+            "title": "Maxregressionpercent",
+            "type": "number"
+          },
+          "minSamples": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Minsamples",
+            "type": "integer"
+          },
+          "msacRole": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Msacrole"
+          },
+          "observationMinutes": {
+            "default": 60,
+            "maximum": 10080.0,
+            "minimum": 1.0,
+            "title": "Observationminutes",
+            "type": "integer"
+          },
+          "revert": {
+            "default": false,
+            "title": "Revert",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kpi"
+        ],
+        "title": "KpiGuard",
+        "type": "object"
+      },
       "KpiScheduleRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1221,6 +1287,16 @@
             "minimum": 0.0,
             "title": "Gatemaxnewalarms",
             "type": "integer"
+          },
+          "kpiGuard": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KpiGuard"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "msacRole": {
             "anyOf": [
@@ -2350,7 +2426,7 @@
     },
     "/config-jobs/{job_id}/kpi-check": {
       "post": {
-        "description": "AI-10.5: did a KPI regress where this job wrote? For each element the job applied changes to, the KPI over the window before the job\n(`baselineMinutes`) is compared with the KPI over the window from the job on (`observationMinutes`); a worse result than\n`maxRegressionPercent` is REGRESSED. With `revert`, the regressed elements are rolled back with the rollback of MGT-1.6 (a new job,\nMSAC, the changed-since guard); where the data is too thin the verdict is INSUFFICIENT_DATA and nothing is reverted. This is a check\nto call, by an rApp, the SMO's autonomy or a scheduler, once the observation window has some data: nothing here runs on its own.",
+        "description": "AI-10.5: did a KPI regress where this job wrote? For each element the job applied changes to, the KPI over the window before the job\n(`baselineMinutes`) is compared with the KPI over the window from the job on (`observationMinutes`); a worse result than\n`maxRegressionPercent` is REGRESSED. With `revert`, the regressed elements are rolled back with the rollback of MGT-1.6 (a new job,\nMSAC, the changed-since guard); where the data is too thin the verdict is INSUFFICIENT_DATA and nothing is reverted. This is a check\nto call, by an rApp, the SMO's autonomy or a scheduler, once the observation window has some data. A job that declared a `kpiGuard`\nis checked by the worker without anyone calling this (`run_due_kpi_guards`).",
         "operationId": "check_configuration_job_kpi_config_jobs__job_id__kpi_check_post",
         "parameters": [
           {

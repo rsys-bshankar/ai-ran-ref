@@ -174,7 +174,8 @@ def test_the_worker_advances_a_staged_job_whose_pause_has_elapsed(client, fleet,
 # ---- the task list
 
 def test_the_task_list_is_what_the_docs_say():
-    assert {t.name: t.interval_seconds for t in tasks.TASKS} == {"advance-waves": 15, "publish-kpis": 30, "purge-safeguard-refusals": 3600}
+    assert {t.name: t.interval_seconds for t in tasks.TASKS} == {"advance-waves": 15, "publish-kpis": 30, "run-kpi-guards": 60,
+                                                                       "purge-safeguard-refusals": 3600}
 
 
 def test_the_worker_tick_runs_the_tasks_through_the_claim(db_session_factory, monkeypatch):
@@ -184,6 +185,6 @@ def test_the_worker_tick_runs_the_tasks_through_the_claim(db_session_factory, mo
     Base.metadata.create_all(engine, tables=[PeriodicRun.__table__])
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
     out = tick(tasks.TASKS, module="ran-nf-oam", session_factory=db_session_factory, engine=engine)
-    assert out == {"advance-waves": "ran", "publish-kpis": "ran", "purge-safeguard-refusals": "ran"}
+    assert out == {"advance-waves": "ran", "publish-kpis": "ran", "run-kpi-guards": "ran", "purge-safeguard-refusals": "ran"}
     assert tick(tasks.TASKS, module="ran-nf-oam", session_factory=db_session_factory, engine=engine) == {
-        "advance-waves": "skipped", "publish-kpis": "skipped", "purge-safeguard-refusals": "skipped"}
+        "advance-waves": "skipped", "publish-kpis": "skipped", "run-kpi-guards": "skipped", "purge-safeguard-refusals": "skipped"}

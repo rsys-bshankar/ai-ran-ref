@@ -1008,8 +1008,17 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   payload, progress and a cancel flag, and the claim of ST-8 already gives "at most once per interval, a dead holder frees it". The `job` table,
   cancel and lease-resume (MSG-4.1 to 4.4) are still open for the queue-shaped users (MSG-4.5 southbound sub-changes, MSG-4.6 software
   management).
-- **Not taken.** `kpi-check` on a timer: a check needs a job id, a KPI and a revert decision per job, so scheduling it means a field on the job
-  (a guard declared at `POST /config-jobs`); left for a follow-up. The worker exports no metrics (it has no port). A worker is not started by anything
+- **KPI guard (the second PR of this feature).** `kpi-check` on a timer needs a job id, a KPI and a revert decision per job, so the job carries
+  them: `kpiGuard` on `POST /config-jobs` (`write_config_job.kpi_guard`, `kpi_guard_result`, `kpi_guard_checked_at`; revision 0020, nullable
+  columns). The worker task `run-kpi-guards` (every minute) takes finished jobs (COMPLETED, PARTIAL_SUCCESS) whose observation window has
+  passed and runs the shared `_kpi_check` (the route's own body, extracted) with the job's settings, `requestedBy` `kpi-guard:<requester>`, and
+  `revert` only if the job asked. **The revert is never forced**: a value changed since the job leaves it unreverted and the result says why
+  (final, REGRESSED, `reverted` false), because an automatic override of somebody's later change is not a decision a timer should take.
+  OK and REGRESSED are final; INSUFFICIENT_DATA or a transient error is retried each run until `RAN_NF_OAM_KPI_GUARD_GRACE_MINUTES` (60) after
+  the window, so late PM files are still seen and a KPI with no data does not make the worker look for ever. `revert` defaults to false: an
+  unasked-for revert is the riskier surprise. Proven by `ran-nf-oam/tests/test_kpi_guard.py` (12), and by mutation: ignoring the window, forcing
+  the revert, and making every verdict final each fail a test.
+- **Not taken.** The worker exports no metrics (it has no port). A worker is not started by anything
   but compose: the Helm chart (OPS-2) gets its own Deployment.
 - **Proof.** `shared/tests/test_worker.py` (once per interval, two workers, one failing task, per-module names, the loop's back-off, heartbeat and
   stop), `ran-nf-oam/tests/test_tasks.py` (schedules end to end against a fake DME, the purge, the wave advance as the worker runs it, the task
