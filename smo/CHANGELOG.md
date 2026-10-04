@@ -6,6 +6,7 @@ Entries are written for an operator: what changed in behaviour, configuration or
 ## [Unreleased]
 
 ### Added
+- **Decision on database high availability (PR-DB-7.1, `docs/adr/0003-postgres-ha.md`).** The one-pod Postgres in the chart stays a lab default and is not highly available. The supported HA route on Kubernetes is an operator (CloudNativePG) behind `postgres.external.*`, a managed service fits the same setting, and compose stays single-node. The lab and failover test follow in this release.
 - **Image vulnerability scan (PR-SEC-12.2).** `.github/workflows/image-scan.yml` builds every image the release publishes from the checkout and scans it with Trivy for HIGH and CRITICAL findings that have a fix (`--ignore-unfixed`). It runs when a Dockerfile or a dependency lock changes, every Monday, and by hand (`report_only` to read the findings without failing), writes a report to the job summary (one row per image, then each distinct finding once with where it is) and fails when there is any. An accepted finding goes in `smo/.trivyignore` with its reason. It is not a required check, so a new advisory does not block an unrelated pull request.
 
 ## [0.3.0] - 2026-10-04

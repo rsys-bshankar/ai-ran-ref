@@ -224,7 +224,7 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| DB-7.1 | ADR: Patroni vs Postgres operator vs managed service | ADR merged | – |
+| DB-7.1 | ADR: Patroni vs Postgres operator vs managed service (done: `docs/adr/0003-postgres-ha.md`, operator route) | ADR merged | – |
 | DB-7.2 | Three-node lab deployment | `pg_isready` on the primary; two replicas streaming | DB-7.1, OPS-2.1 |
 | DB-7.3 | Connection string with multiple hosts and `target_session_attrs=read-write` | Services reconnect after a switchover | DB-7.2 |
 | DB-7.4 | Failover test during the runbook replay | Data intact; recovery time recorded | DB-7.3 |
