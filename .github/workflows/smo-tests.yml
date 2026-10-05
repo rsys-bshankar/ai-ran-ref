@@ -927,6 +927,20 @@ jobs:
           [ "$(count SENT)" = "100" ] && [ "$distinct" = "100" ]
           kubectl -n smo exec postgres-0 -- psql -U smo -d smo -c "DELETE FROM notification_outbox WHERE module = 'ci-failover'"
 
+      - name: A staged CM job waits for the job runner while it is gone, and finishes when it is back (PR-HA-4.2)
+        working-directory: smo
+        run: |
+          run() { kubectl -n smo exec -i deploy/sme -- python3 - "$@" < scripts/k8s_staged_job_failover.py; }
+          job=$(run start | tail -1)
+          echo "job $job: wave 1 of 3 done, 20 s pause before wave 2"
+          kubectl -n smo scale deploy/ran-nf-oam-worker --replicas=0
+          kubectl -n smo wait --for=delete pod -l app.kubernetes.io/name=ran-nf-oam-worker --timeout=90s
+          sleep 30                                   # the pause is over; only the worker would advance the job
+          run stalled "$job"
+          kubectl -n smo scale deploy/ran-nf-oam-worker --replicas=2
+          kubectl -n smo rollout status deploy/ran-nf-oam-worker --timeout=120s
+          run finish "$job"
+
       - name: What the cluster says, when it went wrong
         if: failure()
         run: |

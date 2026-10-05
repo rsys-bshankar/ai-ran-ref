@@ -620,7 +620,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | HA-4.1 | Kill the delivery worker mid-batch (done: the sweep of `MSG-2` was missing and is built here; CI job `helm`) | No lost notification; duplicates only where at-least-once allows | MSG-2.2 |
-| HA-4.2 | Kill the job runner mid-job | Job resumes (`MSG-4.4`) | MSG-4.4 |
+| HA-4.2 | Kill the job runner mid-job (done on kind: the worker is scaled to 0 between the waves of a staged job, the job waits, and finishes when the worker is back; CI job `helm`) | Job resumes (`MSG-4.4`) | MSG-4.4 |
 
 #### PR-HA-5 — Placement
 
