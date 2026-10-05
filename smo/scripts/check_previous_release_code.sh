@@ -81,7 +81,8 @@ replay() {
 # second replay on the same stack is not a fair test. Break one column the previous release needs, replay the first runbook test, expect it to fail.
 echo "== control: a schema that breaks the previous release must make the replay fail"
 fresh_stack
-compose exec -T postgres psql -U smo -d smo -v ON_ERROR_STOP=1 -c "ALTER TABLE write_config_job RENAME COLUMN msac_role TO msac_role_broken" >/dev/null
+# the module tables live in schemas of their own since 0.4.0 (public only holds a compatibility view the modules no longer read): break the real table
+compose exec -T postgres psql -U smo -d smo -v ON_ERROR_STOP=1 -c "ALTER TABLE ran_nf_oam.write_config_job RENAME COLUMN msac_role TO msac_role_broken" >/dev/null
 compose up -d --build --wait
 if replay "tests_integration/test_demo_runbook.py::test_full_runbook_sequence_succeeds" >/dev/null 2>&1; then
   echo "FAIL: the replay passed on a schema with a column the previous release needs renamed: this check cannot fail" >&2
