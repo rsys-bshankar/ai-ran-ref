@@ -64,7 +64,7 @@ def hammer(engine, n: int) -> None:
         errors.append(f"{type(exc).__name__}: {exc}"[:300])
 
 
-engine = build_engine(f"postgresql+psycopg://smo_sme@{HOST}:{PORT}/smo", environ={**os.environ, "SMO_DATABASE_PASSWORD": PASSWORD, "SMO_DB_POOLER": "transaction"})
+engine = build_engine(f"postgresql+psycopg://smo_sme:{PASSWORD}@{HOST}:{PORT}/smo", environ={**os.environ, "SMO_DB_POOLER": "transaction"})
 threads = [threading.Thread(target=hammer, args=(engine, 60)) for _ in range(12)]
 started = time.monotonic()
 [t.start() for t in threads]
