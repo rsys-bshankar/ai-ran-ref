@@ -180,7 +180,7 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 | DB-2.4 | Replace cross-module FKs by plain ID columns, one module pair per PR (done in one revision, `0022`: dropping a constraint changes no data, and the pairs share the same reasoning) | Per PR: tests and migration check green | DB-2.3 |
 | DB-2.5 | Pilot: `onboarding` tables in schema `onboarding`; `search_path` set by the service (done: revision `0023`; the search path is the role's own default, so the service sets nothing) | Module works; other modules unaffected | DB-2.2 |
 | DB-2.6 | Pilot role `smo_onboarding` with rights only on its schema (done for compose and the Helm chart: `scripts/db_roles.py`, `tests_integration/test_db_roles.py`, `databaseRoles` in the chart) | Role cannot read another schema (test) | DB-2.5 |
-| DB-2.7 | Repeat DB-2.5/2.6 for each remaining module (done for MLMR, RAN Analytics, SO SMOS, SA SMOS, Intent Service, MDAF and the four reference rApps in one PR, with the Onboarding pilot before; open: SME, DME, NFO, RApp Management, A1 Related, FOCOM, AIMgF, RAN NF OAM, R1 Termination; MLLF and the mocks have no database) | Per module: runbook replay green | DB-2.6 |
+| DB-2.7 | Repeat DB-2.5/2.6 for each remaining module (done for every module that uses the database: Onboarding, then ten in `0024`, then SME, DME, NFO, RApp Management, A1 Related, FOCOM, AIMgF, RAN NF OAM and R1 Termination in `0025`; MLLF and the mocks have no database) | Per module: runbook replay green | DB-2.6 |
 
 #### PR-DB-3 — Retention
 
