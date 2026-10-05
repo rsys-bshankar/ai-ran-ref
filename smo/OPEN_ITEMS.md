@@ -174,10 +174,10 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| DB-2.1 ★ | Table → owning-module map for all tables (≈120) in a checked-in file | File merged | – |
-| DB-2.2 | CI test: every table in the migrated schema is declared by exactly one module's models | Test fails on an orphan table | DB-2.1 |
-| DB-2.3 | List foreign keys that cross modules; each is a break of "modules talk only through R1" | List with a decision per FK (keep as ID reference without FK, or move) | DB-2.1 |
-| DB-2.4 | Replace cross-module FKs by plain ID columns, one module pair per PR | Per PR: tests and migration check green | DB-2.3 |
+| DB-2.1 ★ | Table → owning-module map for all tables (≈120) in a checked-in file (done: `migrations/table_owners.json`, 134 tables) | File merged | – |
+| DB-2.2 | CI test: every table in the migrated schema is declared by exactly one module's models (done: `tests_integration/test_table_owners.py` and `check_migration_matches_models.py`) | Test fails on an orphan table | DB-2.1 |
+| DB-2.3 | List foreign keys that cross modules; each is a break of "modules talk only through R1" | List with a decision per FK (keep as ID reference without FK, or move) (done: 24, all decided "plain id", in the docstring of revision `0022`) | DB-2.1 |
+| DB-2.4 | Replace cross-module FKs by plain ID columns, one module pair per PR (done in one revision, `0022`: dropping a constraint changes no data, and the pairs share the same reasoning) | Per PR: tests and migration check green | DB-2.3 |
 | DB-2.5 | Pilot: `onboarding` tables in schema `onboarding`; `search_path` set by the service | Module works; other modules unaffected | DB-2.2 |
 | DB-2.6 | Pilot role `smo_onboarding` with rights only on its schema | Role cannot read another schema (test) | DB-2.5 |
 | DB-2.7 | Repeat DB-2.5/2.6 for each remaining module (one PR each) | Per module: runbook replay green | DB-2.6 |
