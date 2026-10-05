@@ -599,7 +599,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 |---|---|---|---|
 | HA-1.1 | Two replicas per module in compose (`deploy.replicas`) or Helm (done in Helm: `ci/ha-values.yaml`, CI job `helm`; Onboarding, GUI backend and the mocks stay at one) | All start | – |
 | HA-1.2 | Replay the runbook against the replicas (CI job `compose-replicas`: `docker-compose.replicas.yml`, two of each module, callers reach them through Docker's DNS) | Green | HA-1.1 |
-| HA-1.3 | Fix list from failures in HA-1.2, one PR each | List empty | HA-1.2 |
+| HA-1.3 | Fix list from failures in HA-1.2, one PR each (done: the replay passed on its first run, so the list is empty; spread of calls over replicas is checked on kind, see `CHANGELOG.md`) | List empty | HA-1.2 |
 
 #### PR-HA-2 — Rolling restart
 
