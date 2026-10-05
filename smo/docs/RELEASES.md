@@ -60,6 +60,16 @@ Verify an image before running it (replace the module, version and repository):
       --certificate-oidc-issuer https://token.actions.githubusercontent.com
     docker buildx imagetools inspect ghcr.io/<owner>/<repo>/smo-ran-nf-oam:0.1.0 --format '{{ json .Provenance }}'
 
+### The repository was renamed (October 2026)
+
+The repository `ai-ran-ref` became `ai-ran-smo`. Images are named after the repository, and a container registry does not redirect, so:
+
+- Releases up to and including `smo-v0.4.0` stay at `ghcr.io/rsys-bshankar/ai-ran-ref/smo-<module>:<version>`; verify them with `<repo>` = `ai-ran-ref` in the command above (their signatures name that repository's workflow).
+- Releases after it are published at `ghcr.io/rsys-bshankar/ai-ran-smo/smo-<module>:<version>`; verify them with `<repo>` = `ai-ran-smo`.
+- The Helm chart's default `image.registry` follows the new name, so a chart at a commit after the rename needs images of a release published after it; to run `0.4.0` from the chart, set `image.registry=ghcr.io/rsys-bshankar/ai-ran-ref`.
+- Web, `git` and API URLs of the old name redirect (until a repository of that name is created again); update remotes with `git remote set-url origin https://github.com/rsys-bshankar/ai-ran-smo`.
+- A package published by the release workflow is private until someone makes it public (package settings of each of the images listed by `python scripts/release_images.py names`).
+
 ## The first tag
 
 `smo-v0.1.0` is the point at which the production-readiness slices recorded under `CHANGELOG.md`'s first section were in `main`. It is a source release: images are not built or published by tag until `OPS-4.2`, so a consumer builds them from the tag with `docker compose up -d --build`.
