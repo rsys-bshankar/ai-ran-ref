@@ -30,6 +30,14 @@ compose() { (cd "$prev_smo" && GUI_COOKIE_SECURE=false docker compose -p "$proje
 # which a plain `rm` cannot remove. On a CI runner the directory is thrown away anyway; elsewhere sudo (if there is any) finishes the job.
 cleanup() {
   status=$?
+  # a stack that did not come up says why only in its own logs, which the teardown below throws away: print them first
+  if [ "$status" -ne 0 ] && [ -d "$prev_smo" ]; then
+    echo "== the stack at failure"
+    compose ps -a --format '{{.Service}}: {{.State}} {{.Health}}' 2>&1 | grep -v ' healthy$' || true
+    for svc in $(compose ps -a --format '{{.Service}} {{.Health}}' 2>/dev/null | awk '$2 == "unhealthy" {print $1}'); do
+      echo "== logs of $svc"; compose logs --no-color --tail=60 "$svc" 2>&1 || true
+    done
+  fi
   [ -d "$prev_smo" ] && { compose down -v --remove-orphans >/dev/null 2>&1 || true; }
   git -C "$repo" worktree remove --force "$scratch/prev" >/dev/null 2>&1 || true
   rm -rf "$scratch" >/dev/null 2>&1 || sudo rm -rf "$scratch" >/dev/null 2>&1 || true
