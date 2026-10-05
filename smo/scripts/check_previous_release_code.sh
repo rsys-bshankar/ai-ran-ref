@@ -64,6 +64,9 @@ fresh_stack() {
   url="postgresql+psycopg://smo:$(cat secrets/db_password)@localhost:5432/smo"
   (cd "$here" && SMO_DATABASE_URL="$url" python scripts/migrate.py)
   (cd "$here" && SMO_DATABASE_URL="$url" python scripts/check_migration_matches_models.py)
+  # the previous release's own `migrate` service also makes the per-module roles its modules connect as (smo_<module>, since 0.4.0); it is replaced by a
+  # no-op here, so make them the way it would: its own script and manifest, its own password files. Without them every module fails to log in.
+  (cd "$prev_smo" && SMO_DATABASE_URL="$url" SMO_DB_ROLE_PASSWORD_DIR="$prev_smo/secrets" python scripts/db_roles.py)
 }
 replay() {
   docker run --rm --network "${project}_default" --network-alias demo-consumer \
