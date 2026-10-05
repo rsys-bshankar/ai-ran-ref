@@ -21,7 +21,7 @@ import schemathesis
 from hypothesis import HealthCheck, settings
 from schemathesis import checks as st_checks
 
-MODULES = [m for m in os.environ.get("SMO_CONTRACT_MODULES", "sme,a1-related").split(",") if m]
+MODULES = [m for m in os.environ.get("SMO_CONTRACT_MODULES", "sme,a1-related,aimgf,mdaf,mllf,mlmr,onboarding,rapp-mgmt").split(",") if m]
 WAIVERS = json.loads(Path(__file__).with_name("contract_waivers.json").read_text())
 CHECKS = (st_checks.not_a_server_error, st_checks.status_code_conformance, st_checks.content_type_conformance, st_checks.response_schema_conformance)
 
