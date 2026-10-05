@@ -17,6 +17,7 @@ tables.
 """
 
 import uuid
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI
 from sqlalchemy import select
@@ -77,7 +78,7 @@ def register_analytics_producer(producer_id: str, analytics_type: str, dme_input
     # as an SME service, the same real two-step CAPIF dance the reference
     # itself requires.
     R1Client().post("/sme/provider-registrations", json={"apfId": producer_id})
-    R1Client().post("/sme/published-apis/v1/{}/service-apis".format(producer_id), json={
+    R1Client().post("/sme/published-apis/v1/{}/service-apis".format(quote(producer_id, safe="")), json={
         "serviceName": f"mdaf.{analytics_type}", "producerId": producer_id, "endpoint": "internal",
         "version": "1.0", "serviceCapabilities": {"analyticsType": analytics_type}, "moduleScope": "ran-analytics",
     })

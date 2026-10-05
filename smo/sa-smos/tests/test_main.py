@@ -278,3 +278,7 @@ def test_list_remedial_actions_filters_escalations(client):
     queue = client.get("/remedial-actions", params={"outcome": "ESCALATED"}).json()["items"]
     assert [a["actionId"] for a in queue] == [escalated["actionId"]]
     assert client.get("/remedial-actions", params={"monitor_id": str(uuid.uuid4())}).json()["items"] == []
+
+
+def test_evaluating_an_unknown_monitor_is_404(client):
+    assert client.post("/monitors/e3e70682-c209-1cac-a29f-6fbed82c07cd/evaluate", json={"x": 1}).status_code == 404

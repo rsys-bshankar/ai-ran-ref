@@ -3,7 +3,7 @@
 schemathesis builds requests from the module's schema (`/openapi.json` of the live ASGI app, in process, on SQLite, with every other module behind the in-process mesh of `conftest.py` so a call a route makes to another module lands on it) and checks, for
 each operation, that
 
-  - no input makes the module answer 5xx (`not_a_server_error`),
+  - no input makes the module answer an unhandled 5xx (`no_unhandled_server_error`: a 502 or 503 whose body is a ProblemDetails is a deliberate "a dependency is missing", not a failure),
   - the status code is one the schema documents (`status_code_conformance`),
   - the body matches the declared content type and schema (`content_type_conformance`, `response_schema_conformance`).
 
@@ -21,9 +21,25 @@ import schemathesis
 from hypothesis import HealthCheck, settings
 from schemathesis import checks as st_checks
 
-MODULES = [m for m in os.environ.get("SMO_CONTRACT_MODULES", "sme,a1-related,aimgf,mdaf,mllf,mlmr,onboarding,rapp-mgmt").split(",") if m]
+MODULES = [m for m in os.environ.get("SMO_CONTRACT_MODULES", "sme,a1-related,aimgf,mdaf,mllf,mlmr,onboarding,rapp-mgmt,nfo,so-smos,sa-smos,focom,ran-nf-oam,dme,intent-service,ran-analytics").split(",") if m]
 WAIVERS = json.loads(Path(__file__).with_name("contract_waivers.json").read_text())
-CHECKS = (st_checks.not_a_server_error, st_checks.status_code_conformance, st_checks.content_type_conformance, st_checks.response_schema_conformance)
+
+
+@schemathesis.check
+def no_unhandled_server_error(ctx, response, case):
+    """5xx is a defect unless it is a deliberate dependency failure: 502 or 503 with a ProblemDetails body (the module says what it is missing)."""
+    if response.status_code < 500:
+        return
+    try:
+        problem = response.json().get("detail")
+    except ValueError:
+        problem = None
+    if response.status_code in (502, 503) and isinstance(problem, dict) and problem.get("title"):
+        return
+    raise AssertionError(f"unhandled {response.status_code}: {response.text[:200]}")
+
+
+CHECKS = (no_unhandled_server_error, st_checks.status_code_conformance, st_checks.content_type_conformance, st_checks.response_schema_conformance)
 
 
 def _fixture(module: str):

@@ -494,6 +494,8 @@ def register_intent_handling_function(body: RegisterRmihRequest, db: Session = D
                                 supported_negotiation_functionalities=body.supportedNegotiationFunctionalities,
                                 supported_utility_list=ts28312.dump(body.supportedUtilityList),
                                 notification_destination=body.notificationDestination, intent_handling_scope=body.intentHandlingScope)
+    if db.get(IntentHandlingFunction, body.rmihId) is not None:
+        raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail=f"rmihId {body.rmihId} is registered")
     db.add(fn)
     db.commit()
     return _rmih_view(fn)

@@ -705,3 +705,16 @@ def test_a_config_job_with_an_idempotency_key_is_written_once(client, db_session
     assert len(sent) == 1
     with db_session_factory() as session:
         assert session.query(WriteConfigJob).count() == 1
+
+
+def test_unknown_ids_are_404_and_malformed_input_is_422_not_500(client):
+    """Found by the contract test (tests_integration/test_contract_schemathesis.py): each of these answered 500."""
+    unknown = "e3e70682-c209-1cac-a29f-6fbed82c07cd"
+    assert client.get(f"/config-jobs/{unknown}").status_code == 404
+    assert client.post(f"/software-management-jobs/{unknown}/advance", params={"succeeded": "true"}).status_code == 404
+    assert client.post(f"/o1-adaptor-endpoints/{unknown}/heartbeat").status_code == 404
+    assert client.post("/config-jobs", json={"requestedBy": "x", "accessScope": "s", "changes": [{}]}).status_code == 422
+    body = {"managedElementRef": "ME-DUP", "adaptorUri": "http://a/edit-config", "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU"}
+    assert client.post("/o1-adaptor-endpoints", json=body).status_code == 201
+    assert client.post("/o1-adaptor-endpoints", json=body).status_code == 409
+    assert client.post("/o1-adaptor-endpoints", json={**body, "managedElementRef": "ManagedElement="}).status_code == 422

@@ -1164,6 +1164,16 @@ def test_mediate_action_surfaces_a_ran_nf_oam_precheck_refusal(client, ran_nf_oa
     assert (action["status"], action["forwardedJobId"]) == ("REJECTED", None)
 
 
+def test_mediate_action_answers_502_when_ran_nf_oam_fails_without_a_usable_body(client, ran_nf_oam):
+    """Found by the contract test: RAN NF OAM answering a bare 500 made DME fail on `resp.json()` and answer 500 itself."""
+    ran_nf_oam.refuse_with = (500, {})
+    resp = client.post("/actions", json={"requestedBy": "rapp", "changes": [
+        {"managedElementRef": "me-1", "className": "GNBDUFunction", "attributeChanges": {"txPower": 10}}]})
+    assert resp.status_code == 502 and resp.json()["detail"]["title"] == "UPSTREAM_FAILED"
+    action = client.get("/actions").json()["items"][0]
+    assert (action["status"], action["forwardedJobId"]) == ("REJECTED", None)
+
+
 def test_mediate_action_rejects_empty_changes(client, ran_nf_oam):
     resp = client.post("/actions", json={"requestedBy": "energy-optimizer", "changes": []})
     assert resp.status_code == 422
@@ -1297,3 +1307,9 @@ def test_stopping_a_job_at_the_producers_is_a_delete_row_in_the_same_transaction
     outbox.drain(app.state.test_engine)
     assert sorted(deleted) == sorted(r.destination for r in stops)
     assert {r.status for r in _outbox_rows(client) if r.method == "DELETE"} == {"SENT"}
+
+
+def test_an_offer_with_no_delivery_method_is_refused(client):
+    resp = client.post("/offers", json={"dmeTypeId": "e3e70682-c209-1cac-a29f-6fbed82c07cd", "dataDeliveryMode": "CONTINUOUS",
+                                        "dataDeliveryMethods": [], "dataOfferTerminationNotificationUri": "http://producer/terminate"})
+    assert resp.status_code == 409

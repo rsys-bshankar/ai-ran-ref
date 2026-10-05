@@ -8,7 +8,7 @@ v1.3 left as "orchestrates in sequence" with no defined failure behavior.
 import uuid
 
 from fastapi import Depends, FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
+from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
@@ -39,6 +40,14 @@ class SubmitOrderRequest(BaseModel):
     steps: list[dict]
     rmihRegistration: str = "so-smos"
 
+    @field_validator("steps")
+    @classmethod
+    def _each_step_names_its_type_and_target(cls, steps: list[dict]) -> list[dict]:
+        for step in steps:
+            if not isinstance(step.get("stepType"), str) or not isinstance(step.get("targetModule"), str):
+                raise ValueError("every step needs a string stepType and targetModule")
+        return steps
+
 
 @app.post("/orders", status_code=202)
 def submit_service_order(body: SubmitOrderRequest, db: Session = Depends(get_session)):
@@ -53,9 +62,16 @@ def submit_service_order(body: SubmitOrderRequest, db: Session = Depends(get_ses
     return {"orderId": str(order.order_id), "steps": results}
 
 
+def _order_or_404(db: Session, order_id: uuid.UUID) -> ServiceOrder:
+    order = db.get(ServiceOrder, order_id)
+    if order is None:
+        raise framework_error(FrameworkError.SERVICE_ORDER_NOT_FOUND, detail=f"unknown orderId {order_id}")
+    return order
+
+
 @app.get("/orders/{order_id}")
 def query_order_status(order_id: uuid.UUID, db: Session = Depends(get_session)):
-    order = db.get(ServiceOrder, order_id)
+    order = _order_or_404(db, order_id)
     return {"orderId": str(order.order_id), "steps": order.steps, "homingDecision": order.homing_decision}
 
 
@@ -69,7 +85,7 @@ def cancel_order(order_id: uuid.UUID, db: Session = Depends(get_session)):
     commit()'s default expire-on-commit re-fetched the unchanged row
     right back, discarding the edit.
     """
-    order = db.get(ServiceOrder, order_id)
+    order = _order_or_404(db, order_id)
     order.steps = [{**step, "status": "CANCELLED"} if step["status"] == "PENDING" else step for step in order.steps]
     db.commit()
     return {"orderId": str(order.order_id), "steps": order.steps}

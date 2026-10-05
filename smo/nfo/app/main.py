@@ -327,12 +327,16 @@ def query_deployment_resources(nf_deployment_id: uuid.UUID, db: Session = Depend
 @app.get("/operations/{operation_id}")
 def query_operation_status(operation_id: uuid.UUID, db: Session = Depends(get_session)):
     op = db.get(LCMOperation, operation_id)
+    if op is None:
+        raise framework_error(FrameworkError.LCM_OPERATION_NOT_FOUND, detail="no such LCM operation")
     return {"operationId": str(op.operation_id), "status": op.status}
 
 
 @app.get("/deployments/{nf_deployment_id}/placement")
 def query_cluster_placement(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
     d = db.get(NFDeployment, nf_deployment_id)
+    if d is None:
+        raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")
     return {"nfDeploymentId": str(d.nf_deployment_id), "clusterId": d.cluster_id}
 
 
