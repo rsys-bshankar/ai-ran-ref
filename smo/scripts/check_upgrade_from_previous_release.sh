@@ -58,10 +58,11 @@ host_migrate() { (cd "$1" && SMO_DATABASE_URL="$url" python scripts/migrate.py "
 psql_prev() { compose_prev exec -T postgres psql -U smo -d smo -v ON_ERROR_STOP=1 -At "$@"; }
 psql_new() { compose_new exec -T postgres psql -U smo -d smo -v ON_ERROR_STOP=1 -At "$@"; }
 
-# row count of every table, and the ids of the packages and instances
+# row count of every table (in whatever schema: a module's tables move into a schema of its own, PR-DB-2.5; names are unique across schemas), and the ids of the
+# packages and instances
 snapshot() {
   "$1" -c "SELECT table_name || '|' || (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text
-           FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY 1"
+           FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_type = 'BASE TABLE' ORDER BY 1"
   "$1" -c "SELECT 'package|' || package_id FROM application_package ORDER BY 1"
   "$1" -c "SELECT 'instance|' || instance_id FROM rapp_instance ORDER BY 1"
 }
@@ -136,7 +137,7 @@ lost=0
 while IFS='|' read -r name count; do
   case "$name" in package|instance) continue ;; esac
   echo "$name|$count" | grep -Eq "$volatile" && continue
-  now="$(grep -E "^$name\|" "$after" | head -1 | cut -d'|' -f2)"
+  now="$(grep -E "^$name\|" "$after" | head -1 | cut -d'|' -f2 || true)"   # a table that is gone is reported below, not by set -e
   if [ -z "$now" ] || [ "$now" -lt "$count" ]; then echo "LOST: $name had $count rows, now ${now:-no table}" >&2; lost=1; fi
 done < <(grep -Ev '^(package|instance)\|' "$before")
 diff <(grep -E '^(package|instance)\|' "$before") <(grep -E '^(package|instance)\|' "$after") || { echo "LOST: the packages or instances differ" >&2; lost=1; }
