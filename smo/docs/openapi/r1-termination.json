@@ -26,6 +26,36 @@
         "title": "ErrorEnvelope",
         "type": "object"
       },
+      "GatewayProblem": {
+        "description": "What the gateway itself answers when it refuses or cannot forward: RFC 7807 fields at the top level (unlike the modules' `{\"detail\": {...}}`).",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "status"
+        ],
+        "title": "GatewayProblem",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -77,6 +107,19 @@
           "status"
         ],
         "title": "ProblemDetails",
+        "type": "object"
+      },
+      "ProxiedError": {
+        "description": "An error a module answered, passed through unchanged.",
+        "properties": {
+          "detail": {
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ProxiedError",
         "type": "object"
       },
       "ReadinessReport": {
@@ -674,31 +717,55 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 401 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "403": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 403 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "404": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 404 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "409": {
             "content": {
@@ -734,31 +801,73 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 429 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "502": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 502 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "503": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 503 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 504 Proxy"
+                }
+              }
+            },
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           }
         },
         "summary": "Proxy"
@@ -800,31 +909,55 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 401 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "403": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 403 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "404": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 404 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "409": {
             "content": {
@@ -860,31 +993,73 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 429 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "502": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 502 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "503": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 503 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 504 Proxy"
+                }
+              }
+            },
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           }
         },
         "summary": "Proxy"
@@ -926,31 +1101,55 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 401 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "403": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 403 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "404": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 404 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "409": {
             "content": {
@@ -986,31 +1185,73 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 429 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "502": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 502 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "503": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 503 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 504 Proxy"
+                }
+              }
+            },
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           }
         },
         "summary": "Proxy"
@@ -1052,31 +1293,55 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 401 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "403": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 403 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "404": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 404 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "409": {
             "content": {
@@ -1112,31 +1377,73 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 429 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "502": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 502 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "503": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 503 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 504 Proxy"
+                }
+              }
+            },
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           }
         },
         "summary": "Proxy"
@@ -1178,31 +1485,55 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 401 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "403": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 403 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "404": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 404 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "409": {
             "content": {
@@ -1238,31 +1569,73 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 429 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "502": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 502 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           },
           "503": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 503 Proxy"
                 }
               }
             },
-            "description": "Error"
+            "description": "refused or failed at the gateway, or a module's own error passed through"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GatewayProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProxiedError"
+                    }
+                  ],
+                  "title": "Response 504 Proxy"
+                }
+              }
+            },
+            "description": "refused or failed at the gateway, or a module's own error passed through"
           }
         },
         "summary": "Proxy"

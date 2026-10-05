@@ -346,13 +346,17 @@ class FaultBody(BaseModel):
     managedObjectRef: str | None = None  # "<ref>" or "<ref>/<function-ref>"; omitted = any
 
 
-@app.post("/faults", status_code=201)
+class MockError(BaseModel):
+    detail: str | list[dict]
+
+
+@app.post("/faults", status_code=201, responses={400: {"model": MockError, "description": "the body is not JSON"}, 422: {"model": MockError, "description": "unknown fault mode, or a body of the wrong shape"}})
 def inject_fault(body: FaultBody):
     """Test-only (like GET /edit-config/{ref}): make the next `count`
     matching edit-configs misbehave, so the SMO's retry, verification and
     rollback paths can be exercised against a real round trip."""
     if body.mode not in ("TIMEOUT", "RPC_ERROR", "IGNORE_WRITE"):
-        return Response(status_code=422, content=f"unknown fault mode {body.mode}")
+        return JSONResponse(status_code=422, content={"detail": f"unknown fault mode {body.mode}"})
     _faults.append(body.model_dump())
     return {"faults": _faults}
 

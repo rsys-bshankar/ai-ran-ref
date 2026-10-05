@@ -1,1 +1,10 @@
-{}
+{
+  "mock-o1-adaptor POST /edit-config": "the mock O1 adaptor speaks NETCONF XML (RFC 6241) over HTTP (a protocol stub, not an R1 REST route); its answers are checked by the NETCONF and RESTCONF tests (mock-o1-adaptor/tests, the netopeer2 lab), not by an OpenAPI/JSON check",
+  "mock-o1-adaptor GET /.well-known/host-meta": "the mock O1 adaptor speaks RESTCONF discovery XRD (RFC 8040) (a protocol stub, not an R1 REST route); its answers are checked by the NETCONF and RESTCONF tests (mock-o1-adaptor/tests, the netopeer2 lab), not by an OpenAPI/JSON check",
+  "mock-o1-adaptor GET /restconf/data/{path}": "the mock O1 adaptor speaks RESTCONF (RFC 8040) with yang-data+json (a protocol stub, not an R1 REST route); its answers are checked by the NETCONF and RESTCONF tests (mock-o1-adaptor/tests, the netopeer2 lab), not by an OpenAPI/JSON check",
+  "mock-o1-adaptor PUT /restconf/data/{path}": "the mock O1 adaptor speaks RESTCONF (RFC 8040) with yang-data+json (a protocol stub, not an R1 REST route); its answers are checked by the NETCONF and RESTCONF tests (mock-o1-adaptor/tests, the netopeer2 lab), not by an OpenAPI/JSON check",
+  "mock-o1-adaptor PATCH /restconf/data/{path}": "the mock O1 adaptor speaks RESTCONF (RFC 8040) with yang-data+json (a protocol stub, not an R1 REST route); its answers are checked by the NETCONF and RESTCONF tests (mock-o1-adaptor/tests, the netopeer2 lab), not by an OpenAPI/JSON check",
+  "mock-o1-adaptor DELETE /restconf/data/{path}": "the mock O1 adaptor speaks RESTCONF (RFC 8040) with yang-data+json (a protocol stub, not an R1 REST route); its answers are checked by the NETCONF and RESTCONF tests (mock-o1-adaptor/tests, the netopeer2 lab), not by an OpenAPI/JSON check",
+  "mock-o1-adaptor POST /restconf/data/{path}": "the mock O1 adaptor speaks RESTCONF (RFC 8040) with yang-data+json (a protocol stub, not an R1 REST route); its answers are checked by the NETCONF and RESTCONF tests (mock-o1-adaptor/tests, the netopeer2 lab), not by an OpenAPI/JSON check",
+  "mock-o1-adaptor POST /restconf/data": "the mock O1 adaptor speaks RESTCONF (RFC 8040) with yang-data+json (a protocol stub, not an R1 REST route); its answers are checked by the NETCONF and RESTCONF tests (mock-o1-adaptor/tests, the netopeer2 lab), not by an OpenAPI/JSON check"
+}

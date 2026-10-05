@@ -13,11 +13,13 @@ stack without an extra infra dependency.
 
 import logging
 import os
+from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
@@ -155,7 +157,23 @@ def bootstrap():
     }
 
 
-@app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], operation_id="proxy")
+class GatewayProblem(BaseModel):
+    """What the gateway itself answers when it refuses or cannot forward: RFC 7807 fields at the top level (unlike the modules' `{"detail": {...}}`)."""
+    title: str
+    status: int
+    detail: str | None = None
+
+
+class ProxiedError(BaseModel):
+    """An error a module answered, passed through unchanged."""
+    detail: Any
+
+
+_GATEWAY_ERRORS = {code: {"model": GatewayProblem | ProxiedError, "description": "refused or failed at the gateway, or a module's own error passed through"}
+                   for code in (401, 403, 404, 429, 502, 503, 504)}
+
+
+@app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], operation_id="proxy", responses=_GATEWAY_ERRORS)
 async def proxy(full_path: str, request: Request):
     """HISTORY.md §2: explicit operation_id, not FastAPI's
     auto-derived one — generate_unique_id() picks
