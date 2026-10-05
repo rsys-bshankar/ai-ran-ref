@@ -7,7 +7,7 @@
 # and create the password Secret yourself (secrets.existingSecret). See deploy/helm/smo/README.md.
 
 image:
-  registry: ghcr.io/rsys-bshankar/ai-ran-ref   # <registry>/<prefix><name>:<tag>, as the release workflow publishes them
+  registry: ghcr.io/rsys-bshankar/ai-ran-smo   # <registry>/<prefix><name>:<tag>, as the release workflow publishes them
   prefix: smo-
   tag: ""                                      # empty: the chart's appVersion
   pullPolicy: IfNotPresent

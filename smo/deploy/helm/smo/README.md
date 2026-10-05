@@ -10,7 +10,7 @@ helm install smo deploy/helm/smo -n smo --create-namespace
 
 Use a namespace of its own: the Services are named as in compose (`sme`, `dme`, `postgres`, ...), which is what the modules and the GUI's nginx address each other by, so there is one release per namespace.
 
-The images are `ghcr.io/rsys-bshankar/ai-ran-ref/smo-<module>:<appVersion>`, the ones the release workflow publishes (`image.registry`, `image.prefix`, `image.tag`). A private registry needs `image.pullSecrets`.
+The images are `ghcr.io/rsys-bshankar/ai-ran-smo/smo-<module>:<appVersion>`, the ones the release workflow publishes (`image.registry`, `image.prefix`, `image.tag`). A private registry needs `image.pullSecrets`.
 
 Reach it:
 

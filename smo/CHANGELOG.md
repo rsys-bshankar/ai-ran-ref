@@ -18,6 +18,7 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ### Changed
 - **The gateway refuses a path that is not in its resolved form (found by V-7b).** A `.` or `..` segment, an empty segment (`//`), a backslash or a NUL in the path after the module prefix is now `400 INVALID_PATH`, and one trailing slash is dropped before the policy and the forward. The role policy and the kill switch match the path as received while a backend resolves dot segments, so `GET /ran-nf-oam/rapp-kill/.` passed the policy for an rApp (which is refused `GET /ran-nf-oam/rapp-kill`) and resolved to that route; the backend's redirect for the trailing slash limited what an rApp could read, and nothing it could change was reachable, but the policy should not depend on that. A client that builds clean paths (R1Client, the SDK, the GUI backend) is unaffected.
+- **The repository is now `ai-ran-smo` (was `ai-ran-ref`), and so is the image path.** Releases after `smo-v0.4.0` publish `ghcr.io/rsys-bshankar/ai-ran-smo/smo-<module>:<version>`; `0.4.0` and earlier stay under `ai-ran-ref`, with signatures that name the old repository (`docs/RELEASES.md`, "The repository was renamed"). The Helm chart's default `image.registry` follows the new name: to run `0.4.0` from the chart set `image.registry=ghcr.io/rsys-bshankar/ai-ran-ref`. URLs of the old name redirect.
 
 ## [0.4.0] - 2026-10-05
 
@@ -195,8 +196,8 @@ The first release: source and the docker compose stack. Images are not published
 ### Upgrade notes
 - `docker compose up -d --build` runs the migrations (`docker compose logs migrate`); outside compose run `python scripts/migrate.py`. A database created from `001_init.sql` by an earlier stack is stamped at `0001` first. Take a backup (`scripts/db_backup.sh`) before upgrading; `python scripts/migrate.py --downgrade -1` reverses one revision.
 
-[Unreleased]: https://github.com/rsys-bshankar/ai-ran-ref/compare/smo-v0.4.0...main
-[0.4.0]: https://github.com/rsys-bshankar/ai-ran-ref/compare/smo-v0.3.0...smo-v0.4.0
-[0.3.0]: https://github.com/rsys-bshankar/ai-ran-ref/compare/smo-v0.2.0...smo-v0.3.0
-[0.2.0]: https://github.com/rsys-bshankar/ai-ran-ref/compare/smo-v0.1.0...smo-v0.2.0
-[0.1.0]: https://github.com/rsys-bshankar/ai-ran-ref/releases/tag/smo-v0.1.0
+[Unreleased]: https://github.com/rsys-bshankar/ai-ran-smo/compare/smo-v0.4.0...main
+[0.4.0]: https://github.com/rsys-bshankar/ai-ran-smo/compare/smo-v0.3.0...smo-v0.4.0
+[0.3.0]: https://github.com/rsys-bshankar/ai-ran-smo/compare/smo-v0.2.0...smo-v0.3.0
+[0.2.0]: https://github.com/rsys-bshankar/ai-ran-smo/compare/smo-v0.1.0...smo-v0.2.0
+[0.1.0]: https://github.com/rsys-bshankar/ai-ran-smo/releases/tag/smo-v0.1.0
