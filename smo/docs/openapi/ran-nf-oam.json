@@ -3290,6 +3290,9 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "dryRun: the plan (waves and changes) was validated and nothing was written"
+          },
           "202": {
             "content": {
               "application/json": {

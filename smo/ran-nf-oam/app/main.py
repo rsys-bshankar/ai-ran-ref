@@ -600,7 +600,7 @@ def _dispatch_blocker(db: Session, change: dict):
     return None, me, endpoint
 
 
-@app.post("/config-jobs", status_code=202)
+@app.post("/config-jobs", status_code=202, responses={200: {"description": "dryRun: the plan (waves and changes) was validated and nothing was written"}})
 @idempotent("ran-nf-oam", status_code=202)
 def write_configuration_changes(body: WriteConfigRequest, request: Request, db: Session = Depends(get_session)):
     """WriteConfigurationChanges — RAN NF OAM LLD section 5.1's full
