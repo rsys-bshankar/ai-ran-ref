@@ -587,7 +587,7 @@ def _dispatch_blocker(db: Session, change: dict):
         return "ENDPOINT_UNREACHABLE", me, None
     endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id)
     # Live-computed staleness at the point health is actually consulted — the same "no scheduler exists anywhere in this
-    # build" pattern as DME's producer health and A1 Related's service supervision sweep — rather than depending on
+    # build" pattern as DME's producer health — rather than depending on
     # something having already called POST /o1-adaptor-endpoints/discover first.
     _age_endpoint_health(endpoint, datetime.datetime.now(datetime.UTC))
     if endpoint.health_status in ("UNREACHABLE", "DEGRADED"):
@@ -2122,8 +2122,7 @@ def _age_endpoint_health(ep: O1AdaptorEndpoint, now: datetime.datetime) -> None:
     write_configuration_changes's own gate, so staleness is caught the
     moment it's actually consulted, not only when something has separately
     polled `/discover` first — no scheduler exists anywhere in this build
-    (same elision as DME's producer health / A1 Related's service
-    supervision), so a live-computed check at the point of use is this
+    (same elision as DME's producer health), so a live-computed check at the point of use is this
     build's substitute for a periodic sweep.
     """
     if ep.health_status == "ACTIVE" and ep.last_heartbeat_at and now - as_utc(ep.last_heartbeat_at) > MISSED_HEARTBEAT_THRESHOLD:
@@ -2200,7 +2199,7 @@ def list_pm_subscriptions(managed_element_ref: str | None = None, limit: int = P
 def unsubscribe_pm(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
     """`docs/call-flows/20-alarm-pm-subscription-lifecycle.md`'s own
     gap, closed: every other subscription-shaped resource in this build
-    (DME's type subscriptions, MDAF's, A1 Related's EI jobs, Intent
+    (DME's type subscriptions, MDAF's, Intent
     Service's RMIH registration, MLMF's) has a real unsubscribe route —
     `PMSubscription` could previously only be created and listed, never
     torn down through this build's own API. Idempotent, matching all of

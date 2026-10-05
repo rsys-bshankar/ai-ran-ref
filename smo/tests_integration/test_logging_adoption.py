@@ -16,7 +16,7 @@ def test_every_loaded_service_has_the_access_log_middleware(loaded_apps):
 
 def test_a_request_to_any_service_logs_one_json_access_line_with_a_route_template_and_no_query(loaded_apps, caplog):
     caplog.set_level(logging.DEBUG, logger="smo.access")
-    for name in ("r1-termination", "sme", "nfo", "mllf", "mock-near-rt-ric"):
+    for name in ("r1-termination", "sme", "nfo", "mllf", "mock-o1-adaptor"):
         caplog.clear()
         TestClient(loaded_apps[name].app).get("/live?token=do-not-log-me")
         records = [r for r in caplog.records if r.name == "smo.access"]

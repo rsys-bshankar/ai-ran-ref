@@ -73,11 +73,6 @@ ingress:
     tlsSecretName: ""
     publicBaseUrl: ""                          # what /bootstrap advertises, e.g. https://r1.example.com (R1_PUBLIC_BASE_URL); empty: the in-cluster address
 
-# Isolation equal to the compose network rules: the mock Near-RT RIC is reachable only from a1-related and has no way out
-# (docker-compose.yml's `a1_mock_net`). Needs a CNI that enforces NetworkPolicy.
-networkPolicy:
-  enabled: false
-
 # How an rApp instance's credentials reach its workload (PR-SEC-14). `none`: rApp Management does not deliver them; an operator fetches them once from
 # POST /instances/{id}/credentials. `kubernetes`: rApp Management writes them to a Secret `rapp-<instanceId>-credentials` in this namespace (the workload
 # takes it with envFrom), replaces it on rotation and deletes it on terminate; nobody sees the secret. This gives the rApp Management pod (only) a service
@@ -153,8 +148,6 @@ modules:
   # the same image as a worker: the periodic work of RAN NF OAM (PR-MSG-4). Run more than one if you like.
   ran-nf-oam-worker: { image: ran-nf-oam, databaseRole: ran-nf-oam, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   mock-o1-adaptor: { image: mock-o1-adaptor, database: false, enrollment: false }
-  a1-related: { image: a1-related, databaseRole: a1-related, env: { R1_GATEWAY_URL: "http://r1-termination:8000", MOCK_NEAR_RT_RIC_URL: "http://mock-near-rt-ric:8000" } }
-  mock-near-rt-ric: { image: mock-near-rt-ric, database: false, enrollment: false }
   nfo: { image: nfo, databaseRole: nfo, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   focom: { image: focom, databaseRole: focom }
   mlmr: { image: mlmr, databaseRole: mlmr }

@@ -56,7 +56,7 @@ Not realised or deviating: DN-typed attributes carry plain strings (flat REST, n
 `FullTime` strings are checked by their RFC 3339 shape, not calendar validity; `GeoArea` / `GeoCoordinate` check
 the structure and the latitude / longitude ranges but not polygon closure.
 `rmihId`, `rmioId` and `intentHandlingScope` on an intent, and `notificationDestination` on an RMIH, are this
-build's own additions. A1 policy is a separate concept and is not part of this service.
+build's own additions. 
 
 ### 1.3 Position in the platform
 
@@ -74,7 +74,7 @@ bare UUIDs.
 
 | Owns | Does not own → owner |
 |---|---|
-| `Intent` with structured `IntentExpectation`s, `IntentReport`, `IntentHandlingFunction` (RMIH), `IntentUtilityFormula` | A1 policy create / enforce / retract → `a1-related/` |
+| `Intent` with structured `IntentExpectation`s, `IntentReport`, `IntentHandlingFunction` (RMIH), `IntentUtilityFormula` | – |
 | Intent resolution and assurance: feasibility, conflict, fulfilment and negotiation reports, report delivery | O1 enactment of CM intents → SA SMOS O1-CM handler (an RMIH), see [`../sa-smos/README.md`](../sa-smos/README.md) |
 | `AutonomyDispatch` (rApp autonomy modes) | `autonomyMode` / `regionScope` on the rApp instance → rApp Management |
 

@@ -1808,7 +1808,7 @@
       },
       "RegisterRmihRequest": {
         "additionalProperties": false,
-        "description": "Wave 6 \u2014 TS 28.312 IntentHandlingFunction with its spec attributes\n(intentHandlingCapabilityList, supportedNegotiationFunctionalities,\nsupportedUtilityList). `smeServiceId`/`notificationDestination` are this\nbuild's own: the SME-published API it serves and where new Intents are\npushed (same callback convention as DME/A1-Related).",
+        "description": "Wave 6 \u2014 TS 28.312 IntentHandlingFunction with its spec attributes\n(intentHandlingCapabilityList, supportedNegotiationFunctionalities,\nsupportedUtilityList). `smeServiceId`/`notificationDestination` are this\nbuild's own: the SME-published API it serves and where new Intents are\npushed (same callback convention as DME).",
         "properties": {
           "intentHandlingCapabilityList": {
             "items": {

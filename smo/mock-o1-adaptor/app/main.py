@@ -1,6 +1,5 @@
 """Mock O1 Adaptor — the isolated NETCONF- and RESTCONF-shaped test double
-RAN NF OAM's own CM write path needs to prove a real HTTP round trip, the
-same role mock-near-rt-ric already plays for A1 Related. The RESTCONF side
+RAN NF OAM's own CM write path needs to prove a real HTTP round trip. The RESTCONF side
 (RFC 8040, OI-1-cm-sync-restconf) is further down, over the same state.
 
 RAN NF OAM LLD section 5.1's PATCH step (ran-nf-oam/app/netconf_client.py)
@@ -15,9 +14,8 @@ with this build's single-Python/FastAPI-stack consolidation (the same
 "ADOPT repos stay pattern references only" boundary already documented
 elsewhere, HISTORY.md §2). This is the honest, minimal
 substitute: just enough real NETCONF-shaped XML parsing to close the loop
-RAN NF OAM's own dispatch client was already built to reach, mirroring
-mock-near-rt-ric's own "give the real caller something real to call, not
-a full protocol implementation" scope.
+RAN NF OAM's own dispatch client was already built to reach: "give the real caller
+something real to call, not a full protocol implementation".
 """
 
 import os
@@ -104,9 +102,7 @@ async def edit_config(request: Request) -> Response:
     delete legitimately carries no attribute_changes at all (RFC 6241
     section 7.2's `operation` attribute), so rejecting it for emptiness
     would be wrong. Non-delete/remove emptiness rejection is the same
-    "empty payload is a real, testable rejection trigger" pattern
-    mock-near-rt-ric's own create_policy already established for an
-    empty policyObject.
+    "empty payload is a real, testable rejection trigger" pattern.
     """
     body = await request.body()
     try:

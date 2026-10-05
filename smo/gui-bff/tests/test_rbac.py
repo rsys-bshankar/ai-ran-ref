@@ -40,7 +40,6 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("PATCH", "/ran-nf-oam/alarms/a/clear", "operator"),
     ("POST", "/ran-nf-oam/alarms/ingest", "admin"),
     ("POST", "/sa-smos/monitors/m/evaluate", "operator"),
-    ("DELETE", "/a1-related/policies/p", "admin"),
     ("DELETE", "/nfo/deployments/d", "admin"),
     ("GET", "/aimgf/feature-groups", "operator"),
     # GUI pass 2
@@ -48,10 +47,6 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("DELETE", "/dme/data-jobs/j", "operator"),
     ("POST", "/dme/offers", "admin"),
     ("POST", "/dme/offers/o/notify", "admin"),
-    ("POST", "/a1-related/policies/subscriptions", "operator"),
-    ("DELETE", "/a1-related/policies/subscriptions/s", "operator"),
-    ("POST", "/a1-related/ei-types/register", "admin"),
-    ("PUT", "/a1-related/services", "admin"),
     ("POST", "/sme/provider-registrations", "admin"),
     ("POST", "/sme/published-apis/v1/apf/service-apis", "admin"),
     ("DELETE", "/sme/published-apis/v1/apf/service-apis/s", "admin"),
@@ -151,7 +146,6 @@ def test_any_duplicated_value_triggers_the_query_match():
 @pytest.mark.parametrize("method,path", [
     ("POST", "/sme/oauth2/token"),
     ("POST", "/sme/oauth2/introspect"),
-    ("POST", "/a1-related/dme-jobs"),
     ("POST", "/ran-nf-oam/dme-jobs"),
     ("POST", "/nfo/deployments"),
     ("PATCH", "/dme/data-jobs/j"),

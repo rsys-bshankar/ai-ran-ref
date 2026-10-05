@@ -6,6 +6,6 @@ Every one of the fourteen SMOS modules depends on this package for:
   - identity: the rAppId <-> RAppInstance.instanceId equivalence
         (Foundational Platform LLD section 1)
   - errors: RFC 7807 ProblemDetails, the error model every R1 service
-        group defers to except A1 policy management (A1 Related LLD section 1.3)
+        group defers to
   - statemachine: a minimal FSM base every module's lifecycle implementation extends
 """

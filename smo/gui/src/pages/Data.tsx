@@ -2,14 +2,14 @@ import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
 import type {
-  CapifEventSubscription, DataJob, DataOffer, DmeProducer, DmeType, DmeTypeSubscription, EiType, SmeInvoker, SmeProvider, SmeService,
+  CapifEventSubscription, DataJob, DataOffer, DmeProducer, DmeType, DmeTypeSubscription, SmeInvoker, SmeProvider, SmeService,
   TrustedInvoker,
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ActionButton, Can, Card, DataTable, Field, Id, Json, Modal, PageHeader, StateBadge, Tabs, useHashTab } from "../components/ui";
 import { parseJsonObject, splitList } from "../lib/domain";
 
-const TABS = ["dme", "a1-ei", "sme"] as const;
+const TABS = ["dme", "sme"] as const;
 const DELIVERY_METHODS = ["PULL_HTTP", "PUSH_HTTP", "STREAMING_KAFKA"];
 const EVENT_TYPES = ["SERVICE_API_AVAILABLE", "SERVICE_API_UNAVAILABLE", "SERVICE_API_UPDATE",
   "API_INVOKER_ONBOARDED", "API_INVOKER_UPDATED", "API_INVOKER_OFFBOARDED"];
@@ -18,12 +18,11 @@ export function Data() {
   const [tab, setTab] = useHashTab(TABS, "dme");
   return (
     <>
-      <PageHeader title="Data & Exposure" subtitle={<>Data Management & Exposure (DME), A1 enrichment-information types, and Service Management & Exposure (SME / CAPIF) — call flows 01, 05 and 08</>} />
+      <PageHeader title="Data & Exposure" subtitle={<>Data Management & Exposure (DME) and Service Management & Exposure (SME / CAPIF) — call flows 01 and 08</>} />
       <Tabs value={tab} onChange={setTab} tabs={[
-        { id: "dme", label: "DME: types, jobs, offers" }, { id: "a1-ei", label: "A1 EI types" }, { id: "sme", label: "SME: services & invokers" },
+        { id: "dme", label: "DME: types, jobs, offers" }, { id: "sme", label: "SME: services & invokers" },
       ]} />
       {tab === "dme" && <Dme />}
-      {tab === "a1-ei" && <EiTypes />}
       {tab === "sme" && <Sme />}
     </>
   );
@@ -187,37 +186,6 @@ function TypeSubscriptions() {
         { header: "Destination", render: (s) => <code className="small">{s.notificationDestination}</code> },
         { header: "", className: "actions", render: (s) => <ActionButton label="Unsubscribe" action={{ method: "DELETE", path: `/dme/type-subscriptions/${s.subscriptionId}`, success: "Unsubscribed" }} /> },
       ]} />
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------- A1 EI
-
-function EiTypes() {
-  const eiTypes = useSmo<EiType[]>("/a1-related/ei-types");
-  const types = useSmo<DmeType[]>("/dme/dme-types");
-  const [f, setF] = useState({ ei_type_id: "", registered_by: "", dme_namespace: "RAN", dme_name: "", dme_version: "1.0.0" });
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
-  return (
-    <Card title="A1 enrichment-information types" actions={<span className="muted small">RegisterEIType wraps DME's RegisterDMEType — no parallel registry (A1 Related LLD section 3)</span>}>
-      <DataTable rows={eiTypes.data} loading={eiTypes.isLoading} error={eiTypes.error} rowKey={(t) => t.eiTypeId} empty="No EI types registered." columns={[
-        { header: "EI type", render: (t) => <strong>{t.eiTypeId}</strong> }, { header: "Registered by", render: (t) => t.registeredBy },
-        { header: "DME type", render: (t) => { const d = types.data?.find((x) => x.dmeTypeId === t.eiSourceDmeTypeId); return d ? <><code>{d.typeName}</code> <StateBadge state={d.typeStatus} /></> : <Id value={t.eiSourceDmeTypeId} />; } },
-        { header: "", className: "actions", render: (t) => <ActionButton label="Deregister" tone="danger" confirm={`Deregister EI type ${t.eiTypeId}?`} action={{ method: "DELETE", path: `/a1-related/ei-types/${t.eiTypeId}`, success: "EI type deregistered" }} /> },
-      ]} />
-      <Can method="POST" path="/a1-related/ei-types/register">
-        <details className="admin-tools">
-          <summary>Admin: register an EI type (what an EI producer does, call flow 05)</summary>
-          <div className="form grid cols-3 tight">
-            <Field label="EI type ID"><input value={f.ei_type_id} onChange={set("ei_type_id")} placeholder="coverage-issue-ei" /></Field>
-            <Field label="Registered by (producer)"><input value={f.registered_by} onChange={set("registered_by")} placeholder="rapp-ei-producer" /></Field>
-            <Field label="DME namespace"><input value={f.dme_namespace} onChange={set("dme_namespace")} /></Field>
-            <Field label="DME name"><input value={f.dme_name} onChange={set("dme_name")} placeholder="CoverageIssue" /></Field>
-            <Field label="DME version"><input value={f.dme_version} onChange={set("dme_version")} /></Field>
-          </div>
-          <ActionButton label="Register EI type" disabled={!f.ei_type_id || !f.registered_by || !f.dme_name} action={{ method: "POST", path: "/a1-related/ei-types/register", query: f, success: "EI type registered (and its DME type)" }} />
-        </details>
-      </Can>
     </Card>
   );
 }

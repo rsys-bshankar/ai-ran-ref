@@ -40,7 +40,7 @@ The real O-RAN-SC `sim-o1-interface` (`ntsim-ng`) is a YANG-validated NETCONF / 
  tests / demo --HTTP GET /objects, /edit-config/{ref}, POST /faults, DELETE /state --> mock-o1-adaptor
 ```
 
-- RAN NF OAM is the only product caller; it addresses the mock through the `adaptor_uri` in its own endpoint registry. There is no isolated network segment (unlike the Near-RT RIC mock): no design requirement calls for one.
+- RAN NF OAM is the only product caller; it addresses the mock through the `adaptor_uri` in its own endpoint registry. There is no isolated network segment: no design requirement calls for one.
 - The mock calls nothing and has no database.
 
 ### 1.4 Ownership

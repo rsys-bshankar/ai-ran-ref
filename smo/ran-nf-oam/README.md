@@ -77,7 +77,7 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 | CM write jobs and sub-changes, NETCONF / RESTCONF dispatch, retry, read-after-write | Analytics on PM / alarms → MDAF |
 | Alarms (ingest, ack, clear) and FM / PM subscriptions | Infrastructure (O-Cloud) alarms → FOCOM (`OCloudAlarm`) |
 | SWM job lifecycle | RAN-function placement and runtimes → NFO |
-| PM data path into DME | A1 policy → A1 Related |
+| PM data path into DME | – |
 
 ### 1.5 Design decisions
 

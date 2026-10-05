@@ -74,7 +74,7 @@ def test_guard_ignores(tmp_path, source):
 
 
 def test_mocks_and_tests_are_not_scanned(tmp_path):
-    _tree(tmp_path, "_policies = {}\n", module="mock-near-rt-ric")
+    _tree(tmp_path, "_policies = {}\n", module="mock-o1-adaptor")
     tests = tmp_path / "demo" / "app" / "tests"
     tests.mkdir(parents=True)
     (tests / "test_x.py").write_text("_x = {}\n")

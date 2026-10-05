@@ -248,13 +248,11 @@ def test_roles_with_an_existing_secret_are_read_from_it_and_not_made():
 
 @helm
 def test_the_optional_templates_render_when_switched_on():
-    docs = _render("--set", "networkPolicy.enabled=true", "--set", "podDisruptionBudget.enabled=true", "--set", "autoscaling.enabled=true",
+    docs = _render("--set", "podDisruptionBudget.enabled=true", "--set", "autoscaling.enabled=true",
                    "--set", "ingress.enabled=true", "--set", "ingress.gui.host=gui.example.com", "--set", "ingress.r1.host=r1.example.com",
                    "--set", "ingress.r1.tlsSecretName=r1-tls", "--set", "ingress.r1.publicBaseUrl=https://r1.example.com")
     kinds = {d["kind"] for d in docs}
-    assert {"NetworkPolicy", "PodDisruptionBudget", "HorizontalPodAutoscaler", "Ingress"} <= kinds
-    policy = next(d for d in docs if d["kind"] == "NetworkPolicy")
-    assert policy["spec"]["ingress"][0]["from"][0]["podSelector"]["matchLabels"]["app.kubernetes.io/name"] == "a1-related" and policy["spec"]["egress"] == []
+    assert {"PodDisruptionBudget", "HorizontalPodAutoscaler", "Ingress"} <= kinds
     r1 = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "r1-termination")
     assert {"name": "R1_PUBLIC_BASE_URL", "value": "https://r1.example.com"} in r1["spec"]["template"]["spec"]["containers"][0]["env"]
     assert not [d for d in docs if d["kind"] == "PodDisruptionBudget" and d["metadata"]["name"] in ("onboarding", "gui-bff")]     # a volume holds one pod

@@ -1,6 +1,6 @@
 """Shared fixtures for cross-service integration tests.
 
-Loads all sixteen modules (plus the mock Near-RT RIC) into one process
+Loads every module (and the mock O1 adaptor) into one process
 via loader.py, wires every one to ONE shared test-DB engine — matching
 the real deployment's one-shared-Postgres-instance topology (Requirements
 v0.1 section 3) — and installs the in-process service mesh so R1Client
@@ -33,8 +33,8 @@ os.environ.setdefault("SME_ALLOW_OPEN_ENROLLMENT", "true")
 
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
-    "a1-related", "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
-    "intent-service", "so-smos", "sa-smos", "mock-near-rt-ric", "mock-o1-adaptor",
+    "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
+    "intent-service", "so-smos", "sa-smos", "mock-o1-adaptor",
     # Wave 10.1: the EnergySaving reference rApp, an R1 consumer of all of the above
     "samples/energy-saving-rapp",
     # Wave 10.2: the Mobility Optimization reference rApp

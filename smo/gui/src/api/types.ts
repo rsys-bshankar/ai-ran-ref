@@ -146,8 +146,7 @@ export interface KpiScheduleRow {
 }
 export interface SwmJob { jobId: string; managedElementRef: string; ruInstanceId: string | null; phase: string; status: string }
 
-// ---- A1 Related / Intent Service
-export interface A1Policy { policyId: string; policyTypeId: string; nearRtRicId: string; policyObject: Record<string, unknown>; enforcementStatus: string }
+// ---- Intent Service
 export interface Intent { intentId: string; intentAdminState: string; intentPriority: number; rmioId: string; intentMgmtPurpose: string | null; rmihId: string; userLabel: string | null; attributes: Record<string, unknown> }
 /** Wave 6: a TS 28.312 IntentReport — every report kind lives under `attributes` (intentFulfilmentReport, intentConflictReports, ...). */
 export interface IntentReport { reportId: string; intentId: string; attributes: Record<string, unknown> & { lastUpdatedTime: string } }
@@ -193,13 +192,10 @@ export interface DmeProducer { producerId: string; producerHealthCallbackUrl: st
 export interface GuiUser { username: string; role: "viewer" | "operator" | "admin"; active: boolean; createdAt: string }
 export interface AuditEntry { id: number; at: string; username: string | null; role: string | null; action: string; method: string | null; path: string | null; statusCode: number | null; detail: string | null }
 
-// ---- GUI pass 2: DME, A1 EI/services, SME registries, onboarding/NFO detail
+// ---- GUI pass 2: DME, SME registries, onboarding/NFO detail
 export interface DataJob { dataJobId: string; dataDeliveryMode: string; dmeTypeId: string; productionJobDefinition: Record<string, unknown>; dataDeliveryMethod: string; deliveryDetails: Record<string, unknown>; consumerId: string; status: string }
 export interface DataOffer { offerId: string; dmeTypeId: string; dataDeliveryMethodsOffered: string[]; committedMethod: string | null; dataAvailabilityNotificationUri: string | null; dataOfferTerminationNotificationUri: string }
 export interface DmeTypeSubscription { subscriptionId: string; notificationDestination: string; owner: string }
-export interface EiType { eiTypeId: string; registeredBy: string; eiSourceDmeTypeId: string }
-export interface A1Service { serviceId: string; callbackUrl: string | null; keepAliveIntervalSeconds: number; timeSinceLastActivitySeconds?: number; [k: string]: unknown }
-export interface PolicyStatusSubscription { subscriptionId: string; notificationDestination: string; subscriptionScope: string | null; policyIdList: string[] | null; policyTypeIdList: string[] | null; nearRtRicIdList: string[] | null }
 export interface SmeProvider { apfId: string; providerDomainInfo: string | null; serviceCount: number }
 export interface SmeService { serviceId: string; serviceName: string; producerId: string; endpoint: string; version: string; fullApiVersions: string[]; serviceCapabilities: Record<string, unknown>; aefProfiles: Record<string, unknown>[] }
 export interface SmeInvoker { apiInvokerId: string; apiInvokerPublicKey: string; keyAuthentication: boolean; trusted: boolean }

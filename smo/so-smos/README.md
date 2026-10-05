@@ -1,12 +1,12 @@
 # Service Orchestration SMOS (`so-smos/`)
 
-> Runs a multi-step service order (config, deploy, infra, AI/ML job, A1 policy steps) sequentially against the owning modules, stopping at the first failure.
+> Runs a multi-step service order (config, deploy, infra, AI/ML job steps) sequentially against the owning modules, stopping at the first failure.
 
 | | |
 |---|---|
 | Standards basis | O-RAN SMO-ARCH §4.2.7 SMOS (role and capabilities); interfaces unspecified, so internal logic |
 | R1 route / port | `/so-smos` via R1 Termination (container :8000) |
-| Depends on (over R1) | RAN NF OAM, NFO, FOCOM, AIMgF, A1 Related (one per dispatch-table entry) |
+| Depends on (over R1) | RAN NF OAM, NFO, FOCOM, AIMgF (one per dispatch-table entry) |
 | Called by | GUI BFF (operators submit and cancel orders); SA SMOS reads orders (`GET /so-smos/orders/{id}`) to resolve a monitor's deployment; any R1 consumer with the route |
 | Database tables | `service_order` |
 | Unit tests | 23 passed (`tests/`, SQLite, standalone) |
@@ -29,7 +29,7 @@ not register as an RMIH with Intent Service and does not use it (see 2.8).
 ### 1.3 Position in the platform
 
 ```
- operator / GUI ──POST /orders──► SO SMOS ──► RAN NF OAM | NFO | FOCOM | AIMgF | A1 Related    (one call per step)
+ operator / GUI ──POST /orders──► SO SMOS ──► RAN NF OAM | NFO | FOCOM | AIMgF    (one call per step)
  SA SMOS ──GET /orders/{id}──► SO SMOS
 ```
 
@@ -43,7 +43,6 @@ It never calls DME, MDAF, Intent Service or MLMR, and never reads another module
 | The dispatch table (step type × target module → one R1 call) and fail-fast execution | NF deployments and heal → NFO |
 | | Infrastructure provisioning → FOCOM |
 | | Training, validation, emulation, model runtime deploy, inference → AIMgF |
-| | A1 policies → A1 Related |
 | | Monitoring and remediation of an order → SA SMOS |
 
 ### 1.5 Design decisions
@@ -128,7 +127,6 @@ Dispatch table (each dispatcher returns the downstream JSON as the step `result`
 | `EMULATION` | `AI_ML_WORKFLOW` | `POST /aimgf/emulation-jobs` | `modelId`, `producerId?`, `emulationCriteria?` |
 | `DEPLOY` | `AIMGF` | `POST /aimgf/models/{modelId}/runtime/deploy` | `modelId` |
 | `INFERENCE` | `AI_ML_WORKFLOW` | `POST /aimgf/models/{modelId}/inference-jobs` (query `notification_destination` when given) | `modelId`, `notificationDestination?` |
-| `POLICY` | `A1_RELATED` | `POST /a1-related/policies` | `policyTypeId`, `policyObject`, `nearRtRicId`, `creatorId?` |
 
 ### 2.5 Interactions
 

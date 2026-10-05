@@ -13,7 +13,7 @@ from smo_shared import r1_client
 SMO_ROOT = Path(__file__).resolve().parent.parent
 # services whose readiness includes the database; the rest (the gateway, the SME-only caller, the mocks, the
 # sample rApps) keep no database of their own
-WITHOUT_DATABASE = {"r1-termination", "mllf", "mock-near-rt-ric", "mock-o1-adaptor", "energy-saving-rapp",
+WITHOUT_DATABASE = {"r1-termination", "mllf", "mock-o1-adaptor", "energy-saving-rapp",
                     "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp"}
 
 
@@ -51,7 +51,7 @@ def test_a_module_that_cannot_get_a_token_from_sme_is_not_ready(loaded_apps, hea
     not_ready = {name for name, main in loaded_apps.items() if TestClient(main.app).get("/ready").status_code == 503}
     # callers of R1 are not ready without a token; SME itself (the issuer), the gateway and focom never ask for one
     assert {"nfo", "aimgf", "rapp-mgmt", "mllf"} <= not_ready
-    assert not_ready.isdisjoint({"sme", "focom", "r1-termination", "mock-near-rt-ric", "mock-o1-adaptor"})
+    assert not_ready.isdisjoint({"sme", "focom", "r1-termination", "mock-o1-adaptor"})
 
 
 def test_the_gateway_probes_need_no_token(loaded_apps):

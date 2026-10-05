@@ -5,14 +5,14 @@ import { Link } from "react-router-dom";
 import { smo } from "../api/client";
 import { POLL, unwrapPage, useSmo } from "../api/hooks";
 import type {
-  AnalyticsProducer, AnalyticsReport, AnalyticsSubscription, ConfigJob, ConfigJobSummary, DataJob, DataOffer, DmeType, EiType,
+  AnalyticsProducer, AnalyticsReport, AnalyticsSubscription, ConfigJob, ConfigJobSummary, 
   FaultReport, InferenceJob, Instance, InstanceSummary, Intent, IntentReport, MlmfReport, MlmfSubscription, Model, ModelLifecycle,
   Monitor, NfDeployment, O1Endpoint, Package, PackageUsage, PerfReport, RemedialAction, Rmih, ServiceOrder, SmeService, TrainingJob,
 } from "../api/types";
 import { CompleteJobButton } from "../components/CompleteJobButton";
 import { ActionButton, Card, Id, PageHeader, StateBadge, useHashTab } from "../components/ui";
 import {
-  FLOWS, flow01, flow02, flow03, flow04, flow05, flow06, flow07, flow08, flow09, flow10, progress, type FlowStep,
+  FLOWS, flow01, flow02, flow03, flow04, flow06, flow07, flow08, flow09, flow10, progress, type FlowStep,
 } from "../lib/flows";
 import { modelActions } from "../lib/domain";
 
@@ -39,8 +39,7 @@ export function Flows() {
             {flowId === "02" && <Flow02 />}
             {flowId === "03" && <Flow03 />}
             {flowId === "04" && <Flow04 />}
-            {flowId === "05" && <Flow05 />}
-            {flowId === "06" && <Flow06 />}
+                        {flowId === "06" && <Flow06 />}
             {flowId === "07" && <Flow07 />}
             {flowId === "08" && <Flow08 />}
             {flowId === "09" && <Flow09 />}
@@ -240,41 +239,6 @@ function Flow04() {
           {go("/kpis#assurance", "Evaluate thresholds")}
         </div>,
         escalate: <ActionButton label="Escalate to operator" tone="danger" action={{ method: "POST", path: `${base}/escalate`, query: { reason: "raised from the lifecycle view" }, success: "Escalated" }} />,
-      }} />
-    </>
-  );
-}
-
-// ---------------------------------------------------------------- 05 A1 EI → consumption
-
-function Flow05() {
-  const eiTypes = useSmo<EiType[]>("/a1-related/ei-types");
-  const [eiId, setEi, ei] = useSelection(eiTypes.data, (t) => t.eiTypeId);
-  const types = useSmo<DmeType[]>("/dme/dme-types");
-  const dmeTypeId = ei?.eiSourceDmeTypeId;
-  const offers = useSmo<DataOffer[]>(dmeTypeId ? "/dme/offers" : null, { dme_type_id: dmeTypeId });
-  const jobs = useSmo<DataJob[]>(dmeTypeId ? "/dme/data-jobs" : null, { dme_type_id: dmeTypeId });
-  const dmeType = types.data?.find((t) => t.dmeTypeId === dmeTypeId);
-  const steps = flow05(ei, dmeType, offers.data ?? [], jobs.data ?? []);
-  // DME only accepts a job whose delivery method an offer has committed to
-  const committed = offers.data?.find((o) => o.committedMethod)?.committedMethod ?? null;
-  return (
-    <>
-      <Pick label="EI type" items={eiTypes.data} value={eiId} onChange={setEi} id={(t) => t.eiTypeId}
-        render={(t) => `${t.eiTypeId} (by ${t.registeredBy})`} empty={<>No EI types registered. {go("/data#a1-ei", "Register one")}</>} />
-      <Timeline steps={steps} actions={{
-        register: go("/data#a1-ei", "Register an EI type"),
-        offer: dmeTypeId && <ActionButton label="Create offer (PUSH_HTTP, PULL_HTTP)" title="Simulates the producer's DataOffer" action={{
-          method: "POST", path: "/dme/offers", success: "Offer created",
-          json: { dmeTypeId, dataDeliveryMode: "CONTINUOUS", dataDeliveryMethods: ["PUSH_HTTP", "PULL_HTTP"], dataOfferTerminationNotificationUri: "http://producer.invalid/terminate" },
-        }} />,
-        job: dmeTypeId && (committed
-          ? <ActionButton label={`Create consumer data job (${committed})`} tone="primary" action={{
-              method: "POST", path: "/dme/data-jobs", success: "Data job created",
-              json: { dmeTypeId, dataDeliveryMode: "CONTINUOUS", dataDeliveryMethod: committed, consumerId: "smo-gui" },
-            }} />
-          : <span className="muted small">DME needs an offer with a committed delivery method first.</span>),
-        consume: go("/data#dme", "DME data jobs"),
       }} />
     </>
   );

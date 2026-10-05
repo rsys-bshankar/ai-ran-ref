@@ -1,7 +1,7 @@
 """Shared outbound-webhook dispatch for every caller-registered
 notification/callback destination in this build (DME's producer/type
 callbacks, SME's event subscriptions, AIMgF's job-completion and guard
-notifications, A1-Related/FOCOM/MDAF subscription callbacks, Intent
+notifications, FOCOM/MDAF subscription callbacks, Intent
 Service's RMIH and autonomy-dispatch notifications, ...).
 
 CodeQL py/full-ssrf flags every one of these: each destination is

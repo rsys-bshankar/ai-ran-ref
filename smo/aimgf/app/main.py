@@ -401,7 +401,7 @@ def _expire_overdue_jobs(db: Session) -> list[dict]:
     run is paused and never expires; its clock restarts on resume.
 
     Enforced lazily (on every job read and completion, the same pattern as
-    A1 Related's supervision sweep) and on demand via
+    DME's producer health) and on demand via
     `POST /execution-timeouts/sweep` for a scheduler to call.
     """
     now = datetime.datetime.now(datetime.UTC)
@@ -1407,7 +1407,7 @@ def unsubscribe_performance_monitoring(subscription_id: uuid.UUID, db: Session =
     """HISTORY.md §7's `MLMFSubscription` finding, closed: previously
     this subscription could only be created and read, never torn down —
     idempotent, matching every other subscription-shaped resource's own
-    unsubscribe route (DME/MDAF/A1-Related/Intent Service).
+    unsubscribe route (DME/MDAF/Intent Service).
     """
     sub = db.get(MLMFSubscription, subscription_id)
     if sub is not None:

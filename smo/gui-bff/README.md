@@ -44,7 +44,7 @@ Browser --/api--> gui (nginx :3000) --> gui-bff --Bearer (SME-issued)--> R1 Term
 
 - Calls: only R1 Termination (and SME's token/registration endpoints at the address R1 advertises). Never a module container directly.
 - Never touches: the SMO Postgres database, `smo_shared`, any module port.
-- Does not join `a1_mock_net`; publishes no host port (`docker-compose.yml`).
+- Publishes no host port (`docker-compose.yml`).
 - It does not set `X-Correlation-ID`; R1 Termination mints one per proxied request (call flow 14).
 
 ### 1.4 Ownership

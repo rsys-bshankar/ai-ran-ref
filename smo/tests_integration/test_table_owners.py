@@ -16,7 +16,7 @@ import pytest
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
 OWNERS = json.loads((SMO_ROOT / "migrations" / "table_owners.json").read_text())
-MODULES = [m for m in OWNERS if m not in ("_comment", "shared")]
+MODULES = [m for m in OWNERS if m != "shared" and not m.startswith("_")]      # `_retired` (a removed module's tables) and `_comment` are not modules
 
 # Run in a process of its own: the other tests load modules into the shared metadata too, and the question here is what each module adds to a clean one.
 _PROBE = """

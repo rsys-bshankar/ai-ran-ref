@@ -51,7 +51,7 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 
 ## What is not in the chart
 
-`netconf-lab` (a throwaway lab server) and `edge-tls` (the compose TLS terminator: use `ingress` with a TLS secret instead). `networkPolicy.enabled` adds the isolation compose has: the mock Near-RT RIC reachable only from `a1-related` and with no way out; it needs a CNI that enforces NetworkPolicy.
+`netconf-lab` (a throwaway lab server) and `edge-tls` (the compose TLS terminator: use `ingress` with a TLS secret instead).
 
 ## Values
 

@@ -81,9 +81,9 @@ registrations, heartbeats: machine-to-machine only).
 |---|:-:|:-:|:-:|
 | Every read: status, lists, details, alarms, KPIs (feature groups excepted: they carry datalake tokens) | ✓ | ✓ | ✓ |
 | Lifecycle: onboard/prime/deprime/deprecate packages; create, configure, upgrade, recover, bootstrap instances; register, edit, train, advance, deploy models, inference, training-metrics writeback, feature groups; ack/clear alarms; CM writes, PM subscriptions, SW jobs; A1 policies and policy-status subscriptions, intents, analytics subscriptions; DME consumer data jobs and type subscriptions; SME event subscriptions; FOCOM inventory subscriptions; SO orders; SA monitor evaluate / remediate / escalate; NFO heal/scale | | ✓ | ✓ |
-| Hard deletes and teardown: delete packages, terminate/delete instances, deprecate/delete models, delete A1 policies and intents, terminate NF deployments, provision/deprovision O-Cloud resources | | | ✓ |
-| Registry administration: SME providers, published service APIs, invoker onboarding (the one-time secret is shown once) and trusted-invoker security contexts; the A1-P service registry; RMIH registration (framework identities only) | | | ✓ |
-| Acting as another party, to exercise a flow: DME producer types and offers, A1 EI types, RAN Analytics producers and reports, intent fulfilment reports, package usage registrations, O1 heartbeats, and test alarms, rApp perf/faults and MLMF reports; GUI users and the audit log | | | ✓ |
+| Hard deletes and teardown: delete packages, terminate/delete instances, deprecate/delete models, delete intents, terminate NF deployments, provision/deprovision O-Cloud resources | | | ✓ |
+| Registry administration: SME providers, published service APIs, invoker onboarding (the one-time secret is shown once) and trusted-invoker security contexts; RMIH registration (framework identities only) | | | ✓ |
+| Acting as another party, to exercise a flow: DME producer types and offers, RAN Analytics producers and reports, intent fulfilment reports, package usage registrations, O1 heartbeats, and test alarms, rApp perf/faults and MLMF reports; GUI users and the audit log | | | ✓ |
 
 The BFF also pins identity-bearing parameters rather than trusting the
 browser: `ack_user_id` / `clear_user_id` are the GUI user; SA SMOS's
@@ -111,24 +111,24 @@ the admin state of exactly the intents it created).
 - Append-only audit log (**Admin → Audit log**): every mutating proxied call
   (allowed or denied, with its status), plus sign-ins and user administration.
 - Only `gui` (:3000) and R1 Termination (:8080, for rApps, unchanged) publish
-  ports. `gui-bff` publishes nothing, and neither joins `a1_mock_net`.
+  ports. `gui-bff` publishes nothing, and nothing else is exposed.
 
 ## Pages and the R1 paths they use
 
 | Page | Module paths (all via `/api/smo/…` → R1) |
 |---|---|
-| **Lifecycle flows** | All ten `docs/call-flows` journeys, each a live step timeline for a chosen package / model / config job / monitor / EI type / instance / analytics type / intent / order, with the next action on the current step (`lib/flows.ts` holds the step logic). Reads everything the flows touch, including `/onboarding/packages/{id}/usage`, `/dme/offers`, `/dme/data-jobs`, `/a1-related/ei-types`, `/sme/published-apis/v1/{apf}/service-apis` |
+| **Lifecycle flows** | Nine `docs/call-flows` journeys, each a live step timeline for a chosen package / model / config job / monitor / instance / analytics type / intent / order, with the next action on the current step (`lib/flows.ts` holds the step logic). Reads everything the flows touch, including `/onboarding/packages/{id}/usage`, `/dme/offers`, `/dme/data-jobs`, `/a1-related/ei-types`, `/sme/published-apis/v1/{apf}/service-apis` |
 | **Dashboard** | BFF `GET /api/modules/status` (every `/<module>/health`, in parallel) · `/ran-nf-oam/alarms` · `/focom/alarms` · `/aimgf/mlmf/reports` · `/rapp-mgmt/instances/{id}/performance` · `/sa-smos/remedial-actions?outcome=ESCALATED` · fleet counts from onboarding, rapp-mgmt, mlmr, nfo, ran-nf-oam, a1-related, intent-service, ran-analytics lists |
 | **rApps** (call-flow 01) | `/onboarding/packages` (+ `prime`, `deprime`, `deprecate`, `cancel-delete`, `DELETE`, `artifacts`, `usage` + `start`/`stop`) · `/rapp-mgmt/instances` (+ `GET {id}`, `config`, `bootstrap-complete`, `upgrade`, `upgrade/resolve`, `recover`, `terminate`, `DELETE`, `performance`, `faults`) |
 | **AI/ML** (call-flow 02) | `/mlmr/models` (+ `{id}` `PUT`/`DELETE`, `artifact`, `artifact/{v}`) · `/mlmr/coordination-groups` · `/aimgf/models/{id}/(advance?event=\|inference-jobs)` · `/aimgf/training-jobs` (+ `model-metrics`) · `/aimgf/inference-jobs` (+ `resolve`) · `/aimgf/mlmf/subscriptions` (+ `reports`) · `/aimgf/feature-groups` · `/mllf/models/{id}/deploy` · `/dme/dme-types` |
 | **Alarms** | `/ran-nf-oam/alarms` (filters `managed_element_ref`, `severity`; `PATCH …/ack`, `…/clear`; admin `alarms/ingest`) · `/focom/alarms` |
 | **KPIs & Assurance** | `/rapp-mgmt/instances/{id}/performance` · `/ran-nf-oam/pm-subscriptions` · MLMF as above · `/mdaf/reports`, `subscriptions` · `/ran-analytics/producers` (and, as admin, registering producers and publishing reports via `/mdaf/reports`) · `/sa-smos/monitors` (+ `evaluate`, `remedial-actions`, `escalate`), `/sa-smos/remedial-actions` · `/focom/performance` |
-| **Policy & Intents** | `/a1-related/policy-types`, `/a1-related/policies` (+ `{id}`, `{id}/status`), `/a1-related/policies/subscriptions`, `/a1-related/services` (+ `keepalive`) · `/intent-service/intents` (+ `admin-state`), `/intent-reports`, `/intent-handling-functions` · `/intent-service/autonomy-dispatches` (+ `resolve`, `reject`) |
+| **Intents** | `/intent-service/intents` (+ `admin-state`), `/intent-reports`, `/intent-handling-functions` · `/intent-service/autonomy-dispatches` (+ `resolve`, `reject`) |
 | **Change management** (Infrastructure → O1 endpoints & jobs, the job drawer; KPIs → KPI definitions) | `/ran-nf-oam/config-jobs/{id}` (+ `rollback`, `continue`, `halt`, `abort`), `/ran-nf-oam/kpi-definitions`, `/ran-nf-oam/kpi-schedules`: a staged job's waves, wave actions and rollback with a preview (operator), a job's KPI guard, KPI definitions and schedules (admin) |
 | **Safeguards** | `/rapp-mgmt/instances/{id}/safeguards`, `/rapp-mgmt/instances/{id}/kill`, `/ran-nf-oam/rapp-limits/{invokerId}`, `/ran-nf-oam/rapp-kill`, `/ran-nf-oam/safeguard-refusals`, `/ran-nf-oam/safeguard-subscriptions`: stop and resume an rApp (operator stops, admin resumes), its limits (admin), the refusal log, and who is told about refusals (admin) |
 | **Energy Saving**, **Mobility**, **Coverage**, **Traffic Steering** | `/energy-saving-rapp/instances`, `/mobility-optimization-rapp/instances`, `/coverage-optimization-rapp/instances`, `/traffic-steering-rapp/instances` (+ `{id}/dashboard`, `evaluate`, `reconcile`, per-cell or per-relation views); see `../DEMO_RUNBOOK.md` §24–§27 |
 | **Infrastructure** | `/nfo/deployments` (+ `heal`, `scale`, `resources`, `operations`, `DELETE`), `/nfo/descriptors` · `/focom/resource-pools` (+ `resources`), `resource-types`, `deployment-managers`, `topology`, `resources/provision`, `inventory/subscriptions` · `/ran-nf-oam/o1-adaptor-endpoints` (+ `discover`, `heartbeat`), `config-jobs` (several MEs per job), `software-management-jobs` (+ `advance`) · `/so-smos/orders` (+ `cancel`) |
-| **Data & Exposure** (call flows 01, 05, 08) | `/dme/dme-types`, `production-capabilities`, `data-jobs`, `offers` (+ `notify`), `type-subscriptions` · `/a1-related/ei-types` (+ `register`) · `/sme/provider-registrations`, `published-apis/v1/{apf}/service-apis`, `invoker-registrations`, `trusted-invokers`, `service-apis/v1/allServiceAPIs`, `capif-events/v1/{subscriber}/subscriptions` |
+| **Data & Exposure** (call flows 01, 08) | `/dme/dme-types`, `production-capabilities`, `data-jobs`, `offers` (+ `notify`), `type-subscriptions` · `/sme/provider-registrations`, `published-apis/v1/{apf}/service-apis`, `invoker-registrations`, `trusted-invokers`, `service-apis/v1/allServiceAPIs`, `capif-events/v1/{subscriber}/subscriptions` |
 | **Admin** | BFF `/api/admin/users`, `/api/admin/audit` |
 
 Polling: alarms every 5 s, module health every 10 s, lists every 15 s
@@ -141,7 +141,6 @@ call often changes another module's state.
   `correlatedNotifications`, but the GUI doesn't compute storms).
 - Live KPI file collection: PM subscriptions register DME producer types,
   and the counters themselves aren't collected (as in RAN NF OAM).
-- A1-ML (dormant in A1 Related).
 - Southbound Docker/NETCONF beyond what the modules already stub; results
   of inference jobs (pulled through DME, not shown here).
 - R1 Termination's own OAuth is unchanged. The GUI's users and roles live in
@@ -180,7 +179,6 @@ rows read as a story: the state before an action, then the state after it.
 | [02 AI/ML model: register → train → certify → deploy → infer → monitor](docs/screenshots/flows/f02.png) | 11 steps: runtime ACTIVE, an inference job, and an MLMF floor breach that triggers a retrain |
 | [03 Configuration write, schema-checked, fleet-aware](docs/screenshots/flows/f03.png) | `PARTIAL_SUCCESS`: one ME applied, one never registered (`ENDPOINT_UNREACHABLE`) |
 | [04 Closed-loop assurance: monitor → decide → remediate → escalate](docs/screenshots/flows/f04.png) | Threshold breach, `RECONNECT` resolved; 5/5 |
-| [05 A1 EI registration → data consumption](docs/screenshots/flows/f05.png) | EI type → DME type → committed offer → active data job; 6/6 |
 | [06 Package failure and the cascade-delete guard](docs/screenshots/flows/f06.png) | A package that failed validation; `CreateInstance` is refused (409) |
 | [06 (guard blocking)](docs/screenshots/flows/f06-blocked.png) | A PRIMED package with active usage registrations: the guard is the failing step, so delete reads as blocked |
 | [07 rApp fault and performance reporting](docs/screenshots/flows/f07.png) | Critical fault → FAULTED → recovered → RUNNING; the next action is Terminate |
@@ -282,21 +280,13 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Register assurance monitor](docs/screenshots/lcm/kpis-register-monitor-form.png) | Scope picked from the SO SMOS orders, metric floors entered |
 | [Monitor registered](docs/screenshots/lcm/kpis-monitor-registered.png) | The new monitor listed with no actions yet |
 
-#### Policy & Intents (A1 Related, Intent Service)
+#### Intents (Intent Service)
 
 | Screen | What it shows |
 |---|---|
-| [A1 policies (tab)](docs/screenshots/pages/policy-a1.png) | Policies with enforcement status (ENFORCED, REJECTED, SUSPENDED) |
-| [Policy status subscriptions (tab)](docs/screenshots/pages/policy-status-subs.png) | Subscriptions notified on enforcement-status changes |
-| [A1 services (tab)](docs/screenshots/pages/policy-services.png) | A1-P service registry with keep-alive supervision |
 | [Intents (tab)](docs/screenshots/pages/policy-intents.png) | TS 28.312 intents with admin state |
 | [Intent handlers, RMIH (tab)](docs/screenshots/pages/policy-handlers.png) | Framework-internal handlers and their capabilities |
 | [Autonomy dispatches (tab)](docs/screenshots/pages/policy-autonomy.png) | DISPATCHED, SHADOWED and AWAITING_SCOPE dispatches by autonomy mode |
-| [Create A1 policy](docs/screenshots/lcm/policy-a1-create-form.png) | Type, Near-RT RIC and policy object |
-| [Policy: ENFORCED](docs/screenshots/lcm/policy-a1-created-enforced.png) | The new policy listed after the Near-RT RIC accepted it |
-| [Policy detail](docs/screenshots/lcm/policy-a1-drawer.png) | Policy object and enforcement status |
-| [Service keep-alive](docs/screenshots/lcm/policy-service-keepalive.png) | A supervised service after Keep alive, with its countdown |
-| [Service unregistered](docs/screenshots/lcm/policy-service-unregistered.png) | Unregister removes the service and deletes its policies |
 | [Create intent](docs/screenshots/lcm/policy-intent-create-form.png) | Handler, expectation object type, targets, priority and purpose |
 | [Intent: ACTIVATED](docs/screenshots/lcm/policy-intent-drawer.png) | Expectations and the handler's reports |
 | [Intent: DEACTIVATED](docs/screenshots/lcm/policy-intent-deactivated.png) | Admin state changed by the intent's own RMIO (`smo-gui`) |
@@ -348,19 +338,16 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Compose service order](docs/screenshots/lcm/orders-compose.png) | Step templates added to the order |
 | [Service order: executed](docs/screenshots/lcm/order-drawer-steps.png) | Per-step results |
 
-#### Data & Exposure (DME, A1 EI, SME)
+#### Data & Exposure (DME, SME)
 
 | Screen | What it shows |
 |---|---|
 | [DME: types, jobs, offers (tab)](docs/screenshots/pages/data-dme.png) | Producers, data types, data jobs, offers and type subscriptions |
-| [A1 EI types (tab)](docs/screenshots/pages/data-a1-ei.png) | Enrichment-information types wrapping DME types |
 | [SME: services & invokers (tab)](docs/screenshots/pages/data-sme.png) | Providers, published APIs, invokers, discovery and CAPIF event subscriptions (one unscoped, one limited by `apiIds`) |
 | [DME offer: notify data ready](docs/screenshots/lcm/dme-offer-notify-data-ready.png) | The producer's availability signal for a committed offer |
 | [Register a producer data type](docs/screenshots/lcm/dme-register-type-form.png) | The admin tool for acting as a producer |
 | [Create a data job](docs/screenshots/lcm/dme-data-job-form.png) | Type, mode, delivery (limited to what an offer committed) and consumer |
 | [Data job](docs/screenshots/lcm/dme-data-job-dialog.png) | The created job's record |
-| [Register EI type](docs/screenshots/lcm/a1-ei-register-form.png) | Filled but not submitted |
-| [EI type registered](docs/screenshots/lcm/a1-ei-registered.png) | The new type listed with its DME type |
 | [SME invoker secret](docs/screenshots/lcm/sme-invoker-secret-dialog.png) | Shown once and never again; SME keeps only a hash |
 | [Trusted-invoker security context](docs/screenshots/lcm/sme-trusted-invoker-dialog.png) | AEF, API and preferred security method |
 | [CAPIF event subscription form](docs/screenshots/lcm/sme-event-subscription-form.png) | Subscriber, events and callback |
@@ -374,4 +361,4 @@ role can't perform aren't rendered, and the BFF refuses them anyway.
 | Role | Screens |
 |---|---|
 | Viewer | [dashboard](docs/screenshots/roles/viewer-dashboard.png) · [alarms](docs/screenshots/roles/viewer-alarm-list.png) · [flow 06](docs/screenshots/roles/viewer-flows-06.png) · [rApp packages](docs/screenshots/roles/viewer-rapp-packages.png) · [SME](docs/screenshots/roles/viewer-sme.png) |
-| Operator | [dashboard](docs/screenshots/roles/operator-dashboard.png) · [rApp instances](docs/screenshots/roles/operator-rapp-instances.png) · [DME](docs/screenshots/roles/operator-dme.png) · [A1 policies](docs/screenshots/roles/operator-a1-policies.png) · [infrastructure](docs/screenshots/roles/operator-infrastructure.png) |
+| Operator | [dashboard](docs/screenshots/roles/operator-dashboard.png) · [rApp instances](docs/screenshots/roles/operator-rapp-instances.png) · [DME](docs/screenshots/roles/operator-dme.png) · [infrastructure](docs/screenshots/roles/operator-infrastructure.png) |

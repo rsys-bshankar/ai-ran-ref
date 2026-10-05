@@ -13432,7 +13432,7 @@
     },
     "/mlmf/subscriptions/{subscription_id}": {
       "delete": {
-        "description": "HISTORY.md \u00a77's `MLMFSubscription` finding, closed: previously\nthis subscription could only be created and read, never torn down \u2014\nidempotent, matching every other subscription-shaped resource's own\nunsubscribe route (DME/MDAF/A1-Related/Intent Service).",
+        "description": "HISTORY.md \u00a77's `MLMFSubscription` finding, closed: previously\nthis subscription could only be created and read, never torn down \u2014\nidempotent, matching every other subscription-shaped resource's own\nunsubscribe route (DME/MDAF/Intent Service).",
         "operationId": "unsubscribe_performance_monitoring_mlmf_subscriptions__subscription_id__delete",
         "parameters": [
           {

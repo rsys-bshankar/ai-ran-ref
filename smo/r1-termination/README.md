@@ -42,11 +42,11 @@ Conventions every R1-facing service applies (authentication scheme `r1BearerAuth
    +--------------------+
       | strip "/<prefix>", forward verbatim
       v
-   sme  dme  onboarding  rapp-mgmt  ran-nf-oam  a1-related  nfo  focom  aimgf  mlmr  mllf
+   sme  dme  onboarding  rapp-mgmt  ran-nf-oam  nfo  focom  aimgf  mlmr  mllf
    ran-analytics  mdaf  intent-service  so-smos  sa-smos  <four reference rApps>
 ```
 
-It calls only SME (introspection) and the chosen backend. It never reads a database and never interprets a body. The southbound mocks (`mock-o1-adaptor`, `mock-near-rt-ric`) are not behind it.
+It calls only SME (introspection) and the chosen backend. It never reads a database and never interprets a body. The southbound mock (`mock-o1-adaptor`) is not behind it.
 
 ### 1.4 Ownership
 
@@ -68,7 +68,6 @@ It calls only SME (introspection) and the chosen backend. It never reads a datab
 | Prefix is stripped before forwarding | No backend carries its own prefix in its routes. |
 | `X-Correlation-ID` is overridden with the request's own id (the caller's, or the one the middleware just assigned); `X-R1-Invoker-Id` is set to the introspected token's `client_id` (any inbound value is dropped; omitted when the token carries none) and `X-R1-Role` to the `role` SME records for that invoker, `internal` (an SMO module or the GUI, which presented the enrollment secret) or `rapp` (`PR-SEC-14`; an SME that reports none is read by the token's scope); all other headers except `Host` are forwarded verbatim | One id threads the whole downstream fan-out of an inbound call (call flow 14). |
 | `/dme-push` and `/dme-pull` both route to DME | Reserved aliases for the push and pull delivery transports; DME has no routes of its own under those names, so after prefix stripping they are the same as `/dme`. |
-| `/a1-related` is routed but marked reserved | Inert until a Near-RT RIC exists. |
 | Explicit `operation_id="proxy"` on the catch-all | FastAPI's auto id depended on set iteration order of the five methods and made the committed OpenAPI spec check flaky. |
 
 Failure behaviour: a backend that does not answer within `R1_UPSTREAM_TIMEOUT_SECONDS` (60) is a `504 UPSTREAM_TIMEOUT`, one that cannot be reached is a `502 UPSTREAM_UNAVAILABLE`. Upstream status codes and bodies (including errors) are passed through unchanged. The backend call has the explicit 60 s timeout, longer than the 30 s a calling module allows itself (`smo_shared/timeouts.py`), so the outer call always outlasts the inner one; before this the gateway used httpx's implicit 5 s and failed any slower operation with an unhandled error.
@@ -116,7 +115,6 @@ Route table (`ROUTES`, prefix → env var → default):
 | `/onboarding` | `ONBOARDING_URL` | `http://onboarding:8000` |
 | `/rapp-mgmt` | `RAPP_MGMT_URL` | `http://rapp-mgmt:8000` |
 | `/ran-nf-oam` | `RAN_NF_OAM_URL` | `http://ran-nf-oam:8000` |
-| `/a1-related` (reserved) | `A1_RELATED_URL` | `http://a1-related:8000` |
 | `/nfo` | `NFO_URL` | `http://nfo:8000` |
 | `/focom` | `FOCOM_URL` | `http://focom:8000` |
 | `/aimgf` | `AIMGF_URL` | `http://aimgf:8000` |

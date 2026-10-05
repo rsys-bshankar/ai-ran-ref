@@ -130,7 +130,7 @@ def _notify_report_subscribers(db: Session, report: MDAFReport) -> None:
     was a deliberate no-op (`for sub in subs: pass`) — a matching
     MDASubscription was looked up but never actually notified, so every
     consumer had to poll QueryAnalyticsReport instead. Same shape fix as
-    A1 Related's `_notify_policy_status_subscribers`/Intent Service's
+    Intent Service's
     CreateIntent notification: best-effort, an unreachable subscriber
     never fails the publish that triggered it. Only subscriptions that
     registered a real `notificationDestination` are ever POSTed to — one
@@ -168,7 +168,7 @@ class SubscribeAnalyticsRequest(BaseModel):
     thresholdInfo: list[ThresholdInfo] | None = None
     # Wave 3 (cross-cutting standardization, Subscriptions): was a query
     # param — the one subscription-shaped resource in this build taking
-    # its callback outside the body, unlike DME/A1-Related/Intent
+    # its callback outside the body, unlike DME/Intent
     # Service's own notificationDestination body field it's now unified
     # with.
     notificationDestination: str | None = None

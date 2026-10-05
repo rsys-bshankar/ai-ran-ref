@@ -15,7 +15,7 @@ export const NAV: { to: string; label: string; icon: string; minRole?: Role }[] 
   { to: "/aiml", label: "AI/ML", icon: "◈" },
   { to: "/alarms", label: "Alarms", icon: "⚠" },
   { to: "/kpis", label: "KPIs & Assurance", icon: "∿" },
-  { to: "/policy", label: "Policy & Intents", icon: "⚖" },
+  { to: "/policy", label: "Intents", icon: "⚖" },
   { to: "/energy-saving", label: "Energy Saving", icon: "☾" },
   { to: "/mobility", label: "Mobility", icon: "⇆" },
   { to: "/coverage", label: "Coverage", icon: "◎" },

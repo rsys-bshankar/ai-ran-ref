@@ -77,60 +77,6 @@ def test_nfo_instantiate_actually_resolves_cluster_through_focom(mesh):
     assert body["state"] == "RUNNING"
 
 
-def test_a1_related_create_policy_reaches_mock_near_rt_ric_enforced(mesh):
-    """A1 Related LLD section 1.1's confirmed sequence, end to end: the
-    A1UCR clause 6.3 call actually happens now (against the isolated mock,
-    per RT-7), and enforcementStatus reflects its real response.
-    """
-    resp = mesh["a1-related"].post("/policies", json={
-        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell-42"},
-        "nearRtRicId": "ric-1", "creatorId": "rapp-1",
-    })
-    assert resp.status_code == 201
-    assert resp.json()["enforcementStatus"] == "ENFORCED"
-
-
-def test_a1_related_create_policy_reaches_mock_near_rt_ric_rejected(mesh):
-    resp = mesh["a1-related"].post("/policies", json={
-        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {},  # empty -> mock rejects
-        "nearRtRicId": "ric-1", "creatorId": "rapp-1",
-    })
-    assert resp.json()["enforcementStatus"] == "REJECTED"
-
-
-def test_a1_related_query_status_refreshes_live_from_mock(mesh):
-    """The cache/pass-through duality (A1 Related LLD section 1.1),
-    proven against the real mock this time, not a fake stand-in.
-    """
-    created = mesh["a1-related"].post("/policies", json={
-        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {}, "nearRtRicId": "ric-1", "creatorId": "rapp-1",
-    }).json()
-    assert created["enforcementStatus"] == "REJECTED"
-
-    status = mesh["a1-related"].get(f"/policies/{created['policyId']}/status")
-    # mock-near-rt-ric's query_policy_status echoes back whatever it stored at
-    # create time — REJECTED — proving this is a live re-fetch reaching the
-    # actual mock service, not a hardcoded test double's canned answer.
-    assert status.json()["enforcementStatus"] == "REJECTED"
-
-
-def test_a1_related_register_ei_type_creates_a_real_dme_type(mesh):
-    """A1 Related LLD section 3: RegisterEIType wraps DME's real
-    RegisterDMEType — this proves the DME type actually gets created,
-    not just that A1 Related believes it did.
-    """
-    resp = mesh["a1-related"].post("/ei-types/register", params={
-        "ei_type_id": "ei-coverage-1", "registered_by": "rapp-1",
-        "dme_namespace": "RAN", "dme_name": "CoverageIssue", "dme_version": "1.0.0",
-    })
-    assert resp.status_code == 200
-    dme_type_id = resp.json()["eiSourceDmeTypeId"]
-
-    dme_types = mesh["dme"].get("/dme-types").json()
-    assert any(t["dmeTypeId"] == dme_type_id for t in dme_types)
-    assert dme_types[0]["dmeTypeIdStruct"] == {"namespace": "RAN", "name": "CoverageIssue", "version": "1.0.0"}
-
-
 def test_ran_analytics_producer_registration_creates_a_real_sme_service(mesh):
     """RAN Analytics LLD section 1: RegisterAnalyticsProducer registers
     via SME — proving the SME ServiceProfile actually gets created.
@@ -145,42 +91,16 @@ def test_ran_analytics_producer_registration_creates_a_real_sme_service(mesh):
     assert services[0]["serviceCapabilities"]["analyticsType"] == "coverage-issue-analysis"
 
 
-def test_so_smos_dispatches_a_policy_step_through_to_the_mock_near_rt_ric(mesh):
-    """SO SMOS LLD section 1's dispatch table, end to end across THREE
-    hops: SO SMOS -> A1 Related -> mock Near-RT RIC. This is the deepest
-    chain in this reference build and the clearest proof the dispatch
-    table (so-smos/app/dispatch.py) isn't just calling into a stub.
-    """
-    resp = mesh["so-smos"].post("/orders", json={
-        "scope": "policy-rollout",
-        "steps": [{
-            "stepType": "POLICY", "targetModule": "A1_RELATED",
-            "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {"scope": "cell-1"},
-            "nearRtRicId": "ric-1", "creatorId": "so-smos",
-        }],
-    })
-    assert resp.status_code == 202
-    steps = resp.json()["steps"]
-    assert steps[0]["status"] == "COMPLETED"
-    assert steps[0]["result"]["enforcementStatus"] == "ENFORCED"
-
-    # and the policy is independently visible via A1 Related's own API —
-    # not just present in SO SMOS's own record of what it dispatched.
-    policies = mesh["a1-related"].get(f"/policies/{steps[0]['result']['policyId']}").json()
-    assert policies["nearRtRicId"] == "ric-1"
-
-
 def test_so_smos_fail_fast_halts_on_a_real_downstream_rejection(mesh):
     """SO SMOS LLD section 1.1: fail-fast, no auto-compensation — proven
-    here against a REAL downstream failure (an unknown policy type,
-    A1 Related's own validation), not a mocked exception.
+    here against a REAL downstream failure (an unknown NF deployment
+    descriptor, NFO's own validation), not a mocked exception.
     """
     resp = mesh["so-smos"].post("/orders", json={
-        "scope": "policy-rollout",
+        "scope": "deploy-rollout",
         "steps": [
-            {"stepType": "POLICY", "targetModule": "A1_RELATED", "policyTypeId": "NOT_A_REAL_TYPE",
-             "policyObject": {}, "nearRtRicId": "ric-1", "creatorId": "so-smos"},
-            {"stepType": "DEPLOY", "targetModule": "NFO", "nfDeploymentDescriptorId": str(uuid.uuid4())},
+            {"stepType": "DEPLOY", "targetModule": "NFO", "nfDeploymentDescriptorId": str(uuid.uuid4()), "name": "first"},
+            {"stepType": "DEPLOY", "targetModule": "NFO", "nfDeploymentDescriptorId": str(uuid.uuid4()), "name": "second"},
         ],
     })
     steps = resp.json()["steps"]
@@ -264,12 +184,10 @@ def test_onboarding_to_rapp_management_full_deploy_creates_real_nf_deployment_de
 
 
 def test_ran_nf_oam_config_write_reaches_a_real_mock_o1_adaptor(mesh, loaded_apps, db_connection):
-    """HISTORY.md §2: "no real southbound integrations beyond
-    the A1 mock" — RAN NF OAM LLD section 5.1's PATCH step
+    """HISTORY.md §2: "no real southbound integrations" — RAN NF OAM LLD section 5.1's PATCH step
     (netconf_client.py) always dispatched a real RFC 6241 <edit-config>
     RPC, but nothing in this build's own topology ever answered it for
-    real before mock-o1-adaptor existed. Proven end to end here, the same
-    way A1 Related's own mock Near-RT RIC round trip already is: no
+    real before mock-o1-adaptor existed. Proven end to end here, no
     ManagedElement registration route exists (a separate, undocumented
     gap, not this item's own scope), so the ManagedEntity/O1AdaptorEndpoint
     rows are seeded directly through the shared engine — the real HTTP

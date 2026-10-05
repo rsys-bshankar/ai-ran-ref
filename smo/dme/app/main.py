@@ -272,7 +272,7 @@ def subscribe_type_changes(body: TypeSubscriptionRequest, db: Session = Depends(
     this build until now. ICS's own PUT is create-or-update against a
     caller-supplied subscriptionId; this build's id is server-generated
     (same adaptation already made for every other subscription in this
-    codebase — RAN Analytics, A1 Related, Policy Mgmt, FOCOM).
+    codebase — RAN Analytics, FOCOM).
     """
     sub = DMETypeSubscription(notification_destination=body.notificationDestination, owner=body.owner)
     db.add(sub)
@@ -559,7 +559,7 @@ def _push_job_to_producers(db: Session, dme_type: DMEType, job: DataJob) -> None
     DB. ICS's own ProducerCallbacks.startInfoJob POSTs the job to every
     producer supporting the type (jobCallbackUrl, ProducerJobInfo's wire
     shape); best-effort per producer, same pattern as every other
-    DME/FOCOM/A1-Related notification in this build — an unreachable
+    DME/FOCOM notification in this build — an unreachable
     producer never fails the consumer-facing call, matching the
     reference's own onErrorResume-and-continue behavior.
     """
@@ -655,7 +655,7 @@ def _producer_is_healthy(callback_url: str) -> bool:
 # ---------------------------------------------------------------- list reads (GUI pass 2)
 # Data jobs and offers were only readable by id, so nobody could see which
 # consumers were pulling which types, or what producers had offered
-# (call flow 05).
+# (call flow 01).
 
 @app.get("/data-jobs")
 def list_data_jobs(dme_type_id: uuid.UUID | None = None, consumer_id: str | None = None, limit: int = PageLimit,

@@ -125,7 +125,7 @@ its class is in the same file (so `R1Gateway` below is listed here, not detected
 | FSM tables (`*_FSM`) | `<module>/app/statemachine.py` | Transition tables built once at import and never mutated | Yes | none |
 | `_limiter` (`TokenBuckets`) | `r1-termination/app/main.py` | One token bucket per invoker id (`smo_shared/ratelimit.py`) | Yes, with a known limit: each replica counts for itself, so a caller's real budget is N x `R1_RATE_PER_SECOND` until the shared store of `PR-SEC-8.5`. Losing it on a restart only refills budgets | `PR-SEC-8.5` |
 | `_r1 = R1Client()` | most `main.py` | A thin client; it holds only a base URL | Yes | none |
-| Module-level dicts and lists | `mock-near-rt-ric`, `mock-o1-adaptor` | Test-double state | Not applicable, they are test doubles | none |
+| Module-level dicts and lists | `mock-o1-adaptor` | Test-double state | Not applicable, they are test doubles | none |
 
 What is **not** state: webhook destinations, subscriptions, jobs, FSM states,
 registrations and every other business object are database rows.
@@ -145,7 +145,6 @@ nothing to elect a leader for yet.
 | Behaviour | Module | How it is triggered |
 |---|---|---|
 | Missed-heartbeat health of an O1 endpoint (`MISSED_HEARTBEAT_THRESHOLD`) | RAN NF OAM | Aged at the point of use: in `POST /o1-adaptor-endpoints/discover` and at the config-write gate (`_age_endpoint_health`) |
-| A1 service keep-alive sweep (`keepAliveIntervalSeconds`) | A1 Related | A stale service and its policies are swept when `GET /services` reads it (`_sweep_stale_service`) |
 | `upgradeTimeoutSeconds` | rApp Management | An overdue upgrade is rolled back the next time either row is touched (`expire_overdue_upgrade`) |
 | Threshold monitors | SA SMOS | The caller posts `POST /monitors/{id}/evaluate` with current metrics; the service does not poll |
 | Analytics report delivery | MDAF | Pushed to subscribers when a report is stored; otherwise the consumer polls `QueryAnalyticsReport` |
@@ -180,18 +179,15 @@ interval across any number of workers. RAN NF OAM is the first user
 | SA SMOS | `sa-smos/` | O-RAN SMO-ARCH §4.2.8 SMOS (interfaces unspecified, internal design); O1-CM handler is a 3GPP TS 28.312 RMIH |
 | RAN Analytics | `ran-analytics/` | None (custom). A registry of analytics producers; reports go to MDAF, with no call between the two |
 
-A1 policy (`a1-related/`) is a separate concept from intents and is not part
-of the Intent Service.
-
 
 ## Repository layout
 
 | Group | Modules |
 |---|---|
 | AI platform services | `aimgf/`, `mlmr/`, `mllf/`, `mdaf/`, `intent-service/`, `dme/` |
-| Other platform services | `sme/`, `nfo/`, `focom/`, `ran-nf-oam/`, `onboarding/`, `rapp-mgmt/`, `a1-related/`, `sa-smos/`, `so-smos/`, `ran-analytics/` |
+| Other platform services | `sme/`, `nfo/`, `focom/`, `ran-nf-oam/`, `onboarding/`, `rapp-mgmt/`, `sa-smos/`, `so-smos/`, `ran-analytics/` |
 | Exposure | `r1-termination/` (R1 gateway), `sdk/` (AI Runtime SDK), `gui/` + `gui-bff/` |
-| Southbound simulators | `mock-o1-adaptor/`, `mock-near-rt-ric/` |
+| Southbound simulators | `mock-o1-adaptor/` |
 | Shared library | `shared/smo_shared/` (DB, errors, pagination, correlation, webhook, R1 client, OpenAPI security) |
 | rApps | `samples/` (four reference rApps) |
 | Tooling and tests | `scripts/`, `migrations/`, `tests_integration/` |
@@ -221,7 +217,7 @@ Every R1-facing service applies the same conventions, implemented once in
 | TLS | Services speak HTTP on the compose network. The optional `tls` compose profile adds an nginx edge (`edge/nginx.conf`, HTTPS on :3443 for the GUI and :8443 for R1 Termination, TLS 1.2 and 1.3 only, HSTS) whose certificate and key are Compose secrets; `scripts/make_dev_certs.sh` makes development ones. A deployment brings its own certificate and ingress. `/bootstrap` still advertises `http://` addresses (`SEC-1.6`); service-to-service mTLS is `PR-SEC-2`. |
 | Limits | R1 Termination caps request bodies at 1 MiB (`R1_MAX_BODY_BYTES`; the model artifact upload `/mlmr/models/*/artifact` 50 MiB, `R1_MAX_BODY_OVERRIDES`) with `413 PAYLOAD_TOO_LARGE`, and gives each invoker a token bucket (`R1_RATE_PER_SECOND` 100, `R1_RATE_BURST` 200) with `429 RATE_LIMITED` and `Retry-After`; both before the backend is called. |
 | Probes | Every service answers `/live` (process up; never depends on anything), `/ready` (200, or 503 naming the failing check: the database and, for callers of R1, an SME token; `smo_shared/health.py`) and `/health` (alias of `/live`, which DME supervision and the GUI grid call). Compose probes `/ready` on every service built from the shared Dockerfile. Restart on `/live`, take out of rotation on `/ready`. |
-| Pagination | Every DB-backed list returns `{items, total, limit, offset}` from a SQL `LIMIT`/`OFFSET` plus `COUNT(*)` (`pagination.py`). Exceptions: fixed enums (A1 `/policy-types`) and spec-fixed shapes (A1-PMS `/services`; CAPIF `GetApfIdServiceApis` / `DiscoverServices` in SME). The GUI's `useSmo()` and the SDK's `ensure_ok()` unwrap `items`. |
+| Pagination | Every DB-backed list returns `{items, total, limit, offset}` from a SQL `LIMIT`/`OFFSET` plus `COUNT(*)` (`pagination.py`). Exceptions: spec-fixed shapes (CAPIF `GetApfIdServiceApis` / `DiscoverServices` in SME). The GUI's `useSmo()` and the SDK's `ensure_ok()` unwrap `items`. |
 | Subscriptions | Subscription resources name their callback `notificationDestination`, unless a real external spec fixes another name (FOCOM `callback` per O2ims, SME `callbackUri` per CAPIF). One-off job callbacks (`InferenceJob.notificationDestination`, `TrainingJob.notificationUri`) are not subscriptions. |
 | Callbacks | Any caller-supplied callback URL is called through `smo_shared.webhook`. |
 | Correlation | `X-Correlation-ID` (`correlation.py`): middleware assigns one when absent; `R1Client` propagates it on every downstream call; R1 Termination forwards its own current id. It is not declared per operation in OpenAPI. See call flow 14. |

@@ -53,11 +53,11 @@ import smo_shared.outbox  # noqa: E402,F401  (registers notification_outbox on t
 import smo_shared.audit  # noqa: E402,F401  (registers audit_log and audit_head)
 
 # Every module that persists to Postgres via smo_shared.db.Base — the two
-# mocks (mock-near-rt-ric, mock-o1-adaptor) have no models and aren't part
+# mock (mock-o1-adaptor) has no models and aren't part
 # of migrations/001_init.sql, so they're deliberately excluded here.
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
-    "a1-related", "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
+    "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
     "intent-service", "so-smos", "sa-smos",
     "samples/energy-saving-rapp",  # Wave 10.1: the reference rApp's own tables
     "samples/mobility-optimization-rapp",  # Wave 10.2

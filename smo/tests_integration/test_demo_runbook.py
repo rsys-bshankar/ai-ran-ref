@@ -306,57 +306,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     del_rmih2 = mesh["intent-service"].delete("/intent-handling-functions/sa-smos")
     assert del_rmih2.status_code == 204
 
-    # step 11: A1 Policy Management — register a service, create a real
-    # policy against the mock Near-RT RIC, observe a real duplicate-
-    # content rejection, observe a real status-change notification,
-    # retract. Intercepted at the same httpx.post call
-    # _notify_policy_status_subscribers makes, same technique as steps
-    # 8-9 above.
-    policy_notifications = callbacks.capture("a1-related", "http://demo-consumer:9000/policy-status")
-
-    service = mesh["a1-related"].put("/services", json={"serviceId": "energy-saving-rapp", "keepAliveIntervalSeconds": 0})
-    assert service.status_code == 200
-
-    policy_types = mesh["a1-related"].get("/policy-types")
-    assert policy_types.status_code == 200
-    assert any(t["policyTypeId"] == "ORAN_QoSandTSP_6.0.1" for t in policy_types.json())
-
-    policy_object = {"scope": {"cellId": "demo-cell-1"}, "qosObjectives": {"gfbr": 100}}
-    policy = mesh["a1-related"].post("/policies", json={
-        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": policy_object,
-        "nearRtRicId": "mock-near-rt-ric-001", "creatorId": "energy-saving-rapp",
-    })
-    assert policy.status_code == 201
-    assert policy.json()["enforcementStatus"] == "ENFORCED"
-    policy_id = policy.json()["policyId"]
-
-    sub = mesh["a1-related"].post("/policies/subscriptions", json={
-        "notificationDestination": "http://demo-consumer:9000/policy-status", "policyIdList": [policy_id],
-    })
-    assert sub.status_code == 201
-
-    duplicate = mesh["a1-related"].post("/policies", json={
-        "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": policy_object,
-        "nearRtRicId": "mock-near-rt-ric-001", "creatorId": "energy-saving-rapp",
-    })
-    assert duplicate.status_code == 201
-    assert duplicate.json()["enforcementStatus"] == "REJECTED"
-    duplicate_policy_id = duplicate.json()["policyId"]
-
-    updated = mesh["a1-related"].put(f"/policies/{policy_id}", json={})
-    assert updated.status_code == 200
-    assert updated.json()["enforcementStatus"] == "REJECTED"
-
-    assert len(policy_notifications) == 1
-    assert policy_notifications[0]["policyId"] == policy_id
-    assert policy_notifications[0]["enforcementStatus"] == "REJECTED"
-
-    del_policy = mesh["a1-related"].delete(f"/policies/{policy_id}")
-    assert del_policy.status_code == 204
-    del_duplicate = mesh["a1-related"].delete(f"/policies/{duplicate_policy_id}")
-    assert del_duplicate.status_code == 204
-    del_service = mesh["a1-related"].delete("/services/energy-saving-rapp")
-    assert del_service.status_code == 204
+    # step 11 was A1 Policy Management; it went with the A1 module (out of scope), and the later steps keep their numbers.
 
     # step 12: SME Trusted Invokers — register a real security context
     # for the invoker registered in step 4, confirm default redaction,
@@ -481,7 +431,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # step 14: RAN Analytics — register a producer (real cross-module SME
     # enrolment + service publish), subscribe with a real notification
     # destination, publish a report, observe the real notification fire
-    # (same intercept technique as FOCOM/Intent Service/A1 Related above),
+    # (same intercept technique as FOCOM/Intent Service above),
     # unsubscribe.
     analytics_notifications = callbacks.capture("mdaf", "http://demo-consumer:9000/analytics-reports")
 
@@ -562,7 +512,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert terminate_second.status_code == 204
 
     # step 16: SO SMOS — a real multi-step order dispatched over the real
-    # R1 client to two different downstream modules (FOCOM, A1 Related),
+    # R1 client to two different downstream modules (FOCOM, NFO),
     # proving the real fail-fast halt (a genuine downstream rejection
     # halts the order; the never-attempted step stays PENDING), then
     # cancel to turn the PENDING step CANCELLED.
@@ -570,8 +520,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
         "scope": "demo-multi-step-order",
         "steps": [
             {"stepType": "INFRA", "targetModule": "FOCOM", "spec": {"resourceTypeId": "gpu-l40", "description": "SO SMOS provisioned node"}},
-            {"stepType": "POLICY", "targetModule": "A1_RELATED", "policyTypeId": "NOT_A_REAL_POLICY_TYPE",
-             "policyObject": {"scope": {"cellId": "demo-cell-1"}}, "nearRtRicId": "mock-near-rt-ric-001"},
+            {"stepType": "DEPLOY", "targetModule": "NFO", "nfDeploymentDescriptorId": "00000000-0000-0000-0000-000000000000", "name": "no-such-descriptor"},
             {"stepType": "TRAINING", "targetModule": "AI_ML_WORKFLOW", "producerId": "energy-saving-rapp"},
         ],
     })
@@ -594,8 +543,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
 
     # step 17: DME type subscriptions — a real consumer notified when any
     # DmeType is registered or removed, closed in an earlier §5 pass but
-    # never demonstrated. Intercepted the same way as FOCOM's/Policy
-    # Mgmt's/A1 Related's/RAN Analytics' own notification steps above.
+    # never demonstrated. Intercepted the same way as FOCOM's/RAN Analytics' own notification steps above.
     dme_type_notifications = callbacks.capture("dme", "http://demo-consumer:9000/dme-type-events")
 
     dme_sub = mesh["dme"].post("/type-subscriptions", json={
@@ -784,33 +732,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert mesh["sme"].delete(f"/capif-events/v1/consumer-unscoped/subscriptions/{unscoped_sub_id}").status_code == 204
     assert mesh["sme"].delete(f"/capif-events/v1/consumer-scoped/subscriptions/{scoped_sub_id}").status_code == 204
 
-    # step 22: A1 Related's service supervision sweep — a real, non-zero
-    # keepAliveIntervalSeconds, real and unit-tested since an earlier §5
-    # pass but never fired in this runbook (step 11's own service used
-    # keepAliveIntervalSeconds: 0, supervision disabled, throughout). No
-    # scheduler exists anywhere in this build — the sweep happens lazily,
-    # on the next GET /services read, not on a timer, so this uses a real
-    # short interval and a real sleep, exactly as the runbook's own live
-    # demo does.
-    import time
-
-    supervised_service = mesh["a1-related"].put("/services", json={"serviceId": "demo-supervised-rapp", "keepAliveIntervalSeconds": 2})
-    assert supervised_service.status_code == 200
-    supervised_policy = mesh["a1-related"].post("/policies", json={
-        "policyTypeId": "ORAN_QoSandTSP_6.0.1",
-        "policyObject": {"scope": {"cellId": "demo-cell-2"}, "qosObjectives": {"gfbr": 50}},
-        "nearRtRicId": "mock-near-rt-ric-001", "creatorId": "demo-supervised-rapp",
-    })
-    assert supervised_policy.status_code == 201
-
-    time.sleep(3)  # let the 2-second interval elapse without a keepalive call
-
-    swept = mesh["a1-related"].get("/services", params={"service_id": "demo-supervised-rapp"})
-    assert swept.status_code == 404  # genuinely deregistered, not just reported stale
-
-    swept_policies = mesh["a1-related"].get("/policies", params={"creator_id": "demo-supervised-rapp"})
-    assert swept_policies.status_code == 200
-    assert swept_policies.json()["items"] == []  # torn down alongside its own service
+    # step 22 was A1 Related's service supervision sweep; it went with the A1 module (out of scope), and the later steps keep their numbers.
 
     # step 23: retire — the real package priming lifecycle (COMMISSIONED-
     # equivalent AVAILABLE -> PRIMING -> PRIMED), a genuine deprime

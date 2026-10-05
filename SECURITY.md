@@ -64,8 +64,7 @@ What is in place, so you can judge what counts as a vulnerability:
   gateway; tokens are issued by SME directly.
   See [`smo/docs/ARCHITECTURE.md`](smo/docs/ARCHITECTURE.md#r1-api-conventions).
 - **Network exposure.** In `docker-compose.yml` only R1 Termination (`:8080`),
-  the GUI (`:3000`) and Postgres (`:5432`) publish host ports. The A1 Near-RT
-  RIC test double sits on an isolated network reachable only from `a1-related`.
+  the GUI (`:3000`) and Postgres (`:5432`) publish host ports.
   The optional `tls` profile adds an nginx edge on `:3443` (GUI) and `:8443` (R1)
   with TLS 1.2+ and HSTS; the plain ports stay open until a deployment removes them.
   Services behind the edge speak HTTP on the compose network (`PR-SEC-2` for mTLS).

@@ -295,7 +295,7 @@ function RegisterEndpoint({ onClose }: { onClose: () => void }) {
           json: { ...f, protocolSupport: splitList(f.protocolSupport), vendorName: f.vendorName || null, managedFunctionRef: f.managedFunctionRef || null } }, { onSuccess: onClose });
       }}>
         <Field label="Managed element ref"><input value={f.managedElementRef} onChange={set("managedElementRef")} required placeholder="ME-1" /></Field>
-        <Field label="Entity type"><select value={f.entityType} onChange={set("entityType")}>{["O-DU", "O-CU-CP", "O-CU-UP", "O-RU", "Near-RT RIC"].map((t) => <option key={t}>{t}</option>)}</select></Field>
+        <Field label="Entity type"><select value={f.entityType} onChange={set("entityType")}>{["O-DU", "O-CU-CP", "O-CU-UP", "O-RU"].map((t) => <option key={t}>{t}</option>)}</select></Field>
         <Field label="Adaptor URI"><input value={f.adaptorUri} onChange={set("adaptorUri")} required /></Field>
         <Field label="O1 protocol" hint="RESTCONF MEs are registered but CM writes to them are rejected (not implemented)"><select value={f.o1Protocol} onChange={set("o1Protocol")}><option>NETCONF</option><option>RESTCONF</option></select></Field>
         <Field label="Protocols supported"><input value={f.protocolSupport} onChange={set("protocolSupport")} /></Field>
@@ -381,7 +381,6 @@ function ConfigWrite({ endpoints, onClose }: { endpoints: O1Endpoint[]; onClose:
 // ---------------------------------------------------------------- SO SMOS
 
 const STEP_TEMPLATES: Record<string, Record<string, unknown>> = {
-  POLICY: { stepType: "POLICY", targetModule: "A1_RELATED", policyTypeId: "ORAN_QoSandTSP_6.0.1", nearRtRicId: "mock-near-rt-ric-001", policyObject: { scope: { cellId: "cell-1" } } },
   CONFIG: { stepType: "CONFIG", targetModule: "RAN_NF_OAM", scope: "cell", changes: [] },
   DEPLOY: { stepType: "DEPLOY", targetModule: "NFO", nfDeploymentDescriptorId: "<descriptor uuid>", name: "so-deploy-1" },
   INFRA: { stepType: "INFRA", targetModule: "FOCOM", spec: { description: "GPU node" } },
@@ -418,7 +417,7 @@ function Orders() {
 
 function SubmitOrder() {
   const [scope, setScope] = useState("");
-  const [steps, setSteps] = useState(JSON.stringify([STEP_TEMPLATES.POLICY], null, 2));
+  const [steps, setSteps] = useState(JSON.stringify([STEP_TEMPLATES.CONFIG], null, 2));
   const models = useSmo<Model[]>("/mlmr/models");
   const descriptors = useSmo<NfDescriptor[]>("/nfo/descriptors");
   const deployments = useSmo<NfDeployment[]>("/nfo/deployments");

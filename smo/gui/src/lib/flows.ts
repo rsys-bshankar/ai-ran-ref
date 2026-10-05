@@ -8,7 +8,7 @@
 // makes impossible.
 
 import type {
-  AnalyticsProducer, AnalyticsReport, AnalyticsSubscription, ConfigJob, DataJob, DataOffer, DmeType, EiType, FaultReport,
+  AnalyticsProducer, AnalyticsReport, AnalyticsSubscription, ConfigJob, FaultReport,
   InferenceJob, Instance, Intent, IntentReport, MlmfReport, MlmfSubscription, Model, ModelLifecycle, Monitor, NfDeployment,
   O1Endpoint, Package, PackageUsage, PerfReport, RemedialAction, Rmih, ServiceOrder, TrainingJob,
 } from "../api/types";
@@ -38,7 +38,6 @@ export const FLOWS: FlowDef[] = [
   { id: "02", number: "02", title: "AI/ML model: register → train → certify → deploy → infer → monitor", doc: "02-aiml-model-train-to-inference.md", subject: "model", modules: ["mlmr", "aimgf", "mllf", "dme"] },
   { id: "03", number: "03", title: "Configuration write, schema-checked, fleet-aware", doc: "03-config-write-with-schema-check.md", subject: "config job", modules: ["ran-nf-oam"] },
   { id: "04", number: "04", title: "Closed-loop assurance: monitor → decide → remediate → escalate", doc: "04-closed-loop-assurance.md", subject: "assurance monitor", modules: ["so-smos", "sa-smos", "mdaf", "ran-nf-oam", "nfo"] },
-  { id: "05", number: "05", title: "A1 EI registration → data consumption", doc: "05-a1-ei-registration-to-consumption.md", subject: "EI type", modules: ["a1-related", "dme"] },
   { id: "06", number: "06", title: "Package lifecycle: onboard → prime → deprecate → delete", doc: "06-package-lifecycle.md", subject: "package", modules: ["onboarding", "rapp-mgmt"] },
   { id: "07", number: "07", title: "rApp instance lifecycle: report → fault → recover → upgrade → terminate", doc: "07-rapp-instance-lifecycle.md", subject: "rApp instance", modules: ["rapp-mgmt"] },
   { id: "08", number: "08", title: "RAN Analytics: producer → report → subscriber query", doc: "08-ran-analytics-data-production.md", subject: "analytics type", modules: ["ran-analytics", "mdaf", "sme"] },
@@ -168,24 +167,6 @@ export function flow04(monitor: Monitor | undefined, order: ServiceOrder | undef
       actions.length ? actions.map((a) => `${a.actionType} ${a.outcome}`).join(", ") : undefined),
     step("escalate", "EscalateToOperator (when remediation can't resolve)", "SA SMOS → Operator", escalated.length ? "warn" : resolved.length > 0,
       escalated.length ? `${escalated.length} escalation(s)` : undefined),
-  ]);
-}
-
-// ---------------------------------------------------------------- 05
-
-export function flow05(ei: EiType | undefined, dmeType: DmeType | undefined, offers: DataOffer[], jobs: DataJob[]): FlowStep[] {
-  const committed = offers.find((o) => o.committedMethod);
-  const active = jobs.filter((j) => j.status === "ACTIVE" || j.status === "PENDING");
-  return settle([
-    step("register", "RegisterEIType(eiTypeId, dme namespace/name/version)", "Producer → A1 Related", !!ei, ei ? `${ei.eiTypeId} by ${ei.registeredBy}` : undefined),
-    step("dme-type", "Wraps DME RegisterDMEType (eiSourceDmeTypeId)", "A1 Related → DME", !!dmeType,
-      dmeType ? `${dmeType.typeName} (${dmeType.typeStatus})` : ei ? "DME type no longer registered" : undefined),
-    step("offer", "Producer DataOffer(dataDeliveryMethods)", "Producer → DME", offers.length > 0, offers.length ? `${offers.length} offer(s)` : undefined),
-    step("commit", "DME commits one delivery method", "DME", !!committed, committed?.committedMethod ?? undefined),
-    step("job", "Consumer CreateDataJob(PULL_HTTP / PUSH / STREAMING)", "Consumer → DME", jobs.length > 0,
-      jobs.length ? jobs.map((j) => `${j.consumerId}: ${j.dataDeliveryMethod} ${j.status}`).join(", ") : undefined),
-    step("consume", "Consumer pulls / receives EI data", "DME → Consumer", active.length > 0 ? true : jobs.length ? "warn" : false,
-      jobs.length && !active.length ? "all jobs terminated" : undefined),
   ]);
 }
 

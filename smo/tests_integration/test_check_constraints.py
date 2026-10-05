@@ -23,7 +23,7 @@ from sqlalchemy import create_engine, text
 from test_db_roles import database, needs_postgres  # noqa: F401  (the `database` fixture: a migrated database)
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
-OWNERS = {m: t for m, t in json.loads((SMO_ROOT / "migrations" / "table_owners.json").read_text()).items() if m not in ("_comment", "shared")}
+OWNERS = {m: t for m, t in json.loads((SMO_ROOT / "migrations" / "table_owners.json").read_text()).items() if m != "shared" and not m.startswith("_")}
 WAIVERS = json.loads((Path(__file__).with_name("check_constraint_waivers.json")).read_text())
 
 # (table, column) -> (file with the enum, enum name): the columns that hold the state of a state machine

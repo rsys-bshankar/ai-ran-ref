@@ -4,6 +4,7 @@
 Compares every `docs/openapi/<module>.json` at the newest `smo-v*` tag (or `--base REF`) with the working tree and fails on a change a client
 written against the previous release could trip over:
 
+  removed-module           a module whose spec file is gone (the whole module was removed)
   removed-operation        a path + method that is gone
   new-required-parameter   a parameter that did not exist, or was optional, and is required now
   narrowed-parameter       a parameter (or request property) whose enum lost a value, or whose maximum / maxLength / maxItems went down, or whose
@@ -180,6 +181,11 @@ def spec_at(ref: str, name: str) -> dict | None:
     return json.loads(result.stdout) if result.returncode == 0 else None
 
 
+def specs_at(ref: str) -> list[str]:
+    result = subprocess.run(["git", "-C", str(REPO), "ls-tree", "--name-only", f"{ref}:smo/docs/openapi/"], capture_output=True, text=True)
+    return [line for line in result.stdout.split() if line.endswith(".json")]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base", help="git ref to compare with (default: the newest smo-v* tag that is not a release candidate)")
@@ -189,6 +195,14 @@ def main() -> int:
     waivers = json.loads(WAIVERS_FILE.read_text()) if WAIVERS_FILE.exists() else {}
     used: set[str] = set()
     breaks = []
+    for name in specs_at(base):
+        if not (SMO / "docs" / "openapi" / name).exists():
+            key = f"{name.removesuffix('.json')} removed-module"
+            matching = [w for w in waivers if fnmatch.fnmatchcase(key, w)]
+            if matching:
+                used.update(matching)
+            else:
+                breaks.append((key, "the module's spec is gone"))
     for path in sorted((SMO / "docs" / "openapi").glob("*.json")):
         old = spec_at(base, path.name)
         if old is None:

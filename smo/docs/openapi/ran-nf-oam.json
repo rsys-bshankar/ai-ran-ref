@@ -12410,7 +12410,7 @@
     },
     "/pm-subscriptions/{subscription_id}": {
       "delete": {
-        "description": "`docs/call-flows/20-alarm-pm-subscription-lifecycle.md`'s own\ngap, closed: every other subscription-shaped resource in this build\n(DME's type subscriptions, MDAF's, A1 Related's EI jobs, Intent\nService's RMIH registration, MLMF's) has a real unsubscribe route \u2014\n`PMSubscription` could previously only be created and listed, never\ntorn down through this build's own API. Idempotent, matching all of\nthose.",
+        "description": "`docs/call-flows/20-alarm-pm-subscription-lifecycle.md`'s own\ngap, closed: every other subscription-shaped resource in this build\n(DME's type subscriptions, MDAF's, Intent\nService's RMIH registration, MLMF's) has a real unsubscribe route \u2014\n`PMSubscription` could previously only be created and listed, never\ntorn down through this build's own API. Idempotent, matching all of\nthose.",
         "operationId": "unsubscribe_pm_pm_subscriptions__subscription_id__delete",
         "parameters": [
           {
