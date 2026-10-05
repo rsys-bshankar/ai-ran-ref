@@ -1,0 +1,55 @@
+# Two replicas of every module that can have them (PR-HA-1.2), on top of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.replicas.yml up -d --build
+#
+# Used by the CI job `compose-replicas`, which replays the whole runbook against it: a module's callers reach its replicas through Docker's DNS
+# (one name, two addresses), so the runbook's calls land on either. The same list as deploy/helm/smo/ci/ha-values.yaml; left at one replica:
+# onboarding and gui-bff (a volume only one container may hold), the mocks (state in memory). The host ports of R1 Termination and the GUI are
+# dropped (two containers cannot bind one host port; the runbook reaches them by name on the compose network).
+services:
+  r1-termination:
+    deploy: { replicas: 2 }
+    ports: !reset []
+  sme:
+    deploy: { replicas: 2 }
+  dme:
+    deploy: { replicas: 2 }
+  rapp-mgmt:
+    deploy: { replicas: 2 }
+  ran-nf-oam:
+    deploy: { replicas: 2 }
+  ran-nf-oam-worker:
+    deploy: { replicas: 2 }
+  a1-related:
+    deploy: { replicas: 2 }
+  nfo:
+    deploy: { replicas: 2 }
+  focom:
+    deploy: { replicas: 2 }
+  mlmr:
+    deploy: { replicas: 2 }
+  aimgf:
+    deploy: { replicas: 2 }
+  mllf:
+    deploy: { replicas: 2 }
+  ran-analytics:
+    deploy: { replicas: 2 }
+  mdaf:
+    deploy: { replicas: 2 }
+  intent-service:
+    deploy: { replicas: 2 }
+  so-smos:
+    deploy: { replicas: 2 }
+  sa-smos:
+    deploy: { replicas: 2 }
+  energy-saving-rapp:
+    deploy: { replicas: 2 }
+  mobility-optimization-rapp:
+    deploy: { replicas: 2 }
+  coverage-optimization-rapp:
+    deploy: { replicas: 2 }
+  traffic-steering-rapp:
+    deploy: { replicas: 2 }
+  gui:
+    deploy: { replicas: 2 }
+    ports: !reset []
