@@ -88,6 +88,18 @@ def test_lint_is_clean():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def _secret_sources(pod: dict) -> list[dict]:
+    """The Secrets a pod mounts, whether as a plain `secret` volume or as the sources of a `projected` one."""
+    sources = []
+    for volume in pod.get("volumes", []):
+        if "secret" in volume:
+            sources.append({"secretName": volume["secret"]["secretName"], **volume["secret"]})
+        for source in volume.get("projected", {}).get("sources", []):
+            if "secret" in source:
+                sources.append({"secretName": source["secret"]["name"], **source["secret"]})
+    return sources
+
+
 @helm
 def test_the_default_install_renders_a_deployment_per_module_and_no_rapp_mounts_the_enrollment_secret():
     docs = _render()
@@ -95,10 +107,13 @@ def test_the_default_install_renders_a_deployment_per_module_and_no_rapp_mounts_
     assert set(deployments) == set(VALUES["modules"])
     for name, deployment in deployments.items():
         pod = deployment["spec"]["template"]["spec"]
-        mounted = {item["path"] for v in pod["volumes"] if "secret" in v for item in v["secret"].get("items", [])}
+        mounted = {item["path"] for source in _secret_sources(pod) for item in source.get("items", [])}
         module = _modules()[name]
         assert ("enrollment_secret" in mounted) == module["enrollment"], name
-        assert ("db_password" in mounted) == module["database"], name
+        # a module with a role of its own (PR-DB-2.6) mounts that role's password in place of the owner's
+        role = module.get("databaseRole")
+        assert ("db_password" in mounted) == (module["database"] and not role), name
+        assert (f"db_password_{role}" in mounted) == bool(role), name
         container = pod["containers"][0]
         assert container["securityContext"]["readOnlyRootFilesystem"] is True and container["securityContext"]["capabilities"] == {"drop": ["ALL"]}, name
     assert {s["metadata"]["name"] for s in docs if s["kind"] == "Service"} >= {n for n, m in _modules().items() if m["kind"] != "worker"}
@@ -146,7 +161,8 @@ def test_an_external_database_drops_the_bundled_one_and_needs_a_host():
     docs = _render("--set", "postgres.enabled=false", "--set", "postgres.external.host=db.example.com", "--set", "postgres.external.sslmode=require")
     assert not [d for d in docs if d["kind"] == "StatefulSet"]
     urls = {e["value"] for d in docs if d["kind"] == "Deployment" for e in d["spec"]["template"]["spec"]["containers"][0].get("env") or [] if e["name"] == "SMO_DATABASE_URL"}
-    assert urls == {"postgresql+psycopg://smo@db.example.com:5432/smo?sslmode=require"}
+    # the owner, and Onboarding as its own role (PR-DB-2.6): the same host, the role's user
+    assert urls == {"postgresql+psycopg://smo@db.example.com:5432/smo?sslmode=require", "postgresql+psycopg://smo_onboarding@db.example.com:5432/smo?sslmode=require"}
     failed = subprocess.run(["helm", "template", "smo", str(CHART), "--kube-version", "1.30.0", "--set", "postgres.enabled=false"], capture_output=True, text=True)
     assert failed.returncode != 0 and "postgres.external.host" in failed.stderr
 
@@ -154,9 +170,51 @@ def test_an_external_database_drops_the_bundled_one_and_needs_a_host():
 @helm
 def test_an_existing_secret_means_the_chart_makes_none():
     docs = _render("--set", "secrets.existingSecret=mine")
-    assert not [d for d in docs if d["kind"] == "Secret"]
-    assert all(v["secret"]["secretName"] == "mine" for d in docs if d["kind"] in ("Deployment", "StatefulSet", "Job")
-               for v in d["spec"].get("template", {}).get("spec", {}).get("volumes", []) if "secret" in v)
+    assert not [d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"] == "smo-secrets"]
+    names = {src["secretName"] for d in docs if d["kind"] in ("Deployment", "StatefulSet", "Job")
+             for src in _secret_sources(d["spec"].get("template", {}).get("spec", {}))}
+    assert names <= {"mine", "smo-role-secrets"} and "mine" in names
+
+
+@helm
+def test_the_role_passwords_are_a_hook_secret_of_their_own_that_the_migrate_job_and_the_module_mount():
+    docs = _render()
+    secret = next(d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"] == "smo-role-secrets")
+    annotations = secret["metadata"]["annotations"]
+    assert annotations["helm.sh/hook"] == "pre-install,pre-upgrade" and annotations["helm.sh/hook-delete-policy"] == "before-hook-creation"
+    assert int(annotations["helm.sh/hook-weight"]) < 0                       # ahead of the migrate Job, which mounts it
+    assert set(secret["stringData"]) == {"db-password-onboarding"} and len(secret["stringData"]["db-password-onboarding"]) >= 32
+    job = next(d for d in docs if d["kind"] == "Job")
+    command = job["spec"]["template"]["spec"]["containers"][0]["command"]
+    assert "db_roles.py" in command[-1] and "migrate.py" in command[-1] and command[-1].index("migrate.py") < command[-1].index("db_roles.py")
+    paths = {item["path"] for src in _secret_sources(job["spec"]["template"]["spec"]) for item in src["items"]}
+    assert paths == {"db_password", "db_password_onboarding"}
+    onboarding = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "onboarding")["spec"]["template"]["spec"]
+    env = {e["name"]: e["value"] for e in onboarding["containers"][0]["env"] if "value" in e}
+    assert env["SMO_DATABASE_URL"] == "postgresql+psycopg://smo_onboarding@postgres:5432/smo"
+    assert env["SMO_DATABASE_PASSWORD_FILE"] == "/run/secrets/db_password_onboarding"
+    init_env = {e["name"]: e["value"] for e in onboarding["initContainers"][0]["env"] if "value" in e}
+    assert init_env["SMO_DATABASE_PASSWORD_FILE"] == "/run/secrets/db_password_onboarding"    # the schema wait uses the role too
+
+
+@helm
+def test_with_roles_off_every_module_connects_as_the_owner_and_no_role_secret_is_made():
+    docs = _render("--set", "databaseRoles.enabled=false")
+    assert not [d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"] == "smo-role-secrets"]
+    for d in docs:
+        if d["kind"] == "Deployment":
+            pod = d["spec"]["template"]["spec"]
+            env = {e["name"]: e["value"] for e in pod["containers"][0].get("env") or [] if "value" in e}
+            if "SMO_DATABASE_URL" in env:
+                assert env["SMO_DATABASE_URL"] == "postgresql+psycopg://smo@postgres:5432/smo" and env["SMO_DATABASE_PASSWORD_FILE"] == "/run/secrets/db_password"
+
+
+@helm
+def test_roles_with_an_existing_secret_are_read_from_it_and_not_made():
+    docs = _render("--set", "databaseRoles.existingSecret=theirs")
+    assert not [d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"] == "smo-role-secrets"]
+    names = {src["secretName"] for d in docs if d["kind"] in ("Deployment", "Job") for src in _secret_sources(d["spec"].get("template", {}).get("spec", {}))}
+    assert "theirs" in names and "smo-role-secrets" not in names
 
 
 @helm

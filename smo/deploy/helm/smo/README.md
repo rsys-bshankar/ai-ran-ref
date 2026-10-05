@@ -65,3 +65,7 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 
 With more than one replica of a module (`modules.<name>.replicas`, or `ci/ha-values.yaml` as an example), `placement.mode` decides how the pods are spread: `soft` (default) prefers different nodes and still starts on a cluster with fewer nodes than replicas, `hard` requires different nodes (a replica that cannot be placed stays Pending), `off` sets nothing. `placement.zoneKey: topology.kubernetes.io/zone` adds a preference across zones. The chart's CI checks that each mode renders as described; it runs on one node, so it does not show pods landing on different nodes.
 
+## Database roles
+
+A module with a `databaseRole` in `values.yaml` (Onboarding today) connects as `smo_<role>`, which can use its own schema and the shared tables it is given and nothing else (`docs/SECRETS.md`, per-module database roles). `databaseRoles.enabled` (default true) turns this on for every module that names a role; the passwords are in the Secret `smo-role-secrets` (made once, kept across upgrades, left in place by `helm uninstall`), and the migrate Job runs `scripts/db_roles.py` after the migration. Turning it off and on again on a running release is safe and is tested.
+

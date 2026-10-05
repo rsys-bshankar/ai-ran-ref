@@ -5,6 +5,7 @@
 {{- range $name, $_ := .Values.modules }}
 {{- $m := include "smo.module" (dict "root" $ "name" $name) | fromYaml }}
 {{- if $m.enabled }}
+{{- $role := include "smo.dbRole" (dict "root" $ "module" $m) }}
 {{- $labels := include "smo.labels" (dict "root" $) }}
 ---
 apiVersion: apps/v1
@@ -77,7 +78,7 @@ spec:
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           command: ["python", "/srv/scripts/migrate.py", "--wait", "{{ $.Values.migrate.schemaWaitSeconds }}"]
           env:
-            {{- include "smo.dbEnv" (dict "root" $) | nindent 12 }}
+            {{- include "smo.dbEnv" (dict "root" $ "role" $role) | nindent 12 }}
           securityContext:
             {{- toYaml $.Values.containerSecurityContext | nindent 12 }}
           volumeMounts:
@@ -96,7 +97,7 @@ spec:
           {{- end }}
           env:
             {{- if $m.database }}
-            {{- include "smo.dbEnv" (dict "root" $) | nindent 12 }}
+            {{- include "smo.dbEnv" (dict "root" $ "role" $role) | nindent 12 }}
             {{- end }}
             {{- if $m.enrollment }}
             - { name: SMO_ENROLLMENT_SECRET_FILE, value: /run/secrets/enrollment_secret }
@@ -189,16 +190,26 @@ spec:
           emptyDir: { medium: Memory }
         {{- if or $m.database $m.enrollment }}
         - name: secrets
-          secret:
-            secretName: {{ include "smo.secretName" $ }}
+          projected:
             defaultMode: 0444
-            # only what the module needs: an rApp must never be able to read the enrollment secret (PR-SEC-14)
-            items:
-              {{- if $m.database }}
-              - { key: db-password, path: db_password }
+            sources:
+              # only what the module needs: an rApp must never be able to read the enrollment secret (PR-SEC-14), and a module with a role of its own does not hold the owner's password (PR-DB-2.6)
+              {{- if or (and $m.database (not $role)) $m.enrollment }}
+              - secret:
+                  name: {{ include "smo.secretName" $ }}
+                  items:
+                    {{- if and $m.database (not $role) }}
+                    - { key: db-password, path: db_password }
+                    {{- end }}
+                    {{- if $m.enrollment }}
+                    - { key: enrollment-secret, path: enrollment_secret }
+                    {{- end }}
               {{- end }}
-              {{- if $m.enrollment }}
-              - { key: enrollment-secret, path: enrollment_secret }
+              {{- if $role }}
+              - secret:
+                  name: {{ include "smo.roleSecretName" $ }}
+                  items:
+                    - { key: {{ printf "db-password-%s" $role }}, path: {{ printf "db_password_%s" $role }} }
               {{- end }}
         {{- end }}
         {{- if and (eq $name "rapp-mgmt") (eq $.Values.rappCredentials.delivery "kubernetes") }}

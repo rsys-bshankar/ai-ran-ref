@@ -27,14 +27,25 @@ helm.sh/chart: {{ printf "%s-%s" .root.Chart.Name .root.Chart.Version | replace 
 {{- default "smo-secrets" .Values.secrets.existingSecret -}}
 {{- end -}}
 
+{{/* The Secret holding the per-module role passwords (db-password-<role>); a hook resource, see role-secrets.yaml. */}}
+{{- define "smo.roleSecretName" -}}
+{{- default "smo-role-secrets" .Values.databaseRoles.existingSecret -}}
+{{- end -}}
+
+{{/* The role a module connects as, or "" for the owner: smo.dbRole (dict "root" . "module" $m). */}}
+{{- define "smo.dbRole" -}}
+{{- if and .root.Values.databaseRoles.enabled .module.databaseRole -}}{{ .module.databaseRole }}{{- end -}}
+{{- end -}}
+
 {{/* Where Postgres is, as the URL every module takes (the password is read from the file, never put in the URL). */}}
 {{- define "smo.databaseUrl" -}}
-{{- if .Values.postgres.enabled -}}
-postgresql+psycopg://smo@postgres:5432/smo
+{{- $user := ternary (printf "smo_%s" (replace "-" "_" (default "" .role))) "" (ne (default "" .role) "") -}}
+{{- if .root.Values.postgres.enabled -}}
+{{- printf "postgresql+psycopg://%s@postgres:5432/smo" (default "smo" $user) -}}
 {{- else -}}
-{{- $e := .Values.postgres.external -}}
+{{- $e := .root.Values.postgres.external -}}
 {{- if not $e.host }}{{ fail "postgres.enabled=false needs postgres.external.host" }}{{ end -}}
-{{- printf "postgresql+psycopg://%s@%s:%v/%s?sslmode=%s" $e.user $e.host $e.port $e.database $e.sslmode -}}
+{{- printf "postgresql+psycopg://%s@%s:%v/%s?sslmode=%s" (default $e.user $user) $e.host $e.port $e.database $e.sslmode -}}
 {{- end -}}
 {{- end -}}
 
@@ -51,7 +62,19 @@ imagePullSecrets:
 {{/* The environment of a container that talks to the database: the URL, the password file and (when it has one) the enrollment secret file. */}}
 {{- define "smo.dbEnv" -}}
 - name: SMO_DATABASE_URL
-  value: {{ include "smo.databaseUrl" .root | quote }}
+  value: {{ include "smo.databaseUrl" (dict "root" .root "role" .role) | quote }}
 - name: SMO_DATABASE_PASSWORD_FILE
-  value: /run/secrets/db_password
+  value: {{ if .role }}/run/secrets/db_password_{{ .role }}{{ else }}/run/secrets/db_password{{ end }}
+{{- end -}}
+
+{{/* The roles in use: the `databaseRole` of every enabled module, once each, as a JSON list ("[]" when roles are off). Read it with fromJsonArray. */}}
+{{- define "smo.dbRoles" -}}
+{{- $roles := list -}}
+{{- if .Values.databaseRoles.enabled -}}
+{{- range $name, $_ := .Values.modules -}}
+{{- $m := include "smo.module" (dict "root" $ "name" $name) | fromYaml -}}
+{{- if and $m.enabled $m.databaseRole -}}{{- $roles = append $roles $m.databaseRole -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- toJson (uniq $roles) -}}
 {{- end -}}
