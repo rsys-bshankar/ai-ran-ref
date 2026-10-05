@@ -58,7 +58,7 @@ def hammer(engine, n: int) -> None:
     try:
         for i in range(n):
             with engine.connect() as conn:
-                assert conn.execute(text("SELECT :a::int + 1"), {"a": i}).scalar() == i + 1
+                assert conn.execute(text("SELECT CAST(:a AS int) + 1"), {"a": i}).scalar() == i + 1
                 conn.execute(text("SELECT count(*) FROM information_schema.tables"))
     except Exception as exc:                                  # noqa: BLE001
         errors.append(f"{type(exc).__name__}: {exc}"[:300])
