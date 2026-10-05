@@ -35,7 +35,7 @@ def test_the_database_password_is_a_compose_secret_file_never_a_literal_or_an_en
     assert len(users) >= 15
     for name, svc in users.items():
         env = svc["environment"]
-        assert "@postgres" in env["SMO_DATABASE_URL"] and ":" not in env["SMO_DATABASE_URL"].split("//", 1)[1].split("@")[0], \
+        assert ("@postgres" in env["SMO_DATABASE_URL"] or "@${SMO_DB_HOST:-postgres}:" in env["SMO_DATABASE_URL"]) and ":" not in env["SMO_DATABASE_URL"].split("//", 1)[1].split("@")[0], \
             f"{name}: the URL carries a password"
         user = env["SMO_DATABASE_URL"].split("//", 1)[1].split("@")[0]
         # the owner (`smo`) uses db_password; a module with a role of its own (PR-DB-2.6) uses the file of that role, and does not get the owner's

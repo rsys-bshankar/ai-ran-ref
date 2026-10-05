@@ -15,7 +15,7 @@ SMO_ROOT = Path(__file__).resolve().parent.parent
 CHART = SMO_ROOT / "deploy" / "helm" / "smo"
 COMPOSE = yaml.safe_load((SMO_ROOT / "docker-compose.yml").read_text())
 VALUES = yaml.safe_load((CHART / "values.yaml").read_text())
-NOT_IN_THE_CHART = {"postgres", "migrate", "netconf-lab", "edge-tls"}      # Postgres is a template of its own, migrate a Job, the other two are compose-only
+NOT_IN_THE_CHART = {"postgres", "migrate", "netconf-lab", "edge-tls", "pgbouncer"}      # Postgres is a template of its own, migrate a Job, the others are compose-only (a pooler on Kubernetes is the operator's)
 helm = pytest.mark.skipif(shutil.which("helm") is None, reason="helm is not installed")
 
 
