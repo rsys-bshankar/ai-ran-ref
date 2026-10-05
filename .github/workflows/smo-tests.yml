@@ -45,6 +45,27 @@ jobs:
         working-directory: smo
         run: python scripts/check_statelessness.py
 
+  # PR-V-4: the R1 contract against the previous release. Every docs/openapi/<module>.json at the newest smo-v* tag is compared with this commit's;
+  # a removed operation, a new required parameter or property, a narrowed bound or enum, a changed type, or a lost response property fails unless
+  # smo/scripts/breaking_change_waivers.json waives it with a reason (the file is emptied when a release is cut). Standard library only.
+  breaking-changes:
+    name: "R1 contract has no breaking change since the previous release"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Compare the committed OpenAPI specs with the previous release's
+        working-directory: smo
+        run: python scripts/check_breaking_changes.py
+
   unit-and-integration:
     name: Unit + integration tests (SQLite)
     runs-on: ubuntu-latest
