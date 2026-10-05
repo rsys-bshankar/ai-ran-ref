@@ -124,7 +124,7 @@ def main() -> None:
         errors.append(f"table {table!r}: in migrations/table_owners.json but not in the migrated schema")
     # a module with a schema of its own (migrations/db_roles.json) has all its tables in it, and nothing else is in it
     for module, spec in json.loads((SMO_ROOT / "migrations" / "db_roles.json").read_text()).items():
-        if module == "_comment":
+        if module == "_comment" or not spec["schema"]:      # a module with no tables of its own has no schema to keep to
             continue
         for table in sorted(real_tables & set(owners)):
             in_schema = schema_of[table] == spec["schema"]

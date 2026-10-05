@@ -34,14 +34,17 @@ def _role(module: str) -> str:
 
 def test_every_module_in_the_roles_manifest_is_a_module_with_tables_and_names_real_shared_tables():
     for module, spec in ROLES.items():
-        assert OWNERS.get(module), f"{module} is in db_roles.json but owns no table in table_owners.json"
-        assert spec["schema"] == _short(module).replace("-", "_"), f"{module}: the schema is the module's name with _ for -"
-        assert spec["schema"] not in ("public", "platform_")
+        if spec["schema"] is None:          # a module with no table of its own (R1 Termination): a role, no schema
+            assert not OWNERS.get(module), f"{module} owns tables, so it needs a schema"
+        else:
+            assert OWNERS.get(module), f"{module} is in db_roles.json but owns no table in table_owners.json"
+            assert spec["schema"] == _short(module).replace("-", "_"), f"{module}: the schema is the module's name with _ for -"
+            assert spec["schema"] not in ("public", "platform_")
         for table in spec.get("shared", []):
             assert table in OWNERS["shared"], f"{module}: {table} is not a shared table"
         for qualified in spec.get("read", []):
             schema, table = qualified.split(".")
-            owner = next(m for m, s in ROLES.items() if s["schema"] == schema)
+            owner = next(m for m, s in ROLES.items() if s["schema"] == schema)   # the schema of the module that owns it
             assert table in OWNERS[owner], f"{module} reads {qualified}, which {owner} does not own"
 
 
@@ -104,6 +107,8 @@ def test_the_tables_are_in_the_modules_schema_and_the_old_names_still_work_for_t
     owner = create_engine(url, isolation_level="AUTOCOMMIT")
     with owner.connect() as connection:
         for module, spec in ROLES.items():
+            if spec["schema"] is None:
+                continue
             in_schema = {r[0] for r in connection.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = :s"), {"s": spec["schema"]})}
             assert in_schema == set(OWNERS[module]), module
             for table in OWNERS[module]:
@@ -134,16 +139,21 @@ def test_every_role_works_in_its_own_schema_and_is_refused_everywhere_else(datab
         granted_shared = set(spec.get("shared", []))
         read = {q.split(".")[1] for q in spec.get("read", [])}
         with role.connect() as connection:
-            assert connection.execute(text("SHOW search_path")).scalar() == f"{spec['schema']}, public", module
+            assert connection.execute(text("SHOW search_path")).scalar() == (f"{spec['schema']}, public" if spec["schema"] else "public"), module
             assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar()          # the pod's schema wait
             for table in own:                                       # unqualified, as the service's code writes them
                 assert connection.execute(text(f'SELECT count(*) FROM "{table}"')).scalar() == 0, (module, table)
-            for table in granted_shared:
-                assert connection.execute(text(f'SELECT count(*) FROM "{table}"')).scalar() == 0, (module, table)
+            for table in granted_shared:        # readable (the audit chain's head holds a row from the migration, so the count is not asked to be 0)
+                connection.execute(text(f'SELECT count(*) FROM "{table}"')).scalar()
         for table in sorted(all_tables - own - granted_shared - read):
             assert _denied(role, f'SELECT * FROM "{table}" LIMIT 1'), f"{_role(module)} can read {table}"
         assert _denied(role, "CREATE TABLE public.not_allowed (a int)")
-        assert _denied(role, f"CREATE TABLE {spec['schema']}.not_allowed (a int)")
+        if spec["schema"]:
+            assert _denied(role, f"CREATE TABLE {spec['schema']}.not_allowed (a int)")
+        for qualified in spec.get("read", []):      # a read grant is SELECT and nothing else
+            with role.connect() as connection:
+                assert connection.execute(text(f"SELECT count(*) FROM {qualified}")).scalar() == 0, (module, qualified)
+            assert _denied(role, f"DELETE FROM {qualified}"), f"{_role(module)} can change {qualified}"
         role.dispose()
     # one write path, end to end, as Onboarding's role does it
     onboarding = _as_role(url, "onboarding", "pw-onboarding")

@@ -213,8 +213,7 @@ jobs:
             [ "$(psql "SELECT count(*) FROM pg_stat_activity WHERE usename = '$role'")" -gt 0 ] || { echo "::error::$name does not connect as $role"; exit 1; }
             pw="$(cat "secrets/db_password_$name")"
             # the role refuses a table of every other kind: another module's, the audit chain, and a shared table it was not given
-            for table in dme_type invoker_registration write_config_job audit_log; do
-              [ "$table" = "dme_type" ] && [ "$name" = "dme" ] && continue
+            for table in $(scripts/db_roles_denied.py "$name"); do
               if docker compose exec -T -e PGPASSWORD="$pw" postgres psql -h postgres -U "$role" -d smo -Atc "SELECT count(*) FROM $table" 2>/dev/null; then
                 echo "::error::$role can read $table"; exit 1
               fi
@@ -722,8 +721,7 @@ jobs:
             # the pod is configured to connect as the role (a reference rApp that has served no request holds no connection yet, so the connection itself is not asked for), and the role can log in
             [ "$(kubectl -n smo exec "deploy/$name" -- printenv SMO_DATABASE_URL | sed -E 's#^[^/]*//([^@:]*).*#\1#')" = "$role" ] || { echo "::error::$name is not configured to connect as $role"; exit 1; }
             [ "$(kubectl -n smo exec postgres-0 -- env PGPASSWORD="$pw" psql -h postgres -U "$role" -d smo -Atc 'SELECT 1')" = "1" ] || { echo "::error::$role cannot log in with the password the pod holds"; exit 1; }
-            for table in dme_type invoker_registration write_config_job audit_log; do
-              [ "$table" = "dme_type" ] && [ "$name" = "dme" ] && continue
+            for table in $(scripts/db_roles_denied.py "$name"); do
               if kubectl -n smo exec postgres-0 -- env PGPASSWORD="$pw" psql -h postgres -U "$role" -d smo -Atc "SELECT count(*) FROM $table" 2>/dev/null; then
                 echo "::error::$role can read $table"; exit 1
               fi

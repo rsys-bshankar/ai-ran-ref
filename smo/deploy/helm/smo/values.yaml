@@ -140,21 +140,21 @@ moduleDefaults:
 
 # The modules. `image` is the image name after the prefix (smo-<image>); the services are named by the key.
 modules:
-  r1-termination: { image: r1-termination, enrollment: false, scratch: /srv/scratch }
-  sme: { image: sme }
-  dme: { image: dme }
+  r1-termination: { image: r1-termination, databaseRole: r1-termination, enrollment: false, scratch: /srv/scratch, env: { R1_KILL_SWITCH_SCHEMA: ran_nf_oam } }
+  sme: { image: sme, databaseRole: sme }
+  dme: { image: dme, databaseRole: dme }
   onboarding: { image: onboarding, databaseRole: onboarding, persistence: { mountPath: /srv/packages, size: 5Gi } }
-  rapp-mgmt: { image: rapp-mgmt, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
-  ran-nf-oam: { image: ran-nf-oam, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
+  rapp-mgmt: { image: rapp-mgmt, databaseRole: rapp-mgmt, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
+  ran-nf-oam: { image: ran-nf-oam, databaseRole: ran-nf-oam, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   # the same image as a worker: the periodic work of RAN NF OAM (PR-MSG-4). Run more than one if you like.
-  ran-nf-oam-worker: { image: ran-nf-oam, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
+  ran-nf-oam-worker: { image: ran-nf-oam, databaseRole: ran-nf-oam, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   mock-o1-adaptor: { image: mock-o1-adaptor, database: false, enrollment: false }
-  a1-related: { image: a1-related, env: { R1_GATEWAY_URL: "http://r1-termination:8000", MOCK_NEAR_RT_RIC_URL: "http://mock-near-rt-ric:8000" } }
+  a1-related: { image: a1-related, databaseRole: a1-related, env: { R1_GATEWAY_URL: "http://r1-termination:8000", MOCK_NEAR_RT_RIC_URL: "http://mock-near-rt-ric:8000" } }
   mock-near-rt-ric: { image: mock-near-rt-ric, database: false, enrollment: false }
-  nfo: { image: nfo, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
-  focom: { image: focom }
+  nfo: { image: nfo, databaseRole: nfo, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
+  focom: { image: focom, databaseRole: focom }
   mlmr: { image: mlmr, databaseRole: mlmr }
-  aimgf: { image: aimgf, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
+  aimgf: { image: aimgf, databaseRole: aimgf, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   mllf: { image: mllf, database: false, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   ran-analytics: { image: ran-analytics, databaseRole: ran-analytics, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   mdaf: { image: mdaf, databaseRole: mdaf }

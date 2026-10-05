@@ -83,7 +83,7 @@ services:
     command: ["sh", "-c", "python /srv/scripts/migrate.py && python /srv/scripts/db_roles.py"]
     restart: "no"
     stop_grace_period: 30s
-    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp]
+    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_a1-related, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
     <<: *hardening
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -93,7 +93,7 @@ services:
   r1-termination:
     build: { context: ., args: { MODULE: r1-termination } }
     stop_grace_period: 30s
-    secrets: [db_password]    # PR-SEC-11: the gateway adds a row to the audit chain for every authenticated change (it keeps no other state)
+    secrets: [db_password_r1-termination]    # PR-SEC-11: the gateway adds a row to the audit chain for every authenticated change (it keeps no other state)
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
@@ -102,6 +102,9 @@ services:
       - smo_scratch:/srv/scratch   # where the runbook copies the rApp CSARs it serves (`docker compose cp ... r1-termination:/srv/scratch/`)
     environment:
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_r1_termination@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_r1-termination
+      R1_KILL_SWITCH_SCHEMA: ran_nf_oam    # the gateway reads RAN NF OAM's rapp_kill, read-only (migrations/db_roles.json)
       R1_AUDIT: ${R1_AUDIT:-on}    # off: no audit rows (the gateway then needs no database)
       # PR-SEC-1.6: unset, /bootstrap names SME on the compose network; set to the HTTPS door (https://localhost:8443 with the tls
       # profile) and it names that address instead, so a consumer that only reaches the edge can complete the flow.
@@ -130,13 +133,15 @@ services:
   sme:
     build: { context: ., args: { MODULE: sme } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_sme, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_sme@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_sme
       # PR-SEC-1.6: a client assertion's `aud` is the token endpoint /bootstrap advertised; behind the HTTPS door that is
       # <R1_PUBLIC_BASE_URL>/sme/oauth2/token. Unset (empty), SME uses its own address on the compose network.
       SME_TOKEN_AUDIENCE: ${R1_PUBLIC_BASE_URL:+${R1_PUBLIC_BASE_URL}/sme/oauth2/token}
@@ -144,13 +149,15 @@ services:
   dme:
     build: { context: ., args: { MODULE: dme } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_dme, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_dme@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_dme
 
   onboarding:
     build: { context: ., args: { MODULE: onboarding } }
@@ -170,25 +177,29 @@ services:
   rapp-mgmt:
     build: { context: ., args: { MODULE: rapp-mgmt } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_rapp-mgmt, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_rapp_mgmt@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_rapp-mgmt
       R1_GATEWAY_URL: http://r1-termination:8000
 
   ran-nf-oam:
     build: { context: ., args: { MODULE: ran-nf-oam } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_ran-nf-oam, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_ran_nf_oam@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-nf-oam
       R1_GATEWAY_URL: http://r1-termination:8000
       SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
 
@@ -199,13 +210,15 @@ services:
     build: { context: ., args: { MODULE: ran-nf-oam } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_ran-nf-oam, enrollment_secret]
     <<: *hardening
     healthcheck: *worker_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: the worker is the same SMO module (one identity, ST-4)
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_ran_nf_oam@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-nf-oam
       R1_GATEWAY_URL: http://r1-termination:8000
       SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
 
@@ -291,7 +304,7 @@ services:
   a1-related:
     build: { context: ., args: { MODULE: a1-related } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_a1-related, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
@@ -299,6 +312,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_a1_related@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_a1-related
       R1_GATEWAY_URL: http://r1-termination:8000
       MOCK_NEAR_RT_RIC_URL: http://mock-near-rt-ric:8000
 
@@ -313,13 +328,15 @@ services:
   nfo:
     build: { context: ., args: { MODULE: nfo } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_nfo, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_nfo@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_nfo
       R1_GATEWAY_URL: http://r1-termination:8000
     # No `privileged: true` and no Docker socket (PR-SEC-13): NFO never started a container (it runs no
     # `docker run`, nfo/README.md), and either one is root on the host. The Docker bridge of SMO Design v1.3
@@ -329,13 +346,15 @@ services:
   focom:
     build: { context: ., args: { MODULE: focom } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_focom, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_focom@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_focom
 
   mlmr:
     build: { context: ., args: { MODULE: mlmr } }
@@ -353,13 +372,15 @@ services:
   aimgf:
     build: { context: ., args: { MODULE: aimgf } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_aimgf, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_aimgf@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_aimgf
       R1_GATEWAY_URL: http://r1-termination:8000
 
   mllf:
@@ -523,6 +544,24 @@ secrets:
     file: ./secrets/db_password_coverage-optimization-rapp
   db_password_traffic-steering-rapp:
     file: ./secrets/db_password_traffic-steering-rapp
+  db_password_a1-related:
+    file: ./secrets/db_password_a1-related
+  db_password_aimgf:
+    file: ./secrets/db_password_aimgf
+  db_password_dme:
+    file: ./secrets/db_password_dme
+  db_password_focom:
+    file: ./secrets/db_password_focom
+  db_password_nfo:
+    file: ./secrets/db_password_nfo
+  db_password_r1-termination:
+    file: ./secrets/db_password_r1-termination
+  db_password_ran-nf-oam:
+    file: ./secrets/db_password_ran-nf-oam
+  db_password_rapp-mgmt:
+    file: ./secrets/db_password_rapp-mgmt
+  db_password_sme:
+    file: ./secrets/db_password_sme
   enrollment_secret:              # PR-SEC-14: what an SMO module presents to SME to be recorded as one (never an rApp); same script
     file: ./secrets/enrollment_secret
   tls_cert:                       # the `tls` profile only; created by scripts/make_dev_certs.sh

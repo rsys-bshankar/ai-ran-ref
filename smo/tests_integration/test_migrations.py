@@ -21,7 +21,7 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0024"          # raise this with every new revision: the tests below then check it is the head
+HEAD = "0025"          # raise this with every new revision: the tests below then check it is the head
 
 
 def _scripts() -> ScriptDirectory:
@@ -123,11 +123,11 @@ def test_the_models_check_passes_at_head_and_refuses_a_database_that_is_not(data
 
 @needs_postgres
 def test_a_model_change_without_a_revision_fails_the_check(databases):
-    """The ORM declares a column the migrated schema lacks (here: dropped after migrating): the check names it."""
+    """The ORM declares a column the migrated schema lacks (here: dropped after migrating, from the table in its module's schema; the compatibility view in `public` goes with it): the check names it."""
     assert _run(MIGRATE, databases["fresh"]).returncode == 0
     engine = create_engine(databases["fresh"])
     with engine.begin() as connection:
-        connection.execute(text("ALTER TABLE service_profile DROP COLUMN api_supp_feats"))
+        connection.execute(text("ALTER TABLE sme.service_profile DROP COLUMN api_supp_feats CASCADE"))
     engine.dispose()
     result = _run(CHECK, databases["fresh"])
     assert result.returncode == 1 and "service_profile.api_supp_feats" in result.stdout

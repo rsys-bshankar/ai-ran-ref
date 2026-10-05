@@ -161,9 +161,9 @@ def test_an_external_database_drops_the_bundled_one_and_needs_a_host():
     docs = _render("--set", "postgres.enabled=false", "--set", "postgres.external.host=db.example.com", "--set", "postgres.external.sslmode=require")
     assert not [d for d in docs if d["kind"] == "StatefulSet"]
     urls = {e["value"] for d in docs if d["kind"] == "Deployment" for e in d["spec"]["template"]["spec"]["containers"][0].get("env") or [] if e["name"] == "SMO_DATABASE_URL"}
-    # the owner, and Onboarding as its own role (PR-DB-2.6): the same host, the role's user
-    assert "postgresql+psycopg://smo@db.example.com:5432/smo?sslmode=require" in urls and "postgresql+psycopg://smo_onboarding@db.example.com:5432/smo?sslmode=require" in urls
-    assert all(u.endswith("@db.example.com:5432/smo?sslmode=require") for u in urls)
+    # every module with a database connects as its own role (PR-DB-2.6, 2.7), to the same host
+    assert "postgresql+psycopg://smo_onboarding@db.example.com:5432/smo?sslmode=require" in urls
+    assert all(u.endswith("@db.example.com:5432/smo?sslmode=require") and u.split("//")[1].startswith("smo_") for u in urls)
     failed = subprocess.run(["helm", "template", "smo", str(CHART), "--kube-version", "1.30.0", "--set", "postgres.enabled=false"], capture_output=True, text=True)
     assert failed.returncode != 0 and "postgres.external.host" in failed.stderr
 

@@ -29,7 +29,10 @@ from sqlalchemy import Column, MetaData, String, Table, select
 
 # the same table as ran-nf-oam/app/models.py RAppKill (the columns the gateway reads); its own metadata, so it is not part of the shared Base
 METADATA = MetaData()
-RAPP_KILL = Table("rapp_kill", METADATA, Column("invoker_id", String, primary_key=True), Column("reason", String), Column("killed_by", String))
+# RAN NF OAM's table lives in its own schema once the database has per-module schemas (PR-DB-2.7): `R1_KILL_SWITCH_SCHEMA` names it (compose and the chart set it to
+# `ran_nf_oam`). Unset, the name is unqualified and resolves through the search path (the unit tests' SQLite, and a database that has not been migrated that far).
+RAPP_KILL = Table("rapp_kill", METADATA, Column("invoker_id", String, primary_key=True), Column("reason", String), Column("killed_by", String),
+                  schema=os.environ.get("R1_KILL_SWITCH_SCHEMA") or None)
 
 STALE_SECONDS = 60.0
 MAX_CACHED = 10_000
