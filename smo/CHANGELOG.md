@@ -5,6 +5,9 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Added
+- **Every CHECK list on a column is tested against the code that writes the column (V-5, `tests_integration/test_check_constraints.py`).** Revision `0026` fixed two constraints that refused states the code uses; this checks the other 95 single-column lists of the schema. Ten state-machine columns must allow every value of their enum, and a string literal assigned to a checked column in the owning module's source must be allowed by a constraint of that module's tables (deliberate exceptions go in `check_constraint_waivers.json`, with a reason; a waiver that no longer matches fails too). No further mismatch was found. The test was shown to fail on the pre-`0026` schema (`write_config_job.status` lacks `HALTED`) and on a seeded unknown literal. **CI now runs the Postgres-only tests of `tests_integration`** (per-module roles, status constraints, this one) in the job `migration-postgres`: they skip without `SMO_TEST_POSTGRES_URL`, which only that job sets, so the SQLite job had never run them.
+
 ## [0.4.0] - 2026-10-05
 
 Runs highly available, and what that took. Two replicas of every module that can have them are proved on Kubernetes and in compose (the whole runbook replayed against them, a rolling restart under a health probe, the delivery worker and the job runner killed mid-work), Postgres runs as a three-instance cloud-native cluster behind `postgres.external.*` and survives losing its primary, PgBouncer is available in compose, every module has its own schema and database role, and a staged CM job that had been failing on Postgres since 0.2.0 now works.
