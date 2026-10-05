@@ -89,14 +89,21 @@ def main() -> None:
     engine = create_engine(database_url)
     inspector = inspect(engine)
     check_at_head(engine)
-    real_tables = set(inspector.get_table_names())
+    # a module that has a schema of its own (PR-DB-2.5) keeps its tables there; the ORM names them without one, and so does this check
+    schema_of: dict[str, str | None] = {}
+    for schema in inspector.get_schema_names():
+        if schema.startswith("pg_") or schema == "information_schema":
+            continue
+        for name in inspector.get_table_names(schema=schema):
+            schema_of[name] = None if schema == "public" else schema
+    real_tables = set(schema_of)
 
     errors = []
     for table in Base.metadata.sorted_tables:
         if table.name not in real_tables:
             errors.append(f"table {table.name!r}: declared by the ORM but missing from the migrated schema")
             continue
-        real_columns = {c["name"]: c for c in inspector.get_columns(table.name)}
+        real_columns = {c["name"]: c for c in inspector.get_columns(table.name, schema=schema_of[table.name])}
         for column in table.columns:
             if column.name not in real_columns:
                 errors.append(f"{table.name}.{column.name}: declared by the ORM but missing from the migrated schema")
@@ -115,8 +122,17 @@ def main() -> None:
         errors.append(f"table {table!r}: in the migrated schema but not in migrations/table_owners.json")
     for table in sorted(set(owners) - real_tables):
         errors.append(f"table {table!r}: in migrations/table_owners.json but not in the migrated schema")
+    # a module with a schema of its own (migrations/db_roles.json) has all its tables in it, and nothing else is in it
+    for module, spec in json.loads((SMO_ROOT / "migrations" / "db_roles.json").read_text()).items():
+        if module == "_comment":
+            continue
+        for table in sorted(real_tables & set(owners)):
+            in_schema = schema_of[table] == spec["schema"]
+            if (owners[table] == module) != in_schema:
+                errors.append(f"table {table!r} (owner {owners[table]}) is in schema {schema_of[table] or 'public'}: "
+                              f"schema {spec['schema']} is for {module}'s tables and only those")
     for table in sorted(real_tables & set(owners)):
-        for fk in inspector.get_foreign_keys(table):
+        for fk in inspector.get_foreign_keys(table, schema=schema_of[table]):
             target = fk["referred_table"]
             if owners.get(target) not in (None, owners[table]):
                 errors.append(f"foreign key {fk['name']}: {table} ({owners[table]}) -> {target} ({owners[target]}) crosses a module boundary; "

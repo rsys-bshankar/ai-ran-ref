@@ -1,0 +1,4 @@
+{
+ "_comment": "Per-module database roles (PR-DB-2.6). `scripts/db_roles.py` makes, for each module listed here whose password file is present, a login role smo_<module> that can use its own schema, the shared tables named in `shared`, and nothing else. A module is added here in the same change that moves its tables into a schema of its own and gives it a password secret.",
+ "onboarding": {"schema": "onboarding", "shared": ["module_identity"]}
+}

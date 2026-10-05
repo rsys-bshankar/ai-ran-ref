@@ -48,7 +48,8 @@ def test_database_and_enrollment_follow_the_compose_secrets():
     for name, service in _compose_services().items():
         secrets = set(service.get("secrets") or [])
         module = _modules()[name]
-        assert module["database"] == ("db_password" in secrets), f"{name}: database access differs from the compose secrets"
+        # compose gives a module with a role of its own (PR-DB-2.6) that role's password file in place of db_password; the chart adopts the roles later
+        assert module["database"] == any(secret.startswith("db_password") for secret in secrets), f"{name}: database access differs from the compose secrets"
         assert module["enrollment"] == ("enrollment_secret" in secrets), f"{name}: enrollment differs from the compose secrets"
 
 

@@ -9,6 +9,11 @@
 #                           file is left alone, so running this again does not lock the stack out of its own
 #                           database. To rotate it, see docs/SECRETS.md.
 #
+# smo/secrets/db_password_onboarding
+#                           the password of the database role smo_onboarding (PR-DB-2.6), which Onboarding connects as: it can use its own schema and
+#                           nothing else. scripts/db_roles.py (run by the `migrate` service) sets it in the database; a file that is missing means
+#                           no role is made. One file per module that has a schema of its own, as modules adopt them.
+#
 # The directory is owner-only (0700) and git-ignored. The file itself is 0644: Compose bind-mounts it as it is,
 # and the services run as uid 10001, not as you, so it has to be readable by other users; the directory is what
 # keeps other accounts on this machine out. Postgres and every module read it at /run/secrets/db_password
@@ -34,4 +39,5 @@ create_secret() {
   echo "created: $path"
 }
 create_secret db_password
+create_secret db_password_onboarding
 create_secret enrollment_secret

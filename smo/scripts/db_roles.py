@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""PR-DB-2.6: per-module database roles.
+
+    python scripts/db_roles.py            # make or reconcile the roles
+    python scripts/db_roles.py --list     # what it would do, without touching the database
+
+Run after `scripts/migrate.py`, as the owner (the same `SMO_DATABASE_URL` the migration used): compose's `migrate` service and the chart's migrate Job do.
+`migrations/db_roles.json` lists the modules that have a schema of their own. For each one whose password file `db_password_<module>` exists in
+`SMO_DB_ROLE_PASSWORD_DIR` (default /run/secrets) the script makes sure that
+
+  * the login role `smo_<module>` exists with that password (the file is the only place the password is kept; running the script again after
+    changing the file is how a password is rotated);
+  * its default search path is `<schema>, public`, so the module's unqualified table names resolve to its own tables, and it needs no code to say so;
+  * it can use its schema (USAGE; SELECT, INSERT, UPDATE, DELETE on every table, USAGE on every sequence, and the same for tables made later)
+    and only the shared tables named in the manifest, plus read `alembic_version` (the pod's schema wait reads it);
+  * it has no right on any other schema's tables, and cannot create anything in `public`.
+
+A module without a password file is skipped, so a deployment that has not adopted the roles keeps connecting as the owner and nothing changes.
+The script is idempotent: privileges are revoked and granted again each time, so a table added by a later revision is covered at once and a shared
+table removed from the manifest is taken away. It needs a database role that may create roles (CREATEROLE) and own the tables; the `smo` role of
+the bundled Postgres is the superuser, a managed database's admin user usually is not, and then the roles must be made by whoever has that right.
+"""
+import json
+import os
+import sys
+from pathlib import Path
+
+SMO_ROOT = Path(__file__).resolve().parent.parent
+MANIFEST = SMO_ROOT / "migrations" / "db_roles.json"
+PASSWORD_DIR_VARIABLE = "SMO_DB_ROLE_PASSWORD_DIR"
+
+
+def role_name(module: str) -> str:
+    return "smo_" + module.replace("-", "_")
+
+
+def load_manifest(path: Path = MANIFEST) -> dict[str, dict]:
+    return {m: spec for m, spec in json.loads(path.read_text()).items() if m != "_comment"}
+
+
+def password_file(module: str, environ=os.environ) -> Path:
+    return Path(environ.get(PASSWORD_DIR_VARIABLE, "/run/secrets")) / f"db_password_{module}"
+
+
+def statements(module: str, spec: dict, password: str | None, schemas: list[str], database: str) -> list:
+    """The SQL that makes `role_name(module)` what the module needs, as psycopg `sql` objects (identifiers and the password are quoted by the driver)."""
+    from psycopg import sql
+    role, own = sql.Identifier(role_name(module)), sql.Identifier(spec["schema"])
+    shared = [sql.Identifier(t) for t in spec.get("shared", [])]
+    out: list = []
+    out.append(sql.SQL("ALTER ROLE {} LOGIN PASSWORD {}").format(role, sql.Literal(password)) if password is not None
+               else sql.SQL("ALTER ROLE {} NOLOGIN").format(role))
+    out.append(sql.SQL("ALTER ROLE {} SET search_path = {}, public").format(role, own))
+    out.append(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(database), role))
+    out.append(sql.SQL("REVOKE CREATE ON SCHEMA public FROM PUBLIC"))
+    # start from nothing on every schema, then give back what the module has a right to
+    for schema in schemas:
+        s = sql.Identifier(schema)
+        out.append(sql.SQL("REVOKE ALL ON ALL TABLES IN SCHEMA {} FROM {}").format(s, role))
+        out.append(sql.SQL("REVOKE ALL ON ALL SEQUENCES IN SCHEMA {} FROM {}").format(s, role))
+        if schema != spec["schema"]:
+            out.append(sql.SQL("REVOKE ALL ON SCHEMA {} FROM {}").format(s, role))
+    out.append(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(role))
+    out.append(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(own, role))
+    out.append(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {} TO {}").format(own, role))
+    out.append(sql.SQL("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {} TO {}").format(own, role))
+    out.append(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {}").format(own, role))
+    out.append(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT USAGE, SELECT ON SEQUENCES TO {}").format(own, role))
+    out.append(sql.SQL("GRANT SELECT ON public.alembic_version TO {}").format(role))
+    for table in shared:
+        out.append(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON public.{} TO {}").format(table, role))
+    return out
+
+
+def main(argv: list[str]) -> int:
+    manifest = load_manifest()
+    if "--list" in argv:
+        for module, spec in manifest.items():
+            present = password_file(module).exists()
+            print(f"{role_name(module)}: schema {spec['schema']}, shared {spec.get('shared', [])}, password file {'found' if present else 'missing (skipped)'}")
+        return 0
+
+    from sqlalchemy import create_engine, text
+    from smo_shared.db import resolve_database_url
+    engine = create_engine(resolve_database_url())
+    if engine.dialect.name != "postgresql":
+        print("per-module roles are for Postgres; nothing to do")
+        return 0
+    made = []
+    raw = engine.raw_connection()
+    try:
+        raw.autocommit = False
+        cur = raw.cursor()
+        cur.execute("SELECT current_database()")
+        database = cur.fetchone()[0]
+        cur.execute("SELECT nspname FROM pg_namespace WHERE nspname NOT LIKE 'pg\\_%' AND nspname <> 'information_schema'")
+        schemas = sorted(r[0] for r in cur.fetchall())
+        for module, spec in manifest.items():
+            path = password_file(module)
+            if not path.exists():
+                print(f"{role_name(module)}: no {path}, skipped")
+                continue
+            password = path.read_text().strip()
+            if not password:
+                print(f"{role_name(module)}: {path} is empty, skipped")
+                continue
+            if spec["schema"] not in schemas:
+                print(f"{role_name(module)}: schema {spec['schema']} does not exist (run scripts/migrate.py first), skipped")
+                continue
+            cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role_name(module),))
+            if cur.fetchone() is None:
+                from psycopg import sql
+                cur.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role_name(module))))
+            for statement in statements(module, spec, password, schemas, database):
+                cur.execute(statement)
+            made.append(role_name(module))
+        raw.commit()
+    except Exception:
+        raw.rollback()
+        raise
+    finally:
+        raw.close()
+    print("roles ready: " + (", ".join(made) if made else "none (no password files)"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

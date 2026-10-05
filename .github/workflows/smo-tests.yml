@@ -201,6 +201,21 @@ jobs:
               pip install -q --no-deps -e shared &&
               python -m pytest tests_integration/test_demo_runbook.py -v -p no:cacheprovider'
 
+      - name: Onboarding runs as its own database role, which can use its schema and nothing else (PR-DB-2.6)
+        working-directory: smo
+        run: |
+          psql() { docker compose exec -T postgres psql -U smo -d smo -Atc "$1"; }
+          # the runbook replay above went through Onboarding: its connections are the role's, and its packages are in its schema
+          [ "$(psql "SELECT count(*) FROM pg_stat_activity WHERE usename = 'smo_onboarding'")" -gt 0 ]
+          [ "$(psql "SELECT count(*) FROM onboarding.application_package")" -gt 0 ]
+          # the role refuses every table of every other module
+          pw="$(cat secrets/db_password_onboarding)"
+          for table in dme_type invoker_registration write_config_job audit_log notification_outbox; do
+            if docker compose exec -T -e PGPASSWORD="$pw" postgres psql -h postgres -U smo_onboarding -d smo -Atc "SELECT count(*) FROM $table" 2>/dev/null; then
+              echo "::error::smo_onboarding can read $table"; exit 1
+            fi
+          done
+
       - name: a1_mock_net isolation (RT-7)
         working-directory: smo
         run: |

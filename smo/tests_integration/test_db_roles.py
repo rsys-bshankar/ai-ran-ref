@@ -1,0 +1,157 @@
+"""PR-DB-2.5/2.6: a module's tables live in a schema of its own, and its role can use that and nothing else.
+
+The manifest tests need no database. The rest need SMO_TEST_POSTGRES_URL (CI's `migration-postgres` job, or a local server): they migrate a
+fresh database to head, run scripts/db_roles.py with a password file, and connect as the module's role.
+"""
+
+import json
+import os
+import subprocess
+import sys
+import uuid
+from pathlib import Path
+
+import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+
+SMO_ROOT = Path(__file__).resolve().parent.parent
+MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
+DB_ROLES = SMO_ROOT / "scripts" / "db_roles.py"
+ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
+needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
+OWNERS = json.loads((SMO_ROOT / "migrations" / "table_owners.json").read_text())
+ROLES = {m: s for m, s in json.loads((SMO_ROOT / "migrations" / "db_roles.json").read_text()).items() if m != "_comment"}
+
+
+def test_every_module_in_the_roles_manifest_is_a_module_with_tables_and_names_real_shared_tables():
+    for module, spec in ROLES.items():
+        assert OWNERS.get(module), f"{module} is in db_roles.json but owns no table in table_owners.json"
+        assert spec["schema"].isidentifier() and spec["schema"] not in ("public", "platform_"), spec
+        for table in spec.get("shared", []):
+            assert table in OWNERS["shared"], f"{module}: {table} is not a shared table"
+
+
+def test_a_role_name_is_derived_from_the_module_and_statements_quote_what_they_are_given():
+    sys.path.insert(0, str(SMO_ROOT / "scripts"))
+    import db_roles
+    assert db_roles.role_name("rapp-mgmt") == "smo_rapp_mgmt"
+    rendered = [s.as_string() for s in db_roles.statements("onboarding", ROLES["onboarding"], "pa'ss\"word", ["public", "onboarding", "dme"], "smo")]
+    text_ = "\n".join(rendered)
+    assert "'pa''ss\"word'" in text_                                  # the password is a quoted literal, never spliced in
+    assert 'ALTER ROLE "smo_onboarding" SET search_path = "onboarding", public' in text_
+    assert 'REVOKE ALL ON SCHEMA "dme" FROM "smo_onboarding"' in text_ and 'REVOKE ALL ON SCHEMA "onboarding"' not in text_
+
+
+@pytest.fixture
+def database(tmp_path):
+    name = f"smo_roles_{uuid.uuid4().hex[:10]}"
+    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT")
+    with admin.connect() as connection:
+        connection.execute(text(f'CREATE DATABASE "{name}"'))
+    url = make_url(ADMIN_URL).set(database=name).render_as_string(hide_password=False)
+    env = {**os.environ, "SMO_DATABASE_URL": url, "SMO_DB_ROLE_PASSWORD_DIR": str(tmp_path)}
+    migrated = subprocess.run([sys.executable, str(MIGRATE)], env=env, capture_output=True, text=True, cwd=SMO_ROOT)
+    assert migrated.returncode == 0, migrated.stderr
+    yield url, env, tmp_path, name
+    with admin.connect() as connection:
+        connection.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+        for module in ROLES:
+            try:       # a role is cluster-wide: it stays when another database still has rights granted to it (the one the admin URL names, say)
+                connection.execute(text(f'DROP ROLE IF EXISTS "smo_{module.replace("-", "_")}"'))
+            except Exception:
+                pass
+    admin.dispose()
+
+
+def _roles(env, *args):
+    return subprocess.run([sys.executable, str(DB_ROLES), *args], env=env, capture_output=True, text=True, cwd=SMO_ROOT)
+
+
+def _as_role(url, module, password):
+    return create_engine(make_url(url).set(username=f"smo_{module.replace('-', '_')}", password=password), isolation_level="AUTOCOMMIT")
+
+
+def _denied(engine, statement) -> bool:
+    try:
+        with engine.connect() as connection:
+            connection.execute(text(statement))
+    except Exception as exc:
+        return "permission denied" in str(exc)
+    return False
+
+
+@needs_postgres
+def test_the_tables_are_in_the_modules_schema_and_the_old_names_still_work_for_the_owner(database):
+    url, env, _, _ = database
+    owner = create_engine(url, isolation_level="AUTOCOMMIT")
+    with owner.connect() as connection:
+        in_schema = {r[0] for r in connection.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'onboarding'"))}
+        assert in_schema == set(OWNERS["onboarding"])
+        assert not connection.execute(text("SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'application_package'")).first()
+        # what the previous release does: name the table with no schema, and insert, read, update and delete through it
+        connection.execute(text("INSERT INTO application_package (application_type, name, version, manifest_ref) VALUES ('rApp', 'old-code', '1', 'm')"))
+        assert connection.execute(text("SELECT count(*) FROM application_package WHERE name = 'old-code'")).scalar() == 1
+        connection.execute(text("UPDATE application_package SET version = '2' WHERE name = 'old-code'"))
+        assert connection.execute(text("SELECT version FROM onboarding.application_package WHERE name = 'old-code'")).scalar() == "2"
+        connection.execute(text("DELETE FROM application_package WHERE name = 'old-code'"))
+    owner.dispose()
+
+
+@needs_postgres
+def test_the_role_works_in_its_own_schema_and_is_refused_everywhere_else(database):
+    url, env, password_dir, _ = database
+    (password_dir / "db_password_onboarding").write_text("s3cret-for-the-test")
+    done = _roles(env)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "smo_onboarding" in done.stdout
+    role = _as_role(url, "onboarding", "s3cret-for-the-test")
+    with role.connect() as connection:
+        assert connection.execute(text("SHOW search_path")).scalar() == "onboarding, public"
+        # unqualified names reach its own tables, as the service's code writes them
+        connection.execute(text("INSERT INTO application_package (application_type, name, version, manifest_ref) VALUES ('rApp', 'mine', '1', 'm')"))
+        assert connection.execute(text("SELECT count(*) FROM application_package")).scalar() == 1
+        connection.execute(text("DELETE FROM application_package"))
+        assert connection.execute(text("SELECT count(*) FROM module_identity")).scalar() == 0      # a shared table it was given
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar()          # the pod's schema wait
+    other_modules = [t for owner, tables in OWNERS.items() if owner not in ("onboarding", "shared", "_comment") for t in tables]
+    assert len(other_modules) > 100
+    for table in other_modules:
+        assert _denied(role, f'SELECT * FROM "{table}" LIMIT 1'), f"smo_onboarding can read {table}"
+    for table in ("audit_log", "audit_head", "notification_outbox", "idempotency_key", "periodic_run"):
+        assert _denied(role, f'SELECT * FROM "{table}" LIMIT 1'), f"smo_onboarding can read the shared table {table}, which it was not given"
+    assert _denied(role, "CREATE TABLE public.not_allowed (a int)")
+    assert _denied(role, "CREATE TABLE onboarding.not_allowed (a int)")
+    assert _denied(role, "SELECT * FROM public.application_package")        # the compatibility view is for the old code, which connects as the owner
+    role.dispose()
+
+
+@needs_postgres
+def test_a_table_added_later_to_the_schema_is_usable_at_once_and_a_second_run_changes_nothing(database):
+    url, env, password_dir, _ = database
+    (password_dir / "db_password_onboarding").write_text("first")
+    assert _roles(env).returncode == 0
+    owner = create_engine(url, isolation_level="AUTOCOMMIT")
+    with owner.connect() as connection:
+        connection.execute(text("CREATE TABLE onboarding.added_later (id int primary key)"))
+    role = _as_role(url, "onboarding", "first")
+    with role.connect() as connection:
+        connection.execute(text("INSERT INTO added_later VALUES (1)"))      # default privileges, before any rerun
+    (password_dir / "db_password_onboarding").write_text("second")          # rotation: write the new file and run it again
+    assert _roles(env).returncode == 0
+    role.dispose()
+    rotated = _as_role(url, "onboarding", "second")
+    with rotated.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM added_later")).scalar() == 1
+    old = _as_role(url, "onboarding", "first")
+    with pytest.raises(Exception, match="password authentication failed"):
+        with old.connect():
+            pass
+    rotated.dispose(); old.dispose(); owner.dispose()
+
+
+@needs_postgres
+def test_without_a_password_file_nothing_is_made(database):
+    url, env, _, _ = database
+    done = _roles(env)
+    assert done.returncode == 0 and "none (no password files)" in done.stdout
