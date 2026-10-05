@@ -1369,4 +1369,4 @@ Pick any, or mix them. `Needs` is the only constraint.
 
 ## v0.5.0 validation inventory (started)
 - **Every CHECK constraint on a status/enum column against the code that writes it.** Revision 0026 fixed two (`write_config_job`, `write_config_sub_change`) that rejected states the code uses; the other ~100 CHECK lists in the schema (see `pg_constraint`) were not audited, and SQLite hides every mismatch. A generated test per column (enum or literal set from the model/FSM against the constraint) belongs in the DB-test category.
-
+- **The whole v0.5.0 validation plan** (by category, with the order of work, lanes and exit criteria) is `docs/VALIDATION.md`.
