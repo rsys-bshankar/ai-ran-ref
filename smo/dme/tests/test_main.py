@@ -1297,3 +1297,9 @@ def test_stopping_a_job_at_the_producers_is_a_delete_row_in_the_same_transaction
     outbox.drain(app.state.test_engine)
     assert sorted(deleted) == sorted(r.destination for r in stops)
     assert {r.status for r in _outbox_rows(client) if r.method == "DELETE"} == {"SENT"}
+
+
+def test_an_offer_with_no_delivery_method_is_refused(client):
+    resp = client.post("/offers", json={"dmeTypeId": "e3e70682-c209-1cac-a29f-6fbed82c07cd", "dataDeliveryMode": "CONTINUOUS",
+                                        "dataDeliveryMethods": [], "dataOfferTerminationNotificationUri": "http://producer/terminate"})
+    assert resp.status_code == 409

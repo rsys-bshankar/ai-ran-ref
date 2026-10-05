@@ -23,7 +23,7 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from smo_shared.errors import illegal_transition_error
 from smo_shared.statemachine import IllegalTransition
 from sqlalchemy import delete, func, select
@@ -270,6 +270,15 @@ class WriteConfigRequest(BaseModel):
     scope: str | None = None
     changes: list[dict]  # each: {managedElementRef, managedFunctionRef?, attributeChanges?, operation?}
     msacRole: str | None = None
+
+    @field_validator("changes")
+    @classmethod
+    def _each_change_names_its_element(cls, changes: list[dict]) -> list[dict]:
+        for change in changes:
+            if not isinstance(change.get("managedElementRef"), str):
+                raise ValueError("every change needs a string managedElementRef")
+        return changes
+
     # MGT-3.1: run every check (MSAC, service presence, data model incl. YANG leaf constraints) and send nothing
     dryRun: bool = False
     # MGT-5.1: a staged rollout. The elements of the job go in waves of `waveSize` elements (all the changes of one element in one wave); after each
@@ -373,6 +382,8 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
         except ValueError as exc:
             raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=str(exc)) from None     # the message never repeats the value
     check_vendor_mode(db, body.vendorName, body.o1Protocol)
+    if db.scalar(select(O1AdaptorEndpoint).where(O1AdaptorEndpoint.managed_element_ref == body.managedElementRef)) is not None:
+        raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail=f"an O1 adaptor is already registered for {body.managedElementRef}")
     _valid_refs(body.managedElementRef, body.managedFunctionRef)
     cap = db.get(VendorCapability, body.vendorName) if body.vendorName else None
     if cap is not None and body.supportedServices is not None and not set(body.supportedServices) <= set(cap.supported_services):
@@ -388,7 +399,10 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
                         o1_adaptor_endpoint_id=endpoint.endpoint_id)
     db.add(me)
     db.flush()
-    mo_tree.sync_registry(db, me)              # PR-SB-6: the element's root (and the function it was registered with) join the containment tree
+    try:
+        mo_tree.sync_registry(db, me)          # PR-SB-6: the element's root (and the function it was registered with) join the containment tree
+    except ValueError as exc:                  # a ref that is not a distinguished name
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=str(exc)) from None
     db.commit()
     return {"endpointId": str(endpoint.endpoint_id), "managedElementRef": me.managed_element_ref, "healthStatus": endpoint.health_status}
 
@@ -1732,6 +1746,8 @@ def run_due_kpi_schedules(db: Session, now: datetime.datetime | None = None) -> 
 @app.get("/config-jobs/{job_id}")
 def query_write_config_job_status(job_id: uuid.UUID, db: Session = Depends(get_session)):
     job = db.get(WriteConfigJob, job_id)
+    if job is None:
+        raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"unknown jobId {job_id}")
     sub_changes = db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job_id).order_by(WriteConfigSubChange.position)).all()
     return {"jobId": str(job.job_id), "status": job.status, "requestedBy": job.requested_by,
             "rollbackOf": str(job.rollback_of) if job.rollback_of else None, "rollbackForced": job.rollback_forced,
@@ -2087,6 +2103,8 @@ def software_update(managed_element_ref: str, ru_instance_id: str | None = None,
 @app.post("/software-management-jobs/{job_id}/advance")
 def advance_software_job(job_id: uuid.UUID, succeeded: bool, db: Session = Depends(get_session)):
     job = db.get(SoftwareManagementJob, job_id)
+    if job is None:
+        raise framework_error(FrameworkError.SOFTWARE_JOB_NOT_FOUND, detail=f"unknown jobId {job_id}")
     event = {"DOWNLOAD": SwmEvent.DOWNLOAD_OK, "INSTALL": SwmEvent.INSTALL_OK, "ACTIVATE": SwmEvent.ACTIVATE_OK}[job.phase]
     if not succeeded:
         job.status = SOFTWARE_MANAGEMENT_FSM.fire(SwmState(job.status), SwmEvent.PHASE_FAILED)
@@ -2136,6 +2154,8 @@ def discover_endpoints(db: Session = Depends(get_session)):
 @app.post("/o1-adaptor-endpoints/{endpoint_id}/heartbeat")
 def endpoint_heartbeat(endpoint_id: uuid.UUID, db: Session = Depends(get_session)):
     ep = db.get(O1AdaptorEndpoint, endpoint_id)
+    if ep is None:
+        raise framework_error(FrameworkError.O1_ENDPOINT_NOT_FOUND, detail=f"unknown endpointId {endpoint_id}")
     ep.last_heartbeat_at = datetime.datetime.now(datetime.UTC)
     current = EndpointHealth(ep.health_status) if ep.health_status in EndpointHealth.__members__.values() else EndpointHealth.DISCOVERED
     if current in (EndpointHealth.DISCOVERED, EndpointHealth.DEGRADED):

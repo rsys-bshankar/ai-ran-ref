@@ -491,7 +491,7 @@ def terminate_data_jobs_for_consumer(consumer_id: str, db: Session = Depends(get
 
 @app.post("/offers", status_code=201)
 def create_data_offer(body: DataOfferRequest, db: Session = Depends(get_session)):
-    if not set(body.dataDeliveryMethods) <= DELIVERY_METHODS:
+    if not body.dataDeliveryMethods or not set(body.dataDeliveryMethods) <= DELIVERY_METHODS:
         raise framework_error(FrameworkError.DELIVERY_METHOD_NOT_OFFERED)
     offer = DataOffer(
         dme_type_id=body.dmeTypeId,
@@ -756,7 +756,14 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
     resp = _r1.post("/ran-nf-oam/config-jobs", json={
         "requestedBy": body.requestedBy, "scope": body.scope, "msacRole": body.msacRole, "changes": body.changes,
     }, timeout=DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS)
-    forwarded = resp.json()
+    try:
+        forwarded = resp.json()
+    except ValueError:
+        forwarded = None
+    if forwarded is None or resp.status_code >= 500:
+        record.status = "REJECTED"
+        db.commit()
+        raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"RAN NF OAM answered {resp.status_code} without a usable body")
     if resp.status_code >= 400:
         # Refused at the pre-check (unsupported MnS service, schema
         # violation, MSAC): the rApp gets RAN NF OAM's own 4xx directly,

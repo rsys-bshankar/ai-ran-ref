@@ -589,6 +589,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -694,6 +704,16 @@
             "description": "Validation Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -821,6 +841,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -925,6 +955,16 @@
             "description": "Validation Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1101,6 +1141,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1206,6 +1256,16 @@
             "description": "Validation Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1329,6 +1389,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1436,6 +1506,16 @@
             "description": "Validation Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1563,6 +1643,16 @@
             "description": "Validation Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1718,6 +1808,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1844,6 +1944,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1953,6 +2063,16 @@
             "description": "Validation Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2087,6 +2207,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -2192,6 +2322,16 @@
             "description": "Validation Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2308,6 +2448,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -2409,6 +2559,16 @@
             "description": "Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2574,6 +2734,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -2679,6 +2849,16 @@
             "description": "Validation Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2802,6 +2982,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -2909,6 +3099,16 @@
             "description": "Validation Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3044,6 +3244,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -3157,6 +3367,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -3253,6 +3473,16 @@
             "description": "Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3377,6 +3607,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -3485,6 +3725,16 @@
             "description": "Validation Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3612,6 +3862,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -3710,6 +3970,16 @@
             "description": "Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3874,6 +4144,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -3980,6 +4260,16 @@
             "description": "Validation Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -4102,6 +4392,16 @@
             },
             "description": "Error"
           },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -4209,6 +4509,16 @@
             "description": "Validation Error"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
             "content": {
               "application/json": {
                 "schema": {

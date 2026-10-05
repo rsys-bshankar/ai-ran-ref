@@ -26,7 +26,7 @@ BEARER_SCHEME_NAME = "r1BearerAuth"
 ERROR_ENVELOPE = "ErrorEnvelope"
 # Statuses any operation can answer with, whatever its own code raises: the framework (400 unparsable body, 413 size cap,
 # 429 rate limit), the gateway's token check (401, 403) and the handlers' ProblemDetails (404, 409, 422, 503 ...).
-STANDARD_ERROR_STATUSES = ("400", "401", "403", "404", "409", "413", "422", "429", "503")
+STANDARD_ERROR_STATUSES = ("400", "401", "403", "404", "409", "413", "422", "429", "502", "503")
 R1_CONTRACT_VERSION = "1.0.0"
 
 
