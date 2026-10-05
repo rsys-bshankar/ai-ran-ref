@@ -21,6 +21,10 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
 BEARER_SCHEME_NAME = "r1BearerAuth"
+ERROR_ENVELOPE = "ErrorEnvelope"
+# Statuses any operation can answer with, whatever its own code raises: the framework (400 unparsable body, 413 size cap,
+# 429 rate limit), the gateway's token check (401, 403) and the handlers' ProblemDetails (404, 409, 422, 503 ...).
+STANDARD_ERROR_STATUSES = ("400", "401", "403", "404", "409", "413", "422", "429", "503")
 R1_CONTRACT_VERSION = "1.0.0"
 
 
@@ -40,6 +44,7 @@ def apply_r1_gateway_security(app: FastAPI, *, public_paths: frozenset[str] = fr
             "type": "http", "scheme": "bearer", "bearerFormat": "JWT",
         }
         schema["security"] = [{BEARER_SCHEME_NAME: []}]
+        _declare_error_responses(schema)
         for path, operations in schema.get("paths", {}).items():
             if path in public_paths:
                 for operation in operations.values():
@@ -49,3 +54,36 @@ def apply_r1_gateway_security(app: FastAPI, *, public_paths: frozenset[str] = fr
         return app.openapi_schema
 
     app.openapi = custom_openapi
+
+
+def _declare_error_responses(schema: dict) -> None:
+    """Declares the error body every operation can answer with (RFC 7807 ProblemDetails inside FastAPI's `detail`, a plain string from
+    the framework, or the list FastAPI's own validation produces) so the spec describes what the service really sends; found by the
+    contract test (tests_integration/test_contract_schemathesis.py). A status an operation already documents is left as it is, except 422,
+    which handlers also use for ProblemDetails: its body is widened to the envelope."""
+    components = schema.setdefault("components", {}).setdefault("schemas", {})
+    components[ERROR_ENVELOPE] = {
+        "title": ERROR_ENVELOPE, "type": "object", "required": ["detail"],
+        "properties": {"detail": {"anyOf": [
+            {"$ref": "#/components/schemas/ProblemDetails"} if "ProblemDetails" in components else {"type": "object"},
+            {"type": "string"},
+            {"type": "array", "items": {"type": "object"}},
+        ]}},
+    }
+    components.setdefault("ProblemDetails", {
+        "title": "ProblemDetails", "type": "object", "required": ["title", "status"],
+        "properties": {"type": {"type": "string", "default": "about:blank"}, "title": {"type": "string"}, "status": {"type": "integer"},
+                       "detail": {"anyOf": [{"type": "string"}, {"type": "null"}]}, "instance": {"anyOf": [{"type": "string"}, {"type": "null"}]}},
+    })
+    components[ERROR_ENVELOPE]["properties"]["detail"]["anyOf"][0] = {"$ref": "#/components/schemas/ProblemDetails"}
+    body = {"application/json": {"schema": {"$ref": f"#/components/schemas/{ERROR_ENVELOPE}"}}}
+    for operations in schema.get("paths", {}).values():
+        for operation in operations.values():
+            if not isinstance(operation, dict) or "responses" not in operation:
+                continue
+            responses = operation["responses"]
+            for status in STANDARD_ERROR_STATUSES:
+                if status not in responses:
+                    responses[status] = {"description": "Error", "content": body}
+                elif status == "422":
+                    responses[status] = {"description": responses[status].get("description", "Error"), "content": body}
