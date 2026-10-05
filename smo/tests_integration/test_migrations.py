@@ -21,7 +21,7 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0025"          # raise this with every new revision: the tests below then check it is the head
+HEAD = "0026"          # raise this with every new revision: the tests below then check it is the head
 
 
 def _scripts() -> ScriptDirectory:
@@ -73,14 +73,16 @@ def _run(script: Path, url: str, *args: str) -> subprocess.CompletedProcess:
 
 
 def _schema(url: str) -> dict:
-    """{(table, column): (type, nullable, default)}, plus the constraint names, from the catalog."""
+    """{(table, column): (type, nullable, default)}, plus the constraints (name and definition), from the catalog, across every schema (a module's
+    tables live in its own schema since PR-DB-2.5; a check on a status column is a constraint whose definition changes, its name does not)."""
     engine = create_engine(url)
     with engine.connect() as connection:
         columns = connection.execute(text(
-            "SELECT table_name, column_name, data_type, is_nullable, column_default FROM information_schema.columns "
-            "WHERE table_schema = 'public' AND table_name <> 'alembic_version'")).all()
+            "SELECT table_schema || '.' || table_name, column_name, data_type, is_nullable, column_default FROM information_schema.columns "
+            "WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_name <> 'alembic_version'")).all()
         constraints = connection.execute(text(
-            "SELECT conrelid::regclass::text, conname FROM pg_constraint WHERE connamespace = 'public'::regnamespace "
+            "SELECT conrelid::regclass::text, conname, pg_get_constraintdef(oid) FROM pg_constraint "
+            "WHERE connamespace NOT IN ('pg_catalog'::regnamespace, 'information_schema'::regnamespace) AND conrelid <> 0 "
             "AND conrelid::regclass::text <> 'alembic_version'")).all()
     engine.dispose()
     return {"columns": sorted(map(tuple, columns)), "constraints": sorted(map(tuple, constraints))}
@@ -138,11 +140,11 @@ def test_the_revision_after_the_baseline_applies_to_a_baseline_database_and_roll
     """OPS-1.4: from 0001 to head and back, with the schema after the round trip equal to a database that never left 0001."""
     assert _run(MIGRATE, databases["fresh"], "--revision", "0001").returncode == 0
     at_baseline = _schema(databases["fresh"])
-    assert "notification_outbox" not in {table for table, _ in at_baseline["constraints"]}
+    assert "notification_outbox" not in {table for table, *_ in at_baseline["constraints"]}
 
     up = _run(MIGRATE, databases["fresh"])
     assert up.returncode == 0 and f"upgraded to {HEAD}" in up.stdout, up.stderr
-    assert any(table == "notification_outbox" for table, *_ in _schema(databases["fresh"])["columns"])
+    assert any(table == "public.notification_outbox" for table, *_ in _schema(databases["fresh"])["columns"])
 
     at_head = _schema(databases["fresh"])
     previous = _scripts().get_revision(HEAD).down_revision                                   # one step down, whatever the head is

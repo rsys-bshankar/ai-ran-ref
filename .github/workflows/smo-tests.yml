@@ -950,7 +950,8 @@ jobs:
         working-directory: smo
         run: |
           run() { kubectl -n smo exec -i deploy/sme -- python3 - "$@" < scripts/k8s_staged_job_failover.py; }
-          job=$(run start | tail -1)
+          started=$(run start) || { echo "$started"; exit 1; }
+          job=$(tail -1 <<<"$started")
           echo "job $job: wave 1 of 3 done, 20 s pause before wave 2"
           kubectl -n smo scale deploy/ran-nf-oam-worker --replicas=0
           kubectl -n smo wait --for=delete pod -l app.kubernetes.io/name=ran-nf-oam-worker --timeout=90s
@@ -968,6 +969,7 @@ jobs:
             echo "::group::$pod"; kubectl -n smo describe pod "$pod" | tail -40; kubectl -n smo logs "$pod" --all-containers --tail=60 || true; echo "::endgroup::"
           done
           kubectl -n smo logs job/migrate --tail=80 || true
+          for d in ran-nf-oam ran-nf-oam-worker sme; do echo "::group::$d"; kubectl -n smo logs "deploy/$d" --tail=60 || true; echo "::endgroup::"; done
 
       - name: helm uninstall
         run: helm uninstall smo -n smo

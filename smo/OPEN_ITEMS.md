@@ -1366,3 +1366,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 6. **Safer changes:** done (MGT-1.1–1.8, MGT-3, MGT-8.1).
 7. **Later:** HA, mesh, federation, vendor profiles.
 8. **Dev sanity and demo:** OPS-10.1–10.4 done (the redeploy gate, `.github/workflows/deploy-on-main.yml`); OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-2 and OPS-5 (OPS-1.6 is done).
+
+## v0.5.0 validation inventory (started)
+- **Every CHECK constraint on a status/enum column against the code that writes it.** Revision 0026 fixed two (`write_config_job`, `write_config_sub_change`) that rejected states the code uses; the other ~100 CHECK lists in the schema (see `pg_constraint`) were not audited, and SQLite hides every mismatch. A generated test per column (enum or literal set from the model/FSM against the constraint) belongs in the DB-test category.
+
