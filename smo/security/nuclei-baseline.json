@@ -1,0 +1,3 @@
+{
+ "_comment": "Findings of the Nuclei default templates against the gateway and the GUI that are accepted, as \"<template-id> <severity>\": \"reason\" (scripts/dast_baseline.py). Empty: every finding of severity low or above fails the nightly run."
+}
