@@ -186,11 +186,9 @@ def test_terminate_removes_deployment(client, monkeypatch):
     del_resp = client.delete(f"/deployments/{created['nfDeploymentId']}")
     assert del_resp.status_code == 204
 
-    # placement query against a deleted deployment is a genuine error path,
-    # not modeled with a friendly 404 in this reference build — asserting
-    # that explicitly rather than papering over it.
+    # a placement query against a deleted deployment is a 404 (the contract test found it answering 500)
     resp = client.get(f"/deployments/{created['nfDeploymentId']}/placement")
-    assert resp.status_code == 500
+    assert resp.status_code == 404
 
 
 def test_terminate_from_running_also_removes_its_resource_link(client, monkeypatch, db_session_factory):
@@ -489,3 +487,7 @@ def test_instantiate_and_scale_with_an_idempotency_key_run_once(client, monkeypa
     assert scaled.status_code == repeated.status_code == 200 and repeated.headers["Idempotent-Replayed"] == "true"
     with db_session_factory() as session:
         assert session.query(LCMOperation).filter_by(operation_type="SCALE").count() == 1
+
+
+def test_an_unknown_operation_is_404(client):
+    assert client.get("/operations/e3e70682-c209-1cac-a29f-6fbed82c07cd").status_code == 404

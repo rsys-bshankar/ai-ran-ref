@@ -89,3 +89,10 @@ def test_list_orders_returns_every_persisted_order(client, monkeypatch):
 
     listed = client.get("/orders").json()["items"]
     assert [(o["orderId"], o["scope"], o["steps"]) for o in listed] == [(created["orderId"], "policy-rollout", created["steps"])]
+
+
+def test_an_unknown_order_is_404_and_a_step_without_its_type_is_422(client):
+    unknown = "e3e70682-c209-1cac-a29f-6fbed82c07cd"
+    assert client.get(f"/orders/{unknown}").status_code == 404
+    assert client.post(f"/orders/{unknown}/cancel").status_code == 404
+    assert client.post("/orders", json={"scope": "s", "steps": [{"targetModule": "NFO"}]}).status_code == 422

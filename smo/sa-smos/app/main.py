@@ -80,6 +80,8 @@ def evaluate_thresholds(monitor_id: uuid.UUID, current_metrics: dict, db: Sessio
     not a gap this LLD pass needed to close).
     """
     monitor = db.get(AssuranceMonitor, monitor_id)
+    if monitor is None:
+        raise framework_error(FrameworkError.ASSURANCE_MONITOR_NOT_FOUND, detail="no such AssuranceMonitor")
     breaches = {k: v for k, v in monitor.requirement_thresholds.items() if current_metrics.get(k, 0) < v}
     return {"monitorId": str(monitor.monitor_id), "breaches": breaches}
 
