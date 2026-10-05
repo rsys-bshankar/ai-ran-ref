@@ -199,6 +199,16 @@ async def proxy(full_path: str, request: Request):
     return response
 
 
+def _path_problem(rest: str) -> bool:
+    """True for a path the policy and the backend could read differently (see the caller)."""
+    if "\\" in rest or "\x00" in rest:
+        return True
+    parts = rest.split("/")
+    if parts[-1] == "":
+        parts = parts[:-1]                               # one trailing slash is tolerated
+    return any(part in ("", ".", "..") for part in parts)
+
+
 async def _proxy(full_path: str, request: Request):
     """The proxy itself (`proxy` above adds the audit record): authenticates, applies the role policy, forwards."""
     segments = full_path.split("/", 1)
@@ -222,6 +232,13 @@ async def _proxy(full_path: str, request: Request):
             "detail": f"this caller has used its request budget; retry in {wait} s"})
 
     rest_of_path = segments[1] if len(segments) > 1 else ""
+    if _path_problem(rest_of_path):
+        # The role policy and the kill switch match the path as received, a backend resolves `.` and `..` (the forwarding client does) and a trailing slash
+        # (the framework redirects): so a path that is not already in its resolved form could pass the policy for one route and reach another (found by
+        # tests_integration/test_token_abuse.py: `GET /ran-nf-oam/rapp-kill/.` was not `GET /ran-nf-oam/rapp-kill`).
+        return JSONResponse(status_code=400, content={"title": "INVALID_PATH", "status": 400,
+                                                      "detail": "the path has a '.', '..' or empty segment, or a backslash: send the resolved path"})
+    rest_of_path = rest_of_path.removesuffix("/")        # one trailing slash is the same route, so policy and forwarding see the same path
     if role == roles.ROLE_RAPP and (roles.internal_only(prefix, request.method, rest_of_path)
                                     or not roles.rapp_may_change(prefix, request.method, rest_of_path)):
         # PR-SEC-14: a route that changes what the platform allows rApps to do is not one an rApp may call, and an rApp changes only what

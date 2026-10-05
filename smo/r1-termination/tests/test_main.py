@@ -508,3 +508,11 @@ def test_the_public_base_url_must_be_an_origin(monkeypatch, value, ok):
             main._public_base_url()
     else:
         assert main._public_base_url() == ok
+
+
+def test_a_path_the_policy_and_the_backend_could_read_differently_is_refused():
+    from app.main import _path_problem
+    for bad in (".", "..", "x/./y", "x/../y", "x//y", "/x", "x/\\y", "x\x00y", "/"):
+        assert _path_problem(bad), bad
+    for fine in ("", "x", "x/y", "x/y/", "published-apis/v1/abc/service-apis", "a.b/c..d"):
+        assert not _path_problem(fine), fine
