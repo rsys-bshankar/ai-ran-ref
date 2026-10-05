@@ -617,6 +617,15 @@ jobs:
           pip install --require-hashes -r requirements/dev.txt
           PYTHONPATH=shared python -m pytest tests_integration/test_migrations.py -v
 
+      # The Postgres-only tests of tests_integration (they skip without SMO_TEST_POSTGRES_URL, so the SQLite job never ran them): per-module roles,
+      # the status constraints of CM jobs (revision 0026), and every CHECK list against the code that writes the column (PR-V-5)
+      - name: Roles, and every CHECK constraint against the code that writes it
+        working-directory: smo
+        env:
+          SMO_TEST_POSTGRES_URL: postgresql+psycopg://smo:smo@localhost:5432/smo
+        run: |
+          PYTHONPATH=shared python -m pytest tests_integration/test_db_roles.py tests_integration/test_status_checks.py tests_integration/test_check_constraints.py -v
+
       # PR-OPS-1.6: the previous commit's schema (its own scripts/migrate.py, on an empty database) upgrades to this commit's head
       - name: A database at the previous commit's schema upgrades to this commit's head
         working-directory: smo
