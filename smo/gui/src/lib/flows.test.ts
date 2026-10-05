@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConfigJob, Instance, Model, ModelLifecycle, NfDeployment, O1Endpoint, Package, ServiceOrder } from "../api/types";
-import { FLOWS, flow01, flow02, flow03, flow05, flow06, flow07, flow09, flow10, progress, settle, type FlowStep } from "./flows";
+import { FLOWS, flow01, flow02, flow03, flow06, flow07, flow09, flow10, progress, settle, type FlowStep } from "./flows";
 
 const statuses = (steps: FlowStep[]) => steps.map((s) => s.status);
 
@@ -26,7 +26,7 @@ const lifecycle = (modelLifecycleState: string, runtimeLifecycleState = "NOT_DEP
 
 describe("the ten documented flows", () => {
   it("are all tracked, in order", () => {
-    expect(FLOWS.map((f) => f.id)).toEqual(["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"]);
+    expect(FLOWS.map((f) => f.id)).toEqual(["01", "02", "03", "04", "06", "07", "08", "09", "10"]);
     expect(FLOWS.every((f) => f.doc.startsWith(f.id + "-") && f.doc.endsWith(".md"))).toBe(true);
   });
 });
@@ -85,17 +85,6 @@ describe("flow 03 — config write", () => {
   });
   it("wants a heartbeat when no endpoint is ACTIVE", () => {
     expect(flow03([ep("DISCOVERED")], undefined)[1].status).toBe("warn");
-  });
-});
-
-describe("flow 05 — A1 EI → consumption", () => {
-  it("progresses from registration to an active consumer job", () => {
-    const ei = { eiTypeId: "ei", registeredBy: "rapp", eiSourceDmeTypeId: "t" };
-    expect(statuses(flow05(ei, undefined, [], []))).toEqual(["done", "current", "todo", "todo", "todo", "todo"]);
-    const done = flow05(ei, { dmeTypeId: "t", dmeTypeIdStruct: {}, typeName: "RAN.X", producerIds: ["p"], typeStatus: "ENABLED" },
-      [{ offerId: "o", dmeTypeId: "t", dataDeliveryMethodsOffered: ["PULL_HTTP"], committedMethod: "PULL_HTTP", dataAvailabilityNotificationUri: null, dataOfferTerminationNotificationUri: "x" }],
-      [{ dataJobId: "j", dataDeliveryMode: "CONTINUOUS", dmeTypeId: "t", productionJobDefinition: {}, dataDeliveryMethod: "PULL_HTTP", deliveryDetails: {}, consumerId: "c", status: "ACTIVE" }]);
-    expect(progress(done).complete).toBe(true);
   });
 });
 

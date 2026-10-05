@@ -118,7 +118,7 @@ class RegisterRmihRequest(BaseModel):
     (intentHandlingCapabilityList, supportedNegotiationFunctionalities,
     supportedUtilityList). `smeServiceId`/`notificationDestination` are this
     build's own: the SME-published API it serves and where new Intents are
-    pushed (same callback convention as DME/A1-Related)."""
+    pushed (same callback convention as DME)."""
     model_config = ConfigDict(extra="forbid")
 
     rmihId: str

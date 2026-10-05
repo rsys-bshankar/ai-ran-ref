@@ -109,9 +109,8 @@ RAPP_MAY_CHANGE: dict[str, tuple[tuple[frozenset[str], re.Pattern], ...] | None]
             (("POST",), r"^/config-jobs$"),
             (("POST",), r"^/config-jobs/[^/]+/rollback$"),
         ),
-        # an rApp's own data-producer and A1 surfaces, which the SDK does not wrap
+        # an rApp's own data-producer surface, which the SDK does not wrap
         "/ran-analytics": None,
-        "/a1-related": None,
         "/dme-push": None,
         "/dme-pull": None,
     }.items()

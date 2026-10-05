@@ -91,8 +91,8 @@ jobs:
         run: |
           set -e
           for m in onboarding rapp-mgmt ran-nf-oam aimgf mlmr mllf so-smos \
-                   a1-related sme dme r1-termination nfo focom ran-analytics mdaf \
-                   intent-service sa-smos mock-near-rt-ric mock-o1-adaptor; do
+                   sme dme r1-termination nfo focom ran-analytics mdaf \
+                   intent-service sa-smos mock-o1-adaptor; do
             scripts/run_unit_suite.sh "$m" "$m" app ".:../shared"
           done
           scripts/run_unit_suite.sh sdk sdk smo_sdk ".:../shared"
@@ -238,21 +238,9 @@ jobs:
           done
           [ "$(psql "SELECT count(*) FROM onboarding.application_package")" -gt 0 ]
 
-      - name: a1_mock_net isolation (RT-7)
+      - name: Only the documented host ports are published
         working-directory: smo
         run: |
-          reach='import socket,sys; s=socket.socket(); s.settimeout(3); s.connect((sys.argv[1],int(sys.argv[2])))'
-          # a1-related is on both networks: it reaches the mock.
-          docker compose exec -T a1-related python3 -c "$reach" mock-near-rt-ric 8000
-          # r1-termination is only on `default`: the mock must not resolve.
-          if docker compose exec -T r1-termination python3 -c "$reach" mock-near-rt-ric 8000; then
-            echo "::error::mock-near-rt-ric reachable from the default network"; exit 1
-          fi
-          # `internal: true`: the mock has no route out.
-          if docker compose exec -T mock-near-rt-ric python3 -c "$reach" 1.1.1.1 443; then
-            echo "::error::mock-near-rt-ric has a route out of a1_mock_net"; exit 1
-          fi
-          # Only the documented host ports are published.
           published=$(docker compose ps --format json | jq -rs '[.[] | select(any(.Publishers[]?; .PublishedPort > 0)) | .Service] | unique | join(" ")')
           echo "services publishing host ports: $published"
           [ "$published" = "gui postgres r1-termination" ]
@@ -770,7 +758,7 @@ jobs:
           helm lint deploy/helm/smo --kube-version 1.30.0
           helm lint deploy/helm/smo --kube-version 1.30.0 -f deploy/helm/smo/ci/kind-values.yaml
           helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 \
-            --set networkPolicy.enabled=true --set podDisruptionBudget.enabled=true --set autoscaling.enabled=true \
+            --set podDisruptionBudget.enabled=true --set autoscaling.enabled=true \
             --set ingress.enabled=true --set ingress.gui.host=gui.example.com --set ingress.r1.host=r1.example.com >/dev/null
           # per-module roles (PR-DB-2.6): the pod holds its role's file and not the owner's; off, the owner's; the Secret is a hook resource
           helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'path: db_password_onboarding'
@@ -915,7 +903,7 @@ jobs:
         working-directory: smo
         run: |
           health_count() { kubectl -n smo exec -i "$1" -- python3 - < scripts/k8s_route_count.py; }
-          for svc in sme dme rapp-mgmt ran-nf-oam r1-termination a1-related nfo focom; do
+          for svc in sme dme rapp-mgmt ran-nf-oam r1-termination nfo focom; do
             pods=$(kubectl -n smo get pods -l "app.kubernetes.io/name=$svc" --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}')
             declare -A before=()
             # the gateway answers an unknown path before its metrics see it, so it is asked for /bootstrap, which it counts

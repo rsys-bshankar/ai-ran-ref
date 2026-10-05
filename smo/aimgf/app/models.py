@@ -341,7 +341,7 @@ class MLMFSubscription(Base):
     dme_type_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     guard_kpi_floor: Mapped[dict | None] = mapped_column(JSON)
     # HISTORY.md §7's `MLMFSubscription` finding, closed: every other
-    # subscription-shaped resource in this build (DME/MDAF/A1-Related/
+    # subscription-shaped resource in this build (DME/MDAF/
     # Intent Service) notifies a real notification_destination and can
     # be torn down with a real DELETE — this one could previously only
     # be created and read.

@@ -57,7 +57,7 @@ def test_route_table_covers_every_module():
     """
     expected_prefixes = {
         "/sme", "/dme", "/dme-push", "/dme-pull", "/onboarding", "/rapp-mgmt",
-        "/ran-nf-oam", "/a1-related", "/nfo", "/focom", "/aimgf", "/mlmr", "/mllf",
+        "/ran-nf-oam", "/nfo", "/focom", "/aimgf", "/mlmr", "/mllf",
         "/ran-analytics", "/mdaf", "/intent-service", "/so-smos", "/sa-smos",
         "/energy-saving-rapp",  # Wave 10.1: the reference rApp's own northbound API
         "/mobility-optimization-rapp",  # Wave 10.2

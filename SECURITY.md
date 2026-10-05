@@ -28,7 +28,7 @@ Older lines and forks receive no backports.
 Report it privately through GitHub: open the repository's **Security** tab and
 choose **Report a vulnerability** (GitHub private vulnerability reporting), or go
 straight to
-<https://github.com/rsys-bshankar/ai-ran-ref/security/advisories/new>.
+<https://github.com/rsys-bshankar/ai-ran-smo/security/advisories/new>.
 If that option is not available to you, open an issue that says only that you
 have a security report to make, with no details, and a maintainer will arrange
 a private channel.
@@ -64,8 +64,7 @@ What is in place, so you can judge what counts as a vulnerability:
   gateway; tokens are issued by SME directly.
   See [`smo/docs/ARCHITECTURE.md`](smo/docs/ARCHITECTURE.md#r1-api-conventions).
 - **Network exposure.** In `docker-compose.yml` only R1 Termination (`:8080`),
-  the GUI (`:3000`) and Postgres (`:5432`) publish host ports. The A1 Near-RT
-  RIC test double sits on an isolated network reachable only from `a1-related`.
+  the GUI (`:3000`) and Postgres (`:5432`) publish host ports.
   The optional `tls` profile adds an nginx edge on `:3443` (GUI) and `:8443` (R1)
   with TLS 1.2+ and HSTS; the plain ports stay open until a deployment removes them.
   Services behind the edge speak HTTP on the compose network (`PR-SEC-2` for mTLS).

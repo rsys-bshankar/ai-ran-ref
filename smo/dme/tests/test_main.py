@@ -388,18 +388,18 @@ def test_a_second_producer_can_register_an_already_known_type(client):
     namespace/name/version regardless of which producer registered it.
     """
     first = client.post("/production-capabilities", json=register_type_body(producerId="ran-nf-oam")).json()
-    second = client.post("/production-capabilities", json=register_type_body(producerId="a1-related")).json()
+    second = client.post("/production-capabilities", json=register_type_body(producerId="ran-analytics")).json()
     assert second["registrationId"] == first["registrationId"]
     types = client.get("/dme-types").json()
     assert len(types) == 1
-    assert types[0]["producerIds"] == ["a1-related", "ran-nf-oam"]
+    assert types[0]["producerIds"] == ["ran-analytics", "ran-nf-oam"]
 
 
 def test_list_producers_returns_every_registered_producer(client):
     client.post("/production-capabilities", json=register_type_body(producerId="ran-nf-oam"))
-    client.post("/production-capabilities", json=register_type_body(name="Other", producerId="a1-related"))
+    client.post("/production-capabilities", json=register_type_body(name="Other", producerId="ran-analytics"))
     ids = {p["producerId"] for p in client.get("/production-capabilities").json()}
-    assert ids == {"ran-nf-oam", "a1-related"}
+    assert ids == {"ran-nf-oam", "ran-analytics"}
 
 
 def test_get_producer_returns_its_supported_type_ids(client):
@@ -691,7 +691,7 @@ def test_create_data_job_pushes_the_job_to_the_producer(client, monkeypatch):
 
 
 def test_create_data_job_succeeds_even_if_the_producer_push_fails(client, monkeypatch):
-    """Best-effort, same pattern as every other DME/FOCOM/A1-Related
+    """Best-effort, same pattern as every other DME/FOCOM
     notification in this build — an unreachable producer must not fail
     the consumer-facing CreateDataJob call.
     """

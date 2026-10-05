@@ -30,7 +30,6 @@ After the move, a notification is sent after the transaction that caused it comm
 | `sme/app/main.py` | `_deliver` | `enqueue` | A | Event subscribers: a service API became available, changed or went away | moved (MSG-1.6) |
 | `aimgf/app/main.py` | `_notify_job_completion` | `enqueue` | A | The job's notification URI: a training or inference job finished | moved (MSG-1.7) |
 | `aimgf/app/main.py` | `report_performance` | `enqueue` | A | A model subscriber: a performance report, possibly below its floor | moved (MSG-1.7) |
-| `a1-related/app/main.py` | `_notify_policy_status_subscribers` | `enqueue` | A | Policy-status subscribers: an enforcement status changed | moved (MSG-1.8) |
 | `focom/app/main.py` | `_notify_inventory_subscribers` | `enqueue` | A | Inventory subscribers: a resource changed | moved (MSG-1.8) |
 | `focom/app/fcaps.py` | `_notify` | `enqueue` | A | Alarm subscribers: an alarm was raised, changed or cleared | moved (MSG-1.8) |
 | `focom/app/fcaps.py` | `_report` | `enqueue` | A | Performance subscribers: new measurements | moved (MSG-1.8) |

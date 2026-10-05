@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { api, smo } from "../api/client";
 import { POLL, unwrapPage, useSmo } from "../api/hooks";
 import type {
-  A1Policy, Alarm, AnalyticsReport, InstanceSummary, Intent, MlmfReport, Model, ModelLifecycle, ModulesStatus, NfDeployment,
+  Alarm, AnalyticsReport, InstanceSummary, Intent, MlmfReport, Model, ModelLifecycle, ModulesStatus, NfDeployment,
   O1Endpoint, OCloudAlarm, Package, PerfReport, RemedialAction,
 } from "../api/types";
 import { CountBar, Sparkline } from "../components/charts";
@@ -24,7 +24,6 @@ export function Dashboard() {
   const modelLifecycles = useSmo<ModelLifecycle[]>("/aimgf/model-lifecycles");
   const deployments = useSmo<NfDeployment[]>("/nfo/deployments");
   const endpoints = useSmo<O1Endpoint[]>("/ran-nf-oam/o1-adaptor-endpoints");
-  const policies = useSmo<A1Policy[]>("/a1-related/policies");
   const intents = useSmo<Intent[]>("/intent-service/intents");
   const analytics = useSmo<AnalyticsReport[]>("/mdaf/reports");
 
@@ -95,7 +94,6 @@ export function Dashboard() {
           <Summary label="AI/ML models" to="/aiml#models" counts={byKey(models.data, (m) => modelLifecycles.data?.find((l) => l.modelId === m.modelId)?.modelLifecycleState ?? "REGISTERED")} />
           <Summary label="NF deployments (NFO)" to="/infrastructure#nfo" counts={byState(deployments.data)} />
           <Summary label="O1 adaptor endpoints" to="/infrastructure#o1" counts={byKey(endpoints.data, (e) => e.healthStatus)} />
-          <Summary label="A1 policies" to="/policy#a1" counts={byKey(policies.data, (p) => p.enforcementStatus)} />
           <Summary label="Intents" to="/policy#intents" counts={byKey(intents.data, (i) => i.intentAdminState)} />
           <Summary label="RAN analytics reports" to="/kpis#analytics" counts={byKey(analytics.data, (r) => r.analyticsType)} />
         </div>

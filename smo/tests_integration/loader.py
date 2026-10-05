@@ -1,7 +1,7 @@
 """Loads multiple modules' FastAPI apps into ONE Python process for
 cross-service integration testing.
 
-Every one of the sixteen modules (plus the mock Near-RT RIC) uses the
+Every one of the modules (and the mock O1 adaptor) uses the
 identical top-level package name `app` — correct for how they actually
 run (one module per Docker container, per the Dockerfile's MODULE build
 arg, so no collision ever occurs in production). It's ONLY a problem for

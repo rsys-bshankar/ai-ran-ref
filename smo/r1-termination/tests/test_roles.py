@@ -162,7 +162,7 @@ def test_an_rapp_may_not_change_what_it_does_not_use(gateway, method, path):
 @pytest.mark.parametrize("method, path", [
     ("POST", "/ran-nf-oam/config-jobs"), ("POST", "/dme/actions"), ("PUT", "/dme/data-jobs/j"), ("POST", "/aimgf/models/m/advance"),
     ("POST", "/aimgf/ml-training-requests"), ("PATCH", "/intent-service/intents/i/admin-state"), ("POST", "/sme/oauth2/token"),
-    ("POST", "/mlmr/models/m/artifact"), ("POST", "/a1-related/policies"), ("DELETE", "/mdaf/subscriptions/s"),
+    ("POST", "/mlmr/models/m/artifact"), ("DELETE", "/mdaf/subscriptions/s"),
 ])
 def test_an_rapp_may_change_what_it_uses(gateway, method, path):
     assert client.request(method, path, headers=AUTH).status_code == 200

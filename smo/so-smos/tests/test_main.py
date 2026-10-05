@@ -37,7 +37,7 @@ def client(monkeypatch):
 def test_submit_order_persists_and_returns_executed_steps(client, monkeypatch):
     monkeypatch.setattr("app.main.execute_order", lambda r1, steps: [{**s, "status": "COMPLETED", "result": {}} for s in steps])
 
-    resp = client.post("/orders", json={"scope": "policy-rollout", "steps": [{"stepType": "POLICY", "targetModule": "A1_RELATED"}]})
+    resp = client.post("/orders", json={"scope": "deploy-rollout", "steps": [{"stepType": "DEPLOY", "targetModule": "NFO"}]})
     assert resp.status_code == 202
     body = resp.json()
     assert body["steps"][0]["status"] == "COMPLETED"
@@ -46,7 +46,7 @@ def test_submit_order_persists_and_returns_executed_steps(client, monkeypatch):
 
 def test_query_order_status_returns_the_persisted_order(client, monkeypatch):
     monkeypatch.setattr("app.main.execute_order", lambda r1, steps: [{**s, "status": "COMPLETED", "result": {}} for s in steps])
-    created = client.post("/orders", json={"scope": "policy-rollout", "steps": [{"stepType": "POLICY", "targetModule": "A1_RELATED"}]}).json()
+    created = client.post("/orders", json={"scope": "deploy-rollout", "steps": [{"stepType": "DEPLOY", "targetModule": "NFO"}]}).json()
 
     resp = client.get(f"/orders/{created['orderId']}")
     assert resp.json()["orderId"] == created["orderId"]
@@ -64,7 +64,7 @@ def test_cancel_order_marks_only_pending_steps_cancelled(client, monkeypatch):
         {**steps[2], "status": "PENDING"},
     ])
     created = client.post("/orders", json={"scope": "mixed", "steps": [
-        {"stepType": "POLICY", "targetModule": "A1_RELATED"},
+        {"stepType": "DEPLOY", "targetModule": "NFO"},
         {"stepType": "CONFIG", "targetModule": "RAN_NF_OAM"},
         {"stepType": "DEPLOY", "targetModule": "NFO"},
     ]}).json()
@@ -85,10 +85,10 @@ def test_list_orders_returns_every_persisted_order(client, monkeypatch):
     """GUI pass: only GET /orders/{id} existed."""
     monkeypatch.setattr("app.main.execute_order", lambda r1, steps: [{**s, "status": "COMPLETED", "result": {}} for s in steps])
     assert client.get("/orders").json()["items"] == []
-    created = client.post("/orders", json={"scope": "policy-rollout", "steps": [{"stepType": "POLICY", "targetModule": "A1_RELATED"}]}).json()
+    created = client.post("/orders", json={"scope": "deploy-rollout", "steps": [{"stepType": "DEPLOY", "targetModule": "NFO"}]}).json()
 
     listed = client.get("/orders").json()["items"]
-    assert [(o["orderId"], o["scope"], o["steps"]) for o in listed] == [(created["orderId"], "policy-rollout", created["steps"])]
+    assert [(o["orderId"], o["scope"], o["steps"]) for o in listed] == [(created["orderId"], "deploy-rollout", created["steps"])]
 
 
 def test_an_unknown_order_is_404_and_a_step_without_its_type_is_422(client):

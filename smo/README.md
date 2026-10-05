@@ -1,6 +1,6 @@
 # AI-RAN SMO — Reference Implementation
 
-[![Deploy gate (main)](https://github.com/rsys-bshankar/ai-ran-ref/actions/workflows/deploy-on-main.yml/badge.svg?branch=main)](https://github.com/rsys-bshankar/ai-ran-ref/actions/workflows/deploy-on-main.yml)
+[![Deploy gate (main)](https://github.com/rsys-bshankar/ai-ran-smo/actions/workflows/deploy-on-main.yml/badge.svg?branch=main)](https://github.com/rsys-bshankar/ai-ran-smo/actions/workflows/deploy-on-main.yml)
 
 This directory holds a reference implementation of an O-RAN Service
 Management and Orchestration (SMO) platform. It is built from the design of
@@ -41,7 +41,6 @@ that realises a standard and adds its own behaviour on top says so.
 | [Onboarding](onboarding/README.md) | O-RAN (rApp package, ASD / TOSCA CSAR) + Internal (`manifest.yaml`, `capabilities.yaml`) | `onboarding/` | CSAR package validation, `ApplicationPackage` FSM, priming, usage registrations | `/onboarding` |
 | [rApp Management](rapp-mgmt/README.md) | O-RAN (rApp Manager) + Internal (autonomy mode, region scope) | `rapp-mgmt/` | `RAppInstance` FSM, deploy/bootstrap/upgrade/terminate, perf/fault reports | `/rapp-mgmt` |
 | [RAN NF OAM](ran-nf-oam/README.md) | O-RAN (O1) + 3GPP (MnS: TS 28.532 / 28.541 / 28.111, TS 28.319 MSAC) + Internal (vendor capability registry) | `ran-nf-oam/` | O1: adaptor endpoints, NETCONF and RESTCONF CM writes with MSAC access control, alarms, PM subscriptions and PM files, software management, vendor capability registry | `/ran-nf-oam` |
-| [A1 Related](a1-related/README.md) | O-RAN (A1-P, A1-EI) | `a1-related/` | A1 policy mapping store, service supervision, EI types; southbound to the mock Near-RT RIC | `/a1-related` |
 | [NFO](nfo/README.md) | O-RAN (O2-DMS-style deployment) + Internal (descriptor model) | `nfo/` | NF descriptors and deployments (`NFDeployment` FSM, heal/scale/terminate) | `/nfo` |
 | [FOCOM](focom/README.md) | O-RAN (O2-IMS) | `focom/` | O-Cloud inventory, provisioning, inventory subscriptions, FCAPS, TEIV topology export | `/focom` |
 | [AIMgF](aimgf/README.md) | 3GPP (TS 28.105) + Internal (lifecycle orchestration) | `aimgf/` | AI/ML lifecycle orchestration: model and runtime lifecycle FSMs, training/validation/emulation/inference jobs, feature groups, MLMF | `/aimgf` |
@@ -62,7 +61,6 @@ records. It has no port; run more than one if you like, a task still runs once p
 
 | Module | Standards basis | Directory | Role | Port / R1 route |
 |---|---|---|---|---|
-| [Mock Near-RT RIC](mock-near-rt-ric/README.md) | Test double of an O-RAN A1-P endpoint | `mock-near-rt-ric/` | A1-P test double, reachable only from `a1-related` on the internal `a1_mock_net` network | none |
 | [Mock O1 Adaptor](mock-o1-adaptor/README.md) | Test double of an O1 adaptor (NETCONF and RESTCONF) | `mock-o1-adaptor/` | O1 test double that answers RAN NF OAM's NETCONF RPCs (`/edit-config`) and RESTCONF requests (`/restconf`) | none (`mock-o1-adaptor:8000`) |
 | [AI Runtime SDK](sdk/README.md) | Internal (thin client over R1) | `sdk/smo_sdk/` | Python clients for the six rApp-facing namespaces: data, analytics, models, lifecycle, intent, platform | library |
 | [Shared library](shared/README.md) | Internal (implements the RFC 7807 / RFC 7662 conventions) | `shared/smo_shared/` | DB session, FSM base, errors, pagination, correlation ids, webhook helper, `R1Client` | library |
@@ -153,7 +151,7 @@ migration-vs-models check against a real Postgres, and the GUI typecheck,
 tests, build and call-flow diagram validation. CI
 (`../.github/workflows/smo-tests.yml`) runs the same checks on every change
 under `smo/`. CI validates `docker-compose.yml` with `docker compose config` and
-brings the full stack up (`compose-e2e`: the whole runbook, §2–§27, replayed live, plus the `a1_mock_net` isolation).
+brings the full stack up (`compose-e2e`: the whole runbook, §2–§27, replayed live).
 
 After editing a sample rApp, rebuild its package with
 `python3 samples/build_csar.py <name>`. The integration suite fails if a
@@ -199,7 +197,7 @@ smo/
   DEMO_RUNBOOK.md           live walk-through: rApp lifecycle on the Energy Saving package (§0–§23), reference rApps (§24–§27)
   OPEN_ITEMS.md             open items only
   HISTORY.md                audit trail: closed items, spec audit, wave exit reviews (cited by code comments)
-  docker-compose.yml        deployment topology, incl. the isolated a1_mock_net network
+  docker-compose.yml        deployment topology
   Dockerfile                one image, parameterised by the MODULE build arg
   migrations/001_init.sql   the consolidated Postgres schema (the Alembic baseline revision 0001)
   migrations/versions/      Alembic revisions on top of it; scripts/migrate.py applies them (docs/adr/0001-schema-migrations.md)
@@ -208,7 +206,6 @@ smo/
   <module>/README.md        the module's HLD + LLD + unit-test document: design, data model, API, tests, status
   <module>/app/             one directory per SMO module (models.py, statemachine.py, main.py)
   <module>/tests/           that module's unit tests (standalone, SQLite)
-  mock-near-rt-ric/         A1-P test double (A1 Related's southbound)
   mock-o1-adaptor/          NETCONF / RESTCONF O1 test double (RAN NF OAM's southbound)
   sdk/smo_sdk/              AI Runtime SDK: data, analytics, models, lifecycle, intent, platform clients
   gui/                      React + TypeScript operator console (nginx)

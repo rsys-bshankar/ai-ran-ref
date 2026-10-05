@@ -149,7 +149,7 @@ function OnboardForm() {
         <Field label="CSAR location (URL reachable from the Onboarding service)" hint="Validation runs asynchronously: the result shows up as the package state (AVAILABLE or FAILED).">
           <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="http://r1-termination:8899/energy-saving-rapp.csar" required pattern="https?://.+" />
         </Field>
-        <Field label="Application type"><select value={applicationType} onChange={(e) => setApplicationType(e.target.value)}><option>rApp</option><option>xApp</option></select></Field>
+        <Field label="Application type"><select value={applicationType} onChange={(e) => setApplicationType(e.target.value)}><option>rApp</option></select></Field>
         <button className="btn primary" disabled={action.isPending}>Onboard</button>
       </form>
     </Card>

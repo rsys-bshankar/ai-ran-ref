@@ -98,13 +98,6 @@
    "idempotency_key"
   ]
  },
- "a1-related": {
-  "schema": "a1_related",
-  "shared": [
-   "module_identity",
-   "notification_outbox"
-  ]
- },
  "focom": {
   "schema": "focom",
   "shared": [

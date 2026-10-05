@@ -7,7 +7,7 @@
 | Standards basis | O-RAN R1 DME (O-RAN-SC ICS-derived data plane) + internal O1 action mediation |
 | R1 route / port | `/dme` via R1 Termination (container `:8000`); `/dme-push` and `/dme-pull` are routed to the same backend and are the same as `/dme` after prefix stripping |
 | Depends on (over R1) | RAN NF OAM (`POST /ran-nf-oam/config-jobs`, action path only); caller-registered callback URLs (producers, type subscribers, offer termination) |
-| Called by | rApps and the SDK `data` namespace; MDAF (checks `input_sources` against `GET /dme/data-jobs/{id}`); RAN NF OAM (registers PM types, ingests records into jobs); A1 Related (EI types as DME types); SA SMOS O1-CM handler (`POST /dme/actions`); rApp Management (producer deregistration); GUI BFF |
+| Called by | rApps and the SDK `data` namespace; MDAF (checks `input_sources` against `GET /dme/data-jobs/{id}`); RAN NF OAM (registers PM types, ingests records into jobs); SA SMOS O1-CM handler (`POST /dme/actions`); rApp Management (producer deregistration); GUI BFF |
 | Database tables | `dme_producer`, `dme_type`, `dme_producer_type`, `dme_type_subscription`, `dme_delivery_schema`, `data_job`, `data_offer`, `data_record`, `dme_action_record` |
 | Unit tests | 85 passed (`tests/`, SQLite, standalone) |
 | Status | Done. `dme_delivery_schema` is defined but unused (see 2.8) |
@@ -46,7 +46,7 @@ Not part of any standard: the DataRecord store, source provenance and eligibilit
 
 ```
  Data path                                            Action path
- producer (RAN NF OAM, A1 Related, rApp)              rApp / SA SMOS O1-CM handler
+ producer (RAN NF OAM, rApp)              rApp / SA SMOS O1-CM handler
     | POST /production-capabilities                       | POST /dme/actions
     | POST /data-jobs/{id}/records                        v
     v                                                   +-----+   POST /ran-nf-oam/config-jobs   +-------------+
@@ -58,7 +58,7 @@ Not part of any standard: the DataRecord store, source provenance and eligibilit
 - **Action path: rApp → DME → RAN NF OAM → O1.** `POST /dme/actions` records the decision (target `managedElementRef`, `className` / `managedFunctionRef`, attribute changes, source context) and forwards it to `POST /ran-nf-oam/config-jobs`. DME's record is the audit of what the AI/ML decision asked for; RAN NF OAM's `WriteConfigJob` is the record of what NETCONF did. MDAF is never on this path.
 - **Data path: MDAF and rApps → DME.** MDAF consumes DME's data plane like any rApp.
 
-A1, Near-RT RIC and xApps are not on the DME loop: inference runs inside the rApp. O-RAN WG4 (O-RU M-plane YANG) is out of scope apart from the Software Management RPC engine RAN NF OAM implements.
+Inference runs inside the rApp. O-RAN WG4 (O-RU M-plane YANG) is out of scope apart from the Software Management RPC engine RAN NF OAM implements.
 
 ### 1.4 Ownership
 
@@ -301,13 +301,12 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 ### 3.3 What is not covered here
 
 - The real RAN NF OAM behind `POST /actions` (capability and schema pre-check, NETCONF dispatch): `tests_integration/test_cross_service.py` (`test_o1_cm_intent_handler_enacts_an_intent_through_dme_to_the_o1_adaptor`, `test_vendor_onboarding_gates_o1_writes_by_capability_and_schema`), and the reference-rApp suites.
-- A1 Related and RAN Analytics registering through DME: `test_a1_related_register_ei_type_creates_a_real_dme_type` and neighbours in the same file.
 - PostgreSQL behaviour (cascade deletes, array columns); the unit tests run on SQLite.
 - The committed OpenAPI spec matching the live schema: `tests_integration/test_openapi_specs.py`.
 
 ## 4. References
 
-- Call flows: [05 A1 EI registration to consumption](../docs/call-flows/05-a1-ei-registration-to-consumption.md), [08 RAN Analytics data production](../docs/call-flows/08-ran-analytics-data-production.md), [11 producer / type lifecycle](../docs/call-flows/11-dme-producer-type-lifecycle.md), [12 data records and eligibility](../docs/call-flows/12-dme-data-record-lifecycle-eligibility.md), [03 config write with schema check](../docs/call-flows/03-config-write-with-schema-check.md), [20 alarm and PM subscriptions](../docs/call-flows/20-alarm-pm-subscription-lifecycle.md), [21 O1 vendor onboarding](../docs/call-flows/21-o1-vendor-onboarding.md)
+- Call flows: [08 RAN Analytics data production](../docs/call-flows/08-ran-analytics-data-production.md), [11 producer / type lifecycle](../docs/call-flows/11-dme-producer-type-lifecycle.md), [12 data records and eligibility](../docs/call-flows/12-dme-data-record-lifecycle-eligibility.md), [03 config write with schema check](../docs/call-flows/03-config-write-with-schema-check.md), [20 alarm and PM subscriptions](../docs/call-flows/20-alarm-pm-subscription-lifecycle.md), [21 O1 vendor onboarding](../docs/call-flows/21-o1-vendor-onboarding.md)
 - OpenAPI: [`../docs/openapi/dme.json`](../docs/openapi/dme.json)
 - Open items: [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md); history of the ICS alignment: [`../HISTORY.md`](../HISTORY.md) (section 7, DME vs the real ICS API)
 - Cross-cutting rules: [ARCHITECTURE.md](../docs/ARCHITECTURE.md)

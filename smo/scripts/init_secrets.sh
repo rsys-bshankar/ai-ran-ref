@@ -50,7 +50,6 @@ create_secret db_password_energy-saving-rapp
 create_secret db_password_mobility-optimization-rapp
 create_secret db_password_coverage-optimization-rapp
 create_secret db_password_traffic-steering-rapp
-create_secret db_password_a1-related
 create_secret db_password_aimgf
 create_secret db_password_dme
 create_secret db_password_focom

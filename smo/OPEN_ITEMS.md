@@ -12,7 +12,7 @@ Each item in sections 1–4: what is missing, why it matters, suggested approach
 
 **After 1.0.0, or with the customer**: customer-specific RAN O1 integration, rApp integration and GUI enhancement; improvements from customer usage; customer DEV/SIT/SVT fixes and enhancements; customer-specific features such as TCE integration and customer-specific telemetry or file decoding for RAN NF OAM and DME. To be discussed with the customer; none of it is planned here.
 
-**Out of scope at every stage**: A1, xApps, the Near-RT RIC and E2, and their policy. The `a1-related` module, `mock-near-rt-ric` and the `OI-5-a1-*` items below predate this decision; what to do with them (remove in an announced release, or freeze) is not decided yet, so they get no new work and no new tests.
+**Out of scope at every stage**: A1, xApps, the Near-RT RIC and E2, and their policy. The `a1-related` module, `mock-near-rt-ric` and the `OI-5-a1-*` items were removed in release 0.5.0 (the code is in the tag `smo-v0.4.0`); A1 stays as a future work item, see "A1 / Near-RT RIC / E2" under 5.8.
 
 **Not decided yet**: what goes in 0.6.0, 0.7.0 and later, and when 1.0.0 is cut. The external penetration test is a criterion for 1.0.0 (see `docs/VALIDATION.md`, V-7c).
 
@@ -25,8 +25,6 @@ Each item in sections 1–4: what is missing, why it matters, suggested approach
 - **OI-1-alarm-storm** — No alarm-storm correlation algorithm in `ran-nf-oam/`;
   `correlation_group` is a coarse string. No audited O-RAN-SC repo implements one either.
   Approach: wait for real alarm traces; start with time-window + topology (`neighbourRefs`) grouping.
-- **OI-1-a1-ml** — A1-ML operations are out of scope (A1 Related LLD §0); schema dormant. Revisit only
-  if that scope decision changes.
 - **OI-6.1-runtime-gate** — `RuntimeLifecycle` transitions (Deploy/Activate/Scale/Terminate, call
   flow 17) have no operator approval beyond the `MODEL_NOT_CERTIFIED` guard. Whether the OI-6.1
   gate should extend to them is undecided. Approach: if yes, reuse the self-loop governance-event
@@ -37,12 +35,6 @@ Each item in sections 1–4: what is missing, why it matters, suggested approach
 - **OI-7-nfo-scale-size** — Runtime scaling takes no target size: `POST /nfo/deployments/{id}/scale` has no
   replica or resource argument, so AIMgF `runtime/scale` cannot ask for one. Approach: add `replicas` /
   `resources` to the NFO scale call and the AIMgF scale request, and pass the manifest's runtime profile bounds.
-- **OI-5-a1-scope** — `subscriptionScope` OWN/OTHERS is treated as ALL; no subscriber identity is
-  tracked. Approach: record the subscriber's rApp id (from the R1 token) and compare with
-  `creator_id`.
-- **OI-5-a1-ric-inventory** — Policy types are the hardcoded `KNOWN_POLICY_TYPES`; `policySchema` is
-  a placeholder; no `GET /rics`. Approach: fetch types and schemas from the Near-RT RIC (A1-P
-  `GET /policytypes`) and model a RIC inventory if more than one RIC is introduced.
 
 ## 3. Spec conformance still open
 
@@ -102,7 +94,7 @@ SA-MLMR-8 (`usageReqs`), SA-MLMR-9 (whole-object `filt-criteria` discovery).
 ## 4. Test coverage
 
 - **OI-4** — Coverage is uneven. By `def test_` count today the shallowest suites are `mllf` (5),
-  `ran-analytics` (13), `mock-o1-adaptor` (14), `so-smos` (15), `mock-near-rt-ric` (16) and
+  `ran-analytics` (13), `mock-o1-adaptor` (14), `so-smos` (15) and
   `r1-termination` (18). Approach: add route-level tests to `mllf` first (its routes are the
   CERTIFIED gate in every rApp deployment); the others were last surveyed as near-complete.
 
@@ -138,7 +130,7 @@ and HA much later).
 | Observability | `PR-OBS` | OBS-2 metrics · OBS-3 traces · OBS-4 business metrics · OBS-5 alerts/SLOs · OBS-6 log shipping · OBS-7 runbooks · OBS-8 self-monitoring |
 | Packaging / ops | `PR-OPS` | OPS-1 migrations · OPS-2 Helm · OPS-3 migrate hook · OPS-4 releases · OPS-5 rolling upgrade · OPS-6 GitOps · OPS-7 config reference · OPS-8 flags · OPS-9 sizing · OPS-10 dev-sanity pipeline (Actions) · OPS-11 demo environment (Codespaces) |
 | High availability | `PR-HA` | HA-1 replicas · HA-2 rolling restart · HA-3 DB failover · HA-4 worker failover · HA-5 placement · HA-6 DR · HA-7 geo |
-| Southbound | `PR-SB` | SB-1 NETCONF/SSH · SB-2 adaptor credentials · SB-3 3GPP YANG · SB-4 WG4 YANG · SB-5 YANG validation · SB-6 containment · SB-7 VES · SB-8 streaming · SB-9 conformance kit · SB-10 vendor profile · SB-11 RIC inventory · SB-12 A1 scope · SB-13 RIC simulator lane · SB-14 O2-IMS client · SB-15 async provisioning · SB-16 K8s driver · SB-17 NFO scale size · SB-18 FOCOM PM collector |
+| Southbound | `PR-SB` | SB-1 NETCONF/SSH · SB-2 adaptor credentials · SB-3 3GPP YANG · SB-4 WG4 YANG · SB-5 YANG validation · SB-6 containment · SB-7 VES · SB-8 streaming · SB-9 conformance kit · SB-10 vendor profile · SB-11 to SB-13 (A1 / Near-RT RIC: out of scope, see below) · SB-14 O2-IMS client · SB-15 async provisioning · SB-16 K8s driver · SB-17 NFO scale size · SB-18 FOCOM PM collector |
 | Management functions | `PR-MGT` | MGT-1 CM history/rollback · MGT-2 MSAC reach · MGT-3 dry-run · MGT-4 change windows · MGT-5 canary · MGT-6 drift · MGT-7 plan mgmt · MGT-8 alarm lifecycle · MGT-9 correlation · MGT-10 topology RCA · MGT-11 KPI engine · MGT-12 PM at scale · MGT-13 trace/QoE · MGT-14 zero-touch · MGT-15 SW campaigns · MGT-16 intent conflicts · MGT-17 SO saga · MGT-18 SLA assurance |
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
@@ -521,7 +513,7 @@ Alembic is in place and compose runs it (`docs/adr/0001-schema-migrations.md`, `
 | OPS-2.3 | Config and secret wiring (env, `*_FILE`) | Pod reads DB URL from a Secret | OPS-2.2 |
 | OPS-2.4 | Probes from `/live` and `/ready` | Probes pass | OPS-2.2 |
 | OPS-2.5 | Services, plus Ingress for R1 Termination and the GUI | Reachable from the kind host | OPS-2.2 |
-| OPS-2.6 | NetworkPolicy equal to the compose network rules (`a1_mock_net` isolation included) | Denied-path test | OPS-2.2 |
+| OPS-2.6 | NetworkPolicy equal to the compose network rules (removed: the only rule isolated the mock Near-RT RIC; the chart has no `networkPolicy` any more) | – | OPS-2.2 |
 | OPS-2.7 | PodDisruptionBudget and HPA templates (off by default) | `helm template` renders | OPS-2.2 |
 | OPS-2.8 | CI: `helm lint` and a kind install | Job green | OPS-2.5 |
 | OPS-2.9 | Runbook replay against the kind install | Replay green | OPS-2.8 |
@@ -657,7 +649,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 
 ### 5.8 Southbound realism (`PR-SB`)
 
-Both southbound ends are mocks (`mock-o1-adaptor`, `mock-near-rt-ric`). The NETCONF path sends an RFC 6241-shaped
+The southbound end is a mock (`mock-o1-adaptor`). The NETCONF path sends an RFC 6241-shaped
 `<edit-config>` as XML over plain HTTP to `O1AdaptorEndpoint.adaptor_uri` (`ran-nf-oam/app/netconf_client.py`).
 FOCOM and NFO are model-level.
 
@@ -742,35 +734,12 @@ Needs access to a vendor simulator or lab.
 | SB-10.3 | List deviations from the standard models | List in the profile README | SB-10.1 |
 | SB-10.4 | Conformance pack run against the vendor | Report attached | SB-9.6, SB-1.9 |
 
-#### A1
+#### A1 / Near-RT RIC / E2 (future work, out of scope)
 
-#### PR-SB-11 — RIC inventory (`OI-5-a1-ric-inventory`)
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| SB-11.1 | `near_rt_ric` table: id, URL, auth ref, status | Migration | – |
-| SB-11.2 | `POST` and `GET /rics` | Route tests | SB-11.1 |
-| SB-11.3 | Health probe per RIC | Status changes when the mock stops | SB-11.2 |
-| SB-11.4 | Fetch policy types from `GET /policytypes` on each RIC | Types and schemas stored | SB-11.2 |
-| SB-11.5 | Map each policy to its RIC | A policy to RIC B goes to B | SB-11.4 |
-| SB-11.6 | Remove the hardcoded `KNOWN_POLICY_TYPES` fallback behind a flag | Test with the flag on | SB-11.4 |
-
-#### PR-SB-12 — A1 OWN/OTHERS scope (`OI-5-a1-scope`)
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| SB-12.1 | Record the subscriber's rApp id from the token on subscription | Column filled | – |
-| SB-12.2 | Compare with `creator_id` for OWN and OTHERS | Test for each scope | SB-12.1 |
-
-#### PR-SB-13 — RIC simulator lane
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| SB-13.1 | Compose profile with the O-RAN-SC `near-rt-ric-simulator` | Starts | – |
-| SB-13.2 | Policy create, read, delete against it | Test green | SB-13.1, SB-11.2 |
-| SB-13.3 | Nightly CI job | Job green | SB-13.2 |
-
-#### O2
+A1 policy management, the Near-RT RIC, xApps and E2 are out of scope at every stage. The `a1-related` module, `mock-near-rt-ric` and everything that
+referred to them were removed in release 0.5.0 (the code is in the tag `smo-v0.4.0`). The backlog that stood here (a RIC inventory, OWN/OTHERS
+subscription scope, a RIC simulator lane, the dormant A1-ML schema) is dropped with it; if the scope changes, restart from that tag. The four
+`a1_*` tables stay in the database, unused, until a later revision drops them (`migrations/table_owners.json`, `_retired`).
 
 #### PR-SB-14 — O2-IMS client
 
@@ -1360,9 +1329,9 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 | QA-5.2 | 72-hour soak | Same | QA-5.1 |
 | QA-6.2 | Role matrix test for the GUI BFF (`rbac.py`) | Every rule has a positive and a negative test | – |
 | QA-7.1 | `mllf` route tests (6 tests, 100 % of its 26 statements: raising the count is not needed, see `docs/VALIDATION.md`) | ≥ 20 route-level tests | – |
-| QA-7.2 | Same for `ran-analytics`, `mock-o1-adaptor`, `so-smos`, `mock-near-rt-ric`, `r1-termination` | Counts raised, one PR each | – |
+| QA-7.2 | Same for `ran-analytics`, `mock-o1-adaptor`, `so-smos`, `r1-termination` | Counts raised, one PR each | – |
 | QA-7.3 | Coverage floor in CI (done: `coverage_floors.json`, `scripts/coverage_floor.py`) | Floor enforced | QA-7.1 |
-| QA-8.1 | Nightly lane: NETCONF server, RIC simulator | Job green | SB-1.9, SB-13.2 |
+| QA-8.1 | Nightly lane: NETCONF server | Job green | SB-1.9 |
 
 ### 5.16 Suggested first slices
 

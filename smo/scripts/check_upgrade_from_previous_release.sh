@@ -50,6 +50,8 @@ echo "== upgrade from $tag ($(git -C "$repo" rev-parse --short "refs/tags/$tag")
 # one set of secrets for both stacks: they share the database volume, and the previous release mounts whichever of these files it declares
 # (0.1.0 only db_password; 0.2.0 also enrollment_secret). A file it does not declare is simply not mounted.
 (cd "$here" && scripts/init_secrets.sh >/dev/null)
+# the previous release's own init first (it may declare a secret this commit no longer has, e.g. 0.4.0's db_password_a1-related), then ours over it
+(cd "$prev_smo" && scripts/init_secrets.sh >/dev/null)
 mkdir -p "$prev_smo/secrets" && cp "$here"/secrets/* "$prev_smo/secrets/"
 [ -f "$here/.env" ] || { cp "$here/.env.example" "$here/.env"; made_env=1; }
 cp "$prev_smo/.env.example" "$prev_smo/.env"

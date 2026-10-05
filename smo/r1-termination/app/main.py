@@ -83,7 +83,6 @@ ROUTES = {
     "/onboarding": os.environ.get("ONBOARDING_URL", "http://onboarding:8000"),
     "/rapp-mgmt": os.environ.get("RAPP_MGMT_URL", "http://rapp-mgmt:8000"),
     "/ran-nf-oam": os.environ.get("RAN_NF_OAM_URL", "http://ran-nf-oam:8000"),
-    "/a1-related": os.environ.get("A1_RELATED_URL", "http://a1-related:8000"),  # reserved, inert until Near-RT RIC
     "/nfo": os.environ.get("NFO_URL", "http://nfo:8000"),
     "/focom": os.environ.get("FOCOM_URL", "http://focom:8000"),
     "/aimgf": os.environ.get("AIMGF_URL", "http://aimgf:8000"),
@@ -342,7 +341,7 @@ async def _introspect_token(request: Request) -> tuple[str, str] | None:
     INTROSPECTION — asking SME whether the token is still active — on
     every proxied request. This is a security gate, not a best-effort
     side effect: unlike this build's usual "unreachable callback never
-    fails the primary operation" pattern (DME/A1 Related notifications),
+    fails the primary operation" pattern (DME notifications),
     SME being unreachable here fails CLOSED (unauthorized), not open.
     """
     auth = request.headers.get("authorization", "")

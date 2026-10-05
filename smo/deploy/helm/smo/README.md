@@ -10,7 +10,7 @@ helm install smo deploy/helm/smo -n smo --create-namespace
 
 Use a namespace of its own: the Services are named as in compose (`sme`, `dme`, `postgres`, ...), which is what the modules and the GUI's nginx address each other by, so there is one release per namespace.
 
-The images are `ghcr.io/rsys-bshankar/ai-ran-ref/smo-<module>:<appVersion>`, the ones the release workflow publishes (`image.registry`, `image.prefix`, `image.tag`). A private registry needs `image.pullSecrets`.
+The images are `ghcr.io/rsys-bshankar/ai-ran-smo/smo-<module>:<appVersion>`, the ones the release workflow publishes (`image.registry`, `image.prefix`, `image.tag`). A private registry needs `image.pullSecrets`.
 
 Reach it:
 
@@ -51,7 +51,7 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 
 ## What is not in the chart
 
-`netconf-lab` (a throwaway lab server) and `edge-tls` (the compose TLS terminator: use `ingress` with a TLS secret instead). `networkPolicy.enabled` adds the isolation compose has: the mock Near-RT RIC reachable only from `a1-related` and with no way out; it needs a CNI that enforces NetworkPolicy.
+`netconf-lab` (a throwaway lab server) and `edge-tls` (the compose TLS terminator: use `ingress` with a TLS secret instead).
 
 ## Values
 

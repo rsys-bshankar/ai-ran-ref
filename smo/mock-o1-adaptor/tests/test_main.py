@@ -16,8 +16,7 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def _reset_mock_state():
     """_applied_changes is a plain module-level dict (Phase 1 test double,
-    not a real persistent service) — same reset shape mock-near-rt-ric's
-    own fixture already uses for the identical reason.
+    not a real persistent service) — reset between tests.
     """
     client.delete("/state")
 
@@ -59,8 +58,7 @@ def test_edit_config_records_the_applied_attribute_changes():
 
 
 def test_edit_config_with_empty_changes_is_rejected():
-    """Same "empty payload is a real, testable rejection trigger" pattern
-    mock-near-rt-ric's own create_policy already established.
+    """Same "empty payload is a real, testable rejection trigger" pattern.
     """
     rpc = _edit_config_rpc("103", "ME-1", {})
     resp = client.post("/edit-config", content=rpc, headers={"Content-Type": "application/xml"})

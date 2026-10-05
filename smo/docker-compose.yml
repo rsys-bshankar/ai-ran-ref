@@ -84,7 +84,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     read_only: true
     tmpfs: ["/tmp"]
-    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_a1-related, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
+    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
     environment:
       PGBOUNCER_POOL_SIZE: ${PGBOUNCER_POOL_SIZE:-20}
       PGBOUNCER_MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-1000}
@@ -107,7 +107,7 @@ services:
     command: ["sh", "-c", "python /srv/scripts/migrate.py && python /srv/scripts/db_roles.py"]
     restart: "no"
     stop_grace_period: 30s
-    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_a1-related, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
+    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
     <<: *hardening
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -139,7 +139,6 @@ services:
       ONBOARDING_URL: http://onboarding:8000
       RAPP_MGMT_URL: http://rapp-mgmt:8000
       RAN_NF_OAM_URL: http://ran-nf-oam:8000
-      A1_RELATED_URL: http://a1-related:8000
       NFO_URL: http://nfo:8000
       FOCOM_URL: http://focom:8000
       AIMGF_URL: http://aimgf:8000
@@ -258,9 +257,8 @@ services:
     stop_grace_period: 30s
     <<: *hardening
     healthcheck: *ready_probe
-    # No isolated network segment — unlike mock-near-rt-ric (RT-7, SMO
-    # Design v1.3 section 3.9), nothing in this build's own design
-    # documents an equivalent O1-adaptor isolation requirement. A real
+    # No isolated network segment: nothing in this build's own design
+    # documents an O1-adaptor isolation requirement. A real
     # ManagedElement's own adaptor_uri (o1_adaptor_endpoint.adaptor_uri)
     # points at http://mock-o1-adaptor:8000/edit-config for a NETCONF ME,
     # or at the RESTCONF root http://mock-o1-adaptor:8000/restconf for a
@@ -335,31 +333,6 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_traffic-steering-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
-
-  a1-related:
-    build: { context: ., args: { MODULE: a1-related } }
-    stop_grace_period: 30s
-    secrets: [db_password_a1-related, enrollment_secret]
-    <<: *hardening
-    healthcheck: *ready_probe
-    depends_on: *wait_for_schema
-    networks: [default, a1_mock_net]
-    environment:
-      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
-      <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_a1_related@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
-      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
-      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_a1-related
-      R1_GATEWAY_URL: http://r1-termination:8000
-      MOCK_NEAR_RT_RIC_URL: http://mock-near-rt-ric:8000
-
-  mock-near-rt-ric:
-    build: { context: ., args: { MODULE: mock-near-rt-ric } }
-    stop_grace_period: 30s
-    <<: *hardening
-    healthcheck: *ready_probe
-    networks: [a1_mock_net]   # isolated, non-routable dev segment — ONLY a1-related can reach it,
-                              # no published ports, not on `default` (closes RT-7, SMO Design v1.3 section 3.9)
 
   nfo:
     build: { context: ., args: { MODULE: nfo } }
@@ -509,7 +482,7 @@ services:
   # ---------------------------------------------------------------- operator GUI
   # Browser -> gui (nginx, the only published GUI port) -> gui-bff -> R1
   # Termination -> modules. gui-bff publishes nothing and authenticates to R1
-  # with its own SME-issued OAuth2 token; neither joins a1_mock_net.
+  # with its own SME-issued OAuth2 token.
   gui-bff:
     build: { context: ., args: { MODULE: gui-bff } }
     stop_grace_period: 30s
@@ -589,8 +562,6 @@ secrets:
     file: ./secrets/db_password_coverage-optimization-rapp
   db_password_traffic-steering-rapp:
     file: ./secrets/db_password_traffic-steering-rapp
-  db_password_a1-related:
-    file: ./secrets/db_password_a1-related
   db_password_aimgf:
     file: ./secrets/db_password_aimgf
   db_password_dme:
@@ -616,8 +587,6 @@ secrets:
 
 networks:
   default:
-  a1_mock_net:
-    internal: true   # no route out — enforces the isolation, not just documents it
 
 volumes:
   smo_pgdata:

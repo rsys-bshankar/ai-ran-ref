@@ -12,7 +12,7 @@ import yaml
 COMPOSE = Path(__file__).resolve().parent.parent / "docker-compose.yml"
 SECRET_FILE = "/run/secrets/enrollment_secret"
 # services that never call another module through R1 (or are not ours): they hold no identity at SME
-NO_IDENTITY = {"postgres", "pgbouncer", "migrate", "r1-termination", "mock-o1-adaptor", "mock-near-rt-ric", "gui", "edge", "edge-tls", "netconf-lab", "netconf-lab-replay"}
+NO_IDENTITY = {"postgres", "pgbouncer", "migrate", "r1-termination", "mock-o1-adaptor", "gui", "edge", "edge-tls", "netconf-lab", "netconf-lab-replay"}
 
 
 def _services():

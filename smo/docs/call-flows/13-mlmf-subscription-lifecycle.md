@@ -2,7 +2,7 @@
 
 The dedicated subscribe → notify → unsubscribe walkthrough for `MLMFSubscription`, which
 call flow 02 only touches in passing. Like every other subscription-shaped resource in this
-build (DME's type subscriptions, MDAF's analytics subscriptions, A1 Related's EI jobs,
+build (DME's type subscriptions, MDAF's analytics subscriptions,
 Intent Service's RMIH registration), an MLMF subscription can notify a real destination and
 be torn down with a `DELETE` (HISTORY.md SA-AIML-8).
 
@@ -54,7 +54,7 @@ sequenceDiagram
 
 **Key decisions this flow depends on:**
 - `SubscribePerformanceMonitoring` requires `dmeTypeId` — an MLMF subscription is always scoped to a specific DME data type feeding the model's own performance signal, not a bare `modelId` alone.
-- `notificationDestination` is optional on creation, exactly like DME's `DMETypeSubscription`, MDAF's subscriptions and A1 Related's EI jobs — a purely poll-based consumer (the `Auditor` actor here) is a first-class, fully-supported shape, not a degraded one.
+- `notificationDestination` is optional on creation, exactly like DME's `DMETypeSubscription`, and MDAF's subscriptions — a purely poll-based consumer (the `Auditor` actor here) is a first-class, fully-supported shape, not a degraded one.
 - The push is best-effort per report, not per subscription lifetime — an unreachable `SA` on one `ReportPerformance` call doesn't disable future pushes; each call tries independently and swallows its own `httpx.HTTPError`.
 - `DELETE /mlmf/subscriptions/{id}` is idempotent by construction (`if sub is not None: delete`), matching every other subscription-shaped resource's unsubscribe route in this build — deleting twice, or deleting an id that never existed, is never an error.
 - `ReportPerformance` against an unsubscribed or never-existing `subscriptionId` returns `MLMF_SUBSCRIPTION_NOT_FOUND` (404), matching every comparable cross-reference elsewhere in this build (HISTORY.md OI-3-report-performance-404).

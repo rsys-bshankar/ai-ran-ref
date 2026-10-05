@@ -5,6 +5,10 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Removed
+- **A1, the Near-RT RIC and E2 are out of scope at every stage, and what implemented them is gone.** Removed: the `a1-related` module (A1 policy management, the A1-P service registry and A1 EI types) and `mock-near-rt-ric`; the `/a1-related` route of the gateway (now `404 NO_ROUTE`) and its role-policy and GUI-permission entries; their compose services, secret `db_password_a1-related` and network `a1_mock_net`, their Helm modules and the chart's `networkPolicy` (its only rule isolated the mock RIC); `A1_RELATED_URL`; their specs (`docs/openapi/a1-related.json`, `mock-near-rt-ric.json`), call flow 05 and demo runbook steps 11 and 22 (the other steps keep their numbers); the SO SMOS dispatch of `POLICY` / `A1_RELATED` steps (such a step now fails as having no dispatcher); in the GUI the A1 policies, policy status subscriptions, A1 services and A1 EI types tabs, call flow 05 and the A1 tile of the dashboard (the page "Policy & Intents" is now "Intents", at the same address); and the `OI-5-a1-*` open items. The code is in the tag `smo-v0.4.0`; `OPEN_ITEMS.md` keeps A1 as a future work item.
+  Upgrading: nothing consumed A1 outside this repository (no sample rApp used it). The four tables (`a1_ei_type`, `a1_policy`, `a1_service_registration`, `policy_status_subscription`, in the schema `a1_related`) and the role `smo_a1_related` stay in an existing database, unused: the release that removed the code cannot drop what the previous release still uses (a rolling upgrade runs both), so a later revision drops them, and until then they are listed under `_retired` in `migrations/table_owners.json`. An operator who does not need the previous release any more can drop them, the schema and the role by hand. The Helm values `modules.a1-related`, `modules.mock-near-rt-ric` and `networkPolicy` are gone: delete them from your values file.
+
 ### Added
 - **Token and identity abuse tests against the gateway (V-7b, `tests_integration/test_token_abuse.py`).** The real gateway in front of the real SME, backends recorded: no, empty, malformed and wrong-scheme `Authorization`, guessed, forged (`alg: none`), altered, expired and offboarded-invoker tokens are all 401 and reach no backend; the identity, role and on-behalf-of headers a caller sends never reach a backend, and an rApp cannot pose as a module; and a walk over every route fills each path parameter with `.` and `..` to check that nothing the policy lets an rApp change resolves to a route it refuses (with a control that finds the escape below when the guard is switched off).
 - **A change to the R1 contract is checked against the previous release (V-4, `scripts/check_breaking_changes.py`).** The CI job "R1 contract has no breaking change since the previous release" compares every `docs/openapi/<module>.json` with the one at the newest `smo-v*` tag and fails on a removed operation, a new required parameter or request property, a narrowed bound or enum, a changed type, or a response property lost; deliberate breaks are waived with a reason in `scripts/breaking_change_waivers.json`, which is emptied at each release. `docs/RELEASES.md` has the deprecation policy (announce in a MINOR release, keep working for at least one more, remove in a MAJOR). The first run found only the bounds added by V-3 (111 operations: a list `offset` above 2147483647 and `purge-stale` above 36500 days, which had made the module answer 500); they are waived with that reason.
@@ -14,6 +18,7 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ### Changed
 - **The gateway refuses a path that is not in its resolved form (found by V-7b).** A `.` or `..` segment, an empty segment (`//`), a backslash or a NUL in the path after the module prefix is now `400 INVALID_PATH`, and one trailing slash is dropped before the policy and the forward. The role policy and the kill switch match the path as received while a backend resolves dot segments, so `GET /ran-nf-oam/rapp-kill/.` passed the policy for an rApp (which is refused `GET /ran-nf-oam/rapp-kill`) and resolved to that route; the backend's redirect for the trailing slash limited what an rApp could read, and nothing it could change was reachable, but the policy should not depend on that. A client that builds clean paths (R1Client, the SDK, the GUI backend) is unaffected.
+- **The repository is now `ai-ran-smo` (was `ai-ran-ref`), and so is the image path.** Releases after `smo-v0.4.0` publish `ghcr.io/rsys-bshankar/ai-ran-smo/smo-<module>:<version>`; `0.4.0` and earlier stay under `ai-ran-ref`, with signatures that name the old repository (`docs/RELEASES.md`, "The repository was renamed"). The Helm chart's default `image.registry` follows the new name: to run `0.4.0` from the chart set `image.registry=ghcr.io/rsys-bshankar/ai-ran-ref`. URLs of the old name redirect.
 
 ## [0.4.0] - 2026-10-05
 
@@ -191,8 +196,8 @@ The first release: source and the docker compose stack. Images are not published
 ### Upgrade notes
 - `docker compose up -d --build` runs the migrations (`docker compose logs migrate`); outside compose run `python scripts/migrate.py`. A database created from `001_init.sql` by an earlier stack is stamped at `0001` first. Take a backup (`scripts/db_backup.sh`) before upgrading; `python scripts/migrate.py --downgrade -1` reverses one revision.
 
-[Unreleased]: https://github.com/rsys-bshankar/ai-ran-ref/compare/smo-v0.4.0...main
-[0.4.0]: https://github.com/rsys-bshankar/ai-ran-ref/compare/smo-v0.3.0...smo-v0.4.0
-[0.3.0]: https://github.com/rsys-bshankar/ai-ran-ref/compare/smo-v0.2.0...smo-v0.3.0
-[0.2.0]: https://github.com/rsys-bshankar/ai-ran-ref/compare/smo-v0.1.0...smo-v0.2.0
-[0.1.0]: https://github.com/rsys-bshankar/ai-ran-ref/releases/tag/smo-v0.1.0
+[Unreleased]: https://github.com/rsys-bshankar/ai-ran-smo/compare/smo-v0.4.0...main
+[0.4.0]: https://github.com/rsys-bshankar/ai-ran-smo/compare/smo-v0.3.0...smo-v0.4.0
+[0.3.0]: https://github.com/rsys-bshankar/ai-ran-smo/compare/smo-v0.2.0...smo-v0.3.0
+[0.2.0]: https://github.com/rsys-bshankar/ai-ran-smo/compare/smo-v0.1.0...smo-v0.2.0
+[0.1.0]: https://github.com/rsys-bshankar/ai-ran-smo/releases/tag/smo-v0.1.0

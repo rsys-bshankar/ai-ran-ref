@@ -34,7 +34,7 @@ RANK = {Role.VIEWER: 0, Role.OPERATOR: 1, Role.ADMIN: 2}
 # The R1 Termination route prefixes the GUI may reach (R1's own ROUTES table,
 # minus DME's push/pull aliases, which are rApp data-plane paths).
 MODULES = [
-    "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "a1-related", "nfo", "focom",
+    "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "nfo", "focom",
     "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf", "intent-service", "so-smos", "sa-smos",
     "energy-saving-rapp",  # Wave 10.1: the reference rApp's operator API (its dashboard and loop controls)
     "mobility-optimization-rapp",  # Wave 10.2
@@ -196,19 +196,7 @@ RULES: list[Rule] = [
     _rule("DELETE", "/ran-nf-oam/safeguard-subscriptions/{id}", A),
     _rule("POST", "/ran-nf-oam/safeguard-refusals/purge", A),
 
-    # --- A1 Related
-    _rule("POST", "/a1-related/policies", O),
-    _rule("PUT", "/a1-related/policies/{id}", O),
-    _rule("DELETE", "/a1-related/policies/{id}", A),
-    _rule("POST", "/a1-related/policies/subscriptions", O),
-    _rule("DELETE", "/a1-related/policies/subscriptions/{id}", O),
-    _rule("POST", "/a1-related/ei-types/register", A),               # producer side of call flow 05
-    _rule("DELETE", "/a1-related/ei-types/{id}", A),
-    _rule("PUT", "/a1-related/services", A),                         # A1-P service registry
-    _rule("PUT", "/a1-related/services/{id}/keepalive", A),
-    _rule("DELETE", "/a1-related/services/{id}", A),
-
-    # --- DME (call flow 05): consumers are operator-level, producers admin
+    # --- DME: consumers are operator-level, producers admin
     _rule("POST", "/dme/data-jobs", O),
     _rule("PUT", "/dme/data-jobs/{id}", O),
     _rule("DELETE", "/dme/data-jobs/{id}", O),                       # terminate a consumer job

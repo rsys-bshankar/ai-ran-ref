@@ -22,7 +22,7 @@ One place for the plumbing that must behave identically in every service, so a c
 
 | Convention | Realised by | Reference |
 |---|---|---|
-| RFC 7807 ProblemDetails | `errors.py` | Error model the R1 service groups defer to (CAPIF TS 29.222 for SME, TS 29.500 for others, TS 28.532 for CM/FM); A1 policy management keeps its own table |
+| RFC 7807 ProblemDetails | `errors.py` | Error model the R1 service groups defer to (CAPIF TS 29.222 for SME, TS 29.500 for others, TS 28.532 for CM/FM) |
 | RFC 7662 token introspection (R1 gateway) | Declared in OpenAPI by `openapi_security.py`; consumed by `r1_client.py` (obtains and sends the token). Enforcement lives in R1 Termination's `_authorized()`, not here | [`../../specs/5G_APIs/`](../../specs/5G_APIs/) CAPIF specs for the invoker path |
 | RFC 6749 client-credentials grant | `r1_client.py` (`_ModuleIdentity`) | |
 | TS 29.500 `3gpp-Sbi-Correlation-Info` | Deliberately not used: that header correlates subscriber identity, not requests. `X-Correlation-ID` is this build's own name | `correlation.py` module docstring |

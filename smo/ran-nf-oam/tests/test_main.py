@@ -171,8 +171,7 @@ def test_config_change_rejects_unreachable_endpoint_without_dispatch(client, db_
 def test_config_change_rejects_a_stale_active_endpoint_live_without_an_explicit_discover_call(client, db_session_factory, monkeypatch):
     """The heartbeat-aging check (HISTORY.md §2) is computed live
     at this gate now, the same "no scheduler exists anywhere in this
-    build" pattern already used for DME's producer health and A1 Related's
-    service supervision — so a stale endpoint is caught here even though
+    build" pattern already used for DME's producer health — so a stale endpoint is caught here even though
     nothing ever called POST /o1-adaptor-endpoints/discover first.
     """
     stale = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10)

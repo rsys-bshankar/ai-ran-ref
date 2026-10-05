@@ -20,8 +20,6 @@ services:
     deploy: { replicas: 2 }
   ran-nf-oam-worker:
     deploy: { replicas: 2 }
-  a1-related:
-    deploy: { replicas: 2 }
   nfo:
     deploy: { replicas: 2 }
   focom:

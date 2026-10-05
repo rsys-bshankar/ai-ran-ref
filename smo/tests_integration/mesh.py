@@ -1,5 +1,4 @@
-"""In-process service mesh — makes cross-module httpx calls (R1Client,
-A1TerminationClient) land on the right module's FastAPI TestClient
+"""In-process service mesh — makes cross-module httpx calls (R1Client) land on the right module's FastAPI TestClient
 instead of going out over the network.
 
 Deliberate scope choice: this bypasses R1 Termination's own proxy
@@ -7,7 +6,6 @@ mechanics (already covered by r1-termination/tests) and dispatches
 directly, path-prefix-to-module, exactly as R1 Termination's ROUTES
 table does. That keeps these tests focused on cross-module BUSINESS
 LOGIC — does calling NFO actually make FOCOM's inventory get queried,
-does A1 Related's create_policy actually reach the mock Near-RT RIC —
 rather than re-proving the gateway's HTTP forwarding a second time.
 """
 
@@ -21,7 +19,7 @@ if TYPE_CHECKING:
 R1_PREFIX_TO_SERVICE = {
     "/sme": "sme", "/dme": "dme", "/dme-push": "dme", "/dme-pull": "dme",
     "/onboarding": "onboarding", "/rapp-mgmt": "rapp-mgmt", "/ran-nf-oam": "ran-nf-oam",
-    "/a1-related": "a1-related", "/nfo": "nfo", "/focom": "focom",
+    "/nfo": "nfo", "/focom": "focom",
     "/aimgf": "aimgf", "/mlmr": "mlmr", "/mllf": "mllf", "/ran-analytics": "ran-analytics", "/mdaf": "mdaf",
     "/intent-service": "intent-service", "/so-smos": "so-smos", "/sa-smos": "sa-smos",
     "/energy-saving-rapp": "energy-saving-rapp",
@@ -33,7 +31,7 @@ R1_PREFIX_TO_SERVICE = {
 
 class ServiceMesh:
     def __init__(self, clients: dict[str, "TestClient"]):
-        """clients: {service-dir-name: TestClient}, e.g. {"sme": <TestClient>, "mock-near-rt-ric": <TestClient>}."""
+        """clients: {service-dir-name: TestClient}, e.g. {"sme": <TestClient>, "mock-o1-adaptor": <TestClient>}."""
         self.clients = clients
 
     def resolve(self, url: str) -> tuple["TestClient", str]:
@@ -50,10 +48,9 @@ class ServiceMesh:
             rest = "/" + segments[1] if len(segments) > 1 else "/"
             return self.clients[service], rest
 
-        # direct calls that bypass R1 Termination entirely — e.g. A1 Related's
-        # a1_termination_client talking to the isolated mock Near-RT RIC,
-        # matching SMO Design v1.3 section 3.9's actual topology (never
-        # routed through R1 Termination at all).
+        # direct calls that bypass R1 Termination entirely — e.g. RAN NF OAM's
+        # O1 clients talking to the mock O1 adaptor (never routed through
+        # R1 Termination at all).
         if host in self.clients:
             return self.clients[host], path
 
@@ -69,8 +66,7 @@ class ServiceMesh:
         # httpx's own GET/DELETE signatures have no `json` parameter at all
         # (only POST/PUT/PATCH do) — passing it unconditionally raises
         # TypeError. Caught while running this harness for the first time:
-        # every GET routed through the mesh (NFO's FOCOM inventory query,
-        # A1 Related's live status refresh) was hitting this before the fix.
+        # every GET routed through the mesh (NFO's FOCOM inventory query) was hitting this before the fix.
         if verb in ("get", "delete"):
             return method(rest_path, params=params, headers=headers)
         # RAN NF OAM's netconf_client.py posts a raw XML body via `content=`,
@@ -92,8 +88,7 @@ class ServiceMesh:
 
 def install(monkeypatch, mesh: ServiceMesh) -> None:
     """Monkeypatches the plain httpx.get/post/put/patch/delete module
-    functions — both smo_shared.r1_client.R1Client and a1-related's
-    A1TerminationClient call these directly (`import httpx; httpx.post(...)`),
+    functions — smo_shared.r1_client.R1Client calls these directly (`import httpx; httpx.post(...)`),
     so one patch at the httpx module level intercepts everything, regardless
     of which module's code makes the call. `patch` added for Wave 1's
     MLMR `PATCH /models/{id}/lifecycle` cross-service write-back — the

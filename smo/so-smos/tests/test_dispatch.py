@@ -10,7 +10,7 @@ import pytest
 from app.dispatch import (
     DownstreamError, _ensure_ok, dispatch_config, dispatch_deploy,
     dispatch_emulation, dispatch_inference, dispatch_infra,
-    dispatch_model_runtime_deploy, dispatch_policy, dispatch_training,
+    dispatch_model_runtime_deploy, dispatch_training,
     dispatch_validation, execute_order,
 )
 
@@ -28,7 +28,7 @@ def test_all_steps_succeed_in_order():
 
     steps = [
         {"stepType": "CONFIG", "targetModule": "RAN_NF_OAM", "scope": "cell", "changes": []},
-        {"stepType": "POLICY", "targetModule": "A1_RELATED", "policyTypeId": "t1", "policyObject": {}, "nearRtRicId": "ric1"},
+        {"stepType": "DEPLOY", "targetModule": "NFO", "nfDeploymentDescriptorId": "d1"},
     ]
     results = execute_order(r1, steps)
 
@@ -73,7 +73,7 @@ def test_ensure_ok_raises_downstream_error_on_4xx():
     """
     resp = MagicMock()
     resp.status_code = 422
-    resp.json.return_value = {"title": "POLICY_TYPE_NOT_SUPPORTED"}
+    resp.json.return_value = {"title": "UNPROCESSABLE"}
     with pytest.raises(DownstreamError):
         _ensure_ok(resp)
 
@@ -87,7 +87,6 @@ def test_ensure_ok_raises_downstream_error_on_4xx():
     (dispatch_emulation, {"modelId": "m1"}, "/aimgf/emulation-jobs"),
     (dispatch_model_runtime_deploy, {"modelId": "m1"}, "/aimgf/models/m1/runtime/deploy"),
     (dispatch_inference, {"modelId": "m1"}, "/aimgf/models/m1/inference-jobs"),
-    (dispatch_policy, {"policyTypeId": "t1", "policyObject": {}, "nearRtRicId": "ric1"}, "/a1-related/policies"),
 ])
 def test_each_dispatcher_posts_to_its_own_target_module(dispatcher, step, expected_path):
     """SO SMOS LLD section 1's dispatch table, one entry at a time: each

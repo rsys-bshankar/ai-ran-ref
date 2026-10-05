@@ -1,5 +1,5 @@
 {
- "_comment": "Which module owns each table (PR-DB-2.1). A module owns a table when its own app/models.py declares it; the tables the shared library declares for every module (smo_shared) are under `shared`. tests_integration/test_table_owners.py fails when a table is missing here, listed twice, or listed under a module that does not declare it; scripts/check_migration_matches_models.py fails when the migrated Postgres has a table that is not here. Add a table here in the same change that adds it.",
+ "_comment": "Which module owns each table (PR-DB-2.1). A module owns a table when its own app/models.py declares it; the tables the shared library declares for every module (smo_shared) are under `shared`. tests_integration/test_table_owners.py fails when a table is missing here, listed twice, or listed under a module that does not declare it; scripts/check_migration_matches_models.py fails when the migrated Postgres has a table that is not here. Add a table here in the same change that adds it. `_retired` lists tables whose module was removed (A1 Related, October 2026: out of scope): nothing reads or writes them, they stay in the database until a later revision drops them (expand, then contract: the release that removed the code cannot drop what the previous release still uses).",
  "shared": [
   "audit_head",
   "audit_log",
@@ -66,12 +66,6 @@
   "vendor_capability",
   "write_config_job",
   "write_config_sub_change"
- ],
- "a1-related": [
-  "a1_ei_type",
-  "a1_policy",
-  "a1_service_registration",
-  "policy_status_subscription"
  ],
  "nfo": [
   "lcm_operation",
@@ -175,5 +169,11 @@
   "traffic_cell",
   "traffic_decision",
   "traffic_instance"
+ ],
+ "_retired": [
+  "a1_ei_type",
+  "a1_policy",
+  "a1_service_registration",
+  "policy_status_subscription"
  ]
 }

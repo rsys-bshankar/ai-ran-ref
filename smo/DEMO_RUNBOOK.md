@@ -588,109 +588,9 @@ print(r4.status_code)
 "
 ```
 
-## 11. A1 Policy Management (optional) — register, enforce, a real duplicate rejection, retract
+## 11. (removed) A1 Policy Management
 
-A1 Related's mapping store, a round trip to the mock Near-RT RIC, and its
-duplicate-content rejection.
-
-Register as a supervised service (`pms-api-v3.json`'s `putService`).
-`keepAliveIntervalSeconds: 0` disables supervision for this walk-through;
-§22 shows a non-zero interval:
-
-```bash
-docker compose exec r1-termination python3 -c "
-import httpx
-r = httpx.put('http://a1-related:8000/services', json={'serviceId': 'energy-saving-rapp', 'keepAliveIntervalSeconds': 0})
-print(r.status_code, r.json())
-"
-```
-
-Policy types (this build's built-in A1TD catalog sample):
-
-```bash
-docker compose exec r1-termination python3 -c "
-import httpx
-r = httpx.get('http://a1-related:8000/policy-types')
-print(r.status_code, r.json())
-"
-```
-
-Create an A1 Policy — a round trip to the mock Near-RT RIC
-(`A1TerminationClient.create_policy`):
-
-```bash
-docker compose exec r1-termination python3 -c "
-import httpx
-r = httpx.post('http://a1-related:8000/policies', json={
-    'policyTypeId': 'ORAN_QoSandTSP_6.0.1',
-    'policyObject': {'scope': {'cellId': 'demo-cell-1'}, 'qosObjectives': {'gfbr': 100}},
-    'nearRtRicId': 'mock-near-rt-ric-001', 'creatorId': 'energy-saving-rapp',
-})
-print(r.status_code, r.json())
-"
-```
-
-`enforcementStatus` is `ENFORCED`. Subscribe to status changes on it:
-
-```bash
-docker compose exec r1-termination python3 -c "
-import httpx
-r = httpx.post('http://a1-related:8000/policies/subscriptions', json={
-    'notificationDestination': 'http://demo-consumer:9000/policy-status',
-    'policyIdList': ['<policyId>'],
-})
-print(r.status_code, r.json())
-"
-```
-
-**A duplicate-policy rejection.** Create a second policy with the same type
-and content; the mock RIC's content-fingerprint check (from the
-near-rt-ric-simulator's `calcFingerprint`) rejects it:
-
-```bash
-docker compose exec r1-termination python3 -c "
-import httpx
-r = httpx.post('http://a1-related:8000/policies', json={
-    'policyTypeId': 'ORAN_QoSandTSP_6.0.1',
-    'policyObject': {'scope': {'cellId': 'demo-cell-1'}, 'qosObjectives': {'gfbr': 100}},
-    'nearRtRicId': 'mock-near-rt-ric-001', 'creatorId': 'energy-saving-rapp',
-})
-print(r.status_code, r.json())
-"
-```
-
-`enforcementStatus` is `REJECTED`. A1 Related still stores the mapping, so
-it's queryable.
-
-Update the first policy to an empty object; the mock's
-`REJECTED`-on-empty rule produces an `ENFORCED -> REJECTED` transition:
-
-```bash
-docker compose exec r1-termination python3 -c "
-import httpx
-r = httpx.put('http://a1-related:8000/policies/<policyId>', json={})
-print(r.status_code, r.json())
-"
-```
-
-`enforcementStatus` is now `REJECTED`, and `_notify_policy_status_subscribers`
-POSTs to `http://demo-consumer:9000/policy-status` — watch `a1-related`'s
-logs.
-
-Retract: delete both policies, then deregister the service (which would
-also cascade-delete any policies still attached):
-
-```bash
-docker compose exec r1-termination python3 -c "
-import httpx
-r = httpx.delete('http://a1-related:8000/policies/<policyId>')
-print(r.status_code)
-r2 = httpx.delete('http://a1-related:8000/policies/<duplicatePolicyId>')
-print(r2.status_code)
-r3 = httpx.delete('http://a1-related:8000/services/energy-saving-rapp')
-print(r3.status_code)
-"
-```
+This step registered an A1 service, created a policy at the mock Near-RT RIC and observed its status notification. A1, the Near-RT RIC and E2 are out of scope for this build and the module and its mock were removed (`CHANGELOG.md`, release 0.5.0); the other steps keep their numbers.
 
 ## 12. SME Trusted Invokers (optional) — register, query, revoke a real security context
 
@@ -1079,8 +979,8 @@ SO SMOS dispatches an order's steps in sequence to the module each
 It is **fail-fast** (section 1.1): the first failed step halts the order,
 later steps stay `PENDING`, and completed steps are not rolled back.
 
-Submit a 3-step order: a `FOCOM` provision, a `POLICY` step with a policy
-type A1 Related doesn't recognise, and a `TRAINING` step that is never
+Submit a 3-step order: a `FOCOM` provision, a `DEPLOY` step naming an NF
+deployment descriptor NFO doesn't know, and a `TRAINING` step that is never
 reached:
 
 ```bash
@@ -1090,8 +990,7 @@ r = httpx.post('http://so-smos:8000/orders', json={
     'scope': 'demo-multi-step-order',
     'steps': [
         {'stepType': 'INFRA', 'targetModule': 'FOCOM', 'spec': {'resourceTypeId': 'gpu-l40', 'description': 'SO SMOS provisioned node'}},
-        {'stepType': 'POLICY', 'targetModule': 'A1_RELATED', 'policyTypeId': 'NOT_A_REAL_POLICY_TYPE',
-         'policyObject': {'scope': {'cellId': 'demo-cell-1'}}, 'nearRtRicId': 'mock-near-rt-ric-001'},
+        {'stepType': 'DEPLOY', 'targetModule': 'NFO', 'nfDeploymentDescriptorId': '00000000-0000-0000-0000-000000000000', 'name': 'no-such-descriptor'},
         {'stepType': 'TRAINING', 'targetModule': 'AI_ML_WORKFLOW', 'producerId': 'energy-saving-rapp'},
     ],
 })
@@ -1100,7 +999,7 @@ print(r.status_code, r.json())
 ```
 
 The response shows all three outcomes: step 1 `COMPLETED` (a new FOCOM
-`Resource` row), step 2 `FAILED` (A1 Related's `POLICY_TYPE_NOT_SUPPORTED`,
+`Resource` row), step 2 `FAILED` (NFO's `NFDEPLOYMENT_DESCRIPTOR_NOT_FOUND`,
 surfaced as a `DownstreamError`, distinct from a transport failure), and
 step 3 `PENDING` — `AI_ML_WORKFLOW` was never dispatched to. Note the
 `orderId`, then confirm the persisted state:
@@ -1447,61 +1346,9 @@ print(r.status_code)
 "
 ```
 
-## 22. A1 Related's service supervision sweep (optional) — a real, non-zero `keepAliveIntervalSeconds`
+## 22. (removed) A1 Related's service supervision sweep
 
-The supervision contract: a service that misses its keepalive within the
-configured interval is deregistered and its policies deleted. There is no
-scheduler; the sweep runs lazily on the next `GET /services` read
-(`_sweep_stale_service`).
-
-Register a supervised service with a short interval and create a policy
-under it:
-
-```bash
-docker compose exec r1-termination python3 -c "
-import httpx
-r = httpx.put('http://a1-related:8000/services', json={'serviceId': 'demo-supervised-rapp', 'keepAliveIntervalSeconds': 2})
-print(r.status_code, r.json())
-r = httpx.post('http://a1-related:8000/policies', json={
-    'policyTypeId': 'ORAN_QoSandTSP_6.0.1',
-    'policyObject': {'scope': {'cellId': 'demo-cell-2'}, 'qosObjectives': {'gfbr': 50}},
-    'nearRtRicId': 'mock-near-rt-ric-001', 'creatorId': 'demo-supervised-rapp',
-})
-print(r.status_code, r.json())
-"
-```
-
-Let the 2-second interval elapse **without** calling
-`PUT /services/demo-supervised-rapp/keepalive`:
-
-```bash
-sleep 3
-```
-
-`GET /services` enforces supervision — a stale match is swept on the way
-out:
-
-```bash
-docker compose exec r1-termination python3 -c "
-import httpx
-r = httpx.get('http://a1-related:8000/services', params={'service_id': 'demo-supervised-rapp'})
-print(r.status_code, r.json() if r.status_code == 200 else None)
-"
-```
-
-`404` — deregistered. Confirm its policy was torn down the same way an
-explicit retract does it (a southbound `a1t.delete_policy` call per
-policy):
-
-```bash
-docker compose exec r1-termination python3 -c "
-import httpx
-r = httpx.get('http://a1-related:8000/policies', params={'creator_id': 'demo-supervised-rapp'})
-print(r.status_code, r.json())
-"
-```
-
-`[]` — the policy is gone with its service.
+Removed with the A1 module (see step 11); the other steps keep their numbers.
 
 ## 23. Retire it — package priming lifecycle, Terminate, then Delete
 

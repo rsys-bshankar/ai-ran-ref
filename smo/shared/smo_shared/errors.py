@@ -1,7 +1,6 @@
 """RFC 7807 ProblemDetails — the error model every R1 service group defers
 to (CAPIF/TS 29.222 for SME, generic TS 29.500/29.501 for DME/AI-ML-Workflow,
-TS 28.532/28.111 for CM/FM), except A1 policy management, which owns its own
-application error table (A1 Related LLD section 1.3).
+TS 28.532/28.111 for CM/FM).
 """
 
 from fastapi import HTTPException
@@ -61,9 +60,7 @@ class FrameworkError:
     # Wave 3 — Intent Service's consumer-side RMIH selection,
     # docs/ARCHITECTURE.md's Intent Service Wave 3 resolution
     RMIH_CAPABILITY_MISMATCH = ("RMIH_CAPABILITY_MISMATCH", 422)
-    # A1 Related LLD section 1.3
-    POLICY_TYPE_NOT_SUPPORTED = ("POLICY_TYPE_NOT_SUPPORTED", 422)
-    POLICY_OBJECT_SCHEMA_INVALID = ("POLICY_OBJECT_SCHEMA_INVALID", 422)
+    # CAPIF event subscriptions (SME)
     SUBSCRIPTION_SCOPE_CONFLICT = ("SUBSCRIPTION_SCOPE_CONFLICT", 422)
     # Foundational Platform LLD section 5
     SERVICE_NAME_CONFLICT = ("SERVICE_NAME_CONFLICT", 409)
@@ -98,14 +95,11 @@ class FrameworkError:
     # service now carries a named, importable code through this same
     # ProblemDetails convention, rather than a bare string only a human
     # ever reads.
-    POLICY_TYPE_NOT_FOUND = ("POLICY_TYPE_NOT_FOUND", 404)
-    POLICY_NOT_FOUND = ("POLICY_NOT_FOUND", 404)
     SOFTWARE_JOB_NOT_FOUND = ("SOFTWARE_JOB_NOT_FOUND", 404)
     UPSTREAM_FAILED = ("UPSTREAM_FAILED", 502)
     LCM_OPERATION_NOT_FOUND = ("LCM_OPERATION_NOT_FOUND", 404)
     SERVICE_ORDER_NOT_FOUND = ("SERVICE_ORDER_NOT_FOUND", 404)
     VALUE_OUT_OF_RANGE = ("VALUE_OUT_OF_RANGE", 422)
-    EI_TYPE_ALREADY_REGISTERED = ("EI_TYPE_ALREADY_REGISTERED", 409)
     ALARM_NOT_FOUND = ("ALARM_NOT_FOUND", 404)
     O1_ENDPOINT_NOT_FOUND = ("O1_ENDPOINT_NOT_FOUND", 404)
     O1_HOST_KEY_NOT_FOUND = ("O1_HOST_KEY_NOT_FOUND", 404)
@@ -132,7 +126,6 @@ class FrameworkError:
     CONFIG_CHANGED_SINCE = ("CONFIG_CHANGED_SINCE", 409)
     # MGT-5: staged rollout of a CM job
     WAVE_PAUSE_NOT_ELAPSED = ("WAVE_PAUSE_NOT_ELAPSED", 409)
-    A1_SERVICE_REGISTRATION_NOT_FOUND = ("A1_SERVICE_REGISTRATION_NOT_FOUND", 404)
     MODEL_NOT_FOUND = ("MODEL_NOT_FOUND", 404)
     TRAINING_JOB_NOT_FOUND = ("TRAINING_JOB_NOT_FOUND", 404)
     VALIDATION_JOB_NOT_FOUND = ("VALIDATION_JOB_NOT_FOUND", 404)

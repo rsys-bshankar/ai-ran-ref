@@ -11,7 +11,7 @@ class DownstreamError(Exception):
     """A downstream module answered (no transport-level exception), but
     with an error status. Caught while integration-testing: every
     dispatcher here was returning resp.json() unconditionally, so a real
-    422 from A1 Related (an unknown policyTypeId) was recorded as
+    422 from a module (an unknown type) was recorded as
     COMPLETED with the error body as the "result" — execute_order's
     fail-fast logic only ever catches raised exceptions, never a
     successfully-received error response, so this silently defeated
@@ -56,16 +56,6 @@ def dispatch_training(r1: R1Client, step: dict) -> dict:
         "producerId": step.get("producerId", "so-smos"),
         "requiredData": step.get("requiredData", {}),
         "validationCriteria": step.get("validationCriteria", {}),
-    })
-    return _ensure_ok(resp)
-
-
-def dispatch_policy(r1: R1Client, step: dict) -> dict:
-    resp = r1.post("/a1-related/policies", json={
-        "policyTypeId": step["policyTypeId"],
-        "policyObject": step["policyObject"],
-        "nearRtRicId": step["nearRtRicId"],
-        "creatorId": step.get("creatorId", "so-smos"),
     })
     return _ensure_ok(resp)
 
@@ -132,7 +122,6 @@ DISPATCH_TABLE = {
     ("EMULATION", "AI_ML_WORKFLOW"): dispatch_emulation,
     ("DEPLOY", "AIMGF"): dispatch_model_runtime_deploy,
     ("INFERENCE", "AI_ML_WORKFLOW"): dispatch_inference,
-    ("POLICY", "A1_RELATED"): dispatch_policy,
 }
 
 

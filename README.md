@@ -1,4 +1,4 @@
-# ai-ran-ref
+# ai-ran-smo
 
 - **[`specs/`](specs/README.md)** — ground-truth industry specifications
   (3GPP 5G Core OpenAPI, O-RAN O1/O2 YANG and information models) this
