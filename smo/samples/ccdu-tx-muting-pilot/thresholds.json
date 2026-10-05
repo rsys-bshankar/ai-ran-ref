@@ -1,0 +1,36 @@
+{
+  "activation": {
+    "prbUtilizationPercent": 40.0,
+    "rrcConnectedUeCount": 10,
+    "combinationOperator": "AND"
+  },
+  "deactivation": {
+    "prbUtilizationPercent": 42.0,
+    "rrcConnectedUeCount": 12,
+    "combinationOperator": "OR"
+  },
+  "requestedConfiguration": {
+    "txPathOffPattern": "HORIZONTAL_PLANE",
+    "requireFeatureEnabled": true,
+    "reducedTxYangValue": "MUTING_ON",
+    "fullTxYangValue": "MUTING_OFF"
+  },
+  "measurementPolicy": {
+    "maximumSampleAgeSeconds": 900,
+    "requiredQuality": "VALID",
+    "missingMeasurementAction": "REQUEST_FULL_TX",
+    "staleMeasurementAction": "REQUEST_FULL_TX"
+  },
+  "alarmPolicy": {
+    "blockReducedTxOnActiveAlarm": true,
+    "requestFullTxOnBlockingAlarm": true,
+    "blockingAlarmIds": [13313, 13314, 13319, 13322, 13323, 14081, 13325, 5124, 4360, 4609],
+    "triggerAlarmIds": [13321, 5121, 5123]
+  },
+  "executionPolicy": {
+    "verifyWithReadback": true,
+    "operationTimeoutSeconds": 15,
+    "maximumRetries": 1,
+    "rollbackOnVerificationFailure": true
+  }
+}
