@@ -30,6 +30,14 @@ compose() { (cd "$prev_smo" && GUI_COOKIE_SECURE=false docker compose -p "$proje
 # which a plain `rm` cannot remove. On a CI runner the directory is thrown away anyway; elsewhere sudo (if there is any) finishes the job.
 cleanup() {
   status=$?
+  # a stack that did not come up says why only in its own logs, which the teardown below throws away: print them first
+  if [ "$status" -ne 0 ] && [ -d "$prev_smo" ]; then
+    echo "== the stack at failure"
+    compose ps -a --format '{{.Service}}: {{.State}} {{.Health}}' 2>&1 | grep -v ' healthy$' || true
+    for svc in $(compose ps -a --format '{{.Service}} {{.Health}}' 2>/dev/null | awk '$2 == "unhealthy" {print $1}'); do
+      echo "== logs of $svc"; compose logs --no-color --tail=60 "$svc" 2>&1 || true
+    done
+  fi
   [ -d "$prev_smo" ] && { compose down -v --remove-orphans >/dev/null 2>&1 || true; }
   git -C "$repo" worktree remove --force "$scratch/prev" >/dev/null 2>&1 || true
   rm -rf "$scratch" >/dev/null 2>&1 || sudo rm -rf "$scratch" >/dev/null 2>&1 || true
@@ -56,6 +64,9 @@ fresh_stack() {
   url="postgresql+psycopg://smo:$(cat secrets/db_password)@localhost:5432/smo"
   (cd "$here" && SMO_DATABASE_URL="$url" python scripts/migrate.py)
   (cd "$here" && SMO_DATABASE_URL="$url" python scripts/check_migration_matches_models.py)
+  # the previous release's own `migrate` service also makes the per-module roles its modules connect as (smo_<module>, since 0.4.0); it is replaced by a
+  # no-op here, so make them the way it would: its own script and manifest, its own password files. Without them every module fails to log in.
+  (cd "$prev_smo" && SMO_DATABASE_URL="$url" SMO_DB_ROLE_PASSWORD_DIR="$prev_smo/secrets" python scripts/db_roles.py)
 }
 replay() {
   docker run --rm --network "${project}_default" --network-alias demo-consumer \
@@ -70,7 +81,8 @@ replay() {
 # second replay on the same stack is not a fair test. Break one column the previous release needs, replay the first runbook test, expect it to fail.
 echo "== control: a schema that breaks the previous release must make the replay fail"
 fresh_stack
-compose exec -T postgres psql -U smo -d smo -v ON_ERROR_STOP=1 -c "ALTER TABLE write_config_job RENAME COLUMN msac_role TO msac_role_broken" >/dev/null
+# the module tables live in schemas of their own since 0.4.0 (public only holds a compatibility view the modules no longer read): break the real table
+compose exec -T postgres psql -U smo -d smo -v ON_ERROR_STOP=1 -c "ALTER TABLE ran_nf_oam.write_config_job RENAME COLUMN msac_role TO msac_role_broken" >/dev/null
 compose up -d --build --wait
 if replay "tests_integration/test_demo_runbook.py::test_full_runbook_sequence_succeeds" >/dev/null 2>&1; then
   echo "FAIL: the replay passed on a schema with a column the previous release needs renamed: this check cannot fail" >&2
