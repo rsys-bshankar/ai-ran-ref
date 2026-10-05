@@ -24,23 +24,40 @@ OWNERS = json.loads((SMO_ROOT / "migrations" / "table_owners.json").read_text())
 ROLES = {m: s for m, s in json.loads((SMO_ROOT / "migrations" / "db_roles.json").read_text()).items() if m != "_comment"}
 
 
+def _short(module: str) -> str:
+    return module.rsplit("/", 1)[-1]
+
+
+def _role(module: str) -> str:
+    return "smo_" + _short(module).replace("-", "_")
+
+
 def test_every_module_in_the_roles_manifest_is_a_module_with_tables_and_names_real_shared_tables():
     for module, spec in ROLES.items():
         assert OWNERS.get(module), f"{module} is in db_roles.json but owns no table in table_owners.json"
-        assert spec["schema"].isidentifier() and spec["schema"] not in ("public", "platform_"), spec
+        assert spec["schema"] == _short(module).replace("-", "_"), f"{module}: the schema is the module's name with _ for -"
+        assert spec["schema"] not in ("public", "platform_")
         for table in spec.get("shared", []):
             assert table in OWNERS["shared"], f"{module}: {table} is not a shared table"
+        for qualified in spec.get("read", []):
+            schema, table = qualified.split(".")
+            owner = next(m for m, s in ROLES.items() if s["schema"] == schema)
+            assert table in OWNERS[owner], f"{module} reads {qualified}, which {owner} does not own"
 
 
 def test_a_role_name_is_derived_from_the_module_and_statements_quote_what_they_are_given():
     sys.path.insert(0, str(SMO_ROOT / "scripts"))
     import db_roles
-    assert db_roles.role_name("rapp-mgmt") == "smo_rapp_mgmt"
+    assert db_roles.role_name("rapp-mgmt") == "smo_rapp_mgmt" and db_roles.role_name("samples/energy-saving-rapp") == "smo_energy_saving_rapp"
     rendered = [s.as_string() for s in db_roles.statements("onboarding", ROLES["onboarding"], "pa'ss\"word", ["public", "onboarding", "dme"], "smo")]
     text_ = "\n".join(rendered)
     assert "'pa''ss\"word'" in text_                                  # the password is a quoted literal, never spliced in
     assert 'ALTER ROLE "smo_onboarding" SET search_path = "onboarding", public' in text_
     assert 'REVOKE ALL ON SCHEMA "dme" FROM "smo_onboarding"' in text_ and 'REVOKE ALL ON SCHEMA "onboarding"' not in text_
+    # a module that reads another's table (SELECT only) and one with no schema of its own
+    reading = "\n".join(s.as_string() for s in db_roles.statements("x", {"schema": None, "shared": [], "read": ["ran_nf_oam.rapp_kill"]}, "p", ["public", "ran_nf_oam"], "smo"))
+    assert 'search_path = public' in reading and 'GRANT SELECT ON "ran_nf_oam"."rapp_kill" TO "smo_x"' in reading and 'GRANT USAGE ON SCHEMA "ran_nf_oam"' in reading
+    assert "INSERT" not in reading.split('GRANT SELECT ON "ran_nf_oam"')[1]
 
 
 @pytest.fixture
@@ -58,7 +75,7 @@ def database(tmp_path):
         connection.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
         for module in ROLES:
             try:       # a role is cluster-wide: it stays when another database still has rights granted to it (the one the admin URL names, say)
-                connection.execute(text(f'DROP ROLE IF EXISTS "smo_{module.replace("-", "_")}"'))
+                connection.execute(text(f'DROP ROLE IF EXISTS "{_role(module)}"'))
             except Exception:
                 pass
     admin.dispose()
@@ -69,7 +86,7 @@ def _roles(env, *args):
 
 
 def _as_role(url, module, password):
-    return create_engine(make_url(url).set(username=f"smo_{module.replace('-', '_')}", password=password), isolation_level="AUTOCOMMIT")
+    return create_engine(make_url(url).set(username=_role(module), password=password), isolation_level="AUTOCOMMIT")
 
 
 def _denied(engine, statement) -> bool:
@@ -86,12 +103,15 @@ def test_the_tables_are_in_the_modules_schema_and_the_old_names_still_work_for_t
     url, env, _, _ = database
     owner = create_engine(url, isolation_level="AUTOCOMMIT")
     with owner.connect() as connection:
-        in_schema = {r[0] for r in connection.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'onboarding'"))}
-        assert in_schema == set(OWNERS["onboarding"])
-        assert not connection.execute(text("SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'application_package'")).first()
-        # what the previous release does: name the table with no schema, and insert, read, update and delete through it
+        for module, spec in ROLES.items():
+            in_schema = {r[0] for r in connection.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = :s"), {"s": spec["schema"]})}
+            assert in_schema == set(OWNERS[module]), module
+            for table in OWNERS[module]:
+                assert not connection.execute(text("SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = :t"), {"t": table}).first(), table
+                # what the previous release does: name the table with no schema (a view of it stays in public)
+                assert connection.execute(text(f'SELECT count(*) FROM "{table}"')).scalar() == 0
+        # ... and write through the view of one table of each kind: insert, update, delete
         connection.execute(text("INSERT INTO application_package (application_type, name, version, manifest_ref) VALUES ('rApp', 'old-code', '1', 'm')"))
-        assert connection.execute(text("SELECT count(*) FROM application_package WHERE name = 'old-code'")).scalar() == 1
         connection.execute(text("UPDATE application_package SET version = '2' WHERE name = 'old-code'"))
         assert connection.execute(text("SELECT version FROM onboarding.application_package WHERE name = 'old-code'")).scalar() == "2"
         connection.execute(text("DELETE FROM application_package WHERE name = 'old-code'"))
@@ -99,31 +119,40 @@ def test_the_tables_are_in_the_modules_schema_and_the_old_names_still_work_for_t
 
 
 @needs_postgres
-def test_the_role_works_in_its_own_schema_and_is_refused_everywhere_else(database):
+def test_every_role_works_in_its_own_schema_and_is_refused_everywhere_else(database):
     url, env, password_dir, _ = database
-    (password_dir / "db_password_onboarding").write_text("s3cret-for-the-test")
+    for module in ROLES:
+        (password_dir / f"db_password_{_short(module)}").write_text(f"pw-{_short(module)}")
     done = _roles(env)
     assert done.returncode == 0, done.stdout + done.stderr
-    assert "smo_onboarding" in done.stdout
-    role = _as_role(url, "onboarding", "s3cret-for-the-test")
-    with role.connect() as connection:
-        assert connection.execute(text("SHOW search_path")).scalar() == "onboarding, public"
-        # unqualified names reach its own tables, as the service's code writes them
+    for module in ROLES:
+        assert _role(module) in done.stdout
+    all_tables = {t for owner, tables in OWNERS.items() if owner != "_comment" for t in tables}
+    for module, spec in ROLES.items():
+        role = _as_role(url, module, f"pw-{_short(module)}")
+        own = set(OWNERS[module])
+        granted_shared = set(spec.get("shared", []))
+        read = {q.split(".")[1] for q in spec.get("read", [])}
+        with role.connect() as connection:
+            assert connection.execute(text("SHOW search_path")).scalar() == f"{spec['schema']}, public", module
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar()          # the pod's schema wait
+            for table in own:                                       # unqualified, as the service's code writes them
+                assert connection.execute(text(f'SELECT count(*) FROM "{table}"')).scalar() == 0, (module, table)
+            for table in granted_shared:
+                assert connection.execute(text(f'SELECT count(*) FROM "{table}"')).scalar() == 0, (module, table)
+        for table in sorted(all_tables - own - granted_shared - read):
+            assert _denied(role, f'SELECT * FROM "{table}" LIMIT 1'), f"{_role(module)} can read {table}"
+        assert _denied(role, "CREATE TABLE public.not_allowed (a int)")
+        assert _denied(role, f"CREATE TABLE {spec['schema']}.not_allowed (a int)")
+        role.dispose()
+    # one write path, end to end, as Onboarding's role does it
+    onboarding = _as_role(url, "onboarding", "pw-onboarding")
+    with onboarding.connect() as connection:
         connection.execute(text("INSERT INTO application_package (application_type, name, version, manifest_ref) VALUES ('rApp', 'mine', '1', 'm')"))
         assert connection.execute(text("SELECT count(*) FROM application_package")).scalar() == 1
         connection.execute(text("DELETE FROM application_package"))
-        assert connection.execute(text("SELECT count(*) FROM module_identity")).scalar() == 0      # a shared table it was given
-        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar()          # the pod's schema wait
-    other_modules = [t for owner, tables in OWNERS.items() if owner not in ("onboarding", "shared", "_comment") for t in tables]
-    assert len(other_modules) > 100
-    for table in other_modules:
-        assert _denied(role, f'SELECT * FROM "{table}" LIMIT 1'), f"smo_onboarding can read {table}"
-    for table in ("audit_log", "audit_head", "notification_outbox", "idempotency_key", "periodic_run"):
-        assert _denied(role, f'SELECT * FROM "{table}" LIMIT 1'), f"smo_onboarding can read the shared table {table}, which it was not given"
-    assert _denied(role, "CREATE TABLE public.not_allowed (a int)")
-    assert _denied(role, "CREATE TABLE onboarding.not_allowed (a int)")
-    assert _denied(role, "SELECT * FROM public.application_package")        # the compatibility view is for the old code, which connects as the owner
-    role.dispose()
+    assert _denied(onboarding, "SELECT * FROM public.application_package")      # the compatibility view is for the old code, which connects as the owner
+    onboarding.dispose()
 
 
 @needs_postgres

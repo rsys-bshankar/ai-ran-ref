@@ -5,14 +5,15 @@
     python scripts/db_roles.py --list     # what it would do, without touching the database
 
 Run after `scripts/migrate.py`, as the owner (the same `SMO_DATABASE_URL` the migration used): compose's `migrate` service and the chart's migrate Job do.
-`migrations/db_roles.json` lists the modules that have a schema of their own. For each one whose password file `db_password_<module>` exists in
+`migrations/db_roles.json` lists the modules that have a role. For each one whose password file `db_password_<name>` (the module's directory name, `samples/` left off) exists in
 `SMO_DB_ROLE_PASSWORD_DIR` (default /run/secrets) the script makes sure that
 
-  * the login role `smo_<module>` exists with that password (the file is the only place the password is kept; running the script again after
+  * the login role `smo_<name>` exists with that password (the file is the only place the password is kept; running the script again after
     changing the file is how a password is rotated);
-  * its default search path is `<schema>, public`, so the module's unqualified table names resolve to its own tables, and it needs no code to say so;
-  * it can use its schema (USAGE; SELECT, INSERT, UPDATE, DELETE on every table, USAGE on every sequence, and the same for tables made later)
-    and only the shared tables named in the manifest, plus read `alembic_version` (the pod's schema wait reads it);
+  * its default search path is `<schema>, public` (just `public` for a module with no tables of its own), so the module's unqualified table names resolve to its own tables, and it needs no code to say so;
+  * it can use its schema (USAGE; SELECT, INSERT, UPDATE, DELETE on every table, USAGE on every sequence, and the same for tables made later),
+    the shared tables named under `shared` (read and write), the tables named under `read` as `schema.table` (SELECT only: the one place a module
+    reads another's table, listed so it is visible), and `alembic_version` (the pod's schema wait reads it);
   * it has no right on any other schema's tables, and cannot create anything in `public`.
 
 A module without a password file is skipped, so a deployment that has not adopted the roles keeps connecting as the owner and nothing changes.
@@ -30,8 +31,13 @@ MANIFEST = SMO_ROOT / "migrations" / "db_roles.json"
 PASSWORD_DIR_VARIABLE = "SMO_DB_ROLE_PASSWORD_DIR"
 
 
+def short_name(module: str) -> str:
+    """The module's name without its directory (`samples/energy-saving-rapp` -> `energy-saving-rapp`): what the role, the password file and the chart's `databaseRole` use."""
+    return module.rsplit("/", 1)[-1]
+
+
 def role_name(module: str) -> str:
-    return "smo_" + module.replace("-", "_")
+    return "smo_" + short_name(module).replace("-", "_")
 
 
 def load_manifest(path: Path = MANIFEST) -> dict[str, dict]:
@@ -39,36 +45,43 @@ def load_manifest(path: Path = MANIFEST) -> dict[str, dict]:
 
 
 def password_file(module: str, environ=os.environ) -> Path:
-    return Path(environ.get(PASSWORD_DIR_VARIABLE, "/run/secrets")) / f"db_password_{module}"
+    return Path(environ.get(PASSWORD_DIR_VARIABLE, "/run/secrets")) / f"db_password_{short_name(module)}"
 
 
 def statements(module: str, spec: dict, password: str | None, schemas: list[str], database: str) -> list:
     """The SQL that makes `role_name(module)` what the module needs, as psycopg `sql` objects (identifiers and the password are quoted by the driver)."""
     from psycopg import sql
-    role, own = sql.Identifier(role_name(module)), sql.Identifier(spec["schema"])
+    role = sql.Identifier(role_name(module))
+    schema = spec.get("schema")                   # None: the module has no table of its own
+    own = sql.Identifier(schema) if schema else None
     shared = [sql.Identifier(t) for t in spec.get("shared", [])]
     out: list = []
     out.append(sql.SQL("ALTER ROLE {} LOGIN PASSWORD {}").format(role, sql.Literal(password)) if password is not None
                else sql.SQL("ALTER ROLE {} NOLOGIN").format(role))
-    out.append(sql.SQL("ALTER ROLE {} SET search_path = {}, public").format(role, own))
+    out.append(sql.SQL("ALTER ROLE {} SET search_path = {}public").format(role, sql.SQL("{}, ").format(own) if own else sql.SQL("")))
     out.append(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(database), role))
     out.append(sql.SQL("REVOKE CREATE ON SCHEMA public FROM PUBLIC"))
     # start from nothing on every schema, then give back what the module has a right to
-    for schema in schemas:
-        s = sql.Identifier(schema)
+    for name in schemas:
+        s = sql.Identifier(name)
         out.append(sql.SQL("REVOKE ALL ON ALL TABLES IN SCHEMA {} FROM {}").format(s, role))
         out.append(sql.SQL("REVOKE ALL ON ALL SEQUENCES IN SCHEMA {} FROM {}").format(s, role))
-        if schema != spec["schema"]:
+        if name != schema:
             out.append(sql.SQL("REVOKE ALL ON SCHEMA {} FROM {}").format(s, role))
     out.append(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(role))
-    out.append(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(own, role))
-    out.append(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {} TO {}").format(own, role))
-    out.append(sql.SQL("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {} TO {}").format(own, role))
-    out.append(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {}").format(own, role))
-    out.append(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT USAGE, SELECT ON SEQUENCES TO {}").format(own, role))
+    if own:
+        out.append(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(own, role))
+        out.append(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {} TO {}").format(own, role))
+        out.append(sql.SQL("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {} TO {}").format(own, role))
+        out.append(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {}").format(own, role))
+        out.append(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT USAGE, SELECT ON SEQUENCES TO {}").format(own, role))
     out.append(sql.SQL("GRANT SELECT ON public.alembic_version TO {}").format(role))
     for table in shared:
         out.append(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON public.{} TO {}").format(table, role))
+    for qualified in spec.get("read", []):
+        read_schema, read_table = qualified.split(".", 1)
+        out.append(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(sql.Identifier(read_schema), role))
+        out.append(sql.SQL("GRANT SELECT ON {}.{} TO {}").format(sql.Identifier(read_schema), sql.Identifier(read_table), role))
     return out
 
 
@@ -77,7 +90,8 @@ def main(argv: list[str]) -> int:
     if "--list" in argv:
         for module, spec in manifest.items():
             present = password_file(module).exists()
-            print(f"{role_name(module)}: schema {spec['schema']}, shared {spec.get('shared', [])}, password file {'found' if present else 'missing (skipped)'}")
+            print(f"{role_name(module)}: schema {spec.get('schema')}, shared {spec.get('shared', [])}, read {spec.get('read', [])}, "
+                  f"password file {'found' if present else 'missing (skipped)'}")
         return 0
 
     from sqlalchemy import create_engine, text
@@ -104,8 +118,9 @@ def main(argv: list[str]) -> int:
             if not password:
                 print(f"{role_name(module)}: {path} is empty, skipped")
                 continue
-            if spec["schema"] not in schemas:
-                print(f"{role_name(module)}: schema {spec['schema']} does not exist (run scripts/migrate.py first), skipped")
+            missing = [x for x in [spec.get("schema"), *(q.split(".")[0] for q in spec.get("read", []))] if x and x not in schemas]
+            if missing:
+                print(f"{role_name(module)}: schema {missing[0]} does not exist (run scripts/migrate.py first), skipped")
                 continue
             cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role_name(module),))
             if cur.fetchone() is None:

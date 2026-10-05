@@ -12,7 +12,7 @@
 # smo/secrets/db_password_onboarding
 #                           the password of the database role smo_onboarding (PR-DB-2.6), which Onboarding connects as: it can use its own schema and
 #                           nothing else. scripts/db_roles.py (run by the `migrate` service) sets it in the database; a file that is missing means
-#                           no role is made. One file per module that has a schema of its own, as modules adopt them.
+#                           no role is made. One file per module that has a role (`migrations/db_roles.json`), as modules adopt them.
 #
 # The directory is owner-only (0700) and git-ignored. The file itself is 0644: Compose bind-mounts it as it is,
 # and the services run as uid 10001, not as you, so it has to be readable by other users; the directory is what
@@ -40,4 +40,14 @@ create_secret() {
 }
 create_secret db_password
 create_secret db_password_onboarding
+create_secret db_password_mlmr
+create_secret db_password_ran-analytics
+create_secret db_password_so-smos
+create_secret db_password_sa-smos
+create_secret db_password_intent-service
+create_secret db_password_mdaf
+create_secret db_password_energy-saving-rapp
+create_secret db_password_mobility-optimization-rapp
+create_secret db_password_coverage-optimization-rapp
+create_secret db_password_traffic-steering-rapp
 create_secret enrollment_secret
