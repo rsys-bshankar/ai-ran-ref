@@ -37,8 +37,13 @@ def test_the_database_password_is_a_compose_secret_file_never_a_literal_or_an_en
         env = svc["environment"]
         assert "@postgres" in env["SMO_DATABASE_URL"] and ":" not in env["SMO_DATABASE_URL"].split("//", 1)[1].split("@")[0], \
             f"{name}: the URL carries a password"
-        assert env["SMO_DATABASE_PASSWORD_FILE"] == "/run/secrets/db_password", name
-        assert "db_password" in svc["secrets"], f"{name} cannot read the secret it is told to"
+        user = env["SMO_DATABASE_URL"].split("//", 1)[1].split("@")[0]
+        # the owner (`smo`) uses db_password; a module with a role of its own (PR-DB-2.6) uses the file of that role, and does not get the owner's
+        secret = "db_password" if user == "smo" else "db_password_" + user.removeprefix("smo_")
+        assert env["SMO_DATABASE_PASSWORD_FILE"] == f"/run/secrets/{secret}", name
+        assert secret in svc["secrets"], f"{name} cannot read the secret it is told to"
+        if secret != "db_password":
+            assert "db_password" not in svc["secrets"], f"{name} has a role of its own and must not also hold the owner's password"
 
 
 def test_the_secret_directory_and_the_real_env_file_are_git_ignored_and_the_example_holds_no_password():
