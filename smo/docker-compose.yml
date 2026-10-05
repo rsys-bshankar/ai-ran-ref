@@ -83,7 +83,7 @@ services:
     command: ["sh", "-c", "python /srv/scripts/migrate.py && python /srv/scripts/db_roles.py"]
     restart: "no"
     stop_grace_period: 30s
-    secrets: [db_password, db_password_onboarding]
+    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp]
     <<: *hardening
     depends_on: { postgres: { condition: service_healthy } }
     environment:
@@ -229,13 +229,15 @@ services:
   energy-saving-rapp:
     build: { context: ., args: { MODULE: samples/energy-saving-rapp } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password_energy-saving-rapp]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_energy_saving_rapp@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_energy-saving-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
 
   # Wave 10.2: the Mobility Optimization reference rApp
@@ -243,13 +245,15 @@ services:
   mobility-optimization-rapp:
     build: { context: ., args: { MODULE: samples/mobility-optimization-rapp } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password_mobility-optimization-rapp]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_mobility_optimization_rapp@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mobility-optimization-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
 
   # Wave 10.3: the Coverage Optimization reference rApp
@@ -257,13 +261,15 @@ services:
   coverage-optimization-rapp:
     build: { context: ., args: { MODULE: samples/coverage-optimization-rapp } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password_coverage-optimization-rapp]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_coverage_optimization_rapp@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_coverage-optimization-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
 
   # Wave 10.4: the Traffic Steering reference rApp
@@ -271,13 +277,15 @@ services:
   traffic-steering-rapp:
     build: { context: ., args: { MODULE: samples/traffic-steering-rapp } }
     stop_grace_period: 30s
-    secrets: [db_password]
+    secrets: [db_password_traffic-steering-rapp]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_traffic_steering_rapp@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_traffic-steering-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
 
   a1-related:
@@ -332,13 +340,15 @@ services:
   mlmr:
     build: { context: ., args: { MODULE: mlmr } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_mlmr, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_mlmr@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mlmr
 
   aimgf:
     build: { context: ., args: { MODULE: aimgf } }
@@ -365,59 +375,69 @@ services:
   ran-analytics:
     build: { context: ., args: { MODULE: ran-analytics } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_ran-analytics, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_ran_analytics@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-analytics
       R1_GATEWAY_URL: http://r1-termination:8000
 
   mdaf:
     build: { context: ., args: { MODULE: mdaf } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_mdaf, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_mdaf@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mdaf
 
   intent-service:
     build: { context: ., args: { MODULE: intent-service } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_intent-service, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_intent_service@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_intent-service
 
   so-smos:
     build: { context: ., args: { MODULE: so-smos } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_so-smos, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_so_smos@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_so-smos
       R1_GATEWAY_URL: http://r1-termination:8000
 
   sa-smos:
     build: { context: ., args: { MODULE: sa-smos } }
     stop_grace_period: 30s
-    secrets: [db_password, enrollment_secret]
+    secrets: [db_password_sa-smos, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_sa_smos@postgres:5432/smo
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_sa-smos
       R1_GATEWAY_URL: http://r1-termination:8000
 
   # ---------------------------------------------------------------- operator GUI
@@ -483,6 +503,26 @@ secrets:
     file: ./secrets/db_password   # created by scripts/init_secrets.sh; git-ignored
   db_password_onboarding:         # the password of the role smo_onboarding (PR-DB-2.6), set by scripts/db_roles.py
     file: ./secrets/db_password_onboarding
+  db_password_mlmr:
+    file: ./secrets/db_password_mlmr
+  db_password_ran-analytics:
+    file: ./secrets/db_password_ran-analytics
+  db_password_so-smos:
+    file: ./secrets/db_password_so-smos
+  db_password_sa-smos:
+    file: ./secrets/db_password_sa-smos
+  db_password_intent-service:
+    file: ./secrets/db_password_intent-service
+  db_password_mdaf:
+    file: ./secrets/db_password_mdaf
+  db_password_energy-saving-rapp:
+    file: ./secrets/db_password_energy-saving-rapp
+  db_password_mobility-optimization-rapp:
+    file: ./secrets/db_password_mobility-optimization-rapp
+  db_password_coverage-optimization-rapp:
+    file: ./secrets/db_password_coverage-optimization-rapp
+  db_password_traffic-steering-rapp:
+    file: ./secrets/db_password_traffic-steering-rapp
   enrollment_secret:              # PR-SEC-14: what an SMO module presents to SME to be recorded as one (never an rApp); same script
     file: ./secrets/enrollment_secret
   tls_cert:                       # the `tls` profile only; created by scripts/make_dev_certs.sh

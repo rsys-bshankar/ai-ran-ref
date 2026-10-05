@@ -162,7 +162,8 @@ def test_an_external_database_drops_the_bundled_one_and_needs_a_host():
     assert not [d for d in docs if d["kind"] == "StatefulSet"]
     urls = {e["value"] for d in docs if d["kind"] == "Deployment" for e in d["spec"]["template"]["spec"]["containers"][0].get("env") or [] if e["name"] == "SMO_DATABASE_URL"}
     # the owner, and Onboarding as its own role (PR-DB-2.6): the same host, the role's user
-    assert urls == {"postgresql+psycopg://smo@db.example.com:5432/smo?sslmode=require", "postgresql+psycopg://smo_onboarding@db.example.com:5432/smo?sslmode=require"}
+    assert "postgresql+psycopg://smo@db.example.com:5432/smo?sslmode=require" in urls and "postgresql+psycopg://smo_onboarding@db.example.com:5432/smo?sslmode=require" in urls
+    assert all(u.endswith("@db.example.com:5432/smo?sslmode=require") for u in urls)
     failed = subprocess.run(["helm", "template", "smo", str(CHART), "--kube-version", "1.30.0", "--set", "postgres.enabled=false"], capture_output=True, text=True)
     assert failed.returncode != 0 and "postgres.external.host" in failed.stderr
 
@@ -179,22 +180,28 @@ def test_an_existing_secret_means_the_chart_makes_none():
 @helm
 def test_the_role_passwords_are_a_hook_secret_of_their_own_that_the_migrate_job_and_the_module_mount():
     docs = _render()
+    roles = {m["databaseRole"] for m in _modules().values() if m.get("databaseRole")}
+    assert roles >= {"onboarding", "mlmr"}
     secret = next(d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"] == "smo-role-secrets")
     annotations = secret["metadata"]["annotations"]
     assert annotations["helm.sh/hook"] == "pre-install,pre-upgrade" and annotations["helm.sh/hook-delete-policy"] == "before-hook-creation"
     assert int(annotations["helm.sh/hook-weight"]) < 0                       # ahead of the migrate Job, which mounts it
-    assert set(secret["stringData"]) == {"db-password-onboarding"} and len(secret["stringData"]["db-password-onboarding"]) >= 32
+    assert set(secret["stringData"]) == {f"db-password-{r}" for r in roles} and all(len(v) >= 32 for v in secret["stringData"].values())
     job = next(d for d in docs if d["kind"] == "Job")
     command = job["spec"]["template"]["spec"]["containers"][0]["command"]
     assert "db_roles.py" in command[-1] and "migrate.py" in command[-1] and command[-1].index("migrate.py") < command[-1].index("db_roles.py")
     paths = {item["path"] for src in _secret_sources(job["spec"]["template"]["spec"]) for item in src["items"]}
-    assert paths == {"db_password", "db_password_onboarding"}
-    onboarding = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "onboarding")["spec"]["template"]["spec"]
-    env = {e["name"]: e["value"] for e in onboarding["containers"][0]["env"] if "value" in e}
-    assert env["SMO_DATABASE_URL"] == "postgresql+psycopg://smo_onboarding@postgres:5432/smo"
-    assert env["SMO_DATABASE_PASSWORD_FILE"] == "/run/secrets/db_password_onboarding"
-    init_env = {e["name"]: e["value"] for e in onboarding["initContainers"][0]["env"] if "value" in e}
-    assert init_env["SMO_DATABASE_PASSWORD_FILE"] == "/run/secrets/db_password_onboarding"    # the schema wait uses the role too
+    assert paths == {"db_password"} | {f"db_password_{r}" for r in roles}
+    for d in docs:
+        if d["kind"] != "Deployment" or not _modules()[d["metadata"]["name"]].get("databaseRole"):
+            continue
+        role = _modules()[d["metadata"]["name"]]["databaseRole"]
+        pod = d["spec"]["template"]["spec"]
+        env = {e["name"]: e["value"] for e in pod["containers"][0]["env"] if "value" in e}
+        assert env["SMO_DATABASE_URL"] == f"postgresql+psycopg://smo_{role.replace('-', '_')}@postgres:5432/smo", role
+        assert env["SMO_DATABASE_PASSWORD_FILE"] == f"/run/secrets/db_password_{role}", role
+        init_env = {e["name"]: e["value"] for e in pod["initContainers"][0]["env"] if "value" in e}
+        assert init_env["SMO_DATABASE_PASSWORD_FILE"] == f"/run/secrets/db_password_{role}", role    # the schema wait uses the role too
 
 
 @helm

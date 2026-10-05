@@ -1,4 +1,72 @@
 {
  "_comment": "Per-module database roles (PR-DB-2.6). `scripts/db_roles.py` makes, for each module listed here whose password file is present, a login role smo_<module> that can use its own schema, the shared tables named in `shared`, and nothing else. A module is added here in the same change that moves its tables into a schema of its own and gives it a password secret.",
- "onboarding": {"schema": "onboarding", "shared": ["module_identity"]}
+ "onboarding": {
+  "schema": "onboarding",
+  "shared": [
+   "module_identity"
+  ]
+ },
+ "mlmr": {
+  "schema": "mlmr",
+  "shared": [
+   "module_identity"
+  ]
+ },
+ "ran-analytics": {
+  "schema": "ran_analytics",
+  "shared": [
+   "module_identity"
+  ]
+ },
+ "so-smos": {
+  "schema": "so_smos",
+  "shared": [
+   "module_identity"
+  ]
+ },
+ "sa-smos": {
+  "schema": "sa_smos",
+  "shared": [
+   "module_identity"
+  ]
+ },
+ "intent-service": {
+  "schema": "intent_service",
+  "shared": [
+   "module_identity",
+   "notification_outbox"
+  ]
+ },
+ "mdaf": {
+  "schema": "mdaf",
+  "shared": [
+   "module_identity",
+   "notification_outbox"
+  ]
+ },
+ "samples/energy-saving-rapp": {
+  "schema": "energy_saving_rapp",
+  "shared": [
+   "module_identity",
+   "idempotency_key"
+  ]
+ },
+ "samples/mobility-optimization-rapp": {
+  "schema": "mobility_optimization_rapp",
+  "shared": [
+   "module_identity"
+  ]
+ },
+ "samples/coverage-optimization-rapp": {
+  "schema": "coverage_optimization_rapp",
+  "shared": [
+   "module_identity"
+  ]
+ },
+ "samples/traffic-steering-rapp": {
+  "schema": "traffic_steering_rapp",
+  "shared": [
+   "module_identity"
+  ]
+ }
 }

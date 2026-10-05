@@ -201,20 +201,26 @@ jobs:
               pip install -q --no-deps -e shared &&
               python -m pytest tests_integration/test_demo_runbook.py -v -p no:cacheprovider'
 
-      - name: Onboarding runs as its own database role, which can use its schema and nothing else (PR-DB-2.6)
+      - name: Every module with a role runs as it, and each role can use its schema and nothing else (PR-DB-2.6, 2.7)
         working-directory: smo
         run: |
           psql() { docker compose exec -T postgres psql -U smo -d smo -Atc "$1"; }
-          # the runbook replay above went through Onboarding: its connections are the role's, and its packages are in its schema
-          [ "$(psql "SELECT count(*) FROM pg_stat_activity WHERE usename = 'smo_onboarding'")" -gt 0 ]
-          [ "$(psql "SELECT count(*) FROM onboarding.application_package")" -gt 0 ]
-          # the role refuses every table of every other module
-          pw="$(cat secrets/db_password_onboarding)"
-          for table in dme_type invoker_registration write_config_job audit_log notification_outbox; do
-            if docker compose exec -T -e PGPASSWORD="$pw" postgres psql -h postgres -U smo_onboarding -d smo -Atc "SELECT count(*) FROM $table" 2>/dev/null; then
-              echo "::error::smo_onboarding can read $table"; exit 1
-            fi
+          roles="$(python3 -c "import json; print(*[m.rsplit('/', 1)[-1] for m in json.load(open('migrations/db_roles.json')) if m != '_comment'])")"
+          echo "modules with a role: $roles"
+          for name in $roles; do
+            role="smo_${name//-/_}"
+            # the runbook replay above went through every module: its connections are the role's
+            [ "$(psql "SELECT count(*) FROM pg_stat_activity WHERE usename = '$role'")" -gt 0 ] || { echo "::error::$name does not connect as $role"; exit 1; }
+            pw="$(cat "secrets/db_password_$name")"
+            # the role refuses a table of every other kind: another module's, the audit chain, and a shared table it was not given
+            for table in dme_type invoker_registration write_config_job audit_log; do
+              [ "$table" = "dme_type" ] && [ "$name" = "dme" ] && continue
+              if docker compose exec -T -e PGPASSWORD="$pw" postgres psql -h postgres -U "$role" -d smo -Atc "SELECT count(*) FROM $table" 2>/dev/null; then
+                echo "::error::$role can read $table"; exit 1
+              fi
+            done
           done
+          [ "$(psql "SELECT count(*) FROM onboarding.application_package")" -gt 0 ]
 
       - name: a1_mock_net isolation (RT-7)
         working-directory: smo
@@ -617,15 +623,15 @@ jobs:
           # per-module roles (PR-DB-2.6): the pod holds its role's file and not the owner's; off, the owner's; the Secret is a hook resource
           helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'path: db_password_onboarding'
           helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'helm.sh/hook: pre-install,pre-upgrade'
-          ! helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set databaseRoles.enabled=false | grep -q 'db_password_onboarding'
-          ! helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set databaseRoles.enabled=false | grep -q 'smo-role-secrets'
+          if helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set databaseRoles.enabled=false | grep -q 'db_password_onboarding'; then echo "::error::roles off, and the owner's password is still not the only one mounted"; exit 1; fi
+          if helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set databaseRoles.enabled=false | grep -q 'smo-role-secrets'; then echo "::error::roles off, and a role Secret is still rendered"; exit 1; fi
           # placement (PR-HA-5): soft by default, hard on request, none when off, and a mode that is not one of these is refused
           helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'whenUnsatisfiable: ScheduleAnyway'
-          ! helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'DoNotSchedule'
+          if helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'DoNotSchedule'; then echo "::error::the default placement is not soft"; exit 1; fi
           helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set placement.mode=hard | grep -q 'whenUnsatisfiable: DoNotSchedule'
           helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set placement.zoneKey=topology.kubernetes.io/zone | grep -q 'topologyKey: topology.kubernetes.io/zone'
           [ "$(helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set placement.mode=off | grep -c topologySpreadConstraints)" = "0" ]
-          ! helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set placement.mode=sideways >/dev/null 2>&1
+          if helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set placement.mode=sideways >/dev/null 2>&1; then echo "::error::a placement mode that is not soft, hard or off was accepted"; exit 1; fi
 
       - name: Build the images from this checkout
         working-directory: smo
@@ -682,7 +688,7 @@ jobs:
           [ "$(kubectl -n smo get secret rapp-ci-check-credentials -o jsonpath='{.data.SMO_INVOKER_SECRET}' | base64 -d)" = "secret-two" ]
           [ "$(kubectl -n smo get secret rapp-ci-check-credentials -o jsonpath='{.data.SMO_IDENTITY_KIND}' | base64 -d)" = "rapp" ]
           kubectl -n smo exec -i deploy/rapp-mgmt -- python3 - withdraw < scripts/k8s_credential_delivery_check.py
-          ! kubectl -n smo get secret rapp-ci-check-credentials
+          if kubectl -n smo get secret rapp-ci-check-credentials; then echo "::error::the rApp credentials Secret was not withdrawn"; exit 1; fi
 
       - name: A pod of the rApps does not hold the enrollment secret
         run: |
@@ -704,21 +710,27 @@ jobs:
           [ "$(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed|Terminating' | wc -l)" = "0" ]
           kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
 
-      - name: Onboarding runs as its own database role, which can use its schema and nothing else (PR-DB-2.6)
+      - name: Every module with a role runs as it, and the role can use its schema and nothing else (PR-DB-2.6, 2.7)
         working-directory: smo
         run: |
           psql() { kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "$1"; }
-          [ "$(psql "SELECT count(*) FROM pg_stat_activity WHERE usename = 'smo_onboarding'")" -gt 0 ]
-          [ "$(psql "SELECT count(*) FROM onboarding.application_package")" -ge 0 ]
-          pw="$(kubectl -n smo get secret smo-role-secrets -o jsonpath='{.data.db-password-onboarding}' | base64 -d)"
-          for table in dme_type invoker_registration write_config_job audit_log notification_outbox; do
-            if kubectl -n smo exec postgres-0 -- env PGPASSWORD="$pw" psql -h postgres -U smo_onboarding -d smo -Atc "SELECT count(*) FROM $table" 2>/dev/null; then
-              echo "::error::smo_onboarding can read $table"; exit 1
-            fi
+          roles="$(python3 -c "import json; print(*[m.rsplit('/', 1)[-1] for m in json.load(open('migrations/db_roles.json')) if m != '_comment'])")"
+          echo "modules with a role: $roles"
+          for name in $roles; do
+            role="smo_${name//-/_}"
+            pw="$(kubectl -n smo get secret smo-role-secrets -o jsonpath="{.data.db-password-$name}" | base64 -d)"
+            # the pod is configured to connect as the role (a reference rApp that has served no request holds no connection yet, so the connection itself is not asked for), and the role can log in
+            [ "$(kubectl -n smo exec "deploy/$name" -- printenv SMO_DATABASE_URL | sed -E 's#^[^/]*//([^@:]*).*#\1#')" = "$role" ] || { echo "::error::$name is not configured to connect as $role"; exit 1; }
+            [ "$(kubectl -n smo exec postgres-0 -- env PGPASSWORD="$pw" psql -h postgres -U "$role" -d smo -Atc 'SELECT 1')" = "1" ] || { echo "::error::$role cannot log in with the password the pod holds"; exit 1; }
+            for table in dme_type invoker_registration write_config_job audit_log; do
+              [ "$table" = "dme_type" ] && [ "$name" = "dme" ] && continue
+              if kubectl -n smo exec postgres-0 -- env PGPASSWORD="$pw" psql -h postgres -U "$role" -d smo -Atc "SELECT count(*) FROM $table" 2>/dev/null; then
+                echo "::error::$role can read $table"; exit 1
+              fi
+            done
+            # the pod holds its own role's password and not the owner's
+            if kubectl -n smo exec "deploy/$name" -- ls /run/secrets/db_password 2>/dev/null; then echo "::error::$name holds the owner's password"; exit 1; fi
           done
-          # the pod holds its own role's password and not the owner's
-          kubectl -n smo exec deploy/onboarding -- ls /run/secrets
-          ! kubectl -n smo exec deploy/onboarding -- ls /run/secrets/db_password 2>/dev/null
 
       - name: Roles can be turned off and on again on a running release (PR-DB-2.6)
         working-directory: smo

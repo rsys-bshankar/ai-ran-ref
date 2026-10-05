@@ -39,7 +39,12 @@ def test_the_database_password_is_a_compose_secret_file_never_a_literal_or_an_en
             f"{name}: the URL carries a password"
         user = env["SMO_DATABASE_URL"].split("//", 1)[1].split("@")[0]
         # the owner (`smo`) uses db_password; a module with a role of its own (PR-DB-2.6) uses the file of that role, and does not get the owner's
-        secret = "db_password" if user == "smo" else "db_password_" + user.removeprefix("smo_")
+        if user == "smo":
+            secret = "db_password"
+        else:   # smo_energy_saving_rapp -> the secret db_password_energy-saving-rapp (a role name has underscores, a module name hyphens)
+            matches = [x for x in svc["secrets"] if x.startswith("db_password_") and x.removeprefix("db_password_").replace("-", "_") == user.removeprefix("smo_")]
+            assert len(matches) == 1, f"{name}: user {user} has no matching role secret in {svc['secrets']}"
+            secret = matches[0]
         assert env["SMO_DATABASE_PASSWORD_FILE"] == f"/run/secrets/{secret}", name
         assert secret in svc["secrets"], f"{name} cannot read the secret it is told to"
         if secret != "db_password":
