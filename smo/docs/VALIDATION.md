@@ -1,0 +1,70 @@
+# Validation program (v0.5.0)
+
+What is tested today, by category, what is not, and the order in which the gaps are closed in 0.5.0. Every step is one PR with a CI lane, a recorded result and a line in `CHANGELOG.md`; a step that finds a defect fixes it in the same PR and says so (revision `0026` is the example: a staged CM job failed on Postgres for two releases because no test ran one there).
+
+A lane is **gating** (every PR, under 25 minutes) or **nightly** (scheduled and by hand, results kept as a workflow artifact and summarised in the run). Load, stress, soak and the external-facing security scans are nightly: they are slow and noisy, and a gate that is flaky teaches people to ignore it.
+
+Counts are test functions (`def test_`) at the time of writing: about 1,830 in the module and shared suites, 204 in `tests_integration`, 4 GUI files. The unit and integration suites run on SQLite, which hides every Postgres-only behaviour (check constraints, schemas, roles, locks, `SKIP LOCKED`): the Postgres lanes below exist because of that.
+
+## 1. Unit tests
+**Today**: 22 suites. Large: RAN NF OAM 384, shared 225, AIMgF 181, SDK 119, SME 106. Thin: MLLF 6, RAN Analytics 13, SO SMOS 15, mock Near-RT RIC 16, mock O1 adaptor 23, SA SMOS 28. Lint is `ruff` for syntax errors and undefined names only. No coverage is measured.
+**Gaps**: no coverage number, so "thin" is by count only; no type check; no mutation testing to tell whether the tests would notice a change.
+**Plan**: **V-1** coverage measured in the SQLite job and the floor ratcheted per module (QA-7.3), with the thin suites raised first (QA-7.1/7.2): MLLF to 20+ route tests, one PR per module. **V-2** `ruff` extended to the bug-finding rule sets (`B`, `S` security, `PL` selectively) with the existing findings fixed or waived one by one; `mypy` on `shared/` first.
+
+## 2. Integration tests
+**Today**: `tests_integration` (204): the in-process mesh replays DEMO_RUNBOOK §2-§27, authorisation and role walks over every route, compose/Helm consistency, probes, graceful shutdown. The same runbook replays against the live compose stack, behind PgBouncer, and against two replicas of every module.
+**Gaps**: nothing replays the runbook through a restart, a failover or a slow dependency (HA below); the sample rApps run as static services in compose, not deployed through `POST /instances`.
+**Plan**: folded into HA and failure injection (V-8, V-9).
+
+## 3. Interface tests (R1, A1, O1/O2, NETCONF, northbound)
+**Today**: OpenAPI specs generated per service and checked against the live schema; a real NETCONF server (Netopeer2) in CI for SSH and TLS sessions; the R1 gateway's role and audit behaviour in the roles script.
+**Gaps**: nothing checks that a service answers what its own spec says (status codes, response shapes) on arbitrary valid input; nothing detects a breaking change between releases (QA-2); the O1 YANG models of WG4 are not bundled; there is no RIC simulator for A1.
+**Plan**: **V-3** schemathesis (or equivalent) over every `docs/openapi/*.json` against the compose stack: gating for a pilot module, then all modules (QA-2.1/2.3), failures triaged into fixes or recorded waivers. **V-4** a breaking-change check: the spec of the previous release tag against this one (removed or narrowed routes, new required fields) as a gating job with a waiver file; consumer-side checks for `R1Client` calls (QA-2.2). Both feed the deprecation policy of the 1.0 work.
+
+## 4. Database tests
+**Today** (Postgres lanes): fresh and legacy databases reach one schema; the previous release's schema upgrades to head; the previous release's code runs on this schema; every revision up and down; per-module roles can use their schema and nothing else (all 22 roles); concurrency, idempotency and outbox claim under real Postgres; backup and restore round trip (compose); slow-statement log; password rotation.
+**Gaps**: **the other ~100 CHECK constraints against the code that writes them** (the class of defect behind 0026); no query-plan or index test on realistic volumes (DB-4); retention is unbuilt (DB-3); the host-mode backup/restore against Postgres 18 and a restore drill with timings (DB-6.2 to 6.4); the migration of a large table is untimed.
+**Plan**: **V-5** a generated test per status/enum column comparing the constraint with the model or FSM that writes it, plus every enum default; Postgres only, gating. **V-6** large-table lane (QA-1.2: a seed script reaching 1M rows) with `EXPLAIN` assertions on the list routes and a recorded migration time; the restore drill (DB-6.2/6.4).
+
+## 5. Penetration and security tests
+**Today**: CodeQL (Python, JS, Actions), dependency review, Trivy image scan with a severity gate, two fuzz targets (CSAR parsers, webhook guard) in ClusterFuzzLite, Scorecard, secret-handling tests, the gateway authorisation walk, TLS edge tests, SSRF guard tests on callback URLs. No active scan of the running stack, and no external test.
+**Gaps**: no DAST against the live stack; no check of the TLS configuration from outside; no abuse tests of the token flow (replay, algorithm confusion, scope escalation, enrollment-secret guessing, rate-limit bypass); no brute-force protection test of the GUI login; the scope for an external penetration test is unwritten (SEC-14.4).
+**Plan**: **V-7** (nightly) OWASP ZAP API scan driven by the OpenAPI specs against compose behind the TLS profile, `testssl.sh` against the edge, and a Nuclei run of the default template set, each with a baseline file of accepted findings; new findings fail the run. **V-7b** (gating) a token-abuse suite in `tests_integration` (replay, expiry, scope, wrong audience, none-algorithm, SQLi and path traversal on every path parameter via the route walk). **V-7c** the one-page scope and rules of engagement for a human penetration test (SEC-14.4), which needs your call on who runs it.
+
+## 6. Load tests
+**Today**: none.
+**Plan**: **V-8** the harness (QA-1): a seed script for N managed elements, cells, PM records and alarms (1k, 10k, 100k); a load script (k6) for the top routes by use (token, service discovery, config job, alarm list, PM query, rApp instance state), run against compose in a nightly lane; baseline numbers (requests/s, p50/p95/p99, error rate, CPU/memory per container, Postgres connections) recorded in `docs/PERFORMANCE.md` per release so a regression is a diff.
+
+## 7. Stress, soak and failure injection
+**Today**: HA lanes kill a worker, the job runner and the Postgres primary on kind and measure the write gap; nothing pushes past capacity.
+**Plan**: **V-9** stress on the V-8 harness: ramp to saturation, then hold (pool exhaustion must give 503 with `Retry-After`, never a hang or a wrong answer), burst past the R1 rate limiter, oversized bodies, a slow or dead webhook subscriber (QA-3.3), Postgres slow (`pg_sleep` injection) and unreachable (QA-3.1), SME down (QA-3.2), disk full on the package volume. **V-9b** a soak (nightly 6 h, release-candidate 24 h/72 h by hand: QA-5): memory, pool, file descriptors and outbox depth must be flat.
+
+## 8. Upgrade tests
+**Today**: previous release to this commit with data kept (compose); previous release's code on this schema and its runbook; `helm upgrade` of this chart on kind with every module rolling; a mixed-version note in the changelog.
+**Gaps**: upgrade **from the previous chart** on Kubernetes (not this chart onto itself); skipping a release (0.3.0 to 0.5.0); upgrade with data in the moved tables under load; the compatibility views being dropped in the release after 0.4.0.
+**Plan**: **V-10** `helm install` of the previous release's published chart, seeded with data, then `helm upgrade` to this checkout under the V-8 load at low rate, then the runbook; the same from two releases back (the 1.0 criterion "upgrade across two releases"). Fails on any non-retried error.
+
+## 9. Rollback tests
+**Today**: every Alembic revision up and down, and the schema after the round trip equals the baseline (now across every schema, with constraint definitions); the previous release's code runs on this schema (the rollback direction an operator uses).
+**Gaps**: `helm rollback` after an upgrade, with the schema already migrated; rolling the images back with data written by the new version; a failed migration leaving old pods serving (asserted in the design, not exercised); downgrade of the full chain from head, not one step.
+**Plan**: **V-11** on kind: upgrade, write data, `helm rollback`, run the runbook on the old release; a deliberately failing migration (a test-only revision) leaves the old pods ready and serving; a full-chain downgrade on Postgres with data.
+
+## 10. High availability tests
+**Today (0.4.0)**: two replicas of every module that can have them; runbook against replicas; rolling restart under a health probe; worker and job-runner kills; three-instance Postgres with a primary kill and measured write gap; PgBouncer; spread of calls over replicas.
+**Gaps**: a planned switchover (HA-3.1); the runbook, not just `/health`, through a rolling restart (HA-2.1/2.2); more than one node (placement, zones, a node drain, PodDisruptionBudgets honoured); a network partition between modules and Postgres; PgBouncer failover; HPA under load; the recovery time recorded per release.
+**Plan**: **V-12** a three-node kind cluster (`placement.mode=hard`) with node drain and a pod kill during the runbook replay driven by a client with the standard retry policy; switchover via the operator; partition by NetworkPolicy; the measured gaps in a table in `docs/PERFORMANCE.md`.
+
+## 11. GUI tests
+**Today**: typecheck, Vitest (4 files), production build, call-flow diagram validation; the GUI backend has 75 tests including the role rules; the GUI is served and proxied in compose and Helm CI; `scripts/gui_smoke.py` exists.
+**Gaps**: no browser test of any page; the role matrix of the backend has no positive/negative test per rule (QA-6.2); no accessibility or visual checks; no test of session expiry, CSRF or the cookie flags in a browser.
+**Plan**: **V-13** Playwright (Chromium, already on the runners) against compose: login per role, each page loads its data, the safeguard and change-management flows end to end (stop and resume an rApp, a staged job with halt/continue/abort/rollback preview), session expiry and logout, screenshots kept as artifacts; **V-13b** the backend role matrix (QA-6.2) and `axe` accessibility checks on every page, failing on serious violations.
+
+## Order, and what each step must leave behind
+1. V-5 (CHECK audit) and V-1 (coverage, thin suites): cheapest, and V-5 is the likeliest to find another 0026.
+2. V-3/V-4 (contract and breaking-change): needed by the 1.0 deprecation policy.
+3. V-8 (load harness) then V-9 (stress/soak): the numbers everything after compares against.
+4. V-10/V-11 (upgrade and rollback on kind), V-12 (multi-node HA).
+5. V-13 (GUI browser tests), V-7 (DAST and token abuse; V-7c needs a decision from you on the external test).
+6. Release candidate: every lane green, the 24 h soak run by hand, `docs/PERFORMANCE.md` and the waiver files reviewed, then Release 0.5.0 with the criteria for 1.0.0.
+
+Every PR records: what was run, against what, the numbers, defects found and where fixed, and what remains untested. A lane that was never red is not evidence until it has been shown to fail on a seeded defect; each new test says how that was checked.

@@ -248,6 +248,7 @@ smo/
 | [`CHANGELOG.md`](CHANGELOG.md), [`docs/RELEASES.md`](docs/RELEASES.md) | What changed for an operator; the tag scheme (`smo-vX.Y.Z`, semver) and how a release is cut |
 | [`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md) | Every outbound call to a caller-registered destination, classified (outbox or inline), kept in step with the code by a test |
 | [`docs/adr/`](docs/adr/) | Architecture decision records (`0001`: Alembic, one history) |
+| [`docs/VALIDATION.md`](docs/VALIDATION.md) | The validation program: what is tested today in each category (unit, integration, interface, DB, security, load, stress, upgrade, rollback, HA, GUI), what is not, and the order gaps are closed |
 | [`docs/SECRETS.md`](docs/SECRETS.md) | Every secret: owner, how it is supplied, how it is stored (hash or plaintext), how it is rotated |
 | [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md) | Command-by-command live demo against `docker compose up` |
 | [`CLAUDE.md`](CLAUDE.md) | Working practice, conventions, full test battery |
