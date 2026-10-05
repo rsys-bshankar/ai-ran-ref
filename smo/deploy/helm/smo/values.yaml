@@ -30,6 +30,10 @@ postgres:
     database: smo
     user: smo
     sslmode: prefer                            # disable | prefer | require | verify-full
+    # Several hosts, comma separated (and a port for each, or one for all), are tried in order; with targetSessionAttrs: read-write the one that
+    # accepts writes is used, so a new primary is found after a failover without a change here. A service that always points at the primary
+    # (CloudNativePG's <cluster>-rw, Patroni's leader service) needs neither.
+    targetSessionAttrs: ""                     # "" | read-write | any | primary | prefer-standby
 
 # The two secrets every install needs: the database password and the enrollment secret (what makes a module an SMO module at SME, PR-SEC-14).
 # By default the chart makes them (random, kept across upgrades). To bring your own, create a Secret with the keys `db-password` and

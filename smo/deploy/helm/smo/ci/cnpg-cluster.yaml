@@ -1,0 +1,34 @@
+# The Postgres of the CI job `postgres-ha` (PR-DB-7.2): three instances under CloudNativePG, one primary and two streaming replicas.
+# `smo-pg-rw` is the Service that always points at the primary; `smo-pg-ro` and `smo-pg-r` reach the replicas.
+# The operand image is pinned by digest (17.4, the CNPG-built image); the operator by the manifest's sha256 (see the job).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: smo-pg-owner
+type: kubernetes.io/basic-auth
+stringData:
+  username: smo
+  password: ci-ha-owner-password
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: smo-pg
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.4@sha256:3c0ba08ea353c9705a755c113e4ae395be76553e0ed68076e5410cb09b9d17d9
+  primaryUpdateStrategy: unsupervised
+  storage:
+    size: 2Gi
+  postgresql:
+    parameters:
+      max_connections: "300"
+  bootstrap:
+    initdb:
+      database: smo
+      owner: smo
+      secret:
+        name: smo-pg-owner
+      # the migrate Job makes the per-module roles (scripts/db_roles.py), which an owner without CREATEROLE cannot do
+      postInitApplicationSQL:
+        - ALTER ROLE smo CREATEROLE

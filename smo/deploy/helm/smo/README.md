@@ -26,7 +26,7 @@ or set `ingress.enabled` with `ingress.gui.host` and `ingress.r1.host` (and `ing
 | | |
 |---|---|
 | Bundled (default) | One Postgres pod (StatefulSet, volume `pgdata-postgres-0`). A lab or trial. |
-| External | `--set postgres.enabled=false --set postgres.external.host=db.example.com` (and `port`, `database`, `user`, `sslmode`). Run a managed or HA Postgres; the password goes in the Secret below. |
+| External | `--set postgres.enabled=false --set postgres.external.host=db.example.com` (and `port`, `database`, `user`, `sslmode`). Run a managed or HA Postgres, such as a CloudNativePG cluster (`ci/cnpg-cluster.yaml`, `ci/cnpg-values.yaml` are the CI example); `targetSessionAttrs: read-write` with a comma-separated host list finds the primary by itself; the password goes in the Secret below. |
 
 Kubernetes keeps a StatefulSet's volume when the release is uninstalled. To reinstall from nothing, delete it too: `kubectl -n smo delete pvc pgdata-postgres-0` (the new install makes a new password, which the old data would not accept).
 

@@ -45,7 +45,16 @@ helm.sh/chart: {{ printf "%s-%s" .root.Chart.Name .root.Chart.Version | replace 
 {{- else -}}
 {{- $e := .root.Values.postgres.external -}}
 {{- if not $e.host }}{{ fail "postgres.enabled=false needs postgres.external.host" }}{{ end -}}
-{{- printf "postgresql+psycopg://%s@%s:%v/%s?sslmode=%s" (default $e.user $user) $e.host $e.port $e.database $e.sslmode -}}
+{{- $tsa := ternary (printf "&target_session_attrs=%s" $e.targetSessionAttrs) "" (ne (default "" $e.targetSessionAttrs) "") -}}
+{{- if contains "," (toString $e.host) -}}
+{{- /* several hosts: libpq tries them in order and, with targetSessionAttrs, takes the one that can write (the port is one for all, or one each; the driver wants one per host, so a single port is repeated) */ -}}
+{{- $hosts := splitList "," (toString $e.host) -}}
+{{- $ports := list -}}
+{{- if contains "," (toString $e.port) -}}{{- $ports = splitList "," (toString $e.port) -}}{{- else -}}{{- range $hosts -}}{{- $ports = append $ports (toString $e.port) -}}{{- end -}}{{- end -}}
+{{- printf "postgresql+psycopg://%s@/%s?host=%s&port=%s&sslmode=%s%s" (default $e.user $user) $e.database (join "," $hosts) (join "," $ports) $e.sslmode $tsa -}}
+{{- else -}}
+{{- printf "postgresql+psycopg://%s@%s:%v/%s?sslmode=%s%s" (default $e.user $user) $e.host $e.port $e.database $e.sslmode $tsa -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 
