@@ -208,9 +208,9 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| DB-5.1 | PgBouncer service in a compose profile | Runbook replay green through it | – |
-| DB-5.2 | Check psycopg 3 prepared statements with transaction pooling; set the needed flag | No "prepared statement does not exist" errors | DB-5.1 |
-| DB-5.3 | Document pool sizing across replicas | Section in README | – |
+| DB-5.1 | PgBouncer service in a compose profile (done: profile `pooler`, CI job `compose-pooler`) | Runbook replay green through it | – |
+| DB-5.2 | Check psycopg 3 prepared statements with transaction pooling; set the needed flag (done: `SMO_DB_POOLER`, `SMO_DB_PREPARE_THRESHOLD`, `scripts/pooler_check.py`) | No "prepared statement does not exist" errors | DB-5.1 |
+| DB-5.3 | Document pool sizing across replicas (done: README section) | Section in README | – |
 
 #### PR-DB-6 — Backup and restore
 

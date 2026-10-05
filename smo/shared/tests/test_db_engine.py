@@ -90,6 +90,36 @@ def test_without_the_limits_the_same_statement_runs_to_completion():
     engine.dispose()
 
 
+# ---------------------------------------------------------------- a connection pooler (PR-DB-5)
+
+PG = "postgresql+psycopg://u@h/db"
+
+
+def test_direct_to_postgres_sends_the_session_limits_and_keeps_prepared_statements_on():
+    connect_args = engine_options(PG, {})["connect_args"]
+    assert "statement_timeout" in connect_args["options"] and "prepare_threshold" not in connect_args
+
+
+def test_behind_a_transaction_pooler_no_startup_options_and_no_prepared_statements():
+    # a pooler refuses `options`, and hands the next transaction another server connection, which has not prepared the statement
+    options = engine_options(PG, {"SMO_DB_POOLER": "transaction"})
+    assert options["connect_args"] == {"prepare_threshold": None}
+
+
+def test_a_pooler_that_tracks_prepared_statements_can_have_them_back():
+    assert engine_options(PG, {"SMO_DB_POOLER": "transaction", "SMO_DB_PREPARE_THRESHOLD": "5"})["connect_args"] == {"prepare_threshold": 5}
+    assert engine_options(PG, {"SMO_DB_PREPARE_THRESHOLD": "off"})["connect_args"]["prepare_threshold"] is None
+
+
+def test_a_session_pooler_keeps_prepared_statements_but_sends_no_options():
+    assert "connect_args" not in engine_options(PG, {"SMO_DB_POOLER": "session"})
+
+
+def test_an_unknown_pooler_mode_is_refused_not_ignored():
+    with pytest.raises(ValueError, match="SMO_DB_POOLER"):
+        engine_options(PG, {"SMO_DB_POOLER": "statement"})
+
+
 # ---------------------------------------------------------------- timeouts.py
 
 def test_http_timeout_defaults_nest_so_an_outer_caller_outlasts_the_call_it_waits_on(monkeypatch):
