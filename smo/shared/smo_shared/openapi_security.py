@@ -20,6 +20,8 @@ several specs (or none) rather than implement exactly one 1:1.
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
+from .errors import install_out_of_range_handler
+
 BEARER_SCHEME_NAME = "r1BearerAuth"
 ERROR_ENVELOPE = "ErrorEnvelope"
 # Statuses any operation can answer with, whatever its own code raises: the framework (400 unparsable body, 413 size cap,
@@ -35,6 +37,7 @@ def apply_r1_gateway_security(app: FastAPI, *, public_paths: frozenset[str] = fr
     routes its own docstrings already say never call `_authorized`).
     """
     app.version = R1_CONTRACT_VERSION
+    install_out_of_range_handler(app)  # a number too large for its column is a 422, not a 500 (errors.py)
 
     def custom_openapi() -> dict:
         if app.openapi_schema:

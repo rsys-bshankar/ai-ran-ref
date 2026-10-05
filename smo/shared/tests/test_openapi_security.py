@@ -36,3 +36,25 @@ def test_every_operation_declares_the_standard_error_statuses_with_the_envelope(
     assert spec["paths"]["/public"]["post"]["responses"]["404"]["description"] == "custom"
     assert spec["paths"]["/public"]["post"]["responses"]["422"]["content"]["application/json"]["schema"]["$ref"].endswith(ERROR_ENVELOPE)
     assert {"ProblemDetails", ERROR_ENVELOPE} <= set(spec["components"]["schemas"])
+
+
+def test_a_number_too_large_for_the_database_is_a_422_not_a_500():
+    from fastapi.testclient import TestClient
+    from sqlalchemy.exc import DataError
+
+    app = FastAPI()
+
+    @app.get("/overflow")
+    def overflow():
+        raise OverflowError("Python int too large to convert to SQLite INTEGER")
+
+    @app.get("/data-error")
+    def data_error():
+        raise DataError("INSERT ...", {}, Exception("integer out of range"))
+
+    apply_r1_gateway_security(app)
+    client = TestClient(app, raise_server_exceptions=False)
+    for path in ("/overflow", "/data-error"):
+        response = client.get(path)
+        assert response.status_code == 422
+        assert response.json()["detail"]["title"] == "VALUE_OUT_OF_RANGE"
