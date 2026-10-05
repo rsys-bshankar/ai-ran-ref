@@ -161,6 +161,35 @@ committed `.csar` no longer matches its sources. After changing a route's
 request or response shape, regenerate the specs with
 `PYTHONPATH=shared python scripts/generate_openapi_specs.py`.
 
+## Connection pooling and pool sizing
+
+Every process holds its own connection pool: up to `SMO_DB_POOL_SIZE` (5) plus `SMO_DB_MAX_OVERFLOW` (10) connections, so a module run as *N* replicas
+with *W* uvicorn workers each can hold *N* × *W* × 15 against Postgres's `max_connections` (100 by default). The stack has about 20 modules: at one
+replica each that is already near 300 at full load, which Postgres's default will not carry in the worst case, though a module rarely uses its overflow.
+Size it one of three ways:
+
+1. **Lower the pools.** `SMO_DB_POOL_SIZE=2 SMO_DB_MAX_OVERFLOW=3` per module, and raise Postgres's `max_connections` (each connection costs a few MB). Right for one replica of each.
+2. **Raise `max_connections`** to the product above plus ~20 for the migration Job, backups and an operator, and keep the pool defaults. Right up to a few replicas.
+3. **Put a pooler in front** (PgBouncer, transaction mode). Many client connections share a few server connections; the sum over replicas no longer has to fit under `max_connections`.
+   The compose profile `pooler` runs it:
+
+   ```bash
+   SMO_DB_HOST=pgbouncer SMO_DB_PORT=6432 SMO_DB_POOLER=transaction docker compose --profile pooler up -d
+   ```
+
+   Every module then connects to `pgbouncer:6432` (the `migrate` service always goes direct). The pooler keeps `PGBOUNCER_POOL_SIZE` (20) server connections *per role*
+   (each module has its own role, `docs/SECRETS.md`), so Postgres sees at most roles × 20 from the pooler (about 420 for all roles, though only a busy role fills its 20): set it to
+   `max_connections` divided by the number of roles that are busy at once, with headroom. `PGBOUNCER_MAX_CLIENT_CONN` (1000) is the clients it accepts: at least the sum of every
+   module's replicas × workers × pool size and overflow.
+
+   **Prepared statements.** In transaction mode the next transaction may run on another server connection, which has not prepared the statement ("prepared statement ... does not
+   exist"). With `SMO_DB_POOLER=transaction` the services therefore turn psycopg's server-side prepared statements off (`SMO_DB_PREPARE_THRESHOLD=off`); the cost is a re-parse of a
+   repeated statement. The bundled PgBouncer (1.21 or later) tracks prepared statements itself (`max_prepared_statements`, `PGBOUNCER_MAX_PREPARED`), and CI checks
+   that they work through it (`scripts/pooler_check.py`), so a deployment on that PgBouncer may set `SMO_DB_PREPARE_THRESHOLD=5` to have them back. **Session limits.** A pooler refuses the
+   `options` startup parameter, so the services do not send `statement_timeout` and `idle_in_transaction_session_timeout`; PgBouncer sets the same two limits when it opens a server
+   connection (`POSTGRES_STATEMENT_TIMEOUT_MS`, `POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS` on the pgbouncer service). On Kubernetes, run the pooler of your Postgres operator
+   (CloudNativePG's `Pooler`) point `postgres.external.host` and `port` at it and set `SMO_DB_POOLER: transaction` in each module's `env`; the chart does not run one.
+
 ## Repository layout
 
 ```

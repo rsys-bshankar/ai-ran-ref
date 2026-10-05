@@ -44,7 +44,8 @@ x-wait-for-schema: &wait_for_schema
 
 # The environment every database-using service shares: where the database is, and the file its password is in.
 x-db-env: &db_env
-  SMO_DATABASE_URL: postgresql+psycopg://smo@postgres:5432/smo   # no password here: smo_shared/db.py adds it from the file below
+  SMO_DATABASE_URL: postgresql+psycopg://smo@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo   # no password here: smo_shared/db.py adds it from the file below
+  SMO_DB_POOLER: ${SMO_DB_POOLER:-}
   SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
 
 services:
@@ -68,6 +69,29 @@ services:
       - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U smo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Connection pooler (PR-DB-5.1), a profile: `SMO_DB_HOST=pgbouncer SMO_DB_POOLER=transaction docker compose --profile pooler up -d`.
+  # Every service then connects to pgbouncer:6432 instead of postgres:5432 (SMO_DB_PORT=6432). The one-shot `migrate` service always goes direct: DDL and advisory
+  # locks want a session. SMO_DB_POOLER makes the services leave off what transaction pooling cannot carry (README, "Connection pooling and pool sizing").
+  pgbouncer:
+    profiles: ["pooler"]
+    build: { context: ./pgbouncer }
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    secrets: [db_password, db_password_onboarding, db_password_mlmr, db_password_ran-analytics, db_password_so-smos, db_password_sa-smos, db_password_intent-service, db_password_mdaf, db_password_energy-saving-rapp, db_password_mobility-optimization-rapp, db_password_coverage-optimization-rapp, db_password_traffic-steering-rapp, db_password_a1-related, db_password_aimgf, db_password_dme, db_password_focom, db_password_nfo, db_password_r1-termination, db_password_ran-nf-oam, db_password_rapp-mgmt, db_password_sme]
+    environment:
+      PGBOUNCER_POOL_SIZE: ${PGBOUNCER_POOL_SIZE:-20}
+      PGBOUNCER_MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-1000}
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    ports: ["127.0.0.1:6432:6432"]
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 6432"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -102,7 +126,8 @@ services:
       - smo_scratch:/srv/scratch   # where the runbook copies the rApp CSARs it serves (`docker compose cp ... r1-termination:/srv/scratch/`)
     environment:
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_r1_termination@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_r1_termination@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_r1-termination
       R1_KILL_SWITCH_SCHEMA: ran_nf_oam    # the gateway reads RAN NF OAM's rapp_kill, read-only (migrations/db_roles.json)
       R1_AUDIT: ${R1_AUDIT:-on}    # off: no audit rows (the gateway then needs no database)
@@ -140,7 +165,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_sme@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_sme@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_sme
       # PR-SEC-1.6: a client assertion's `aud` is the token endpoint /bootstrap advertised; behind the HTTPS door that is
       # <R1_PUBLIC_BASE_URL>/sme/oauth2/token. Unset (empty), SME uses its own address on the compose network.
@@ -156,7 +182,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_dme@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_dme@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_dme
 
   onboarding:
@@ -169,7 +196,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_onboarding@postgres:5432/smo    # the role can use schema `onboarding` and the shared tables it is given, nothing else
+      SMO_DATABASE_URL: postgresql+psycopg://smo_onboarding@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo    # the role can use schema `onboarding` and the shared tables it is given, nothing else
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_onboarding
     volumes:
       - smo_packages:/srv/packages   # FileSystem-aaS, SMO Design v1.3 section 3.4
@@ -184,7 +212,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_rapp_mgmt@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_rapp_mgmt@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_rapp-mgmt
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -198,7 +227,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_ran_nf_oam@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_ran_nf_oam@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-nf-oam
       R1_GATEWAY_URL: http://r1-termination:8000
       SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
@@ -217,7 +247,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: the worker is the same SMO module (one identity, ST-4)
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_ran_nf_oam@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_ran_nf_oam@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-nf-oam
       R1_GATEWAY_URL: http://r1-termination:8000
       SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
@@ -249,7 +280,8 @@ services:
     environment:
       SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_energy_saving_rapp@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_energy_saving_rapp@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_energy-saving-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -265,7 +297,8 @@ services:
     environment:
       SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_mobility_optimization_rapp@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_mobility_optimization_rapp@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mobility-optimization-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -281,7 +314,8 @@ services:
     environment:
       SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_coverage_optimization_rapp@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_coverage_optimization_rapp@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_coverage-optimization-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -297,7 +331,8 @@ services:
     environment:
       SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_traffic_steering_rapp@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_traffic_steering_rapp@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_traffic-steering-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -312,7 +347,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_a1_related@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_a1_related@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_a1-related
       R1_GATEWAY_URL: http://r1-termination:8000
       MOCK_NEAR_RT_RIC_URL: http://mock-near-rt-ric:8000
@@ -335,7 +371,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_nfo@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_nfo@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_nfo
       R1_GATEWAY_URL: http://r1-termination:8000
     # No `privileged: true` and no Docker socket (PR-SEC-13): NFO never started a container (it runs no
@@ -353,7 +390,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_focom@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_focom@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_focom
 
   mlmr:
@@ -366,7 +404,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_mlmr@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_mlmr@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mlmr
 
   aimgf:
@@ -379,7 +418,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_aimgf@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_aimgf@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_aimgf
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -403,7 +443,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_ran_analytics@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_ran_analytics@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-analytics
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -417,7 +458,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_mdaf@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_mdaf@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mdaf
 
   intent-service:
@@ -430,7 +472,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_intent_service@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_intent_service@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_intent-service
 
   so-smos:
@@ -443,7 +486,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_so_smos@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_so_smos@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_so-smos
       R1_GATEWAY_URL: http://r1-termination:8000
 
@@ -457,7 +501,8 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
-      SMO_DATABASE_URL: postgresql+psycopg://smo_sa_smos@postgres:5432/smo
+      SMO_DATABASE_URL: postgresql+psycopg://smo_sa_smos@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_sa-smos
       R1_GATEWAY_URL: http://r1-termination:8000
 

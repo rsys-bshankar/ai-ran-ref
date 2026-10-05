@@ -72,6 +72,16 @@ def engine_options(url: str, environ=os.environ) -> dict:
     The idle-in-transaction default is deliberately longer than any request: a route may hold a transaction
     open across calls to other modules (each bounded by `timeouts.py`).
 
+    Behind a connection pooler in transaction mode (PgBouncer, PR-DB-5), set SMO_DB_POOLER=transaction. The process then does not send the
+    session limits above as a startup parameter (a pooler refuses `options`; the pooler sets the same limits itself, see pgbouncer/entrypoint.sh)
+    and does not use server-side prepared statements, which a pooler that hands the next transaction a different server connection loses
+    ("prepared statement ... does not exist"):
+
+      SMO_DB_POOLER                   (unset)  transaction | session | (unset)
+      SMO_DB_PREPARE_THRESHOLD        see text number of repeats after which psycopg prepares a statement (default 5; with SMO_DB_POOLER=transaction
+                                      the default is off, and a value turns it back on for a pooler that tracks prepared statements,
+                                      PgBouncer 1.21+ with max_prepared_statements > 0)
+
     SQLite (the unit tests) gets none of these: it has no server-side pool or session limits.
     """
     options: dict = {"pool_pre_ping": True, "future": True}
@@ -87,6 +97,16 @@ def engine_options(url: str, environ=os.environ) -> dict:
     recycle = number("SMO_DB_POOL_RECYCLE_SECONDS", 1800)
     options["pool_recycle"] = recycle if recycle > 0 else -1
     if url.startswith("postgresql"):
+        pooled = (environ.get("SMO_DB_POOLER") or "").strip().lower()
+        if pooled not in ("", "session", "transaction"):
+            raise ValueError(f"SMO_DB_POOLER must be 'transaction', 'session' or unset, not {pooled!r}")
+        threshold = environ.get("SMO_DB_PREPARE_THRESHOLD")
+        if threshold not in (None, ""):
+            options.setdefault("connect_args", {})["prepare_threshold"] = None if threshold.lower() == "off" else int(threshold)
+        elif pooled == "transaction":
+            options.setdefault("connect_args", {})["prepare_threshold"] = None
+        if pooled:
+            return options                    # the pooler sets the session limits on its server connections
         session_limits = []
         statement = number("SMO_DB_STATEMENT_TIMEOUT_MS", 30000)
         idle = number("SMO_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", 300000)
@@ -95,7 +115,7 @@ def engine_options(url: str, environ=os.environ) -> dict:
         if idle > 0:
             session_limits.append(f"-c idle_in_transaction_session_timeout={idle}")
         if session_limits:
-            options["connect_args"] = {"options": " ".join(session_limits)}
+            options.setdefault("connect_args", {})["options"] = " ".join(session_limits)
     return options
 
 
