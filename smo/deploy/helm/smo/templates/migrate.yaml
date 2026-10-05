@@ -40,7 +40,8 @@ spec:
           # any service image carries the migrations; this is the R1 Termination build, as in docker-compose.yml's `migrate`
           image: {{ include "smo.image" (dict "root" . "name" (index .Values.modules "r1-termination" "image")) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["python", "/srv/scripts/migrate.py"]
+          # the schema, then the per-module roles (PR-DB-2.6): scripts/db_roles.py makes one for each password file mounted below, and none without
+          command: ["sh", "-c", "python /srv/scripts/migrate.py && python /srv/scripts/db_roles.py"]
           env:
             {{- include "smo.dbEnv" (dict "root" .) | nindent 12 }}
           resources:
@@ -55,8 +56,19 @@ spec:
         - name: tmp
           emptyDir: { medium: Memory }
         - name: secrets
-          secret:
-            secretName: {{ include "smo.secretName" . }}
+          projected:
             defaultMode: 0444
-            items:
-              - { key: db-password, path: db_password }
+            sources:
+              - secret:
+                  name: {{ include "smo.secretName" . }}
+                  items:
+                    - { key: db-password, path: db_password }
+              {{- $roles := include "smo.dbRoles" . | fromJsonArray }}
+              {{- if $roles }}
+              - secret:
+                  name: {{ include "smo.roleSecretName" . }}
+                  items:
+                    {{- range $roles }}
+                    - { key: {{ printf "db-password-%s" . }}, path: {{ printf "db_password_%s" . }} }
+                    {{- end }}
+              {{- end }}

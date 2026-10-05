@@ -614,6 +614,11 @@ jobs:
           helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 \
             --set networkPolicy.enabled=true --set podDisruptionBudget.enabled=true --set autoscaling.enabled=true \
             --set ingress.enabled=true --set ingress.gui.host=gui.example.com --set ingress.r1.host=r1.example.com >/dev/null
+          # per-module roles (PR-DB-2.6): the pod holds its role's file and not the owner's; off, the owner's; the Secret is a hook resource
+          helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'path: db_password_onboarding'
+          helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'helm.sh/hook: pre-install,pre-upgrade'
+          ! helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set databaseRoles.enabled=false | grep -q 'db_password_onboarding'
+          ! helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set databaseRoles.enabled=false | grep -q 'smo-role-secrets'
           # placement (PR-HA-5): soft by default, hard on request, none when off, and a mode that is not one of these is refused
           helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'whenUnsatisfiable: ScheduleAnyway'
           ! helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'DoNotSchedule'
@@ -697,6 +702,38 @@ jobs:
           kubectl -n smo get pods
           # an old pod the rollout has replaced is still Terminating for its preStop delay and its drain (about 25 s); that is the rollout working, not a failed pod
           [ "$(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed|Terminating' | wc -l)" = "0" ]
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+
+      - name: Onboarding runs as its own database role, which can use its schema and nothing else (PR-DB-2.6)
+        working-directory: smo
+        run: |
+          psql() { kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "$1"; }
+          [ "$(psql "SELECT count(*) FROM pg_stat_activity WHERE usename = 'smo_onboarding'")" -gt 0 ]
+          [ "$(psql "SELECT count(*) FROM onboarding.application_package")" -ge 0 ]
+          pw="$(kubectl -n smo get secret smo-role-secrets -o jsonpath='{.data.db-password-onboarding}' | base64 -d)"
+          for table in dme_type invoker_registration write_config_job audit_log notification_outbox; do
+            if kubectl -n smo exec postgres-0 -- env PGPASSWORD="$pw" psql -h postgres -U smo_onboarding -d smo -Atc "SELECT count(*) FROM $table" 2>/dev/null; then
+              echo "::error::smo_onboarding can read $table"; exit 1
+            fi
+          done
+          # the pod holds its own role's password and not the owner's
+          kubectl -n smo exec deploy/onboarding -- ls /run/secrets
+          ! kubectl -n smo exec deploy/onboarding -- ls /run/secrets/db_password 2>/dev/null
+
+      - name: Roles can be turned off and on again on a running release (PR-DB-2.6)
+        working-directory: smo
+        run: |
+          psql() { kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "$1"; }
+          # off: every module connects as the owner again, and the stack answers
+          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --set databaseRoles.enabled=false --wait --timeout 12m
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+          # on: the role passwords already exist (the Secret is kept) and the pods move to them
+          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --wait --timeout 12m
+          for i in $(seq 1 30); do
+            [ "$(psql "SELECT count(*) FROM pg_stat_activity WHERE usename = 'smo_onboarding'")" -gt 0 ] && break
+            sleep 2
+          done
+          [ "$(psql "SELECT count(*) FROM pg_stat_activity WHERE usename = 'smo_onboarding'")" -gt 0 ]
           kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
 
       - name: Two replicas of every module that can have them, and the stack still answers (PR-HA-1)
