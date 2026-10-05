@@ -1,0 +1,5 @@
+{
+  "* narrowed-parameter GET * query offset": "0.5.0 bounds a list offset at 2147483647 (the database integer); a larger value made the database fail and the module answer 500 (found by the contract test, V-3), so no working request is refused",
+  "sme narrowed-parameter POST /invoker-registrations/purge-stale query unused_for_days": "0.5.0 bounds it at 36500 days; a larger value overflowed the date arithmetic and answered 500 (V-3)",
+  "mlmr narrowed-parameter GET /models/{model_id}/artifact/{artifact_version} path artifact_version": "0.5.0 bounds the version at 2147483647 (the database integer); a larger value made the database fail and the module answer 500 (found by the contract test, V-3)"
+}

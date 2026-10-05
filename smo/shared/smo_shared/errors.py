@@ -100,6 +100,7 @@ class FrameworkError:
     # ever reads.
     POLICY_TYPE_NOT_FOUND = ("POLICY_TYPE_NOT_FOUND", 404)
     POLICY_NOT_FOUND = ("POLICY_NOT_FOUND", 404)
+    VALUE_OUT_OF_RANGE = ("VALUE_OUT_OF_RANGE", 422)
     EI_TYPE_ALREADY_REGISTERED = ("EI_TYPE_ALREADY_REGISTERED", 409)
     ALARM_NOT_FOUND = ("ALARM_NOT_FOUND", 404)
     O1_ENDPOINT_NOT_FOUND = ("O1_ENDPOINT_NOT_FOUND", 404)
@@ -200,3 +201,20 @@ def illegal_transition_error(exc, subject: str) -> HTTPException:
     """
     return framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
                            detail=f"{subject}: event {exc.event} is not allowed in state {exc.state}")
+
+
+def install_out_of_range_handler(app) -> None:
+    """A number too large for the database column (Postgres `DataError`, SQLite or date arithmetic `OverflowError`) is the caller's input, so it
+    answers 422 VALUE_OUT_OF_RANGE, not a 500. Found by the contract test (PR-V-3): a request with `9223372036854775808` in any integer field
+    reached the database and failed there. Installed by `apply_r1_gateway_security`, which every module calls."""
+    from fastapi.responses import JSONResponse
+    from sqlalchemy.exc import DataError
+
+    title, status = FrameworkError.VALUE_OUT_OF_RANGE
+
+    async def _out_of_range(request, exc):  # noqa: ARG001
+        body = ProblemDetails(title=title, status=status, detail="a value in the request is outside the range the service can store").model_dump()
+        return JSONResponse(status_code=status, content={"detail": body})
+
+    app.add_exception_handler(OverflowError, _out_of_range)
+    app.add_exception_handler(DataError, _out_of_range)

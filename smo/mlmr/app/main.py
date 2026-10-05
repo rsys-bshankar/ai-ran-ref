@@ -14,7 +14,7 @@ is the real thing now.
 import json
 import uuid
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Path, Query, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -327,7 +327,7 @@ def upload_model_artifact(model_id: uuid.UUID, file: UploadFile = File(...), db:
 
 
 @app.get("/models/{model_id}/artifact/{artifact_version}")
-def download_model_artifact(request: Request, model_id: uuid.UUID, artifact_version: int, db: Session = Depends(get_session)):
+def download_model_artifact(request: Request, model_id: uuid.UUID, artifact_version: int = Path(le=2**31 - 1), db: Session = Depends(get_session)):
     """DownloadModel — same modelId+artifactVersion lookup as the reference's
     modelName+modelVersion+artifactVersion modelKey. A model's `storeDiscReqs`
     are enforced here (SA-MLMR-6): 410 `MODEL_EXPIRED` past its `duration`,

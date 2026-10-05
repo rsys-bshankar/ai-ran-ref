@@ -23,10 +23,22 @@ Until `1.0.0`, `0.MINOR` is the breaking-change number and `0.x.PATCH` is for fi
 A schema revision is additive when the previous release's code runs on the new schema (a new nullable column, a new table, a new index). Anything else needs
 the MAJOR bump, or an expand/contract split across two MINOR releases (`PR-OPS-5`).
 
+## Compatibility checks and the deprecation policy
+
+CI compares the contract with the previous release on every pull request (`scripts/check_breaking_changes.py`, job "R1 contract has no breaking change since the previous release"): each `docs/openapi/<module>.json` at the newest `smo-v*` tag against the one in the checkout. A removed operation, a new required parameter or request property, a narrowed bound or enum, a changed type or a lost response property fails the job. An intended break is waived in `scripts/breaking_change_waivers.json` with a reason (a key may use `*`); a waiver that matches nothing fails, and the file is emptied when a release is cut, since each waiver describes the comparison with one release. Schema compatibility has its own jobs (the previous release's code on the new schema; the upgrade that keeps data).
+
+Deprecation, for a MAJOR-bump change made without surprising a consumer:
+
+1. **Announce first.** A route, field or setting to be removed or narrowed is marked deprecated in a MINOR release: `deprecated: true` in its OpenAPI entry, a `### Deprecated` entry in `CHANGELOG.md` naming what replaces it and the release it goes in.
+2. **Keep it working for at least one MINOR release** (two before 1.0), and answer a call to it as before; where a response can carry it, add a `Deprecation` header.
+3. **Remove it only in a MAJOR release** (before 1.0, in a MINOR release that says so under `### Changed` with an upgrade note), and then waive it in the break file in the same pull request.
+
+A change that only refuses input that used to make the service fail (a 500) is a fix, not a break; it is waived with that reason.
+
 ## Cutting a release
 
 1. Everything for the release is merged to `main` and CI is green on it.
-2. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, start a fresh `## [Unreleased]` above it, and update the compare links at the foot. Merge that as its own PR (`Release X.Y.Z`).
+2. Empty `smo/scripts/breaking_change_waivers.json` (`{}`): the new tag is the next comparison's base. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, start a fresh `## [Unreleased]` above it, and update the compare links at the foot. Merge that as its own PR (`Release X.Y.Z`).
 3. Tag the merge commit: `git tag -a smo-vX.Y.Z -m "SMO X.Y.Z" <sha> && git push origin smo-vX.Y.Z`. Tags are never moved or deleted; a bad release is superseded by the next PATCH.
 4. The tag is the release. Pushing it starts `.github/workflows/release-images.yml` (below). In the same release PR as the changelog, update the supported-versions table in `SECURITY.md`: the newest `0.MINOR` line is supported and the previous one is dropped (a test checks that every line listed has a release).
 
