@@ -15,7 +15,7 @@ case "$branch" in
   main|master) echo "refusing to commit on $branch: switch to the pilot branch first" >&2; exit 1 ;;
 esac
 
-git add -- "smo/samples/$PILOT_NAME" "smo/docs/design/CCDU_TX_MUTING_PILOT_HLD_LLD.md"
+git add -A -- "smo/samples/$PILOT_NAME"
 if git diff --cached --quiet; then
   echo "nothing to commit"
 else

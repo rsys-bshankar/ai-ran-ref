@@ -845,6 +845,7 @@ VENDOR   Outside ai-ran-ref scope - CCDU/vendor side
 
 ```text
 smo/samples/ccdu-tx-muting-pilot/
+├── CCDU_TX_MUTING_PILOT_HLD_LLD.md   This document
 ├── engine.py            §6 decision logic, A.5.4 hysteresis check (pure functions)
 ├── pilot.py             Demo steps 00-08: reads, decision, DME action, read-back
 ├── thresholds.json      A.5 threshold configuration

@@ -4,7 +4,7 @@
     python3 pilot.py 00        # one step
     python3 pilot.py all       # every step in order
 
-Design: smo/docs/design/CCDU_TX_MUTING_PILOT_HLD_LLD.md. Run it inside the compose network (from the r1-termination
+Design: CCDU_TX_MUTING_PILOT_HLD_LLD.md (this directory). Run it inside the compose network (from the r1-termination
 container, as the DEMO_RUNBOOK.md demos do); helper scripts are in ./scripts. Ids are kept between steps in
 $PILOT_STATE (default /tmp/ccdu-tx-muting-pilot.json).
 
