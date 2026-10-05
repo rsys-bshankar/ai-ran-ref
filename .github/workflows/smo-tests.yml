@@ -667,9 +667,10 @@ jobs:
       - name: Does this change touch the schema?
         id: gate
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ] && git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- smo/migrations; then
+          if [ "${{ github.event_name }}" = "pull_request" ] && git diff --quiet "${{ github.event.pull_request.base.sha }}" HEAD -- \
+               smo/migrations smo/scripts/check_previous_release_code.sh; then
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "smo/migrations is unchanged in this pull request: nothing to prove"
+            echo "neither smo/migrations nor this check changed in this pull request: nothing to prove"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
