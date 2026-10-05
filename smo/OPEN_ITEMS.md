@@ -599,7 +599,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 |---|---|---|---|
 | HA-1.1 | Two replicas per module in compose (`deploy.replicas`) or Helm (done in Helm: `ci/ha-values.yaml`, CI job `helm`; Onboarding, GUI backend and the mocks stay at one) | All start | – |
 | HA-1.2 | Replay the runbook against the replicas (CI job `compose-replicas`: `docker-compose.replicas.yml`, two of each module, callers reach them through Docker's DNS) | Green | HA-1.1 |
-| HA-1.3 | Fix list from failures in HA-1.2, one PR each | List empty | HA-1.2 |
+| HA-1.3 | Fix list from failures in HA-1.2, one PR each (done: the replay passed on its first run, so the list is empty; spread of calls over replicas is checked on kind, see `CHANGELOG.md`) | List empty | HA-1.2 |
 
 #### PR-HA-2 — Rolling restart
 
@@ -620,7 +620,7 @@ Later by design; each feature assumes the stateless, database and messaging step
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | HA-4.1 | Kill the delivery worker mid-batch (done: the sweep of `MSG-2` was missing and is built here; CI job `helm`) | No lost notification; duplicates only where at-least-once allows | MSG-2.2 |
-| HA-4.2 | Kill the job runner mid-job | Job resumes (`MSG-4.4`) | MSG-4.4 |
+| HA-4.2 | Kill the job runner mid-job (done on kind: the worker is scaled to 0 between the waves of a staged job, the job waits, and finishes when the worker is back; CI job `helm`) | Job resumes (`MSG-4.4`) | MSG-4.4 |
 
 #### PR-HA-5 — Placement
 
@@ -1366,3 +1366,7 @@ Pick any, or mix them. `Needs` is the only constraint.
 6. **Safer changes:** done (MGT-1.1–1.8, MGT-3, MGT-8.1).
 7. **Later:** HA, mesh, federation, vendor profiles.
 8. **Dev sanity and demo:** OPS-10.1–10.4 done (the redeploy gate, `.github/workflows/deploy-on-main.yml`); OPS-11.1–11.4 (on-demand Codespaces demo, $0 spending limit) need nothing else; OPS-10.5 onward follows OPS-2 and OPS-5 (OPS-1.6 is done).
+
+## v0.5.0 validation inventory (started)
+- **Every CHECK constraint on a status/enum column against the code that writes it.** Revision 0026 fixed two (`write_config_job`, `write_config_sub_change`) that rejected states the code uses; the other ~100 CHECK lists in the schema (see `pg_constraint`) were not audited, and SQLite hides every mismatch. A generated test per column (enum or literal set from the model/FSM against the constraint) belongs in the DB-test category.
+

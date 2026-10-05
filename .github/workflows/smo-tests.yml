@@ -885,6 +885,25 @@ jobs:
           kubectl -n smo exec -i deploy/sme -- python3 - < scripts/compose_e2e_roles.py
           kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
 
+      - name: Calls to a service are spread over its replicas (load balancing)
+        working-directory: smo
+        run: |
+          health_count() { kubectl -n smo exec -i "$1" -- python3 - < scripts/k8s_route_count.py; }
+          for svc in sme dme rapp-mgmt ran-nf-oam r1-termination a1-related nfo focom; do
+            pods=$(kubectl -n smo get pods -l "app.kubernetes.io/name=$svc" --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}')
+            declare -A before=()
+            # the gateway answers an unknown path before its metrics see it, so it is asked for /bootstrap, which it counts
+            path=/lb-check; [ "$svc" = r1-termination ] && path=/bootstrap
+            for p in $pods; do before[$p]=$(health_count "$p"); done
+            kubectl -n smo exec deploy/sme -- python3 -c "import httpx; [httpx.get('http://$svc:8000$path', timeout=5) for _ in range(80)]"
+            for p in $pods; do
+              after=$(health_count "$p")
+              echo "$svc: $p served $((after - before[$p])) of 80"
+              [ $((after - before[$p])) -ge 10 ] || { echo "::error::$p served fewer than 10 of the 80 calls to $svc: the Service does not spread over its replicas"; exit 1; }
+            done
+            unset before
+          done
+
       - name: Restart every deployment, one at a time, while the services are probed (PR-HA-2)
         working-directory: smo
         run: |
@@ -927,6 +946,21 @@ jobs:
           [ "$(count SENT)" = "100" ] && [ "$distinct" = "100" ]
           kubectl -n smo exec postgres-0 -- psql -U smo -d smo -c "DELETE FROM notification_outbox WHERE module = 'ci-failover'"
 
+      - name: A staged CM job waits for the job runner while it is gone, and finishes when it is back (PR-HA-4.2)
+        working-directory: smo
+        run: |
+          run() { kubectl -n smo exec -i deploy/sme -- python3 - "$@" < scripts/k8s_staged_job_failover.py; }
+          started=$(run start) || { echo "$started"; exit 1; }
+          job=$(tail -1 <<<"$started")
+          echo "job $job: wave 1 of 3 done, 20 s pause before wave 2"
+          kubectl -n smo scale deploy/ran-nf-oam-worker --replicas=0
+          kubectl -n smo wait --for=delete pod -l app.kubernetes.io/name=ran-nf-oam-worker --timeout=90s
+          sleep 30                                   # the pause is over; only the worker would advance the job
+          run stalled "$job"
+          kubectl -n smo scale deploy/ran-nf-oam-worker --replicas=2
+          kubectl -n smo rollout status deploy/ran-nf-oam-worker --timeout=120s
+          run finish "$job"
+
       - name: What the cluster says, when it went wrong
         if: failure()
         run: |
@@ -935,6 +969,7 @@ jobs:
             echo "::group::$pod"; kubectl -n smo describe pod "$pod" | tail -40; kubectl -n smo logs "$pod" --all-containers --tail=60 || true; echo "::endgroup::"
           done
           kubectl -n smo logs job/migrate --tail=80 || true
+          for d in ran-nf-oam ran-nf-oam-worker sme; do echo "::group::$d"; kubectl -n smo logs "deploy/$d" --tail=60 || true; echo "::endgroup::"; done
 
       - name: helm uninstall
         run: helm uninstall smo -n smo
