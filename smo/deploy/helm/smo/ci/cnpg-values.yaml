@@ -1,0 +1,13 @@
+# The chart against a Postgres it does not run (the CI job `postgres-ha`): the CloudNativePG cluster in ci/cnpg-cluster.yaml. Used on top of kind-values.yaml.
+# `smo-pg-rw` always points at the primary, so no host list is needed; the job separately installs with a host list and
+# targetSessionAttrs to prove that form.
+postgres:
+  enabled: false
+  external:
+    host: smo-pg-rw
+    port: 5432
+    database: smo
+    user: smo
+    sslmode: require
+secrets:
+  existingSecret: smo-secrets            # made by the job, with the same password as the cluster's owner

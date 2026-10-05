@@ -168,6 +168,24 @@ def test_an_external_database_drops_the_bundled_one_and_needs_a_host():
     assert failed.returncode != 0 and "postgres.external.host" in failed.stderr
 
 
+def _database_urls(*args: str) -> set[str]:
+    docs = _render("--set", "postgres.enabled=false", *args)
+    return {e["value"] for d in docs if d["kind"] == "Deployment" for e in d["spec"]["template"]["spec"]["containers"][0].get("env") or [] if e["name"] == "SMO_DATABASE_URL"}
+
+
+@helm
+def test_an_external_database_takes_target_session_attrs_and_a_list_of_hosts():
+    one = _database_urls("--set", "postgres.external.host=db", "--set", "postgres.external.targetSessionAttrs=read-write")
+    assert "postgresql+psycopg://smo_onboarding@db:5432/smo?sslmode=prefer&target_session_attrs=read-write" in one
+    # a list of hosts goes in the query, which SQLAlchemy hands to the driver unchanged (a comma in the host part would not parse)
+    many = _database_urls("--set", "postgres.external.host=a\\,b", "--set", "postgres.external.targetSessionAttrs=read-write")
+    assert "postgresql+psycopg://smo_onboarding@/smo?host=a,b&port=5432&sslmode=prefer&target_session_attrs=read-write" in many
+    from sqlalchemy.engine import make_url
+
+    parsed = make_url(next(iter(many)))
+    assert parsed.query["host"] == "a,b" and parsed.query["target_session_attrs"] == "read-write"
+
+
 @helm
 def test_an_existing_secret_means_the_chart_makes_none():
     docs = _render("--set", "secrets.existingSecret=mine")

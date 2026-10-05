@@ -811,3 +811,137 @@ jobs:
 
       - name: helm uninstall
         run: helm uninstall smo -n smo
+
+  postgres-ha:
+    name: Postgres HA (CloudNativePG, three instances) and a primary failover
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build the images from this checkout
+        working-directory: smo
+        run: |
+          pip install --quiet pyyaml
+          python scripts/release_images.py matrix | jq -c '.include[]' | while read -r row; do
+            name=$(jq -r .name <<<"$row"); context=$(jq -r .context <<<"$row"); module=$(jq -r .module <<<"$row")
+            if [ -n "$module" ]; then
+              docker build --quiet -t "local/smo-$name:ci" --build-arg "MODULE=$module" "$context"
+            else
+              docker build --quiet -t "local/smo-$name:ci" "$context"
+            fi
+          done
+          docker image ls 'local/smo-*'
+
+      - name: Create the cluster and load the images
+        run: |
+          kind create cluster --name smo --wait 120s
+          images=$(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
+          kind load docker-image --name smo $images
+
+      - name: Install the CloudNativePG operator (pinned, and its manifest checked)
+        run: |
+          curl -fsSL -o cnpg.yaml https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.25.1/cnpg-1.25.1.yaml
+          echo "ece141801fef6507451a3032b1eda29e9fa15944b741fa7301701c781160ce41  cnpg.yaml" | sha256sum -c -
+          kubectl apply --server-side -f cnpg.yaml
+          kubectl -n cnpg-system rollout status deploy/cnpg-controller-manager --timeout=180s
+
+      - name: A three-instance cluster, one primary and two replicas streaming from it (PR-DB-7.2)
+        run: |
+          kubectl create namespace smo
+          # the owner's password is the one the chart will be given, so the same Secret serves both
+          kubectl -n smo create secret generic smo-secrets --from-literal=db-password=ci-ha-owner-password --from-literal=enrollment-secret="$(openssl rand -hex 24)"
+          kubectl -n smo apply -f smo/deploy/helm/smo/ci/cnpg-cluster.yaml
+          kubectl -n smo wait --for=condition=Ready cluster/smo-pg --timeout=600s
+          kubectl -n smo get cluster smo-pg
+          [ "$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.readyInstances}')" = "3" ]
+          primary=$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.currentPrimary}')
+          psql() { kubectl -n smo exec "$primary" -c postgres -- psql -U postgres -d smo -Atc "$1"; }
+          for i in $(seq 1 30); do
+            [ "$(psql "SELECT count(*) FROM pg_stat_replication WHERE state = 'streaming'")" = "2" ] && break
+            sleep 2
+          done
+          [ "$(psql "SELECT count(*) FROM pg_stat_replication WHERE state = 'streaming'")" = "2" ]
+          echo "primary $primary, two replicas streaming"
+
+      - name: helm install against it, with the primary and the replicas in the host list and target_session_attrs=read-write (PR-DB-7.3)
+        working-directory: smo
+        run: |
+          # the replicas first: the driver must skip them and settle on the one that accepts writes
+          helm install smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml -f deploy/helm/smo/ci/cnpg-values.yaml \
+            --set 'postgres.external.host=smo-pg-ro\,smo-pg-rw' --set postgres.external.targetSessionAttrs=read-write --wait --timeout 12m
+          kubectl -n smo get pods
+          kubectl -n smo wait --for=condition=complete job/migrate --timeout=60s
+          kubectl -n smo exec deploy/sme -- printenv SMO_DATABASE_URL
+          primary=$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.currentPrimary}')
+          head=$(ls migrations/versions | grep -oE '^[0-9]+' | sort | tail -1)
+          at=$(kubectl -n smo exec "$primary" -c postgres -- psql -U postgres -d smo -Atc "SELECT version_num FROM alembic_version")
+          echo "database at $at, repository head $head"
+          [ "$at" = "$head" ]
+
+      - name: The stack answers on it, and the roles hold (PR-DB-7.2)
+        working-directory: smo
+        run: |
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+          kubectl -n smo exec -i deploy/sme -- python3 - < scripts/compose_e2e_roles.py
+          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
+          primary=$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.currentPrimary}')
+          psql() { kubectl -n smo exec "$primary" -c postgres -- psql -U postgres -d smo -Atc "$1"; }
+          # every module's session is its own role's, and none is the owner's
+          [ "$(psql "SELECT count(*) FROM pg_stat_activity WHERE usename = 'smo_onboarding'")" -gt 0 ]
+          # a replica has what the primary has
+          replica=$(kubectl -n smo get pods -l cnpg.io/cluster=smo-pg,cnpg.io/instanceRole=replica -o jsonpath='{.items[0].metadata.name}')
+          [ "$(kubectl -n smo exec "$replica" -c postgres -- psql -U postgres -d smo -Atc 'SELECT pg_is_in_recovery()')" = "t" ]
+          want=$(psql "SELECT count(*) FROM audit_log")
+          for i in $(seq 1 30); do
+            [ "$(kubectl -n smo exec "$replica" -c postgres -- psql -U postgres -d smo -Atc 'SELECT count(*) FROM audit_log')" -ge "$want" ] && break
+            sleep 2
+          done
+          [ "$(kubectl -n smo exec "$replica" -c postgres -- psql -U postgres -d smo -Atc 'SELECT count(*) FROM audit_log')" -ge "$want" ]
+
+      - name: Kill the primary while writes go through SME; the stack recovers and nothing committed is lost (PR-DB-7.4, PR-HA-3)
+        working-directory: smo
+        run: |
+          primary=$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.currentPrimary}')
+          psql() { kubectl -n smo exec "$1" -c postgres -- psql -U postgres -d smo -Atc "$2"; }
+          # a row the primary has committed and a replica has, before anything goes wrong
+          psql "$primary" "CREATE TABLE IF NOT EXISTS public.ha_marker (n int)"
+          psql "$primary" "INSERT INTO public.ha_marker VALUES (1)"
+          sleep 5
+          pod=$(kubectl -n smo get pod -l app.kubernetes.io/name=sme -o jsonpath='{.items[0].metadata.name}')
+          kubectl -n smo exec "$pod" -- python3 -c "$(cat scripts/k8s_failover_probe.py)" > probe.log 2>&1 &
+          probe=$!
+          sleep 10
+          echo "killing $primary"
+          kubectl -n smo delete pod "$primary" --force --grace-period=0
+          # a new primary, and the old pod back as a replica: three ready instances again
+          for i in $(seq 1 120); do
+            now=$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.currentPrimary}')
+            ready=$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.readyInstances}')
+            [ "$now" != "$primary" ] && [ "$ready" = "3" ] && break
+            sleep 5
+          done
+          echo "primary was $primary, is $now, $ready instances ready"
+          [ "$now" != "$primary" ] && [ "$ready" = "3" ]
+          sleep 15
+          kubectl -n smo exec "$pod" -- touch /tmp/stop
+          wait "$probe" || { cat probe.log; echo "::error::writes did not recover, or took too long to"; exit 1; }
+          cat probe.log
+          echo "### Primary failover: $(tail -1 probe.log)" >> "$GITHUB_STEP_SUMMARY"
+          # what was committed before is there on the new primary, and the audit chain still verifies
+          [ "$(psql "$now" "SELECT count(*) FROM public.ha_marker")" = "1" ]
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+          kubectl -n smo exec -i deploy/sme -- python3 - < scripts/compose_e2e_roles.py
+          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
+          psql "$now" "DROP TABLE public.ha_marker"
+
+      - name: What the cluster says, when it went wrong
+        if: failure()
+        run: |
+          kubectl -n smo get pods,jobs,cluster,events --sort-by=.lastTimestamp | tail -80 || true
+          cat smo/probe.log probe.log 2>/dev/null || true
+          for pod in $(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed' | cut -d' ' -f1); do
+            echo "::group::$pod"; kubectl -n smo describe pod "$pod" | tail -40; kubectl -n smo logs "$pod" --all-containers --tail=60 || true; echo "::endgroup::"
+          done
+          kubectl -n smo logs job/migrate --tail=80 || true
+          kubectl -n cnpg-system logs deploy/cnpg-controller-manager --tail=80 || true

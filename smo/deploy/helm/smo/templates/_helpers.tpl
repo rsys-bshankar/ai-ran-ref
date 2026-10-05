@@ -45,7 +45,13 @@ helm.sh/chart: {{ printf "%s-%s" .root.Chart.Name .root.Chart.Version | replace 
 {{- else -}}
 {{- $e := .root.Values.postgres.external -}}
 {{- if not $e.host }}{{ fail "postgres.enabled=false needs postgres.external.host" }}{{ end -}}
-{{- printf "postgresql+psycopg://%s@%s:%v/%s?sslmode=%s" (default $e.user $user) $e.host $e.port $e.database $e.sslmode -}}
+{{- $tsa := ternary (printf "&target_session_attrs=%s" $e.targetSessionAttrs) "" (ne (default "" $e.targetSessionAttrs) "") -}}
+{{- if contains "," (toString $e.host) -}}
+{{- /* several hosts: libpq tries them in order and, with targetSessionAttrs, takes the one that can write (the port is one for all, or one each) */ -}}
+{{- printf "postgresql+psycopg://%s@/%s?host=%s&port=%s&sslmode=%s%s" (default $e.user $user) $e.database $e.host (toString $e.port) $e.sslmode $tsa -}}
+{{- else -}}
+{{- printf "postgresql+psycopg://%s@%s:%v/%s?sslmode=%s%s" (default $e.user $user) $e.host $e.port $e.database $e.sslmode $tsa -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

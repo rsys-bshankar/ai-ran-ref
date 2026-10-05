@@ -225,9 +225,9 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | DB-7.1 | ADR: Patroni vs Postgres operator vs managed service (done: `docs/adr/0003-postgres-ha.md`, operator route) | ADR merged | – |
-| DB-7.2 | Three-node lab deployment | `pg_isready` on the primary; two replicas streaming | DB-7.1, OPS-2.1 |
-| DB-7.3 | Connection string with multiple hosts and `target_session_attrs=read-write` | Services reconnect after a switchover | DB-7.2 |
-| DB-7.4 | Failover test during the runbook replay | Data intact; recovery time recorded | DB-7.3 |
+| DB-7.2 | Three-node lab deployment (done: the CI job `postgres-ha`, CloudNativePG 1.25.1 on kind) | `pg_isready` on the primary; two replicas streaming | DB-7.1, OPS-2.1 |
+| DB-7.3 | Connection string with multiple hosts and `target_session_attrs=read-write` (done: `postgres.external.targetSessionAttrs` and a host list in the chart) | Services reconnect after a switchover | DB-7.2 |
+| DB-7.4 | Failover test during the runbook replay (done with writes through SME and the e2e checks around the kill, not the full runbook replay) | Data intact; recovery time recorded | DB-7.3 |
 
 ### 5.3 Messaging and jobs (`PR-MSG`)
 
@@ -612,8 +612,8 @@ Later by design; each feature assumes the stateless, database and messaging step
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| HA-3.1 | Switchover during a replay | Recovery time recorded | DB-7.4 |
-| HA-3.2 | Primary kill (unplanned) during a replay | No data loss for committed work | DB-7.4 |
+| HA-3.1 | Switchover during a replay (not done: only the unplanned kill is exercised) | Recovery time recorded | DB-7.4 |
+| HA-3.2 | Primary kill (unplanned) during a replay (done as DB-7.4: a marker row committed before the kill is on the new primary) | No data loss for committed work | DB-7.4 |
 
 #### PR-HA-4 — Worker failover
 
