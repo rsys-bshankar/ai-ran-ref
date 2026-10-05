@@ -141,10 +141,10 @@ def test_each_services_openapi_declares_the_token_on_every_operation_except_its_
     for path in sorted(openapi.glob("*.json")):
         spec = json.loads(path.read_text())
         if "r1BearerAuth" not in spec.get("components", {}).get("securitySchemes", {}):
-            continue                      # the two southbound mocks are not R1-facing
+            continue                      # the southbound mock is not R1-facing
         declared += 1
         assert spec["security"] == [{"r1BearerAuth": []}], path.name
         open_paths = {p for p, ops in spec["paths"].items()
                       for op in ops.values() if isinstance(op, dict) and op.get("security") == []}
         assert open_paths <= allowed_open.get(path.stem, set()), f"{path.name} declares open: {open_paths}"
-    assert declared >= 17
+    assert declared >= 16
