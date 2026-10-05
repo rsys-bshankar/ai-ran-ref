@@ -718,8 +718,10 @@ jobs:
           echo "modules with a role: $roles"
           for name in $roles; do
             role="smo_${name//-/_}"
-            [ "$(psql "SELECT count(*) FROM pg_stat_activity WHERE usename = '$role'")" -gt 0 ] || { echo "::error::$name does not connect as $role"; exit 1; }
             pw="$(kubectl -n smo get secret smo-role-secrets -o jsonpath="{.data.db-password-$name}" | base64 -d)"
+            # the pod is configured to connect as the role (a reference rApp that has served no request holds no connection yet, so the connection itself is not asked for), and the role can log in
+            [ "$(kubectl -n smo exec "deploy/$name" -- printenv SMO_DATABASE_URL | sed -E 's#^[^/]*//([^@:]*).*#\1#')" = "$role" ] || { echo "::error::$name is not configured to connect as $role"; exit 1; }
+            [ "$(kubectl -n smo exec postgres-0 -- env PGPASSWORD="$pw" psql -h postgres -U "$role" -d smo -Atc 'SELECT 1')" = "1" ] || { echo "::error::$role cannot log in with the password the pod holds"; exit 1; }
             for table in dme_type invoker_registration write_config_job audit_log; do
               [ "$table" = "dme_type" ] && [ "$name" = "dme" ] && continue
               if kubectl -n smo exec postgres-0 -- env PGPASSWORD="$pw" psql -h postgres -U "$role" -d smo -Atc "SELECT count(*) FROM $table" 2>/dev/null; then
