@@ -3724,6 +3724,7 @@
             "name": "artifact_version",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
               "title": "Artifact Version",
               "type": "integer"
             }
