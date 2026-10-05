@@ -738,6 +738,27 @@
         "title": "ProblemDetails",
         "type": "object"
       },
+      "ReadinessReport": {
+        "properties": {
+          "checks": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadinessReport",
+        "type": "object"
+      },
       "SubscribeAnalyticsRequest": {
         "description": "`scope`'s wire shape changes here from a bare JSON body to this\nnamed model \u2014 FastAPI can't leave `scope` as the implicit unwrapped\nbody once a second body-eligible field (`thresholdInfo`) exists\nalongside it. No real caller sets `scope` on a subscription today\n(grepped: ran-analytics never does, and no test did either before\nthis pass), so this is a real but zero-blast-radius wire change.",
         "properties": {
@@ -2872,11 +2893,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/ReadinessReport"
                 }
               }
             },
-            "description": "Error"
+            "description": "A check failed: this replica should not receive traffic"
           }
         },
         "summary": "Ready",

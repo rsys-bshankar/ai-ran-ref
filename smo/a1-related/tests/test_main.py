@@ -103,6 +103,14 @@ def test_get_unknown_policy_type_is_404(client):
     assert resp.status_code == 404
 
 
+def test_an_unknown_policy_is_404_not_500(client):
+    # found by the contract test (tests_integration/test_contract_schemathesis.py): these three dereferenced a missing row
+    unknown = "e3e70682-c209-1cac-a29f-6fbed82c07cd"
+    assert client.get(f"/policies/{unknown}").status_code == 404
+    assert client.put(f"/policies/{unknown}", json={"x": 1}).status_code == 404
+    assert client.get(f"/policies/{unknown}/status").status_code == 404
+
+
 def test_create_policy_unknown_type_rejected(client):
     resp = client.post("/policies", json={"policyTypeId": "NOT_A_REAL_TYPE", "policyObject": {"x": 1}, "nearRtRicId": "ric1", "creatorId": "rapp-1"})
     assert resp.status_code == 422
@@ -166,19 +174,6 @@ def test_query_policy_returns_created_policy(client):
     assert resp.json()["enforcementStatus"] == "ENFORCED"
 
 
-def test_query_policy_for_unknown_id_is_a_genuine_error_not_404(client):
-    """query_policy has no guard for a missing row — db.get returns None
-    and _policy_view(None) crashes. Asserting that explicitly, the same
-    pattern nfo/tests/test_main.py uses for its own unguarded-None path,
-    rather than silently avoiding the case.
-    """
-    from fastapi.testclient import TestClient as _TestClient
-    from app.main import app as _app
-    raw = _TestClient(_app, raise_server_exceptions=False)
-    resp = raw.get(f"/policies/{uuid.uuid4()}")
-    assert resp.status_code == 500
-
-
 def test_update_policy_reflects_southbound_enforcement_status(client):
     created = client.post("/policies", json={
         "policyTypeId": "ORAN_QoSandTSP_6.0.1", "policyObject": {}, "nearRtRicId": "ric1", "creatorId": "rapp-1",
@@ -199,12 +194,8 @@ def test_delete_policy_removes_it(client):
     resp = client.delete(f"/policies/{created['policyId']}")
     assert resp.status_code == 204
 
-    from fastapi.testclient import TestClient as _TestClient
-    from app.main import app as _app
-    raw = _TestClient(_app, raise_server_exceptions=False)
-    # same unguarded-None path as the query test above — proves the row is
-    # actually gone (a query against a still-existing row would 200).
-    assert raw.get(f"/policies/{created['policyId']}").status_code == 500
+    # proves the row is actually gone (a query against a still-existing row would 200)
+    assert client.get(f"/policies/{created['policyId']}").status_code == 404
 
 
 def test_delete_unknown_policy_is_idempotent(client):

@@ -26,6 +26,7 @@ from collections.abc import Callable, Sequence
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +76,11 @@ def run_checks(checks: Sequence[Check], timeout: float | None = None) -> dict[st
     return results
 
 
+class ReadinessReport(BaseModel):
+    status: str
+    checks: dict[str, str]
+
+
 def install_health(app: FastAPI, checks: Sequence[Check] = ()) -> None:
     """Adds `/live`, `/ready` and the `/health` alias to `app`."""
     checks = tuple(checks)
@@ -92,7 +98,7 @@ def install_health(app: FastAPI, checks: Sequence[Check] = ()) -> None:
         """
         return {"status": "healthy"}
 
-    @app.get("/ready", tags=["health"])
+    @app.get("/ready", tags=["health"], responses={503: {"model": ReadinessReport, "description": "A check failed: this replica should not receive traffic"}})
     def ready():
         """Readiness probe: 200 when the database and SME (where this module uses them) answer, else 503
         naming the failing check. Take the replica out of rotation on 503; do not restart it.

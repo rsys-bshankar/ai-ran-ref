@@ -1785,6 +1785,27 @@
         "title": "ProblemDetails",
         "type": "object"
       },
+      "ReadinessReport": {
+        "properties": {
+          "checks": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadinessReport",
+        "type": "object"
+      },
       "RegisterRmihRequest": {
         "additionalProperties": false,
         "description": "Wave 6 \u2014 TS 28.312 IntentHandlingFunction with its spec attributes\n(intentHandlingCapabilityList, supportedNegotiationFunctionalities,\nsupportedUtilityList). `smeServiceId`/`notificationDestination` are this\nbuild's own: the SME-published API it serves and where new Intents are\npushed (same callback convention as DME/A1-Related).",
@@ -5217,11 +5238,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/ReadinessReport"
                 }
               }
             },
-            "description": "Error"
+            "description": "A check failed: this replica should not receive traffic"
           }
         },
         "summary": "Ready",

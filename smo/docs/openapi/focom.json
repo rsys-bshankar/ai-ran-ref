@@ -825,6 +825,27 @@
         "title": "ProvisioningRequest",
         "type": "object"
       },
+      "ReadinessReport": {
+        "properties": {
+          "checks": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadinessReport",
+        "type": "object"
+      },
       "RegisterResourceTypeRequest": {
         "additionalProperties": false,
         "description": "Registers a ResourceType (SA-FOCOM-9): the O2 interface treats the type\nlist as read-only, so this is the SMO-side seeding path.",
@@ -10634,11 +10655,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
+                  "$ref": "#/components/schemas/ReadinessReport"
                 }
               }
             },
-            "description": "Error"
+            "description": "A check failed: this replica should not receive traffic"
           }
         },
         "summary": "Ready",
