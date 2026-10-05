@@ -724,7 +724,7 @@ def _record_view(r: DataRecord) -> dict:
 DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS = 10.0
 
 
-@app.post("/actions", status_code=202)
+@app.post("/actions", status_code=202, responses={200: {"description": "the actionId was already recorded: the replay is IGNORED and nothing is forwarded again"}})
 def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
     if not body.changes:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="changes must not be empty")

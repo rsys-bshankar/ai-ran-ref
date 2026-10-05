@@ -625,6 +625,9 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "the actionId was already recorded: the replay is IGNORED and nothing is forwarded again"
+          },
           "202": {
             "content": {
               "application/json": {
