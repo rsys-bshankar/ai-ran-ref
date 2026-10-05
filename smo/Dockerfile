@@ -33,6 +33,7 @@ COPY sdk /srv/sdk
 COPY alembic.ini /srv/alembic.ini
 COPY migrations /srv/migrations
 COPY scripts/migrate.py /srv/scripts/migrate.py
+COPY scripts/db_roles.py /srv/scripts/db_roles.py
 
 COPY ${MODULE}/pyproject.toml* /srv/module/
 COPY ${MODULE}/app /srv/module/app
