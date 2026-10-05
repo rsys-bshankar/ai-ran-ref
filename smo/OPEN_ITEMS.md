@@ -6,6 +6,16 @@ decided and built is in [`HISTORY.md`](HISTORY.md). IDs keep their original numb
 
 Each item in sections 1–4: what is missing, why it matters, suggested approach. Section 5 is the tier-1 production-readiness backlog, split into independently pickable blocks.
 
+## Scope (decided, October 2026)
+
+**Before 1.0.0**: spec features and spec compliance; deployment-grade product features; security scanning and tightening; audit logging and reports; LCM flows; the sample rApps' life cycle at plugfest grade (not for an actual plugfest); a RAN O1 stub (development, use and integration); rApp SDK enrichment.
+
+**After 1.0.0, or with the customer**: customer-specific RAN O1 integration, rApp integration and GUI enhancement; improvements from customer usage; customer DEV/SIT/SVT fixes and enhancements; customer-specific features such as TCE integration and customer-specific telemetry or file decoding for RAN NF OAM and DME. To be discussed with the customer; none of it is planned here.
+
+**Out of scope at every stage**: A1, xApps, the Near-RT RIC and E2, and their policy. The `a1-related` module, `mock-near-rt-ric` and the `OI-5-a1-*` items below predate this decision; what to do with them (remove in an announced release, or freeze) is not decided yet, so they get no new work and no new tests.
+
+**Not decided yet**: what goes in 0.6.0, 0.7.0 and later, and when 1.0.0 is cut. The external penetration test is a criterion for 1.0.0 (see `docs/VALIDATION.md`, V-7c).
+
 ## 1. Design decisions without an answer
 
 - **OI-1-weighted-triggers** — `WEIGHTED_TRIGGERS` group-retrain propagation raises
