@@ -1164,6 +1164,16 @@ def test_mediate_action_surfaces_a_ran_nf_oam_precheck_refusal(client, ran_nf_oa
     assert (action["status"], action["forwardedJobId"]) == ("REJECTED", None)
 
 
+def test_mediate_action_answers_502_when_ran_nf_oam_fails_without_a_usable_body(client, ran_nf_oam):
+    """Found by the contract test: RAN NF OAM answering a bare 500 made DME fail on `resp.json()` and answer 500 itself."""
+    ran_nf_oam.refuse_with = (500, {})
+    resp = client.post("/actions", json={"requestedBy": "rapp", "changes": [
+        {"managedElementRef": "me-1", "className": "GNBDUFunction", "attributeChanges": {"txPower": 10}}]})
+    assert resp.status_code == 502 and resp.json()["detail"]["title"] == "UPSTREAM_FAILED"
+    action = client.get("/actions").json()["items"][0]
+    assert (action["status"], action["forwardedJobId"]) == ("REJECTED", None)
+
+
 def test_mediate_action_rejects_empty_changes(client, ran_nf_oam):
     resp = client.post("/actions", json={"requestedBy": "energy-optimizer", "changes": []})
     assert resp.status_code == 422
