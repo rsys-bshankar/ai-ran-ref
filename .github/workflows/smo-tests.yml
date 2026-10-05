@@ -893,11 +893,11 @@ jobs:
             pods=$(kubectl -n smo get pods -l "app.kubernetes.io/name=$svc" --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}')
             declare -A before=()
             for p in $pods; do before[$p]=$(health_count "$p"); done
-            kubectl -n smo exec deploy/sme -- python3 -c "import httpx; [httpx.get('http://$svc:8000/health', timeout=5).raise_for_status() for _ in range(80)]"
+            kubectl -n smo exec deploy/sme -- python3 -c "import httpx; [httpx.get('http://$svc:8000/lb-check', timeout=5) for _ in range(80)]"
             for p in $pods; do
               after=$(health_count "$p")
               echo "$svc: $p served $((after - before[$p])) of 80"
-              [ "$after" -gt "${before[$p]}" ] || { echo "::error::$p served none of the 80 calls to $svc: the Service does not spread over its replicas"; exit 1; }
+              [ $((after - before[$p])) -ge 10 ] || { echo "::error::$p served fewer than 10 of the 80 calls to $svc: the Service does not spread over its replicas"; exit 1; }
             done
             unset before
           done
