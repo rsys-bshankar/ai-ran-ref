@@ -273,7 +273,7 @@ def _offboard(db: Session, inv: InvokerRegistration) -> None:
 
 
 @app.post("/invoker-registrations/purge-stale")
-def purge_stale_invokers(unused_for_days: int = Query(gt=0), dry_run: bool = True, db: Session = Depends(get_session)):
+def purge_stale_invokers(unused_for_days: int = Query(gt=0, le=36500), dry_run: bool = True, db: Session = Depends(get_session)):
     """PR-ST-4 housekeeping (this build's own addition; CAPIF has no such operation). Offboards every invoker
     that has obtained no token for `unused_for_days` days (or, if it never did, was onboarded that long ago):
     the leftovers of processes that registered an identity of their own and were replaced. A module that
@@ -393,7 +393,18 @@ def _check_scope(db: Session, scope: str | None, api_invoker_id: str, kind: str 
     return None
 
 
-@app.post("/oauth2/token")
+class OAuthError(BaseModel):
+    """RFC 6749 section 5.2: what the token and introspection endpoints answer when they refuse, not the ProblemDetails of the other routes."""
+    error: str
+    error_description: str | None = None
+
+
+class UnparsableBody(BaseModel):
+    """What the framework answers (400) before the route runs, when the body is not JSON."""
+    detail: str
+
+
+@app.post("/oauth2/token", responses={400: {"model": OAuthError | UnparsableBody, "description": "RFC 6749 section 5.2 error"}, 401: {"model": OAuthError | UnparsableBody, "description": "RFC 6749 section 5.2 error"}})
 def issue_access_token(body: AccessTokenRequest, db: Session = Depends(get_session)):
     """HISTORY.md §2: "no actual validation code path" for
     R1 Termination's advertised tokenEndPoint — this is that endpoint,
@@ -444,7 +455,7 @@ class IntrospectRequest(BaseModel):
     token: str
 
 
-@app.post("/oauth2/introspect")
+@app.post("/oauth2/introspect", responses={400: {"model": OAuthError | UnparsableBody, "description": "RFC 6749 section 5.2 error"}, 401: {"model": OAuthError | UnparsableBody, "description": "RFC 6749 section 5.2 error"}})
 def introspect_token(body: IntrospectRequest, db: Session = Depends(get_session)):
     """RFC 7662 — the honest substitute for the reference's own
     self-contained signed-JWT validation (see issue_access_token's own

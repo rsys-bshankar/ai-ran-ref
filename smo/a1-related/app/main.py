@@ -147,13 +147,12 @@ def list_policy_status_subscriptions(limit: int = PageLimit, offset: int = PageO
 
 @app.get("/policies/{policy_id}")
 def query_policy(policy_id: uuid.UUID, db: Session = Depends(get_session)):
-    p = db.get(A1Policy, policy_id)
-    return _policy_view(p)
+    return _policy_view(_policy_or_404(db, policy_id))
 
 
 @app.put("/policies/{policy_id}")
 def update_policy(policy_id: uuid.UUID, policy_object: dict, db: Session = Depends(get_session), a1t: A1TerminationClient = Depends(get_a1_termination_client)):
-    p = db.get(A1Policy, policy_id)
+    p = _policy_or_404(db, policy_id)
     old_status = p.enforcement_status
     result = a1t.update_policy(p.near_rt_ric_policy_id, policy_object)
     p.policy_object = policy_object
@@ -181,7 +180,7 @@ def query_policy_status(policy_id: uuid.UUID, db: Session = Depends(get_session)
     — the Near-RT RIC's OWN identifier for this policy, not our R1-facing
     policy_id (see the model's docstring; caught by the integration suite).
     """
-    p = db.get(A1Policy, policy_id)
+    p = _policy_or_404(db, policy_id)
     old_status = p.enforcement_status
     result = a1t.query_policy_status(p.near_rt_ric_policy_id)
     p.enforcement_status = result["enforcementStatus"]
@@ -366,6 +365,8 @@ def register_ei_type(ei_type_id: str, registered_by: str, dme_namespace: str, dm
     (clause 9 has no 9.2). This wraps DME's real RegisterDMEType, then
     records the EI bookkeeping entry.
     """
+    if db.get(A1EIType, ei_type_id) is not None:
+        raise framework_error(FrameworkError.EI_TYPE_ALREADY_REGISTERED, detail=f"eiTypeId {ei_type_id} is registered")
     r1 = R1Client()
     dme_resp = r1.post("/dme/production-capabilities", json={
         "namespace": dme_namespace, "name": dme_name, "version": dme_version,
@@ -406,6 +407,13 @@ def receive_dme_job(body: dict):
 @app.delete("/dme-jobs/{data_job_id}", status_code=204)
 def stop_dme_job(data_job_id: str):
     pass
+
+
+def _policy_or_404(db: Session, policy_id: uuid.UUID) -> A1Policy:
+    p = db.get(A1Policy, policy_id)
+    if p is None:
+        raise framework_error(FrameworkError.POLICY_NOT_FOUND, detail=f"unknown policyId {policy_id}")
+    return p
 
 
 def _policy_view(p: A1Policy) -> dict:

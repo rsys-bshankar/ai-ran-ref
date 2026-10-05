@@ -99,6 +99,8 @@ class FrameworkError:
     # ProblemDetails convention, rather than a bare string only a human
     # ever reads.
     POLICY_TYPE_NOT_FOUND = ("POLICY_TYPE_NOT_FOUND", 404)
+    POLICY_NOT_FOUND = ("POLICY_NOT_FOUND", 404)
+    EI_TYPE_ALREADY_REGISTERED = ("EI_TYPE_ALREADY_REGISTERED", 409)
     ALARM_NOT_FOUND = ("ALARM_NOT_FOUND", 404)
     O1_ENDPOINT_NOT_FOUND = ("O1_ENDPOINT_NOT_FOUND", 404)
     O1_HOST_KEY_NOT_FOUND = ("O1_HOST_KEY_NOT_FOUND", 404)

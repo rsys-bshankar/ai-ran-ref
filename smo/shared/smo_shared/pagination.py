@@ -29,9 +29,10 @@ from sqlalchemy.orm import Session
 
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 500
+MAX_OFFSET = 2**31 - 1  # a larger one overflows the database's integer (a 500 before the contract test found it)
 
 PageLimit = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT, description="Max rows to return (1-500).")
-PageOffset = Query(0, ge=0, description="Rows to skip before the first one returned.")
+PageOffset = Query(0, ge=0, le=MAX_OFFSET, description="Rows to skip before the first one returned.")
 
 
 def paginate(db: Session, stmt, limit: int, offset: int) -> dict[str, Any]:
