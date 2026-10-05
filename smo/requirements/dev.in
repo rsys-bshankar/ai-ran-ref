@@ -3,3 +3,4 @@
 -r runtime.in
 pytest
 hypothesis
+coverage

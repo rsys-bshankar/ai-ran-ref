@@ -64,41 +64,37 @@ jobs:
           pip install --require-hashes -r requirements/dev.txt
           pip install --no-deps -e shared
 
-      - name: Run each module's unit test suite
+      # Every unit suite runs under coverage (scripts/run_unit_suite.sh) and leaves smo/coverage/<name>.json; the floors file is checked after the suites
+      - name: Run each module's unit test suite, with coverage
         working-directory: smo
         run: |
           set -e
           for m in onboarding rapp-mgmt ran-nf-oam aimgf mlmr mllf so-smos \
                    a1-related sme dme r1-termination nfo focom ran-analytics mdaf \
-                   intent-service sa-smos mock-near-rt-ric mock-o1-adaptor sdk; do
-            echo "::group::$m"
-            (cd "$m" && PYTHONPATH=.:../shared python -m pytest tests/ -v)
-            echo "::endgroup::"
+                   intent-service sa-smos mock-near-rt-ric mock-o1-adaptor; do
+            scripts/run_unit_suite.sh "$m" "$m" app ".:../shared"
+          done
+          scripts/run_unit_suite.sh sdk sdk smo_sdk ".:../shared"
+
+      - name: Run the sample rApps' own tests (EnergySaving, Mobility, Coverage and Traffic Steering, model and decision engines)
+        working-directory: smo
+        run: |
+          set -e
+          for r in energy-saving-rapp mobility-optimization-rapp coverage-optimization-rapp traffic-steering-rapp; do
+            scripts/run_unit_suite.sh "$r" "samples/$r" app ".:../../shared:../../sdk"
           done
 
-      - name: Run the sample rApps' own tests (EnergySaving rApp model + decision engine)
-        working-directory: smo/samples/energy-saving-rapp
-        run: PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -v
-
-      - name: Run the sample rApps' own tests (Mobility Optimization rApp model + MRO engine)
-        working-directory: smo/samples/mobility-optimization-rapp
-        run: PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -v
-
-      - name: Run the sample rApps' own tests (Coverage Optimization rApp model + joint optimiser)
-        working-directory: smo/samples/coverage-optimization-rapp
-        run: PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -v
-
-      - name: Run the sample rApps' own tests (Traffic Steering rApp model + steering engine)
-        working-directory: smo/samples/traffic-steering-rapp
-        run: PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -v
-
-      - name: Run the shared library's tests (R1Client's OAuth2 client flow)
-        working-directory: smo/shared
-        run: PYTHONPATH=. python -m pytest tests/ -v
+      - name: Run the shared library's tests (R1Client's OAuth2 client flow, database, worker, ...)
+        working-directory: smo
+        run: scripts/run_unit_suite.sh shared shared smo_shared "."
 
       - name: Run the Operator GUI BFF tests
-        working-directory: smo/gui-bff
-        run: PYTHONPATH=.:../shared python -m pytest tests/ -v
+        working-directory: smo
+        run: scripts/run_unit_suite.sh gui-bff gui-bff app ".:../shared"
+
+      - name: Coverage against the floors (PR-V-1)
+        working-directory: smo
+        run: python scripts/coverage_floor.py coverage/
 
       - name: Run cross-service integration tests
         working-directory: smo
