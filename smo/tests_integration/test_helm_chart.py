@@ -179,11 +179,15 @@ def test_an_external_database_takes_target_session_attrs_and_a_list_of_hosts():
     assert "postgresql+psycopg://smo_onboarding@db:5432/smo?sslmode=prefer&target_session_attrs=read-write" in one
     # a list of hosts goes in the query, which SQLAlchemy hands to the driver unchanged (a comma in the host part would not parse)
     many = _database_urls("--set", "postgres.external.host=a\\,b", "--set", "postgres.external.targetSessionAttrs=read-write")
-    assert "postgresql+psycopg://smo_onboarding@/smo?host=a,b&port=5432&sslmode=prefer&target_session_attrs=read-write" in many
+    assert "postgresql+psycopg://smo_onboarding@/smo?host=a,b&port=5432,5432&sslmode=prefer&target_session_attrs=read-write" in many
     from sqlalchemy.engine import make_url
 
     parsed = make_url(next(iter(many)))
-    assert parsed.query["host"] == "a,b" and parsed.query["target_session_attrs"] == "read-write"
+    # the dialect itself accepts it (it refuses a list of hosts and one port)
+    from sqlalchemy import create_engine
+
+    create_engine(parsed).dialect.create_connect_args(parsed)
+    assert parsed.query["host"] == "a,b" and parsed.query["port"] == "5432,5432" and parsed.query["target_session_attrs"] == "read-write"
 
 
 @helm
