@@ -12,7 +12,7 @@ Each item in sections 1–4: what is missing, why it matters, suggested approach
 
 **After 1.0.0, or with the customer**: customer-specific RAN O1 integration, rApp integration and GUI enhancement; improvements from customer usage; customer DEV/SIT/SVT fixes and enhancements; customer-specific features such as TCE integration and customer-specific telemetry or file decoding for RAN NF OAM and DME. To be discussed with the customer; none of it is planned here.
 
-**Out of scope at every stage**: A1, xApps, the Near-RT RIC and E2, and their policy. The `a1-related` module, `mock-near-rt-ric` and the `OI-5-a1-*` items below predate this decision; what to do with them (remove in an announced release, or freeze) is not decided yet, so they get no new work and no new tests.
+**Out of scope at every stage**: A1, xApps, the Near-RT RIC and E2, and their policy. The `a1-related` module, `mock-near-rt-ric` and the `OI-5-a1-*` items were removed in release 0.5.0 (the code is in the tag `smo-v0.4.0`); A1 stays as a future work item, see "A1 / Near-RT RIC / E2" under 5.8.
 
 **Not decided yet**: what goes in 0.6.0, 0.7.0 and later, and when 1.0.0 is cut. The external penetration test is a criterion for 1.0.0 (see `docs/VALIDATION.md`, V-7c).
 
