@@ -10,6 +10,7 @@ import json
 import uuid
 import zipfile
 from io import BytesIO
+from typing import Any
 
 import httpx
 import yaml
@@ -370,7 +371,7 @@ def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, d
         meta = z.read("TOSCA-Metadata/TOSCA.meta").decode()
         entry_line = next(l for l in meta.splitlines() if l.startswith("Entry-Definitions:"))
         entry_definitions = entry_line.split(":", 1)[1].strip()
-        identity = _asd_identity(z.read(entry_definitions).decode(errors="replace"))  # raises KeyError if missing/malformed
+        identity: dict[str, Any] = _asd_identity(z.read(entry_definitions).decode(errors="replace"))  # raises KeyError if missing/malformed
         artifacts = [(n, f"{location}#{n}") for n in z.namelist() if n.startswith("Artifacts/") and not n.endswith("/")]
         ai_capabilities = _parse_ai_capabilities(z)
         if ai_capabilities is not None:

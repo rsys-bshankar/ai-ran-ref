@@ -330,6 +330,8 @@ def _verify_client_assertion(db: Session, inv: InvokerRegistration, body: Access
     assertion can't buy a second token."""
     if body.client_assertion_type != CLIENT_ASSERTION_TYPE:
         return f"client_assertion_type must be {CLIENT_ASSERTION_TYPE}"
+    if body.client_assertion is None:
+        return "client_assertion is missing"
     key = _pem_public_key(inv.public_key)
     if key is None:
         return "invoker has no PEM public key to verify an assertion with"

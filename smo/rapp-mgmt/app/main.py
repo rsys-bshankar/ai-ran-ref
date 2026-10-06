@@ -102,7 +102,7 @@ def _load_instance(db: Session, instance_id: uuid.UUID) -> RAppInstance:
     swept = _sweep_overdue_upgrade(db, owner) if owner is not None else False
     if swept is None:  # another replica swept it first: reload, which is a 404 if the replacement is gone
         return _get_or_404(db, instance_id)
-    if swept and owner.instance_id != instance_id:
+    if swept and owner is not None and owner.instance_id != instance_id:
         raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND,
                               detail=f"RAppInstance {instance_id} was an upgrade replacement, rolled back after "
                                      f"upgradeTimeoutSeconds={owner.upgrade_timeout_seconds}")

@@ -168,7 +168,7 @@ class ProxiedError(BaseModel):
     detail: Any
 
 
-_GATEWAY_ERRORS = {code: {"model": GatewayProblem | ProxiedError, "description": "refused or failed at the gateway, or a module's own error passed through"}
+_GATEWAY_ERRORS: dict[int | str, dict[str, Any]] = {code: {"model": GatewayProblem | ProxiedError, "description": "refused or failed at the gateway, or a module's own error passed through"}
                    for code in (401, 403, 404, 429, 502, 503, 504)}
 
 

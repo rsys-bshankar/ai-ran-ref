@@ -299,7 +299,7 @@ class StoragePatch(_Spec):
 def _profile_view(db: Session, p: MLModelProfile) -> dict:
     model = db.get(MLModel, p.model_id)
     view = {"mlModelProfId": str(p.profile_id), "aimleServId": p.aimle_serv_id, "aimleRepId": p.aimle_rep_id,
-            "mlModelInfo": model_info_view(db, model), "mlModelUri": p.ml_model_uri}
+            "mlModelInfo": model_info_view(db, model) if model is not None else None, "mlModelUri": p.ml_model_uri}
     return {k: v for k, v in view.items() if v is not None}
 
 

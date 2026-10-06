@@ -247,9 +247,9 @@ def register_sme_declarations(inst: RAppInstance, status: dict | None = None) ->
     """
     r1 = R1Client()
     declarations = (onboarding_status(inst) if status is None else status).get("smeDeclarations")
-    if not declarations:
-        return
     apf_id = inst.oauth_client_id
+    if not declarations or not apf_id:          # no identity yet: nothing to register under
+        return
     try:
         for provider in declarations.get("providers", []):
             r1.post("/sme/provider-registrations", json=_sme_provider_registration_body(provider, apf_id))
