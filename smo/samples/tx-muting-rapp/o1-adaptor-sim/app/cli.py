@@ -25,7 +25,7 @@ HELP = """\
   status                                   registration, running config, alarms, faults, generator
   register                                 self-register with RAN NF OAM, heartbeat, subscribe PM counters
   heartbeat                                one heartbeat
-  pm <prb%> <ue> [sync|nosync] [cell]      report DL_PRB_UTILIZATION, RRC_CONNECTED_UE, RADIO_SYNC_STATE
+  pm <prb%> <ue> [cell]                    report DL_PRB_UTILIZATION and RRC_CONNECTED_UE
   counter <TYPE> <value> [cell]            report any one PM counter
   alarm raise <id> [severity] [cause]      raise an alarm on the cell (severity: critical|major|minor|warning)
   alarm clear <id>                         clear it (RAN NF OAM alarmId or the source alarm id)
@@ -80,14 +80,10 @@ def run(api: Api, argv: list[str]) -> object:
         return api.call("post", "/control/heartbeat")
     if c == "pm":
         if len(a) < 2:
-            raise CliError("usage: pm <prb%> <ue> [sync|nosync] [cell]")
-        sync = a[2] if len(a) > 2 else "sync"
-        if sync not in ("sync", "nosync"):
-            raise CliError("third argument must be sync or nosync")
-        body = {"counters": {"DL_PRB_UTILIZATION": float(a[0]), "RRC_CONNECTED_UE": float(a[1]),
-                             "RADIO_SYNC_STATE": 1.0 if sync == "sync" else 0.0}}
-        if len(a) > 3:
-            body["cellId"] = a[3]
+            raise CliError("usage: pm <prb%> <ue> [cell]")
+        body = {"counters": {"DL_PRB_UTILIZATION": float(a[0]), "RRC_CONNECTED_UE": float(a[1])}}
+        if len(a) > 2:
+            body["cellId"] = a[2]
         return api.call("post", "/control/counters", json=body)
     if c == "counter":
         if len(a) < 2:

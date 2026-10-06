@@ -24,4 +24,4 @@ echo "waiting for health"
 wait_healthy postgres "${SMO_SERVICES[@]}" "${SAMPLE_SERVICES[@]}"
 copy_demo
 
-echo "ready: scripts/run_demo.sh (steps 00-08), scripts/cli.sh (O1 adaptor CLI)"
+echo "ready: scripts/run_demo.sh (steps 00-06), scripts/cli.sh (O1 adaptor CLI)"

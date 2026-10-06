@@ -3,8 +3,8 @@ capabilities:
   consumes:
     - namespace: data
       description: >-
-        DL_PRB_UTILIZATION, RRC_CONNECTED_UE and RADIO_SYNC_STATE (O1 PM via RAN NF OAM -> DME), active alarms and
-        the TX-muting configuration read-back from RAN NF OAM.
+        DL_PRB_UTILIZATION and RRC_CONNECTED_UE (O1 PM via RAN NF OAM -> DME) and the TX-muting configuration
+        read-back from RAN NF OAM.
     - namespace: platform
       description: Direct DME O1 actions for TX-muting writes and their rollback.
   provides: []
@@ -12,7 +12,6 @@ capabilities:
 datasets:
   - DL_PRB_UTILIZATION
   - RRC_CONNECTED_UE
-  - RADIO_SYNC_STATE
 supportedStages:
   - INFERENCE
 consumedServices:

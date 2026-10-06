@@ -82,7 +82,7 @@ def test_register_heartbeats_and_subscribes(sim):
     assert r.json()["endpointId"] == "ep-1"
     paths = sim.fake.paths()
     assert ("POST", "/o1-adaptor-endpoints") in paths and ("POST", "/o1-adaptor-endpoints/ep-1/heartbeat") in paths
-    assert [p for _, p in paths].count("/pm-subscriptions") == 3
+    assert [p for _, p in paths].count("/pm-subscriptions") == 2
     assert "endpoint.registered" in kinds(sim)
 
 
@@ -153,9 +153,9 @@ def test_events_long_poll_returns_new_event(sim):
 
 def test_cli_commands(sim, capsys):
     api = cli.Api(client=sim)
-    cli.show(cli.run(api, ["pm", "18.4", "4", "nosync"]))
+    cli.show(cli.run(api, ["pm", "18.4", "4"]))
     reports = {b["counterType"]: b["measurements"][0]["value"] for _, p, _, b in sim.fake.requests if p == "/pm-reports"}
-    assert reports == {"DL_PRB_UTILIZATION": 18.4, "RRC_CONNECTED_UE": 4.0, "RADIO_SYNC_STATE": 0.0}
+    assert reports == {"DL_PRB_UTILIZATION": 18.4, "RRC_CONNECTED_UE": 4.0}
     cli.run(api, ["alarm", "raise", "13325", "major"])
     assert sim.fake.requests[-1][2]["severity"] == "major"
     cli.run(api, ["config", "set", "txMutingActivation=MUTING_ON"])
@@ -166,7 +166,7 @@ def test_cli_commands(sim, capsys):
     assert len(out.splitlines()) == 3 and "#" in out
 
 
-@pytest.mark.parametrize("argv", [["pm", "1"], ["alarm"], ["config", "set"], ["gen", "x"], ["bogus"], ["pm", "1", "2", "maybe"]])
+@pytest.mark.parametrize("argv", [["pm", "1"], ["alarm"], ["config", "set"], ["gen", "x"], ["bogus"]])
 def test_cli_usage_errors(sim, argv):
     with pytest.raises(cli.CliError):
         cli.run(cli.Api(client=sim), argv)

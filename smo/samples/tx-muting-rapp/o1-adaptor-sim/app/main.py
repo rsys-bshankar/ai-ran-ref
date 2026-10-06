@@ -287,7 +287,7 @@ class Generator:
         while not stop.wait(self.interval):
             prb = min(max(prb + random.uniform(-6, 6), 2.0), 95.0)
             ue = min(max(ue + random.randint(-2, 2), 0), 60)
-            values = {"DL_PRB_UTILIZATION": round(prb, 1), "RRC_CONNECTED_UE": ue, "RADIO_SYNC_STATE": 1.0}
+            values = {"DL_PRB_UTILIZATION": round(prb, 1), "RRC_CONNECTED_UE": ue}
             try:
                 northbound.report_counters(ME, self.cell, values)
                 events.emit("pm.reported", cellId=self.cell, counters=values, generated=True)

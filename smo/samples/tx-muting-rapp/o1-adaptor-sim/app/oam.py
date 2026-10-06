@@ -6,7 +6,7 @@ import datetime
 import httpx
 
 # the PM counters the TX-muting rApp consumes, with the value each one carries
-DEFAULT_COUNTERS = ("DL_PRB_UTILIZATION", "RRC_CONNECTED_UE", "RADIO_SYNC_STATE")
+DEFAULT_COUNTERS = ("DL_PRB_UTILIZATION", "RRC_CONNECTED_UE")
 
 
 class OamError(RuntimeError):

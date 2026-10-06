@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package and instance lifecycle of the TX-muting rApp against Onboarding and rApp Management (see LCM.md).
+"""Package and instance lifecycle of the TX-muting rApp against Onboarding and rApp Management (see README.md section 10).
 
     python3 lcm.py onboard | prime | deploy | bootstrap | status | terminate | deprime | delete | retire | up | down
 
@@ -46,7 +46,7 @@ def onboard(state):
         time.sleep(1)
     show("onboarding", status)
     if status["state"] != "AVAILABLE":
-        raise SystemExit("package did not become AVAILABLE: a byte-identical package is refused while the first is still onboarded (retire it, see LCM.md)")
+        raise SystemExit("package did not become AVAILABLE: a byte-identical package is refused while the first is still onboarded (retire it, see README.md section 10)")
 
 
 def prime(state):

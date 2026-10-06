@@ -5,7 +5,8 @@ Onboarding's `_validate_package` fetches over HTTP and opens.
     python3 smo/samples/build_csar.py                      # every sample
     python3 smo/samples/build_csar.py energy-saving-rapp   # one sample
 
-Test suites, caches, the sample's own service tests and its README.md are left out, and
+Test suites, caches, the sample's own service tests and its README.md are left out (and, per sample, what
+SAMPLE_EXCLUDED lists: deployment tooling that is not package content), and
 every entry carries a fixed timestamp, so a rebuild of unchanged sources is
 byte-identical.
 
@@ -21,9 +22,12 @@ from pathlib import Path
 
 SAMPLES_DIR = Path(__file__).resolve().parent
 SAMPLES = ["energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp",
-           "traffic-steering-rapp"]
+           "traffic-steering-rapp", "tx-muting-rapp"]
 EXCLUDED_PARTS = {"__pycache__", "tests", ".pytest_cache"}
 EXCLUDED_FILES = {"README.md"}  # sample documentation, not package content
+# Per sample: top-level entries that belong to its deployment and tooling, not to the package
+# (tx-muting-rapp ships a test-double service, a compose overlay, helper scripts and its lifecycle notes).
+SAMPLE_EXCLUDED = {"tx-muting-rapp": {"o1-adaptor-sim", "scripts", "docker-compose.yml", ".gitattributes"}}
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
 
@@ -33,7 +37,8 @@ def build_bytes(name: str) -> bytes:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for path in sorted(source.rglob("*")):
             rel = path.relative_to(source)
-            if path.is_file() and not EXCLUDED_PARTS & set(rel.parts) and rel.as_posix() not in EXCLUDED_FILES:
+            if (path.is_file() and not EXCLUDED_PARTS & set(rel.parts) and rel.as_posix() not in EXCLUDED_FILES
+                    and rel.parts[0] not in SAMPLE_EXCLUDED.get(name, ()) and path.suffix != ".csar"):
                 info = zipfile.ZipInfo(rel.as_posix(), FIXED_TIME)
                 info.compress_type = zipfile.ZIP_DEFLATED
                 z.writestr(info, path.read_bytes())

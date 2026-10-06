@@ -38,15 +38,21 @@ services:
       ADAPTOR_VENDOR: ${ADAPTOR_VENDOR:-demo-vendor}
       ADAPTOR_PUBLIC_URI: http://o1-adaptor-sim:8000/edit-config
 
+  # The rApp reaches DME and RAN NF OAM only through R1 Termination, as an rApp: it registers at SME as an API invoker
+  # (no enrollment secret, so SME records it as `rapp`), takes a client_credentials token (scope smo-rapp) and sends it
+  # as a Bearer token. R1 applies the rApp role policy to every call. Its identity is kept in the process (no database).
   tx-muting-rapp:
     build: { context: ., args: { MODULE: samples/tx-muting-rapp } }
     stop_grace_period: 30s
     <<: *hardening
     healthcheck: *ready_probe
     depends_on:
+      r1-termination: { condition: service_healthy }
+      sme: { condition: service_healthy }
       dme: { condition: service_healthy }
       ran-nf-oam: { condition: service_healthy }
       o1-adaptor-sim: { condition: service_healthy }
     environment:
-      DME_URL: http://dme:8000
-      RAN_NF_OAM_URL: http://ran-nf-oam:8000
+      SMO_IDENTITY_KIND: rapp
+      SMO_MODULE_IDENTITY_STORE: "off"
+      R1_GATEWAY_URL: http://r1-termination:8000

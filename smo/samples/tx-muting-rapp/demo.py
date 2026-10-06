@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TX-muting rApp demo: steps 00-08 against a running stack (see README, Run and test).
+"""TX-muting rApp demo: steps 00-06 against a running stack (see README, Run and test).
 
     python3 demo.py 00        # one step
     python3 demo.py all       # every step in order
@@ -38,11 +38,11 @@ def show(label: str, value) -> None:
     print(f"  {label}: {value if isinstance(value, str) else json.dumps(value, default=str)}")
 
 
-def pm(prb: float, ue: int, radio_synchronized: bool = True) -> None:
+def pm(prb: float, ue: int) -> None:
     """The adaptor reports one sample per counter to RAN NF OAM, time-stamped now."""
     call("post", ADAPTOR, "/control/counters", json={"cellId": CELL, "counters": {
-        "DL_PRB_UTILIZATION": prb, "RRC_CONNECTED_UE": ue, "RADIO_SYNC_STATE": 1.0 if radio_synchronized else 0.0}})
-    show("PM reported", {"dlPrbUtilization": prb, "rrcConnectedUeCount": ue, "radioSynchronized": radio_synchronized})
+        "DL_PRB_UTILIZATION": prb, "RRC_CONNECTED_UE": ue}})
+    show("PM reported", {"dlPrbUtilization": prb, "rrcConnectedUeCount": ue})
 
 
 def evaluate() -> dict:
@@ -56,7 +56,7 @@ def evaluate() -> dict:
 
 
 def step_00(state: dict) -> None:
-    """Prepare the RAN: the O1 adaptor registers (ACTIVE), PM counters subscribed, existing TX-muting config."""
+    """Prepare the RAN: the O1 adaptor registers (ACTIVE), 2 PM counters subscribed, existing TX-muting config."""
     reg = call("post", ADAPTOR, "/control/register")
     seeded = call("post", "ran-nf-oam", "/config-jobs", json={
         "requestedBy": "initial-reconciliation", "accessScope": "single-ME",
@@ -76,7 +76,7 @@ def step_01(state: dict) -> None:
 
 
 def step_02(state: dict) -> None:
-    """Low load: PRB 18.4 %, 4 UEs, radio synchronized -> REDUCED_TX, MUTING_ON read back."""
+    """Low load: PRB 18.4 %, 4 UEs -> REDUCED_TX, MUTING_ON read back."""
     pm(18.4, 4)
     state["lastAction"] = evaluate().get("action")
 
@@ -110,24 +110,6 @@ def step_05(state: dict) -> None:
 
 
 def step_06(state: dict) -> None:
-    """Safety gate: a blocking alarm (13325) on the cell stops MUTING_ON despite low load."""
-    raised = call("post", ADAPTOR, "/control/alarms", json={
-        "sourceAlarmId": "13325", "severity": "critical", "probableCause": "FRONTHAUL_LINK_DOWN", "cellId": CELL})
-    pm(16.2, 3)
-    evaluate()
-    call("post", ADAPTOR, "/control/alarms/13325/clear")
-    show("alarm", f"13325 raised as {raised['alarmId']}, cleared after the pass")
-
-
-def step_07(state: dict) -> None:
-    """Radio loses sync while muted: re-mute on low load, then not synchronized -> FULL_TX."""
-    pm(18.0, 4)
-    evaluate()
-    pm(18.0, 4, radio_synchronized=False)
-    evaluate()
-
-
-def step_08(state: dict) -> None:
     """Audit: every decision of this run and every DME action the rApp requested."""
     for d in call("get", RAPP, "/decisions")["items"]:
         verified = (d.get("verification") or {}).get("result", "-")
@@ -135,7 +117,7 @@ def step_08(state: dict) -> None:
     show("DME actions by the rApp", len(call("get", RAPP, "/actions")["items"]))
 
 
-STEPS = {f"{i:02d}": globals()[f"step_{i:02d}"] for i in range(9)}
+STEPS = {f"{i:02d}": globals()[f"step_{i:02d}"] for i in range(7)}
 
 
 def main() -> None:

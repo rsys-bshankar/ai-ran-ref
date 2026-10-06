@@ -3,7 +3,11 @@ event log that the CLI (and anything else) follows."""
 
 import collections
 import datetime
+import json
+import logging
 import threading
+
+log = logging.getLogger("o1_adaptor_sim")
 
 # Initial configuration of a managed function: the TX-muting leaves, feature enabled and muting off.
 DEFAULT_CONFIG = {"txMutingFeatureEnable": "true", "txPathOffPattern": "HORIZONTAL_PLANE", "txMutingActivation": "MUTING_OFF"}
@@ -26,7 +30,8 @@ class EventLog:
                      "kind": kind, "data": data}
             self._events.append(event)
             self._cond.notify_all()
-            return event
+        log.info("event %s %s", kind, json.dumps(data, default=str))  # also in `docker compose logs`
+        return event
 
     @property
     def last_seq(self) -> int:
