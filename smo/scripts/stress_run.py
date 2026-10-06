@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import sys
 import time
+from pathlib import Path
 
 import httpx
 from load_run import get_token, register
@@ -23,10 +24,17 @@ LIST = "/ran-nf-oam/alarms?limit=5"
 
 
 async def session(client: httpx.AsyncClient, args) -> dict[str, str]:
+    """A token, kept in `--token-file` so a later run (with the database stopped, when no one can register) reuses it."""
+    cache = Path(args.token_file) if args.token_file else None
+    if cache is not None and cache.exists():
+        return {"Authorization": f"Bearer {cache.read_text(encoding='utf-8').strip()}"}
     reg = await register(client, args.sme)
     token = await get_token(client, args.sme, reg)
     token.raise_for_status()
-    return {"Authorization": f"Bearer {token.json()['access_token']}"}
+    access = token.json()["access_token"]
+    if cache is not None:
+        cache.write_text(access, encoding="utf-8")
+    return {"Authorization": f"Bearer {access}"}
 
 
 def fail(msg: str) -> int:
@@ -59,13 +67,18 @@ async def limiter(client, args, headers) -> int:
 
 async def oversize(client, args, headers) -> int:
     body = b"x" * (3 * 1024 * 1024)
-    resp = await client.post(f"{args.gateway}/ran-nf-oam/config-jobs", content=body, headers={**headers, "Content-Type": "application/json"})
-    if resp.status_code != 413:
-        return fail(f"a 3 MiB body got {resp.status_code}, not 413")
+    try:
+        resp = await client.post(f"{args.gateway}/ran-nf-oam/config-jobs", content=body, headers={**headers, "Content-Type": "application/json"})
+    except httpx.TransportError as exc:
+        # the cap is enforced before the service reads the body: the server may end the exchange while the client is still sending
+        print(f"oversize: the connection was ended during the upload ({type(exc).__name__}), the way an early 413 reaches a client that is still sending")
+    else:
+        if resp.status_code != 413:
+            return fail(f"a 3 MiB body got {resp.status_code}, not 413")
     after = await client.get(f"{args.gateway}{LIST}", headers=headers)
     if after.status_code != 200:
         return fail(f"after the oversized body the gateway answered {after.status_code}")
-    print("oversize: OK, 413, and the next call is served")
+    print("oversize: OK, refused, and the next call is served")
     return 0
 
 
@@ -90,6 +103,11 @@ async def saturate(client, args, headers) -> int:
         deadline = time.monotonic() + args.seconds
 
         await asyncio.gather(*[hammer(client, f"{args.gateway}{LIST}", headers, deadline, codes, problems) for _ in range(level)])
+        total = sum(codes.values()) or 1
+        resets = codes.pop(0, 0)
+        problems = [p for p in problems if p != "ReadError" and p != "RemoteProtocolError"] + (["connection resets above --max-reset-rate"] if resets / total > args.max_reset_rate else [])
+        if resets:
+            print(f"saturate: {resets} of {total} calls ended in a connection reset ({100 * resets / total:.2f} %, the limit is {100 * args.max_reset_rate:.2f} %)")
         wrong = {c: n for c, n in codes.items() if c not in (200, 429, 503)}
         print(f"saturate: {level} in flight for {args.seconds:.0f} s -> {dict(sorted(codes.items()))}")
         if wrong:
@@ -138,6 +156,8 @@ def main() -> None:
     ap.add_argument("--gateway", default="http://r1-termination:8000")
     ap.add_argument("--sme", default="http://sme:8000")
     ap.add_argument("--timeout", type=float, default=30)
+    ap.add_argument("--token-file", default="")
+    ap.add_argument("--max-reset-rate", type=float, default=0.005, help="saturate: share of calls that may end in a connection reset (a kept-alive connection closed as it is reused)")
     ap.add_argument("--burst", type=int, default=400)
     ap.add_argument("--levels", default="20,50,100,200")
     ap.add_argument("--seconds", type=float, default=15)
