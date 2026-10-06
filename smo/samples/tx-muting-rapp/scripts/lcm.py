@@ -3,8 +3,10 @@
 
     python3 lcm.py onboard | prime | deploy | bootstrap | status | terminate | deprime | delete | retire | up | down
 
-Runs inside the compose network (scripts/lcm/lcm.sh copies it and serves the CSAR). `up` = onboard, prime, deploy,
-bootstrap; `down` = terminate, deprime, delete. Ids are kept in $LCM_STATE (default /tmp/tx-muting-lcm.json).
+Runs inside the compose network: start.sh copies it there, serves the CSAR and calls it one command at a time (steps L2
+to L5 and R1 to R3 of the guided session). `up` = onboard, prime, deploy, bootstrap; `down` = terminate, deprime, delete.
+Ids are kept in $LCM_STATE, by default the file gnb_demo.py uses ($GNB_DEMO_STATE, /tmp/gnb-demo.json), so both see the
+same package and instance.
 """
 
 import json
@@ -16,7 +18,7 @@ import httpx
 
 CSAR_URL = os.environ.get("LCM_CSAR_URL", "http://r1-termination:8899/tx-muting-rapp.csar")
 ONBOARDING, RAPP_MGMT = "http://onboarding:8000", "http://rapp-mgmt:8000"
-STATE_FILE = os.environ.get("LCM_STATE", "/tmp/tx-muting-lcm.json")
+STATE_FILE = os.environ.get("LCM_STATE") or os.environ.get("GNB_DEMO_STATE", "/tmp/gnb-demo.json")  # the demo's state file, shared
 
 
 def call(verb, url, expect=(200, 201, 202, 204), **kw):

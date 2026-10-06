@@ -1,7 +1,10 @@
 # TX-muting rApp deployment: the rApp service and the gNB O1 adaptor simulator, added to the SMO stack.
 #
-#   docker compose -f ../../docker-compose.yml -f docker-compose.yml up -d --build tx-muting-rapp gnb-o1-adaptor-sim
-#                                           (scripts/stack/start.sh does this and waits for health)
+#   ./start.sh      the guided demo: starts the stack (with gnb-o1-adaptor-sim), then, at step L5, the rApp, and removes
+#                   everything again on exit. It is the only script; run `./start.sh --help`.
+#
+# The rApp is the workload of the CSAR deployment, so the stack does not start it: NFO has no container runtime, and
+# start.sh starts the container once the instance is RUNNING and removes it when the instance is retired.
 #
 # Both are built from the SMO Dockerfile like every other service (MODULE picks the app/ directory). Relative paths
 # resolve against the first -f file, smo/docker-compose.yml. Neither service uses the database, so no secret or
@@ -22,7 +25,7 @@ x-hardening: &hardening
 
 services:
   # The O1 adaptor stand-in: consumes edit-config / get-config from RAN NF OAM, generates PM counters and alarms on
-  # demand. Follow it with `docker compose logs -f gnb-o1-adaptor-sim` or its CLI (scripts/demo/gnb-cli.sh).
+  # demand. Follow it with `docker compose logs -f gnb-o1-adaptor-sim` or its CLI (./start.sh offers it at step G9).
   # In-memory state: keep one replica and one worker.
   gnb-o1-adaptor-sim:
     build: { context: ., args: { MODULE: samples/tx-muting-rapp/gnb-o1-adaptor-sim } }

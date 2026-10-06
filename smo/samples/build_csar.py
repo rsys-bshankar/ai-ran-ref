@@ -27,7 +27,7 @@ EXCLUDED_PARTS = {"__pycache__", "tests", ".pytest_cache"}
 EXCLUDED_FILES = {"README.md"}  # sample documentation, not package content
 # Per sample: top-level entries that belong to its deployment and tooling, not to the package
 # (tx-muting-rapp ships a test-double service, a compose overlay, helper scripts and its lifecycle notes).
-SAMPLE_EXCLUDED = {"tx-muting-rapp": {"gnb-o1-adaptor-sim", "scripts", "docker-compose.yml", ".gitattributes"}}
+SAMPLE_EXCLUDED = {"tx-muting-rapp": {"gnb-o1-adaptor-sim", "scripts", "docker-compose.yml", "start.sh", ".gitattributes"}}
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
 
