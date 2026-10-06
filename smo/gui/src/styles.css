@@ -14,10 +14,11 @@
   --bad: #b3261e;      --bad-soft: #fbe6e4;
   --info: #3d5a99;     --info-soft: #e7ecf8;
   --sev-critical: #b3261e;
-  --sev-major: #d9531e;
-  --sev-minor: #c48a00;
-  --sev-warning: #3d7fc4;
-  --sev-cleared: #7c8896;
+  --sev-major: #b8430f;
+  --sev-minor: #8f6400;
+  --sev-warning: #2b6cb0;
+  --sev-cleared: #5d6b7a;
+  --on-sev: #ffffff;           /* text on a severity colour: each pair is at least 4.5:1 (WCAG AA), checked by scripts/gui_e2e.py (axe) */
   --radius: 8px;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -43,6 +44,7 @@
     --sev-major: #f08a4b;
     --sev-minor: #e5b53c;
     --sev-warning: #6aa8e6;
+    --on-sev: #0f141a;           /* the dark theme's severity colours are the light ones: dark text on them */
     --shadow: none;
     color-scheme: dark;
   }
@@ -140,7 +142,7 @@ h3 { font-size: 13px; margin: 18px 0 8px; text-transform: uppercase; letter-spac
 .tone-muted { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
 .stat.tone-ok, .stat.tone-warn, .stat.tone-bad { background: var(--surface); color: var(--text); }
 
-.sev { display: inline-block; min-width: 64px; text-align: center; font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; color: #fff; }
+.sev { display: inline-block; min-width: 64px; text-align: center; font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; color: var(--on-sev); }
 .sev-critical { background: var(--sev-critical); }
 .sev-major { background: var(--sev-major); }
 .sev-minor { background: var(--sev-minor); }
@@ -149,9 +151,9 @@ h3 { font-size: 13px; margin: 18px 0 8px; text-transform: uppercase; letter-spac
 
 .sev-counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
 .sev-counts.filters { margin-bottom: 16px; }
-.sev-count { display: flex; flex-direction: column; align-items: flex-start; padding: 8px 12px; border-radius: 6px; color: #fff; font: inherit; text-transform: uppercase; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; border: 2px solid transparent; }
+.sev-count { display: flex; flex-direction: column; align-items: flex-start; padding: 8px 12px; border-radius: 6px; color: var(--on-sev); font: inherit; text-transform: uppercase; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; border: 2px solid transparent; }
 .sev-count span { font-size: 24px; line-height: 1.1; }
-button.sev-count { cursor: pointer; opacity: 0.85; }
+button.sev-count { cursor: pointer; }          /* the active one is told by its border; dimming the others would lower their contrast */
 button.sev-count:hover, button.sev-count.active { opacity: 1; border-color: var(--text); }
 
 .countbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--surface-2); border: 1px solid var(--border); }
