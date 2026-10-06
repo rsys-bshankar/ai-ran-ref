@@ -118,7 +118,7 @@ def test_total_false_asks_the_database_for_exactly_one_row_more_than_the_page():
 def test_total_false_pages_stay_in_primary_key_order_without_overlap():
     db = _session()
     seen, offset = [], 0
-    while True:
+    for _ in range(10):                                         # bounded: a paging bug must fail this test, not hang it (a hang is a mutation-run timeout)
         page = pagination.paginate(db, select(Item), _no_total(3), offset)
         seen += [i.id for i in page["items"]]
         if not page["hasMore"]:
