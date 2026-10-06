@@ -1317,7 +1317,7 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | QA-2.1 | Pilot: schemathesis or similar over one module's `docs/openapi/` file | Runs in CI | – (done: `tests_integration/test_contract_schemathesis.py`, eight modules) |
-| QA-2.2 | Consumer-side checks for cross-module calls made through `R1Client` | Break detected on a seeded change | – |
+| QA-2.2 | Consumer-side checks for cross-module calls made through `R1Client` | Break detected on a seeded change | – (done: `tests_integration/test_r1_consumer_calls.py`, 195 literal-path calls checked, waivers in `r1_consumer_waivers.json`) |
 | QA-2.3 | Roll out to every module | Job covers all | QA-2.1 |
 
 #### PR-QA-3 — Failure injection
