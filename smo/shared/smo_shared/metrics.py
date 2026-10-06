@@ -125,7 +125,7 @@ class PoolCollector:
 
     def collect(self):
         pool = getattr(self._engine_getter(), "pool", None)
-        if not all(hasattr(pool, attr) for attr in ("checkedout", "checkedin", "overflow", "size")):
+        if pool is None or not all(hasattr(pool, attr) for attr in ("checkedout", "checkedin", "overflow", "size")):
             return                                                  # SQLite's test pools are not a QueuePool: no series
         in_use = GaugeMetricFamily("smo_db_pool_connections", "Database pool connections, by state.", labels=["state"])
         in_use.add_metric(["in_use"], pool.checkedout())

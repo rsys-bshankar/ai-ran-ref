@@ -147,4 +147,6 @@ def role_of(request) -> str | None:
 
 
 def enrollment_secret_valid(presented: str | None, expected: str) -> bool:
-    return bool(presented) and bool(expected) and hmac.compare_digest(presented.encode(), expected.encode())
+    if not presented or not expected:
+        return False
+    return hmac.compare_digest(presented.encode(), expected.encode())

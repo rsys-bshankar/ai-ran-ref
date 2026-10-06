@@ -44,7 +44,10 @@ import logging
 import os
 import uuid
 
+from typing import cast
+
 from sqlalchemy import JSON, DateTime, Integer, String, Text, Uuid, delete, event, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from . import webhook
@@ -101,11 +104,11 @@ def _backoff(attempts: int) -> datetime.timedelta:
 
 def _claim(db: Session, row_id: uuid.UUID, now: datetime.datetime) -> bool:
     """One atomic compare-and-set: only the caller whose UPDATE matches the still-due PENDING row owns this send."""
-    claimed = db.execute(
+    claimed = cast(CursorResult, db.execute(
         update(NotificationOutbox)
         .where(NotificationOutbox.id == row_id, NotificationOutbox.status == PENDING, NotificationOutbox.next_attempt_at <= now)
         .values(attempts=NotificationOutbox.attempts + 1, next_attempt_at=now + datetime.timedelta(seconds=LEASE_SECONDS))
-        .execution_options(synchronize_session=False))   # the WHERE is the database's to evaluate (SQLite hands datetimes back naive)
+        .execution_options(synchronize_session=False)))   # the WHERE is the database's to evaluate (SQLite hands datetimes back naive)
     db.commit()
     return claimed.rowcount == 1
 
@@ -139,6 +142,8 @@ def drain(engine, ids: list[uuid.UUID] | None = None, now: datetime.datetime | N
             if not _claim(db, row_id, now):
                 continue                                    # another replica took it
             row = db.get(NotificationOutbox, row_id)
+            if row is None:
+                continue                                    # gone since the claim (purged by hand): nothing to send
             delivered, error, retryable = _send(row.destination, row.payload, row.method)
             if delivered:
                 row.status, row.last_error = SENT, None

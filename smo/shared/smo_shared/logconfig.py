@@ -108,8 +108,10 @@ class JsonFormatter(logging.Formatter):
         for key, value in vars(record).items():
             if key not in _STANDARD_ATTRIBUTES and key not in entry:
                 entry[key] = value
-        if record.exc_info or record.exc_text:
-            entry["exception"] = record.exc_text or self.formatException(record.exc_info)
+        if record.exc_text:
+            entry["exception"] = record.exc_text
+        elif record.exc_info:
+            entry["exception"] = self.formatException(record.exc_info)
         return json.dumps(entry, default=str, ensure_ascii=False)
 
 

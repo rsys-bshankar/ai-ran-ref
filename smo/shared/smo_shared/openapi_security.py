@@ -56,7 +56,7 @@ def apply_r1_gateway_security(app: FastAPI, *, public_paths: frozenset[str] = fr
         app.openapi_schema = schema
         return app.openapi_schema
 
-    app.openapi = custom_openapi
+    app.openapi = custom_openapi  # type: ignore[method-assign]  # FastAPI's documented way to customise the schema
 
 
 def _declare_error_responses(schema: dict) -> None:

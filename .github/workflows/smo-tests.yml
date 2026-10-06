@@ -32,12 +32,19 @@ jobs:
           cache: pip
           cache-dependency-path: smo/requirements/*.txt
 
-      # Rules and the reason for the narrow selection: smo/ruff.toml.
+      # Rules, and what is switched off and why: smo/ruff.toml.
       - name: ruff check
         working-directory: smo
         run: |
           pip install --require-hashes -r requirements/lint.txt
           ruff check .
+
+      # PR-V-2b: the shared library is type checked (smo/shared/mypy.ini). It needs the packages it imports, for their types: the runtime requirements.
+      - name: mypy (shared library)
+        working-directory: smo
+        run: |
+          pip install --require-hashes -r requirements/runtime.txt
+          cd shared && mypy
 
       # Service code keeps no request-visible state and starts no background work
       # (docs/ARCHITECTURE.md, "Process state and scale-out"). Standard library only.
