@@ -48,7 +48,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 
-from sqlalchemy import Boolean, Float, String, text
+from sqlalchemy import Boolean, Float, String, delete, func, select, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -140,7 +140,7 @@ class SharedTokenBuckets:
         self._local = TokenBuckets(rate, burst, monotonic)          # the fallback while the store is down
         self._down_until = 0.0
         self._last_purge = monotonic()
-        self._last_log = float("-inf")
+        self._last_log = -math.inf
         self._lock = threading.Lock()
 
     def _session(self):
@@ -169,7 +169,7 @@ class SharedTokenBuckets:
                 log.warning("rate limiter store unavailable, failing open to the per-replica bucket for %.0f s: %s: %s",
                             FAIL_BACKOFF_SECONDS, type(exc).__name__, exc)
             return self._local.take(caller)
-        self._maybe_purge(tick, rate, burst)
+        self._maybe_purge(tick)
         return None if allowed else max(1, math.ceil((1 - tokens) / rate))
 
     def _take_shared(self, caller: str, rate: float, burst: float) -> tuple[float, bool]:
@@ -181,7 +181,7 @@ class SharedTokenBuckets:
             db.commit()
         return float(row[0]), bool(row[1])
 
-    def _maybe_purge(self, tick: float, rate: float, burst: float) -> None:
+    def _maybe_purge(self, tick: float) -> None:
         """Delete the buckets that would be full again (what `TokenBuckets._forget_idle` does), at most once a PURGE_INTERVAL_SECONDS per replica.
         Idempotent, so replicas purging at once do no harm; a failure is ignored (the next interval retries; the table only grows meanwhile)."""
         with self._lock:
@@ -189,14 +189,13 @@ class SharedTokenBuckets:
                 return
             self._last_purge = tick
         try:
-            self.purge(rate, burst)
+            self.purge()
         except Exception:
             log.debug("rate limiter purge failed", exc_info=True)
 
-    def purge(self, rate: float | None = None, burst: float | None = None) -> int:
-        """Delete idle buckets now; returns how many went."""
-        rate = float(self._rate()) if rate is None else rate
-        burst = float(self._burst()) if burst is None else burst
+    def purge(self) -> int:
+        """Delete idle buckets now (by the current settings); returns how many went."""
+        rate, burst = float(self._rate()), float(self._burst())
         with self._session() as db:
             _, statement = _statements(db.get_bind().dialect.name)
             deleted = db.execute(statement, {"now": self._clock(), "rate": rate, "burst": burst}).rowcount
@@ -208,17 +207,17 @@ class SharedTokenBuckets:
         self._local.clear()
         self._down_until = 0.0
         with self._session() as db:
-            db.execute(text("DELETE FROM rate_bucket"))
+            db.execute(delete(RateBucket))
             db.commit()
 
     def __len__(self) -> int:
         with self._session() as db:
-            return int(db.execute(text("SELECT count(*) FROM rate_bucket")).scalar_one())
+            return int(db.execute(select(func.count()).select_from(RateBucket)).scalar_one())
 
 
 def store_from_environment(environ: Mapping[str, str] = os.environ) -> str:
     """`R1_RATE_STORE`: `memory` (default) or `postgres`. Anything else stops the process at start rather than silently limiting per replica."""
-    value = environ.get("R1_RATE_STORE", "memory").strip().lower() or "memory"
+    value = (environ.get("R1_RATE_STORE") or "").strip().lower() or "memory"
     if value not in ("memory", "postgres"):
         raise RuntimeError(f"R1_RATE_STORE must be 'memory' or 'postgres', not {value!r}")
     return value

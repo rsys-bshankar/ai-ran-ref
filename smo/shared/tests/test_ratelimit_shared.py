@@ -18,8 +18,8 @@ from smo_shared.testing import make_test_engine
 
 
 class Clock:
-    def __init__(self):
-        self.now = 1000.0
+    def __init__(self, now=1000.0):
+        self.now = now
 
     def __call__(self):
         return self.now
@@ -185,8 +185,10 @@ def test_the_store_is_tried_again_after_the_back_off(factory):
 def test_the_store_setting_is_memory_unless_postgres_is_asked_for():
     assert store_from_environment({}) == "memory" and store_from_environment({"R1_RATE_STORE": ""}) == "memory"
     assert store_from_environment({"R1_RATE_STORE": " Postgres "}) == "postgres"
-    with pytest.raises(RuntimeError, match="R1_RATE_STORE"):
+    assert store_from_environment({"R1_RATE_STORE": "  "}) == "memory" and store_from_environment({"R1_RATE_STORE": "MEMORY"}) == "memory"
+    with pytest.raises(RuntimeError) as refused:
         store_from_environment({"R1_RATE_STORE": "redis"})
+    assert str(refused.value) == "R1_RATE_STORE must be 'memory' or 'postgres', not 'redis'"
 
 
 def test_clear_empties_the_store_and_the_fallback(factory):
@@ -227,3 +229,150 @@ def test_concurrent_callers_never_get_more_than_the_burst_from_the_shared_store(
     [t.join(timeout=60) for t in threads]
     assert metrics.RATE_STORE_ERRORS._value.get() == errors      # no statement failed (a failure would have fallen back and hidden the count)
     assert len(allowed) == 30
+
+
+# --- found by the mutation pilot (V-2c): boundaries, exact counts, the fallback's clock, the log lines ---
+
+def flaky_once(factory, calls):
+    def make():
+        calls.append(1)
+        if len(calls) == 1:
+            raise ConnectionError("blip")
+        return factory()
+    return make
+
+
+def test_the_purge_runs_exactly_when_an_interval_has_passed_and_the_interval_restarts_from_it(factory):
+    b, clock, ticks = shared(factory, rate=1, burst=2)         # made at tick 1000
+    b.take("a")
+    clock.now += 100                                           # a would be full again, and so would anything idle from here on
+    ticks.now = 1000 + PURGE_INTERVAL_SECONDS - 0.001
+    b.take("b")
+    assert _callers(factory) == ["a", "b"]                     # a hair under the interval: no purge
+    ticks.now = 1000 + PURGE_INTERVAL_SECONDS
+    b.take("c")
+    assert _callers(factory) == ["b", "c"]                     # exactly the interval: purge
+    clock.now += 100                                           # b and c idle now
+    ticks.now = 1000 + 2 * PURGE_INTERVAL_SECONDS - 0.001
+    b.take("d")
+    assert _callers(factory) == ["b", "c", "d"]                # the next interval counts from the purge, not from the start
+    ticks.now = 1000 + 2 * PURGE_INTERVAL_SECONDS
+    b.take("e")
+    assert _callers(factory) == ["d", "e"]
+
+
+def test_purge_deletes_what_would_be_full_again_by_the_current_settings_and_counts_it(factory):
+    state = {"burst": 3.0}
+    clock, ticks = Clock(), Clock()
+    b = SharedTokenBuckets(lambda: 1, lambda: state["burst"], clock, factory, ticks)
+    for caller in ("a", "b", "c"):
+        b.take(caller)                                         # each holds 2 of 3
+    assert len(b) == 3 and b.purge() == 0                      # none full yet
+    clock.now += 0.999
+    assert b.purge() == 0                                      # 2.999 < 3
+    state["burst"] = 2.0                                       # the new settings are read: every bucket is now at or above its size
+    assert b.purge() == 3 and len(b) == 0 and _callers(factory) == []
+
+
+def test_clear_counts_and_empties_the_store(factory):
+    b, _, _ = shared(factory, rate=1, burst=3)
+    for caller in ("a", "b", "c"):
+        b.take(caller)
+    assert len(b) == 3
+    b.clear()
+    assert len(b) == 0 and _callers(factory) == []
+
+
+def test_a_failed_purge_is_logged_at_debug_with_its_traceback(factory, caplog):
+    b, _, ticks = shared(factory)
+    b.take("a")
+    ticks.now += PURGE_INTERVAL_SECONDS
+    calls = []
+
+    def second_session_fails():
+        calls.append(1)
+        if len(calls) > 1:
+            raise RuntimeError("database down")
+        return factory()
+    b._session_factory = second_session_fails
+    with caplog.at_level(logging.DEBUG, logger="smo_shared.ratelimit"):
+        assert b.take("a") is None
+    [record] = [r for r in caplog.records if r.name == "smo_shared.ratelimit"]
+    assert (record.levelno, record.getMessage()) == (logging.DEBUG, "rate limiter purge failed")
+    assert record.exc_info is not None and record.exc_info[0] is RuntimeError
+
+
+def test_the_statements_are_built_for_the_connections_dialect(factory, monkeypatch):
+    seen = []
+    real = ratelimit._statements
+    monkeypatch.setattr(ratelimit, "_statements", lambda dialect: (seen.append(dialect), real(dialect))[1])
+    b, _, _ = shared(factory)
+    b.take("a")
+    b.purge()
+    assert seen == ["sqlite", "sqlite"]
+
+
+def test_the_upsert_is_an_insert_the_purge_a_delete():
+    for dialect in ("postgresql", "sqlite"):
+        take, purge = ratelimit._statements(dialect)
+        assert str(take).startswith("INSERT INTO rate_bucket (caller, tokens, refilled_at, last_allowed) VALUES (:caller, :first_tokens, :now, :first_allowed) ON CONFLICT")
+        assert str(purge).startswith("DELETE FROM rate_bucket WHERE ")
+
+
+def test_a_new_caller_with_a_burst_below_one_starts_with_the_whole_burst_and_is_refused(factory):
+    b, _, _ = shared(factory, rate=1, burst=0.5)
+    assert b.take("a") == 1                                    # (1 - 0.5) / 1 rounded up
+    with factory() as db:
+        row = db.execute(select(RateBucket)).scalar_one()
+    assert (row.tokens, row.last_allowed) == (0.5, False)      # not 0.5 - 1: a refused request takes nothing
+
+
+def test_the_fallback_bucket_refills_on_the_replicas_own_monotonic_clock():
+    clock, ticks = Clock(), Clock()
+    b = SharedTokenBuckets(lambda: 1.0, lambda: 1.0, clock, broken_factory, ticks)
+    assert b.take("a") is None and b.take("a") is not None     # the local bucket, empty
+    ticks.now += 2 * FAIL_BACKOFF_SECONDS                      # out of the back-off: the store fails again, the local bucket has refilled by the injected clock
+    assert b.take("a") is None
+
+
+def test_a_limiter_starts_with_the_store_available_whatever_the_monotonic_clock_reads(factory):
+    clock, ticks = Clock(), Clock(0.5)                         # a monotonic clock is not epoch time: it may be small
+    b = SharedTokenBuckets(lambda: 1.0, lambda: 1.0, clock, factory, ticks)
+    assert b.take("a") is None
+    assert _callers(factory) == ["a"]
+
+
+def test_clear_ends_a_back_off(factory):
+    calls = []
+    clock, ticks = Clock(), Clock(0.5)
+    b = SharedTokenBuckets(lambda: 1.0, lambda: 1.0, clock, flaky_once(factory, calls), ticks)
+    assert b.take("a") is None and calls == [1]                # failed: backing off until tick 5.5
+    b.clear()
+    assert b.take("a") is None
+    assert _callers(factory) == ["a"]                          # the store was used again at once, not after the back-off
+
+
+def test_the_back_off_lasts_exactly_FAIL_BACKOFF_SECONDS(factory):
+    calls = []
+    clock, ticks = Clock(), Clock()
+    b = SharedTokenBuckets(lambda: 1.0, lambda: 5.0, clock, flaky_once(factory, calls), ticks)
+    b.take("a")
+    assert len(calls) == 1
+    ticks.now = 1000 + FAIL_BACKOFF_SECONDS - 0.001
+    b.take("a")
+    assert len(calls) == 1                                     # still backing off
+    ticks.now = 1000 + FAIL_BACKOFF_SECONDS
+    b.take("a")
+    assert len(calls) == 2                                     # at the boundary the store is tried again
+
+
+def test_the_outage_is_logged_once_per_interval_with_the_error_named(caplog):
+    clock, ticks = Clock(), Clock()
+    b = SharedTokenBuckets(lambda: 1.0, lambda: 5.0, clock, broken_factory, ticks)
+    with caplog.at_level(logging.WARNING, logger="smo_shared.ratelimit"):
+        for at in (0, 10, 20, 30):                   # each is past the back-off, so each is a failed statement
+            ticks.now = 1000 + at
+            b.take("a")
+    lines = [r.getMessage() for r in caplog.records if r.name == "smo_shared.ratelimit"]
+    expected = "rate limiter store unavailable, failing open to the per-replica bucket for 5 s: ConnectionError: database down"
+    assert lines == [expected, expected]                       # at 0 and at exactly 30 s later
