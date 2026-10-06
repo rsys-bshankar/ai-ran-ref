@@ -12,3 +12,7 @@ certs/
 netconf-lab/pki/
 coverage/
 .coverage
+
+# mutmut's working copy (scripts/mutation_pilot.sh)
+shared/mutants/
+shared/.mutmut-cache

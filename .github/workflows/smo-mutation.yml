@@ -1,0 +1,50 @@
+name: SMO mutation testing
+
+# PR-V-2c: scripts/mutation_pilot.sh on the shared library's role policy, rate limiter, pagination and time helpers: a change no test notices fails the run.
+# Weekly, on demand, and on a pull request that changes the script, its configuration or those modules' tests. About a minute. Not a required check yet (a pilot).
+
+on:
+  schedule:
+    - cron: "41 3 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/smo-mutation.yml"
+      - "smo/scripts/mutation_pilot.sh"
+      - "smo/shared/pyproject.toml"
+      - "smo/shared/smo_shared/roles.py"
+      - "smo/shared/smo_shared/ratelimit.py"
+      - "smo/shared/smo_shared/pagination.py"
+      - "smo/shared/smo_shared/timeutil.py"
+      - "smo/requirements/mutation.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smo-mutation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  mutation:
+    name: Every mutant of the role policy, rate limiter, pagination and time helpers is killed
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: smo/requirements/*.txt
+
+      - name: Install the dev requirements, mutmut and the shared library
+        working-directory: smo
+        run: |
+          pip install --require-hashes -r requirements/dev.txt -r requirements/mutation.txt
+          pip install --no-deps -e shared
+
+      - name: Mutate, and run the tests against each mutant
+        working-directory: smo
+        run: scripts/mutation_pilot.sh

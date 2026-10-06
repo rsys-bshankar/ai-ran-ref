@@ -10,6 +10,7 @@ fails the hash check.
 | `runtime.in` / `runtime.txt` | service images, the migration check |
 | `dev.in` / `dev.txt` | runtime + pytest: unit, integration and live-replay jobs |
 | `lint.in` / `lint.txt` | the `lint` job (ruff, mypy) |
+| `mutation.in` / `mutation.txt` | mutmut, on top of `dev.txt`: the mutation-testing pilot (`scripts/mutation_pilot.sh`) |
 | `smoke.in` / `smoke.txt` | the deploy gate's headless GUI check (`scripts/gui_smoke.py`, Playwright) |
 
 The `.in` files hold the direct dependencies; the `.txt` files are generated and
