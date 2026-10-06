@@ -4,8 +4,9 @@ name: SMO stress and failure injection
 #   limiter   a burst past the per-caller budget -> 429 with Retry-After, never a 5xx; served again after the wait
 #   oversize  a body over the 1 MiB cap -> 413; the gateway keeps answering
 #   saturate  callers in flight ramped 20 -> 200 (rate limiter off) -> only 200, or 429/503 with Retry-After; no hang, no other 5xx
+#   sme       SME stopped -> 503 with Retry-After within the deadline (the token check cannot be answered); started again -> 200 within 90 s
 #   database  Postgres stopped -> a database-backed route answers with a 5xx within the deadline (no hang); started again -> 200 within 90 s
-# Nightly, on demand, and on a pull request that changes the script or this workflow. Not a required check yet. Still to add: a slow or dead webhook subscriber, SME down, a full package volume, and the soak (V-9b).
+# Nightly, on demand, and on a pull request that changes the script or this workflow. Not a required check yet. Still to add: a slow subscriber through a running stack and a full package volume (a slow or dead subscriber is a unit test of the outbox).
 
 on:
   schedule:
@@ -75,6 +76,11 @@ jobs:
             docker compose stop postgres
             stress probe --expect down || status=1
             docker compose start postgres
+            stress probe --expect up --wait 90 || status=1
+            # SME taken away (the gateway asks it about every token), then given back
+            docker compose stop sme
+            stress probe --expect down --down-status 503 || status=1
+            docker compose start sme
             stress probe --expect up --wait 90 || status=1
             echo '```'
             exit $status

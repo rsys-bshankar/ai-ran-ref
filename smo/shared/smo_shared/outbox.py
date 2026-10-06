@@ -24,7 +24,7 @@ only after that transaction commits.
         the commit hook below passes); without, every due row (what a worker or a recovery sweep does, MSG-2). A row
         is claimed with one atomic UPDATE that moves its `next_attempt_at` a lease ahead, so two replicas never send
         the same row and a process that dies mid-send leaves a row that becomes due again when the lease runs out
-        (delivery is at least once). A 2xx-4xx answer marks it SENT (a 4xx is the destination refusing, which a retry
+        (delivery is at least once). The claimed rows are sent concurrently (`SMO_OUTBOX_SEND_CONCURRENCY`, default 8), so a destination that does not answer holds up only its own rows, not every row behind it. A 2xx-4xx answer marks it SENT (a 4xx is the destination refusing, which a retry
         will not change); no answer or a 5xx counts an attempt and schedules the next with a backoff; after
         `MAX_ATTEMPTS` the row is DEAD, and so is a row whose destination the SSRF guard refuses at send time.
         Returns {"sent": n, "retry": n, "dead": n}.
@@ -44,6 +44,7 @@ import logging
 import os
 import uuid
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import cast
 
 from sqlalchemy import JSON, DateTime, Integer, String, Text, Uuid, delete, event, select, update
@@ -98,6 +99,10 @@ def enqueue(db: Session, destination: str | None, payload: dict, module: str | N
     return row
 
 
+def _send_concurrency() -> int:
+    return int(os.environ.get("SMO_OUTBOX_SEND_CONCURRENCY", "8"))
+
+
 def _backoff(attempts: int) -> datetime.timedelta:
     return datetime.timedelta(seconds=_BACKOFF_SECONDS[min(attempts, len(_BACKOFF_SECONDS)) - 1])
 
@@ -138,13 +143,18 @@ def drain(engine, ids: list[uuid.UUID] | None = None, now: datetime.datetime | N
                  .order_by(NotificationOutbox.created_at, NotificationOutbox.id).limit(limit))
         if ids is not None:
             query = query.where(NotificationOutbox.id.in_(ids))
+        claimed = []
         for row_id in db.scalars(query).all():
             if not _claim(db, row_id, now):
                 continue                                    # another replica took it
             row = db.get(NotificationOutbox, row_id)
             if row is None:
                 continue                                    # gone since the claim (purged by hand): nothing to send
-            delivered, error, retryable = _send(row.destination, row.payload, row.method)
+            claimed.append(row)
+        # sent concurrently: one after the other, a subscriber that never answers made every row behind it wait out its timeout
+        with ThreadPoolExecutor(max_workers=max(1, min(_send_concurrency(), len(claimed) or 1))) as pool:
+            outcomes = list(pool.map(lambda r: _send(r.destination, r.payload, r.method), claimed))
+        for row, (delivered, error, retryable) in zip(claimed, outcomes, strict=True):
             if delivered:
                 row.status, row.last_error = SENT, None
                 result["sent"] += 1

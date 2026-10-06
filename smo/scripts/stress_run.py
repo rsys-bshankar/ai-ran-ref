@@ -6,7 +6,7 @@
     scripts/stress_run.py saturate [--levels 20,50,100,200] [--seconds 15]
                                                      ramp the callers in flight (run with the rate limiter off): every answer is 200, or 503/429 with Retry-After; no hang, no other 5xx
     scripts/stress_run.py probe --expect down|up     a few calls to a database-backed route: `down` (the database is stopped) must be answered within --deadline s
-                                                     with a 5xx (not a hang), `up` must be 200 within --wait s (recovery after the database comes back)
+                                                     with a 5xx (not a hang; with --down-status 503, exactly 503 and a Retry-After: SME stopped), `up` must be 200 within --wait s (recovery after the dependency comes back)
 
 Runs in a one-shot container on the compose network, like load_run.py (same registration and token). The workflow stops and starts containers between probes.
 """
@@ -131,6 +131,10 @@ async def probe(client, args, headers) -> int:
             print(f"probe down: {r.status_code} in {time.monotonic() - t:.1f} s")
             if r.status_code < 500:
                 return fail(f"with the database down a database-backed route answered {r.status_code}")
+            if args.down_status and r.status_code != args.down_status:
+                return fail(f"with the dependency down the gateway answered {r.status_code}, not {args.down_status}")
+            if r.status_code == 503 and int(r.headers.get("Retry-After", "0")) < 1:
+                return fail("a 503 came without a usable Retry-After")
         return 0
     while time.monotonic() - started < args.wait:
         try:
@@ -162,6 +166,7 @@ def main() -> None:
     ap.add_argument("--levels", default="20,50,100,200")
     ap.add_argument("--seconds", type=float, default=15)
     ap.add_argument("--expect", choices=["down", "up"], default="up")
+    ap.add_argument("--down-status", type=int, default=0, help="probe down: the one status the gateway must answer (0: any 5xx); SME down is 503")
     ap.add_argument("--deadline", type=float, default=20)
     ap.add_argument("--wait", type=float, default=90)
     sys.exit(asyncio.run(main_async(ap.parse_args())))
