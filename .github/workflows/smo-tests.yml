@@ -787,6 +787,19 @@ jobs:
           [ "$(helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set placement.mode=off | grep -c topologySpreadConstraints)" = "0" ]
           if helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set placement.mode=sideways >/dev/null 2>&1; then echo "::error::a placement mode that is not soft, hard or off was accepted"; exit 1; fi
 
+      # PR-OPS-6 and PR-OBS-3/6: the GitOps overlays build (the runner has kustomize), and the traces and logs stack renders
+      - name: GitOps overlays build, and the observability stack renders
+        working-directory: smo
+        run: |
+          kustomize version
+          for overlay in lab staging prod; do
+            kustomize build --enable-helm deploy/gitops/overlays/$overlay >/dev/null
+          done
+          helm lint deploy/helm/smo --kube-version 1.30.0 --set observability.tempo.enabled=true --set observability.loki.enabled=true \
+            --set observability.grafana.enabled=true --set observability.fluentBit.enabled=true
+          helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 --set observability.tempo.enabled=true | grep -q 'SMO_OTEL_ENDPOINT'
+          if helm template smo deploy/helm/smo -n smo --kube-version 1.30.0 | grep -q 'SMO_OTEL_ENDPOINT'; then echo "::error::spans are on by default"; exit 1; fi
+
       - name: Build the images from this checkout
         working-directory: smo
         run: |

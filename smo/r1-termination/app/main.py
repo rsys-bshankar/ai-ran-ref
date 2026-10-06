@@ -28,6 +28,7 @@ from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics, record_role_refusal
 from smo_shared.bodylimit import MIB, BodySizeLimit, settings_from_env
 from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
+from smo_shared import tracing
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.audit import audit_enabled, write_audit
 from smo_shared.health import install_health
@@ -313,7 +314,8 @@ async def _proxy(full_path: str, request: Request):
     # ID threaded through its own request's whole downstream fan-out.
     forwarded_headers = {k: v for k, v in request.headers.items()
                           if k.lower() not in ("host", CORRELATION_ID_HEADER.lower(), INVOKER_ID_HEADER.lower(), roles.ROLE_HEADER.lower(),
-                                               ON_BEHALF_OF_HEADER.lower())}
+                                               ON_BEHALF_OF_HEADER.lower(),
+                                               tracing.TRACEPARENT, tracing.TRACESTATE)}
     forwarded_headers[roles.ROLE_HEADER] = role              # PR-SEC-14: never a value the caller sent (dropped above)
     forwarded_headers[CORRELATION_ID_HEADER] = get_correlation_id()
     # The caller's own id, from the introspected token: any inbound value of
@@ -327,14 +329,19 @@ async def _proxy(full_path: str, request: Request):
     if on_behalf_of and role == roles.ROLE_INTERNAL:
         forwarded_headers[ON_BEHALF_OF_HEADER] = on_behalf_of
     try:
-        async with httpx.AsyncClient(timeout=upstream_timeout()) as client:
-            upstream = await client.request(
-                request.method,
-                f"{backend}/{rest_of_path}",
-                headers=forwarded_headers,
-                params=request.query_params,
-                content=body,
-            )
+        # PR-OBS-3: the caller's traceparent is replaced by this hop's own (the gateway's CLIENT span when spans are on, else the caller's unchanged)
+        with tracing.span(f"{request.method} {prefix}", "client", {"http.request.method": request.method, "smo.target": prefix,
+                                                                 "smo.correlation_id": get_correlation_id() or ""}) as client_span:
+            forwarded_headers.update(tracing.inject_headers())
+            async with httpx.AsyncClient(timeout=upstream_timeout()) as client:
+                upstream = await client.request(
+                    request.method,
+                    f"{backend}/{rest_of_path}",
+                    headers=forwarded_headers,
+                    params=request.query_params,
+                    content=body,
+                )
+            tracing.mark_status(client_span, upstream.status_code)
     except httpx.TimeoutException:
         return JSONResponse(status_code=504, content={
             "title": "UPSTREAM_TIMEOUT", "status": 504,

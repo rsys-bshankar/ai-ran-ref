@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: smo
+  labels:
+    app.kubernetes.io/part-of: smo
+    # the pods run as non-root with no capability, so the restricted Pod Security level fits, except Fluent Bit (observability.fluentBit, root, hostPath), which is lab-only
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted

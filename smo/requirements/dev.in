@@ -5,3 +5,4 @@ pytest
 hypothesis
 coverage
 schemathesis
+-r tracing.in
