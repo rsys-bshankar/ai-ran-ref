@@ -56,12 +56,16 @@ def apply_correlation_id(app: FastAPI) -> None:
 
     Every service calls this, so it also installs the invoker context
     (smo_shared/invoker.py): who the request is really for, which R1Client
-    passes on the same way.
+    passes on the same way, and the W3C trace context (smo_shared/tracing.py:
+    a `traceparent` the caller sent is continued downstream; spans only when
+    SMO_OTEL_ENDPOINT is set).
     """
     from .invoker import apply_invoker_context
     from .security_headers import apply_security_headers
+    from .tracing import apply_tracing
     apply_invoker_context(app)
     apply_security_headers(app)
+    apply_tracing(app)       # inside the correlation middleware below, so a span can carry the correlation id (PR-OBS-3)
 
     @app.middleware("http")
     async def _correlation_id_middleware(request: Request, call_next):

@@ -1,0 +1,14 @@
+# Staging: an external Postgres, secrets you create, two replicas of the stateless modules, ingress. Mirrors production at a smaller size.
+#   kustomize build --enable-helm deploy/gitops/overlays/staging
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+helmGlobals:
+  chartHome: ../../../helm
+helmCharts:
+  - name: smo
+    releaseName: smo
+    namespace: smo
+    valuesFile: values.yaml
+    kubeVersion: "1.30.0"

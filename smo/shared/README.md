@@ -9,7 +9,7 @@
 | Depends on (over R1) | `R1Client` calls R1 Termination (`/bootstrap`) and SME (`/invoker-registrations`, `/oauth2/token`) for its own token; no other module |
 | Called by | Every backend module (imports); the SDK (`sdk/`) and the four sample rApps via `R1Client`. Not imported by `gui-bff` |
 | Database tables | None. Provides `Base`, the engine and sessions that modules' `models.py` use |
-| Unit tests | 367 passed (`tests/`; 62 more are skipped without `SMO_TEST_POSTGRES_URL`) |
+| Unit tests | 392 passed (`tests/`; 62 more are skipped without `SMO_TEST_POSTGRES_URL`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -46,6 +46,7 @@ Mapping of the "R1 API conventions" table in `docs/ARCHITECTURE.md` to code:
 | Subscriptions | Nothing (naming convention only: `notificationDestination`, with the CAPIF/O2ims exceptions) | Each module's request models |
 | Callbacks | `webhook.post_webhook` / `get_webhook` / `delete_webhook` / `is_safe_webhook_destination` | |
 | Correlation | `correlation.apply_correlation_id`, `get_correlation_id`; `R1Client` propagates | R1 Termination forwards its own current id |
+| Trace context | `tracing.apply_tracing` (installed by `apply_correlation_id`), `inject_headers`, `span`; `R1Client` and the gateway send `traceparent` | W3C Trace Context; spans to OTLP/HTTP only with `SMO_OTEL_ENDPOINT` and the OpenTelemetry packages (`docs/OBSERVABILITY.md`) |
 | Cross-module calls | `r1_client.R1Client` | Choosing which module to call |
 
 Also provided, outside that table: `db` (engine and session), `statemachine` (FSM base), `identity` (rAppId equivalence), `timeutil`, `testing`.
@@ -86,6 +87,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | `smo_shared/errors.py` | `ProblemDetails`, `problem()`, `FrameworkError`, `framework_error()`, `illegal_transition_error()` |
 | `smo_shared/pagination.py` | `paginate()`, `paginate_list()`, `PageSize`, `PageLimit`, `PageOffset`, `DEFAULT_LIMIT`, `MAX_LIMIT` |
 | `smo_shared/correlation.py` | `apply_correlation_id()`, `get_correlation_id()`, `HEADER_NAME` |
+| `smo_shared/tracing.py` | W3C `traceparent` / `tracestate` parsing and propagation (a context variable, stdlib only), `get_trace_id()`, `inject_headers()`, the optional OpenTelemetry layer (`configure_tracing()`, `span()`: SERVER span per request, CLIENT span per `R1Client` call, OTLP/HTTP export, `SMO_OTEL_ENDPOINT`, `SMO_OTEL_SAMPLE_RATIO`); the SDK is the `tracing` extra of `pyproject.toml` and `requirements/tracing.txt`; FastAPI's own native server span is switched off so a request has one |
 | `smo_shared/invoker.py` | `INVOKER_ID_HEADER` (`X-R1-Invoker-Id`), `ON_BEHALF_OF_HEADER` (`X-R1-On-Behalf-Of`), `invoker_id(request)` (the rApp an internal module is acting for, else the caller's own id), `get_originator()` and `apply_invoker_context(app)` (installed by `apply_correlation_id`, so every service has it); `R1Client` adds the header to onward calls |
 | `smo_shared/mtls.py` | Mutual TLS between services, opt in by `SMO_MTLS=on` (PR-SEC-2): `enabled()`, `serving()`, `http_url()`, `client_kwargs()` (the `httpx` `verify` context with the module's certificate and the CA, rebuilt when a file changes), `webhook_kwargs()` (the certificate only for an `https://` destination inside the deployment), `uvicorn_args()` (certfile, keyfile, CA, `CERT_REQUIRED`; raises when a file is missing so the image does not start plain), `probe()`; `python -m smo_shared.mtls uvicorn-args|probe` |
 | `smo_shared/webhook.py` | `post_webhook`, `get_webhook`, `delete_webhook`, `is_safe_webhook_destination` |
@@ -200,7 +202,7 @@ All instances in a process share one identity and token (`_identity`).
 |---|---|
 | `configure_logging(service=None)` | Puts one handler on the root logger (stdout, JSON, redaction filter); level from `LOG_LEVEL` (default INFO; an unknown name is INFO with a warning); uvicorn's own logs go through it and its plain-text access line is off. Idempotent; handlers that are not its own are left alone |
 | `install_logging(app)` | What every `main.py` calls: configure (if nothing did) and add `AccessLogMiddleware` |
-| Fields | `timestamp` (UTC, ms), `level`, `logger`, `service` (the container's `MODULE`), `message`, `correlationId` (inside a request), `exception` (one field, not extra lines), and every `extra=` key |
+| Fields | `timestamp` (UTC, ms), `level`, `logger`, `service` (the container's `MODULE`), `message`, `correlationId` (inside a request), `traceId` (when the request belongs to a trace), `exception` (one field, not extra lines), and every `extra=` key |
 | Access line | `logger: smo.access`, `message: request`, `method`, `route` (the template, `/models/{model_id}`; `unmatched` if none, never the raw path or the query string), `status`, `durationMs`, `correlationId`; probes (`/live`, `/ready`, `/health`) at DEBUG, 5xx at ERROR |
 | Redaction | On the handler, so uvicorn and third-party loggers too: `Authorization`/`Bearer` values, `password=`, `secret=`, `token=`, `api_key=` pairs (also JSON `"key": "value"`), the password in `scheme://user:password@host`, and any extra field named like a secret, in the message, its arguments, the exception text and the extras. A safety net, not permission to log a credential |
 
@@ -317,6 +319,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 |---|---|---|
 | `tests/test_pagination.py` | `paginate`: real LIMIT/OFFSET and COUNT, total follows the filter, stable primary-key order; `?total=false`: no count statement issued (counted with a SQLAlchemy event), `limit + 1` fetch and `hasMore`, no overlap between pages; `paginate_list` in both modes; the `total` parameter through a real route and its OpenAPI declaration |
 | `tests/test_correlation.py` | Id generated when the caller sends none; caller's id propagated and echoed; `get_correlation_id()` is `None` outside a request; two requests get distinct ids | 4 |
+| `tests/test_tracing.py` | `traceparent` parsing (invalid forms ignored); a `traceparent` and `tracestate` surviving an in-process `R1Client` hop with spans off; none in, none out; the trace id in the JSON log line; with the SDK (skipped without it) the span tree across the hop, a new trace for a request without one, a 5xx as an error span | 19 |
 | `tests/test_r1_client.py` | A caller's own headers ride along and survive the 401 retry, the client's authorization wins; token obtained "the rApp way" (bootstrap, onboarding, client credentials) and attached; token cached across clients and calls; revoked token refreshed once with the same invoker; explicit bearer used as is; SME down means call sent unauthenticated, not raised; correlation header absent outside a request and propagated inside one | 7 |
 | `tests/test_mtls.py` | Off changes nothing (addresses, client arguments, uvicorn options); only an explicit `on` turns it on; internal addresses upgraded to `https://`; the server options require a client certificate and name the files; a client-only process serves plain HTTP; fail closed on a missing, empty or mismatched file (also the `uvicorn-args` exit status); the client context is cached and rebuilt when a file changes; which callback hosts are internal; a callback carries the certificate only to an https internal destination; certificate expiry from a file or a CA bundle; the expiry metric only with mTLS on; a real uvicorn started from the printed options answers a client with a certificate and refuses one with none, one from another CA, and plain HTTP; `R1Client` against it, and refused with another PKI; the exec probe | 33 |
 | `tests/test_webhook.py` | Allowed destinations (http/https, ordinary and private-range hosts); rejected ones (bad scheme, loopback, link-local/metadata, multicast, unspecified, malformed; parametrized); `post_webhook`/`get_webhook`/`delete_webhook` call `httpx` for an allowed destination, no-op for a disallowed one, and `post_webhook` swallows an unreachable destination | 29 |

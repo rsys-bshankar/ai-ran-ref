@@ -229,7 +229,10 @@ smo/
                             incl. test_demo_runbook.py, which replays DEMO_RUNBOOK.md
   scripts/                  OpenAPI generation, migration-vs-models check, CM schema ingest,
                             TS 28.312 family generation, config_reference.py (the environment-variable reference)
+  deploy/helm/smo/          the Helm chart (also the traces and logs lab stack, values-gated)
+  deploy/gitops/            Kustomize overlays (lab, staging, prod) and Argo CD Applications for the chart
   docs/
+    OBSERVABILITY.md        traces (Tempo), logs (Loki, Fluent Bit), Grafana, the queries by trace id and correlation id
     ARCHITECTURE.md         layers, golden rules, R1 conventions, standards per service
     CONFIGURATION.md        every environment variable: default, secret or not, who reads it, what it does (generated, then described)
     config_descriptions.json  the hand-written descriptions CONFIGURATION.md is merged from
@@ -257,6 +260,8 @@ smo/
 | [`gui/README.md`](gui/README.md) | Operator GUI: running it, roles, security, pages, screenshots |
 | [`OPEN_ITEMS.md`](OPEN_ITEMS.md) | Items still open, and deliberate scope cuts |
 | [`CHANGELOG.md`](CHANGELOG.md), [`docs/RELEASES.md`](docs/RELEASES.md) | What changed for an operator; the tag scheme (`smo-vX.Y.Z`, semver) and how a release is cut |
+| [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) | Distributed traces (W3C `traceparent`, OpenTelemetry to Tempo), log shipping (Fluent Bit to Loki), Grafana, queries by trace id and correlation id |
+| [`deploy/gitops/README.md`](deploy/gitops/README.md) | Kustomize overlays and Argo CD Applications for the Helm chart |
 | [`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md) | Every outbound call to a caller-registered destination, classified (outbox or inline), kept in step with the code by a test |
 | [`docs/adr/`](docs/adr/) | Architecture decision records (`0001`: Alembic, one history) |
 | [`docs/VALIDATION.md`](docs/VALIDATION.md) | The validation program: what is tested today in each category (unit, integration, interface, DB, security, load, stress, upgrade, rollback, HA, GUI), what is not, and the order gaps are closed |

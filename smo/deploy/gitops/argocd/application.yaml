@@ -1,0 +1,41 @@
+# Argo CD Application for the SMO, from the Helm chart in this repository with an overlay's values (the recommended way: Argo renders the chart itself,
+# so it needs no `--enable-helm` build option). Replace repoURL with your fork or mirror, targetRevision with a release tag, and the overlay as needed.
+#   kubectl apply -n argocd -f deploy/gitops/argocd/application.yaml
+# Secrets are not in Git: create `smo-secrets` and `smo-role-secrets` in the namespace first (staging and prod overlays), for example with External Secrets.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: smo-lab
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rsys-bshankar/ai-ran-smo.git
+    targetRevision: main
+    path: smo/deploy/helm/smo
+    helm:
+      releaseName: smo
+      valueFiles:
+        - ../../gitops/overlays/lab/values.yaml        # relative to the chart: smo/deploy/gitops/overlays/lab/values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: smo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff: { duration: 10s, factor: 2, maxDuration: 3m }
+  # The database is migrated by the chart's Job (a plain Job on install, a pre-upgrade hook on upgrade: Argo runs the latter as a PreSync-equivalent
+  # `helm.sh/hook`), and the pods wait for the schema in an init container, so a sync needs no extra ordering here.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas                               # an HorizontalPodAutoscaler (autoscaling.enabled) owns it when on

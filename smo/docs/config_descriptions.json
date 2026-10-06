@@ -141,6 +141,8 @@
     "secret": false
   },
   "SMO_MTLS_SERVE": "With `SMO_MTLS=on`: `off` leaves this process serving plain HTTP while its own outgoing calls still use the certificate (the GUI backend, whose caller is the GUI's nginx). Default `on`.",
+  "SMO_OTEL_ENDPOINT": "OTLP/HTTP base URL of a collector or Tempo (for example http://tempo:4318). Empty (the default) turns span export off; the W3C traceparent is still passed on. Spans also need an image built with the OpenTelemetry packages (SMO_WITH_TRACING=1).",
+  "SMO_OTEL_SAMPLE_RATIO": "Fraction of new traces that are sampled, 0 to 1 (parent-based: a request already in a trace follows its parent). Empty: every trace.",
   "SMO_OUTBOX_INLINE_DRAIN": "`true` (default): a module delivers its queued notifications right after the request that created them. `false`, `0`, `no` or `off`: only the sweep delivers them, which adds up to `SMO_OUTBOX_SWEEP_SECONDS` of delay.",
   "SMO_OUTBOX_SEND_CONCURRENCY": "Notifications one drain sends in parallel (default 8). Raise it for many subscribers; each is one outbound call.",
   "SMO_OUTBOX_SENT_RETENTION_SECONDS": "Seconds a delivered notification row is kept before the sweep deletes it (default 86400, one day). Failed (DEAD) rows are never deleted by this.",
@@ -148,6 +150,7 @@
   "SMO_OUTBOX_SWEEP_SECONDS": "Seconds between outbox delivery sweeps by the worker (default 5). It bounds the delay of a retried notification.",
   "SMO_ROLE_ENFORCEMENT": "`enforce` (default): a role check that fails refuses the call with 403. `audit`: it only logs. Anything else is `enforce`, so a typo cannot switch protection off. Use `audit` only to trial a new role table.",
   "SMO_VERSION": "Release version of the build (for example `0.5.0`), baked into the image (`SMO_VERSION` build argument). Answered by `GET /version` and shown in the GUI. `unknown` when not given.",
+  "SMO_WITH_TRACING": "Compose build argument: 1 installs the OpenTelemetry packages (requirements/tracing.txt) into the image. 0 (the default) builds the image without them.",
   "SMO_WORKER_FAILURE_BACKOFF_SECONDS": "Seconds a worker waits before running a task again after it failed (default 30), so a broken task does not spin.",
   "SMO_WORKER_HEARTBEAT_FILE": "File a worker touches on every tick (default `/tmp/worker-heartbeat`); the container health check reports unhealthy when it is a minute old. Change it only with the health check.",
   "SMO_WORKER_METRICS_PORT": "Port on which a module's worker process serves its own /metrics (task runs and last success per task). Unset by default: the worker serves no metrics port.",

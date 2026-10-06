@@ -113,6 +113,14 @@ spec:
             - { name: SMO_MTLS_SERVE, value: "off" }
             {{- end }}
             {{- end }}
+            {{- /* PR-OBS-3: an SMO service (not the GUI's nginx or its backend) is told where to send spans, when there is a place */}}
+            {{- $otel := default (ternary "http://tempo:4318" "" $.Values.observability.tempo.enabled) $.Values.tracing.endpoint }}
+            {{- if and $otel (ne $m.kind "static") }}
+            - { name: SMO_OTEL_ENDPOINT, value: {{ $otel | quote }} }
+            {{- with $.Values.tracing.sampleRatio }}
+            - { name: SMO_OTEL_SAMPLE_RATIO, value: {{ . | toString | quote }} }
+            {{- end }}
+            {{- end }}
             {{- if eq $name "r1-termination" }}
             {{- with $.Values.ingress.r1.publicBaseUrl }}
             - { name: R1_PUBLIC_BASE_URL, value: {{ . | quote }} }

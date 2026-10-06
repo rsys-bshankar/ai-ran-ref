@@ -4,30 +4,49 @@ Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_mtls.py -q
 """
 
 import importlib.util
+import os
 import socket
 import ssl
+import sys
 import threading
 import time
 from pathlib import Path
 
 import httpx
 import pytest
-import uvicorn
 
 from smo_shared import metrics, mtls
 from smo_shared.r1_client import R1Client
 from smo_shared.webhook import get_webhook
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "mtls_certs.py"
-_spec = importlib.util.spec_from_file_location("mtls_certs", SCRIPT)
-certs = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(certs)
+SCRIPT = next(p / "scripts" / "mtls_certs.py" for p in Path(__file__).resolve().parents if (p / "scripts" / "mtls_certs.py").exists())   # also from the mutation pilot's copy of this directory
+
+
+class _Certs:
+    """The certificate script, loaded on first use: importing `cryptography` while collecting would put it in the parent of every forked mutant of
+    scripts/mutation_pilot.sh, where its tests then segfault (found when this file was added)."""
+    _module = None
+
+    def __getattr__(self, name):
+        if _Certs._module is None:
+            spec = importlib.util.spec_from_file_location("mtls_certs", SCRIPT)
+            _Certs._module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(_Certs._module)
+        return getattr(_Certs._module, name)
+
+
+certs = _Certs()
 
 ENV = ("SMO_MTLS", "SMO_MTLS_SERVE", "SMO_MTLS_CERT_FILE", "SMO_MTLS_KEY_FILE", "SMO_MTLS_CA_FILE", "SMO_MTLS_INTERNAL_HOSTS")
 
 
 @pytest.fixture(autouse=True)
-def clean_env(monkeypatch):
+def clean_env(monkeypatch, request):
+    if "mutmut" in sys.modules and {"pki", "server"} & set(request.fixturenames):
+        # scripts/mutation_pilot.sh runs this suite in a process that then forks one child per mutant; loading `cryptography` (the certificates) or starting a TLS
+        # server thread before that fork crashes the children (segfault, found when this file was added). The mutants of ratelimit.py and roles.py are not about
+        # this module; the tests below that need no certificate still run there, and every test runs in the ordinary suite.
+        pytest.skip("not under the mutation pilot")
     for name in ENV:
         monkeypatch.delenv(name, raising=False)
 
@@ -186,6 +205,7 @@ async def _app(scope, receive, send):
 @pytest.fixture()
 def server(monkeypatch, pki):
     """uvicorn configured from `mtls.uvicorn_args()` exactly as the image starts it (the options are parsed back into a Config)."""
+    import uvicorn
     use(monkeypatch, pki / "sme")
     args = mtls.uvicorn_args()
     option = {args[i]: args[i + 1] for i in range(0, len(args), 2)}

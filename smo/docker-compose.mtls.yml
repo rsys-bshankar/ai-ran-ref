@@ -8,7 +8,8 @@
 # every call a module makes (R1Client, the gateway's proxying and token introspection, the callbacks to another service) presents the module's own
 # certificate and verifies the server against the CA. Each service mounts its own directory read-only at /run/mtls (tls.crt, tls.key, ca.crt).
 # Not part of it, by design: mock-o1-adaptor (a stand-in for a network function outside the SMO: plain HTTP), the GUI's nginx and gui-bff (the BFF is a client
-# of R1, with a certificate, and serves the nginx plain HTTP), Postgres (`sslmode=verify-full` is PR-SEC-2.4, open).
+# of R1, with a certificate, and serves the nginx plain HTTP), Postgres (`sslmode=verify-full` is PR-SEC-2.4, open). The tracing and logging profiles' third-party containers (tempo, loki,
+# fluent-bit, grafana) are not part of it either: spans go to tempo over plain OTLP/HTTP.
 #
 # Consequences: the published port 8080 is the gateway over mTLS, so a host client needs a certificate too (`scripts/mtls_certs.py client NAME`, then
 # `curl --cacert certs/mtls/ca/ca.crt --cert certs/mtls/clients/NAME/tls.crt --key certs/mtls/clients/NAME/tls.key https://localhost:8080/live`); the `tls`

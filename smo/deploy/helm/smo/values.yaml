@@ -138,6 +138,42 @@ autoscaling:
   maxReplicas: 6
   targetCPUUtilizationPercentage: 70
 
+# Distributed traces (PR-OBS-3). `endpoint` is the OTLP/HTTP base URL of a collector or of Tempo (SMO_OTEL_ENDPOINT, every module); empty turns spans off,
+# and the services still pass a W3C `traceparent` on. Spans need images built with the OpenTelemetry packages (docker build --build-arg WITH_TRACING=1);
+# without them the services log one warning and propagate only. With observability.tempo.enabled and no endpoint, it is the bundled Tempo's.
+tracing:
+  endpoint: ""
+  sampleRatio: ""                              # SMO_OTEL_SAMPLE_RATIO for new traces, 0 to 1; empty: every trace
+
+# Traces and logs, a lab or trial stack (PR-OBS-3, PR-OBS-6; docs/OBSERVABILITY.md): Tempo (traces), Loki (logs), Fluent Bit (a DaemonSet that ships this
+# release's pod logs to Loki) and Grafana (with both as provisioned data sources, linked on the trace id). All four are off by default. They keep their data
+# on an emptyDir, so a restarted pod starts empty; for production use your own Tempo, Loki and Grafana (tracing.endpoint) and ship the logs your way.
+# The Services are named `tempo`, `loki` and `grafana`. Fluent Bit reads the node's container logs (a hostPath), so its pods run as root.
+observability:
+  tempo:
+    enabled: false
+    image: grafana/tempo:2.8.2
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 512Mi }
+  loki:
+    enabled: false
+    image: grafana/loki:3.5.5
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 512Mi }
+  fluentBit:
+    enabled: false                             # needs loki.enabled (or a Loki at the Service name `loki`)
+    image: fluent/fluent-bit:4.1.1
+    resources:
+      requests: { cpu: 25m, memory: 64Mi }
+      limits: { memory: 128Mi }
+  grafana:
+    enabled: false
+    image: grafana/grafana:12.2.0
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 384Mi }
 # The alert and SLO burn-rate rules (PR-OBS-5, files/smo-alerts.rules.yaml) as a PrometheusRule of the Prometheus Operator. Off by default: it needs that CRD, and
 # the rules assume each module is scraped as a job named after it. `labels` is what your Prometheus's ruleSelector matches (for example `release: kube-prometheus-stack`).
 prometheusRule:

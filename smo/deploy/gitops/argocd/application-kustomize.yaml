@@ -1,0 +1,25 @@
+# The same release through the Kustomize overlays, for a cluster whose Argo CD already builds everything with Kustomize.
+# Kustomize renders the chart with `helmCharts`, which Argo CD allows only when its `kustomize.buildOptions` includes `--enable-helm`
+# (argocd-cm: `kustomize.buildOptions: --enable-helm`). Prefer application.yaml unless you need a Kustomize patch on top of the chart's output.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: smo-staging
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/rsys-bshankar/ai-ran-smo.git
+    targetRevision: main
+    path: smo/deploy/gitops/overlays/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: smo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

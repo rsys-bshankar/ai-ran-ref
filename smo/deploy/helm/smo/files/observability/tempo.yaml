@@ -1,0 +1,24 @@
+# Grafana Tempo, single binary, local disk (PR-OBS-3): receives the services' spans over OTLP/HTTP (port 4318) and answers Grafana on 3200.
+# One file for the compose `tracing` profile (mounted from here) and the Helm chart's observability.tempo (a ConfigMap of this file).
+# A lab or trial store: for production run Tempo with object storage and point SMO_OTEL_ENDPOINT / tracing.endpoint at it.
+stream_over_http_enabled: true
+server:
+  http_listen_port: 3200
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+compactor:
+  compaction:
+    block_retention: 72h
+usage_report:
+  reporting_enabled: false
