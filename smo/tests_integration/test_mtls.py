@@ -333,7 +333,7 @@ def test_with_mtls_each_participant_mounts_its_secret_serves_what_its_mode_says_
 @helm
 def test_cert_manager_mode_makes_a_ca_chain_and_one_certificate_per_participant():
     docs = _render("--set", "mtls.enabled=true", "--set", "mtls.certManager.enabled=true")
-    kinds = [(d["kind"], d["metadata"]["name"]) for d in docs if d["apiVersion"].startswith("cert-manager.io")]
+    kinds = [(d["kind"], d["metadata"]["name"]) for d in docs if d["apiVersion"].split("/")[0] == "cert-manager.io"]
     assert ("Issuer", "smo-mtls-selfsigned") in kinds and ("Certificate", "smo-mtls-ca") in kinds and ("Issuer", "smo-mtls-ca") in kinds
     certificates = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Certificate" and d["metadata"]["name"] != "smo-mtls-ca"}
     values = _values()

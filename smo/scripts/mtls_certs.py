@@ -244,12 +244,18 @@ def rotate_ca(root: Path, phase: str, days: int) -> str:
     raise SystemExit(f"unknown phase {phase!r}")
 
 
+def _not_after(certificate) -> dt.datetime:
+    """The expiry as an aware UTC time: `not_valid_after_utc` from cryptography 42, the naive `not_valid_after` before it."""
+    value = getattr(certificate, "not_valid_after_utc", None)
+    return value if value is not None else certificate.not_valid_after.replace(tzinfo=dt.timezone.utc)
+
+
 def status(root: Path, warn_days: int) -> tuple[str, bool]:
     lines, bad = [], False
     now = _now()
     items = [("CA", root / "ca" / "ca.crt")] + [(d.name if d.parent == root else f"clients/{d.name}", d / "tls.crt") for d in _service_dirs(root)]
     for label, path in items:
-        left = (min(c.not_valid_after_utc for c in x509.load_pem_x509_certificates(path.read_bytes())) - now).days
+        left = (min(_not_after(c) for c in x509.load_pem_x509_certificates(path.read_bytes())) - now).days
         flag = left < warn_days
         bad = bad or flag
         lines.append(f"{'EXPIRING' if flag else 'ok      '} {label:30s} {left:5d} days")
