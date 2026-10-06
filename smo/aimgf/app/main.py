@@ -35,7 +35,7 @@ import datetime
 import os
 import re
 import uuid
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -315,7 +315,7 @@ def _nfo_create_execution_descriptor(job_kind: str, job_id: uuid.UUID, runtime_p
     helper; Inference doesn't, see InferenceJob's own docstring) use one
     workload-template shape rather than each inventing its own.
     """
-    workload = {"jobKind": job_kind, "jobId": str(job_id)}
+    workload: dict[str, Any] = {"jobKind": job_kind, "jobId": str(job_id)}
     if runtime_profile:
         workload["resources"] = runtime_profile  # Wave 7 (W7-03): the mode's runtime profile
     resp = _r1.post("/nfo/descriptors", json={
@@ -405,7 +405,7 @@ def _expire_overdue_jobs(db: Session) -> list[dict]:
     `POST /execution-timeouts/sweep` for a scheduler to call.
     """
     now = datetime.datetime.now(datetime.UTC)
-    expired: list[dict] = []
+    expired: list[tuple[str, uuid.UUID, str | None]] = []
     for job in db.scalars(select(TrainingJob).where(TrainingJob.status == "IN_PROGRESS")).all():
         if not _overdue(job.started_at, job.timeout_seconds, now):
             continue
@@ -420,8 +420,9 @@ def _expire_overdue_jobs(db: Session) -> list[dict]:
         if job.ml_update_process_id is not None:
             _advance_ml_update_process(db, job.ml_update_process_id)
         expired.append(("TRAINING", job.training_job_id, job.notification_uri))
-    for kind, cls, event in (("VALIDATION", ValidationJob, ModelLifecycleEvent.VALIDATION_FAILED),
-                             ("EMULATION", EmulationJob, ModelLifecycleEvent.EMULATION_FAILED)):
+    kinds: list[tuple[str, Any, ModelLifecycleEvent]] = [("VALIDATION", ValidationJob, ModelLifecycleEvent.VALIDATION_FAILED),
+                                                        ("EMULATION", EmulationJob, ModelLifecycleEvent.EMULATION_FAILED)]
+    for kind, cls, event in kinds:
         for job in db.scalars(select(cls).where(cls.status == "RUNNING")).all():
             if not _overdue(job.started_at, job.timeout_seconds, now):
                 continue
@@ -435,10 +436,10 @@ def _expire_overdue_jobs(db: Session) -> list[dict]:
                 db.add(MLTestingReport(validation_job_id=job_id, ml_testing_function_id=job.ml_testing_function_id,
                                        ml_testing_result="FAILED"))
             expired.append((kind, job_id, job.notification_uri))
-    for job in db.scalars(select(InferenceJob).where(InferenceJob.status == InferenceState.RUNNING)).all():
-        if _overdue(job.started_at, job.timeout_seconds, now):
-            job.status = INFERENCE_JOB_FSM.fire(InferenceState(job.status), InferenceEvent.FAIL)
-            expired.append(("INFERENCE", job.inference_job_id, job.notification_destination))
+    for inference in db.scalars(select(InferenceJob).where(InferenceJob.status == InferenceState.RUNNING)).all():
+        if _overdue(inference.started_at, inference.timeout_seconds, now):
+            inference.status = INFERENCE_JOB_FSM.fire(InferenceState(inference.status), InferenceEvent.FAIL)
+            expired.append(("INFERENCE", inference.inference_job_id, inference.notification_destination))
     if expired:
         for kind, job_id, destination in expired:
             _notify_job_completion(db, destination, kind, job_id, False, None, {"failureReason": "TIMEOUT"})
@@ -572,7 +573,7 @@ def _start_training(db: Session, *, model_id: uuid.UUID | None, group_id: uuid.U
     job.nf_deployment_descriptor_id = descriptor_id
     job.nf_deployment_id = _nfo_instantiate_execution(descriptor_id, "TRAINING", job.training_job_id)
 
-    if lifecycle is not None:
+    if lifecycle is not None and model_id is not None:      # a lifecycle exists only for a named model
         if lifecycle.model_lifecycle_state == ModelLifecycleState.TRAINING:
             existing_job_id = lifecycle.training_job_id
             if existing_job_id is not None:
@@ -1154,7 +1155,7 @@ def _nfo_create_descriptor(model_id: uuid.UUID, runtime_profile: dict | None = N
     (NFO's own `nf_deployment_descriptor.package_id` is nullable since
     this wave, migrations/001_init.sql).
     """
-    workload = {"modelId": str(model_id), "jobKind": "INFERENCE"}
+    workload: dict[str, Any] = {"modelId": str(model_id), "jobKind": "INFERENCE"}
     if runtime_profile:
         workload["resources"] = runtime_profile  # Wave 7 (W7-03): the INFERENCE runtime profile
     resp = _r1.post("/nfo/descriptors", json={

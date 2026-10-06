@@ -11,7 +11,7 @@ MODULES=(onboarding rapp-mgmt mlmr mllf so-smos sme dme r1-termination nfo ran-a
 status=0
 for m in "${MODULES[@]}"; do
   echo "== $m"
-  (cd "$m" && PYTHONPATH=.:../shared mypy --python-version 3.11 --check-untyped-defs --ignore-missing-imports --disable-error-code import-untyped --warn-unused-ignores --warn-redundant-casts \
+  (cd "$m" && PYTHONPATH=.:../shared python -m mypy --python-version 3.11 --check-untyped-defs --ignore-missing-imports --disable-error-code import-untyped --warn-unused-ignores --warn-redundant-casts \
       --explicit-package-bases app) || status=1
 done
 exit $status

@@ -326,7 +326,7 @@ def modify_ml_training_process(process_id: uuid.UUID, body: ProcessFlagsBody, db
         p.priority = body.priority
     if body.terminationConditions is not None:
         p.termination_conditions = body.terminationConditions
-    _apply_training_flags(db, db.get(TrainingJob, p.training_job_id), body.cancelProcess, body.suspendProcess)
+    _apply_training_flags(db, db.get_one(TrainingJob, p.training_job_id), body.cancelProcess, body.suspendProcess)
     db.commit()
     return _training_process_view_for(db)(p)
 
@@ -669,7 +669,7 @@ def create_aiml_inference_report(body: AIMLInferenceReportBody, db: Session = De
                                detail="exactly one of aIMLInferenceFunctionRef/aIMLInferenceEmulationFunctionRef")
     if body.aIMLInferenceFunctionRef is not None:
         _get(db, AIMLInferenceFunction, body.aIMLInferenceFunctionRef, "AIMLInferenceFunction")
-    else:
+    elif body.aIMLInferenceEmulationFunctionRef is not None:       # exactly one is set (checked above)
         _get(db, AIMLInferenceEmulationFunction, body.aIMLInferenceEmulationFunctionRef, "AIMLInferenceEmulationFunction")
     r = AIMLInferenceReport(aiml_inference_function_id=body.aIMLInferenceFunctionRef,
                             aiml_inference_emulation_function_id=body.aIMLInferenceEmulationFunctionRef,
@@ -1036,7 +1036,7 @@ def modify_ml_update_request(request_id: uuid.UUID, body: RequestFlagsBody, db: 
     r = _get(db, MLUpdateRequest, request_id, "MLUpdateRequest")
     if r.request_status in ("FINISHED", "CANCELLED"):
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION, detail=f"update request already {r.request_status}")
-    p = db.scalar(select(MLUpdateProcess).where(MLUpdateProcess.ml_update_request_id == r.ml_update_request_id))
+    p = db.scalars(select(MLUpdateProcess).where(MLUpdateProcess.ml_update_request_id == r.ml_update_request_id)).one()
     jobs = db.scalars(select(TrainingJob).where(TrainingJob.ml_update_process_id == p.ml_update_process_id)).all()
     if body.cancelRequest:
         r.cancel_request, r.request_status = True, "CANCELLED"
@@ -1067,7 +1067,7 @@ def advance_ml_update_process(db: Session, process_id: uuid.UUID) -> None:
     p.progress_percentage = int(100 * len(done) / len(jobs)) if jobs else 100
     if len(done) < len(jobs):
         return
-    r = db.get(MLUpdateRequest, p.ml_update_request_id)
+    r = db.get_one(MLUpdateRequest, p.ml_update_request_id)
     succeeded = [j for j in jobs if j.status == "FINISHED"]
     p.status = "FINISHED" if len(succeeded) == len(jobs) else "FAILED"
     p.result_state_info = f"{len(succeeded)}/{len(jobs)} models updated"
