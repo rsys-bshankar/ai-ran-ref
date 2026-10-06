@@ -16,3 +16,7 @@ coverage/
 # mutmut's working copy (scripts/mutation_pilot.sh)
 shared/mutants/
 shared/.mutmut-cache
+
+# tool caches
+.mypy_cache/
+.ruff_cache/

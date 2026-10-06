@@ -22,7 +22,7 @@ from pathlib import Path
 SAMPLES_DIR = Path(__file__).resolve().parent
 SAMPLES = ["energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp",
            "traffic-steering-rapp"]
-EXCLUDED_PARTS = {"__pycache__", "tests", ".pytest_cache"}
+EXCLUDED_PARTS = {"__pycache__", "tests", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
 EXCLUDED_FILES = {"README.md"}  # sample documentation, not package content
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
