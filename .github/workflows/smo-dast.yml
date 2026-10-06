@@ -5,7 +5,7 @@ name: SMO DAST
 #
 #   ZAP API scan   the gateway's OpenAPI document (docs/openapi/r1-termination.json) against the live gateway: what an unauthenticated caller can reach. Baseline smo/security/zap-baseline.json.
 #   testssl.sh     the TLS edge (https://localhost:8443 and :3443): protocols, ciphers, certificate. Baseline smo/security/testssl-baseline.json.
-#   Nuclei         the default template set, severity low and above, against the gateway and the GUI. Baseline smo/security/nuclei-baseline.json.
+#   Nuclei         the default template set, severity low and above, against what is reachable from outside: the TLS edge of the gateway and of the GUI. Baseline smo/security/nuclei-baseline.json.
 #
 # Every tool's report is uploaded as an artifact. smo/security/README.md says how to triage a finding. Not done here (smo/docs/VALIDATION.md, V-7): an
 # authenticated ZAP scan with an SMO token, and a scan of each module on the internal network.
@@ -72,10 +72,12 @@ jobs:
         if: ${{ !cancelled() }}   # each scanner reports even when another found something
         working-directory: smo
         run: |
+          # the certs directory is mode 0700 (it holds the CA key): the scanner's user gets the CA certificate alone, in a directory it can read
+          cp certs/ca.crt ../scan-out/ca.crt
           set +e
           for port in 8443 3443; do
-            docker run --rm --network host -v "$PWD/certs:/certs:ro" -v "$PWD/../scan-out:/out" "$TESTSSL_IMAGE" \
-              --add-ca /certs/ca.crt --severity LOW --jsonfile "/out/testssl-$port.json" --warnings off --quiet "localhost:$port" > "../scan-out/testssl-$port.txt" 2>&1
+            docker run --rm --network host -v "$PWD/../scan-out:/out" "$TESTSSL_IMAGE" \
+              --add-ca /out/ca.crt --severity LOW --jsonfile "/out/testssl-$port.json" --warnings off --quiet "localhost:$port" > "../scan-out/testssl-$port.txt" 2>&1
           done
           set -e
           status=0
@@ -91,8 +93,10 @@ jobs:
         working-directory: smo
         run: |
           set +e
-          docker run --rm --network smo_default -v "$PWD/../scan-out:/out" "$NUCLEI_IMAGE" \
-            -u http://r1-termination:8000 -u http://gui:8080 -severity low,medium,high,critical -jsonl -o /out/nuclei.jsonl -silent
+          # what is reachable from outside: the TLS edge in front of the gateway (:8443) and of the GUI (:3443). Not the containers' own ports: R1's /metrics is for the
+          # scraper on the container network and is answered 404 at the edge (edge/nginx.conf), which this scan then checks.
+          docker run --rm --network host -v "$PWD/../scan-out:/out" "$NUCLEI_IMAGE" \
+            -u https://localhost:8443 -u https://localhost:3443 -severity low,medium,high,critical -jsonl -o /out/nuclei.jsonl -silent
           set -e
           [ -e ../scan-out/nuclei.jsonl ] || : > ../scan-out/nuclei.jsonl   # nothing found: no file
           python3 scripts/dast_baseline.py nuclei security/nuclei-baseline.json ../scan-out/nuclei.jsonl
