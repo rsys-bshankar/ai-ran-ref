@@ -1,0 +1,123 @@
+name: SMO high availability on a three-node cluster
+
+# PR-V-12: two replicas of every module that can have them, spread over three worker nodes (placement.mode=hard, PodDisruptionBudgets on), then a node drained and pods killed
+# while every replicated service is asked for /health through its Service (smo/scripts/k8s_rolling_probe.py: a call may fail once and be retried, never twice in a row).
+# Checked: every replicated deployment has its two pods on two different nodes, before and after the drain; the drained node's pods come back elsewhere; the runbook gate
+# (scripts/compose_e2e.py) and the audit chain pass at the end. The node drained is one that holds neither Postgres nor a volume-holding single pod (onboarding, the GUI backend):
+# those are single by design (Recreate, one volume), so their node is a gap, not a failure.
+# Nightly, on demand, and on a pull request that changes this workflow or the chart's HA values. Not a required check yet. Not yet here: a hard node loss (power off), the replay of the
+# whole runbook through the disturbance, and a zone-level failure.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/smo-ha-kind.yml"
+      - "smo/deploy/helm/smo/ci/kind-3node.yaml"
+      - "smo/deploy/helm/smo/ci/ha-values.yaml"
+      - "smo/scripts/k8s_rolling_probe.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smo-ha-kind-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ha:
+    name: Node drain and pod kills across three nodes
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build the images from this checkout
+        working-directory: smo
+        run: |
+          pip install --quiet pyyaml
+          python scripts/release_images.py matrix | jq -c '.include[]' | while read -r row; do
+            name=$(jq -r .name <<<"$row"); context=$(jq -r .context <<<"$row"); module=$(jq -r .module <<<"$row")
+            if [ -n "$module" ]; then
+              docker build --quiet -t "local/smo-$name:ci" --build-arg "MODULE=$module" "$context" > /dev/null
+            else
+              docker build --quiet -t "local/smo-$name:ci" "$context" > /dev/null
+            fi
+          done
+
+      - name: Create the three-node cluster and load the images
+        run: |
+          kind create cluster --name smo --config smo/deploy/helm/smo/ci/kind-3node.yaml --wait 180s
+          kubectl get nodes
+          kind load docker-image --name smo $(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
+
+      - name: Install with two replicas, hard placement and disruption budgets
+        working-directory: smo
+        run: |
+          helm install smo deploy/helm/smo -n smo --create-namespace \
+            -f deploy/helm/smo/ci/kind-values.yaml -f deploy/helm/smo/ci/ha-values.yaml \
+            --set placement.mode=hard --set podDisruptionBudget.enabled=true --wait --timeout 15m
+          kubectl -n smo get pods -o wide
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+
+      - name: Every replicated deployment has its pods on different nodes
+        run: |
+          check_spread() {
+            bad=0
+            for d in $(kubectl -n smo get deploy -o json | jq -r '.items[] | select(.spec.replicas == 2) | .metadata.name'); do
+              nodes=$(kubectl -n smo get pods -l "app.kubernetes.io/name=$d" --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' | sort -u | wc -l)
+              if [ "$nodes" != "2" ]; then echo "::error::$d has its running pods on $nodes node(s), not 2"; bad=1; fi
+            done
+            return $bad
+          }
+          check_spread
+          declare -f check_spread > "$RUNNER_TEMP/check_spread.sh"
+
+      - name: Drain a node, and kill pods, while the services are probed
+        working-directory: smo
+        run: |
+          kubectl -n smo run probe --image=local/smo-sme:ci --image-pull-policy=Never --restart=Never -- python3 -c "$(cat scripts/k8s_rolling_probe.py)"
+          kubectl -n smo wait --for=condition=Ready pod/probe --timeout=120s
+          # a worker that holds neither Postgres nor a single pod with a volume
+          keep=$(for p in postgres-0 $(kubectl -n smo get pods -o name | grep -E '/(onboarding|gui-bff)-' | cut -d/ -f2); do kubectl -n smo get pod "$p" -o jsonpath='{.spec.nodeName}{"\n"}'; done | sort -u)
+          target=$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o name | cut -d/ -f2 | grep -vxF "$keep" | head -1)
+          echo "nodes holding state: $(echo $keep); draining: ${target:-none free}"
+          [ -n "$target" ] || { echo "::error::every worker holds Postgres or a volume; nothing is free to drain"; exit 1; }
+          kubectl drain "$target" --ignore-daemonsets --delete-emptydir-data --timeout=300s
+          kubectl -n smo get pods -o wide
+          for d in $(kubectl -n smo get deploy -o json | jq -r '.items[] | select(.spec.replicas == 2) | .metadata.name'); do
+            kubectl -n smo rollout status "deploy/$d" --timeout=240s
+            [ "$(kubectl -n smo get deploy "$d" -o jsonpath='{.status.readyReplicas}')" = "2" ] || { echo "::error::$d did not get its second pod back while the node is drained"; exit 1; }
+          done
+          source "$RUNNER_TEMP/check_spread.sh"; check_spread
+          kubectl uncordon "$target"
+          # one pod of each replicated deployment, killed without a grace period, one deployment after another
+          for d in $(kubectl -n smo get deploy -o json | jq -r '.items[] | select(.spec.replicas == 2) | .metadata.name'); do
+            pod=$(kubectl -n smo get pods -l "app.kubernetes.io/name=$d" --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
+            echo "killing $pod"
+            kubectl -n smo delete pod "$pod" --force --grace-period=0
+            kubectl -n smo rollout status "deploy/$d" --timeout=240s
+          done
+          for d in $(kubectl -n smo get deploy -o name); do kubectl -n smo rollout status "$d" --timeout=240s; done
+          kubectl -n smo exec probe -- touch /tmp/stop
+          kubectl -n smo wait --for=jsonpath='{.status.phase}'=Succeeded pod/probe --timeout=90s || { kubectl -n smo logs probe; exit 1; }
+          kubectl -n smo logs probe
+
+      - name: The stack still answers, and the audit chain verifies
+        working-directory: smo
+        run: |
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
+
+      - name: What the cluster says, when it went wrong
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl -n smo get pods -o wide || true
+          kubectl -n smo get events --sort-by=.lastTimestamp | tail -60 || true
+          kubectl -n smo logs probe --tail 40 || true
+          for pod in $(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed' | cut -d' ' -f1); do
+            echo "::group::$pod"; kubectl -n smo describe pod "$pod" | tail -30; echo "::endgroup::"
+          done
