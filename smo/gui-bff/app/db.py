@@ -12,7 +12,7 @@ import time
 
 from typing import cast
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, create_engine, delete, event, update
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, create_engine, delete, event, func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -106,6 +106,21 @@ class RevokedSession(Base):
     expires_at: Mapped[float] = mapped_column(Float, nullable=False, index=True)   # unix seconds: the token's `exp`; the row is useless after it
 
 
+class OidcLogin(Base):
+    """One OIDC sign-in in flight (PR-SEC-6): written by `GET /api/oidc/login`, consumed (deleted) by `GET /api/oidc/callback`. In the database,
+    not in a process, because the callback can land on another instance than the one that sent the browser to the identity provider. `state`
+    is the lookup key the provider hands back; `nonce` and `verifier` (the PKCE code verifier) are what the ID token and the code exchange
+    are checked against; `binding_hash` is the SHA-256 of a random value held in a cookie of the browser that started the sign-in, so a
+    callback URL planted in another browser (login CSRF) does not match. Short-lived: `expires_at` is a few minutes ahead."""
+    __tablename__ = "gui_oidc_login"
+
+    state: Mapped[str] = mapped_column(String, primary_key=True)
+    nonce: Mapped[str] = mapped_column(String, nullable=False)
+    verifier: Mapped[str] = mapped_column(String, nullable=False)
+    binding_hash: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[float] = mapped_column(Float, nullable=False, index=True)   # unix seconds
+
+
 class Database:
     def __init__(self, url: str):
         kwargs: dict = {"future": True}
@@ -191,6 +206,33 @@ class Database:
     def session_revoked(self, jti: str) -> bool:
         with self.session() as s:
             return s.get(RevokedSession, jti) is not None
+
+    # ------------------------------------------------------------ OIDC sign-ins in flight (PR-SEC-6)
+
+    def start_oidc_login(self, state: str, nonce: str, verifier: str, binding_hash: str, now: float, ttl_seconds: float, max_pending: int) -> bool:
+        """Store one sign-in in flight and forget the ones that have expired. False when `max_pending` are already waiting (the route is
+        unauthenticated, so the table must not grow without bound)."""
+        with self.session() as s:
+            s.execute(delete(OidcLogin).where(OidcLogin.expires_at <= now))
+            if (s.scalar(select(func.count()).select_from(OidcLogin)) or 0) >= max_pending:
+                s.commit()
+                return False
+            s.add(OidcLogin(state=state, nonce=nonce, verifier=verifier, binding_hash=binding_hash, expires_at=now + ttl_seconds))
+            s.commit()
+            return True
+
+    def consume_oidc_login(self, state: str, now: float) -> OidcLogin | None:
+        """The sign-in in flight under `state`, removed so it works once: a replayed callback finds nothing. Of two instances asked at the same
+        moment only the one whose DELETE removes the row gets it. None for an unknown, used or expired state."""
+        with self.session() as s:
+            row = s.get(OidcLogin, state)
+            if row is None:
+                return None
+            removed = cast(CursorResult, s.execute(delete(OidcLogin).where(OidcLogin.state == state)))
+            s.commit()
+            if removed.rowcount != 1 or row.expires_at <= now:
+                return None
+            return row
 
     def clear_login_failures(self, username: str) -> None:
         with self.session() as s:
