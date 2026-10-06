@@ -2,12 +2,13 @@ name: SMO disaster recovery drill
 
 # PR-HA-6: the recovery targets of docs/DISASTER_RECOVERY.md (RPO 15 minutes, RTO 1 hour), proved on every change to the backup scripts and weekly.
 #
-# A Postgres 18 migrated to head takes writes (one timestamped row a second); scripts/dr_backup.sh --loop ships the databases to a MinIO bucket (the
-# S3 API, as AWS S3 has it) every 20 s; then the database and the backup job are killed with no warning. A FRESH Postgres 18 is started and
+# A Postgres 18 migrated to head takes writes (one timestamped row a second); scripts/dr_backup.sh --loop ships the databases to an S3 bucket served by moto_server (a
+# pip-installable S3 stand-in, requirements/dr.txt) every 20 s; then the database and the backup job are killed with no warning. A FRESH Postgres 18 is started and
 # scripts/dr_drill.sh restores the newest off-site set into it: manifest checksums, migrate + models check, a smoke check, and the data-loss
 # window (the last write the dead database acknowledged minus the newest row found after the restore). The job fails when the loss exceeds 900 s
 # (RPO), the drill takes longer than 3600 s (RTO), or any check fails. A second drill with --rto-seconds 1 must fail, so the gate is known to bite.
-# Timings and the loss window go to the job summary. MinIO is started with `docker run` because a service container cannot pass `server /data`.
+# Timings and the loss window go to the job summary. The S3 side is moto, NOT real storage: the AWS CLI calls, the manifest and the retention are proved here, MinIO and AWS S3 themselves are still to be
+# proved in a drill (docs/DISASTER_RECOVERY.md, section 8). moto replaced a MinIO image that could not be pulled.
 # Not a required check yet.
 
 on:
@@ -22,6 +23,7 @@ on:
       - "smo/scripts/db_restore.sh"
       - "smo/scripts/pg_env.sh"
       - "smo/backup/**"
+      - "smo/requirements/dr.*"
   push:
     branches: [main]
     paths:
@@ -43,7 +45,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      MINIO_IMAGE: docker.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
       POSTGRES_IMAGE: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
       PGPASSWORD: smo
       AWS_ACCESS_KEY_ID: smo-ci-access
@@ -68,6 +69,7 @@ jobs:
         run: |
           pip install --quiet --require-hashes -r requirements/runtime.txt
           pip install --quiet --no-deps -e shared
+          pip install --quiet --require-hashes -r requirements/dr.txt       # moto_server and the AWS CLI
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
@@ -75,11 +77,11 @@ jobs:
           echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
           aws --version
 
-      - name: Start MinIO and make the bucket
+      - name: Start moto_server (an S3 API on :9000) and make the bucket
         run: |
-          docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" -e MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" \
-            "$MINIO_IMAGE" server /data
-          for i in $(seq 1 30); do curl -fsS http://localhost:9000/minio/health/ready && break; sleep 2; done
+          nohup moto_server -H 127.0.0.1 -p 9000 > "$RUNNER_TEMP/moto.log" 2>&1 &
+          for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:9000/moto-api/ && break; sleep 1; done
+          curl -fsS -o /dev/null http://localhost:9000/moto-api/
           aws --endpoint-url "$SMO_BACKUP_S3_ENDPOINT" s3 mb "s3://$SMO_BACKUP_S3_BUCKET"
 
       - name: Start the source Postgres 18 and migrate it to head
@@ -160,4 +162,4 @@ jobs:
         run: |
           docker logs pg-source --tail 40 || true
           docker logs pg-target --tail 40 || true
-          docker logs minio --tail 40 || true
+          tail -40 "$RUNNER_TEMP/moto.log" || true

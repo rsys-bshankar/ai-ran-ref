@@ -2,7 +2,7 @@
 """A stand-in for the AWS CLI that keeps "buckets" in a directory (FAKE_AWS_ROOT), for tests_integration/test_dr_scripts.py.
 
 Understands the three calls the disaster-recovery scripts make (`aws [--endpoint-url U] s3 cp|ls|rm ...`, flags `--only-show-errors`,
-`--sse X` and `--recursive` accepted) and nothing else; any other call exits 2. Not a model of S3: the real round trip against MinIO is the CI job
+`--sse X` and `--recursive` accepted) and nothing else; any other call exits 2. Not a model of S3: the round trip against an S3 API (moto_server) is the CI job
 `disaster-recovery` (.github/workflows/smo-dr.yml).
 """
 

@@ -1139,7 +1139,7 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   `scripts/check_migration_matches_models.py` on it, checks that every table answers a query and that the GUI database passes `PRAGMA integrity_check` and has users, then prints the phase timings and
   the data-loss window. With `--probe TABLE:COLUMN --high-water T` the window is the last write the dead database acknowledged minus the newest row after the restore; without them it is the
   age of the set. It exits 1 when a check fails, the recovery time exceeds `--rto-seconds` (3600) or the window exceeds `--rpo-seconds` (900), and drops its database unless `--keep`.
-  CI job `disaster-recovery` (`.github/workflows/smo-dr.yml`, weekly and on changes to the scripts): MinIO from `docker run` (a service container cannot pass `server /data`), a Postgres 18 source
+  CI job `disaster-recovery` (`.github/workflows/smo-dr.yml`, weekly and on changes to the scripts): `moto_server` (pip-installed from the hashed `requirements/dr.txt` with the AWS CLI; a MinIO image could not be pulled in CI, and moto is an S3 stand-in, not real storage), a Postgres 18 source
   migrated to head taking one row a second into `periodic_run` (a real table, so the models check still passes: it fails on a table outside `table_owners.json`), `dr_backup.sh --loop 20`, a kill of
   the database and the job together, a fresh Postgres 18, the drill with both gates, an assertion that the loss was under 120 s at that cadence, and a second drill limited to 1 s that must fail.
 - **Proof here.** `tests_integration/test_dr_scripts.py` on a real Postgres with a stand-in AWS CLI (`tests_integration/fake_aws.py`): manifest content, `latest.json` equal to the newest
@@ -1149,8 +1149,8 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
 - **Choices not taken.** WAL archiving for compose and plain hosts (a shipper in the image, a base-backup cycle and a recovery procedure, each to build and prove; the logical dump meets 15 minutes at
   these sizes and the document says when it stops doing so); a CronJob and a published backup image for Kubernetes without CloudNativePG; client-side encryption (the bucket's server-side encryption
   and policy are the operator's); an alert on a late set; a chart-made CloudNativePG Cluster (the operator and its object store are the operator's, the chart only schedules).
-- **Not done, still open (HA-6.3, DB-6.2, DB-6.4).** Not run here: Docker, Helm, MinIO and kind were not available in the sandbox, so the compose service, the Dockerfile, the `helm` render tests and the CI job's
-  first run (including the PGDG client install and the MinIO image tag) are checked only by structure. The WAL archive and a CloudNativePG recovery have never run. The drill of the runbook (sections 5 and 6)
+- **Not done, still open (HA-6.3, DB-6.2, DB-6.4).** Not run here: Docker, Helm and kind were not available in the sandbox, so the compose service, the Dockerfile, the `helm` render tests and the CI job's
+  first run (including the PGDG client install) are checked only by structure; the CI job's steps were afterwards run by hand against `moto_server`, the pinned AWS CLI and two local Postgres 16 clusters (backup loop, kill, drill with both gates, the 1 s gate, retention), which passed. MinIO and AWS S3 themselves have not been used. The WAL archive and a CloudNativePG recovery have never run. The drill of the runbook (sections 5 and 6)
   on a real host and on kind at a representative size, with its line in the drill log, is what `RELEASES.md` criterion 4 asks for and is open.
 
 ### PR-DB-4 — Indexes and pagination (DB-4.1; 4.2–4.5 open)

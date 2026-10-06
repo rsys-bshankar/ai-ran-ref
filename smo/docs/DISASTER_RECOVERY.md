@@ -31,7 +31,7 @@ How each is bounded, and what the drill can and cannot show:
 | The GUI backend's own database (SQLite: GUI users, the GUI audit log, failed-login counters, the BFF's SME credential, a generated session signing key) | `dr_backup.sh` with `SMO_BACKUP_GUI_DB` copies it with SQLite's online backup API, into the same set. Compose only (the `db-backup` service mounts the volume). `PR-DB-6.5` |
 | Integrity of what was uploaded | A manifest per set with the size and SHA-256 of each file, the Alembic revision, the Postgres version and the UTC time; the upload is checked by name and size before `latest.json` moves; `dr_fetch.sh` refuses a file that differs from the manifest |
 | Retention | `SMO_BACKUP_RETENTION_DAYS` (14) with a floor of `SMO_BACKUP_KEEP_MIN` (5) sets; CloudNativePG `retentionPolicy` |
-| A tested restore into a fresh Postgres | `scripts/dr_drill.sh`; CI job `disaster-recovery` (`.github/workflows/smo-dr.yml`) with MinIO |
+| A tested restore into a fresh Postgres | `scripts/dr_drill.sh`; CI job `disaster-recovery` (`.github/workflows/smo-dr.yml`) against `moto_server`, an S3 stand-in, not real storage |
 
 | Not covered | Why, and what to do |
 |---|---|
@@ -187,10 +187,11 @@ Read the whole list once before the first step. Times in brackets are the budget
 ## 8. Testing it
 
 * **Every change to the scripts, and weekly**: CI job `disaster-recovery` (`.github/workflows/smo-dr.yml`). A Postgres 18 migrated to head takes one timestamped row a second; `dr_backup.sh --loop 20`
-  ships to MinIO; the database and the job are killed together; a fresh Postgres 18 is started; `dr_drill.sh` restores the newest set, runs `scripts/migrate.py`
+  ships to `moto_server` (a pip-installable S3 server, `requirements/dr.txt`, with the pinned AWS CLI); the database and the job are killed together; a fresh Postgres 18 is started; `dr_drill.sh` restores the newest set, runs `scripts/migrate.py`
   and `scripts/check_migration_matches_models.py` on it, a smoke check (every table answers a query; the GUI database passes its integrity check and has its users) and prints the timings. The job fails when the
   loss exceeds 900 s, the drill exceeds 3600 s, or any check fails; a second drill limited to 1 s must fail, so the gate is known to bite. The numbers are in the job summary.
-* **Without Docker or MinIO**: `tests_integration/test_dr_scripts.py` runs the same scripts against any Postgres (`SMO_TEST_POSTGRES_URL`, client tools at least as new as the server) with a stand-in for the AWS CLI:
+  **CI's S3 is moto, not MinIO or AWS S3.** It proves the AWS CLI calls (copy with and without `--sse`, list, recursive delete, path-style addressing), the manifest, the upload check and the retention; it does not prove a real object store's behaviour (consistency, large objects, lifecycle and lock rules, credentials by role). MinIO or AWS S3 against real storage is still to be proved in a drill (the last row of the log).
+* **Without Docker or an S3 server**: `tests_integration/test_dr_scripts.py` runs the same scripts against any Postgres (`SMO_TEST_POSTGRES_URL`, client tools at least as new as the server) with a stand-in for the AWS CLI:
   manifest content, a failed upload leaving `latest.json` alone, retention and its floor, a damaged file refused, the drill's pass and its RTO, RPO and schema failures.
 * **By hand, any time** (a database you can lose, never production): 
 
@@ -207,8 +208,10 @@ Read the whole list once before the first step. Times in brackets are the budget
 
 | Date | Where | Database | Set age / data lost | Fetch + verify | Restore | Schema checks | Smoke | Total | Verdict |
 |---|---|---|---|---|---|---|---|---|---|
-| 2026-10-06 | Development sandbox, Postgres 16, directory standing in for the bucket (`tests_integration/fake_aws.py`), script-level drill only | the migrated schema (136 tables), a few thousand rows | 1.8 s (a write 2 s after the backup) | 0.2 s | 0.9 s | 4.1 s | 0.1 s | 5.4 s | Mechanism works; says nothing about size, MinIO or a real host |
+| 2026-10-06 | Development sandbox, Postgres 16, directory standing in for the bucket (`tests_integration/fake_aws.py`), script-level drill only | the migrated schema (136 tables), a few thousand rows | 1.8 s (a write 2 s after the backup) | 0.2 s | 0.9 s | 4.1 s | 0.1 s | 5.4 s | Mechanism works; says nothing about size, an S3 server or a real host |
+| 2026-10-06 | Development sandbox, the CI job's steps run by hand: Postgres 16 source killed (database dropped) while taking a row a second, backup loop every 20 s to `moto_server` through the pinned AWS CLI 1.46, restore into a second Postgres 16 cluster | the migrated schema (136 tables) and 1 000+ rows, a GUI SQLite file | 5.2 s | 1.9 s | 0.8 s | 4.1 s | 0.1 s | 6.9 s | All gates pass; a drill limited to 1 s fails; retention deleted three old sets and kept the newest two. moto, not real storage |
 | (first CI run of `disaster-recovery`) | | | | | | | | | to be added from the job summary |
+| (a drill against MinIO or AWS S3) | | | | | | | | | **open**: real object storage has not been used |
 | (first drill of section 5 or 6 on a real stack) | | | | | | | | | **open**: needed for `RELEASES.md` criterion 4 |
 
 For scale, the volume lane (`.github/workflows/smo-db-volume.yml`, a million alarms and half a million performance files, 51 MB dump) records 6 s to dump and 9 s to restore on a CI runner. Extrapolated

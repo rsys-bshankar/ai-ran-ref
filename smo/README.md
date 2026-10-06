@@ -138,7 +138,7 @@ Disaster recovery (RPO 15 minutes, RTO 1 hour; [`docs/DISASTER_RECOVERY.md`](doc
 SQLite database, a manifest with checksums, the schema revision and the time) to an S3-compatible bucket (AWS S3, MinIO) and applies retention; in compose it is the
 `db-backup` service of the `backup` profile (every `SMO_BACKUP_INTERVAL_SECONDS`, default 600), on Kubernetes with CloudNativePG it is continuous WAL archiving
 (`postgres.cnpgBackup`, `deploy/helm/smo/ci/cnpg-cluster-backup.yaml`). `scripts/dr_drill.sh` restores the newest off-site set into a fresh Postgres, checks the schema, runs a smoke check and prints the
-timings and the data-loss window against the targets; CI runs it against MinIO (`.github/workflows/smo-dr.yml`). The runbook, what is not covered (point-in-time recovery outside CloudNativePG,
+timings and the data-loss window against the targets; CI runs it against `moto_server`, an S3 stand-in (`.github/workflows/smo-dr.yml`; MinIO or AWS S3 on real storage is still to be drilled). The runbook, what is not covered (point-in-time recovery outside CloudNativePG,
 the SQLite database on Kubernetes) and the drill log are in that document.
 
 ```bash

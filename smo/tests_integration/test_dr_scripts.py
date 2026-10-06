@@ -1,6 +1,6 @@
 """Off-site backup, fetch and restore drill (PR-HA-6): scripts/dr_backup.sh, dr_fetch.sh, dr_drill.sh.
 
-The bucket is a directory behind `tests_integration/fake_aws.py`, a stand-in for the AWS CLI; the real round trip against MinIO is the CI job
+The bucket is a directory behind `tests_integration/fake_aws.py`, a stand-in for the AWS CLI; the round trip against an S3 API (moto_server, not real storage) is the CI job
 `disaster-recovery` (.github/workflows/smo-dr.yml). The database is real: SMO_TEST_POSTGRES_URL, with a pg_dump / pg_restore / psql at least as new
 as the server (as test_db_backup_restore.py); otherwise those tests skip, saying why. The structure tests at the end need nothing.
 """
@@ -218,12 +218,12 @@ def test_the_drill_fails_on_a_set_that_is_not_the_schema_it_says(source, bucket,
 
 # -- structure: what must exist for the pieces to hang together --------------------------------------------------------------------------------
 
-def test_the_scripts_are_executable_and_the_ci_job_runs_the_drill_with_minio_and_the_targets():
+def test_the_scripts_are_executable_and_the_ci_job_runs_the_drill_with_moto_and_the_targets():
     for script in (BACKUP, FETCH, DRILL, FAKE_AWS):
         assert os.access(script, os.X_OK), script
     workflow = yaml.safe_load((SMO_ROOT.parent / ".github" / "workflows" / "smo-dr.yml").read_text())
     text_ = (SMO_ROOT.parent / ".github" / "workflows" / "smo-dr.yml").read_text()
-    assert "dr_backup.sh" in text_ and "dr_drill.sh" in text_ and "minio" in text_.lower()
+    assert "dr_backup.sh" in text_ and "dr_drill.sh" in text_ and "moto_server" in text_ and "requirements/dr.txt" in text_
     assert 'RTO_SECONDS: "3600"' in text_ and 'RPO_SECONDS: "900"' in text_ and '--rto-seconds "$RTO_SECONDS"' in text_ and '--rpo-seconds "$RPO_SECONDS"' in text_
     assert "disaster-recovery" in workflow["jobs"]
 
