@@ -360,8 +360,7 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 | SEC-7.1 | `gui_user_totp` table and enrol route | QR secret generated and verified | – |
 | SEC-7.2 | Login second step | Wrong code refused | SEC-7.1 |
 | SEC-7.3 | Recovery codes (hashed) | One-time use | SEC-7.1 |
-| SEC-7.4 | Server-side session row so logout revokes a session (today only `token_version` bumps do) | Token refused after logout | – |
-| SEC-7.5 | Admin action: revoke a user's sessions | Route test | SEC-7.4 |
+| SEC-7.5 | Admin action: revoke a user's sessions (SEC-7.4, logout revocation, is done: `HISTORY.md`) | Route test | – |
 
 #### PR-SEC-8 — Rate and size limits
 
