@@ -222,12 +222,23 @@ title "TX-muting rApp: guided end-to-end demo"
 explain "You will deploy an rApp from its CSAR package through the SMO's lifecycle services, then watch it run a closed loop on a simulated gNB, then retire it. Every step is explained first and you decide when it runs. Events from both the rApp and the gNB are explained live as they happen, in colour: cyan for the rApp, magenta for the gNB."
 cat <<EOF
 
-      +--------+   PM / alarms    +-------------+    +-----+      +-----------+  R1 + SME token  +----------------+
-      |  gNB   |----------------->| RAN NF OAM  |--->| DME |----->|  rApp     |----------------->| R1 Termination |
-      | (sim)  |<-----------------|  (O1)       |<---+     |<-----+ (decides  |  (reads PM,      +----------------+
-      +--------+  O1 edit-config  +-------------+  /actions      |  by itself)|   writes config)
-                                                                  +-----------+
-      Lifecycle:  CSAR --> Onboarding --> rApp Management --> NFO / FOCOM      (the rApp container is started by this script)
+      +-------+   PM, alarms   +-------------+   PM records   +-----+
+      |  gNB  |--------------->| RAN NF OAM  |--------------->| DME |
+      | (sim) |<---------------|    (O1)     |<---------------|     |
+      +-------+ O1 edit-config +------+------+   config job   +--+--+
+                                      ^        (from /actions)   ^
+                                      |                          |
+                            +---------+--------------------------+---------+
+                            |               R1 Termination                  |------> SME
+                            +-----------------------+-----------------------+   checks every token;
+                                                    ^                           the rApp registered
+                                                    | Bearer token              there as an API invoker
+                                                    | on every call
+                                               +----+-----+
+                                               |   rApp   |   decides by itself, every few seconds
+                                               +----------+
+
+      Lifecycle:  CSAR --> Onboarding --> rApp Management --> NFO / FOCOM     (this script starts the rApp container)
 EOF
 
 # ---- checks

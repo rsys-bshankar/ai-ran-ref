@@ -34,19 +34,22 @@ The network side is a simulator for now. It is generic on purpose: it consumes c
 # 2. Architecture
 
 ```text
- +-----------------+  R1, Bearer token   +-----------------+   +--------------------------------------+
- | tx-muting-rapp  |-------------------->| R1 Termination  |-->| DME         PM data jobs, /actions   |
- | (this sample)   |  (SME client creds) | (SME introspect)|-->| RAN NF OAM  configuration read       |
- +-----------------+                     +-----------------+   +------------------+-------------------+
-                                                                                  | O1: NETCONF edit-config / get-config
-                                                                                  v
-                                                        +-------------------------------------------+
-   gnb-cli / gnb_demo.py (control API) ---------------->| gnb-o1-adaptor-sim (this sample)          |
-   events (log, long poll, gnb-cli) <-------------------|  consumes config, generates PM / alarms   |
-                                                        +---------------------+---------------------+
-                                                                              | PM reports, alarms, registration, heartbeat
-                                                                              v
-                                                                      RAN NF OAM  ->  DME
+ +-------------------+   PM, alarms   +-------------+   PM records   +-----+
+ | gnb-o1-adaptor-sim|--------------->| RAN NF OAM  |--------------->| DME |
+ | (this sample)     |<---------------|    (O1)     |<---------------|     |
+ +-------------------+ O1 edit-config +------+------+   config job   +--+--+
+                                             ^        (from /actions)   ^
+                                             |                          |
+                                   +---------+--------------------------+---------+
+                                   |               R1 Termination                  |------> SME
+                                   +-----------------------+-----------------------+   introspects every token;
+                                                           ^                           the rApp registered there
+                                                           | Bearer token (SME         as an API invoker
+                                                           | client credentials)
+                                                  +--------+--------+
+                                                  | tx-muting-rapp  |
+                                                  | (this sample)   |
+                                                  +-----------------+
 ```
 
 | Component | Role | Where |
