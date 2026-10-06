@@ -554,6 +554,21 @@ services:
       GUI_VIEWER_PASSWORD: ${GUI_VIEWER_PASSWORD:-}
       GUI_COOKIE_SECURE: ${GUI_COOKIE_SECURE:-true}
       GUI_SESSION_TTL_SECONDS: ${GUI_SESSION_TTL_SECONDS:-28800}    # how long a sign-in lasts (8 h)
+      # OIDC login (PR-SEC-6), off unless GUI_OIDC_ENABLED=true: docs/CONFIGURATION.md, gui-bff/README.md "OIDC login". The client's credential
+      # is better mounted as a file (GUI_OIDC_CLIENT_SECRET_FILE) than set here.
+      GUI_OIDC_ENABLED: ${GUI_OIDC_ENABLED:-false}
+      GUI_OIDC_ISSUER: ${GUI_OIDC_ISSUER:-}
+      GUI_OIDC_CLIENT_ID: ${GUI_OIDC_CLIENT_ID:-}
+      GUI_OIDC_CLIENT_SECRET: ${GUI_OIDC_CLIENT_SECRET:-}
+      GUI_OIDC_REDIRECT_URI: ${GUI_OIDC_REDIRECT_URI:-}
+      GUI_OIDC_SCOPES: ${GUI_OIDC_SCOPES:-openid profile email}
+      GUI_OIDC_GROUPS_CLAIM: ${GUI_OIDC_GROUPS_CLAIM:-groups}
+      GUI_OIDC_GROUP_ROLE_MAP: ${GUI_OIDC_GROUP_ROLE_MAP:-}
+      GUI_OIDC_DEFAULT_ROLE: ${GUI_OIDC_DEFAULT_ROLE:-}
+      GUI_OIDC_PROVIDER_NAME: ${GUI_OIDC_PROVIDER_NAME:-SSO}
+      GUI_OIDC_POST_LOGOUT_REDIRECT_URI: ${GUI_OIDC_POST_LOGOUT_REDIRECT_URI:-}
+      GUI_OIDC_ALLOW_HTTP: ${GUI_OIDC_ALLOW_HTTP:-false}
+      GUI_LOCAL_LOGIN_ENABLED: ${GUI_LOCAL_LOGIN_ENABLED:-true}
     volumes:
       - gui_bff_data:/data   # GUI users, audit log, the BFF's SME invoker credential
 

@@ -7,9 +7,12 @@ OAuth2 token (smo_client.py). The browser never calls R1 or any module port
 directly: that would need CORS on every module and bypass the role checks.
 
 Routes (all under /api, which nginx forwards here unchanged):
+  GET  /api/auth/config         what the sign-in page may offer: local login, OIDC and the provider's name (no session needed)
   POST /api/login               username/password -> httpOnly session cookie
+  GET  /api/oidc/login          start an OIDC sign-in (authorization code + PKCE): redirect to the provider        (PR-SEC-6)
+  GET  /api/oidc/callback       finish it: validate the ID token, create/update the user, set the session cookie, redirect to the GUI
   POST /api/token               OAuth2 password grant -> Bearer JWT (scripts/CLI)
-  POST /api/logout
+  POST /api/logout              ends the session; an OIDC user also gets the provider's end-session URL when it has one
   GET  /api/me                  current user, role, CSRF token
   POST /api/me/password
   GET  /api/permissions         the RBAC table, so the SPA gates on the same rules
@@ -20,6 +23,7 @@ Routes (all under /api, which nginx forwards here unchanged):
 """
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -30,16 +34,18 @@ import time
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from typing import Any, cast
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
 from .db import AuditEntry, Database, GuiUser, LoginFailure
+from .oidc import LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS, OidcClient, OidcConfig, OidcError
 from .rbac import MODULES, RULES, Role, Rule, User, decide
 from .security import decode_jwt, hash_password, issue_jwt, verify_password
 from .smo_client import R1Gateway, SmoAuthError
@@ -55,6 +61,12 @@ MAX_LOGIN_FAILURES = 5
 LOCKOUT_SECONDS = 300
 MIN_PASSWORD_LENGTH = 8
 USERNAME_RE = re.compile(r"^[a-z][a-z0-9_.-]{1,31}$")
+
+# PR-SEC-6: a user the identity provider vouches for is the row `oidc:<subject>`. USERNAME_RE has no ':', so no local account can take such a name,
+# and the stored "hash" can never verify (no salt:digest in it), so the row has no password at all.
+OIDC_PREFIX = "oidc:"
+UNUSABLE_HASH = "!"
+OIDC_COOKIE = "smo_oidc"      # the browser binding of a sign-in in flight; Lax because the provider's redirect back is a cross-site navigation
 
 # RFC 7230 section 6.1 hop-by-hop headers, plus headers the BFF must own
 # itself: lengths/encodings are recomputed (httpx has already decoded the
@@ -192,7 +204,12 @@ class Session:
     via_cookie: bool
 
 
-def create_app(cfg: Settings = default_settings, db: Database | None = None, gateway: R1Gateway | None = None) -> FastAPI:
+def create_app(cfg: Settings = default_settings, db: Database | None = None, gateway: R1Gateway | None = None,
+               oidc_transport: httpx.BaseTransport | None = None) -> FastAPI:
+    oidc: OidcClient | None = OidcClient(OidcConfig.from_settings(cfg), transport=oidc_transport) if cfg.oidc_enabled else None
+    if not cfg.local_login_enabled and oidc is None:
+        raise ValueError("GUI_LOCAL_LOGIN_ENABLED=false needs GUI_OIDC_ENABLED=true: with neither, nobody could sign in")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if app.state.db is None:
@@ -211,6 +228,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     app = FastAPI(title="SMO Operator GUI BFF", lifespan=lifespan, docs_url=None, redoc_url=None,
                   openapi_url="/api/openapi.json")
     app.state.db, app.state.gateway, app.state.cfg = db, gateway, cfg
+    app.state.oidc = oidc
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -288,8 +306,16 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         username: str
         password: str
 
+    @app.get("/api/auth/config")
+    def auth_config():
+        """Unauthenticated: what the sign-in page may offer. Nothing here is secret (the provider's display name and where to start)."""
+        return {"localLogin": cfg.local_login_enabled,
+                "oidc": ({"enabled": True, "providerName": cfg.oidc_provider_name, "loginUrl": "/api/oidc/login"} if oidc else {"enabled": False})}
+
     @app.post("/api/login")
     def login(body: LoginRequest, response: Response):
+        if not cfg.local_login_enabled:
+            return _problem(403, "LOCAL_LOGIN_DISABLED", "sign in through the identity provider")
         user = check_credentials(body.username, body.password)
         if isinstance(user, JSONResponse):
             return user
@@ -307,6 +333,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         """
         if grant_type != "password":
             return JSONResponse(status_code=400, content={"error": "unsupported_grant_type"})
+        if not cfg.local_login_enabled:
+            return JSONResponse(status_code=403, content={"error": "unauthorized_client", "error_description": "local login is disabled"})
         user = check_credentials(username, password)
         if isinstance(user, JSONResponse):
             return JSONResponse(status_code=400 if user.status_code == 401 else user.status_code,
@@ -327,7 +355,104 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
                 # the cookie is cleared in the browser, but a copy of it (or the token) would stay good until it expires: the session itself is ended here
                 app.state.db.revoke_session(claims["jti"], claims["exp"], time.time())
             audit("LOGOUT", username=claims.get("sub"))
-        return {"status": "logged out"}
+        result: dict[str, str] = {"status": "logged out"}
+        if oidc is not None and claims and str(claims.get("sub", "")).startswith(OIDC_PREFIX):
+            end_session = oidc.end_session_url()        # RP-initiated logout: the SPA sends the browser there to end the provider's session too
+            if end_session:
+                result["endSessionUrl"] = end_session
+        return result
+
+    # ------------------------------------------------------------ OIDC login (PR-SEC-6)
+
+    def oidc_failure(code: str, *, subject: str | None = None, detail: str | None = None) -> RedirectResponse:
+        """Back to the sign-in page with a reason code (never the provider's text), the binding cookie cleared, and an audit row."""
+        audit("OIDC_LOGIN_FAILED", username=subject, detail=f"{code}: {detail}" if detail else code)
+        response = RedirectResponse("/login?" + urlencode({"oidc_error": code}), status_code=303)
+        response.delete_cookie(OIDC_COOKIE, path="/api/oidc", secure=cfg.cookie_secure, samesite="lax")
+        return response
+
+    @app.get("/api/oidc/login")
+    def oidc_login():
+        if oidc is None:
+            return _problem(404, "OIDC_DISABLED")
+        state, nonce, verifier, binding = (secrets.token_urlsafe(32), secrets.token_urlsafe(32), secrets.token_urlsafe(64), secrets.token_urlsafe(24))
+        try:
+            url = oidc.authorization_url(state, nonce, verifier)
+        except OidcError as exc:
+            return oidc_failure(exc.code, detail=exc.detail)
+        if not app.state.db.start_oidc_login(state, nonce, verifier, hashlib.sha256(binding.encode()).hexdigest(), time.time(),
+                                             LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS):
+            return oidc_failure("too_many_logins")
+        response = RedirectResponse(url, status_code=302)
+        response.set_cookie(OIDC_COOKIE, binding, httponly=True, path="/api/oidc", secure=cfg.cookie_secure, samesite="lax", max_age=LOGIN_TTL_SECONDS)
+        return response
+
+    def provision_oidc_user(subject: str, role: Role) -> tuple[GuiUser | None, str]:
+        """The user row for `subject`, created on first sign-in (no password) and given `role` at every sign-in; None for a disabled one."""
+        username = OIDC_PREFIX + subject
+        for _ in range(2):
+            with app.state.db.session() as s:
+                user = s.get(GuiUser, username)
+                if user is None:
+                    # a random starting token version, as for any new user: see create_user
+                    user = GuiUser(username=username, password_hash=UNUSABLE_HASH, role=role, token_version=secrets.randbits(30))
+                    s.add(user)
+                    try:
+                        s.commit()
+                    except IntegrityError:      # another instance created the same user a moment earlier: use its row
+                        s.rollback()
+                        continue
+                    return user, "created"
+                if not user.active:
+                    return None, "disabled"
+                note = "existing"
+                if user.role != role:
+                    note = f"role {user.role}->{role}"
+                    user.role = role
+                    s.commit()
+                return user, note
+        raise RuntimeError("could not create or read the OIDC user")
+
+    @app.get("/api/oidc/callback")
+    def oidc_callback(request: Request, code: str | None = None, state: str | None = None, error: str | None = None):
+        if oidc is None:
+            return _problem(404, "OIDC_DISABLED")
+        pending = app.state.db.consume_oidc_login(state, time.time()) if state else None
+        if pending is None:
+            return oidc_failure("invalid_state")
+        binding = request.cookies.get(OIDC_COOKIE, "")
+        if not hmac.compare_digest(hashlib.sha256(binding.encode()).hexdigest(), pending.binding_hash):
+            return oidc_failure("invalid_state", detail="the browser that started the sign-in is not the one that came back")
+        if error:
+            return oidc_failure("access_denied" if error == "access_denied" else "idp_error", detail=error if re.fullmatch(r"[a-z_]{1,40}", error) else None)
+        if not code:
+            return oidc_failure("idp_error", detail="no code")
+        subject: str | None = None
+        try:
+            tokens = oidc.exchange_code(code, pending.verifier)
+            access = tokens.get("access_token")
+            claims = oidc.validate_id_token(tokens["id_token"], pending.nonce, access if isinstance(access, str) else None)
+            subject = OIDC_PREFIX + claims["sub"]
+            role = oidc.role_for(claims)
+            if role is None:
+                # removed from every mapped group: an earlier session of this person ends too (a role is otherwise re-read on every request)
+                with app.state.db.session() as s:
+                    existing = s.get(GuiUser, subject)
+                    if existing is not None:
+                        existing.token_version += 1
+                        s.commit()
+                raise OidcError("no_role", "no group of the user maps to a role")
+            user, note = provision_oidc_user(claims["sub"], role)
+            if user is None:
+                raise OidcError("account_disabled")
+        except OidcError as exc:
+            return oidc_failure(exc.code, subject=subject, detail=exc.detail)
+        token, csrf = issue_session(user)
+        response = RedirectResponse("/", status_code=303)
+        set_session_cookies(response, token, csrf)
+        response.delete_cookie(OIDC_COOKIE, path="/api/oidc", secure=cfg.cookie_secure, samesite="lax")
+        audit("OIDC_LOGIN", User(user.username, Role(user.role)), detail=f"iss={oidc.cfg.issuer} {note}")
+        return response
 
     @app.get("/api/me")
     def me(session: Session = Depends(current_session)):
@@ -511,6 +636,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             user = s.get(GuiUser, username)
             if user is None:
                 return _problem(404, "NO_SUCH_USER")
+            if body.password is not None and user.password_hash == UNUSABLE_HASH:
+                return _problem(409, "OIDC_USER", "this user signs in through the identity provider and has no password")
             demoting = (body.role is not None and body.role != Role.ADMIN) or body.active is False
             if user.role == Role.ADMIN and demoting and _active_admins(s) <= 1:
                 return _problem(409, "LAST_ADMIN", "at least one active admin must remain")

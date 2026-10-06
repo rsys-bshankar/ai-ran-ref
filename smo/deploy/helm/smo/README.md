@@ -38,6 +38,8 @@ The chart makes the Secret `smo-secrets` with the database password and the enro
 
 The GUI backend's own settings (`GUI_JWT_SECRET`, `GUI_ADMIN_PASSWORD`, ...) go in `gui.env`; left empty they are generated on first start.
 
+**OIDC login for the GUI** (PR-SEC-6, off by default). Set `gui.env` to `GUI_OIDC_ENABLED: "true"` with `GUI_OIDC_ISSUER`, `GUI_OIDC_CLIENT_ID`, `GUI_OIDC_REDIRECT_URI` (the public URL of `/api/oidc/callback`, which the `gui` ingress already forwards under `/api`) and `GUI_OIDC_GROUP_ROLE_MAP` (`smo-admins=admin,smo-ops=operator,smo-viewers=viewer`; a user in no mapped group is refused unless `GUI_OIDC_DEFAULT_ROLE` is set); the other `GUI_OIDC_*` are in `docs/CONFIGURATION.md`. The client's credential should not sit in values: make a Secret of your own and point `gui.oidcClientSecretRef` at it (`{name: my-oidc-secret, key: client-secret}`, key default `client-secret`), which the chart passes to the pod as `GUI_OIDC_CLIENT_SECRET`. The backend refuses to start on a half-configured provider, so `kubectl -n smo logs deploy/gui-bff` names the variable. The issuer and the redirect URI must be https (a lab provider on http needs `GUI_OIDC_ALLOW_HTTP: "true"`). The local admin stays as the break-glass account; `GUI_LOCAL_LOGIN_ENABLED: "false"` removes it. The sign-ins in flight are rows in the GUI backend's database, so this works with the one replica the chart runs and would with several on one database. The chart itself has not been rendered or run against a provider in CI (the Keycloak check uses compose).
+
 ## Migrations and upgrades
 
 The schema is brought to the release's by one Job (`scripts/migrate.py`, the same as compose's `migrate` service):

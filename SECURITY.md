@@ -99,7 +99,11 @@ What is in place, so you can judge what counts as a vulnerability:
   cookie, CSRF double-submit on unsafe methods, role checks (viewer / operator /
   admin) re-read on every request, account lockout after repeated failures, an
   append-only audit log (append-only in the application; not hash-chained, `STD-4.7`), a strict CSP, and a proxy that never forwards browser
-  credentials to R1. Details: [`smo/gui/README.md`](smo/gui/README.md#security).
+  credentials to R1. Optional OIDC sign-in (`GUI_OIDC_ENABLED`, off by default): authorization code with PKCE, the ID token validated
+  against the provider's JWKS (signature, issuer, audience, expiry, nonce; asymmetric algorithms only), the state held in the database and tied to the
+  browser by a cookie, roles from a configured group map with no role as the default (refused), and the same session as a password login; the
+  provider enforces multi-factor, and the local admin stays as the break-glass account (`GUI_LOCAL_LOGIN_ENABLED=false` removes it).
+  Details: [`smo/gui/README.md`](smo/gui/README.md#security), [`smo/gui-bff/README.md`](smo/gui-bff/README.md) section 2.9.
 - **Outbound callbacks.** Any caller-supplied callback URL is called through
   one helper (`smo_shared.webhook`); RAN NF OAM vendor discovery never fetches a
   URL taken from a request body.
@@ -138,6 +142,9 @@ declined, but a way to exploit one in a surprising way is welcome.
   NETCONF `edit-config` and RFC 8040 RESTCONF over plain HTTP, without TLS or
   authentication, to the adaptor, and the stack has not been run against a real
   RAN.
+- OIDC login: one provider, no LDAP, no back-channel logout, no native MFA (the provider's), and the ID token is not kept, so the end-session
+  request has no `id_token_hint` and the provider may ask the person to confirm. A user's role is set from the token at each sign-in, so a role an admin sets by hand on an
+  OIDC user lasts until that user's next sign-in. Tested against a fake provider in unit tests and against Keycloak in CI, not against any other provider.
 - Backend RBAC exists only in `gui-bff`; R1 service APIs authenticate callers
   but do not authorise per resource.
 - Personal data (GUI users and the names written next to operator actions) is inventoried in

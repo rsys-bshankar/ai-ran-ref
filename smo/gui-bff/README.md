@@ -8,9 +8,9 @@
 | R1 route / port | None. Not an R1 service: reached only as `/api/*` through the `gui` nginx (:3000); container :8000, publishes no host port |
 | Depends on (over R1) | R1 Termination (`/bootstrap`, `/health`, every proxied `/<module>/...`) and, for its own token, SME's `/invoker-registrations` and `/oauth2/token` (URL discovered via R1 `/bootstrap`, or `SME_URL`) |
 | Called by | The GUI SPA (`../gui/`), and scripts via `POST /api/token` |
-| Database tables | `gui_user`, `gui_audit_log`, `gui_smo_credential`, `gui_setting`, `gui_login_failure` (own SQLite/SQLAlchemy store, not the SMO Postgres schema) |
-| Unit tests | 173 passed (`tests/`, SQLite, standalone; R1 and SME faked with `httpx.MockTransport`; 3 more run only when `SMO_TEST_POSTGRES_URL` is set) |
-| Status | Done. No OPEN_ITEMS ids. Sessions are stateless JWTs (no server-side logout revocation). Several instances work against one shared `GUI_DATABASE_URL`: signing key, lockout counters and SME credential live in it; see 2.8 |
+| Database tables | `gui_user`, `gui_audit_log`, `gui_smo_credential`, `gui_setting`, `gui_login_failure`, `gui_revoked_session`, `gui_oidc_login` (own SQLite/SQLAlchemy store, not the SMO Postgres schema) |
+| Unit tests | 879 passed (`tests/`, SQLite, standalone; R1 and SME faked with `httpx.MockTransport`; 3 more run only when `SMO_TEST_POSTGRES_URL` is set) |
+| Status | Done. OIDC login (SEC-6, opt-in) is built; open: SEC-6.8 (LDAP bind, optional) and SEC-7.5 (admin revokes a user's sessions). Sessions are signed JWTs with a logout revocation list. Several instances work against one shared `GUI_DATABASE_URL`: signing key, lockout counters and SME credential live in it; see 2.8 |
 
 The console as a whole (pages, screenshots, role matrix, run instructions, `GUI_*` quick reference) is described in [`../gui/README.md`](../gui/README.md). This file documents only the BFF's own design and does not repeat the role tables there; the authoritative permission table is `app/rbac.py`.
 
@@ -20,7 +20,7 @@ The console as a whole (pages, screenshots, role matrix, run instructions, `GUI_
 
 The BFF exists so that the browser never calls R1 Termination or a module port directly (that would need CORS on every module and bypass role checks). It:
 
-- authenticates GUI users (password login, httpOnly session cookie, or an OAuth2 password-grant Bearer token for scripts);
+- authenticates GUI users (password login, httpOnly session cookie, or an OAuth2 password-grant Bearer token for scripts), and, when switched on, through an OpenID Connect provider (section 2.9);
 - holds the user and role table and checks every proxied call against it (`app/rbac.py`);
 - pins identity-bearing request fields to the signed-in GUI user instead of trusting the browser;
 - authenticates to the SMO as an ordinary R1 consumer (CAPIF invoker at SME, `client_credentials`);
@@ -31,18 +31,19 @@ It implements no SMO domain logic: lifecycle rules stay in the modules, and the 
 
 ### 1.2 Standards basis
 
-None. Reused conventions only: RFC 6749 section 4.3 (resource-owner password grant, `POST /api/token`), RFC 7519 (HS256 session JWT, hand-rolled verifier in `app/security.py`), and the CAPIF invoker onboarding plus client-credentials path the SMO already exposes ([`../../specs/5G_APIs/`](../../specs/5G_APIs/) `TS29222_CAPIF_API_Invoker_Management_API.yaml`) for its southbound identity. Its error bodies are `{title, status, detail}` shaped like the R1 ProblemDetails convention but deliberately do not use `smo_shared` (see 1.5).
+None. Reused conventions only: RFC 6749 section 4.3 (resource-owner password grant, `POST /api/token`), OpenID Connect Core 1.0 and Discovery 1.0 with RFC 7636 PKCE and RP-Initiated Logout 1.0 for the optional OIDC login (section 2.9), RFC 7519 (HS256 session JWT, hand-rolled verifier in `app/security.py`), and the CAPIF invoker onboarding plus client-credentials path the SMO already exposes ([`../../specs/5G_APIs/`](../../specs/5G_APIs/) `TS29222_CAPIF_API_Invoker_Management_API.yaml`) for its southbound identity. Its error bodies are `{title, status, detail}` shaped like the R1 ProblemDetails convention but deliberately do not use `smo_shared` (see 1.5).
 
 ### 1.3 Position in the platform
 
 ```
 Browser --/api--> gui (nginx :3000) --> gui-bff --Bearer (SME-issued)--> R1 Termination --> modules
                                            |                                   ^
-                                           +-- own SQLite: users, audit, SME credential
+                                           +-- own SQLite: users, audit, SME credential, sign-ins in flight
+                                           +-- (optional) OIDC provider: discovery, JWKS, token endpoint
                                            +-- /bootstrap, SME onboarding + token ---+
 ```
 
-- Calls: only R1 Termination (and SME's token/registration endpoints at the address R1 advertises). Never a module container directly.
+- Calls: only R1 Termination (and SME's token/registration endpoints at the address R1 advertises), and, with OIDC on, the one configured identity provider (`GUI_OIDC_ISSUER`). Never a module container directly.
 - Never touches: the SMO Postgres database, `smo_shared`, any module port.
 - Publishes no host port (`docker-compose.yml`).
 - It does not set `X-Correlation-ID`; R1 Termination mints one per proxied request (call flow 14).
@@ -66,7 +67,8 @@ Browser --/api--> gui (nginx :3000) --> gui-bff --Bearer (SME-issued)--> R1 Term
 | JWT carries `ver` = `gui_user.token_version`; bumped on password change/reset and on (de)activation | Existing sessions die at once without a session store. Self password change re-issues the caller's own token. |
 | Cookie session plus double-submit CSRF: `smo_csrf` cookie (readable) echoed as `X-CSRF-Token`, compared with the `csrf` claim inside the JWT | Applies only to cookie-authenticated `POST/PUT/PATCH/DELETE`. A Bearer call needs no CSRF (a browser never attaches one by itself). |
 | Cookies: `smo_session` HttpOnly, `Path=/api`; `SameSite=Strict`; `Secure` by default (`GUI_COOKIE_SECURE`) | Session unreachable from script and not sent to non-API paths. |
-| HS256 verified with stdlib `hmac`, fixed header, constant-time compare, `exp` required | No `alg` negotiation to get wrong; no JWT library. |
+| OIDC (PR-SEC-6): authorization code with PKCE, opt in, one provider; the session after it is the same signed cookie, CSRF token and `jti` as a password login; the identity provider does multi-factor, the BFF has none of its own | Section 2.9 has the flow and what was not taken. |
+| HS256 verified with stdlib `hmac`, fixed header, constant-time compare, `exp` required | No `alg` negotiation to get wrong; no JWT library for the BFF's own session token. (The OIDC provider's RS/ES-signed ID tokens are the one place a library is used: PyJWT, with an allowed list of asymmetric algorithms, section 2.9.) |
 | scrypt (N=2^14, r=8, p=1, 16-byte salt) password hashes; unknown user verifies against a dummy hash | Response time does not reveal which usernames exist. |
 | Local `_problem()` / `_paginate()` instead of `smo_shared` | The BFF's CI job and image deliberately do not depend on `smo_shared`; the BFF must also keep working (login, audit) while the SMO stack is down. |
 | Own small store, not the SMO Postgres schema | None of it is SMO domain data. |
@@ -85,14 +87,16 @@ Idempotency: none needed beyond `seed_users` (first boot only, never touches a n
 
 | File | Responsibility |
 |---|---|
-| `app/main.py` | `create_app()`: lifespan (DB, seeding, gateway), session/CSRF dependencies, login/token/logout/me/password, `GET /api/permissions`, health aggregation, the RBAC proxy, admin user CRUD, audit listing; `seed_users`, `_write_initial_password` |
+| `app/main.py` | `create_app()`: lifespan (DB, seeding, gateway), session/CSRF dependencies, login/token/logout/me/password, `/api/auth/config`, `/api/oidc/login` and `/callback` (user provisioning), `GET /api/permissions`, health aggregation, the RBAC proxy, admin user CRUD, audit listing; `seed_users`, `_write_initial_password` |
 | `app/rbac.py` | `Role`, `RANK`, `MODULES`, `Rule`, `RULES` (125 rules), `decide()`, `GUI_RMIO_ID` |
+| `app/oidc.py` | `OidcConfig` (validates the settings), `OidcClient` (discovery and JWKS with caching and rotation, authorization URL, code exchange, ID-token validation, group-to-role, end-session URL), `OidcError` and its reason codes |
 | `app/security.py` | `hash_password`/`verify_password` (scrypt), `issue_jwt`/`decode_jwt` (HS256) |
 | `app/smo_client.py` | `R1Gateway`: token discovery, one-time invoker onboarding, cached `client_credentials` token, `request()` with one refresh on 401, `r1_health()` |
-| `app/db.py` | `GuiUser`, `AuditEntry` (with append-only ORM guard), `SmoCredential`, `Database` (`create_all` on start) |
+| `app/db.py` | `GuiUser`, `AuditEntry` (with append-only ORM guard), `SmoCredential`, `GuiSetting`, `LoginFailure`, `RevokedSession`, `OidcLogin`, `Database` (`create_all` on start) |
 | `app/config.py` | `Settings` from environment; generates `jwt_secret` if unset |
 | `scripts/export_permissions.py` | Writes `../gui/src/auth/permissions.fixture.json` from `RULES` |
-| `tests/test_main.py`, `tests/test_rbac.py` | See 3.2 |
+| `tests/test_main.py`, `tests/test_shared_state.py`, `tests/test_oidc.py`, `tests/test_rbac.py` | See 3.2 |
+| `tests/keycloak/smo-realm.json` | The Keycloak realm the browser check signs in against (CI only): client `smo-gui`, groups `smo-admins`, `smo-ops`, `smo-viewers`, four throwaway users |
 
 ### 2.2 Data model
 
@@ -102,8 +106,8 @@ Own database (`GUI_DATABASE_URL`, default `sqlite:///./gui-bff.db`; compose uses
 
 | Column | Notes |
 |---|---|
-| `username` | PK; creation validated against `^[a-z][a-z0-9_.-]{1,31}$` |
-| `password_hash` | `salt_hex:digest_hex` (scrypt) |
+| `username` | PK; creation validated against `^[a-z][a-z0-9_.-]{1,31}$`; an OIDC user is `oidc:<subject>` (the colon keeps it apart from every local name) |
+| `password_hash` | `salt_hex:digest_hex` (scrypt); `!` for a user of the identity provider, which can never verify (no password stored) |
 | `role` | `viewer` / `operator` / `admin` |
 | `active` | default true |
 | `token_version` | seeded users start at 0, a user created through the admin route at a random value (so a user deleted and created again under the same name does not accept the earlier holder's token); bumped on password change/reset and on any `active` change |
@@ -115,8 +119,10 @@ Own database (`GUI_DATABASE_URL`, default `sqlite:///./gui-bff.db`; compose uses
 |---|---|
 | `id` | autoincrement PK |
 | `at`, `username`, `role` | `username`/`role` nullable (e.g. failed login for an unknown name has no role) |
-| `action` | `LOGIN`, `LOGIN_FAILED`, `LOGIN_LOCKED`, `TOKEN`, `LOGOUT`, `PASSWORD_CHANGED`, `USER_CREATED`, `USER_UPDATED`, `USER_DELETED`, `PROXY`, `DENIED` |
+| `action` | `LOGIN`, `LOGIN_FAILED`, `LOGIN_LOCKED`, `OIDC_LOGIN`, `OIDC_LOGIN_FAILED`, `TOKEN`, `LOGOUT`, `PASSWORD_CHANGED`, `USER_CREATED`, `USER_UPDATED`, `USER_DELETED`, `PROXY`, `DENIED` |
 | `method`, `path`, `status_code`, `detail` | proxy calls; `path` includes the query string for mutating calls |
+
+**`gui_oidc_login`** (PR-SEC-6): one OIDC sign-in in flight, written by `GET /api/oidc/login` and deleted by the callback: `state` (PK), `nonce`, `verifier` (the PKCE code verifier), `binding_hash` (SHA-256 of the value in the browser's `smo_oidc` cookie), `expires_at` (indexed; ten minutes). In the database, not in a process, because the callback may land on another instance. Contains no personal data. Expired rows are removed whenever a sign-in starts; at most 5000 may wait (the route is unauthenticated).
 
 **`gui_smo_credential`** (one row, `id=1`): `api_invoker_id`, `onboarding_secret`. Stored as issued because it must be presented to SME's token endpoint, so it cannot be hashed here.
 
@@ -134,9 +140,12 @@ All routes are under `/api`. OpenAPI is served at `/api/openapi.json` (docs/redo
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/api/login` | `{username, password}` -> sets `smo_session` + `smo_csrf` cookies; returns `{username, role, csrfToken}` | 401 `INVALID_CREDENTIALS`; 429 `TOO_MANY_ATTEMPTS` |
-| POST | `/api/token` | Form `grant_type=password`, `username`, `password` -> `{access_token, token_type: Bearer, expires_in}` | 400 `{"error": "unsupported_grant_type"}` or `{"error": "invalid_grant"}` (a lockout keeps status 429) |
-| POST | `/api/logout` | Clears both cookies; audits `LOGOUT` if the cookie was valid | none (needs no session or CSRF) |
+| GET | `/api/auth/config` | No session. `{localLogin, oidc: {enabled, providerName, loginUrl}}`: what the sign-in page offers | none |
+| POST | `/api/login` | `{username, password}` -> sets `smo_session` + `smo_csrf` cookies; returns `{username, role, csrfToken}` | 401 `INVALID_CREDENTIALS`; 429 `TOO_MANY_ATTEMPTS`; 403 `LOCAL_LOGIN_DISABLED` |
+| GET | `/api/oidc/login` | Starts an OIDC sign-in: 302 to the provider's authorization endpoint (state, nonce, PKCE S256 challenge) and sets the `smo_oidc` binding cookie | 404 `OIDC_DISABLED`; otherwise a redirect to `/login?oidc_error=<code>` |
+| GET | `/api/oidc/callback` | `code`, `state` from the provider: validates, signs the user in, 303 to `/` with `smo_session` + `smo_csrf`; on any failure 303 to `/login?oidc_error=<code>` and an `OIDC_LOGIN_FAILED` audit row | 404 `OIDC_DISABLED`; codes: `idp_unavailable`, `idp_error`, `access_denied`, `invalid_state`, `token_exchange_failed`, `token_invalid`, `no_role`, `account_disabled`, `too_many_logins` |
+| POST | `/api/token` | Form `grant_type=password`, `username`, `password` -> `{access_token, token_type: Bearer, expires_in}` | 400 `{"error": "unsupported_grant_type"}` or `{"error": "invalid_grant"}` (a lockout keeps status 429); 403 `unauthorized_client` when local login is off |
+| POST | `/api/logout` | Clears both cookies, revokes the session, audits `LOGOUT` if the cookie was valid; for an OIDC user whose provider advertises an `end_session_endpoint` the answer also holds `endSessionUrl`, where the SPA sends the browser | none (needs no session or CSRF) |
 | GET | `/api/me` | `{username, role, csrfToken}` | 401 `UNAUTHENTICATED` / `SESSION_REVOKED` |
 | POST | `/api/me/password` | `{currentPassword, newPassword (min 8)}`; bumps `token_version`, re-issues the caller's session | 400 `INVALID_CREDENTIALS`; 422 on short password |
 | GET | `/api/permissions` | `{role, rules[{method, pattern, role, queryMatch}]}`: the RBAC table for the SPA (display only) | 401 |
@@ -224,16 +233,42 @@ The BFF answers `{"title", "status", "detail"?}` (no `type` / `instance`). Error
 | `SMO_AUTH_FAILED` | 502 | Could not obtain an SME token |
 | `R1_UNREACHABLE` | 502 | Transport failure to R1 |
 | `INVALID_USERNAME`, `USER_EXISTS`, `NO_SUCH_USER`, `LAST_ADMIN`, `CANNOT_DELETE_SELF` | 400 / 409 / 404 / 409 / 409 | User administration |
+| `OIDC_USER` | 409 | An admin tried to set a password on a user of the identity provider |
+| `LOCAL_LOGIN_DISABLED` | 403 | `POST /api/login` with `GUI_LOCAL_LOGIN_ENABLED=false` |
 
 ### 2.8 Limits and open items
 
 - Sessions are signed tokens with no session list: `POST /api/logout` clears the cookies and records the token's `jti` in `gui_revoked_session` until the token would expire, so a copied cookie or Bearer token stops working on every instance. There is still no way for an admin to list or end one user's sessions short of deactivating or deleting the user or resetting the password (`SEC-7.4`, `SEC-7.5`).
 - Running more than one instance needs one shared database: set `GUI_DATABASE_URL` to the same Postgres (or similar) for all of them. The default SQLite file belongs to one instance, and two instances on separate files would have separate users. When seeding on first boot, set `GUI_ADMIN_PASSWORD` explicitly: with a generated password each instance writes its own password file, and an instance that loses the seeding race deletes the one it wrote.
 - The SME token cache is per process (a token is per process by nature); an expired or revoked token is refreshed once on a 401.
-- No external IdP: users and roles live in `gui_user`. R1 Termination's own OAuth is unchanged.
+- One OIDC provider at most, no LDAP bind (`SEC-6.8`, optional, open). Users and roles still live in `gui_user`; R1 Termination's own OAuth is unchanged.
 - No per-module data validation: an operator can submit anything the module accepts; the BFF checks role only.
 - The RBAC regexes are mirrored in the SPA (`../gui/src/auth/permissions.fixture.json`); regenerate with `cd gui-bff && PYTHONPATH=. python scripts/export_permissions.py` after editing `rbac.py` (`test_rbac.py` fails on drift).
 - No OPEN_ITEMS id refers to this module.
+
+### 2.9 OIDC login (PR-SEC-6)
+
+Off by default (`GUI_OIDC_ENABLED=false`): nothing below exists then, `/api/oidc/*` answer 404 and `GET /api/auth/config` says `oidc.enabled: false`. Local username/password login is unchanged and stays as the break-glass admin path. Every variable is in `../docs/CONFIGURATION.md`; the ones that matter: `GUI_OIDC_ISSUER`, `GUI_OIDC_CLIENT_ID`, `GUI_OIDC_CLIENT_SECRET[_FILE]`, `GUI_OIDC_REDIRECT_URI` (the public URL of `/api/oidc/callback`, registered at the provider), `GUI_OIDC_SCOPES`, `GUI_OIDC_GROUPS_CLAIM`, `GUI_OIDC_GROUP_ROLE_MAP`, `GUI_OIDC_DEFAULT_ROLE`, `GUI_OIDC_PROVIDER_NAME`, `GUI_OIDC_POST_LOGOUT_REDIRECT_URI`, `GUI_LOCAL_LOGIN_ENABLED`. `OidcConfig.from_settings` checks the combination when the app is built, so a missing issuer, a non-https URL (http only for localhost or with `GUI_OIDC_ALLOW_HTTP`), `openid` missing from the scopes, a bad role in the map, or "nobody could sign in" (no map and no default role) stops the start and names the variable.
+
+**The flow.**
+
+1. The sign-in page (`gui/src/pages/Login.tsx`) asks `GET /api/auth/config` and, when OIDC is on, shows a link "Sign in with <provider name>" to `/api/oidc/login` (a full navigation, not a fetch).
+2. `GET /api/oidc/login` creates `state`, `nonce`, a PKCE verifier (S256 challenge) and a browser-binding value; stores `state`, `nonce`, the verifier and the SHA-256 of the binding value in `gui_oidc_login`; sets the binding value as the cookie `smo_oidc` (HttpOnly, `SameSite=Lax` because the provider's redirect back is a cross-site navigation that `Strict` would not carry, `Path=/api/oidc`, ten minutes); and answers 302 to the provider's authorization endpoint, found by discovery.
+3. The provider authenticates the person (and enforces multi-factor: the BFF has none of its own, `SEC-7.1` to `7.3` stay unbuilt) and redirects to `GET /api/oidc/callback?code=...&state=...`.
+4. The callback consumes the `gui_oidc_login` row by `state` (a `DELETE` whose row count decides, so a replay, an expired state or a second instance racing for it finds nothing), checks the `smo_oidc` cookie against `binding_hash` (so a callback URL planted in another browser, login CSRF, does not work), exchanges the code at the token endpoint with the verifier (client authentication `client_secret_basic`, or `client_secret_post` when that is all the provider offers, or none for a public client), and validates the ID token.
+5. **ID-token validation** (`OidcClient.validate_id_token`): the algorithm must be one of RS256/384/512, PS256/384/512, ES256/384/512 (so `none` and an HMAC keyed with the public key are refused before any key is looked at); the signature is checked against the JWKS key with the token's `kid`; `iss` equals the configured issuer; `aud` contains the client id, and `azp` equals it when present or when there are several audiences; `exp`, `iat`, `sub`, `iss`, `aud` are required, with 30 s of clock leeway; `nonce` equals the one this sign-in started with; `at_hash`, when the token has one, matches the access token.
+6. **Role.** The claim named by `GUI_OIDC_GROUPS_CLAIM` (a list, or a string split on spaces and commas; a dotted name reaches into an object, such as `realm_access.roles`) is looked up in `GUI_OIDC_GROUP_ROLE_MAP` (`group=role,...`); the highest role matched wins; none matched gives `GUI_OIDC_DEFAULT_ROLE`, which is empty by default, and empty means refused (`no_role`). The ID token alone is used: the userinfo endpoint is not called.
+7. **User.** Provisioned just in time as `gui_user` `oidc:<subject>` with `password_hash = "!"` (no password is stored and none can verify, so the row cannot be used at `/api/login`). The role is set from the token at every sign-in, and a changed role is noted in the audit row; a role an admin sets by hand on the Users page is therefore overwritten at the next sign-in. A user with `active = false` is refused (`account_disabled`). A user who signs in with no mapped group has the `token_version` of an existing row bumped, which ends that person's earlier sessions. An admin cannot set a password on such a user (409 `OIDC_USER`); deleting the user works as for any other, and the next sign-in creates it again.
+8. **Session.** The same as a password login: `issue_session` (HS256 JWT with `ver`, `csrf`, `jti`), `smo_session` and `smo_csrf` cookies set on the 303 to `/`, the `smo_oidc` cookie cleared. Everything after that (CSRF double submit, revocation by `jti`, `token_version`, role read from the row on every request) is the existing machinery.
+9. **Audit.** `OIDC_LOGIN` (username `oidc:<subject>`, role, detail `iss=<issuer>` and whether the user was created or the role changed) and `OIDC_LOGIN_FAILED` (the subject when the token was valid enough to have one; detail is a reason code, a validation class name or a claim name, never a token, a code or the provider's text). The browser is only given the reason code, as `/login?oidc_error=<code>`, and the page maps it to its own wording.
+
+**Provider documents.** Discovery (`<issuer>/.well-known/openid-configuration`; its `issuer` must equal the configured one, and the endpoints it names must be https) and the JWKS are fetched with `GUI_OIDC_TIMEOUT_SECONDS` and cached in the process for an hour; a cache of public provider metadata is safe per replica. A `kid` the cache does not know makes one refetch (key rotation), at most once per 30 s so a forged `kid` cannot make the BFF hammer the provider; a provider that cannot be reached leaves the last good copy in use. Only RSA and EC signing keys (`use` absent or `sig`) are kept.
+
+**Logout.** `POST /api/logout` revokes the session as before. For an `oidc:` user, when the provider's discovery document has an `end_session_endpoint`, the answer also carries `endSessionUrl` (`?client_id=...` and, if `GUI_OIDC_POST_LOGOUT_REDIRECT_URI` is set, `post_logout_redirect_uri`), and the SPA sends the browser there (RP-initiated logout) so the provider's session ends too. No `id_token_hint` is sent: the BFF keeps no ID token, so the provider may ask the person to confirm.
+
+**Break-glass.** `GUI_LOCAL_LOGIN_ENABLED` (default `true`) keeps `/api/login` and the `/api/token` password grant; `false` answers both 403 and hides the form, and is refused at start unless OIDC is on (otherwise nobody could sign in).
+
+**Not taken.** Native MFA (the provider does it); storing the ID token (for `id_token_hint`, and to avoid a PII copy); calling the userinfo endpoint; several providers; mapping the e-mail or `preferred_username` to a readable name (a `gui_user` row is keyed by name and the schema is not changed in a minor release, so the subject is the name and the audit row names the issuer); an OIDC back-channel logout; LDAP (`SEC-6.8`).
 
 ## 3. Unit tests
 
@@ -252,10 +287,12 @@ cd smo/gui-bff && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_main.py` | Login cookies (HttpOnly session, readable CSRF, Secure default), wrong password audited, lockout, tampered token, logout, seeding (no password in git, never touches a populated table), viewer/operator/admin gating through the proxy (nothing reaches R1 when denied), identity pinning (ack user, remedial `requester_is_admin`, intent RMIO, CM-write requester/MSAC tier, ASSIST reject, energy-saving override), role change on next request, CSRF on cookie sessions, Bearer grant without CSRF, BFF token (not browser credentials) forwarded, hop-by-hop and `Set-Cookie` stripping, SMO auth failure without leaking exception text, upstream error pass-through, one-time token refresh on 401, audit of mutations and not reads, append-only audit guard, security headers, health aggregation (including SMO auth failure), user admin (create/update/delete, session revocation, last-admin guard, own password change), the erasure of a user end to end and what it leaves in the audit log (STD-4.3), audit listing/filters, `/api/permissions` | 43 |
 | `tests/test_mtls.py` | PR-SEC-2: off, the R1 address and the HTTP client are as before; `SMO_MTLS=on` makes the R1 and SME addresses `https://` and gives the client a verifying context with its certificate; a missing file fails at start | 3 |
 | `tests/test_shared_state.py` | Instances on one database: a generated signing key is stored once and shared (a session from one instance is accepted by another and survives a restart; separate explicit secrets are not shared, as the control); failed logins count across instances, a success clears them, an unknown name locks like a real one, the window restarts, concurrent failures are all counted; two instances seeding one empty database do not crash and leave one password file; two instances onboarding at once keep one SME invoker and offboard the duplicate; a forgotten invoker is replaced once; instances starting together all create the schema; an old database gains the new tables; the store operations under races on SQLite and Postgres | 21 (3 of them are Postgres variants, skipped without `SMO_TEST_POSTGRES_URL`) |
+| `tests/test_oidc.py` | OIDC login against a fake provider (`httpx.MockTransport`, an RSA key generated in the test; the provider checks the redirect URI, the client credentials and the PKCE verifier): the redirect (state, nonce, S256 challenge, binding cookie), the happy path (user created with no password, normal cookies, audit with the subject), role by highest group, role re-evaluated at each sign-in, unknown group refused with no user created, default role, losing every group ends earlier sessions, nested and string group claims, disabled user refused, local login of an OIDC user refused, admin password reset refused; negative: unknown, replayed, expired state, a callback from another browser, wrong nonce, no nonce, wrong audience, wrong `azp`, wrong issuer, expired token, missing `exp`/`sub`, tampered payload, another key's signature, `alg=none`, HS256 keyed with the public key, malformed token, wrong `at_hash`, provider error codes (never echoed), a provider that refuses the code or the PKCE verifier; keys and discovery (cached, rotation picked up, a forged `kid` does not make the BFF refetch each time, an unreachable provider, stale discovery kept, a discovery document for another issuer); logout with and without an end-session endpoint; local login kept, switched off, and refused at start without OIDC; configuration validation (twelve bad settings); the credential from a file; PKCE against the RFC 7636 example; a sign-in started on one instance and finished on another; the CI realm agrees with the workflow and the script | 68 |
 | `tests/test_rbac.py` | Every module readable by a viewer; minimum role per route (parametrized, 109 cases total in the file); `event=DEPRECATE` admin-only via `query_match` including duplicated values; unlisted routes refused for everyone; ids cannot span path segments; every mutating rule requires at least operator; SPA permissions fixture equals the live table | 109 |
 
 ### 3.3 What is not covered here
 
+- Against a real OIDC provider: the unit tests use a fake one. The browser check `scripts/gui_oidc_e2e.py` signs in through a real Keycloak (CI job `oidc` of `.github/workflows/smo-gui-e2e.yml`, realm `tests/keycloak/smo-realm.json`).
 - Against a real R1 Termination / SME / modules: not in `tests_integration/` either; the BFF is exercised only against the fake in `tests/test_main.py` (`FakeSmo`).
 - The SPA side (role gating in JavaScript, API helpers): `cd smo/gui && npx vitest run`, including `src/auth/rbac.test.ts` against the shared fixture.
 - The whole BFF against a non-SQLite database: only the shared-state operations (stored setting, failed-login counting, SME credential store and replace) run on Postgres, in `tests/test_shared_state.py`.

@@ -44,6 +44,8 @@ docker compose up --build
 | `GUI_COOKIE_SECURE` | `true` | Set `false` only for plain-http access by a non-localhost name |
 | `GUI_DATABASE_URL` | `sqlite:////data/gui-bff.db` (compose volume) | Users, audit log, the BFF's SME credential |
 | `GUI_SESSION_TTL_SECONDS` | `28800` | Session lifetime |
+| `GUI_OIDC_ENABLED` and the other `GUI_OIDC_*` | `false` | OIDC sign-in next to the password form (PR-SEC-6): issuer, client id, `GUI_OIDC_CLIENT_SECRET[_FILE]`, redirect URI, scopes, the groups claim, `GUI_OIDC_GROUP_ROLE_MAP` (`group=role,...`), `GUI_OIDC_DEFAULT_ROLE`, `GUI_OIDC_PROVIDER_NAME`; see [`../gui-bff/README.md`](../gui-bff/README.md) section 2.9 |
+| `GUI_LOCAL_LOGIN_ENABLED` | `true` | `false` hides the password form and refuses `/api/login` and `/api/token` (needs OIDC on); leave `true` for the break-glass admin |
 
 No password ever lives in git: seed users are hashed (salted scrypt) from
 the environment on the first boot, and never touched again after that.
@@ -98,6 +100,11 @@ the admin state of exactly the intents it created).
   `/api`. Unsafe methods also need `X-CSRF-Token` matching the claim inside
   the JWT (double submit). Scripts can use `POST /api/token` (OAuth2 password
   grant) and send `Authorization: Bearer`.
+- Optional OIDC sign-in (PR-SEC-6, `GUI_OIDC_ENABLED`): the sign-in page then also shows "Sign in with <provider>". The BFF runs the authorization-code flow with
+  PKCE, validates the ID token (signature from the provider's JWKS, issuer, audience, expiry, nonce), maps a groups claim to viewer/operator/admin through
+  `GUI_OIDC_GROUP_ROLE_MAP` (a user in no mapped group is refused), creates the user `oidc:<subject>` on first sign-in with no password, and then issues the
+  same cookie session as a password login. Multi-factor is the provider's. Signing out also offers the provider's end-session page. The local admin stays
+  as the break-glass account. An error from the provider is shown as a fixed sentence per reason, never the provider's own text.
 - Roles are read from the user table on every request: a demotion applies
   immediately, and a password reset or deactivation revokes existing sessions.
 - 5 failed logins lock an account for 5 minutes. Unknown users cost the same
@@ -162,7 +169,7 @@ rows read as a story: the state before an action, then the state after it.
 
 | Screen | What it shows |
 |---|---|
-| [Sign in](docs/screenshots/generic/login.png) | The only page reachable signed out |
+| [Sign in](docs/screenshots/generic/login.png) | The only page reachable signed out. With OIDC on it also offers "Sign in with <provider>" (not in the screenshot: it shows the default, password only) |
 | [Failed sign-in](docs/screenshots/generic/login-failed.png) | Wrong password: a generic error that does not say which half was wrong; 5 failures lock the account for 5 minutes |
 | [Account locked](docs/screenshots/generic/login-locked.png) | After 5 failed attempts the account is locked for 5 minutes; the message does not say whether the user exists |
 | [Dashboard](docs/screenshots/pages/dashboard.png) | Module health for every service, open alarms by severity, SA SMOS escalations, model KPIs, rApp performance and fleet counts |
