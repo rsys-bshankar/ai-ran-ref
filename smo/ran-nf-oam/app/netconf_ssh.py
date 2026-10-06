@@ -22,6 +22,7 @@ import hashlib
 import re
 import socket
 import ssl
+from typing import Any
 from urllib.parse import urlsplit
 
 import paramiko
@@ -154,7 +155,7 @@ class NetconfSession:
         self.chunked = False
         self.server_capabilities: list[str] = []
         self._client: paramiko.SSHClient | None = None
-        self._channel: paramiko.Channel | None = None
+        self._channel: Any = None                       # a paramiko Channel, or the TLS subclass's socket
         self._buffer = b""
 
     def __enter__(self) -> "NetconfSession":

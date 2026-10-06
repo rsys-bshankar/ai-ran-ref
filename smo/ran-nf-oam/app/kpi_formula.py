@@ -11,6 +11,8 @@ A division by zero, or a counter that has no value, makes the KPI *undefined* (`
 
 import ast
 import math
+from collections.abc import Callable
+from typing import cast
 
 MAX_LENGTH = 500
 MAX_NODES = 120
@@ -23,7 +25,7 @@ class FormulaError(ValueError):
     """The formula is not acceptable (a message safe to show the caller: it names the construct, never evaluates anything)."""
 
 
-FUNCTIONS = {"min": min, "max": max, "abs": abs, "sqrt": math.sqrt, "round": round, "log10": math.log10}
+FUNCTIONS: dict[str, Callable[..., float]] = {"min": min, "max": max, "abs": abs, "sqrt": math.sqrt, "round": round, "log10": math.log10}
 _BINARY = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
 _COMPARE = (ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)
 
@@ -58,7 +60,7 @@ def parse(formula: str) -> ast.Expression:
         elif isinstance(node, ast.BinOp) and isinstance(node.op, _BINARY):
             check(node.left, depth + 1)
             check(node.right, depth + 1)
-            if isinstance(node.op, ast.Pow) and not (isinstance(node.right, ast.Constant) and abs(node.right.value) <= MAX_EXPONENT):
+            if isinstance(node.op, ast.Pow) and not (isinstance(node.right, ast.Constant) and abs(cast(float, node.right.value)) <= MAX_EXPONENT):
                 raise FormulaError(f"an exponent must be a number no larger than {MAX_EXPONENT}")
         elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
             check(node.operand, depth + 1)
@@ -136,7 +138,7 @@ def evaluate(formula: str, values: dict[str, float | None]) -> float | None:
                 left = right
             return 1.0
         if isinstance(node, ast.Call):
-            name = node.func.id
+            name = cast(ast.Name, node.func).id            # a call to anything but a plain name was refused by `check`
             if name == "ifelse":                                   # only the branch taken is evaluated: ifelse(x > 0, y / x, 0) is not undefined at 0
                 return run(node.args[1]) if run(node.args[0]) else run(node.args[2])
             try:

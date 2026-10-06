@@ -146,7 +146,7 @@ def load_cm_schema(body: CMSchemaBody, db: Session = Depends(get_session)):
     if not created:
         raise framework_error(FrameworkError.CM_SCHEMA_CONFLICT, detail=f"{ref['schemaName']}@{ref['revision']} is already loaded")
     db.commit()
-    row = db.get(CMSchemaCache, (body.schemaName, body.revision))
+    row = db.get_one(CMSchemaCache, (body.schemaName, body.revision))
     return _schema_view(row.schema_name, row.revision, row.type, row.location, row.descriptor, builtin=False)
 
 

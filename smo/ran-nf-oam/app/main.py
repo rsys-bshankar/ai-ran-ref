@@ -19,7 +19,7 @@ import json
 import os
 import time
 import uuid
-from typing import Literal
+from typing import Any, Literal, NoReturn, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from smo_shared.errors import illegal_transition_error
 from smo_shared.statemachine import IllegalTransition
 from sqlalchemy import delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from smo_shared.logconfig import install_logging
@@ -585,7 +586,7 @@ def _dispatch_blocker(db: Session, change: dict):
     me = db.get(ManagedEntity, change["managedElementRef"])
     if me is None or me.o1_adaptor_endpoint_id is None:
         return "ENDPOINT_UNREACHABLE", me, None
-    endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id)
+    endpoint = db.get_one(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id)
     # Live-computed staleness at the point health is actually consulted — the same "no scheduler exists anywhere in this
     # build" pattern as DME's producer health — rather than depending on
     # something having already called POST /o1-adaptor-endpoints/discover first.
@@ -620,7 +621,7 @@ RATE_WINDOW = datetime.timedelta(hours=1)
 SAFEGUARD_EVENT_MIN_INTERVAL = datetime.timedelta(seconds=int(os.environ.get("SAFEGUARD_EVENT_MIN_INTERVAL_SECONDS", "60") or 0))
 
 
-def _refuse(db: Session, caller: str, requested_by: str | None, error) -> None:
+def _refuse(db: Session, caller: str | None, requested_by: str | None, error) -> NoReturn:
     """AI-10.6: every refusal of an rApp by a safeguard (a kill switch, the rate, blast-radius or magnitude limit) is recorded in
     `safeguard_refusal` and announced: an event goes through the outbox to each subscriber of `/safeguard-subscriptions` that wants that code.
     The same refusal of the same rApp is announced at most once per `SAFEGUARD_EVENT_MIN_INTERVAL_SECONDS` (default 60; 0: every one) so an
@@ -711,11 +712,12 @@ def _enforce_change_limits(db: Session, body: WriteConfigRequest, caller: str | 
                 _refuse(db, caller, body.requestedBy, framework_error(FrameworkError.RAPP_MAGNITUDE_EXCEEDED, detail=(
                     f"{change['managedElementRef']} {name}: its current value cannot be checked against maxChangePercent="
                     f"{limit.max_change_percent:g} ({error or 'it is not a number'})")))
-            moved = abs(_number(new) - current)
+            target = cast(float, _number(new))              # `wanted` holds only the numeric ones
+            moved = abs(target - current)
             percent = 0.0 if moved == 0 else float("inf") if current == 0 else moved / abs(current) * 100
             if percent > limit.max_change_percent:
                 _refuse(db, caller, body.requestedBy, framework_error(FrameworkError.RAPP_MAGNITUDE_EXCEEDED, detail=(
-                    f"{change['managedElementRef']} {name}: {current:g} to {_number(new):g} is a change of "
+                    f"{change['managedElementRef']} {name}: {current:g} to {target:g} is a change of "
                     f"{'more than any' if percent == float('inf') else f'{percent:.1f}%'}; {caller} may change a value by {limit.max_change_percent:g}% at most")))
 
 
@@ -807,7 +809,7 @@ def _wave_rows(db: Session, job: WriteConfigJob, wave: int) -> list[WriteConfigS
 
 def _dispatch_wave(db: Session, job: WriteConfigJob, rows: list[WriteConfigSubChange]) -> None:
     """Dispatch the sub-changes of one wave and record each outcome on its row (and its snapshot)."""
-    changes = [{"managedElementRef": r.managed_element_ref, "managedFunctionRef": r.managed_function_ref,
+    changes: list[dict[str, Any]] = [{"managedElementRef": r.managed_element_ref, "managedFunctionRef": r.managed_function_ref,
                 "attributeChanges": r.attribute_changes, "operation": r.operation} for r in rows]
     # PR-SB-1.10: the sub-changes of one element behind a `?datastore=candidate` endpoint are one candidate transaction (lock once, every
     # edit, one commit): they all take effect or none does. A lone sub-change for an element is the same transaction of one.
@@ -945,7 +947,7 @@ def read_configuration(managed_element_ref: str, managed_function_ref: str | Non
     require_service(db, managed_element_ref, "PROV")
     me = db.get(ManagedEntity, managed_element_ref)
     endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id) if me and me.o1_adaptor_endpoint_id else None
-    if endpoint is None:
+    if me is None or endpoint is None:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"{managed_element_ref} has no registered O1 adaptor")
     client = _o1_client(me.o1_protocol, endpoint.transport)
     if client is None:
@@ -1020,7 +1022,7 @@ def purge_configuration_history(older_than_days: int | None = None, db: Session 
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
                               detail="older_than_days is required (and positive) unless RAN_NF_OAM_CM_SNAPSHOT_RETENTION_DAYS is set")
     cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
-    deleted = db.execute(delete(CMSnapshot).where(CMSnapshot.created_at < cutoff)).rowcount
+    deleted = cast(CursorResult, db.execute(delete(CMSnapshot).where(CMSnapshot.created_at < cutoff))).rowcount
     db.commit()
     return {"deleted": deleted, "olderThan": cutoff.isoformat()}
 
@@ -1083,8 +1085,8 @@ def _changed_since(db: Session, expected: dict) -> list[dict]:
     for (element, function), want in expected.items():
         me = db.get(ManagedEntity, element)
         endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id) if me and me.o1_adaptor_endpoint_id else None
-        client = _o1_client(me.o1_protocol, endpoint.transport) if endpoint is not None else None
-        if client is None:
+        client = _o1_client(me.o1_protocol, endpoint.transport) if me is not None and endpoint is not None else None
+        if endpoint is None or client is None:
             found.append({"managedElementRef": element, "managedFunctionRef": function, "attribute": None, "expected": want, "actual": None,
                           "error": "the element has no reachable O1 adaptor to read"})
             continue
@@ -1215,8 +1217,8 @@ def run_due_kpi_guards(db: Session, now: datetime.datetime | None = None) -> lis
         WriteConfigJob.kpi_guard.is_not(None), WriteConfigJob.kpi_guard_checked_at.is_(None),
         WriteConfigJob.status.in_([JobState.COMPLETED, JobState.PARTIAL_SUCCESS])).order_by(WriteConfigJob.created_at)).all()
     for job_id in ids:
-        job = db.get(WriteConfigJob, job_id)
-        guard = job.kpi_guard
+        job = db.get_one(WriteConfigJob, job_id)
+        guard = cast(dict, job.kpi_guard)                          # selected above as not null
         anchor = as_utc(job.schema_validated_at) if job.schema_validated_at else as_utc(job.created_at)
         window_ends = anchor + datetime.timedelta(minutes=guard["observationMinutes"])
         if now < window_ends:
@@ -1235,7 +1237,7 @@ def run_due_kpi_guards(db: Session, now: datetime.datetime | None = None) -> lis
             db.rollback()
             result = {"verdict": "ERROR", "reverted": False, "error": f"{type(exc).__name__}: {exc}"[:500]}
         final = result["verdict"] in ("OK", "REGRESSED") or (now >= window_ends + datetime.timedelta(minutes=KPI_GUARD_GRACE_MINUTES))
-        job = db.get(WriteConfigJob, job_id)
+        job = db.get_one(WriteConfigJob, job_id)
         job.kpi_guard_result = {**result, "checkedAt": now.isoformat()}
         job.kpi_guard_checked_at = now if final else None
         db.commit()
@@ -1486,7 +1488,7 @@ def kill_rapp(invoker_id_: str, body: RAppKillRequest, db: Session = Depends(get
     else:
         row.reason, row.killed_by = body.reason, body.requestedBy
     db.commit()
-    return _kill_view(db.get(RAppKill, invoker_id_))
+    return _kill_view(db.get_one(RAppKill, invoker_id_))
 
 
 @app.get("/rapp-kill")
@@ -1575,7 +1577,7 @@ SAFEGUARD_REFUSAL_RETENTION_DAYS = int(os.environ.get("SAFEGUARD_REFUSAL_RETENTI
 def purge_safeguard_refusals(db: Session, older_than_days: int) -> int:
     """Delete the refusal records older than `older_than_days` days; returns how many. Subscriptions are not touched."""
     cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=older_than_days)
-    deleted = db.execute(delete(SafeguardRefusal).where(SafeguardRefusal.occurred_at < cutoff)).rowcount
+    deleted = cast(CursorResult, db.execute(delete(SafeguardRefusal).where(SafeguardRefusal.occurred_at < cutoff))).rowcount
     db.commit()
     return deleted
 
@@ -1719,7 +1721,7 @@ def run_due_kpi_schedules(db: Session, now: datetime.datetime | None = None) -> 
     now = now or datetime.datetime.now(datetime.UTC)
     ran = []
     for schedule_id in db.scalars(select(KpiSchedule.schedule_id).where(KpiSchedule.enabled.is_(True)).order_by(KpiSchedule.schedule_id)).all():
-        row = db.get(KpiSchedule, schedule_id)
+        row = db.get_one(KpiSchedule, schedule_id)
         last = as_utc(row.last_run_at) if row.last_run_at else None
         if last and last + datetime.timedelta(seconds=row.interval_seconds) > now:
             continue
@@ -1736,7 +1738,7 @@ def run_due_kpi_schedules(db: Session, now: datetime.datetime | None = None) -> 
         except Exception as exc:                             # noqa: BLE001 (one schedule must not stop the others)
             db.rollback()
             status, detail = "ERROR", f"{type(exc).__name__}: {exc}"[:500]
-        row = db.get(KpiSchedule, schedule_id)
+        row = db.get_one(KpiSchedule, schedule_id)
         row.last_run_at, row.last_status, row.last_detail = now, status, detail
         db.commit()
         ran.append({"scheduleId": schedule_id, "status": status, "detail": detail})
@@ -1944,7 +1946,7 @@ def _fan_out_to_dme(managed_element_ref: str, counter_type: str, measurements: l
     jobs = r1.get("/dme/data-jobs", params={"dme_type_id": dme_type["dmeTypeId"], "limit": 500}).json()["items"] if dme_type else []
     delivered = 0
     for m in measurements:
-        payload = {"managedElementRef": managed_element_ref, "cellId": m.cellId, "counter": counter_type,
+        payload: dict[str, Any] = {"managedElementRef": managed_element_ref, "cellId": m.cellId, "counter": counter_type,
                    "value": m.value, "timestamp": m.timestamp.isoformat()}
         if m.values is not None:
             payload["values"] = m.values
