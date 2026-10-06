@@ -98,6 +98,7 @@
   "SME_URL": "Address of SME: where R1 Termination forwards `/sme/...`, the base of SME's own token-endpoint audience, and (GUI backend) an optional override of the token endpoint otherwise discovered from `/bootstrap`.",
   "SMO_BUILD_SHA": "Git commit of the build, baked into the image (`SMO_BUILD_SHA` build argument; compose reads it from your environment). Answered by `GET /version` and shown in the GUI. `unknown` when not given.",
   "SMO_BUILT_AT": "UTC time of the build (ISO 8601), baked into the image like `SMO_BUILD_SHA` and answered by `GET /version`. `unknown` when not given.",
+  "SMO_BUSINESS_METRICS_TTL_SECONDS": "How long, in seconds, the scrape-time state gauges (rApp packages and instances, intents, outbox rows) are cached before the database is queried again. Keeps a busy Prometheus from querying on every scrape.",
   "SMO_DATABASE_PASSWORD": "Password put into `SMO_DATABASE_URL` when the URL has none. Compose and the chart mount it as a file instead (`SMO_DATABASE_PASSWORD_FILE`, from `db_password*`). Set only one of the two.",
   "SMO_DATABASE_PASSWORD_FILE": "File holding the database password (a Compose secret or Kubernetes Secret volume); a trailing newline is removed. The `*_FILE` form of `SMO_DATABASE_PASSWORD`.",
   "SMO_DATABASE_URL": "SQLAlchemy URL of the shared PostgreSQL database every module uses (without the password when the file form is used). Empty under pytest: SQLite in memory; empty otherwise: the module refuses to start.",
@@ -132,6 +133,7 @@
   "SMO_VERSION": "Release version of the build (for example `0.5.0`), baked into the image (`SMO_VERSION` build argument). Answered by `GET /version` and shown in the GUI. `unknown` when not given.",
   "SMO_WORKER_FAILURE_BACKOFF_SECONDS": "Seconds a worker waits before running a task again after it failed (default 30), so a broken task does not spin.",
   "SMO_WORKER_HEARTBEAT_FILE": "File a worker touches on every tick (default `/tmp/worker-heartbeat`); the container health check reports unhealthy when it is a minute old. Change it only with the health check.",
+  "SMO_WORKER_METRICS_PORT": "Port on which a module's worker process serves its own /metrics (task runs and last success per task). Unset by default: the worker serves no metrics port.",
   "SMO_WORKER_TICK_SECONDS": "Seconds between a worker's checks for due tasks (default 5). A task's own interval cannot be shorter than this.",
   "SO_SMOS_URL": "Base URL R1 Termination forwards `/so-smos/...` to (service orchestration).",
   "TRAFFIC_STEERING_RAPP_URL": "Base URL R1 Termination forwards `/traffic-steering-rapp/...` to."
