@@ -31,9 +31,11 @@ def no_unhandled_server_error(ctx, response, case):
     if response.status_code < 500:
         return
     try:
-        problem = response.json().get("detail")
+        body = response.json()
     except ValueError:
-        problem = None
+        body = None
+    # A ProblemDetails is either the whole body (R1 Termination's own answers) or the `detail` of a FastAPI error.
+    problem = body.get("detail") if isinstance(body, dict) and isinstance(body.get("detail"), dict) else body
     if response.status_code in (502, 503) and isinstance(problem, dict) and problem.get("title"):
         return
     raise AssertionError(f"unhandled {response.status_code}: {response.text[:200]}")

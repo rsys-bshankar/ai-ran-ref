@@ -18,6 +18,7 @@ users authenticate to the BFF, the BFF authenticates to the SMO.
 import asyncio
 import os
 import secrets
+import ssl
 import time
 from contextlib import suppress
 
@@ -38,6 +39,21 @@ def _enrollment_secret() -> str | None:
     return value or None
 
 
+def _mtls_client_args() -> dict:
+    """PR-SEC-2: with `SMO_MTLS=on`, the client certificate and the CA of this backend (`SMO_MTLS_CERT_FILE`, `_KEY_FILE`, `_CA_FILE`, default
+    /run/mtls/tls.crt, tls.key, ca.crt) for every call to R1 and SME. Read once at start (a renewed certificate takes a restart of this one pod). The files
+    must load: with mTLS on and no certificate this fails at start rather than calling without one."""
+    if os.environ.get("SMO_MTLS", "off").strip().lower() not in ("on", "1", "true", "yes", "require"):
+        return {}
+    cert = os.environ.get("SMO_MTLS_CERT_FILE") or "/run/mtls/tls.crt"
+    key = os.environ.get("SMO_MTLS_KEY_FILE") or "/run/mtls/tls.key"
+    ca = os.environ.get("SMO_MTLS_CA_FILE") or "/run/mtls/ca.crt"
+    context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=ca)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_cert_chain(cert, key)
+    return {"verify": context}
+
+
 _EXPIRY_MARGIN_SECONDS = 30
 
 
@@ -51,7 +67,7 @@ class R1Gateway:
         self.r1_url = r1_url.rstrip("/")
         self._sme_url_override = sme_url
         self._db = db
-        self._client = httpx.AsyncClient(timeout=timeout, transport=transport)
+        self._client = httpx.AsyncClient(timeout=timeout, transport=transport, **_mtls_client_args())
         self._token: str | None = None
         self._token_expires_at = 0.0
         self._token_endpoint: str | None = None

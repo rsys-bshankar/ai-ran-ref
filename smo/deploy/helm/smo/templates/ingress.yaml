@@ -1,5 +1,10 @@
 {{- if .Values.ingress.enabled }}
 {{- $labels := include "smo.labels" (dict "root" .) }}
+{{- /* PR-SEC-2: with mutual TLS the gateway speaks HTTPS and wants a client certificate: ingress-nginx is told to, when `mtls.ingressClientSecret` names one */}}
+{{- $r1Mtls := dict }}
+{{- if and .Values.mtls.enabled .Values.mtls.ingressClientSecret }}
+{{- $r1Mtls = dict "nginx.ingress.kubernetes.io/backend-protocol" "HTTPS" "nginx.ingress.kubernetes.io/proxy-ssl-secret" .Values.mtls.ingressClientSecret "nginx.ingress.kubernetes.io/proxy-ssl-verify" "on" "nginx.ingress.kubernetes.io/proxy-ssl-name" "r1-termination" }}
+{{- end }}
 {{- range $key, $target := dict "gui" (dict "service" "gui" "port" 8080) "r1" (dict "service" "r1-termination" "port" 8000) }}
 {{- $cfg := get $.Values.ingress $key }}
 {{- if $cfg.host }}
@@ -10,7 +15,8 @@ metadata:
   name: {{ $key }}
   labels:
     {{- $labels | nindent 4 }}
-  {{- with $.Values.ingress.annotations }}
+  {{- $annotations := ternary (merge (dict) $r1Mtls $.Values.ingress.annotations) $.Values.ingress.annotations (eq $key "r1") }}
+  {{- with $annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -47,7 +53,7 @@ metadata:
   labels:
     {{- $labels | nindent 4 }}
   annotations:
-    {{- toYaml (merge (dict "nginx.ingress.kubernetes.io/whitelist-source-range" (join "," .bootstrapAllowedSourceRanges)) $.Values.ingress.annotations) | nindent 4 }}
+    {{- toYaml (merge (dict "nginx.ingress.kubernetes.io/whitelist-source-range" (join "," .bootstrapAllowedSourceRanges)) $r1Mtls $.Values.ingress.annotations) | nindent 4 }}
 spec:
   {{- with $.Values.ingress.className }}
   ingressClassName: {{ . }}

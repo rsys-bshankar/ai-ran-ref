@@ -115,6 +115,30 @@ placement:
   mode: soft
   zoneKey: ""
 
+# PR-SEC-2: mutual TLS between the services. Off by default: nothing below changes while `enabled` is false. When true every `service` module serves HTTPS
+# on its port and refuses a client without a certificate from the CA, and every call between modules presents the module's own certificate and verifies the
+# CA (smo_shared/mtls.py). Each module mounts the Secret `<module><secretSuffix>` (keys tls.crt, tls.key, ca.crt: what cert-manager writes) at /run/mtls.
+# The probes of such a module become `python -m smo_shared.mtls probe` (an exec probe: the kubelet's httpGet cannot present a certificate). Not part of it:
+# `mock-o1-adaptor` (a stand-in for a network function, plain HTTP: `mtls: "off"`), `gui` (nginx) and the GUI backend (`mtls: client`: it calls R1 with a
+# certificate and serves the GUI's nginx plain HTTP). Postgres TLS (`postgres.external.sslmode: verify-full`) is separate and still open (PR-SEC-2.4).
+#   certManager.enabled: true   the chart makes the Certificates (and, with createCA, a self-signed CA chain: Issuer -> CA Certificate -> CA Issuer);
+#                               needs cert-manager's CRDs. With createCA: false, name your own Issuer or ClusterIssuer in issuerRef.
+#   certManager.enabled: false  you create the Secrets, one per module (names: `<module><secretSuffix>`), from your own CA or from scripts/mtls_certs.py
+#                               (deploy/helm/smo/README.md, "Mutual TLS between the services"). A module whose Secret is missing does not start.
+# ingress.r1 reaches the gateway over HTTPS then: `ingressClientSecret` ("<namespace>/<name>" of a kubernetes.io/tls Secret with a client certificate and ca.crt)
+# adds the ingress-nginx annotations backend-protocol HTTPS and proxy-ssl-secret / proxy-ssl-verify; empty: the ingress is left as it is (and cannot reach the gateway).
+mtls:
+  enabled: false
+  secretSuffix: "-mtls"
+  ingressClientSecret: ""
+  certManager:
+    enabled: false
+    createCA: true
+    issuerRef: { name: "", kind: Issuer, group: cert-manager.io }
+    duration: 2160h              # 90 days
+    renewBefore: 720h            # 30 days
+    caDuration: 87600h           # 10 years (createCA only)
+
 # Per-module PodDisruptionBudget and HorizontalPodAutoscaler templates, off until a module runs more than one replica (PR-HA).
 podDisruptionBudget:
   enabled: false
@@ -198,6 +222,7 @@ moduleDefaults:
   database: true             # gets the database URL and password
   databaseRole: ""            # connects as smo_<this> with its own password instead of as the owner (databaseRoles above); a schema of its own must exist
   enrollment: true           # presents the enrollment secret to SME, so it is recorded as an SMO module
+  mtls: server               # with mtls.enabled: server (serves mTLS and calls with a certificate), client (calls with one, serves plain HTTP), off (not part of it)
   env: {}
   podSecurityContext: null   # replaces the pod-wide one for this module
   persistence: null          # {mountPath: /srv/packages, size: 5Gi}
@@ -216,7 +241,7 @@ modules:
   ran-nf-oam: { image: ran-nf-oam, databaseRole: ran-nf-oam, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   # the same image as a worker: the periodic work of RAN NF OAM (PR-MSG-4). Run more than one if you like.
   ran-nf-oam-worker: { image: ran-nf-oam, databaseRole: ran-nf-oam, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
-  mock-o1-adaptor: { image: mock-o1-adaptor, database: false, enrollment: false }
+  mock-o1-adaptor: { image: mock-o1-adaptor, database: false, enrollment: false, mtls: "off" }
   nfo: { image: nfo, databaseRole: nfo, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   focom: { image: focom, databaseRole: focom }
   mlmr: { image: mlmr, databaseRole: mlmr }
@@ -237,10 +262,11 @@ modules:
     image: gui-bff
     kind: static
     database: false
+    mtls: client
     persistence: { mountPath: /data, size: 1Gi }
     env:
       R1_URL: "http://r1-termination:8000"
       GUI_DATABASE_URL: "sqlite:////data/gui-bff.db"
       GUI_INITIAL_PASSWORD_FILE: "/data/initial-admin-password"
   # nginx runs as the image's own user (101), so the pod does not force the SMO images' uid
-  gui: { image: gui, kind: static, port: 8080, database: false, enrollment: false, podSecurityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } } }
+  gui: { image: gui, kind: static, port: 8080, database: false, enrollment: false, mtls: "off", podSecurityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } } }

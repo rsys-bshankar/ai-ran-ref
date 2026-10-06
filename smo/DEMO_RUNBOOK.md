@@ -13,6 +13,12 @@ and the four `demo.py` scripts (§24–§27) through the in-process mesh on
 every CI run, and the `compose-e2e` job replays the same test file against
 a live `docker compose up` stack (`SMO_E2E_LIVE=1`, `tests_integration/live.py`).
 
+With mutual TLS between the services on (`docker-compose.mtls.yml`, `PR-SEC-2`) the commands below need `https://` and a client
+certificate (`scripts/mtls_certs.py client NAME`; `curl --cacert certs/mtls/ca/ca.crt --cert ... --key ...`), the snippets that
+call a service by name from inside a container need `verify=` and `cert=` (or `smo_shared.mtls.client_kwargs()`), and a notification
+destination inside the stack (`so-smos`, `sa-smos`, the intent-handling steps) is written `https://` instead of `http://`. The
+CI job `compose-mtls` replays the test file that way, which is the supported route; receivers outside the stack stay plain HTTP.
+
 Sections §6–§22 are optional and independent of the rApp instance,
 except where a step says it reuses an id from an earlier step. There is no
 §9.

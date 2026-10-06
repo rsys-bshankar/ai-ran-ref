@@ -28,6 +28,9 @@ sends it when `SMO_BOOTSTRAP_KEY[_FILE]` is set (the SDK and the sample rApps re
 SMO_INVOKER_ID / SMO_INVOKER_SECRET pin a pre-provisioned invoker instead
 of onboarding a fresh one at first use.
 
+PR-SEC-2: with `SMO_MTLS=on` every call below presents this module's client certificate and verifies the server against the CA
+(`smo_shared/mtls.py`); the gateway and the token endpoint it advertises are `https://` then.
+
 PR-SEC-14, who the caller is: an SMO module presents the enrollment secret
 (`SMO_ENROLLMENT_SECRET[_FILE]`, a compose secret) when it registers and asks for
 the `smo-internal` scope; SME records the invoker as `internal`. A process that
@@ -48,12 +51,12 @@ import httpx
 from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from .correlation import get_correlation_id
 from .invoker import ON_BEHALF_OF_HEADER, get_originator
-from . import metrics, tracing
+from . import metrics, mtls, tracing
 from .roles import BOOTSTRAP_KEY_HEADER, ENROLLMENT_HEADER, RAPP_SCOPE
 from .secretfile import read_secret
 from .timeouts import call_timeout
 
-R1_GATEWAY_URL = os.environ.get("R1_GATEWAY_URL", "http://r1-termination:8000")
+R1_GATEWAY_URL = mtls.http_url(os.environ.get("R1_GATEWAY_URL", "http://r1-termination:8000"))   # PR-SEC-2: https:// when SMO_MTLS=on
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +87,7 @@ class _ModuleIdentity:
         if self.token_endpoint is None:
             # PR-SEC-9.3: a gateway that sets R1_BOOTSTRAP_KEY asks for it here; unset (the default) nothing is sent
             key = read_secret("SMO_BOOTSTRAP_KEY")
-            resp = httpx.get(f"{base_url}/bootstrap", headers={BOOTSTRAP_KEY_HEADER: key} if key else None, timeout=5.0)
+            resp = httpx.get(f"{base_url}/bootstrap", headers={BOOTSTRAP_KEY_HEADER: key} if key else None, timeout=5.0, **mtls.client_kwargs(base_url))
             resp.raise_for_status()
             uris = [(ep.get("tokenEndPoint") or {}).get("uri") for ep in resp.json().get("apiEndpoints", [])]
             self.token_endpoint = next(u for u in uris if u)
@@ -109,7 +112,7 @@ class _ModuleIdentity:
         enrollment = read_secret("SMO_ENROLLMENT_SECRET") if kind == "module" else None
         if enrollment:
             headers[ENROLLMENT_HEADER] = enrollment
-        resp = httpx.post(f"{sme}/invoker-registrations", json={"apiInvokerPublicKey": label}, headers=headers, timeout=5.0)
+        resp = httpx.post(f"{sme}/invoker-registrations", json={"apiInvokerPublicKey": label}, headers=headers, timeout=5.0, **mtls.client_kwargs(sme))
         resp.raise_for_status()
         body = resp.json()
         return body["apiInvokerId"], body["onboardingSecret"]
@@ -151,7 +154,7 @@ class _ModuleIdentity:
     def _offboard(token_endpoint: str, invoker_id: str) -> None:
         sme = token_endpoint.rsplit("/oauth2/token", 1)[0]
         try:
-            httpx.delete(f"{sme}/invoker-registrations/{invoker_id}", timeout=5.0)
+            httpx.delete(f"{sme}/invoker-registrations/{invoker_id}", timeout=5.0, **mtls.client_kwargs(sme))
         except httpx.HTTPError as exc:  # an orphan registration is only clutter; SME's stale-invoker purge removes it
             log.warning("could not offboard the duplicate invoker %s: %r", invoker_id, exc)
 
@@ -159,7 +162,7 @@ class _ModuleIdentity:
         return httpx.post(token_endpoint, json={
             "grant_type": "client_credentials", "client_id": self.invoker_id,
             "client_secret": self.invoker_secret, "scope": RAPP_SCOPE if identity_kind() == "rapp" else "smo-internal",
-        }, timeout=5.0)
+        }, timeout=5.0, **mtls.client_kwargs(token_endpoint))
 
     def token_for(self, base_url: str, refresh: bool = False) -> str | None:
         with self.lock:
@@ -246,6 +249,8 @@ class R1Client:
         # authorization and correlation headers; the client's own win on a clash.
         extra = kwargs.pop("headers", None) or {}
         kwargs.setdefault("timeout", call_timeout())   # never httpx's implicit 5 s (timeouts.py)
+        for name, value in mtls.client_kwargs(self.base_url).items():   # PR-SEC-2: this module's client certificate and the CA, when SMO_MTLS=on
+            kwargs.setdefault(name, value)
         resp = self._call(send, method, path, {**extra, **self._headers()}, **kwargs)
         if resp.status_code == 401 and self._bearer_token is None:
             # expired or revoked at SME since it was cached: one fresh token, one retry

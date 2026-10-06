@@ -15,12 +15,13 @@ import hashlib
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from smo_shared import mtls
 
 router = APIRouter()
 
 SIM_PRODUCER_ID = "energy-saving-dt-producer"
 SIM_TYPE = {"namespace": "RAN", "name": "PRB_UTILIZATION_SIM", "version": "1.0.0", "typeName": "RAN.PRB_UTILIZATION_SIM"}
-SELF_URL = "http://energy-saving-rapp:8000"
+SELF_URL = mtls.http_url("http://energy-saving-rapp:8000")   # https:// with SMO_MTLS=on (PR-SEC-2): the address DME calls back
 
 # (hour, PRB %) — linear in between: idle 00–04, busy 07–21
 _PROFILE = [(0, 2.5), (4, 2.5), (5, 4.0), (6, 12.0), (7, 30.0), (12, 50.0), (18, 60.0), (21, 30.0),

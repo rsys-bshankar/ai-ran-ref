@@ -6,6 +6,7 @@ import uuid
 from typing import Any
 
 from pydantic import BaseModel
+from smo_shared import mtls
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -28,7 +29,7 @@ SEEDED_RESOURCE_TYPES = {
 
 # O2IMS infrastructureManagementServicesEndPoint / smoRegistrationService
 IMS_ENDPOINT = os.environ.get("FOCOM_IMS_ENDPOINT", "/focom")
-SMO_REGISTRATION_SERVICE = os.environ.get("FOCOM_SMO_REGISTRATION_SERVICE", "http://r1-termination:8000")
+SMO_REGISTRATION_SERVICE = mtls.http_url(os.environ.get("FOCOM_SMO_REGISTRATION_SERVICE", "http://r1-termination:8000"))
 
 
 def auto_register_resource_types() -> bool:

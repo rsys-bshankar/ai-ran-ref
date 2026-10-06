@@ -121,6 +121,13 @@ deployment that should be reachable over TLS only. The services behind the edge 
 `/bootstrap` still advertises their `http://` addresses (`PR-SEC-1.6`). The GUI's session cookie is `Secure` by default
 (`GUI_COOKIE_SECURE`), so it is only sent over the HTTPS door; set it to `false` only for plain-HTTP development.
 
+Mutual TLS between the services (opt in, `PR-SEC-2`): `scripts/mtls_certs.py init` makes a development CA and one certificate per service
+(`smo/certs/mtls/`, git-ignored) and `docker compose -f docker-compose.yml -f docker-compose.mtls.yml up -d --build` starts the stack with every
+service serving HTTPS and refusing a client that has no certificate from that CA; every call a module makes presents its own. Off unless you
+use the second file. A host client needs a certificate too (`scripts/mtls_certs.py client NAME`). What it covers, what it does not (the GUI's
+nginx and `mock-o1-adaptor` stay plain HTTP, Postgres TLS is `PR-SEC-2.4`), the health checks and the rotation: `docs/ARCHITECTURE.md`, "Mutual
+TLS between services"; on a cluster: `deploy/helm/smo/README.md`.
+
 Slow statements: Postgres logs any statement slower than `POSTGRES_SLOW_QUERY_MS` (default 500 ms, set in `.env`; `-1` turns
 it off) with its duration and text: `docker compose logs postgres | grep duration`.
 

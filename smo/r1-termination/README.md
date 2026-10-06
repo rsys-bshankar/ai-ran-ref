@@ -149,6 +149,7 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 | `<NAME>_URL` per route | see the route table | Backend base URL for that prefix. `DME_URL` serves three prefixes. |
 | `R1_UPSTREAM_TIMEOUT_SECONDS` | `60` | How long the gateway waits for the backend it proxies to |
 | `R1_PUBLIC_BASE_URL` | unset | The origin consumers outside the compose network reach the gateway by (`https://localhost:8443` behind the TLS edge): `/bootstrap` advertises it instead of SME's compose address (PR-SEC-1.6). Validated at start |
+| `SMO_MTLS` (and `SMO_MTLS_CERT_FILE`, `_KEY_FILE`, `_CA_FILE`) | off | PR-SEC-2: with `on` the gateway serves HTTPS and refuses a client without a certificate from the CA (so a rApp outside the stack needs one: `scripts/mtls_certs.py client NAME`, or an edge that holds one), and its proxying to every backend and its token introspection at SME present its own certificate; the routes above become `https://`. The token check is unchanged. `docs/ARCHITECTURE.md`, "Mutual TLS between services" |
 | `R1_MAX_BODY_BYTES` | `1048576` | Largest request body any route accepts (413 over it) |
 | `R1_MAX_BODY_OVERRIDES` | `/mlmr/models/*/artifact=52428800` | `<path-pattern>=<bytes>,...` caps that replace the default for matching paths (`*` matches anything); the default is the model artifact upload, 50 MiB like the GUI's nginx. Setting it replaces this default |
 | `R1_RATE_PER_SECOND` | `100` | Requests a second each caller (invoker id) may sustain; `0` turns the limiter off |
@@ -202,6 +203,7 @@ cd smo/r1-termination && PYTHONPATH=.:../shared python -m pytest tests/ -q
 |---|---|---|
 | `tests/test_bootstrap_key_and_shared_limiter.py` | The bootstrap key (open by default; 401 without or with a wrong key, nothing revealed in the refusal; constant-time compare; from the environment or a file, never both; the declared optional header and 401) and the shared limiter at the gateway (default store is in-process; `postgres` builds the shared limiter, a bad value stops the service; 429 and the bucket row; a second replica over the same database sees the spent budget; a database error does not refuse and is logged; unauthenticated requests spend nothing) | 11 |
 | `tests/test_main.py` | Bootstrap content and its no-auth rule; route table covers every module; unknown prefix 404; proxy to the right backend; 401 for missing/non-bearer/inactive token; fail-closed when SME is unreachable; method, body and query forwarding; `Host` stripped, other headers kept; correlation id generated or kept; `traceparent` / `tracestate` forwarded when valid, dropped when not; upstream error status passthrough; bare-prefix path; `/dme-push` and `/dme-pull` routing; local `/health` | 20 |
+| `tests/test_mtls_routes.py` | PR-SEC-2: off, every backend address is plain `http://`; `SMO_MTLS=on`: every backend and the advertised token endpoint are `https://`, an operator-set `http://` address is upgraded and an `https://` one is left alone (each case imports the gateway in a fresh interpreter) | 3 |
 
 ### 3.3 What is not covered here
 

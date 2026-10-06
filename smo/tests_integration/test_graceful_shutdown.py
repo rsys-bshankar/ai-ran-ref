@@ -66,7 +66,7 @@ def service(tmp_path):
     def start(workers: int, grace_seconds: int):
         port = free_port()
         command = dockerfile_command().replace("--port 8000", f"--port {port}").replace("0.0.0.0", "127.0.0.1")
-        env = {**os.environ, "PYTHONPATH": str(tmp_path), "UVICORN_WORKERS": str(workers),
+        env = {**os.environ, "PYTHONPATH": f"{tmp_path}{os.pathsep}{SMO_ROOT / 'shared'}", "UVICORN_WORKERS": str(workers),
                "UVICORN_GRACEFUL_SHUTDOWN_SECONDS": str(grace_seconds)}
         process = subprocess.Popen(["sh", "-c", command], cwd=tmp_path, env=env,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -145,7 +145,8 @@ def test_the_drain_is_bounded_by_the_graceful_shutdown_setting(service):
 
 def test_the_dockerfile_command_reads_its_settings_from_the_environment_and_execs_uvicorn():
     command = dockerfile_command()
-    assert command.startswith("exec uvicorn app.main:app")
+    # PR-SEC-2: the only thing ahead of `exec uvicorn` is the mTLS options (and an exit when they cannot be made); uvicorn must still be PID 1
+    assert command.startswith("tls=$(python -m smo_shared.mtls uvicorn-args) || exit 1; exec uvicorn app.main:app") and command.count("exec ") == 1
     assert "--workers ${UVICORN_WORKERS}" in command and "--timeout-graceful-shutdown ${UVICORN_GRACEFUL_SHUTDOWN_SECONDS}" in command
     text = (SMO_ROOT / "Dockerfile").read_text()
     assert re.search(r"UVICORN_WORKERS=1", text) and re.search(r"UVICORN_GRACEFUL_SHUTDOWN_SECONDS=\d+", text)

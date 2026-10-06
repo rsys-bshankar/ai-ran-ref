@@ -9,7 +9,7 @@
 | Depends on (over R1) | `R1Client` calls R1 Termination (`/bootstrap`) and SME (`/invoker-registrations`, `/oauth2/token`) for its own token; no other module |
 | Called by | Every backend module (imports); the SDK (`sdk/`) and the four sample rApps via `R1Client`. Not imported by `gui-bff` |
 | Database tables | None. Provides `Base`, the engine and sessions that modules' `models.py` use |
-| Unit tests | 359 passed (`tests/`; 62 more are skipped without `SMO_TEST_POSTGRES_URL`) |
+| Unit tests | 392 passed (`tests/`; 62 more are skipped without `SMO_TEST_POSTGRES_URL`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -89,6 +89,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | `smo_shared/correlation.py` | `apply_correlation_id()`, `get_correlation_id()`, `HEADER_NAME` |
 | `smo_shared/tracing.py` | W3C `traceparent` / `tracestate` parsing and propagation (a context variable, stdlib only), `get_trace_id()`, `inject_headers()`, the optional OpenTelemetry layer (`configure_tracing()`, `span()`: SERVER span per request, CLIENT span per `R1Client` call, OTLP/HTTP export, `SMO_OTEL_ENDPOINT`, `SMO_OTEL_SAMPLE_RATIO`); the SDK is the `tracing` extra of `pyproject.toml` and `requirements/tracing.txt`; FastAPI's own native server span is switched off so a request has one |
 | `smo_shared/invoker.py` | `INVOKER_ID_HEADER` (`X-R1-Invoker-Id`), `ON_BEHALF_OF_HEADER` (`X-R1-On-Behalf-Of`), `invoker_id(request)` (the rApp an internal module is acting for, else the caller's own id), `get_originator()` and `apply_invoker_context(app)` (installed by `apply_correlation_id`, so every service has it); `R1Client` adds the header to onward calls |
+| `smo_shared/mtls.py` | Mutual TLS between services, opt in by `SMO_MTLS=on` (PR-SEC-2): `enabled()`, `serving()`, `http_url()`, `client_kwargs()` (the `httpx` `verify` context with the module's certificate and the CA, rebuilt when a file changes), `webhook_kwargs()` (the certificate only for an `https://` destination inside the deployment), `uvicorn_args()` (certfile, keyfile, CA, `CERT_REQUIRED`; raises when a file is missing so the image does not start plain), `probe()`; `python -m smo_shared.mtls uvicorn-args|probe` |
 | `smo_shared/webhook.py` | `post_webhook`, `get_webhook`, `delete_webhook`, `is_safe_webhook_destination` |
 | `smo_shared/r1_client.py` | `R1Client` (a caller's own `headers=` are merged with the authorization and correlation headers; the client's win), `R1_GATEWAY_URL`, per-process `_ModuleIdentity` token cache |
 | `smo_shared/openapi_security.py` | `apply_r1_gateway_security()`, `BEARER_SCHEME_NAME`, `R1_CONTRACT_VERSION` |
@@ -269,7 +270,11 @@ No background tasks.
 | `READY_CHECK_TIMEOUT_SECONDS` | 3 | `health.py`: the longest a readiness check may take |
 | `LOG_LEVEL` | `INFO` | `logconfig.py`: DEBUG, INFO, WARNING, ERROR or CRITICAL |
 | `SMO_HTTP_TIMEOUT_SECONDS`, `R1_UPSTREAM_TIMEOUT_SECONDS`, `R1_INTROSPECT_TIMEOUT_SECONDS` | 30, 60, 5 | `timeouts.py` (the last two are R1 Termination's) |
-| `R1_GATEWAY_URL` | `http://r1-termination:8000` | `r1_client.py` |
+| `R1_GATEWAY_URL` | `http://r1-termination:8000` (`https://` with `SMO_MTLS=on`) | `r1_client.py` |
+| `SMO_MTLS` | `off`; `on` makes the service require a client certificate and every internal call present one | `mtls.py` |
+| `SMO_MTLS_SERVE` | `on`; `off` keeps this process serving plain HTTP while its calls still use the certificate (the GUI backend) | `mtls.py` |
+| `SMO_MTLS_CERT_FILE`, `SMO_MTLS_KEY_FILE`, `SMO_MTLS_CA_FILE` | `/run/mtls/tls.crt`, `tls.key`, `ca.crt` | `mtls.py`: with mTLS on, a missing or empty file stops the process |
+| `SMO_MTLS_INTERNAL_HOSTS` | unset; fnmatch patterns of hosts inside the deployment, besides single-label names and `*.svc`, `*.svc.cluster.local` | `mtls.py`, `webhook.py`: which callbacks carry the certificate |
 | `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset: the module's shared identity from `module_identity`, registered on first use | `r1_client.py` |
 | `SMO_MODULE_IDENTITY_STORE` | `db`; `off` gives each process its own invoker | `r1_client.py` |
 | `MODULE` | `unknown` (set by the root `Dockerfile` build arg) | `r1_client.py`, label of the onboarded invoker |
@@ -316,6 +321,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 | `tests/test_correlation.py` | Id generated when the caller sends none; caller's id propagated and echoed; `get_correlation_id()` is `None` outside a request; two requests get distinct ids | 4 |
 | `tests/test_tracing.py` | `traceparent` parsing (invalid forms ignored); a `traceparent` and `tracestate` surviving an in-process `R1Client` hop with spans off; none in, none out; the trace id in the JSON log line; with the SDK (skipped without it) the span tree across the hop, a new trace for a request without one, a 5xx as an error span | 19 |
 | `tests/test_r1_client.py` | A caller's own headers ride along and survive the 401 retry, the client's authorization wins; token obtained "the rApp way" (bootstrap, onboarding, client credentials) and attached; token cached across clients and calls; revoked token refreshed once with the same invoker; explicit bearer used as is; SME down means call sent unauthenticated, not raised; correlation header absent outside a request and propagated inside one | 7 |
+| `tests/test_mtls.py` | Off changes nothing (addresses, client arguments, uvicorn options); only an explicit `on` turns it on; internal addresses upgraded to `https://`; the server options require a client certificate and name the files; a client-only process serves plain HTTP; fail closed on a missing, empty or mismatched file (also the `uvicorn-args` exit status); the client context is cached and rebuilt when a file changes; which callback hosts are internal; a callback carries the certificate only to an https internal destination; certificate expiry from a file or a CA bundle; the expiry metric only with mTLS on; a real uvicorn started from the printed options answers a client with a certificate and refuses one with none, one from another CA, and plain HTTP; `R1Client` against it, and refused with another PKI; the exec probe | 33 |
 | `tests/test_webhook.py` | Allowed destinations (http/https, ordinary and private-range hosts); rejected ones (bad scheme, loopback, link-local/metadata, multicast, unspecified, malformed; parametrized); `post_webhook`/`get_webhook`/`delete_webhook` call `httpx` for an allowed destination, no-op for a disallowed one, and `post_webhook` swallows an unreachable destination | 29 |
 | `tests/test_versioning.py` | `Versioned` on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres: version starts at 1 and every update bumps it; two sessions firing one transition have exactly one winner; a write to another column also conflicts; the repeat after a conflict is refused as an illegal transition; eight threads racing one transition give one winner; a stale write is a 409 ProblemDetails | 11 (5 need Postgres) |
 | `tests/test_idempotency.py` | `@idempotent` on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres: no header runs every time; a repeat replays the first answer and runs nothing; another payload or path is 422; keys are scoped to the caller; a failed attempt is not stored; a running key is 409; an abandoned reservation is taken over; expired records are purged; invalid keys are 422; six threads racing one key run the command once | 27 (13 need Postgres) |

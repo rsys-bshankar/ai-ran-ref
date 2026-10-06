@@ -32,7 +32,7 @@ from smo_shared import tracing
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.audit import audit_enabled, write_audit
 from smo_shared.health import install_health
-from smo_shared import killswitch, roles
+from smo_shared import killswitch, mtls, roles
 from smo_shared.invoker import INVOKER_ID_HEADER, ON_BEHALF_OF_HEADER
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.ratelimit import SharedTokenBuckets, TokenBuckets, store_from_environment
@@ -117,6 +117,8 @@ ROUTES = {
     # Wave 10.4: the Traffic Steering reference rApp
     "/traffic-steering-rapp": os.environ.get("TRAFFIC_STEERING_RAPP_URL", "http://traffic-steering-rapp:8000"),
 }
+# PR-SEC-2: with SMO_MTLS=on every backend is reached over https (an http:// address, default or set, becomes https://)
+ROUTES.update({prefix: mtls.http_url(url) for prefix, url in ROUTES.items()})
 
 
 def _public_base_url() -> str | None:
@@ -303,7 +305,7 @@ async def _proxy(full_path: str, request: Request):
 
     # (rest_of_path was worked out above, for the role policy)
     # TLS is terminated at the ingress in front of this container (Phase 1:
-    # docker-compose network boundary) — everything past _authorized above
+    # docker-compose network boundary); with SMO_MTLS=on the hop to the backend is mutual TLS (PR-SEC-2) — everything past _authorized above
     # is just forwarding the already-authenticated request.
     body = await request.body()
     # Every other header forwards verbatim; X-Correlation-ID is
@@ -333,7 +335,7 @@ async def _proxy(full_path: str, request: Request):
         with tracing.span(f"{request.method} {prefix}", "client", {"http.request.method": request.method, "smo.target": prefix,
                                                                  "smo.correlation_id": get_correlation_id() or ""}) as client_span:
             forwarded_headers.update(tracing.inject_headers())
-            async with httpx.AsyncClient(timeout=upstream_timeout()) as client:
+            async with httpx.AsyncClient(timeout=upstream_timeout(), **mtls.client_kwargs(backend)) as client:
                 upstream = await client.request(
                     request.method,
                     f"{backend}/{rest_of_path}",
@@ -387,7 +389,7 @@ async def _introspect_token(request: Request) -> tuple[str, str] | None:
     token = auth[len("bearer "):].strip()
     if not token:
         return None
-    async with httpx.AsyncClient(timeout=introspect_timeout()) as client:
+    async with httpx.AsyncClient(timeout=introspect_timeout(), **mtls.client_kwargs(ROUTES["/sme"])) as client:
         try:
             resp = await client.request("POST", f"{ROUTES['/sme']}/oauth2/introspect", json={"token": token})
         except httpx.HTTPError as exc:

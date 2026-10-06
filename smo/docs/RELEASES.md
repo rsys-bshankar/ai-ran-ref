@@ -44,7 +44,7 @@ A change that only refuses input that used to make the service fail (a 500) is a
 3. **The external penetration test is passed**: scope in `docs/PENTEST_SCOPE.md`, findings rated high or critical fixed, the report summarised in the release notes.
 4. **One full disaster-recovery drill** with timings inside the targets (RPO 15 minutes, RTO 1 hour), from an off-site copy (`PR-HA-6`): the runbook of `docs/DISASTER_RECOVERY.md` run on a spare host or namespace at a representative database size, with the line added to its drill log. The CI job `disaster-recovery` proves the mechanism and the gates at small size, and does not satisfy this by itself.
 5. **Operations documents are complete**: configuration reference (`PR-OPS-7`) with its CI check, a runbook entry for each alert (`PR-OBS-7`), measured sizing (`PR-OPS-9`), SLIs and SLOs (`PR-OBS-5`).
-6. **Traffic between services is mutually authenticated**: native mTLS (`PR-SEC-2`) with the rotation procedure tried once, or the service-mesh path (`PR-SEC-3`) documented and checked.
+6. **Traffic between services is mutually authenticated**: native mTLS (`PR-SEC-2`, built in 0.5.0, opt in) with the rotation procedure tried once (the CI job `compose-mtls` renews and restarts three services; the CA rotation phases are tested by handshake). The service-mesh path (`PR-SEC-3`) was decided against, so it is not a way to meet this criterion.
 7. **No unwaived breaking change since 0.5.0**: `scripts/breaking_change_waivers.json` is empty at the candidate, and the deprecation policy above has been followed for everything removed.
 8. **The compliance documents exist and are current**: spec release table, personal-data inventory and erasure procedure, data residency statement, control matrix (`PR-STD`).
 
