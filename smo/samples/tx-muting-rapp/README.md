@@ -1,10 +1,10 @@
 # TX-Muting Energy-Saving rApp: HLD and LLD
 
-A Non-RT RIC rApp that mutes half of a cell's TX paths when load is low and restores full TX when load returns, through O1; plus an gNB O1 adaptor simulator with a CLI that stands in for the network side.
+A Non-RT RIC rApp that mutes half of a cell's TX paths when load is low and restores full TX when load returns, through O1; plus a gNB O1 adaptor simulator with a CLI that stands in for the network side.
 
 | | |
 |---|---|
-| Status | Pilot. Both services run in Docker; the demo, the CLI, the R1/SME path and the package lifecycle were run on the built stack (§9.6) |
+| Status | Pilot. Both services run in Docker; `gnb_demo.py`, `gnb-cli`, the R1/SME path and the package lifecycle were run on the built stack (§9.6) |
 | Scope | One managed element, one cell per start; R1 only: no A1, Near-RT RIC, xApp or E2 |
 
 ## Document map
@@ -37,15 +37,15 @@ The network side is a simulator for now. It is generic on purpose: it consumes c
  | tx-muting-rapp  |-------------------->| R1 Termination  |-->| DME         PM data jobs, /actions   |
  | (this sample)   |  (SME client creds) | (SME introspect)|-->| RAN NF OAM  configuration read       |
  +-----------------+                     +-----------------+   +------------------+-------------------+
-                                                                              | O1: NETCONF edit-config / get-config
-                                                         v
-                                      +-----------------------------------------+
-   CLI / control API ---------------->| gnb-o1-adaptor-sim (this sample)            |
-   events (log, long poll, CLI) <-----|  consumes config, generates PM / alarms |
-                                      +------------------+----------------------+
-                                                         | PM reports, alarms, registration, heartbeat
-                                                         v
-                                                  RAN NF OAM  ->  DME
+                                                                                  | O1: NETCONF edit-config / get-config
+                                                                                  v
+                                                        +-------------------------------------------+
+   gnb-cli / gnb_demo.py (control API) ---------------->| gnb-o1-adaptor-sim (this sample)          |
+   events (log, long poll, gnb-cli) <-------------------|  consumes config, generates PM / alarms   |
+                                                        +---------------------+---------------------+
+                                                                              | PM reports, alarms, registration, heartbeat
+                                                                              v
+                                                                      RAN NF OAM  ->  DME
 ```
 
 | Component | Role | Where |
@@ -66,7 +66,7 @@ Interfaces:
 | DME | RAN NF OAM | SMO-internal, forwards the action as a config job |
 | RAN NF OAM | adaptor | NETCONF-shaped `edit-config` / `get-config` over HTTP to the registered `adaptorUri` |
 | adaptor | RAN NF OAM | `POST /o1-adaptor-endpoints`, heartbeat, `POST /pm-subscriptions`, `POST /pm-reports`, `POST /alarms/ingest`, `PATCH /alarms/{id}/clear` (direct: the adaptor is the network side, not an rApp) |
-| operator | adaptor | CLI or `/control/*` routes; `/events` for asynchronous output |
+| operator | adaptor | `gnb-cli` or `/control/*` routes; `/events` for asynchronous output |
 
 ## 2.1 rApp identity and the R1 path
 
@@ -115,7 +115,7 @@ The gNB O1 adaptor simulator and the demo script are not rApps: they act as the 
 | Adaptor registration and heartbeat | Adaptor to RAN NF OAM | Not standardised: replaces MnS Registry polling (TS 28.623) | **SMO build** (adaptor self-registration) |
 | Package | CSAR with an ASD | TOSCA Simple Profile 1.3 (OASIS) as used by the O-RAN rApp package | Standard container; `manifest.yaml` and `capabilities.yaml` are **SMO build** extensions |
 | Package and instance lifecycle | Operator to Onboarding, rApp Management | O-RAN-SC rApp Manager model (onboard, prime, instantiate, terminate) | Standard model; state names as implemented by the SMO build |
-| Control, events, CLI | Operator to `gnb-o1-adaptor-sim`, rApp `GET /events` | None | **Sample-defined**: `/control/*`, `/events`, the CLI, `scripts/watch.sh` |
+| Control, events, CLI | Operator, `gnb-cli`, `gnb_demo.py` to `gnb-o1-adaptor-sim`; rApp `GET /events` | None | **Sample-defined**: `/control/*`, `/events`, `gnb-cli`, `scripts/watch.sh` |
 | Probes and metrics | Orchestrator to every service | None (`/live`, `/ready`, `/health`, `/metrics`) | **SMO build** |
 | Deployment | Docker Compose overlay | Compose Specification | Standard format; the service layout is **sample-defined** |
 
@@ -209,7 +209,7 @@ Not decision inputs, by design: alarms, radio synchronisation, and the age or qu
 ```mermaid
 sequenceDiagram
     autonumber
-    participant OP as CLI / demo
+    participant OP as gnb-cli / gnb_demo.py
     participant AD as gnb-o1-adaptor-sim
     participant NF as RAN NF OAM
     OP->>AD: POST /control/register
@@ -380,7 +380,7 @@ A failed RAN NF OAM call is an event (`northbound.error`) and a 502, never a cra
 
 ## 7.4 Events
 
-One numbered, time-stamped log of everything that happens (also logged as `event <kind> {...}` in `docker compose logs gnb-o1-adaptor-sim`). `GET /events?since=N&wait=S` returns events after `N` and blocks up to `S` seconds (max 30) for the first: a long poll that the CLI, and any other consumer, follows.
+One numbered, time-stamped log of everything that happens (also logged as `event <kind> {...}` in `docker compose logs gnb-o1-adaptor-sim`). `GET /events?since=N&wait=S` returns events after `N` and blocks up to `S` seconds (max 30) for the first: a long poll that `gnb-cli`, and any other consumer, follows.
 
 | Kind | When |
 |---|---|
@@ -390,7 +390,7 @@ One numbered, time-stamped log of everything that happens (also logged as `event
 | `endpoint.registered`, `endpoint.heartbeat` | Registration |
 | `fault.injected`, `generator.started`, `generator.stopped`, `state.reset`, `northbound.error` | Control and errors |
 
-## 7.5 CLI
+## 7.5 gNB CLI (`gnb-cli`)
 
 `scripts/gnb-cli.sh` runs `python -m app.gnb_cli` in the simulator container. Without arguments it is a shell that prints events asynchronously as they arrive; with arguments it runs one command; `watch` follows events only.
 
@@ -411,7 +411,7 @@ Example of what appears on the console when RAN NF OAM pushes a configuration:
 [08:51:12.683] #23   config.received      ref=tx-muting-me-001 functionRef=NRCellDU=101 operation=merge changes={"txMutingActivation": "MUTING_ON", ...}
 ```
 
-`ADAPTOR_URL` (default `http://localhost:8000`) points the CLI elsewhere. Simulator settings: `ADAPTOR_ME`, `ADAPTOR_CELL`, `ADAPTOR_VENDOR`, `ADAPTOR_PUBLIC_URI`, `RAN_NF_OAM_URL`.
+`ADAPTOR_URL` (default `http://localhost:8000`) points `gnb-cli` elsewhere. Simulator settings: `ADAPTOR_ME`, `ADAPTOR_CELL`, `ADAPTOR_VENDOR`, `ADAPTOR_PUBLIC_URI`, `RAN_NF_OAM_URL`.
 
 ---
 
@@ -455,7 +455,7 @@ Both services are built from the SMO Dockerfile like every other service (`MODUL
 cd smo/samples/tx-muting-rapp
 scripts/start.sh               # secrets (once), build, start, wait for health   (FULL_STACK=1: every SMO service)
 scripts/run_gnb_demo.sh            # steps 00-06, or: scripts/run_gnb_demo.sh 02 03
-scripts/gnb-cli.sh                 # O1 adaptor CLI
+scripts/gnb-cli.sh                 # gNB CLI
 scripts/watch.sh               # follow state changes: the rApp's and the simulator's
 scripts/cleanup.sh             # reset, run again from 00
 scripts/stop.sh                # stop (--down removes containers); cleanup.sh --purge removes the database
