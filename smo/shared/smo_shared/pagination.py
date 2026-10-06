@@ -36,6 +36,7 @@ promised goes missing; a client that reads `total` must not ask for
 only present in this mode).
 """
 
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import Depends, Query
@@ -80,7 +81,7 @@ def _in_a_stable_order(stmt):
     return stmt.order_by(*inspect(entity).primary_key)
 
 
-def _envelope(items: list, limit: int, offset: int, total: int | None, has_more: bool | None) -> dict[str, Any]:
+def _envelope(items: Sequence, limit: int, offset: int, total: int | None, has_more: bool | None) -> dict[str, Any]:
     out: dict[str, Any] = {"items": items, "limit": int(limit), "offset": offset}
     if total is not None:
         out["total"] = total
