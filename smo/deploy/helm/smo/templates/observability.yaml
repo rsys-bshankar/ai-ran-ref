@@ -1,0 +1,247 @@
+{{- /* Traces and logs for a lab or trial (PR-OBS-3, PR-OBS-6): Tempo, Loki, Fluent Bit, Grafana. Each is off until values.yaml `observability.<name>.enabled`. The configuration is files/observability/, the same files docker compose mounts. */}}
+{{- $labels := include "smo.labels" (dict "root" .) }}
+{{- $cfg := dict "tempo" (dict "file" "tempo.yaml" "mount" "/etc/tempo" "port" 3200 "uid" 10001) "loki" (dict "file" "loki.yaml" "mount" "/etc/loki" "port" 3100 "uid" 10001) }}
+{{- range $name := list "tempo" "loki" }}
+{{- $v := get $.Values.observability $name }}
+{{- if $v.enabled }}
+{{- $c := get $cfg $name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-config
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+data:
+  {{ $c.file }}: |
+    {{- $.Files.Get (printf "files/observability/%s" $c.file) | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+    - { name: http, port: {{ $c.port }}, targetPort: http }
+    {{- if eq $name "tempo" }}
+    - { name: otlp-http, port: 4318, targetPort: otlp-http }
+    {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/name: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- $labels | nindent 8 }}
+        app.kubernetes.io/name: {{ $name }}
+      annotations:
+        checksum/config: {{ $.Files.Get (printf "files/observability/%s" $c.file) | sha256sum }}
+    spec:
+      {{- include "smo.pullSecrets" $ | nindent 6 }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ $c.uid }}
+        runAsGroup: {{ $c.uid }}
+        fsGroup: {{ $c.uid }}
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: {{ $name }}
+          image: {{ $v.image }}
+          args: ["-config.file={{ $c.mount }}/{{ $c.file }}"]
+          ports:
+            - { name: http, containerPort: {{ $c.port }} }
+            {{- if eq $name "tempo" }}
+            - { name: otlp-http, containerPort: 4318 }
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 10
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: config, mountPath: {{ $c.mount }}, readOnly: true }
+            - { name: data, mountPath: {{ ternary "/var/tempo" "/loki" (eq $name "tempo") }} }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: config
+          configMap: { name: {{ $name }}-config }
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: { medium: Memory }
+{{- end }}
+{{- end }}
+
+{{- if .Values.observability.grafana.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: grafana
+data:
+  smo.yaml: |
+    {{- .Files.Get "files/observability/grafana-datasources.yaml" | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: grafana
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: grafana
+  ports:
+    - { name: http, port: 3000, targetPort: http }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: grafana
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: grafana
+  template:
+    metadata:
+      labels:
+        {{- $labels | nindent 8 }}
+        app.kubernetes.io/name: grafana
+      annotations:
+        checksum/config: {{ .Files.Get "files/observability/grafana-datasources.yaml" | sha256sum }}
+    spec:
+      {{- include "smo.pullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: grafana
+          image: {{ .Values.observability.grafana.image }}
+          ports:
+            - { name: http, containerPort: 3000 }
+          env:
+            # A lab Grafana reached with `kubectl port-forward svc/grafana 3001:3000`: no sign-in. Put real authentication in front of it (or use your own Grafana) before exposing it.
+            - { name: GF_AUTH_ANONYMOUS_ENABLED, value: "true" }
+            - { name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Admin }
+            - { name: GF_AUTH_DISABLE_LOGIN_FORM, value: "true" }
+            - { name: GF_ANALYTICS_REPORTING_ENABLED, value: "false" }
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.observability.grafana.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: datasources, mountPath: /etc/grafana/provisioning/datasources, readOnly: true }
+            - { name: data, mountPath: /var/lib/grafana }
+      volumes:
+        - name: datasources
+          configMap: { name: grafana-datasources }
+        - name: data
+          emptyDir: {}
+{{- end }}
+
+{{- if .Values.observability.fluentBit.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: fluent-bit
+data:
+  fluent-bit.conf: |
+    {{- .Files.Get "files/observability/fluent-bit-k8s.conf" | replace "NAMESPACE" .Release.Namespace | nindent 4 }}
+  parsers.conf: |
+    {{- .Files.Get "files/observability/parsers.conf" | nindent 4 }}
+---
+# One pod per node, reading the node's container logs (hostPath, read-only), so it runs as root, with no capability and a read-only root filesystem.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluent-bit
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: fluent-bit
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: fluent-bit
+  template:
+    metadata:
+      labels:
+        {{- $labels | nindent 8 }}
+        app.kubernetes.io/name: fluent-bit
+      annotations:
+        checksum/config: {{ printf "%s%s" (.Files.Get "files/observability/fluent-bit-k8s.conf") (.Files.Get "files/observability/parsers.conf") | sha256sum }}
+    spec:
+      {{- include "smo.pullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 0
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: fluent-bit
+          image: {{ .Values.observability.fluentBit.image }}
+          command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+          resources:
+            {{- toYaml .Values.observability.fluentBit.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: config, mountPath: /fluent-bit/etc, readOnly: true }
+            - { name: varlog, mountPath: /var/log, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: config
+          configMap: { name: fluent-bit-config }
+        - name: varlog
+          hostPath: { path: /var/log }
+        - name: tmp
+          emptyDir: {}
+{{- end }}

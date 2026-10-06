@@ -157,7 +157,7 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
 
   r1-termination:
-    build: { context: ., args: { <<: *build_info, MODULE: r1-termination } }
+    build: { context: ., args: { <<: *build_info, MODULE: r1-termination, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_r1-termination]    # PR-SEC-11: the gateway adds a row to the audit chain for every authenticated change (it keeps no other state)
     <<: *hardening
@@ -167,6 +167,7 @@ services:
     volumes:
       - smo_scratch:/srv/scratch   # where the runbook copies the rApp CSARs it serves (`docker compose cp ... r1-termination:/srv/scratch/`)
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_r1_termination@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
@@ -203,13 +204,14 @@ services:
       TRAFFIC_STEERING_RAPP_URL: http://traffic-steering-rapp:8000
 
   sme:
-    build: { context: ., args: { <<: *build_info, MODULE: sme } }
+    build: { context: ., args: { <<: *build_info, MODULE: sme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_sme, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_sme@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -220,13 +222,14 @@ services:
       SME_TOKEN_AUDIENCE: ${R1_PUBLIC_BASE_URL:+${R1_PUBLIC_BASE_URL}/sme/oauth2/token}
 
   dme:
-    build: { context: ., args: { <<: *build_info, MODULE: dme } }
+    build: { context: ., args: { <<: *build_info, MODULE: dme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_dme, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_dme@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -234,13 +237,14 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_dme
 
   onboarding:
-    build: { context: ., args: { <<: *build_info, MODULE: onboarding } }
+    build: { context: ., args: { <<: *build_info, MODULE: onboarding, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_onboarding, enrollment_secret]    # not db_password: it connects as its own role (PR-DB-2.6), which scripts/db_roles.py makes
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_onboarding@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo    # the role can use schema `onboarding` and the shared tables it is given, nothing else
@@ -250,13 +254,14 @@ services:
       - smo_packages:/srv/packages   # FileSystem-aaS, SMO Design v1.3 section 3.4
 
   rapp-mgmt:
-    build: { context: ., args: { <<: *build_info, MODULE: rapp-mgmt } }
+    build: { context: ., args: { <<: *build_info, MODULE: rapp-mgmt, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_rapp-mgmt, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_rapp_mgmt@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -266,13 +271,14 @@ services:
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   ran-nf-oam:
-    build: { context: ., args: { <<: *build_info, MODULE: ran-nf-oam } }
+    build: { context: ., args: { <<: *build_info, MODULE: ran-nf-oam, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_ran-nf-oam, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_ran_nf_oam@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -286,7 +292,7 @@ services:
   # the refusal purge; ran-nf-oam/app/tasks.py), so no request process ever runs a timer. Run as many as you like: a task runs at most
   # once per interval across all of them, and a worker that dies frees its tasks for another.
   ran-nf-oam-worker:
-    build: { context: ., args: { <<: *build_info, MODULE: ran-nf-oam } }
+    build: { context: ., args: { <<: *build_info, MODULE: ran-nf-oam, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
     secrets: [db_password_ran-nf-oam, enrollment_secret]
@@ -294,6 +300,7 @@ services:
     healthcheck: *worker_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: the worker is the same SMO module (one identity, ST-4)
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_ran_nf_oam@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -304,7 +311,9 @@ services:
       SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
 
   mock-o1-adaptor:
-    build: { context: ., args: { <<: *build_info, MODULE: mock-o1-adaptor } }
+    build: { context: ., args: { <<: *build_info, MODULE: mock-o1-adaptor, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
     stop_grace_period: 30s
     <<: *hardening
     healthcheck: *ready_probe
@@ -320,13 +329,14 @@ services:
   # (DEMO_RUNBOOK.md §24, Demo 00–11). It reaches every SMO service only
   # through R1 Termination, and is reached by the GUI the same way.
   energy-saving-rapp:
-    build: { context: ., args: { <<: *build_info, MODULE: samples/energy-saving-rapp } }
+    build: { context: ., args: { <<: *build_info, MODULE: samples/energy-saving-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_energy-saving-rapp]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_energy_saving_rapp@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -338,13 +348,14 @@ services:
   # Wave 10.2: the Mobility Optimization reference rApp
   # (samples/mobility-optimization-rapp) — R1-only, like energy-saving-rapp.
   mobility-optimization-rapp:
-    build: { context: ., args: { <<: *build_info, MODULE: samples/mobility-optimization-rapp } }
+    build: { context: ., args: { <<: *build_info, MODULE: samples/mobility-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_mobility-optimization-rapp]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_mobility_optimization_rapp@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -356,13 +367,14 @@ services:
   # Wave 10.3: the Coverage Optimization reference rApp
   # (samples/coverage-optimization-rapp) — R1-only, like energy-saving-rapp.
   coverage-optimization-rapp:
-    build: { context: ., args: { <<: *build_info, MODULE: samples/coverage-optimization-rapp } }
+    build: { context: ., args: { <<: *build_info, MODULE: samples/coverage-optimization-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_coverage-optimization-rapp]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_coverage_optimization_rapp@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -374,13 +386,14 @@ services:
   # Wave 10.4: the Traffic Steering reference rApp
   # (samples/traffic-steering-rapp) — R1-only, like energy-saving-rapp.
   traffic-steering-rapp:
-    build: { context: ., args: { <<: *build_info, MODULE: samples/traffic-steering-rapp } }
+    build: { context: ., args: { <<: *build_info, MODULE: samples/traffic-steering-rapp, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_traffic-steering-rapp]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_IDENTITY_KIND: rapp        # PR-SEC-14: an rApp: no enrollment secret, so SME records it as one and R1 applies the rApp role
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_traffic_steering_rapp@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -390,13 +403,14 @@ services:
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   nfo:
-    build: { context: ., args: { <<: *build_info, MODULE: nfo } }
+    build: { context: ., args: { <<: *build_info, MODULE: nfo, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_nfo, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_nfo@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -410,13 +424,14 @@ services:
     # or the Kubernetes API), not as this service holding the socket.
 
   focom:
-    build: { context: ., args: { <<: *build_info, MODULE: focom } }
+    build: { context: ., args: { <<: *build_info, MODULE: focom, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_focom, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_focom@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -424,13 +439,14 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_focom
 
   mlmr:
-    build: { context: ., args: { <<: *build_info, MODULE: mlmr } }
+    build: { context: ., args: { <<: *build_info, MODULE: mlmr, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_mlmr, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_mlmr@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -438,13 +454,14 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mlmr
 
   aimgf:
-    build: { context: ., args: { <<: *build_info, MODULE: aimgf } }
+    build: { context: ., args: { <<: *build_info, MODULE: aimgf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_aimgf, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_aimgf@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -454,24 +471,26 @@ services:
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   mllf:
-    build: { context: ., args: { <<: *build_info, MODULE: mllf } }
+    build: { context: ., args: { <<: *build_info, MODULE: mllf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       R1_GATEWAY_URL: http://r1-termination:8000
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   ran-analytics:
-    build: { context: ., args: { <<: *build_info, MODULE: ran-analytics } }
+    build: { context: ., args: { <<: *build_info, MODULE: ran-analytics, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_ran-analytics, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_ran_analytics@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -481,13 +500,14 @@ services:
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   mdaf:
-    build: { context: ., args: { <<: *build_info, MODULE: mdaf } }
+    build: { context: ., args: { <<: *build_info, MODULE: mdaf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_mdaf, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_mdaf@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -495,13 +515,14 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mdaf
 
   intent-service:
-    build: { context: ., args: { <<: *build_info, MODULE: intent-service } }
+    build: { context: ., args: { <<: *build_info, MODULE: intent-service, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_intent-service, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_intent_service@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -509,13 +530,14 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_intent-service
 
   so-smos:
-    build: { context: ., args: { <<: *build_info, MODULE: so-smos } }
+    build: { context: ., args: { <<: *build_info, MODULE: so-smos, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_so-smos, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_so_smos@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -525,13 +547,14 @@ services:
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   sa-smos:
-    build: { context: ., args: { <<: *build_info, MODULE: sa-smos } }
+    build: { context: ., args: { <<: *build_info, MODULE: sa-smos, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     secrets: [db_password_sa-smos, enrollment_secret]
     <<: *hardening
     healthcheck: *ready_probe
     depends_on: *wait_for_schema
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_sa_smos@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
@@ -545,12 +568,13 @@ services:
   # Termination -> modules. gui-bff publishes nothing and authenticates to R1
   # with its own SME-issued OAuth2 token.
   gui-bff:
-    build: { context: ., args: { <<: *build_info, MODULE: gui-bff } }
+    build: { context: ., args: { <<: *build_info, MODULE: gui-bff, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     stop_grace_period: 30s
     <<: *hardening
     secrets: [enrollment_secret]
     depends_on: [r1-termination, sme]
     environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       R1_URL: http://r1-termination:8000
       GUI_DATABASE_URL: sqlite:////data/gui-bff.db
@@ -592,6 +616,65 @@ services:
     volumes:
       - ./edge/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     secrets: [tls_cert, tls_key]
+
+  # Traces and logs (PR-OBS-3, PR-OBS-6; docs/OBSERVABILITY.md). Two profiles, both off by default, sharing one Grafana. The configuration files are the
+  # chart's (deploy/helm/smo/files/observability/), so compose and Kubernetes run the same ones. Lab stores: Tempo and Loki keep their data in a volume
+  # on local disk and run as root with no capability, the volume being theirs.
+  #   SMO_WITH_TRACING=1 SMO_OTEL_ENDPOINT=http://tempo:4318 docker compose --profile tracing up -d --build
+  #   docker compose --profile logging up -d
+  tempo:
+    profiles: ["tracing"]
+    image: grafana/tempo:2.8.2
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    user: "0"
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ./deploy/helm/smo/files/observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+
+  loki:
+    profiles: ["logging"]
+    image: grafana/loki:3.5.5
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    user: "0"
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ./deploy/helm/smo/files/observability/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki_data:/loki
+
+  # Reads every container's json-file log (the Docker default), so it needs the host's container log directory, read-only, and root to read it.
+  fluent-bit:
+    profiles: ["logging"]
+    image: fluent/fluent-bit:4.1.1
+    command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+    user: "0"
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on: [loki]
+    volumes:
+      - ./deploy/helm/smo/files/observability/fluent-bit-compose.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./deploy/helm/smo/files/observability/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+
+  grafana:
+    profiles: ["tracing", "logging"]
+    image: grafana/grafana:12.2.0
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ports: ["3001:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"        # a lab Grafana, bound to this machine's port only: anonymous viewers, no sign-in
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./deploy/helm/smo/files/observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/smo.yaml:ro
 
   gui:
     build: { context: ./gui }
@@ -656,3 +739,5 @@ volumes:
   smo_scratch:
   smo_packages:
   gui_bff_data:
+  tempo_data:
+  loki_data:

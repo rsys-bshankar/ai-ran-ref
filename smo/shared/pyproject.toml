@@ -14,6 +14,13 @@ dependencies = [
     "jsonschema>=4.0",
 ]
 
+[project.optional-dependencies]
+# Distributed traces (smo_shared/tracing.py): without these only W3C traceparent propagation runs. Pinned and hashed in requirements/tracing.txt.
+tracing = [
+    "opentelemetry-sdk>=1.25",
+    "opentelemetry-exporter-otlp-proto-http>=1.25",
+]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

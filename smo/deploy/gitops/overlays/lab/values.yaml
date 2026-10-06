@@ -1,0 +1,12 @@
+# Lab values for deploy/helm/smo: what differs from the chart's defaults, and nothing else (a key set here must exist in the chart's values.yaml:
+# tests_integration/test_gitops.py checks it).
+image:
+  tag: ""                 # the chart's appVersion; pin a release here (for example "0.5.0") to make the lab follow Git, not the chart
+
+# Traces and logs, the lab stack of the chart: Tempo, Loki, Fluent Bit, Grafana (kubectl -n smo port-forward svc/grafana 3001:3000).
+# Spans need images built with --build-arg WITH_TRACING=1; the published images propagate a traceparent and log the trace id, and no more.
+observability:
+  tempo: { enabled: true }
+  loki: { enabled: true }
+  fluentBit: { enabled: true }
+  grafana: { enabled: true }

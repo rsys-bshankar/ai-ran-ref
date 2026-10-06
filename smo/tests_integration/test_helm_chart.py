@@ -15,7 +15,8 @@ SMO_ROOT = Path(__file__).resolve().parent.parent
 CHART = SMO_ROOT / "deploy" / "helm" / "smo"
 COMPOSE = yaml.safe_load((SMO_ROOT / "docker-compose.yml").read_text())
 VALUES = yaml.safe_load((CHART / "values.yaml").read_text())
-NOT_IN_THE_CHART = {"postgres", "migrate", "netconf-lab", "edge-tls", "pgbouncer", "db-backup"}      # Postgres is a template of its own, migrate a Job, the others are compose-only (a pooler on Kubernetes is the operator's)
+NOT_IN_THE_CHART = {"postgres", "migrate", "netconf-lab", "edge-tls", "pgbouncer", "db-backup",                   # Postgres is a template of its own, migrate a Job, the others are compose-only (a pooler on Kubernetes is the operator's)
+                    "tempo", "loki", "fluent-bit", "grafana"}                                      # the observability profiles: templates of their own, values-gated (observability.yaml)
 helm = pytest.mark.skipif(shutil.which("helm") is None, reason="helm is not installed")
 
 
@@ -297,3 +298,58 @@ def test_credential_delivery_gives_only_rapp_mgmt_a_token_and_a_role_that_cannot
     role = next(d for d in docs if d["kind"] == "Role")
     verbs = {v for rule in role["rules"] for v in rule["verbs"]}
     assert verbs == {"create", "update", "delete"} and role["rules"][0]["resources"] == ["secrets"]
+
+
+def _env_of(doc: dict) -> dict:
+    return {e["name"]: e.get("value") for e in doc["spec"]["template"]["spec"]["containers"][0].get("env") or []}
+
+
+def _deployment(docs: list[dict], name: str) -> dict:
+    return next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == name)
+
+
+@helm
+def test_traces_and_logs_are_off_by_default():
+    docs = _render()
+    assert not [d for d in docs if d["metadata"]["name"] in ("tempo", "loki", "grafana", "fluent-bit")]
+    for d in docs:
+        if d["kind"] == "Deployment":
+            assert "SMO_OTEL_ENDPOINT" not in _env_of(d), d["metadata"]["name"]
+
+
+@helm
+def test_tempo_loki_grafana_and_fluent_bit_render_when_switched_on_and_the_modules_send_spans_to_tempo():
+    docs = _render("--set", "observability.tempo.enabled=true", "--set", "observability.loki.enabled=true",
+                   "--set", "observability.grafana.enabled=true", "--set", "observability.fluentBit.enabled=true",
+                   "--set", "tracing.sampleRatio=0.25")
+    kinds = {(d["kind"], d["metadata"]["name"]) for d in docs}
+    assert {("Deployment", "tempo"), ("Deployment", "loki"), ("Deployment", "grafana"), ("DaemonSet", "fluent-bit"),
+            ("Service", "tempo"), ("Service", "loki"), ("Service", "grafana")} <= kinds
+    sme = _env_of(_deployment(docs, "sme"))
+    assert sme["SMO_OTEL_ENDPOINT"] == "http://tempo:4318" and sme["SMO_OTEL_SAMPLE_RATIO"] == "0.25"
+    for static in ("gui", "gui-bff"):
+        assert "SMO_OTEL_ENDPOINT" not in _env_of(_deployment(docs, static))
+    fluent = next(d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "fluent-bit-config")
+    assert "_smo_*.log" in fluent["data"]["fluent-bit.conf"] and "NAMESPACE" not in fluent["data"]["fluent-bit.conf"]
+    for name in ("tempo", "loki", "grafana"):
+        pod = _deployment(docs, name)["spec"]["template"]["spec"]
+        assert pod["automountServiceAccountToken"] is False and pod["securityContext"]["runAsNonRoot"] is True
+
+
+@helm
+def test_an_explicit_tracing_endpoint_wins_over_the_bundled_tempo():
+    docs = _render("--set", "tracing.endpoint=http://collector.obs:4318", "--set", "observability.tempo.enabled=true")
+    assert _env_of(_deployment(docs, "dme"))["SMO_OTEL_ENDPOINT"] == "http://collector.obs:4318"
+
+
+def test_the_observability_configuration_files_parse_and_compose_mounts_them():
+    files = CHART / "files" / "observability"
+    for name in ("tempo.yaml", "loki.yaml", "grafana-datasources.yaml"):
+        assert isinstance(yaml.safe_load((files / name).read_text()), dict), name
+    datasources = {d["uid"]: d for d in yaml.safe_load((files / "grafana-datasources.yaml").read_text())["datasources"]}
+    assert datasources["tempo"]["jsonData"]["tracesToLogsV2"]["datasourceUid"] == "loki"
+    assert datasources["loki"]["jsonData"]["derivedFields"][0]["datasourceUid"] == "tempo"
+    mounted = {v.split(":")[0] for name in ("tempo", "loki", "fluent-bit", "grafana") for v in COMPOSE["services"][name]["volumes"] if v.startswith("./")}
+    assert all((SMO_ROOT / m).is_file() for m in mounted), mounted
+    for name in ("tempo", "loki", "fluent-bit", "grafana"):
+        assert COMPOSE["services"][name]["profiles"], f"{name} must stay behind a profile"
