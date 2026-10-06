@@ -4,6 +4,8 @@ name: SMO upgrade and rollback on kind
 # then rolled back with `helm rollback` so the previous release's code runs on the schema this checkout migrated. Two releases are tried: the previous one and the one before it
 # (the 1.0 criterion "upgrade across two releases"). Checked after each step: every pod ready, the database at the right revision, the data written by the old release still there,
 # the runbook replay (scripts/compose_e2e.py of the release that is running) passes, and the audit chain verifies.
+# The rollback is promised to the release before only (expand and contract: this checkout keeps what the previous release needs). The release before that is upgraded from, not rolled
+# back to: its own migrate step does not know a newer schema ("Can't locate revision"), which is a limit of that release's code, so the rollback step is skipped for it.
 # Nightly, on demand, and on a pull request that changes this workflow or the chart's upgrade path. Not a required check yet. Not yet here: a load running through the upgrade,
 # and a deliberately failing migration (V-11's second half).
 
@@ -26,13 +28,15 @@ concurrency:
 
 jobs:
   upgrade:
-    name: "From ${{ matrix.from }}, upgrade then roll back"
+    name: "From ${{ matrix.from }}, upgrade${{ matrix.rollback && ' then roll back' || '' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        from: [smo-v0.4.0, smo-v0.3.0]
+        include:
+          - { from: smo-v0.4.0, rollback: true }
+          - { from: smo-v0.3.0, rollback: false }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -100,6 +104,7 @@ jobs:
           kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
 
       - name: Roll back to the previous release, on the schema this checkout migrated
+        if: ${{ matrix.rollback }}
         working-directory: prev/smo
         run: |
           helm rollback smo 1 -n smo --wait --timeout 12m
