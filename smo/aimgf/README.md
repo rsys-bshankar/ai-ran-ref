@@ -327,6 +327,8 @@ End-to-end flows: [call flow 02](../docs/call-flows/02-aiml-model-train-to-infer
 
 ### 2.6 Configuration
 
+The complete list, with defaults and descriptions, is `../docs/CONFIGURATION.md` (generated from the code; `_timeout_for` reads `AIMGF_TIMEOUT_<KIND>_SECONDS`, and the `# config-ref:` comment above the sweep route tells the generator which four names that is).
+
 | Variable | Default | Use |
 |---|---|---|
 | `SMO_DATABASE_URL` | none; required | database (Postgres in compose, SQLite in tests) |
