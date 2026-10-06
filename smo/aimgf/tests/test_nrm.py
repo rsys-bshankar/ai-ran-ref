@@ -372,3 +372,13 @@ def test_nrm_cancel_of_a_training_request_releases_the_model(client, mlmr):
     assert client.get(f"/models/{other}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.FAILED
     # DELETE of a finished/cancelled request stays a no-op
     assert client.delete(f"/ml-training-requests/{request_id}").status_code == 204
+
+
+def test_a_list_route_accepts_total_false(client):
+    client.post("/aiml-inference-emulation-functions", json={"userLabel": "a"})
+    client.post("/aiml-inference-emulation-functions", json={"userLabel": "b"})
+    assert client.get("/aiml-inference-emulation-functions", params={"limit": 1}).json()["total"] == 2
+    page = client.get("/aiml-inference-emulation-functions", params={"limit": 1, "total": "false"}).json()
+    assert "total" not in page and len(page["items"]) == 1 and page["hasMore"] is True
+    reports = client.get("/aiml-inference-reports", params={"total": "false"}).json()
+    assert reports["items"] == [] and reports["hasMore"] is False

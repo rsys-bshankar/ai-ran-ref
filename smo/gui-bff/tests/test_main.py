@@ -608,3 +608,18 @@ def test_rotating_the_signing_key_ends_every_session_and_a_new_login_works(cfg, 
     carried.cookies.update(old.cookies)
     assert carried.get("/api/me").status_code == 401                          # the old session does not survive the rotation
     assert login(new_app, "viewer").get("/api/me").json()["role"] == "viewer"
+
+
+def test_audit_endpoint_total_false_has_no_total_and_a_has_more_flag(app):
+    admin = login(app, "admin")
+    admin.post("/api/admin/users", json={"username": "noc2", "password": "long-enough", "role": "viewer"})
+    assert admin.get("/api/admin/audit", params={"limit": 1}).json()["total"] >= 2
+    page = admin.get("/api/admin/audit", params={"limit": 1, "total": "false"}).json()
+    assert "total" not in page and len(page["items"]) == 1 and page["hasMore"] is True
+    assert admin.get("/api/admin/audit", params={"limit": 500, "total": "false"}).json()["hasMore"] is False
+
+
+def test_a_list_read_through_the_proxy_decides_the_same_with_total_false():
+    from app.rbac import Role, decide
+    for role in (Role.VIEWER, Role.OPERATOR, Role.ADMIN):
+        assert decide("GET", "/aimgf/models", {"limit": ["5"], "total": ["false"]}, role).allowed

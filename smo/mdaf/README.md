@@ -144,6 +144,8 @@ request's `active` flag, derived at read time from `start_time <= now < stop_tim
 
 ### 2.4 API
 
+Every list route also takes the optional `total` (boolean, default `true`, the shared `smo_shared.pagination` parameter): `total=false` skips the `COUNT(*)` of the whole result, leaves `total` out of the envelope and adds `hasMore`.
+
 Producer-push (legacy, unchanged shape)
 
 | Method | Path | Purpose | Notable errors |
@@ -241,7 +243,7 @@ cd smo/mdaf && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | File | Covers | Tests |
 |---|---|---|
 | `tests/test_main.py` | Publish/query, scope persistence, subscribe/unsubscribe/list and filters, notification delivery (with, without, other type, unreachable destination), DME input validation, `ThresholdInfo` (validation, fires on first crossing, no refire, refire after reset, DOWN, missing IE, no-threshold subscription), `/health` | 26 |
-| `tests/test_mda.py` | MDAFunction capability gating, request validation, typed output validation per `mDAType`, NOTIFICATION matching, edge-triggered IE thresholds, `filterValue` and `timeOut`, FILE method and download, report answering one request and legacy-report matching, DRIFT forwarding to MLMF, 404s | 10 |
+| `tests/test_mda.py` | MDAFunction capability gating, request validation, typed output validation per `mDAType`, NOTIFICATION matching, edge-triggered IE thresholds, `filterValue` and `timeOut`, FILE method and download, report answering one request and legacy-report matching, DRIFT forwarding to MLMF, 404s | 10 `GET /mda-reports?total=false`: no `total`, `hasMore` set correctly. |
 
 ### 3.3 What is not covered here
 

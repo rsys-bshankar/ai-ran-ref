@@ -44,7 +44,7 @@ from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
-from smo_shared.pagination import PageLimit, PageOffset, paginate
+from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 from smo_shared.webhook import get_webhook
 
 from .ldn import leaf_class
@@ -155,8 +155,7 @@ def list_cm_schemas(limit: int = PageLimit, offset: int = PageOffset, db: Sessio
     rows = [_schema_view(r.schema_name, r.revision, r.type, r.location, r.descriptor, builtin=False)
             for r in db.scalars(select(CMSchemaCache).order_by(CMSchemaCache.schema_name, CMSchemaCache.revision))]
     builtins = [_schema_view(n, rev, d["type"], d["location"], d, builtin=True) for (n, rev), d in _builtin_schemas().items()]
-    items = builtins + rows
-    return {"items": items[offset:offset + limit], "total": len(items), "limit": limit, "offset": offset}
+    return paginate_list(builtins + rows, limit, offset)
 
 
 @router.get("/cm-schemas/{schema_name}")
@@ -482,4 +481,4 @@ def query_cell_guards(managed_element_ref: str | None = None, cell_id: str | Non
                     or (incident_zone and guard.get("incidentZone") != incident_zone):
                 continue
             items.append({"managedElementRef": me.managed_element_ref, "cellId": cid, **guard})
-    return {"items": items[offset:offset + limit], "total": len(items), "limit": limit, "offset": offset}
+    return paginate_list(items, limit, offset)
