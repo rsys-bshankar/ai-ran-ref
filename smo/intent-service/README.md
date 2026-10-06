@@ -9,7 +9,7 @@
 | Depends on (over R1) | rApp Management (`GET /rapp-mgmt/instances/{id}`, autonomy dispatch only); outbound webhooks to RMIHs, report recipients and operator destinations |
 | Called by | rApps via `sdk.intent`; GUI BFF (intents, autonomy dispatches); SA SMOS O1-CM handler (reads intents, publishes reports, registers as RMIH `sa-smos`, see [`../sa-smos/README.md`](../sa-smos/README.md)); SO SMOS identity may register as an RMIH |
 | Database tables | `intent`, `intent_utility_formula`, `intent_report`, `intent_handling_function`, `autonomy_dispatch` |
-| Unit tests | 73 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 77 passed (`tests/`, SQLite, standalone) |
 | Status | Done. The 8 value datatypes are checked by structure (`SA-INTENT-partial`, closed); `GeoArea` is the one `ValueRangeType` alternative with a documented simplification (1.2) |
 
 ## 1. High-level design (HLD)
@@ -276,6 +276,8 @@ link-local, multicast and reserved literal addresses. No background tasks.
 
 No Intent-Service-specific variables.
 
+**Metrics (PR-OBS-4).** Besides the shared series, `GET /metrics` has `smo_intents{admin_state}`: the `intent` rows by `ACTIVATED` / `DEACTIVATED` (both always present), read at scrape time (cached 15 s). Intents are the policy objects of this build since A1 policy management was removed. Aggregate replicas with `max`.
+
 ### 2.7 Error codes
 
 | Code | HTTP | When |
@@ -317,6 +319,7 @@ cd smo/intent-service && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | File | Covers | Tests |
 |---|---|---|
 | `tests/test_main.py` | Create/query/delete intents, admin-state (creator only, SUSPENDED report), RMIH registration (external-caller rejection, capability validation, list, deregister), scope and capability matching, dispatch to the named RMIH (and unreachable callback), strict spec shapes and family constraints, feasibility (reject vs report), purpose/negotiation gating, initial report and conflicts, report-control delivery, all report kinds, negotiation feedback, utility formula IOC, autonomy dispatch (AUTONOMOUS, ASSIST resolve/reject, SHADOW, up-front RMIH validation, operator notification and its SSRF scheme guard, unknown instance/RMIH, list/get, region-scope folding and bounding), `/health` | 56 |
+| `tests/test_business_metrics.py` | `smo_intents` counts intents by admin state, both states present at zero | 1 |
 
 ### 3.3 What is not covered here
 

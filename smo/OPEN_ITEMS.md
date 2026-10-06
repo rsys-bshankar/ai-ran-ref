@@ -24,7 +24,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 |---|---|---|
 | API | `?total=false` on every list route (opt out of the page `COUNT(*)`; default unchanged) | – |
 | Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 logout revocation (done, V-13c); SEC-2 mTLS between services; SEC-3 mesh option (documented with the mTLS work); SEC-6 OIDC login for the GUI | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0). SEC-7.1 to 7.3 (native TOTP) only if required: with OIDC the identity provider does the second factor, and local login stays as break-glass |
-| Operability | OBS-3 traces (Tempo), OBS-4 business metrics, OBS-5 alerts and SLOs, OBS-6 log shipping, OBS-7 runbooks, OBS-8 `/version`, OPS-6 GitOps example, OPS-7 configuration reference, OPS-9 sizing | – |
+| Operability | OBS-3 traces (Tempo), OBS-4 business metrics, OBS-5 alerts and SLOs, OBS-6 log shipping, OBS-7 runbooks (OBS-4, 5 and 7 are done in part: what remains is under 5.5), OBS-8 `/version`, OPS-6 GitOps example, OPS-7 configuration reference, OPS-9 sizing | – |
 | Disaster recovery | HA-6: RPO 15 minutes, RTO 1 hour, off-site backup shipping, one timed restore drill | HA-7 geo-redundancy (after 1.0.0) |
 | Standards and documents | STD-2.1 spec release table; STD-4.1 personal-data inventory; STD-6.1 data residency statement; STD-4.3 erasure procedure for a GUI user; STD-5 control matrix (ISO 27001, NESAS/SCAS) | STD-3 plugfest plan (0.6.0 or later) |
 
@@ -461,26 +461,25 @@ HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10); no Op
 | OBS-3.4 | FastAPI, httpx and SQLAlchemy instrumentation | A request shows 3 span kinds | OBS-3.3 |
 | OBS-3.5 | Collector plus Jaeger or Tempo in a compose profile | Trace visible for a runbook call | OBS-3.4 |
 
-#### PR-OBS-4 — Business metrics
+#### PR-OBS-4 — Business metrics (open: the remainder below; done in `HISTORY.md` §10)
+
+Done: packages, rApp instances and intents by state, the outbox backlog and its oldest pending age, refusals by class, worker task counters. Still open, each step on the same pattern (`register_query_gauge` or a counter beside the code path, low-cardinality labels):
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OBS-4.1 | Gauges: packages, rApp instances and NF deployments by state | Values match the DB | OBS-2.2 |
-| OBS-4.2 | Alarms by severity and ack state | Same | OBS-2.2 |
-| OBS-4.3 | O1 write outcome and retry counters | Counters move in an O1 test | OBS-2.2 |
-| OBS-4.4 | Model and runtime lifecycle counts | Same | OBS-2.2 |
-| OBS-4.5 | Pending approvals and their age | Same | OBS-2.2 |
+| OBS-4.1 | Gauge: NF deployments by state (packages and rApp instances are done) | Values match the DB | – |
+| OBS-4.2 | Alarms by severity and ack state | Same | – |
+| OBS-4.3 | O1 write outcome and retry counters | Counters move in an O1 test | – |
+| OBS-4.4 | Model and runtime lifecycle counts | Same | – |
+| OBS-4.5 | Pending approvals and their age | Same | – |
 
-#### PR-OBS-5 — Alerts and SLOs
+#### PR-OBS-5 — Alerts and SLOs (open: OBS-5.4; the rest is in `HISTORY.md` §10)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OBS-5.1 | SLI definitions (availability, latency, correctness) in `docs/` | Doc reviewed | – |
-| OBS-5.2 | Availability and error-rate alert rules | `promtool check rules` green | OBS-2.2 |
-| OBS-5.3 | Latency alert rules | Same | OBS-2.2 |
-| OBS-5.4 | O1 write failure rate rule | Same | OBS-4.3 |
-| OBS-5.5 | Outbox DEAD-row depth rule | Same | MSG-2.6 |
-| OBS-5.6 | Each rule links to its runbook entry | Link check | OBS-7.1 |
+| OBS-5.4 | O1 write failure rate rule (and its runbook page) | Rule and page added to `smo-alerts.rules.yaml` and `docs/runbooks/` | OBS-4.3 |
+| OBS-5.7 | Accept the proposed SLO targets (`docs/SLOS.md`) for a deployment and tune the thresholds against a week of its traffic | Targets no longer say proposed | a deployment |
+| OBS-5.8 | Scrape the worker's metrics port in compose and the chart (`SMO_WORKER_METRICS_PORT`), so `SmoWorkerTaskFailing` has data | Series visible on a scrape | – |
 
 #### PR-OBS-6 — Log shipping
 
@@ -490,14 +489,12 @@ HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10); no Op
 | OBS-6.2 | Loki and Grafana in a compose profile | Search by correlation id works | OBS-6.1 |
 | OBS-6.3 | Elasticsearch field mapping doc | Doc reviewed | – |
 
-#### PR-OBS-7 — Runbooks
+#### PR-OBS-7 — Runbooks (open: the entries below; template, index and one page per alert are in `HISTORY.md` §10)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OBS-7.1 | Runbook template and index | Template merged | – |
-| OBS-7.2 | Entries: Postgres down, SME down, R1 down | Each tried once on the compose stack | – |
-| OBS-7.3 | Entries: O1 write failures, adaptor unreachable | Same | – |
-| OBS-7.4 | Entries: webhook backlog, DEAD rows | Same | MSG-2.4 |
+| OBS-7.2 | Entry: Postgres down (SME down and R1 down are the `SmoModuleDown` page); each page tried once on the compose stack (none has been: the commands were written from the code, not replayed) | Each tried once | – |
+| OBS-7.3 | Entries: O1 write failures, adaptor unreachable (the latter is partly `SmoOutboundCallsFailing`) | Same | OBS-4.3 |
 | OBS-7.5 | Entry: certificate expiry and rotation | Same | SEC-2.5 |
 | OBS-7.6 | Entry: backup and restore | Same | DB-6.4 |
 
