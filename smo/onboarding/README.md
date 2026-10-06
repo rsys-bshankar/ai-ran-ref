@@ -9,7 +9,7 @@
 | Depends on (over R1) | NFO (`POST /nfo/descriptors`); the package location itself (plain HTTP GET, not over R1) |
 | Called by | rApp Management (`onboarding-status`, `usage/start`, `usage/stop`); AIMgF (`onboarding-status`, for `aiCapabilities.runtimeProfiles`); GUI BFF (operator and admin actions); operators |
 | Database tables | `application_package` (versioned), `artifact`, `package_usage_registration` |
-| Unit tests | 85 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 104 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Package signature verification is not performed (see 1.5, 2.8) |
 
 ## 1. High-level design (HLD)
@@ -184,6 +184,8 @@ Inbound: rApp Management calls `onboarding-status` on every create, upgrade and 
 
 Onboarding reads no environment variable of its own. Through `smo_shared`: `SMO_DATABASE_URL` (required, no default) and `R1_GATEWAY_URL` (default `http://r1-termination:8000`, for the NFO call). Constant: package fetch timeout 30 s.
 
+**Metrics (PR-OBS-4).** Besides the shared series, `GET /metrics` has `smo_rapp_packages{state}`: the `application_package` rows by `PackageState` (every state present, 0 when empty; `AVAILABLE`, `PRIMED` and so on are the rApps onboarded), read from the database at scrape time (cached 15 s). Aggregate replicas with `max`.
+
 ### 2.7 Error codes
 
 | Code | Status | When |
@@ -230,7 +232,9 @@ cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Package list and state filter, identity fields for the GUI, health | 3 |
 | | Package row committed before the NFO call | 1 |
 | `tests/test_statemachine.py` | The FSM alone: success and failure onboarding, deprecate round trip, delete guards (child, usage, after stop), no transition from `FAILED`, prime / deprime round trip and guard, no `ONBOARDING → PRIME`, no `PRIMED → DELETE` | 11 |
-| | Total | 74 |
+| `tests/test_business_metrics.py` | `smo_rapp_packages` counts packages by state with every state of `PackageState` present | 1 |
+| | Total | 75 |
+
 
 ### 3.3 What is not covered here
 

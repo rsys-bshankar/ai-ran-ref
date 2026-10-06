@@ -66,6 +66,10 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 
 `values.yaml` is commented. The modules are one map (`modules`) and one template; a module is described by `image`, `kind` (`service` with `/live` and `/ready`, `worker` with a heartbeat file, `static` with a TCP probe), `database`, `enrollment`, `env`, `persistence`, `resources`; `moduleDefaults` is what each starts from. Every pod runs as the unprivileged user, with no capability, no privilege escalation and a read-only root filesystem (PR-SEC-13).
 
+## Alerts
+
+`prometheusRule.enabled=true` renders `files/smo-alerts.rules.yaml` (18 alerts, the burn-rate rules for three proposed SLOs, `docs/SLOS.md`) as a `PrometheusRule` of the Prometheus Operator; it is off by default because it needs that CRD. `prometheusRule.labels` is what your Prometheus selects rules on (for example `release: kube-prometheus-stack`), `prometheusRule.namespace` where to put it (default: the release's). The rules assume each module is scraped on `/metrics` as a job named after the module; the chart does not make the scrape configuration (a `ServiceMonitor` is not included). Without the Operator, use the same file as a plain `rule_files:` entry. Each alert's `runbook_url` is a page in `docs/runbooks/`.
+
 ## CI
 
 `.github/workflows/smo-tests.yml`, job `helm`: lint, render with the options on, build the images from the checkout, install on kind, check the database is at the head revision, run the compose smoke scripts inside the cluster (`compose_e2e.py`, `compose_e2e_roles.py`), check no rApp can read the enrollment secret, upgrade (every module rolls, no pod fails), uninstall.

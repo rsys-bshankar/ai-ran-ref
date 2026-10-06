@@ -30,6 +30,23 @@ host**: the destination is whatever a caller registered, so a host label would l
 `2xx`/`3xx`/`4xx`/`5xx`, `timeout`, `error` (could not connect or any other transport failure) or `blocked` (the SSRF guard refused the
 destination, nothing was sent). R1Client counts each attempt, so the one retry after a 401 shows as two calls.
 
+Business series (PR-OBS-4), all low-cardinality (a label is a state, a status, a module or a refusal class, never an id, a path or a host):
+
+  smo_refusals_total{module,reason}                       every 4xx answer, by module and a fixed class (`unauthorized`, `forbidden`, `not_found`,
+                                                          `conflict`, `invalid`, `too_large`, `rate_limited`, `other_4xx`), counted by the middleware
+  smo_outbox_rows{module,status}                          this module's notification_outbox rows by PENDING / SENT / DEAD (the backlog), read at scrape time
+  smo_outbox_oldest_pending_age_seconds{module}           age of this module's oldest PENDING row (0 when none): the delivery lag
+  smo_rapp_packages{state}                                onboarding: packages by lifecycle state (rApps onboarded)
+  smo_rapp_instances{state}                               rapp-mgmt: instances by lifecycle state (`RUNNING` are the active rApps)
+  smo_intents{admin_state}                                intent-service: intents (the policy objects, since A1 left) by admin state
+  smo_worker_task_runs_total{module,task,outcome}         a worker's periodic tasks that ran (`ok` or `failed`; a skipped offer is not counted)
+  smo_worker_task_last_success_timestamp_seconds{module,task}
+
+State gauges are read from the database when Prometheus scrapes (`register_query_gauge`, cached `SMO_BUSINESS_METRICS_TTL_SECONDS`, default 15):
+the request path pays nothing, "values match the DB" is true by construction, and a database that cannot answer yields no series for that
+scrape instead of an error. Every replica of a module reports the same value: aggregate with `max`, not `sum`. The worker has no HTTP server;
+`SMO_WORKER_METRICS_PORT` (unset: off) makes it serve `/metrics` on that port.
+
 Unmatched paths are one `route="unmatched"` series. Probes and `/metrics` itself are not counted: a scrape every
 15 s would otherwise be most of the traffic.
 
@@ -42,15 +59,22 @@ Metrics are held per process. With `UVICORN_WORKERS` above 1 each worker answers
 sees one of them; keep one worker per container and scale replicas (the default), or add multiprocess mode first.
 """
 
+import datetime
+import logging
+import os
 import re
 import sys
+import threading
 import time
+from collections.abc import Callable, Iterable
 
 from fastapi import FastAPI, Response
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
 from prometheus_client.core import GaugeMetricFamily
 
 from .logconfig import PROBE_PATHS
+
+log = logging.getLogger(__name__)
 
 METRICS_PATH = "/metrics"
 
@@ -129,6 +153,154 @@ def record_outbound(client: str, target: str, method: str, outcome: str, seconds
         OUTBOUND_DURATION.labels(client, target).observe(seconds)
 
 
+REFUSALS = Counter("smo_refusals_total", "4xx answers, by module and refusal class.", ["module", "reason"])
+_REFUSAL_REASONS = {400: "invalid", 401: "unauthorized", 403: "forbidden", 404: "not_found", 405: "invalid", 409: "conflict",
+                    410: "not_found", 413: "too_large", 415: "invalid", 422: "invalid", 429: "rate_limited"}
+
+
+def refusal_reason(status: int) -> str | None:
+    """The refusal class of a status, or None when it is not a refusal (anything but 4xx)."""
+    return _REFUSAL_REASONS.get(status, "other_4xx") if 400 <= status < 500 else None
+
+
+def _module_name() -> str:
+    name = os.environ.get("MODULE", "")
+    return name if _TARGET_OK.match(name) else "unknown"
+
+
+def record_refusal(status: int, module: str | None = None) -> None:
+    reason = refusal_reason(status)
+    if reason is not None:
+        REFUSALS.labels(module or _module_name(), reason).inc()
+
+
+WORKER_RUNS = Counter("smo_worker_task_runs_total", "Worker periodic tasks that ran, by module, task and outcome (ok or failed).",
+                      ["module", "task", "outcome"])
+_worker_last_success: dict[tuple[str, str], float] = {}
+_worker_lock = threading.Lock()
+
+
+def record_worker_task(module: str, task: str, outcome: str) -> None:
+    WORKER_RUNS.labels(module, task, outcome).inc()
+    if outcome == "ok":
+        with _worker_lock:
+            _worker_last_success[(module, task)] = time.time()
+
+
+class _WorkerSuccessCollector:
+    def describe(self):
+        return []
+
+    def collect(self):
+        family = GaugeMetricFamily("smo_worker_task_last_success_timestamp_seconds", "Unix time of a worker task's last successful run.",
+                                   labels=["module", "task"])
+        with _worker_lock:
+            items = list(_worker_last_success.items())
+        for (module, task), at in items:
+            family.add_metric([module, task], at)
+        yield family
+
+
+REGISTRY.register(_WorkerSuccessCollector())
+
+Rows = Iterable[tuple[tuple[str, ...], float]]
+
+
+class QueryGauge:
+    """A gauge family whose samples are rows a function reads from the database when Prometheus scrapes.
+
+    `rows(session)` returns `((label values...), value)` pairs. The result is cached for `ttl` seconds, so a burst of scrapes is one query.
+    With no database in the process (R1 Termination, the mocks), or a database that does not answer, nothing is yielded."""
+
+    def __init__(self, name: str, doc: str, labels: list[str], rows: Callable, session_factory=None, ttl: float | None = None):
+        self.name, self.doc, self.labels, self._rows, self._session_factory = name, doc, labels, rows, session_factory
+        self._ttl = ttl if ttl is not None else float(os.environ.get("SMO_BUSINESS_METRICS_TTL_SECONDS", "15"))
+        self._cached: tuple[float, list] | None = None
+        self._lock = threading.Lock()
+
+    def describe(self):
+        return []
+
+    def _factory(self):
+        if self._session_factory is not None:
+            return self._session_factory
+        return getattr(sys.modules.get("smo_shared.db"), "SessionLocal", None)
+
+    def _read(self) -> list | None:
+        factory = self._factory()
+        if factory is None:
+            return None
+        try:
+            with factory() as session:
+                return [(tuple(labels), float(value)) for labels, value in self._rows(session)]
+        except Exception:                                           # noqa: BLE001 (a scrape must never fail because a table is not there yet)
+            log.debug("business metric %s unavailable", self.name, exc_info=True)
+            return None
+
+    def collect(self):
+        with self._lock:
+            now = time.monotonic()
+            if self._cached is None or now - self._cached[0] >= self._ttl:
+                rows = self._read()
+                self._cached = (now, rows) if rows is not None else None
+            else:
+                rows = self._cached[1]
+        if rows is None:
+            return
+        family = GaugeMetricFamily(self.name, self.doc, labels=self.labels)
+        for labels, value in rows:
+            family.add_metric(list(labels), value)
+        yield family
+
+
+_query_gauges: dict[str, QueryGauge] = {}
+
+
+def register_query_gauge(name: str, doc: str, labels: list[str], rows: Callable, session_factory=None, ttl: float | None = None) -> QueryGauge:
+    """Register `name` once per process (a second call with the same name returns the first)."""
+    if name not in _query_gauges:
+        _query_gauges[name] = QueryGauge(name, doc, labels, rows, session_factory, ttl)
+        REGISTRY.register(_query_gauges[name])
+    return _query_gauges[name]
+
+
+def count_by(session, column, known: Iterable = ()) -> Rows:
+    """`SELECT column, COUNT(*) GROUP BY column` as label rows, with a zero for every `known` state so a gauge never disappears when its last row does."""
+    from sqlalchemy import func, select
+    counts = {str(getattr(state, "value", state)): int(n) for state, n in session.execute(select(column, func.count()).group_by(column))}
+    for state in known:
+        counts.setdefault(str(getattr(state, "value", state)), 0)
+    return [((state,), n) for state, n in sorted(counts.items())]
+
+
+def _outbox_rows(session) -> Rows:
+    from sqlalchemy import func, select
+
+    from .outbox import DEAD, PENDING, SENT, NotificationOutbox
+    module = _module_name()
+    counts = dict(session.execute(select(NotificationOutbox.status, func.count())
+                                  .where(NotificationOutbox.module == module).group_by(NotificationOutbox.status)).all())
+    return [((module, status), int(counts.get(status, 0))) for status in (PENDING, SENT, DEAD)]
+
+
+def _outbox_age_rows(session) -> Rows:
+    from sqlalchemy import func, select
+
+    from .outbox import PENDING, NotificationOutbox
+    from .timeutil import as_utc
+    module = _module_name()
+    oldest = session.scalar(select(func.min(NotificationOutbox.created_at))
+                            .where(NotificationOutbox.module == module, NotificationOutbox.status == PENDING))
+    age = 0.0 if oldest is None else max(0.0, (datetime.datetime.now(datetime.UTC) - as_utc(oldest)).total_seconds())
+    return [((module,), age)]
+
+
+def register_outbox_metrics() -> None:
+    register_query_gauge("smo_outbox_rows", "This module's notification outbox rows, by status.", ["module", "status"], _outbox_rows)
+    register_query_gauge("smo_outbox_oldest_pending_age_seconds", "Age of this module's oldest PENDING outbox row (0 when none).",
+                         ["module"], _outbox_age_rows)
+
+
 class PoolCollector:
     """Connection pool gauges, read from the engine's pool when Prometheus scrapes, so the request path pays nothing."""
 
@@ -191,6 +363,7 @@ class MetricsMiddleware:
             template = getattr(scope.get("route"), "path", None) or "unmatched"
             labels = (scope["method"], template, str(status))
             REQUESTS.labels(*labels).inc()
+            record_refusal(status)
             DURATION.labels(*labels).observe(time.perf_counter() - started)
 
 
@@ -198,6 +371,7 @@ def install_metrics(app: FastAPI) -> None:
     """What each service's `main.py` calls, right after `install_logging(app)`."""
     app.add_middleware(MetricsMiddleware)
     register_pool_metrics(_modules_engine)
+    register_outbox_metrics()
 
     @app.get(METRICS_PATH, include_in_schema=False)
     def metrics():

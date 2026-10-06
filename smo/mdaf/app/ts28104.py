@@ -10,9 +10,10 @@ attributes carry plain strings (this build's ids or managed-element refs):
 the one recorded deviation is addressing.
 """
 
+import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MDA_TYPES = (
     "COVERAGE_ANALYTICS_COVERAGE_PROBLEM_ANALYSIS", "COVERAGE_ANALYTICS_PAGING_OPTIMIZATION",
@@ -74,6 +75,18 @@ class MDAOutputIEFilter(_Spec):
     threshold: list[ThresholdInfo] | None = None
     analyticsPeriod: AnalyticsSchedule | None = None
     timeOut: str | None = None  # DateTime
+
+    @field_validator("timeOut")
+    @classmethod
+    def _timeout_is_a_datetime(cls, value: str | None) -> str | None:
+        # The request is matched against reports later and compares this with the clock;
+        # a value that does not parse would fail there as a 500, so refuse it here.
+        if value:
+            try:
+                datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("timeOut must be an ISO 8601 date-time") from exc
+        return value
 
 
 class MDAOutputPerMDAType(_Spec):
