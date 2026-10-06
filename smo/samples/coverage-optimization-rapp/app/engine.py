@@ -63,7 +63,7 @@ class CellInput:
 
 
 def evaluate_guards(c: CellInput, now: datetime.datetime) -> dict:
-    blocks = []
+    blocks: list[dict] = []
     if c.guard.get("cellClass") == "EMERGENCY" or c.guard.get("incidentZone"):
         blocks.append({"guard": "PROTECTED_CELL", "level": "HARD",
                        "detail": "EMERGENCY" if c.guard.get("cellClass") == "EMERGENCY" else f"incident zone {c.guard['incidentZone']}"})

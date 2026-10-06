@@ -30,6 +30,7 @@ How each kind of write reaches O1:
 import datetime
 import json
 import uuid
+from typing import cast
 
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
@@ -203,13 +204,15 @@ def _expectation(inst: MobilityInstance, relation: str, value: int, execution_id
 def _settle(row: MobilityRelation, d: MobilityDecision, now: datetime.datetime | None, ok: bool, rollback: dict | None) -> None:
     if ok:
         row.state, row.current_cio = engine.OBSERVING, d.to_cio
-        row.last_change = {"at": (now or d.observed_at).isoformat(), "from": d.from_cio, "to": d.to_cio, "preRate": d.rate}
-        row.last_changed_at = now or d.observed_at
+        changed_at = cast(datetime.datetime, now or d.observed_at)      # a decision to change has an observation
+        row.last_change = {"at": changed_at.isoformat(), "from": d.from_cio, "to": d.to_cio, "preRate": d.rate}
+        row.last_changed_at = changed_at
         d.outcome = "EXECUTED"
     else:
         row.state, row.current_cio = engine.STEADY, d.from_cio
-        d.outcome = f"{rollback['trigger']}_ROLLED_BACK" if rollback["result"] in ("VERIFIED", "ALREADY_RESTORED") \
-            else f"{rollback['trigger']}_ROLLBACK_FAILED"
+        undone = cast(dict, rollback)      # not ok, so the caller made the rollback
+        d.outcome = f"{undone['trigger']}_ROLLED_BACK" if undone["result"] in ("VERIFIED", "ALREADY_RESTORED") \
+            else f"{undone['trigger']}_ROLLBACK_FAILED"
     d.final_state = {"state": row.state, "cio": row.current_cio}
     d.updated_at = datetime.datetime.now(datetime.UTC)
 
@@ -231,15 +234,16 @@ def _follow_dispatch(inst, rows, decisions: dict[str, MobilityDecision], dispatc
     actions = _intent_actions(dispatch["intentId"])
     for rel in rels:
         d, row = decisions[rel], rows[rel]
-        action = actions.get(_expectation(inst, rel, d.to_cio, d.execution_id)["expectationId"])
+        to_cio, from_cio = cast(int, d.to_cio), cast(int, d.from_cio)      # a change has both
+        action = actions.get(_expectation(inst, rel, to_cio, d.execution_id)["expectationId"])
         d.action = {"path": "INTENT", **action} if action else {"path": "INTENT", "status": "NOT_ENACTED"}
         status = d.action.get("status")
-        d.verification = _verify_cio(inst, {rel: d.to_cio}) if status == "COMPLETED" else None
-        ok = status == "COMPLETED" and d.verification["result"] == "VERIFIED"
+        d.verification = _verify_cio(inst, {rel: to_cio}) if status == "COMPLETED" else None
+        ok = status == "COMPLETED" and cast(dict, d.verification)["result"] == "VERIFIED"      # verified just above
         rollback = None
         if not ok:
             trigger = "VERIFY_FAILED" if status == "COMPLETED" else "PARTIAL_SUCCESS" if status == "PARTIAL_SUCCESS" else "ACTION_FAILED"
-            rollback = {"trigger": trigger, **_restore(inst, {rel: d.from_cio}, execution_id, f"ROLLBACK:{trigger}")}
+            rollback = {"trigger": trigger, **_restore(inst, {rel: from_cio}, execution_id, f"ROLLBACK:{trigger}")}
         d.rollback = rollback
         _settle(row, d, None, ok, rollback)
 
@@ -255,7 +259,7 @@ def _reconcile(db: Session, inst: MobilityInstance) -> list[dict]:
         dispatch = sdk.intent.get_autonomy_dispatch(dispatch_id)
         if dispatch["status"] == "AWAITING_SCOPE":
             continue
-        decisions = {r: db.get(MobilityDecision, rows[r].pending_decision_id) for r in rels}
+        decisions = {r: db.get_one(MobilityDecision, rows[r].pending_decision_id) for r in rels}
         for r in rels:
             rows[r].pending_dispatch_id = rows[r].pending_decision_id = None
         _follow_dispatch(inst, rows, decisions, dispatch, next(iter(decisions.values())).execution_id)
@@ -372,7 +376,8 @@ def validate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     job = sdk.lifecycle.start_validation(inst.model_id, RAPP_ID, package_id=inst.package_id,
                                          training_job_id=(inst.lifecycle_jobs or {}).get("training"),
                                          validation_criteria={"minScore": ValidationLogic.PASS_THRESHOLD})
-    passed, metrics = ValidationLogic.validate(MobilityModel.from_dict(inst.model_params), _dataset(inst, "TRAINING"))
+    model = MobilityModel.from_dict(cast(dict, inst.model_params))      # set by training
+    passed, metrics = ValidationLogic.validate(model, _dataset(inst, "TRAINING"))
     completed = sdk.lifecycle.complete_validation(job["validationJobId"], passed, metrics=metrics)
     _jobs(inst, validation=job["validationJobId"])
     db.commit()
@@ -386,7 +391,8 @@ def emulate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     inst = _instance(db, instance_id)
     job = sdk.lifecycle.start_emulation(inst.model_id, RAPP_ID, package_id=inst.package_id,
                                         emulation_criteria={"dataset": SIM_DATASET, "minDirectionAccuracy": EmulationLogic.PASS_RATE})
-    passed, metrics = EmulationLogic.emulate(MobilityModel.from_dict(inst.model_params), _dataset(inst, "EMULATION"))
+    model = MobilityModel.from_dict(cast(dict, inst.model_params))      # set by training
+    passed, metrics = EmulationLogic.emulate(model, _dataset(inst, "EMULATION"))
     completed = sdk.lifecycle.complete_emulation(job["emulationJobId"], passed, metrics=metrics)
     _jobs(inst, emulation=job["emulationJobId"])
     db.commit()
@@ -501,7 +507,7 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
         if result.decision != engine.REVERT:
             continue
         d, row = decisions[rid], rows[rid]
-        restore = _restore(inst, {rid: result.new_cio}, execution_id, "REVERT:KPI_DEGRADED")
+        restore = _restore(inst, {rid: cast(int, result.new_cio)}, execution_id, "REVERT:KPI_DEGRADED")      # a revert names the CIO to restore
         d.action = restore["attempts"][0]["action"] if restore["performed"] else None
         d.verification = restore["attempts"][-1]["verification"] if restore["performed"] else restore["verification"]
         ok = restore["result"] in ("VERIFIED", "ALREADY_RESTORED")
@@ -515,7 +521,7 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     changes = {rid: decisions[rid] for rid, r in results.items() if r.decision in (engine.RAISE, engine.LOWER)}
     if changes:
         dispatch = sdk.intent.request_autonomy_dispatch(
-            inst.instance_id, [_expectation(inst, rid, d.to_cio, execution_id) for rid, d in changes.items()], inst.rmih_id,
+            inst.instance_id, [_expectation(inst, rid, cast(int, d.to_cio), execution_id) for rid, d in changes.items()], inst.rmih_id,
             model_id=inst.model_id, notification_destination=inst.operator_notification_uri,
             user_label=f"mobility-optimization {execution_id}")
         _follow_dispatch(inst, rows, changes, dispatch, execution_id)

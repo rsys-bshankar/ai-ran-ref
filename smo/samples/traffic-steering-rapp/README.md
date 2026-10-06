@@ -16,7 +16,7 @@ cell individual offset.
 | R1 route | `/traffic-steering-rapp` (r1-termination, `TRAFFIC_STEERING_RAPP_URL`) |
 | Call flow | [25 Traffic Steering closed loop](../../docs/call-flows/25-traffic-steering-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 27](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 26 passed (`tests/test_engine.py`, `tests/test_model.py`) |
+| Unit tests | 55 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
 
 ## What it does
 
@@ -85,7 +85,7 @@ CIO envelope. This rApp publishes its observed relations at
 | `app/models.py` | Tables `traffic_instance`, `traffic_cell`, `traffic_decision` (audit) |
 | `app/producer.py` | Sample load model and `LOAD_PERFORMANCE_SIM` producer |
 | `app/model/` | `SteeringModel.py` (forecast, planner), `series.py` (score), one logic file per execution mode |
-| `demo.py`, `tests/` | Demo 00-11 script; engine and model unit tests |
+| `demo.py`, `tests/` | Demo 00-11 script; engine, model and route unit tests |
 | `manifest.yaml`, `capabilities.yaml`, `Definitions/`, `TOSCA-Metadata/` | Package content |
 
 ## Package
@@ -121,7 +121,7 @@ This package declares:
 ## Run and test
 ```bash
 cd traffic-steering-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 26 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 55 passed
 ```
 Demo, run inside the compose network (e.g. from `r1-termination`):
 ```bash
