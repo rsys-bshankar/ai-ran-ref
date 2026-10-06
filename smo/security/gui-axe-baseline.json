@@ -1,0 +1,3 @@
+{
+ "_comment": "Serious or critical accessibility findings (axe-core, WCAG 2 A and AA) of the operator GUI that are accepted, as \"<route> <rule id>\": \"reason\" (scripts/gui_e2e.py). Empty: every such finding fails the run."
+}
