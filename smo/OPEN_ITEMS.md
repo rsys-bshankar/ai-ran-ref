@@ -309,8 +309,8 @@ Done (`HISTORY.md` §10): `smo_shared/outbox.py` (table, `enqueue`, `drain`, inl
 
 ### 5.4 Security (`PR-SEC`)
 
-`SECURITY.md` says the build is not hardened. `/bootstrap` and `/health` are unauthenticated and service-to-service calls
-are plain HTTP.
+`SECURITY.md` says the build is not hardened. `/bootstrap` and `/health` are unauthenticated (what `/bootstrap` reveals, and the three controls that narrow
+who can ask, are in `r1-termination/README.md` and `HISTORY.md` PR-SEC-9) and service-to-service calls are plain HTTP.
 
 #### PR-SEC-1 — TLS at the edge
 
@@ -382,16 +382,12 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 |---|---|---|---|
 | SEC-8.3 | Separate stricter limit for the unauthenticated paths | Test | – |
 | SEC-8.4 | Limits per route class (read, write, upload) from config | Config test | – |
-| SEC-8.5 | Shared limiter state (Postgres) so replicas share a budget | Two replicas share one bucket | – |
 | SEC-8.6 | Same limiter on the BFF login route | Brute-force test | – |
 
 #### PR-SEC-9 — Bootstrap exposure
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-9.1 | Document why `/bootstrap` is open and what it reveals | Paragraph in `r1-termination/README.md` | – |
-| SEC-9.2 | NetworkPolicy / ingress rule limiting `/bootstrap` to rApp networks | Manifest and test | OPS-2.6 |
-| SEC-9.3 | Optional shared bootstrap key header, off by default | Test both modes | – |
 
 #### PR-SEC-10 — Tenant / region authorization
 

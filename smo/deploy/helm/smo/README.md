@@ -82,6 +82,16 @@ Every module answers `GET /version` (`{module, version, buildSha, builtAt}`, PR-
 
 `.github/workflows/smo-tests.yml`, job `helm`: lint, render with the options on, build the images from the checkout, install on kind, check the database is at the head revision, run the compose smoke scripts inside the cluster (`compose_e2e.py`, `compose_e2e_roles.py`), check no rApp can read the enrollment secret, upgrade (every module rolls, no pod fails), uninstall.
 
+## Exposure of `/bootstrap` and the rate limiter (PR-SEC-9, PR-SEC-8.5)
+
+`GET /bootstrap` on R1 Termination has no token (an rApp calls it to find SME before it has one) and reveals only SME's address and two API paths (`r1-termination/README.md`). Three controls, all off by default:
+
+* **`bootstrapNetworkPolicy.enabled`** renders a NetworkPolicy on the `r1-termination` pods: ingress to the gateway port only from the pods of this release (the modules and the GUI backend) and `bootstrapNetworkPolicy.allowedSources`, a list of NetworkPolicyPeers (the rApp namespaces, the ingress controller's namespace, a scraper). **A NetworkPolicy selects pods and ports, not URL paths**, so it limits who can reach the whole gateway, `/bootstrap` with it, not `/bootstrap` alone. Once on it denies everything not listed, so list the rApps first; it needs a CNI that enforces NetworkPolicy.
+* **`ingress.r1.bootstrapAllowedSourceRanges`** (ingress-nginx; with `ingress.enabled` and `ingress.r1.host`) renders a second Ingress `r1-bootstrap` for the exact path `/bootstrap` carrying `nginx.ingress.kubernetes.io/whitelist-source-range`; the `r1` Ingress and every other path are unchanged. This is the per-path control. Other ingress controllers need their own annotation.
+* **`R1_BOOTSTRAP_KEY[_FILE]`**, the gateway's own shared key (`X-Bootstrap-Key`). The chart has no dedicated value, so that the key does not land in `values.yaml`: mount a Secret and set `modules.r1-termination.env.R1_BOOTSTRAP_KEY_FILE` on the gateway and `moduleDefaults.env.SMO_BOOTSTRAP_KEY_FILE` for every client (every module and rApp that reaches `/bootstrap` must send it, or its discovery gets a 401).
+
+The rate limiter's buckets are per gateway replica by default. `modules.r1-termination.env.R1_RATE_STORE=postgres` (the chart sets `memory`, as compose does by default) keeps them in the shared table `rate_bucket` (migration `0028`; the gateway's database role has it) so replicas share one budget, at the price of one database round trip per authenticated request; if the database fails the limiter fails open to the replica's own bucket and counts it in `smo_rate_store_errors_total`. `HorizontalPodAutoscaler` or `replicas` above 1 on `r1-termination` is where this matters.
+
 ## Where the replicas land
 
 With more than one replica of a module (`modules.<name>.replicas`, or `ci/ha-values.yaml` as an example), `placement.mode` decides how the pods are spread: `soft` (default) prefers different nodes and still starts on a cluster with fewer nodes than replicas, `hard` requires different nodes (a replica that cannot be placed stays Pending), `off` sets nothing. `placement.zoneKey: topology.kubernetes.io/zone` adds a preference across zones. The chart's CI checks that each mode renders as described; it runs on one node, so it does not show pods landing on different nodes.

@@ -22,6 +22,7 @@ ROLE_INTERNAL = "internal"
 ROLE_RAPP = "rapp"
 ROLE_HEADER = "X-R1-Role"
 ENROLLMENT_HEADER = "X-SMO-Enrollment"
+BOOTSTRAP_KEY_HEADER = "X-Bootstrap-Key"             # the optional shared key GET /bootstrap asks for (PR-SEC-9.3): R1_BOOTSTRAP_KEY[_FILE] at the gateway, SMO_BOOTSTRAP_KEY[_FILE] in a client
 
 # the scopes only an internal invoker is granted (SME); `smo-rapp` is the scope an rApp asks for
 INTERNAL_SCOPES = frozenset({"smo-internal", "smo-gui"})

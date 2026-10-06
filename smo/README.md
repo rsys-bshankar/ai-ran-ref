@@ -84,7 +84,7 @@ R1 Termination's routing table is `ROUTES` in `r1-termination/app/main.py`.
 It strips the prefix before forwarding, so `/sme/capif-events/...` reaches SME's
 `/capif-events/...`. Tokens are obtained from SME's own address, which
 `/bootstrap` returns (`tokenEndPoint`); the gateway itself answers 401 to an
-unauthenticated `/sme/oauth2/token`. Cross-module calls go through `smo_shared.r1_client.R1Client`,
+unauthenticated `/sme/oauth2/token`. `/bootstrap` has no token (an rApp needs it to find SME) and reveals only SME's address and two API paths; `R1_BOOTSTRAP_KEY` optionally gates it behind a shared `X-Bootstrap-Key` (`r1-termination/README.md`). The per-caller rate limit is per replica unless `R1_RATE_STORE=postgres` shares one budget. Cross-module calls go through `smo_shared.r1_client.R1Client`,
 which obtains its own SME token the same way an rApp does.
 
 ## Quickstart
