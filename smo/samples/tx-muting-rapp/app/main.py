@@ -1,7 +1,8 @@
 """TX-muting rApp: a Non-RT RIC energy-saving rApp that mutes half of a cell's TX paths at low load and restores full
 TX when load returns, through O1. R1 only: no A1, Near-RT RIC, xApp or E2.
 
-The loop (POST /evaluate):
+The loop runs by itself every EVALUATION_INTERVAL_SECONDS once POST /start has set the target (POST /evaluate runs one
+extra pass on demand):
 
     PM from DME + config from RAN NF OAM -> decision (engine.py)
         -> DME /actions -> RAN NF OAM config job -> O1 edit-config -> read-back -> rollback -> audit
@@ -82,6 +83,9 @@ class AppState:
         self.data_jobs: dict = {}
         self.decisions: list[dict] = []
         self.counter = 0
+        self.unchanged_passes = 0  # NO_CHANGE passes since the last one that was reported
+        self._last_signature: tuple | None = None
+        self.last_error: str | None = None
         self.tx_state: str | None = None  # txMutingActivation as last read or written
 
     def emit(self, kind: str, **data) -> dict:
@@ -121,11 +125,21 @@ class AppState:
             self.tx_state = value
 
     def record(self, record: dict) -> None:
+        """Keep the pass. A NO_CHANGE that repeats the previous pass (same decision, reason and state) is kept in the
+        decision log but is not an event: nothing changed, so a pass every few seconds does not flood the console."""
         self.decisions.append(record)
+        del self.decisions[:-MAX_DECISIONS]
+        signature = (record["decision"], record["reason"], record["currentState"])
+        repeat = record["decision"] == "NO_CHANGE" and signature == self._last_signature
+        self._last_signature = signature
+        if repeat:
+            self.unchanged_passes += 1
+            return
         self.emit("decision", decisionId=record["decisionId"], decision=record["decision"], reason=record["reason"],
                   stateBefore=record["currentState"], changes=record["changes"],
                   verification=(record.get("verification") or {}).get("result"), attempts=record.get("attempts"),
-                  rolledBack="rollback" in record)
+                  rolledBack="rollback" in record, unchangedPassesBefore=self.unchanged_passes)
+        self.unchanged_passes = 0
         verified = (record.get("verification") or {}).get("result") == "VERIFIED"
         if record["changes"] and "txMutingActivation" in record["changes"]:
             new = record["changes"]["txMutingActivation"]
@@ -137,14 +151,81 @@ class AppState:
                 self.emit("tx-state.changed", decisionId=record["decisionId"], previous=self.tx_state, current=new)
                 self.tx_state = new
 
+    def note_error(self, message: str | None) -> None:
+        """A failed automatic pass is an event once per distinct failure, and its recovery is one: not one per interval."""
+        if message and message != self.last_error:
+            self.emit("evaluation.error", error=message)
+        elif message is None and self.last_error:
+            self.emit("evaluation.recovered", previousError=self.last_error)
+        self.last_error = message
+
     def reset(self) -> None:
         before = {"started": self.started, "decisions": len(self.decisions)}
         self.started, self.target, self.data_jobs, self.decisions, self.counter, self.tx_state = False, {}, {}, [], 0, None
+        self.unchanged_passes, self._last_signature, self.last_error = 0, None, None
         self.emit("reset", discarded=before)
 
 
+MAX_DECISIONS = 1000
+
 _lock = threading.Lock()
 _state = AppState()
+
+
+class EvaluationLoop:
+    """Runs the closed loop by itself: one pass every `interval` seconds while a target is set. Started by POST /start,
+    stopped by DELETE /state. `EVALUATION_INTERVAL_SECONDS=0` turns it off (passes only through POST /evaluate)."""
+
+    def __init__(self):
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self.interval = 0.0
+
+    @property
+    def running(self) -> bool:
+        return bool(self._thread and self._thread.is_alive())
+
+    def start(self, interval: float) -> None:
+        self.stop()
+        self.interval = interval
+        if interval <= 0:
+            _state.emit("auto-evaluation.disabled", reason="EVALUATION_INTERVAL_SECONDS is 0: passes only through POST /evaluate")
+            return
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, args=(self._stop, interval), name="evaluation-loop", daemon=True)
+        self._thread.start()
+        _state.emit("auto-evaluation.started", intervalSeconds=interval)
+
+    def stop(self) -> None:
+        if self.running:
+            self._stop.set()
+            self._thread.join(10)
+            _state.emit("auto-evaluation.stopped")
+        self._thread = None
+
+    @staticmethod
+    def _run(stop: threading.Event, interval: float) -> None:
+        while not stop.wait(interval):
+            try:
+                with _lock:
+                    if _state.started and not stop.is_set():
+                        _evaluate_and_act()
+                _state.note_error(None)
+            except HTTPException as exc:
+                _state.note_error(str(exc.detail))
+            except Exception as exc:  # the loop must outlive any one failed pass
+                log.exception("automatic pass failed")
+                _state.note_error(repr(exc))
+
+
+_loop = EvaluationLoop()
+
+
+def evaluation_interval() -> float:
+    try:
+        return float(os.environ.get("EVALUATION_INTERVAL_SECONDS", "10"))
+    except ValueError:
+        return 10.0
 
 
 class StartRequest(BaseModel):
@@ -287,13 +368,14 @@ def start(body: StartRequest | None = None):
                 "maximumSampleAgeSeconds": MAX_SAMPLE_AGE_SECONDS}})["dataJobId"]
     with _lock:
         _state.start(body.managedElementRef, body.cellId, jobs)
+    _loop.start(evaluation_interval())
     return {"managedElementRef": body.managedElementRef, "cellId": body.cellId, "dataJobs": jobs,
             "thresholds": {"activation": cfg["activation"], "deactivation": cfg["deactivation"]}}
 
 
 @app.post("/evaluate")
 def evaluate():
-    """One closed-loop pass. X-Correlation-ID of the DME action is the returned decisionId."""
+    """Run one closed-loop pass now, in addition to the automatic ones. X-Correlation-ID of the DME action is the returned decisionId."""
     with _lock:
         return _evaluate_and_act()
 
@@ -304,7 +386,8 @@ def state():
     if not _state.started:
         return {"started": False}
     return {"started": True, **_state.target, "dataJobs": _state.data_jobs, "config": read_tx_config(),
-            "lastKnownTxState": _state.tx_state, "decisions": len(_state.decisions), "lastEventSeq": _state.last_seq}
+            "lastKnownTxState": _state.tx_state, "decisions": len(_state.decisions), "lastEventSeq": _state.last_seq,
+            "autoEvaluation": {"running": _loop.running, "intervalSeconds": _loop.interval}}
 
 
 @app.get("/decisions")
@@ -333,5 +416,6 @@ def actions():
 @app.delete("/state", status_code=204)
 def reset():
     """Forget the target and the decision log (data jobs are ended by `DELETE /data-jobs?consumer_id=` on DME). The event log is kept."""
+    _loop.stop()  # before taking the lock: a pass in flight holds it
     with _lock:
         _state.reset()

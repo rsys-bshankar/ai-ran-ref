@@ -56,3 +56,4 @@ services:
       SMO_IDENTITY_KIND: rapp
       SMO_MODULE_IDENTITY_STORE: "off"
       R1_GATEWAY_URL: http://r1-termination:8000
+      EVALUATION_INTERVAL_SECONDS: ${EVALUATION_INTERVAL_SECONDS:-5}   # the rApp decides by itself this often; 0 = only POST /evaluate

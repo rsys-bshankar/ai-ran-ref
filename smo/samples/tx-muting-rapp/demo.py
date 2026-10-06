@@ -4,6 +4,9 @@
     python3 demo.py 00        # one step
     python3 demo.py all       # every step in order
 
+The rApp evaluates by itself (every EVALUATION_INTERVAL_SECONDS, 5 s in the compose overlay): a step that changes the
+load reports the counters and then waits for the rApp's own first pass that saw them; nothing triggers the pass.
+
 Run it inside the compose network (from the r1-termination container; scripts/run_demo.sh does that). It calls each
 service by hostname, the way DEMO_RUNBOOK.md does. All network data comes from the O1 adaptor simulator, exactly as
 you can trigger it by hand with its CLI (scripts/cli.sh): the demo only calls the same control routes. Ids are
@@ -13,6 +16,7 @@ kept between steps in $DEMO_STATE (default /tmp/tx-muting-demo.json).
 import json
 import os
 import sys
+import time
 
 import httpx
 
@@ -45,8 +49,21 @@ def pm(prb: float, ue: int) -> None:
     show("PM reported", {"dlPrbUtilization": prb, "rrcConnectedUeCount": ue})
 
 
-def evaluate() -> dict:
-    d = call("post", RAPP, "/evaluate")
+def load(prb: float, ue: int, timeout: float = 120.0) -> dict:
+    """Report the counters, then wait for the rApp's own first pass that saw exactly these values and show it."""
+    seen = {d["decisionId"] for d in call("get", RAPP, "/decisions")["items"]}
+    pm(prb, ue)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for d in call("get", RAPP, "/decisions")["items"]:
+            v = d["instantaneousValues"]
+            if d["decisionId"] not in seen and v.get("dlPrbUtilization") == prb and v.get("rrcConnectedUeCount") == ue:
+                return show_decision(d)
+        time.sleep(1)
+    raise SystemExit(f"no decision on PRB {prb} / {ue} UEs within {timeout:g} s: is the rApp started and its loop running? (GET {RAPP}/state)")
+
+
+def show_decision(d: dict) -> dict:
     show("decision", f"{d['decisionId']} {d['decision']} ({d['reason']})")
     show("state before", d["currentState"])
     if "action" in d:
@@ -77,8 +94,7 @@ def step_01(state: dict) -> None:
 
 def step_02(state: dict) -> None:
     """Low load: PRB 18.4 %, 4 UEs -> REDUCED_TX, MUTING_ON read back."""
-    pm(18.4, 4)
-    state["lastAction"] = evaluate().get("action")
+    state["lastAction"] = load(18.4, 4).get("action")
 
 
 def step_03(state: dict) -> None:
@@ -99,21 +115,28 @@ def step_03(state: dict) -> None:
 
 def step_04(state: dict) -> None:
     """Hysteresis (no change): PRB 41 %, 8 UEs while MUTING_ON -> NO_CHANGE, no O1 write."""
-    pm(41.0, 8)
-    evaluate()
+    load(41.0, 8)
 
 
 def step_05(state: dict) -> None:
     """Restore full TX: PRB 45 % -> FULL_TX, MUTING_OFF read back."""
-    pm(45.0, 8)
-    evaluate()
+    load(45.0, 8)
 
 
 def step_06(state: dict) -> None:
-    """Audit: every decision of this run and every DME action the rApp requested."""
-    for d in call("get", RAPP, "/decisions")["items"]:
-        verified = (d.get("verification") or {}).get("result", "-")
-        print(f"  {d['decisionId']}  {d['currentState'] or '-':10} -> {d['decision']:10} {verified:13} {d['reason']}")
+    """Audit: the rApp's decisions (repeated no-change passes collapsed) and the DME actions it requested."""
+    last, repeats = None, 0
+    for d in call("get", RAPP, "/decisions", params={"limit": 1000})["items"] + [None]:
+        key = d and (d["decision"], d["reason"], d["currentState"])
+        if d and key == last and d["decision"] == "NO_CHANGE":
+            repeats += 1
+            continue
+        if repeats:
+            print(f"{'':12}(+{repeats} identical no-change passes)")
+        last, repeats = key, 0
+        if d:
+            verified = (d.get("verification") or {}).get("result", "-")
+            print(f"  {d['decisionId']}  {d['currentState'] or '-':10} -> {d['decision']:10} {verified:13} {d['reason']}")
     show("DME actions by the rApp", len(call("get", RAPP, "/actions")["items"]))
 
 

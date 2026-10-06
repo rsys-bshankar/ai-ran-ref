@@ -11,7 +11,7 @@ A Non-RT RIC rApp that mutes half of a cell's TX paths when load is low and rest
 
 | Part | Sections |
 |---|---|
-| HLD | §1 Purpose, §2 Architecture, §3 Information model, §4 Decision logic, §5 Flows |
+| HLD | §1 Purpose, §2 Architecture (§2.2: components, interfaces and the standards they follow), §3 Information model, §4 Decision logic, §5 Flows |
 | LLD | §6 rApp service, §7 O1 adaptor simulator and CLI, §8 Package |
 | Operation | §9 Deploy, run and test (including the end-to-end demo, §9.3), §10 Lifecycle management, §11 Limits |
 
@@ -80,6 +80,44 @@ The rApp never calls DME or RAN NF OAM directly. Its client (`smo_shared.r1_clie
 R1 Termination introspects the token on every call and applies the rApp role policy (`smo_shared/roles.py`): reads are open, and an rApp may change only what is on the allow-list. This rApp needs `POST /dme/data-jobs`, `POST /dme/actions` and reads, all allowed. The identity is kept in the process (`SMO_MODULE_IDENTITY_STORE=off`: no database), so a restart registers a new invoker. A refusal at the gateway is a 502 from the rApp that names the call and the status.
 
 The O1 adaptor simulator and the demo script are not rApps: they act as the network side and as an operator, and call RAN NF OAM and DME directly.
+
+## 2.2 Components, interfaces and the standards they follow
+
+"Standard" means a published O-RAN, 3GPP, IETF or OASIS specification; the right-hand column says whether the item follows one, follows only its message shape, or is defined by the SMO build, by this sample, or by the vendor. The SMO rows restate each module's own "Standards basis" (its README). Where a real network function replaces the simulator, the vendor-defined rows are the ones to map.
+
+**Components**
+
+| Component | Follows | Defined by |
+|---|---|---|
+| `tx-muting-rapp` | An O-RAN Non-RT RIC rApp, R1 consumer (O-RAN.WG2 R1GAP / R1AP) | **Sample**: the decision logic, thresholds, decision record |
+| R1 Termination | O-RAN R1 gateway: token check at SME, prefix routing | **SMO build**: the routing table and the rApp/internal role policy are project design, not standardised |
+| SME | O-RAN R1 SME on 3GPP CAPIF: TS 23.222, TS 29.222 | Standard (subset implemented) |
+| DME | O-RAN R1 DME services, derived from the O-RAN-SC ICS data plane | Standard for data jobs and types; **SMO build** for O1 action mediation (`/actions`) |
+| RAN NF OAM | O-RAN O1 consumer; 3GPP MnS: TS 28.532 and TS 28.541 (CM, FM, PM), TS 28.319 (MSAC) | Standard, plus an **SMO build** per-vendor capability registry |
+| Onboarding | O-RAN rApp package onboarding (ASD in a TOSCA CSAR, O-RAN-SC rApp Manager) | Standard; **SMO build** extension: `manifest.yaml`, `capabilities.yaml` |
+| rApp Management | O-RAN rApp lifecycle management (O-RAN-SC rApp Manager) | Standard; **SMO build** extension: autonomy mode, region scope |
+| `o1-adaptor-sim` | Stands in for an O1 (MnS) producer. Follows only the NETCONF message shape (RFC 6241) | **Sample / vendor side**: not a standard component; everything below the O1 message is up to the real product |
+| `scripts/*`, `demo.py` | None | **Sample**: operator tooling |
+
+**Interfaces**
+
+| Interface | Between | Follows | Defined by |
+|---|---|---|---|
+| R1 | rApp to R1 Termination to SME, DME, RAN NF OAM | O-RAN R1 (R1GAP, R1AP), HTTP/JSON | Standard framework; route prefixes `/dme`, `/ran-nf-oam` are **SMO build** |
+| Authentication | rApp, SME, R1 Termination | OAuth 2.0 client credentials (RFC 6749) with Bearer tokens (RFC 6750); invoker registration and token introspection from CAPIF (TS 29.222) | Standard; the `smo-rapp` scope and the `rapp` role are **SMO build** |
+| DME data jobs | rApp to DME | O-RAN R1 DME data-job model (`ONE_TIME`, `PULL_HTTP`, data types) | Standard model; the type names `RAN.PMCounters.<counter>` are **SMO build** |
+| DME `/actions` | rApp to DME, then DME to RAN NF OAM | Not standardised | **SMO build** ("internal O1 action mediation"); the `X-Correlation-ID` header is a project convention |
+| Configuration read | rApp to RAN NF OAM, then NETCONF `get-config` to the adaptor | 3GPP MnS provisioning (TS 28.532) | REST shape **SMO build**; the managed object `NRCellDU` is the 3GPP IOC (TS 28.541) |
+| O1 CM | RAN NF OAM to the adaptor | O-RAN O1 with NETCONF (RFC 6241) `edit-config` / `get-config` | In this sample only the message shape, as XML over plain HTTP with a simplified `managed-object` payload; a real O1 uses NETCONF over SSH (RFC 6242) or TLS (RFC 7589). The wire form is **SMO build / sample** |
+| TX-muting data model | `txMutingFeatureEnable`, `txPathOffPattern`, `txMutingActivation` on `NRCellDU` | `NRCellDU` is 3GPP TS 28.541; the three leaves are **not** in 3GPP or O-RAN models | **Vendor-defined** (a vendor YANG augmentation; the names and values here are the sample's reading of it) |
+| PM | Adaptor to RAN NF OAM to DME | O1 PM reporting (TS 28.532) | The counters `DL_PRB_UTILIZATION`, `RRC_CONNECTED_UE` are **sample-defined** names, not TS 28.552 measurement names |
+| FM | Adaptor to RAN NF OAM | O1 FM (TS 28.532) alarm model | Alarm ids are **placeholders**; the rApp does not read alarms |
+| Adaptor registration and heartbeat | Adaptor to RAN NF OAM | Not standardised: replaces MnS Registry polling (TS 28.623) | **SMO build** (adaptor self-registration) |
+| Package | CSAR with an ASD | TOSCA Simple Profile 1.3 (OASIS) as used by the O-RAN rApp package | Standard container; `manifest.yaml` and `capabilities.yaml` are **SMO build** extensions |
+| Package and instance lifecycle | Operator to Onboarding, rApp Management | O-RAN-SC rApp Manager model (onboard, prime, instantiate, terminate) | Standard model; state names as implemented by the SMO build |
+| Control, events, CLI | Operator to `o1-adaptor-sim`, rApp `GET /events` | None | **Sample-defined**: `/control/*`, `/events`, the CLI, `scripts/watch.sh` |
+| Probes and metrics | Orchestrator to every service | None (`/live`, `/ready`, `/health`, `/metrics`) | **SMO build** |
+| Deployment | Docker Compose overlay | Compose Specification | Standard format; the service layout is **sample-defined** |
 
 ---
 
@@ -199,7 +237,7 @@ sequenceDiagram
     end
 ```
 
-## 5.3 One closed-loop pass: `POST /evaluate`
+## 5.3 One closed-loop pass (automatic, every `EVALUATION_INTERVAL_SECONDS`)
 
 ```mermaid
 sequenceDiagram
@@ -210,6 +248,7 @@ sequenceDiagram
     participant R as tx-muting-rapp
     AD->>NF: POST /pm-reports (counters, timestamp now)
     NF->>D: PM records
+    Note over R: a timer starts the pass, nobody calls /evaluate
     R->>D: GET /data-jobs/{id}/records (latest per counter)
     R->>NF: GET config (get-config)
     R->>R: engine.evaluate -> decision, reason, changes
@@ -244,10 +283,10 @@ In 5.2 and 5.3 each rApp-to-DME or rApp-to-RAN NF OAM arrow is `rApp -> R1 Termi
 | Route | Behaviour |
 |---|---|
 | `GET /health`, `/live`, `/ready` | Probes (`install_health`) |
-| `POST /start` `{managedElementRef, cellId}` | Validates thresholds, finds the two DME types (409 if absent: the adaptor must have registered), opens one data job each; stores target and job ids |
-| `POST /evaluate` | One pass under a lock; returns the decision record (409 before `/start`) |
+| `POST /start` `{managedElementRef, cellId}` | Validates thresholds, finds the two DME types (409 if absent: the adaptor must have registered), opens one data job each, stores target and job ids, **starts the automatic evaluation loop** |
+| `POST /evaluate` | One extra pass now, under the same lock as the automatic ones; returns the decision record (409 before `/start`). Not needed in normal operation |
 | `GET /state` | Target, data jobs, live configuration through RAN NF OAM, last known TX state, decision count, last event number |
-| `GET /decisions?limit=` | Decision records of this run |
+| `GET /decisions?limit=` | Decision records, every pass, the last 1000 kept |
 | `GET /actions` | DME actions with `requested_by=tx-muting-rapp` |
 | `GET /thresholds` | Active validated policy |
 | `GET /events?since=&wait=` | Every change of this service's state, numbered; with `wait` a long poll (§6.5) |
@@ -257,7 +296,7 @@ A failed call to DME or RAN NF OAM, including a refusal at the R1 gateway, is a 
 
 ## 6.2 Settings
 
-`R1_GATEWAY_URL` (default `http://r1-termination:8000`), `SMO_IDENTITY_KIND=rapp`, `SMO_MODULE_IDENTITY_STORE=off` (set in the compose overlay), `TX_MUTING_THRESHOLDS` (path to another policy file).
+`EVALUATION_INTERVAL_SECONDS` (seconds between automatic passes; code default 10, compose overlay 5, `0` turns the loop off), `R1_GATEWAY_URL` (default `http://r1-termination:8000`), `SMO_IDENTITY_KIND=rapp`, `SMO_MODULE_IDENTITY_STORE=off` (set in the compose overlay), `TX_MUTING_THRESHOLDS` (path to another policy file).
 
 ## 6.3 Decision record
 
@@ -296,9 +335,11 @@ The service keeps its state in memory: the target, the data jobs, the decision l
 |---|---|
 | `started` | `POST /start`: target and data jobs set |
 | `tx-state.observed` | A pass read a `txMutingActivation` different from the last known one: the first read, or a change made by someone else |
-| `decision` | Every pass: decision, reason, state before, changes, verification result, attempts, whether it was rolled back |
+| `auto-evaluation.started` / `.stopped` / `.disabled` | The loop starts at `POST /start`, stops at `DELETE /state`, or is off (`EVALUATION_INTERVAL_SECONDS=0`) |
+| `decision` | A pass whose result is new: decision, reason, state before, changes, verification result, attempts, whether it was rolled back, and `unchangedPassesBefore`. A `NO_CHANGE` that repeats the previous pass (same decision, reason and state) is kept in `GET /decisions` but is not an event, so a pass every few seconds does not flood the console |
+| `evaluation.error` / `evaluation.recovered` | An automatic pass failed (once per distinct error, not per interval), and the first pass that worked again |
 | `tx-state.changed` | A write was verified (or a rollback was): `previous` to `current` |
-| `reset` | `DELETE /state`: what was discarded |
+| `reset` | `DELETE /state`: what was discarded (the loop is stopped first) |
 
 `scripts/watch.sh` follows these and the adaptor simulator's events on one console. The events are lost on restart, like the rest of the state.
 
@@ -425,7 +466,7 @@ Without the scripts: `cd smo && docker compose -f docker-compose.yml -f samples/
 The whole path, from a counter on the simulated network to a verified configuration change on it:
 
 ```text
-cli.sh pm 18.4 4 -> adaptor -> RAN NF OAM -> DME -> rApp (/evaluate) -> R1 Termination -> DME /actions
+cli.sh pm 18.4 4 -> adaptor -> RAN NF OAM -> DME -> rApp (its own timer, every 5 s) -> R1 Termination -> DME /actions
                                                   -> RAN NF OAM -> adaptor edit-config -> read-back
 ```
 
@@ -454,44 +495,42 @@ It prints the rApp's events (`started`, `tx-state.observed`, `decision`, `tx-sta
 scripts/run_demo.sh            # steps 00-06, or: scripts/run_demo.sh 02 03
 ```
 
-Each step prints what it did; the expected result of each is in §9.4. The run ends with an audit table:
+The rApp decides by itself: a step that changes the load reports the counters and then waits for the rApp's own next pass (at most one interval, 5 s) before it prints the decision. The expected result of each step is in §9.4. The run ends with an audit table in which repeated no-change passes are collapsed:
 
 ```text
-TXM-0001  MUTING_OFF -> REDUCED_TX VERIFIED      INSTANTANEOUS_LOW_LOAD
-TXM-0002  MUTING_ON  -> NO_CHANGE  -             LOAD_WITHIN_HYSTERESIS
-TXM-0003  MUTING_ON  -> FULL_TX    VERIFIED      PRB_HIGH
+TXM-0003  MUTING_OFF -> REDUCED_TX VERIFIED      INSTANTANEOUS_LOW_LOAD
+TXM-0009  MUTING_ON  -> NO_CHANGE  -             LOAD_WITHIN_HYSTERESIS
+TXM-0010  MUTING_ON  -> FULL_TX    VERIFIED      PRB_HIGH
 ```
 
-**3b. Hand-driven run** (instead of 3a, or after it): the same loop one move at a time. Prepare once, then alternate "set a counter" and "evaluate":
+(The numbers differ per run: the loop also makes a pass every interval, and each pass has an id.)
+
+**3b. Hand-driven run** (instead of 3a, or after it): you only change the network side; the rApp reacts on its own. Prepare once, then set counters and watch terminal B:
 
 ```bash
-scripts/run_demo.sh 00 01        # register the adaptor, seed the configuration, start the rApp
+scripts/run_demo.sh 00 01        # register the adaptor, seed the configuration, start the rApp (this starts its loop)
 
 scripts/cli.sh pm 18.4 4         # low load
-scripts/evaluate.sh              # TXM-0001  MUTING_OFF -> REDUCED_TX ... read-back=VERIFIED
+                                 # within 5 s, terminal B: rApp decision REDUCED_TX, adaptor config.received, tx-state.changed MUTING_OFF -> MUTING_ON
 scripts/cli.sh config show       # the simulated cell now reads txMutingActivation MUTING_ON
 
-scripts/cli.sh pm 41 8           # inside the hysteresis band
-scripts/evaluate.sh              # NO_CHANGE (LOAD_WITHIN_HYSTERESIS): nothing is written
-
-scripts/cli.sh pm 45 8           # load returns
-scripts/evaluate.sh              # FULL_TX (PRB_HIGH), read-back=VERIFIED
+scripts/cli.sh pm 41 8           # inside the hysteresis band: no event, nothing is written (repeated NO_CHANGE passes are not events)
+scripts/cli.sh pm 45 8           # load returns: decision FULL_TX (PRB_HIGH), tx-state.changed MUTING_ON -> MUTING_OFF
 ```
 
 Then break the write path on purpose:
 
 ```bash
 scripts/cli.sh fault IGNORE_WRITE      # the next edit-config is acknowledged but not applied
-scripts/cli.sh pm 18 4
-scripts/evaluate.sh                    # REDUCED_TX ... read-back=VERIFIED attempts=2  (the retry applied it)
+scripts/cli.sh pm 18 4                 # decision REDUCED_TX with attempts=2: the read-back failed once, the retry applied it
 
-scripts/cli.sh pm 45 8 && scripts/evaluate.sh      # back to full TX
+scripts/cli.sh pm 45 8                 # back to full TX
 scripts/cli.sh fault IGNORE_WRITE 2    # the write and its retry are both ignored
-scripts/cli.sh pm 18 4
-scripts/evaluate.sh                    # read-back=VERIFY_FAILED attempts=2, then "rolled back to full TX: VERIFIED"
+scripts/cli.sh pm 18 4                 # decision REDUCED_TX with verification VERIFY_FAILED, attempts=2, rolledBack=true
+                                       # (tx-state stays MUTING_OFF; the faults are spent, so the next pass, one interval later, mutes successfully)
 ```
 
-`scripts/evaluate.sh --json` prints the full decision record (§6.3); `scripts/cli.sh gen start 5` makes the simulator report random counters every 5 s; `scripts/cli.sh help` lists every command.
+The loop keeps running, so after any failed or rolled-back mute the rApp simply tries again on its next pass while the load stays low. `scripts/cli.sh reset` clears pending faults. `GET /decisions` on `tx-muting-rapp` has every pass; `scripts/cli.sh gen start 5` makes the simulator report random counters every 5 s so the rApp follows a changing load; `scripts/cli.sh help` lists every command. To change the pace, set `EVALUATION_INTERVAL_SECONDS` in the environment of `scripts/start.sh` (for example `EVALUATION_INTERVAL_SECONDS=2 scripts/start.sh`), or `0` to turn the loop off.
 
 **4. What to look at**
 
@@ -499,6 +538,7 @@ scripts/evaluate.sh                    # read-back=VERIFY_FAILED attempts=2, the
 |---|---|
 | Terminal B (`watch.sh`) | One line per state change, both services interleaved. A mute reads: `pm.reported`, `config.read`, `config.received`, then the rApp's `decision` and `tx-state.changed MUTING_OFF -> MUTING_ON` |
 | `scripts/cli.sh events 20` | The simulator's last events |
+| `GET /state` on `tx-muting-rapp` | `autoEvaluation`: whether the loop runs and its interval |
 | `GET /decisions`, `GET /state` on `tx-muting-rapp` | Decision records; target, live configuration, last known TX state |
 | `docker compose logs r1-termination` | The rApp's calls through R1, each with the decision id as `correlationId` |
 | `docker compose logs sme` | The rApp's one-off `POST /invoker-registrations` and its token grants |
@@ -522,11 +562,11 @@ If something fails, §10.7 lists the usual causes (an unregistered adaptor gives
 |---|---|---|
 | 00 | Adaptor registers `tx-muting-me-001`, heartbeat, 2 PM subscriptions; an initial config job seeds the leaves | Endpoint `ACTIVE`; `NRCellDU=101` reads `MUTING_OFF`, feature `true` |
 | 01 | `POST /start` | 2 data job ids |
-| 02 | PRB 18.4 %, 4 UEs | `REDUCED_TX`, action `COMPLETED`, read-back `VERIFIED` `MUTING_ON` |
+| 02 | PRB 18.4 %, 4 UEs; waits for the rApp's own next pass | `REDUCED_TX`, action `COMPLETED`, read-back `VERIFIED` `MUTING_ON` |
 | 03 | Show the DME action, the config job, the adaptor's running and last received config | `correlationId` = decision id, job `COMPLETED` |
-| 04 | PRB 41 %, 8 UEs while muted | `NO_CHANGE` (`LOAD_WITHIN_HYSTERESIS`) |
-| 05 | PRB 45 % | `FULL_TX` (`PRB_HIGH`), `MUTING_OFF` read back |
-| 06 | Audit | Decision table, count of DME actions by `tx-muting-rapp` |
+| 04 | PRB 41 %, 8 UEs while muted; waits for the rApp's own pass | `NO_CHANGE` (`LOAD_WITHIN_HYSTERESIS`) |
+| 05 | PRB 45 %; waits for the rApp's own pass | `FULL_TX` (`PRB_HIGH`), `MUTING_OFF` read back |
+| 06 | Audit | Decision table (repeated no-change passes collapsed), count of DME actions by `tx-muting-rapp` |
 
 ## 9.5 Unit tests
 
@@ -534,20 +574,17 @@ No stack needed. Both services have a package called `app`, so run the suites se
 
 ```bash
 cd smo/samples/tx-muting-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q                                  # 35: engine, closed loop on a fake DME / RAN NF OAM, R1 path, state events, package
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q                                  # 38: engine, closed loop on a fake DME / RAN NF OAM, automatic loop, R1 path, state events, package
 cd o1-adaptor-sim && PYTHONPATH=.:../../../shared:../../../sdk python -m pytest tests/ -q       # 20: config, counters, alarms, faults, events, CLI
 ```
 
 ## 9.6 Verification status
 
-On 2026-10-06, on the built Docker stack, with the final code and package:
+Verified on 2026-10-06 on the built Docker stack, on the revision **before** the automatic evaluation loop was added: both unit suites; `scripts/start.sh` and the demo with the rApp calling DME and RAN NF OAM through R1 Termination on an SME token (SME `POST /invoker-registrations` 201; R1 proxying `/actions` with the decision id as correlation id); a hand-driven run with `POST /evaluate`, including the retry (`attempts=2`) and the rollback; `scripts/watch.sh` and the state-change log lines; the package lifecycle of §10.
 
-- both unit suites pass;
-- `scripts/start.sh` and `scripts/run_demo.sh` (steps 00-06) pass, with the rApp calling DME and RAN NF OAM through R1 Termination on an SME token (SME `POST /invoker-registrations` 201; R1 proxying `/actions` with the decision id as correlation id);
-- the hand-driven walkthrough of §9.3 (CLI plus `evaluate.sh`), including the retry (`attempts=2`) and the rollback, and `scripts/watch.sh` with the state-change log lines;
-- the package lifecycle of §10: onboard, prime, deploy (autonomy `AUTONOMOUS`), bootstrap (`RUNNING`), a refused deprime (409), terminate, deprime, delete, retire.
+**Not run since the automatic loop was added:** the loop itself (`EvaluationLoop`, `EVALUATION_INTERVAL_SECONDS`, the `auto-evaluation.*` and `evaluation.*` events, the collapsing of repeated no-change passes), the three unit tests written for it, the demo's waiting steps (`load()` and the collapsed audit in `demo.py`), the hand-driven run of §9.3 3b, and the rebuilt CSAR. The numbers in §9.5 (38 and 20) are the expected counts, not a measured result.
 
-Not run: `FULL_STACK=1`, `cleanup.sh --purge`, more than one cell or managed element, package upgrade (§10.5), an instance whose container calls `bootstrap-complete` itself.
+Never run: `FULL_STACK=1`, `cleanup.sh --purge`, more than one cell or managed element, package upgrade (§10.5), an instance whose container calls `bootstrap-complete` itself.
 
 ---
 
@@ -590,7 +627,7 @@ stateDiagram-v2
 | Prime | `scripts/lcm.sh prime` | `PRIMED` |
 | Deploy | `scripts/lcm.sh deploy` | Instance `DEPLOYING`, OAuth client id issued |
 | Bootstrap | `scripts/lcm.sh bootstrap` | Instance `RUNNING` |
-| Operate | `scripts/start.sh`, `run_demo.sh`, `evaluate.sh`, `cli.sh`, `watch.sh` (§9.3) | See §9 |
+| Operate | `scripts/start.sh`, `run_demo.sh`, `cli.sh`, `watch.sh` (§9.3) | See §9 |
 | Terminate | `scripts/lcm.sh terminate` | Instance `UNDEPLOYED`, package usage closed |
 | Deprime | `scripts/lcm.sh deprime` | Package `AVAILABLE` |
 | Delete instance | `scripts/lcm.sh delete` | Instance record gone |
@@ -639,14 +676,14 @@ Onboarding never rejects synchronously (it answers 202); the outcome is only in 
 
 ## 10.4 Operate
 
-Once the instance is `RUNNING`, operation is the rApp's own API (§6): `POST /start` binds the target cell and opens the data jobs, `POST /evaluate` runs one pass, `GET /decisions` is the audit trail. `scripts/run_demo.sh` does all of it (§9.3); `scripts/cli.sh` drives the network side and `scripts/evaluate.sh` runs a pass.
+Once the instance is `RUNNING`, operation is the rApp's own API (§6): `POST /start` binds the target cell, opens the data jobs and starts the rApp's own evaluation loop; from then on it decides every `EVALUATION_INTERVAL_SECONDS` without being asked. `GET /decisions` is the audit trail. `scripts/run_demo.sh` does all of it (§9.3); `scripts/cli.sh` drives the network side.
 
 | Task | How |
 |---|---|
 | Check health | `docker compose ps`; `GET /ready` on each service; `docker compose logs -f tx-muting-rapp o1-adaptor-sim` (structured JSON logs, one access line per request) |
 | Watch state changes | `scripts/watch.sh`: the rApp's (`started`, `decision`, `tx-state.changed`, ...) and the simulator's, on one console. Also `GET /events` on each service and the `state change` lines in `docker compose logs -f tx-muting-rapp` |
-| Change the policy | Edit `app/thresholds.json` (activation strictly below deactivation) and rebuild: `docker compose ... up -d --build tx-muting-rapp`. Or mount another file and set `TX_MUTING_THRESHOLDS`. A bad policy fails `POST /evaluate` with 422 before anything is written |
-| Pause the automation | Stop calling `POST /evaluate`: the rApp acts only when asked. `scripts/cli.sh` and the control API continue to work |
+| Change the policy | Edit `app/thresholds.json` (activation strictly below deactivation) and rebuild: `docker compose ... up -d --build tx-muting-rapp`. Or mount another file and set `TX_MUTING_THRESHOLDS`. A bad policy fails `POST /start`, and every pass, with 422 before anything is written |
+| Pause the automation | `DELETE /state` on `tx-muting-rapp` stops the loop (and forgets the target); `POST /start` resumes it. Or restart the stack with `EVALUATION_INTERVAL_SECONDS=0` to run passes only through `POST /evaluate`. The simulator and its CLI keep working either way |
 | Return to full TX by hand | `scripts/cli.sh config set txMutingActivation=MUTING_OFF` changes the simulator's configuration; against the platform, write through DME `/actions` |
 | Reset the run | `scripts/cleanup.sh`: ends the rApp's data jobs, clears its state and the simulator's, removes the demo state. Managed element, PM subscriptions, DME actions and alarms stay as audit history |
 | Restart a service | `docker compose ... restart tx-muting-rapp`. State is in memory: run `POST /start` again; the simulator forgets configuration and alarms but keeps nothing the platform needs (re-run `register`) |
@@ -689,7 +726,7 @@ After the package is `DELETING`, the same CSAR can be onboarded again.
 | `onboarding-status` `FAILED` | Byte-identical package already onboarded, or `TOSCA.meta` / `Entry-Definitions` missing | `lcm.sh retire` the old one (or fix the package), rebuild, onboard again |
 | `lcm.sh` cannot open `lcm.py` or serves an old CSAR | A stale copy in the `r1-termination` volume | `scripts/*.sh` clear the copy as root before copying; re-run the script |
 | `POST /start` 409 "DME type ... is not registered" | The adaptor has not registered, so the PM types do not exist | `scripts/cli.sh register` (or demo step 00), then `POST /start` |
-| `POST /evaluate` 502 | DME or RAN NF OAM unreachable, or R1 Termination refused the call (401 token, 403 role); the message names the call and the status | Check `docker compose ps`, the named service's logs, and that `sme` and `r1-termination` are healthy |
+| Automatic or manual pass 502 / `evaluation.error` event | DME or RAN NF OAM unreachable, or R1 Termination refused the call (401 token, 403 role); the message names the call and the status | Check `docker compose ps`, the named service's logs, and that `sme` and `r1-termination` are healthy |
 | `VERIFY_FAILED` in a decision | The network side acknowledged but did not apply (try it: `scripts/cli.sh fault IGNORE_WRITE`) | The rApp retries once, then rolls a failed mute back to `MUTING_OFF`; the record shows `attempts` and `rollback` |
 | Instance stays `DEPLOYING` | `bootstrap-complete` was never sent | `scripts/lcm.sh bootstrap` |
 

@@ -19,8 +19,11 @@ class Fake:
         self.config = {"txMutingFeatureEnable": "true", "txPathOffPattern": "HORIZONTAL_PLANE", "txMutingActivation": "MUTING_OFF"}
         self.actions = []
         self.drop_writes = 0
+        self.fail = False  # every call raises, as a gateway refusal would
 
     def __call__(self, base, verb, path, expect=(200, 201, 202, 204), **kw):
+        if self.fail:
+            raise main.HTTPException(502, "boom")
         if path == "/dme-types":
             return [{"typeName": f"RAN.PMCounters.{c}", "dmeTypeId": f"t-{c}"} for c in self.pm]
         if path == "/data-jobs":
@@ -46,11 +49,13 @@ class Fake:
 def svc(monkeypatch):
     fake = Fake()
     monkeypatch.setattr(main, "_call", fake)
+    monkeypatch.setenv("EVALUATION_INTERVAL_SECONDS", "0")  # passes only through POST /evaluate, unless a test turns the loop on
     main._state.reset()
     with TestClient(main.app) as client:
         client.fake = fake
         client.post("/start", json={"managedElementRef": "me-1", "cellId": "101"})
         yield client
+    main._loop.stop()
     main._state.reset()
 
 
@@ -116,7 +121,7 @@ def kinds(svc, since=0):
 
 
 def test_every_state_change_is_an_event(svc):
-    assert kinds(svc)[-1][0] == "started" and kinds(svc)[-1][1]["cellId"] == "101"
+    assert [k for k, _ in kinds(svc)[-2:]] == ["started", "auto-evaluation.disabled"]
     base = svc.get("/events").json()["lastSeq"]
     svc.post("/evaluate")                                   # mute: first read, then a verified change
     events = kinds(svc, base)
@@ -196,3 +201,56 @@ def test_decision_id_is_the_correlation_id_and_the_token_rides_along():
         assert client._headers()[main.CORRELATION_HEADER] == "TXM-0042"
     finally:
         main._correlation_override.reset(token)
+
+
+# ---- the rApp decides by itself
+
+def wait_for(condition, timeout=5.0):
+    import time
+    end = time.time() + timeout
+    while time.time() < end:
+        if condition():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_the_loop_decides_without_being_asked(svc, monkeypatch):
+    monkeypatch.setenv("EVALUATION_INTERVAL_SECONDS", "0.05")
+    svc.post("/start", json={"managedElementRef": "me-1", "cellId": "101"})   # starts the loop; nobody calls /evaluate
+    assert wait_for(lambda: svc.fake.config["txMutingActivation"] == "MUTING_ON")
+    assert ("auto-evaluation.started", {"intervalSeconds": 0.05}) in kinds(svc)
+    assert svc.get("/state").json()["autoEvaluation"] == {"running": True, "intervalSeconds": 0.05}
+    svc.fake.pm["DL_PRB_UTILIZATION"] = 45.0                                  # load returns: restored on its own
+    assert wait_for(lambda: svc.fake.config["txMutingActivation"] == "MUTING_OFF")
+    svc.delete("/state")
+    assert not main._loop.running and kinds(svc)[-1][0] == "reset"
+    assert "auto-evaluation.stopped" in [k for k, _ in kinds(svc)]
+
+
+def test_repeated_no_change_passes_are_logged_but_not_events(svc):
+    svc.fake.pm["DL_PRB_UTILIZATION"] = 41.0                                  # blocks a mute: NO_CHANGE every pass
+    base = svc.get("/events").json()["lastSeq"]
+    for _ in range(3):
+        svc.post("/evaluate")
+    assert [k for k, _ in kinds(svc, base)].count("decision") == 1            # the first only
+    assert len(svc.get("/decisions").json()["items"]) == 3                    # but every pass is kept
+    svc.fake.pm["DL_PRB_UTILIZATION"] = 18.0
+    svc.post("/evaluate")
+    decision = [d for k, d in kinds(svc, base) if k == "decision"][-1]
+    assert decision["decision"] == "REDUCED_TX" and decision["unchangedPassesBefore"] == 2
+
+
+def test_a_failing_automatic_pass_is_one_event_and_so_is_the_recovery(svc, monkeypatch):
+    monkeypatch.setenv("EVALUATION_INTERVAL_SECONDS", "0.03")
+    svc.post("/start", json={"managedElementRef": "me-1", "cellId": "101"})
+    assert wait_for(lambda: svc.fake.config["txMutingActivation"] == "MUTING_ON")
+    base = svc.get("/events").json()["lastSeq"]
+    svc.fake.fail = True
+    assert wait_for(lambda: any(k == "evaluation.error" for k, _ in kinds(svc, base)))
+    import time
+    time.sleep(0.3)                                                            # many more failing passes
+    assert [k for k, _ in kinds(svc, base)].count("evaluation.error") == 1
+    svc.fake.fail = False
+    assert wait_for(lambda: any(k == "evaluation.recovered" for k, _ in kinds(svc, base)))
+    assert [k for k, _ in kinds(svc, base)].count("evaluation.recovered") == 1
