@@ -95,7 +95,7 @@ class IntentExpectation(_Spec):
 
     @model_validator(mode="after")
     def _family(self):
-        family = FAMILIES.get(self.expectationObject.objectType or "")
+        family: dict[str, Any] | None = FAMILIES.get(self.expectationObject.objectType or "")
         targets = family["targets"] if family else {}
         contexts = {**GENERIC_CONTEXTS, **(family["contexts"] if family else {})}
         for target in self.expectationTargets:

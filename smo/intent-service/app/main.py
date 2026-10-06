@@ -23,6 +23,7 @@ addressed to it (ON DELETE CASCADE), not just leave a dangling reference.
 import datetime
 import json
 import uuid
+from typing import Any
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
@@ -214,7 +215,7 @@ def _feasibility(fn: IntentHandlingFunction, expectations: list[dict]) -> dict:
                 bad.append({"targetName": target["targetName"]})
         if bad:
             infeasible.append({"expectationId": exp["expectationId"], "inFeasibleTargets": bad})
-    report = {"feasibilityCheckResult": "INFEASIBLE" if infeasible else "FEASIBLE",
+    report: dict[str, Any] = {"feasibilityCheckResult": "INFEASIBLE" if infeasible else "FEASIBLE",
               "infeasibilityReasons": ["INVALID_INTENT_EXPRESSION"] if infeasible else []}
     if infeasible:
         report["inFeasibleExpectationInfos"] = infeasible
@@ -448,7 +449,7 @@ def submit_negotiation_feedback(intent_id: uuid.UUID, body: NegotiationFeedbackR
                         .order_by(IntentReport.last_updated_time.desc())).first()
     if report is None:
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail="intent has no negotiation report to answer")
-    negotiation = dict(report.intent_fulfilment_negotiation_report)
+    negotiation = dict(report.intent_fulfilment_negotiation_report or {})
     outcome_ids = {o["possibleIntentOutcomeId"] for o in negotiation.get("possibleIntentOutcomeList") or []}
     if body.referredIntentOutcomeId not in outcome_ids:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
@@ -789,15 +790,15 @@ def _dispatch_intent_request(dispatch: AutonomyDispatch, user_label: str | None)
     """The strict TS 28.312 Intent an AUTONOMOUS/resolved-ASSIST dispatch
     creates: its expectations as dispatched, reports delivered to the
     dispatch's own operator notification destination (when it has one)."""
-    control = {"observationPeriod": 60}
+    control: dict[str, Any] = {"observationPeriod": 60}
     if dispatch.notification_destination:
         control["reportRecipientAddress"] = dispatch.notification_destination
-    return CreateIntentRequest(
-        userLabel=user_label or f"autonomy-dispatch {dispatch.dispatch_id}",
-        intentExpectations=[_scoped(e, dispatch.region_scope) for e in dispatch.expectations],
-        intentPriority=dispatch.priority, intentMgmtPurpose=dispatch.intent_mgmt_purpose or "FULFILMENT_WITHOUT_NEGOTIATION",
-        intentReportControl=[control], rmihId=dispatch.rmih_id, rmioId=str(dispatch.instance_id),
-        intentHandlingScope=dispatch.intent_handling_scope)
+    return CreateIntentRequest.model_validate({       # the dispatch's stored JSON is validated into the strict model here
+        "userLabel": user_label or f"autonomy-dispatch {dispatch.dispatch_id}",
+        "intentExpectations": [_scoped(e, dispatch.region_scope) for e in dispatch.expectations],
+        "intentPriority": dispatch.priority, "intentMgmtPurpose": dispatch.intent_mgmt_purpose or "FULFILMENT_WITHOUT_NEGOTIATION",
+        "intentReportControl": [control], "rmihId": dispatch.rmih_id, "rmioId": str(dispatch.instance_id),
+        "intentHandlingScope": dispatch.intent_handling_scope})
 
 
 def _autonomy_dispatch_view(d: AutonomyDispatch) -> dict:
