@@ -91,7 +91,7 @@ def low_run_minutes(series) -> float:
 
 
 def evaluate_guards(c: CellInput, now: datetime.datetime) -> dict:
-    blocks = []
+    blocks: list[dict] = []
     cell_class = c.guards.get("cellClass", "NORMAL")
     if cell_class == "EMERGENCY":
         blocks.append({"guard": "EMERGENCY_CELL", "level": "HARD"})
