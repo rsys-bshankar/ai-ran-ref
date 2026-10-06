@@ -1,0 +1,32 @@
+# TxMuting_rApp package manifest — the fields of the rApp package description, read by Onboarding's
+# _parse_ai_capabilities.
+rappManifest:
+  manifestVersion: "1.0"
+  aiRuntimeSdkVersion: "1.0"
+
+name: TxMuting_rApp
+version: 1.0.0
+vendor: Radisys
+ownerTeam: AI-RAN-SMO
+description: >
+  Rule-based Energy Saving rApp: mutes half of a cell's TX paths at low PRB utilisation and restores full TX when
+  load returns, through O1.
+useCase: Energy Saving
+domain: RAN
+deploymentModel: NonRT-RIC
+
+executionModes:
+  - INFERENCE
+
+autonomyModes:
+  - AUTONOMOUS
+
+requiredServices:
+  - DME
+  - RAN-NF-OAM
+
+runtimeProfiles:
+  INFERENCE:
+    cpu: 1
+    memory: 1Gi
+    gpu: 0

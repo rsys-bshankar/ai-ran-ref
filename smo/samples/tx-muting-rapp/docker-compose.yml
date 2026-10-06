@@ -1,0 +1,52 @@
+# TX-muting rApp deployment: the rApp service and the O1 adaptor simulator, added to the SMO stack.
+#
+#   docker compose -f ../../docker-compose.yml -f docker-compose.yml up -d --build tx-muting-rapp o1-adaptor-sim
+#                                           (scripts/start.sh does this and waits for health)
+#
+# Both are built from the SMO Dockerfile like every other service (MODULE picks the app/ directory). Relative paths
+# resolve against the first -f file, smo/docker-compose.yml. Neither service uses the database, so no secret or
+# migration is needed; they depend on the services they call.
+
+x-ready-probe: &ready_probe
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=4)"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs: ["/tmp"]
+
+services:
+  # The O1 adaptor stand-in: consumes edit-config / get-config from RAN NF OAM, generates PM counters and alarms on
+  # demand. Follow it with `docker compose logs -f o1-adaptor-sim` or its CLI (scripts/cli.sh).
+  # In-memory state: keep one replica and one worker.
+  o1-adaptor-sim:
+    build: { context: ., args: { MODULE: samples/tx-muting-rapp/o1-adaptor-sim } }
+    stop_grace_period: 30s
+    <<: *hardening
+    healthcheck: *ready_probe
+    depends_on:
+      ran-nf-oam: { condition: service_healthy }
+    environment:
+      RAN_NF_OAM_URL: http://ran-nf-oam:8000
+      ADAPTOR_ME: ${ADAPTOR_ME:-tx-muting-me-001}
+      ADAPTOR_CELL: ${ADAPTOR_CELL:-101}
+      ADAPTOR_VENDOR: ${ADAPTOR_VENDOR:-demo-vendor}
+      ADAPTOR_PUBLIC_URI: http://o1-adaptor-sim:8000/edit-config
+
+  tx-muting-rapp:
+    build: { context: ., args: { MODULE: samples/tx-muting-rapp } }
+    stop_grace_period: 30s
+    <<: *hardening
+    healthcheck: *ready_probe
+    depends_on:
+      dme: { condition: service_healthy }
+      ran-nf-oam: { condition: service_healthy }
+      o1-adaptor-sim: { condition: service_healthy }
+    environment:
+      DME_URL: http://dme:8000
+      RAN_NF_OAM_URL: http://ran-nf-oam:8000

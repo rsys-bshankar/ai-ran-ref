@@ -1,0 +1,33 @@
+# TxMuting_rApp capabilities. `capabilities` is what Onboarding records; the rest describes the O1 surface.
+capabilities:
+  consumes:
+    - namespace: data
+      description: >-
+        DL_PRB_UTILIZATION, RRC_CONNECTED_UE and RADIO_SYNC_STATE (O1 PM via RAN NF OAM -> DME), active alarms and
+        the TX-muting configuration read-back from RAN NF OAM.
+    - namespace: platform
+      description: Direct DME O1 actions for TX-muting writes and their rollback.
+  provides: []
+
+datasets:
+  - DL_PRB_UTILIZATION
+  - RRC_CONNECTED_UE
+  - RADIO_SYNC_STATE
+supportedStages:
+  - INFERENCE
+consumedServices:
+  - sdk.data
+  - sdk.platform
+outputs:
+  - txMutingActivation
+supportedActions:
+  - TX_MUTING_ON
+  - TX_MUTING_OFF
+o1Targets:
+  - NRCellDU
+o1Attributes:
+  - txMutingFeatureEnable
+  - txPathOffPattern
+  - txMutingActivation
+supportedVendorModes:
+  - O1_NETCONF

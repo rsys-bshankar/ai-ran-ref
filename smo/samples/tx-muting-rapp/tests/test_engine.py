@@ -1,23 +1,22 @@
 import copy
 import datetime
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
+from app import engine
+
 HERE = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(HERE))
-import engine  # noqa: E402
 
 NOW = datetime.datetime(2026, 9, 30, 9, 30, tzinfo=datetime.UTC)
-CFG = json.loads((HERE / "thresholds.json").read_text())
+CFG = json.loads((HERE / "app" / "thresholds.json").read_text())
 
 
-def snap(prb=18.4, ue=4, mru="SYNCHRONIZED", state="MUTING_OFF", enabled=True, alarms=(), age_s=60):
+def snap(prb=18.4, ue=4, radio="SYNCHRONIZED", state="MUTING_OFF", enabled=True, alarms=(), age_s=60):
     ts = (NOW - datetime.timedelta(seconds=age_s)).isoformat()
     return {"dlPrbUtilization": {"value": prb, "timestamp": ts}, "rrcConnectedUeCount": {"value": ue, "timestamp": ts},
-            "mruSynchronizationState": {"value": mru, "timestamp": ts}, "txMutingActivation": {"value": state},
+            "radioSynchronizationState": {"value": radio, "timestamp": ts}, "txMutingActivation": {"value": state},
             "txMutingFeatureEnable": {"value": enabled}, "blockingAlarms": list(alarms)}
 
 
@@ -36,7 +35,7 @@ def test_low_load_mutes():
     ({"prb": 41.0, "ue": 8}, "PRB_NOT_LOW"),
     ({"ue": 10}, "UE_COUNT_NOT_LOW"),
     ({"enabled": False}, "FEATURE_DISABLED"),
-    ({"mru": "NOT_SYNCHRONIZED"}, "MRU_NOT_SYNCHRONIZED"),
+    ({"radio": "NOT_SYNCHRONIZED"}, "RADIO_NOT_SYNCHRONIZED"),
     ({"alarms": [13325]}, "BLOCKING_ALARM"),
     ({"age_s": 901}, "MEASUREMENTS_NOT_VALID"),
 ])
@@ -59,7 +58,7 @@ def test_hysteresis_band_keeps_muting():
 @pytest.mark.parametrize("kw,reason", [
     ({"prb": 42.0}, "PRB_HIGH"),
     ({"ue": 12}, "UE_COUNT_HIGH"),
-    ({"mru": "NOT_SYNCHRONIZED"}, "MRU_NOT_SYNCHRONIZED"),
+    ({"radio": "NOT_SYNCHRONIZED"}, "RADIO_NOT_SYNCHRONIZED"),
     ({"alarms": [13325]}, "BLOCKING_ALARM"),
     ({"age_s": 901}, "MEASUREMENT_STALE"),
 ])

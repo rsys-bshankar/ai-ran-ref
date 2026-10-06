@@ -1,0 +1,20 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: >
+  TxMuting_rApp — a Non-RT RIC rApp that mutes half of a cell's TX paths at low load and restores full TX when load
+  returns, through O1. No A1, Near-RT RIC, xApps or E2.
+
+topology_template:
+  node_templates:
+    applicationServiceDescriptor:
+      type: tosca.nodes.asd
+      description: "tx-muting-rapp"
+      properties:
+        descriptor_id: 5b7a1f40-2c3d-4e8a-9f61-0d2c4b6a7e01
+        descriptor_invariant_id: 5b7a1f40-2c3d-4e8a-9f61-0d2c4b6a0001
+        descriptor_version: "1.0.0"
+        schema_version: "2.0"
+        function_description: "TxMuting_rApp — TX-path muting for energy saving through O1"
+        provider: "Radisys"
+        application_name: TxMuting_rApp
+        application_version: "1.0.0"

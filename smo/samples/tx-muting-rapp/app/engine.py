@@ -1,4 +1,4 @@
-"""CCDU TX-muting decision engine (HLD/LLD §6, Appendix A.5): pure functions, no I/O.
+"""TX-muting decision engine (README Design): pure functions, no I/O.
 
 evaluate() takes one cell's latest snapshot and the threshold configuration and returns
 REDUCED_TX (MUTING_ON), FULL_TX (MUTING_OFF) or NO_CHANGE, with every check it made.
@@ -6,7 +6,7 @@ REDUCED_TX (MUTING_ON), FULL_TX (MUTING_OFF) or NO_CHANGE, with every check it m
 
 import datetime
 
-MANDATORY = ("dlPrbUtilization", "rrcConnectedUeCount", "mruSynchronizationState",
+MANDATORY = ("dlPrbUtilization", "rrcConnectedUeCount", "radioSynchronizationState",
              "txMutingActivation", "txMutingFeatureEnable")
 
 
@@ -15,7 +15,7 @@ class ThresholdError(ValueError):
 
 
 def validate_thresholds(cfg: dict) -> None:
-    """A.5.4: activation thresholds must sit strictly below deactivation thresholds (hysteresis)."""
+    """activation thresholds must sit strictly below deactivation thresholds (hysteresis)."""
     act, deact = cfg["activation"], cfg["deactivation"]
     if not act["prbUtilizationPercent"] < deact["prbUtilizationPercent"]:
         raise ThresholdError("activation.prbUtilizationPercent must be below deactivation.prbUtilizationPercent")
@@ -54,7 +54,7 @@ def evaluate(snapshot: dict, cfg: dict, now: datetime.datetime) -> dict:
         "allMeasurementsValid": measurements_ok,
         "blockingAlarms": blocking,
         "featureEnabled": value["txMutingFeatureEnable"] is True,
-        "mruSynchronized": value["mruSynchronizationState"] == "SYNCHRONIZED",
+        "radioSynchronized": value["radioSynchronizationState"] == "SYNCHRONIZED",
     }
     if measurements_ok:
         prb, ue = float(value["dlPrbUtilization"]), int(value["rrcConnectedUeCount"])
@@ -78,8 +78,8 @@ def evaluate(snapshot: dict, cfg: dict, now: datetime.datetime) -> dict:
                 triggers.append("PRB_HIGH")
             if ev["ueAtOrAboveDeactivation"]:
                 triggers.append("UE_COUNT_HIGH")
-        if value["mruSynchronizationState"] not in (None, "SYNCHRONIZED"):
-            triggers.append("MRU_NOT_SYNCHRONIZED")
+        if value["radioSynchronizationState"] not in (None, "SYNCHRONIZED"):
+            triggers.append("RADIO_NOT_SYNCHRONIZED")
         if blocking and alarms["requestFullTxOnBlockingAlarm"]:
             triggers.append("BLOCKING_ALARM")
         if triggers:
@@ -97,8 +97,8 @@ def evaluate(snapshot: dict, cfg: dict, now: datetime.datetime) -> dict:
                 blockers.append("UE_COUNT_NOT_LOW")
         if req["requireFeatureEnabled"] and not ev["featureEnabled"]:
             blockers.append("FEATURE_DISABLED")
-        if not ev["mruSynchronized"]:
-            blockers.append("MRU_NOT_SYNCHRONIZED")
+        if not ev["radioSynchronized"]:
+            blockers.append("RADIO_NOT_SYNCHRONIZED")
         if blocking and alarms["blockReducedTxOnActiveAlarm"]:
             blockers.append("BLOCKING_ALARM")
         if blockers:

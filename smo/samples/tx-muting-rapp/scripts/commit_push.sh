@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Commit the pilot (code, scripts, HLD/LLD) and push the current branch.
+# Commit this sample (code, scripts, README) and push the current branch.
 #
 #   scripts/commit_push.sh "message"             # commit, then push to origin
 #   scripts/commit_push.sh "message" --no-push   # commit only
@@ -12,10 +12,10 @@ message="${1:-}"
 cd "$REPO_DIR"
 branch="$(git rev-parse --abbrev-ref HEAD)"
 case "$branch" in
-  main|master) echo "refusing to commit on $branch: switch to the pilot branch first" >&2; exit 1 ;;
+  main|master) echo "refusing to commit on $branch: switch to the sample branch first" >&2; exit 1 ;;
 esac
 
-git add -A -- "smo/samples/$PILOT_NAME"
+git add -A -- "smo/samples/$SAMPLE_NAME"
 if git diff --cached --quiet; then
   echo "nothing to commit"
 else
