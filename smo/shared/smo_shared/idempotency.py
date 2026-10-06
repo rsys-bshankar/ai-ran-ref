@@ -43,10 +43,13 @@ import inspect
 import json
 import os
 
+from typing import cast
+
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import JSON, DateTime, Integer, String, delete, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -92,7 +95,9 @@ def _pk(module: str, scope: str, key: str):
 
 
 def _replay(row: IdempotencyKey) -> JSONResponse:
-    return JSONResponse(status_code=row.response_status, content=row.response_body, headers={REPLAY_HEADER: "true"})
+    # a COMPLETED row always has its status (_complete writes both together); a missing one is a damaged row, answered as the failure it is
+    status_code = row.response_status if row.response_status is not None else 500
+    return JSONResponse(status_code=status_code, content=row.response_body, headers={REPLAY_HEADER: "true"})
 
 
 def _begin(db: Session, module: str, scope: str, key: str, req_hash: str) -> JSONResponse | None:
@@ -116,8 +121,8 @@ def _begin(db: Session, module: str, scope: str, key: str, req_hash: str) -> JSO
             return _replay(row)
         started = as_utc(row.created_at)
         if _now() - started > datetime.timedelta(seconds=_seconds("IDEMPOTENCY_IN_PROGRESS_SECONDS", 300)):
-            taken = db.execute(update(IdempotencyKey).where(*_pk(module, scope, key), IdempotencyKey.created_at == row.created_at)
-                               .values(created_at=_now()))
+            taken = cast(CursorResult, db.execute(update(IdempotencyKey).where(*_pk(module, scope, key), IdempotencyKey.created_at == row.created_at)
+                                                  .values(created_at=_now())))
             db.commit()
             if taken.rowcount == 1:  # compare-and-swap: exactly one replica takes an abandoned key over
                 return None
@@ -136,7 +141,7 @@ def _release(db: Session, module: str, scope: str, key: str) -> None:
 
 def _complete(db: Session, module: str, scope: str, key: str, status_code: int, result) -> None:
     if isinstance(result, Response):
-        status_code, body = result.status_code, (json.loads(result.body) if result.body else None)
+        status_code, body = result.status_code, (json.loads(bytes(result.body)) if result.body else None)
     else:
         body = jsonable_encoder(result)
     db.execute(update(IdempotencyKey).where(*_pk(module, scope, key))

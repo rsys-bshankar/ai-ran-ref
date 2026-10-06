@@ -1,2 +1,3 @@
-# The lint job installs only this.
+# The lint job installs this (and the runtime requirements, so that mypy can read the types of what the shared library imports).
 ruff
+mypy

@@ -1,5 +1,6 @@
 import os
 import sys
+from collections.abc import Iterator
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine
@@ -132,7 +133,7 @@ class Base(DeclarativeBase):
 
 
 @contextmanager
-def session_scope() -> Session:
+def session_scope() -> Iterator[Session]:
     """Provide a transactional scope for a single unit of work."""
     session = SessionLocal()
     try:
