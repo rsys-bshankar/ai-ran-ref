@@ -235,6 +235,7 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 | DB-6.2 | CI job: backup, wipe, restore, run a runbook smoke (a compose-mode round trip exists since DB-6.1; this adds the runbook smoke and a host-mode run against Postgres 18) | Job green | – |
 | DB-6.3 | Document WAL archiving and point-in-time recovery | Doc reviewed | – |
 | DB-6.4 | Restore drill checklist with timings | Checklist filled once | – |
+| DB-6.5 | Back up and restore the GUI backend's own database (SQLite on volume `gui_bff_data` by default: users, GUI audit log, failed-login counters); `db_backup.sh` dumps Postgres only | A restore on a new host keeps the GUI users and audit log | – |
 
 #### PR-DB-7 — Postgres HA
 
@@ -373,8 +374,7 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 | SEC-7.1 | `gui_user_totp` table and enrol route | QR secret generated and verified | – |
 | SEC-7.2 | Login second step | Wrong code refused | SEC-7.1 |
 | SEC-7.3 | Recovery codes (hashed) | One-time use | SEC-7.1 |
-| SEC-7.4 | Server-side session row so logout revokes a session (today only `token_version` bumps do) | Token refused after logout | – |
-| SEC-7.5 | Admin action: revoke a user's sessions | Route test | SEC-7.4 |
+| SEC-7.5 | Admin action: revoke a user's sessions (SEC-7.4, logout revocation, is done: `HISTORY.md`) | Route test | – |
 
 #### PR-SEC-8 — Rate and size limits
 
@@ -1291,16 +1291,14 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 | Feature | Step | What | Done when | Needs |
 |---|---|---|---|---|
 | STD-1 | STD-1.1 | Close the §3 items (`SA-MLMR-1/6/7`, `SA-FOCOM-6/7`, `SA-RANOAM-1/4/8`, `SA-O1-4`); do not duplicate them here | §3 empty | – |
-| STD-2 | STD-2.1 | Record the release of every spec in `specs/` | Table in `specs/README.md` | – |
-| STD-2 | STD-2.2 | List newer releases and what changes for the SMO | List with item IDs | STD-2.1 |
+| STD-2 | STD-2.2 | List newer releases and what changes for the SMO (`specs/README.md` has the release table and a minimal list of what is certain; everything else there says "not assessed") | List with item IDs | – |
 | STD-3 | STD-3.1 | Map each interface to the O-RAN test specification | Table | – |
 | STD-3 | STD-3.2 | Plugfest plan | One page | STD-3.1 |
-| STD-4 | STD-4.1 | Inventory of personal data (GUI users, subscriber-derived PM) | Table | – |
-| STD-4 | STD-4.2 | Retention per item | Linked to `DB-3` | STD-4.1, DB-3.1 |
-| STD-4 | STD-4.3 | Erasure procedure for a GUI user | Tested once | STD-4.1 |
-| STD-4 | STD-4.4 | Access logging for personal data reads | Rows appear | STD-4.1, SEC-11.2 |
-| STD-5 | STD-5.1 | Control matrix (ISO 27001, NESAS/SCAS) against what exists | Matrix | SEC-14.2 |
-| STD-6 | STD-6.1 | Data residency statement: where data lives and what leaves a site | One page | – |
+| STD-4 | STD-4.2 | Retention per item (the inventory is `docs/PRIVACY.md`; its retention column says "none" for most rows) | Linked to `DB-3` | DB-3.1 |
+| STD-4 | STD-4.4 | Access logging for personal data reads | Rows appear | SEC-11.2 |
+| STD-4 | STD-4.5 | Erasure beyond the account (`docs/PRIVACY.md` section 4): write an opaque per-user id instead of the username in `gui_audit_log` and in the module columns that take `smo-gui:<username>` / `ack_user_id`, so deleting the user severs the link and the rows stay; or a tested SQL procedure per table. Decide first whether the audit rows are kept with a stated period instead | A deleted user's name appears in no table; a test shows it | – |
+| STD-4 | STD-4.6 | Pin `decided_by` (`POST /aimgf/models/{id}/advance`) and `pinnedBy` (O1 host keys) to the signed-in GUI user, as `requestedBy` is: today an operator can attribute either to any name | Test: the stored name is the caller's whatever the request says | – |
+| STD-4 | STD-4.7 | Make `gui_audit_log` tamper-evident: chain it as `smo_shared/audit.py` does, or write GUI actions into the platform chain with the person as `detail` (it is append-only in the ORM only, and a GUI action reaches the platform chain under the GUI's own invoker id) | `verify` detects an edited GUI audit row | SEC-11.6 |
 
 ### 5.15 Quality engineering (`PR-QA`)
 
