@@ -167,3 +167,12 @@ def test_unknown_objects_404(client):
         resp = client.get(f"/{path}/{uuid.uuid4()}")
         assert resp.status_code == 404 and resp.json()["detail"]["title"] == "NRM_OBJECT_NOT_FOUND"
     assert client.post("/mda-reports", json=_pm_report(1.0, mDARequestRef=str(uuid.uuid4()))).status_code == 404
+
+
+def test_report_list_total_false_has_no_total_and_a_has_more_flag(client):
+    for value in (1.0, 2.0, 3.0):
+        client.post("/mda-reports", json=_pm_report(value))
+    assert client.get("/mda-reports", params={"limit": 2}).json()["total"] == 3
+    page = client.get("/mda-reports", params={"limit": 2, "total": "false"}).json()
+    assert "total" not in page and len(page["items"]) == 2 and page["hasMore"] is True
+    assert client.get("/mda-reports", params={"limit": 2, "offset": 2, "total": "false"}).json()["hasMore"] is False

@@ -84,7 +84,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | `smo_shared/timeouts.py` | `call_timeout()`, `upstream_timeout()`, `introspect_timeout()`: the platform's outbound HTTP timeouts, read from the environment when asked |
 | `smo_shared/statemachine.py` | `StateMachine`, `Transition`, `IllegalTransition` |
 | `smo_shared/errors.py` | `ProblemDetails`, `problem()`, `FrameworkError`, `framework_error()`, `illegal_transition_error()` |
-| `smo_shared/pagination.py` | `paginate()`, `PageLimit`, `PageOffset`, `DEFAULT_LIMIT`, `MAX_LIMIT` |
+| `smo_shared/pagination.py` | `paginate()`, `paginate_list()`, `PageSize`, `PageLimit`, `PageOffset`, `DEFAULT_LIMIT`, `MAX_LIMIT` |
 | `smo_shared/correlation.py` | `apply_correlation_id()`, `get_correlation_id()`, `HEADER_NAME` |
 | `smo_shared/invoker.py` | `INVOKER_ID_HEADER` (`X-R1-Invoker-Id`), `ON_BEHALF_OF_HEADER` (`X-R1-On-Behalf-Of`), `invoker_id(request)` (the rApp an internal module is acting for, else the caller's own id), `get_originator()` and `apply_invoker_context(app)` (installed by `apply_correlation_id`, so every service has it); `R1Client` adds the header to onward calls |
 | `smo_shared/webhook.py` | `post_webhook`, `get_webhook`, `delete_webhook`, `is_safe_webhook_destination` |
@@ -144,8 +144,9 @@ The package installs no exception handler. FastAPI therefore serialises these as
 
 | Name | Contract |
 |---|---|
-| `PageLimit` / `PageOffset` | `Query(100, ge=1, le=500)` / `Query(0, ge=0)`; use as route parameter defaults so every OpenAPI spec documents identical bounds |
-| `paginate(db, stmt, limit, offset)` | `COUNT(*)` over `stmt.subquery()` plus `stmt.limit().offset()` executed in SQL. Returns `{"items": [ORM rows], "total", "limit", "offset"}`. Rows are raw ORM objects; the caller maps them: `{**page, "items": [view(r) for r in page["items"]]}`. The statement must carry its own `ORDER BY` for stable paging |
+| `PageLimit` / `PageOffset` | `Depends(...)` reading `limit` (`ge=1, le=500`, default 100) and the optional boolean `total` (default `true`) / `Query(0, ge=0)`; use as route parameter defaults so every OpenAPI spec documents identical bounds and the `total` opt-out. `PageLimit` hands the route a `PageSize`, an `int` that remembers `total` |
+| `paginate(db, stmt, limit, offset)` | `COUNT(*)` over `stmt.subquery()` plus `stmt.limit().offset()` executed in SQL. Returns `{"items": [ORM rows], "total", "limit", "offset"}`. With `?total=false` (`limit.with_total` is false) no count query is issued, `limit + 1` rows are fetched and the envelope is `{"items", "limit", "offset", "hasMore"}` (`total` left out, `hasMore` only in this mode). Rows are raw ORM objects; the caller maps them: `{**page, "items": [view(r) for r in page["items"]]}`. The statement must carry its own `ORDER BY` for stable paging |
+| `paginate_list(rows, limit, offset)` | The same envelope for a list already in memory (routes that filter in Python): a slice, `total` unless `?total=false` (then `hasMore`) |
 
 **`correlation`**
 
@@ -301,6 +302,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 
 | Test file | Covers | Passed |
 |---|---|---|
+| `tests/test_pagination.py` | `paginate`: real LIMIT/OFFSET and COUNT, total follows the filter, stable primary-key order; `?total=false`: no count statement issued (counted with a SQLAlchemy event), `limit + 1` fetch and `hasMore`, no overlap between pages; `paginate_list` in both modes; the `total` parameter through a real route and its OpenAPI declaration |
 | `tests/test_correlation.py` | Id generated when the caller sends none; caller's id propagated and echoed; `get_correlation_id()` is `None` outside a request; two requests get distinct ids | 4 |
 | `tests/test_r1_client.py` | A caller's own headers ride along and survive the 401 retry, the client's authorization wins; token obtained "the rApp way" (bootstrap, onboarding, client credentials) and attached; token cached across clients and calls; revoked token refreshed once with the same invoker; explicit bearer used as is; SME down means call sent unauthenticated, not raised; correlation header absent outside a request and propagated inside one | 7 |
 | `tests/test_webhook.py` | Allowed destinations (http/https, ordinary and private-range hosts); rejected ones (bad scheme, loopback, link-local/metadata, multicast, unspecified, malformed; parametrized); `post_webhook`/`get_webhook`/`delete_webhook` call `httpx` for an allowed destination, no-op for a disallowed one, and `post_webhook` swallows an unreachable destination | 29 |
@@ -322,7 +324,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 
 ### 3.3 What is not covered here
 
-`db`, `errors`, `pagination`, `statemachine`, `identity`, `timeutil`, `openapi_security` and `testing` have no tests in `shared/tests/`; they are exercised through the module suites (e.g. `aimgf/tests/test_statemachine.py`, `onboarding/tests/test_statemachine.py`, every module's `tests/` using `make_test_engine()`, `paginate()` and `framework_error()`) and through `../tests_integration/` (including `test_openapi_specs.py`, which compares each committed `../docs/openapi/*.json` with the live schema). The real Postgres path of `db.py` is covered only by `../scripts/check_migration_matches_models.py`.
+`db`, `errors`, `statemachine`, `identity`, `timeutil`, `openapi_security` and `testing` have no tests in `shared/tests/`; they are exercised through the module suites (e.g. `aimgf/tests/test_statemachine.py`, `onboarding/tests/test_statemachine.py`, every module's `tests/` using `make_test_engine()`, `paginate()` and `framework_error()`) and through `../tests_integration/` (including `test_openapi_specs.py`, which compares each committed `../docs/openapi/*.json` with the live schema). The real Postgres path of `db.py` is covered only by `../scripts/check_migration_matches_models.py`.
 
 ## 4. References
 

@@ -96,3 +96,14 @@ def test_an_unknown_order_is_404_and_a_step_without_its_type_is_422(client):
     assert client.get(f"/orders/{unknown}").status_code == 404
     assert client.post(f"/orders/{unknown}/cancel").status_code == 404
     assert client.post("/orders", json={"scope": "s", "steps": [{"targetModule": "NFO"}]}).status_code == 422
+
+
+def test_list_orders_total_false_skips_the_count_and_reports_has_more(client, monkeypatch):
+    monkeypatch.setattr("app.main.execute_order", lambda r1, steps: [{**s, "status": "COMPLETED", "result": {}} for s in steps])
+    for _ in range(3):
+        client.post("/orders", json={"scope": "s", "steps": [{"stepType": "DEPLOY", "targetModule": "NFO"}]})
+    assert client.get("/orders", params={"limit": 2}).json()["total"] == 3
+    page = client.get("/orders", params={"limit": 2, "total": "false"}).json()
+    assert "total" not in page and len(page["items"]) == 2 and page["hasMore"] is True
+    last = client.get("/orders", params={"limit": 2, "offset": 2, "total": "false"}).json()
+    assert len(last["items"]) == 1 and last["hasMore"] is False

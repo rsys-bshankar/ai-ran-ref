@@ -226,6 +226,8 @@ Deploy needs model state `CERTIFIED` or `PROMOTED` (`409 MODEL_NOT_CERTIFIED`). 
 
 ### 2.4 API
 
+Every list route also takes the optional `total` (boolean, default `true`, the shared `smo_shared.pagination` parameter): `total=false` skips the `COUNT(*)` of the whole result, leaves `total` out of the envelope and adds `hasMore`.
+
 Paths are relative to `/aimgf`. Lists are `{items, total, limit, offset}` with `limit` / `offset`. Several routes take scalar inputs as query parameters (`advance`, `inference-jobs`, `resolve`, MLMF `subscriptions`); check [`../docs/openapi/aimgf.json`](../docs/openapi/aimgf.json) for exact shapes. Every `{id}` lookup that misses is 404 with the resource's `*_NOT_FOUND` code (2.7).
 
 **Model lifecycle and governance**
@@ -389,7 +391,7 @@ NFO, MLMR and the webhook are faked in-process; the database is SQLite.
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_main.py` | training / validation / emulation request, complete, cancel, suspend / resume, supersede, DME check, completion notifications; advance, governance records, operator gates, lifecycle history; runtime deploy / activate / scale / terminate and end-of-life; inference gating; NFO execution runtime create / teardown per job kind; MLMF subscribe / report / notify / unsubscribe and group retrain; feature groups; health | 100 |
-| `tests/test_nrm.py` | TS 28.105 requests as real jobs, spec enum rejection, process flags and progress, chained training reports, testing requests, loading request / policy / process, inference-function gating, emulation reports, update request / report, 404 for unknown NRM objects | 21 |
+| `tests/test_nrm.py` | TS 28.105 requests as real jobs, spec enum rejection, process flags and progress, chained training reports, testing requests, loading request / policy / process, inference-function gating, emulation reports, update request / report, 404 for unknown NRM objects | 21 `?total=false` on an NRM list and on the in-memory inference-report list. |
 | `tests/test_runtime.py` | runtime profile sizing (package, explicit, unknown package), per-mode profiles, stage timeouts, lazy expiry, suspended runs pausing, timeouts never forcing an illegal transition, 5 s inference default, clock restart on NRM resume | 13 |
 | `tests/test_steps_and_feature_groups.py` | training steps (start, forward progress, no going back, suspended and ended runs, how a run ended, a finished run, validation); feature-group DME job (created with the group, none without `enableDme`, a refusal means no group, duplicate name first, delete terminates it, delete without a job) | 13 |
 | `tests/test_statemachine.py` | both FSMs (full pipeline, no shortcuts, retrain re-entry, rollback, reject, terminal states, state counts), inference FSM, retrain propagation policies, `ADVANCEABLE_EVENTS`, `TRAINABLE_STATES` | 25 |

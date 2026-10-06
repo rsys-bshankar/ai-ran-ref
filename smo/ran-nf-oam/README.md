@@ -199,6 +199,8 @@ The Postgres schema (`migrations/001_init.sql`) adds CHECK constraints that the 
 
 ### 2.4 API
 
+Every list route also takes the optional `total` (boolean, default `true`, the shared `smo_shared.pagination` parameter): `total=false` skips the `COUNT(*)` of the whole result, leaves `total` out of the envelope and adds `hasMore`.
+
 All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limit, offset}`.
 
 **O1 adaptor endpoints and managed entities**
@@ -478,7 +480,7 @@ cd smo/ran-nf-oam && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_main.py` | Config dispatch (apply, reject, `operation` threading, RESTCONF dispatch, refusal of a protocol with no client, unreachable / stale / fresh endpoint), `discover` aging, endpoint registration and heartbeat, PM / FM subscription create / list / delete and DME producer registration, `/health` and `/dme-jobs` callbacks, alarm ingest / filter / ack / clear, an alarm naming its cell, list reads | 38 |
 | `tests/test_yang_schemas.py` | The YANG reader (comments, quoting, typedef chains, enums, choice / case, `container attributes`, unresolved groupings, cross-file groupings and cycles, revision) and the bundled WG10 / WG5 descriptors (named classes and enums, the union, COMBINED and OWN vendors writing against them, DN function refs) | 10 |
 | `tests/test_leafcheck.py` | Every YANG type: integer (range with holes, strings and floats, never a boolean), decimal64 (fraction digits, range), boolean, string (length, every pattern, an unreadable pattern skipped), enum of any type, array / object / any; each rejection's reason | 53 |
-| `tests/test_vendors.py` | Bundled spec descriptor and custom schema load, capability CRUD and defaults, vendor-mode gating, `SPEC` / `OWN` / `COMBINED` schema checks, unregistered vendor unchecked, service-presence guards, onboarding with discovery and its failures, cell guards | 10 |
+| `tests/test_vendors.py` | Bundled spec descriptor and custom schema load, capability CRUD and defaults, vendor-mode gating, `SPEC` / `OWN` / `COMBINED` schema checks, unregistered vendor unchecked, service-presence guards, onboarding with discovery and its failures, cell guards | 10 `GET /cm-schemas?total=false`: no `total`, `hasMore`. |
 | `tests/test_dispatch_reliability.py` | `function-ref` dispatch, retry with backoff, the retry time budget on a fake clock (a fast-failing adaptor keeps the whole schedule, a slow one is cut off inside the 65 s worst case for every attempt duration, a smaller budget stops earlier, the first attempt is always made), retry exhaustion -> failed change + alarm, no retry on `<rpc-error>`, read-after-write, PM report fan-out to every data job, multi-counter per-relation measurements; RESTCONF retry and alarm, no retry on an `ietf-restconf:errors` reply, RESTCONF read-after-write | 20 |
 | `tests/test_netconf_ssh.py` | The SSH wrapper against an in-process SSH server (`tests/netconf_ssh_server.py`): both framings, a reply in pieces, `<rpc-error>`, timeout, closed port, hang-up, unknown / changed host key, wrong password, no subsystem, bad hello, `*_FILE` password | 18 |
 | `tests/test_ssh_transport_routes.py` | `transport` on registration (default, mismatches refused), config job and `GET .../config` over SSH, rejection and retry reasons | 7 |

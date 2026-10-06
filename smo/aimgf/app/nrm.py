@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
-from smo_shared.pagination import PageLimit, PageOffset, paginate
+from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 
 from . import ts28105
 from .main import (
@@ -694,8 +694,8 @@ def list_aiml_inference_reports(aiml_inference_function_id: uuid.UUID | None = N
     rows = db.scalars(stmt.order_by(AIMLInferenceReport.created_at.desc())).all()
     if model_id:
         rows = [r for r in rows if str(model_id) in (r.ml_model_refs or [])]
-    items = rows[offset:offset + limit]
-    return {"items": [_inference_report_view(r) for r in items], "total": len(rows), "limit": limit, "offset": offset}
+    page = paginate_list(rows, limit, offset)
+    return {**page, "items": [_inference_report_view(r) for r in page["items"]]}
 
 
 @router.get("/aiml-inference-reports/{report_id}")

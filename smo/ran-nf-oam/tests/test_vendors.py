@@ -239,3 +239,10 @@ def test_cell_guards_set_query_and_delete(client):
     assert client.put("/managed-entities/ME-A/cells/3/guards", json={"cellClass": "VIP"}).status_code == 422
     resp = client.put("/managed-entities/ghost/cells/1/guards", json={})
     assert resp.status_code == 404 and resp.json()["detail"]["title"] == "MANAGED_ENTITY_NOT_FOUND"
+
+
+def test_cm_schemas_total_false_has_no_total_and_a_has_more_flag(client):
+    everything = client.get("/cm-schemas").json()
+    assert everything["total"] == len(everything["items"]) >= 1
+    page = client.get("/cm-schemas", params={"limit": 1, "total": "false"}).json()
+    assert "total" not in page and len(page["items"]) == 1 and page["hasMore"] is (everything["total"] > 1)

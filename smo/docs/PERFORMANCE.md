@@ -14,6 +14,10 @@ GitHub's runners vary from night to night: compare a run with the previous one o
 
 `scripts/load_seed.py --elements N` loads N managed elements with 10 alarms and 5 performance files each (COPY, as the database owner; `--clean` removes them). The load workflow takes `elements` (1000, 10000 or 100000) when run by hand and seeds before the load, so the alarm and PM routes are measured against a table of that size, not an empty one. The nightly run seeds 1000.
 
+## The page total
+
+Every list route counts the whole result for `total` (`COUNT(*)`, 55 ms for a million alarms, linear: `scripts/db_volume_check.py` times it). A caller that only pages forward adds `?total=false`: no count query runs, `total` is left out of the response and `hasMore` says whether another page follows. The volume lane's count cases measure what a default call pays; the opt-out costs a first page.
+
 ## Not yet covered
 
 - Cells, managed objects and KPI results are not seeded yet (V-8b seeds managed elements, alarms and performance files).
