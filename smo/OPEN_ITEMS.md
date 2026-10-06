@@ -14,7 +14,21 @@ Each item in sections 1–4: what is missing, why it matters, suggested approach
 
 **Out of scope at every stage**: A1, xApps, the Near-RT RIC and E2, and their policy. The `a1-related` module, `mock-near-rt-ric` and the `OI-5-a1-*` items were removed in release 0.5.0 (the code is in the tag `smo-v0.4.0`); A1 stays as a future work item, see "A1 / Near-RT RIC / E2" under 5.8.
 
-**Not decided yet**: what goes in 0.6.0, 0.7.0 and later, and when 1.0.0 is cut. The external penetration test is a criterion for 1.0.0 (see `docs/VALIDATION.md`, V-7c).
+**Not decided yet**: what goes in 0.6.0 beyond the items named below, what goes in 0.7.0 (to be discussed once 0.5.0 is done), and when 1.0.0 is cut. The external penetration test is a criterion for 1.0.0 (see `docs/VALIDATION.md`, V-7c); the criteria are in `docs/RELEASES.md`.
+
+### Release 0.5.0 scope (decided, October 2026)
+
+Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
+
+| Area | In 0.5.0 | Moved to 0.6.0 or later |
+|---|---|---|
+| API | `?total=false` on every list route (opt out of the page `COUNT(*)`; default unchanged) | – |
+| Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 logout revocation (done, V-13c); SEC-2 mTLS between services; SEC-3 mesh option (documented with the mTLS work); SEC-6 OIDC login for the GUI | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0). SEC-7.1 to 7.3 (native TOTP) only if required: with OIDC the identity provider does the second factor, and local login stays as break-glass |
+| Operability | OBS-3 traces (Tempo), OBS-4 business metrics, OBS-5 alerts and SLOs, OBS-6 log shipping, OBS-7 runbooks, OBS-8 `/version`, OPS-6 GitOps example, OPS-7 configuration reference, OPS-9 sizing | – |
+| Disaster recovery | HA-6: RPO 15 minutes, RTO 1 hour, off-site backup shipping, one timed restore drill | HA-7 geo-redundancy (after 1.0.0) |
+| Standards and documents | STD-2.1 spec release table; STD-4.1 personal-data inventory; STD-6.1 data residency statement; STD-4.3 erasure procedure for a GUI user; STD-5 control matrix (ISO 27001, NESAS/SCAS) | STD-3 plugfest plan (0.6.0 or later) |
+
+**Documentation rule (every pull request):** a change updates the documents it makes stale in the same pull request: the overall `README.md`, the module's own `README.md` (HLD, LLD, tests), `docs/ARCHITECTURE.md` and `docs/STANDARDS.md` where behaviour or a standard's realisation changes, `OPEN_ITEMS.md` (closed items move to `HISTORY.md`), `CHANGELOG.md`, `docs/VALIDATION.md`, and the chart's README for anything an operator deploys.
 
 ## 1. Design decisions without an answer
 
