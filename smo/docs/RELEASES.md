@@ -35,6 +35,21 @@ Deprecation, for a MAJOR-bump change made without surprising a consumer:
 
 A change that only refuses input that used to make the service fail (a 500) is a fix, not a break; it is waived with that reason.
 
+## Criteria for 1.0.0
+
+`1.0.0` is cut when all of these hold on the release candidate (`smo-v1.0.0-rc.N`); each has a place where its evidence lives.
+
+1. **Every validation lane is green** on the candidate: unit, integration, contract, breaking-change, migration, upgrade (from the previous two releases) and rollback, HA, DB-volume, load, stress, GUI browser and DAST lanes (`docs/VALIDATION.md`).
+2. **A 72 hour soak** on a runner of our own with memory, connections, descriptors and outbox depth flat (`scripts/soak_check.py`; the result is attached to the release).
+3. **The external penetration test is passed**: scope in `docs/PENTEST_SCOPE.md`, findings rated high or critical fixed, the report summarised in the release notes.
+4. **One full disaster-recovery drill** with timings inside the targets (RPO 15 minutes, RTO 1 hour), from an off-site copy (`PR-HA-6`).
+5. **Operations documents are complete**: configuration reference (`PR-OPS-7`) with its CI check, a runbook entry for each alert (`PR-OBS-7`), measured sizing (`PR-OPS-9`), SLIs and SLOs (`PR-OBS-5`).
+6. **Traffic between services is mutually authenticated**: native mTLS (`PR-SEC-2`) with the rotation procedure tried once, or the service-mesh path (`PR-SEC-3`) documented and checked.
+7. **No unwaived breaking change since 0.5.0**: `scripts/breaking_change_waivers.json` is empty at the candidate, and the deprecation policy above has been followed for everything removed.
+8. **The compliance documents exist and are current**: spec release table, personal-data inventory and erasure procedure, data residency statement, control matrix (`PR-STD`).
+
+A criterion that cannot be met is not waived silently: the release notes say which one and why, and the person cutting the release decides.
+
 ## Cutting a release
 
 1. Everything for the release is merged to `main` and CI is green on it.
