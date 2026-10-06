@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TX-muting rApp demo: steps 00-06 against a running stack (see README, Run and test).
+"""TX-muting rApp demo: steps 00-09 against a running stack (see README, Run and test).
 
     python3 gnb_demo.py 00        # one step
     python3 gnb_demo.py all       # every step in order
@@ -7,12 +7,17 @@
 The rApp evaluates by itself (every EVALUATION_INTERVAL_SECONDS, 5 s in the compose overlay): a step that changes the
 load reports the counters and then waits for the rApp's own first pass that saw them; nothing triggers the pass.
 
-Run it inside the compose network (from the r1-termination container; scripts/run_gnb_demo.sh does that). It calls each
+The rApp is deployed from its CSAR first (steps 00-01: onboard, prime, create the instance, bootstrap) and retired from it at
+the end (step 09), through Onboarding and rApp Management, with the helpers of scripts/lcm/lcm.py. The compose service
+tx-muting-rapp is the workload the instance stands for: NFO in this build has no container runtime.
+
+Run it inside the compose network (from the r1-termination container; scripts/demo/run_gnb_demo.sh does that). It calls each
 service by hostname, the way DEMO_RUNBOOK.md does. All network data comes from the gNB O1 adaptor simulator, exactly as
-you can trigger it by hand with its CLI (scripts/gnb-cli.sh): the demo only calls the same control routes. Ids are
+you can trigger it by hand with its CLI (scripts/demo/gnb-cli.sh): the demo only calls the same control routes. Ids are
 kept between steps in $GNB_DEMO_STATE (default /tmp/gnb-demo.json).
 """
 
+import importlib.util
 import json
 import os
 import sys
@@ -26,7 +31,16 @@ MFR = f"NRCellDU={CELL}"
 RAPP = os.environ.get("GNB_DEMO_RAPP_URL", "http://tx-muting-rapp:8000")
 ADAPTOR = os.environ.get("GNB_DEMO_ADAPTOR_URL", "http://gnb-o1-adaptor-sim:8000")
 STATE_FILE = os.environ.get("GNB_DEMO_STATE", "/tmp/gnb-demo.json")
+HERE = os.path.dirname(os.path.abspath(__file__))
 TX_LEAVES = ("txMutingFeatureEnable", "txPathOffPattern", "txMutingActivation")
+
+
+def _lcm():
+    """scripts/lcm/lcm.py (the package and instance lifecycle), loaded from the copy beside this file."""
+    spec = importlib.util.spec_from_file_location("lcm", os.path.join(HERE, "scripts", "lcm", "lcm.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def call(verb: str, base: str, path: str, expect=(200, 201, 202, 204), **kw):
@@ -73,6 +87,38 @@ def show_decision(d: dict) -> dict:
 
 
 def step_00(state: dict) -> None:
+    """Package: onboard tx-muting-rapp.csar and prime it (a package onboarded earlier is reused)."""
+    lcm = _lcm()
+    known = [p for p in call("get", "onboarding", "/packages", params={"limit": 200})["items"]
+             if p["name"] == "TxMuting_rApp" and p["state"] in ("AVAILABLE", "PRIMED")]
+    if known:  # Onboarding refuses a byte-identical package, so reuse the one that is there
+        state["packageId"] = known[0]["packageId"]
+        show("package", f"reusing {state['packageId']} ({known[0]['state']})")
+        if known[0]["state"] == "AVAILABLE":
+            lcm.prime(state)
+        return
+    lcm.onboard(state)
+    lcm.prime(state)
+
+
+def step_01(state: dict) -> None:
+    """Deploy: create the rApp instance (AUTONOMOUS) and complete its bootstrap -> RUNNING (the workload is the compose service)."""
+    lcm = _lcm()
+    package = state.get("packageId")
+    if not package:
+        raise SystemExit("no package: run step 00 first")
+    running = [i for i in call("get", "rapp-mgmt", "/instances", params={"state": "RUNNING", "limit": 200})["items"]
+               if i["packageId"] == package]
+    if running:  # NFO deploys a descriptor once: reuse a running instance of this package
+        state["instanceId"] = running[0]["instanceId"]
+        show("instance", f"reusing {state['instanceId']} (RUNNING)")
+        return
+    lcm.deploy(state)
+    lcm.bootstrap(state)
+    show("workload", "the compose service tx-muting-rapp (NFO has no container runtime; see README section 10)")
+
+
+def step_02(state: dict) -> None:
     """Prepare the RAN: the O1 adaptor registers (ACTIVE), 2 PM counters subscribed, existing TX-muting config."""
     reg = call("post", ADAPTOR, "/control/register")
     seeded = call("post", "ran-nf-oam", "/config-jobs", json={
@@ -85,23 +131,23 @@ def step_00(state: dict) -> None:
     show(MFR, call("get", ADAPTOR, f"/objects/{ME}", params={"function_ref": MFR})["attributes"])
 
 
-def step_01(state: dict) -> None:
+def step_03(state: dict) -> None:
     """rApp start: load and check thresholds, open one ONE_TIME pull data job per counter in DME."""
     started = call("post", RAPP, "/start", json={"managedElementRef": ME, "cellId": CELL})
     show("thresholds", started["thresholds"])
     show("data jobs", started["dataJobs"])
 
 
-def step_02(state: dict) -> None:
+def step_04(state: dict) -> None:
     """Low load: PRB 18.4 %, 4 UEs -> REDUCED_TX, MUTING_ON read back."""
     state["lastAction"] = load(18.4, 4).get("action")
 
 
-def step_03(state: dict) -> None:
+def step_05(state: dict) -> None:
     """Show the DME action, the RAN NF OAM job and what the O1 adaptor received and applied."""
     action = state.get("lastAction")
     if not action:
-        raise SystemExit("no action recorded: run step 02 first")
+        raise SystemExit("no action recorded: run step 04 first")
     record = call("get", "dme", f"/actions/{action['actionId']}")
     job = call("get", "ran-nf-oam", f"/config-jobs/{record['forwardedJobId']}")
     applied = call("get", ADAPTOR, f"/objects/{ME}", params={"function_ref": MFR})["attributes"]
@@ -113,17 +159,17 @@ def step_03(state: dict) -> None:
         show("last config received by the adaptor", received[-1]["data"]["changes"])
 
 
-def step_04(state: dict) -> None:
+def step_06(state: dict) -> None:
     """Hysteresis (no change): PRB 41 %, 8 UEs while MUTING_ON -> NO_CHANGE, no O1 write."""
     load(41.0, 8)
 
 
-def step_05(state: dict) -> None:
+def step_07(state: dict) -> None:
     """Restore full TX: PRB 45 % -> FULL_TX, MUTING_OFF read back."""
     load(45.0, 8)
 
 
-def step_06(state: dict) -> None:
+def step_08(state: dict) -> None:
     """Audit: the rApp's decisions (repeated no-change passes collapsed) and the DME actions it requested."""
     last, repeats = None, 0
     for d in call("get", RAPP, "/decisions", params={"limit": 1000})["items"] + [None]:
@@ -140,7 +186,16 @@ def step_06(state: dict) -> None:
     show("DME actions by the rApp", len(call("get", RAPP, "/actions")["items"]))
 
 
-STEPS = {f"{i:02d}": globals()[f"step_{i:02d}"] for i in range(7)}
+def step_09(state: dict) -> None:
+    """Retire: terminate the instance, deprime and delete it, then retire the package (the demo can then run again from 00)."""
+    lcm = _lcm()
+    lcm.terminate(state)
+    lcm.deprime(state)
+    lcm.delete(state)
+    lcm.retire(state)
+
+
+STEPS = {f"{i:02d}": globals()[f"step_{i:02d}"] for i in range(10)}
 
 
 def main() -> None:

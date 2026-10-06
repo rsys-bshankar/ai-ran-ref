@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Commit this sample (code, scripts, README) and push the current branch.
 #
-#   scripts/commit_push.sh "message"             # commit, then push to origin
-#   scripts/commit_push.sh "message" --no-push   # commit only
+#   scripts/dev/commit_push.sh "message"             # commit, then push to origin
+#   scripts/dev/commit_push.sh "message" --no-push   # commit only
 set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
 message="${1:-}"
 [ -n "$message" ] || { echo "usage: $0 \"commit message\" [--no-push]" >&2; exit 1; }

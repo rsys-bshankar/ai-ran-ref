@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Reset the sample so the demo can run again from step 00.
 #
-#   scripts/cleanup.sh           # the rApp's data jobs and state, the simulator's config / alarms / faults
-#   scripts/cleanup.sh --purge   # the whole stack: containers AND volumes (the database), after confirmation
+#   scripts/stack/cleanup.sh           # the rApp's data jobs and state, the simulator's config / alarms / faults
+#   scripts/stack/cleanup.sh --purge   # the whole stack: containers AND volumes (the database), after confirmation
 set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
 if [ "${1:-}" = "--purge" ]; then
   echo "This removes every container and volume of the SMO stack, including the database (not just this sample's data)."

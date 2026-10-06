@@ -97,7 +97,7 @@ The gNB O1 adaptor simulator and the demo script are not rApps: they act as the 
 | Onboarding | O-RAN rApp package onboarding (ASD in a TOSCA CSAR, O-RAN-SC rApp Manager) | Standard; **SMO build** extension: `manifest.yaml`, `capabilities.yaml` |
 | rApp Management | O-RAN rApp lifecycle management (O-RAN-SC rApp Manager) | Standard; **SMO build** extension: autonomy mode, region scope |
 | `gnb-o1-adaptor-sim` | Stands in for an O1 (MnS) producer. Follows only the NETCONF message shape (RFC 6241) | **Sample / vendor side**: not a standard component; everything below the O1 message is up to the real product |
-| `scripts/*`, `gnb_demo.py` | None | **Sample**: operator tooling |
+| `scripts/*/*`, `gnb_demo.py` | None | **Sample**: operator tooling |
 
 **Interfaces**
 
@@ -115,7 +115,7 @@ The gNB O1 adaptor simulator and the demo script are not rApps: they act as the 
 | Adaptor registration and heartbeat | Adaptor to RAN NF OAM | Not standardised: replaces MnS Registry polling (TS 28.623) | **SMO build** (adaptor self-registration) |
 | Package | CSAR with an ASD | TOSCA Simple Profile 1.3 (OASIS) as used by the O-RAN rApp package | Standard container; `manifest.yaml` and `capabilities.yaml` are **SMO build** extensions |
 | Package and instance lifecycle | Operator to Onboarding, rApp Management | O-RAN-SC rApp Manager model (onboard, prime, instantiate, terminate) | Standard model; state names as implemented by the SMO build |
-| Control, events, CLI | Operator, `gnb-cli`, `gnb_demo.py` to `gnb-o1-adaptor-sim`; rApp `GET /events` | None | **Sample-defined**: `/control/*`, `/events`, `gnb-cli`, `scripts/watch.sh` |
+| Control, events, CLI | Operator, `gnb-cli`, `gnb_demo.py` to `gnb-o1-adaptor-sim`; rApp `GET /events` | None | **Sample-defined**: `/control/*`, `/events`, `gnb-cli`, `scripts/demo/watch.sh` |
 | Probes and metrics | Orchestrator to every service | None (`/live`, `/ready`, `/health`, `/metrics`) | **SMO build** |
 | Deployment | Docker Compose overlay | Compose Specification | Standard format; the service layout is **sample-defined** |
 
@@ -341,13 +341,13 @@ The service keeps its state in memory: the target, the data jobs, the decision l
 | `tx-state.changed` | A write was verified (or a rollback was): `previous` to `current` |
 | `reset` | `DELETE /state`: what was discarded (the loop is stopped first) |
 
-`scripts/watch.sh` follows these and the adaptor simulator's events on one console. The events are lost on restart, like the rest of the state.
+`scripts/demo/watch.sh` follows these and the adaptor simulator's events on one console. The events are lost on restart, like the rest of the state.
 
 ---
 
 # 7. gNB O1 adaptor simulator and CLI (LLD)
 
-Naming: everything on the network side carries the `gnb` prefix and keeps "O1 adaptor" in the name, so it is never mistaken for the rApp or for a real adaptor: the service and folder `gnb-o1-adaptor-sim`, the CLI `scripts/gnb-cli.sh` (`app/gnb_cli.py`, prompt `gnb>`), and the demo `gnb_demo.py` run by `scripts/run_gnb_demo.sh` (settings `GNB_DEMO_*`). The environment variables of the simulator itself keep the `ADAPTOR_` prefix.
+Naming: everything on the network side carries the `gnb` prefix and keeps "O1 adaptor" in the name, so it is never mistaken for the rApp or for a real adaptor: the service and folder `gnb-o1-adaptor-sim`, the CLI `scripts/demo/gnb-cli.sh` (`app/gnb_cli.py`, prompt `gnb>`), and the demo `gnb_demo.py` run by `scripts/demo/run_gnb_demo.sh` (settings `GNB_DEMO_*`). The environment variables of the simulator itself keep the `ADAPTOR_` prefix.
 
 `gnb-o1-adaptor-sim/app/`, FastAPI, port 8000, in memory: keep one replica and one worker.
 
@@ -392,7 +392,7 @@ One numbered, time-stamped log of everything that happens (also logged as `event
 
 ## 7.5 gNB CLI (`gnb-cli`)
 
-`scripts/gnb-cli.sh` runs `python -m app.gnb_cli` in the simulator container. Without arguments it is a shell that prints events asynchronously as they arrive; with arguments it runs one command; `watch` follows events only.
+`scripts/demo/gnb-cli.sh` runs `python -m app.gnb_cli` in the simulator container. Without arguments it is a shell that prints events asynchronously as they arrive; with arguments it runs one command; `watch` follows events only.
 
 ```text
 status                                   register / heartbeat
@@ -437,35 +437,49 @@ Layout and field semantics: [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md). `
 
 ```text
 smo/samples/tx-muting-rapp/
-├── README.md                this document
-├── manifest.yaml, capabilities.yaml, Definitions/, TOSCA-Metadata/   (package files; the .csar is smo/samples/tx-muting-rapp.csar)
-├── app/                     main.py, engine.py, thresholds.json
-├── gnb-o1-adaptor-sim/          app/ (main, oam, state, cli) and tests/
-├── docker-compose.yml       overlay adding both services to the SMO stack
-├── gnb_demo.py                  steps 00-06
-├── scripts/                 start, run_gnb_demo, gnb-cli, watch, lcm, cleanup, stop, commit_push
-└── tests/                   test_engine.py, test_service.py, conftest.py
+├── README.md                     this document
+├── manifest.yaml, capabilities.yaml, Definitions/, TOSCA-Metadata/   package files (the .csar is smo/samples/tx-muting-rapp.csar)
+├── app/                          main.py, engine.py, thresholds.json
+├── gnb-o1-adaptor-sim/           app/ (main, oam, state, gnb_cli) and tests/
+├── docker-compose.yml            overlay adding both services to the SMO stack
+├── gnb_demo.py                   demo steps 00-09 (CSAR deploy, RAN, rApp, retire)
+├── scripts/                      see below
+│   ├── lib.sh                    shared paths, service lists, compose wrapper (sourced, not run)
+│   ├── stack/                    start.sh  stop.sh  cleanup.sh
+│   ├── demo/                     run_gnb_demo.sh  gnb-cli.sh  watch.sh
+│   ├── lcm/                      lcm.sh  lcm.py
+│   └── dev/                      commit_push.sh
+└── tests/                        test_engine.py, test_service.py, test_package.py, conftest.py
 ```
+
+| Folder | Scripts | Purpose |
+|---|---|---|
+| `scripts/stack/` | `start.sh`, `stop.sh`, `cleanup.sh` | Build, start, stop and reset the Docker stack (§9.2) |
+| `scripts/demo/` | `run_gnb_demo.sh`, `gnb-cli.sh`, `watch.sh` | Run the end-to-end demo, drive the network side by hand, follow state changes (§9.3) |
+| `scripts/lcm/` | `lcm.sh` (host), `lcm.py` (runs in `r1-termination`) | Package and instance lifecycle through Onboarding and rApp Management (§10) |
+| `scripts/dev/` | `commit_push.sh` | Commit this sample and push the branch |
+
+Every script sources `scripts/lib.sh` and can be run from any directory.
 
 ## 9.2 Docker
 
-Both services are built from the SMO Dockerfile like every other service (`MODULE` picks the `app/` directory) and added by the overlay. Prerequisites: Docker Engine with Compose, Python 3 (for `scripts/init_secrets.sh`), git.
+Both services are built from the SMO Dockerfile like every other service (`MODULE` picks the `app/` directory) and added by the overlay. Prerequisites: Docker Engine with Compose, Python 3 (for the SMO's `smo/scripts/init_secrets.sh`), git.
 
 ```bash
 cd smo/samples/tx-muting-rapp
-scripts/start.sh               # secrets (once), build, start, wait for health   (FULL_STACK=1: every SMO service)
-scripts/run_gnb_demo.sh            # steps 00-06, or: scripts/run_gnb_demo.sh 02 03
-scripts/gnb-cli.sh                 # gNB CLI
-scripts/watch.sh               # follow state changes: the rApp's and the simulator's
-scripts/cleanup.sh             # reset, run again from 00
-scripts/stop.sh                # stop (--down removes containers); cleanup.sh --purge removes the database
+scripts/stack/start.sh               # secrets (once), build, start, wait for health   (FULL_STACK=1: every SMO service)
+scripts/demo/run_gnb_demo.sh         # steps 00-09: deploy from the CSAR, run the loop, retire; or: scripts/demo/run_gnb_demo.sh 04 05
+scripts/demo/gnb-cli.sh                 # gNB CLI
+scripts/demo/watch.sh               # follow state changes: the rApp's and the simulator's
+scripts/stack/cleanup.sh             # reset; then run again from 00 (step 09 already retires the package and instance)
+scripts/stack/stop.sh                # stop (--down removes containers); cleanup.sh --purge removes the database
 ```
 
 Without the scripts: `cd smo && docker compose -f docker-compose.yml -f samples/tx-muting-rapp/docker-compose.yml up -d --build tx-muting-rapp gnb-o1-adaptor-sim`. Neither service uses the database, so no secret or migration is needed beyond the SMO's own.
 
 ## 9.3 Run the end-to-end demo
 
-The whole path, from a counter on the simulated network to a verified configuration change on it:
+The whole path: the rApp is deployed from its CSAR, then a counter on the simulated network leads to a verified configuration change on it, and the rApp is retired from the CSAR again:
 
 ```text
 gnb-cli.sh pm 18.4 4 -> adaptor -> RAN NF OAM -> DME -> rApp (its own timer, every 5 s) -> R1 Termination -> DME /actions
@@ -478,15 +492,15 @@ gnb-cli.sh pm 18.4 4 -> adaptor -> RAN NF OAM -> DME -> rApp (its own timer, eve
 
 ```bash
 cd smo/samples/tx-muting-rapp
-scripts/start.sh
+scripts/stack/start.sh
 ```
 
-Expected: every service reported `healthy` (`postgres`, `r1-termination`, `sme`, `dme`, `ran-nf-oam`, `ran-nf-oam-worker`, `tx-muting-rapp`, `gnb-o1-adaptor-sim`), then `ready: ...`.
+Expected: every service reported `healthy` (`postgres`, `r1-termination`, `sme`, `dme`, `ran-nf-oam`, `ran-nf-oam-worker`, `onboarding`, `rapp-mgmt`, `nfo`, `focom`, `tx-muting-rapp`, `gnb-o1-adaptor-sim`), then `ready: ...`. The first four platform services after the worker are what the CSAR deployment of step 00-01 talks to.
 
 **2. Watch state changes** (terminal B, keep it open):
 
 ```bash
-scripts/watch.sh
+scripts/demo/watch.sh
 ```
 
 It prints the rApp's events (`started`, `tx-state.observed`, `decision`, `tx-state.changed`) and the simulator's (`config.received`, `pm.reported`, ...) as they happen. The same changes are in `docker compose logs -f tx-muting-rapp gnb-o1-adaptor-sim`.
@@ -494,10 +508,10 @@ It prints the rApp's events (`started`, `tx-state.observed`, `decision`, `tx-sta
 **3a. Scripted run** (terminal A):
 
 ```bash
-scripts/run_gnb_demo.sh            # steps 00-06, or: scripts/run_gnb_demo.sh 02 03
+scripts/demo/run_gnb_demo.sh         # steps 00-09, or: scripts/demo/run_gnb_demo.sh 04 05
 ```
 
-The rApp decides by itself: a step that changes the load reports the counters and then waits for the rApp's own next pass (at most one interval, 5 s) before it prints the decision. The expected result of each step is in §9.4. The run ends with an audit table in which repeated no-change passes are collapsed:
+Steps 00-01 deploy the rApp from `tx-muting-rapp.csar` (the script builds and serves the package, Onboarding fetches it; §10), steps 02-08 run the loop, step 09 retires the instance and the package, so the run can be repeated. The rApp decides by itself: a step that changes the load reports the counters and then waits for the rApp's own next pass (at most one interval, 5 s) before it prints the decision. The expected result of each step is in §9.4. The run ends with an audit table in which repeated no-change passes are collapsed:
 
 ```text
 TXM-0003  MUTING_OFF -> REDUCED_TX VERIFIED      INSTANTANEOUS_LOW_LOAD
@@ -510,65 +524,68 @@ TXM-0010  MUTING_ON  -> FULL_TX    VERIFIED      PRB_HIGH
 **3b. Hand-driven run** (instead of 3a, or after it): you only change the network side; the rApp reacts on its own. Prepare once, then set counters and watch terminal B:
 
 ```bash
-scripts/run_gnb_demo.sh 00 01        # register the adaptor, seed the configuration, start the rApp (this starts its loop)
+scripts/demo/run_gnb_demo.sh 00 01 02 03     # deploy from the CSAR, register the adaptor, seed the configuration, start the rApp (this starts its loop)
 
-scripts/gnb-cli.sh pm 18.4 4         # low load
+scripts/demo/gnb-cli.sh pm 18.4 4         # low load
                                  # within 5 s, terminal B: rApp decision REDUCED_TX, adaptor config.received, tx-state.changed MUTING_OFF -> MUTING_ON
-scripts/gnb-cli.sh config show       # the simulated cell now reads txMutingActivation MUTING_ON
+scripts/demo/gnb-cli.sh config show       # the simulated cell now reads txMutingActivation MUTING_ON
 
-scripts/gnb-cli.sh pm 41 8           # inside the hysteresis band: no event, nothing is written (repeated NO_CHANGE passes are not events)
-scripts/gnb-cli.sh pm 45 8           # load returns: decision FULL_TX (PRB_HIGH), tx-state.changed MUTING_ON -> MUTING_OFF
+scripts/demo/gnb-cli.sh pm 41 8           # inside the hysteresis band: no event, nothing is written (repeated NO_CHANGE passes are not events)
+scripts/demo/gnb-cli.sh pm 45 8           # load returns: decision FULL_TX (PRB_HIGH), tx-state.changed MUTING_ON -> MUTING_OFF
 ```
 
 Then break the write path on purpose:
 
 ```bash
-scripts/gnb-cli.sh fault IGNORE_WRITE      # the next edit-config is acknowledged but not applied
-scripts/gnb-cli.sh pm 18 4                 # decision REDUCED_TX with attempts=2: the read-back failed once, the retry applied it
+scripts/demo/gnb-cli.sh fault IGNORE_WRITE      # the next edit-config is acknowledged but not applied
+scripts/demo/gnb-cli.sh pm 18 4                 # decision REDUCED_TX with attempts=2: the read-back failed once, the retry applied it
 
-scripts/gnb-cli.sh pm 45 8                 # back to full TX
-scripts/gnb-cli.sh fault IGNORE_WRITE 2    # the write and its retry are both ignored
-scripts/gnb-cli.sh pm 18 4                 # decision REDUCED_TX with verification VERIFY_FAILED, attempts=2, rolledBack=true
+scripts/demo/gnb-cli.sh pm 45 8                 # back to full TX
+scripts/demo/gnb-cli.sh fault IGNORE_WRITE 2    # the write and its retry are both ignored
+scripts/demo/gnb-cli.sh pm 18 4                 # decision REDUCED_TX with verification VERIFY_FAILED, attempts=2, rolledBack=true
                                        # (tx-state stays MUTING_OFF; the faults are spent, so the next pass, one interval later, mutes successfully)
 ```
 
-The loop keeps running, so after any failed or rolled-back mute the rApp simply tries again on its next pass while the load stays low. `scripts/gnb-cli.sh reset` clears pending faults. `GET /decisions` on `tx-muting-rapp` has every pass; `scripts/gnb-cli.sh gen start 5` makes the simulator report random counters every 5 s so the rApp follows a changing load; `scripts/gnb-cli.sh help` lists every command. To change the pace, set `EVALUATION_INTERVAL_SECONDS` in the environment of `scripts/start.sh` (for example `EVALUATION_INTERVAL_SECONDS=2 scripts/start.sh`), or `0` to turn the loop off.
+The loop keeps running, so after any failed or rolled-back mute the rApp simply tries again on its next pass while the load stays low. `scripts/demo/gnb-cli.sh reset` clears pending faults. `GET /decisions` on `tx-muting-rapp` has every pass; `scripts/demo/gnb-cli.sh gen start 5` makes the simulator report random counters every 5 s so the rApp follows a changing load; `scripts/demo/gnb-cli.sh help` lists every command. To change the pace, set `EVALUATION_INTERVAL_SECONDS` in the environment of `scripts/stack/start.sh` (for example `EVALUATION_INTERVAL_SECONDS=2 scripts/stack/start.sh`), or `0` to turn the loop off.
 
 **4. What to look at**
 
 | Where | What it shows |
 |---|---|
 | Terminal B (`watch.sh`) | One line per state change, both services interleaved. A mute reads: `pm.reported`, `config.read`, `config.received`, then the rApp's `decision` and `tx-state.changed MUTING_OFF -> MUTING_ON` |
-| `scripts/gnb-cli.sh events 20` | The simulator's last events |
+| `scripts/demo/gnb-cli.sh events 20` | The simulator's last events |
 | `GET /state` on `tx-muting-rapp` | `autoEvaluation`: whether the loop runs and its interval |
 | `GET /decisions`, `GET /state` on `tx-muting-rapp` | Decision records; target, live configuration, last known TX state |
 | `docker compose logs r1-termination` | The rApp's calls through R1, each with the decision id as `correlationId` |
 | `docker compose logs sme` | The rApp's one-off `POST /invoker-registrations` and its token grants |
 
-**5. Add the package lifecycle** (optional): `scripts/lcm.sh services` once, then `scripts/lcm.sh up`, `status` and `down` (§10).
+**5. The package lifecycle on its own** (optional): the same onboard, prime, deploy and retire calls are available one at a time with `scripts/lcm/lcm.sh up`, `status` and `down` (§10). Use it instead of steps 00, 01 and 09 when you want to inspect each state.
 
-**6. Reset and stop:**
+**6. Reset and stop:** (step 09 has already retired the instance and the package)
 
 ```bash
-scripts/cleanup.sh             # end the data jobs, reset both services' state; run again from 00
-scripts/stop.sh                # stop the containers (--down removes them; cleanup.sh --purge also drops the database)
+scripts/stack/cleanup.sh             # end the data jobs, reset both services' state; run again from 00
+scripts/stack/stop.sh                # stop the containers (--down removes them; cleanup.sh --purge also drops the database)
 ```
 
 If something fails, §10.7 lists the usual causes (an unregistered adaptor gives a 409 on `POST /start`; a refused call at the gateway is a 502 that names it).
 
 ## 9.4 Demo steps
 
-`gnb_demo.py` runs inside the compose network (from `r1-termination`); ids persist in `$GNB_DEMO_STATE` (default `/tmp/gnb-demo.json`). `GNB_DEMO_ME` must equal `ADAPTOR_ME`.
+`gnb_demo.py` runs inside the compose network (from `r1-termination`); it loads `scripts/lcm/lcm.py` from the copy beside it for steps 00, 01 and 09. Ids persist in `$GNB_DEMO_STATE` (default `/tmp/gnb-demo.json`). `GNB_DEMO_ME` must equal `ADAPTOR_ME`.
 
 | Step | What it does | Expected result |
 |---|---|---|
-| 00 | Adaptor registers `tx-muting-me-001`, heartbeat, 2 PM subscriptions; an initial config job seeds the leaves | Endpoint `ACTIVE`; `NRCellDU=101` reads `MUTING_OFF`, feature `true` |
-| 01 | `POST /start` | 2 data job ids |
-| 02 | PRB 18.4 %, 4 UEs; waits for the rApp's own next pass | `REDUCED_TX`, action `COMPLETED`, read-back `VERIFIED` `MUTING_ON` |
-| 03 | Show the DME action, the config job, the adaptor's running and last received config | `correlationId` = decision id, job `COMPLETED` |
-| 04 | PRB 41 %, 8 UEs while muted; waits for the rApp's own pass | `NO_CHANGE` (`LOAD_WITHIN_HYSTERESIS`) |
-| 05 | PRB 45 %; waits for the rApp's own pass | `FULL_TX` (`PRB_HIGH`), `MUTING_OFF` read back |
-| 06 | Audit | Decision table (repeated no-change passes collapsed), count of DME actions by `tx-muting-rapp` |
+| 00 | **Package.** The CSAR is built and served, Onboarding fetches and validates it, then it is primed. A package onboarded earlier is reused | Package `AVAILABLE`, then `PRIMED`; `nfDeploymentDescriptorId` set |
+| 01 | **Deploy.** `CreateInstance` (autonomy `AUTONOMOUS`), then `bootstrap-complete`. A running instance of the package is reused | Instance `DEPLOYING`, then `RUNNING`; the workload is the compose service `tx-muting-rapp` (§10) |
+| 02 | Adaptor registers `tx-muting-me-001`, heartbeat, 2 PM subscriptions; an initial config job seeds the leaves | Endpoint `ACTIVE`; `NRCellDU=101` reads `MUTING_OFF`, feature `true` |
+| 03 | `POST /start` | 2 data job ids; the rApp's loop starts |
+| 04 | PRB 18.4 %, 4 UEs; waits for the rApp's own next pass | `REDUCED_TX`, action `COMPLETED`, read-back `VERIFIED` `MUTING_ON` |
+| 05 | Show the DME action, the config job, the adaptor's running and last received config | `correlationId` = decision id, job `COMPLETED` |
+| 06 | PRB 41 %, 8 UEs while muted; waits for the rApp's own pass | `NO_CHANGE` (`LOAD_WITHIN_HYSTERESIS`) |
+| 07 | PRB 45 %; waits for the rApp's own pass | `FULL_TX` (`PRB_HIGH`), `MUTING_OFF` read back |
+| 08 | Audit | Decision table (repeated no-change passes collapsed), count of DME actions by `tx-muting-rapp` |
+| 09 | **Retire.** Terminate the instance, deprime, delete it, retire the package | Instance `UNDEPLOYED` then gone; package `DELETING`; step 00 works again |
 
 ## 9.5 Unit tests
 
@@ -582,9 +599,9 @@ cd gnb-o1-adaptor-sim && PYTHONPATH=.:../../../shared:../../../sdk python -m pyt
 
 ## 9.6 Verification status
 
-Verified on 2026-10-06 on the built Docker stack, on the revision **before** the automatic evaluation loop was added: both unit suites; `scripts/start.sh` and the demo with the rApp calling DME and RAN NF OAM through R1 Termination on an SME token (SME `POST /invoker-registrations` 201; R1 proxying `/actions` with the decision id as correlation id); a hand-driven run with `POST /evaluate`, including the retry (`attempts=2`) and the rollback; `scripts/watch.sh` and the state-change log lines; the package lifecycle of §10.
+Verified on 2026-10-06 on the built Docker stack, on the revision **before** the automatic evaluation loop was added: both unit suites; `scripts/stack/start.sh` and the demo with the rApp calling DME and RAN NF OAM through R1 Termination on an SME token (SME `POST /invoker-registrations` 201; R1 proxying `/actions` with the decision id as correlation id); a hand-driven run with `POST /evaluate`, including the retry (`attempts=2`) and the rollback; `scripts/demo/watch.sh` and the state-change log lines; the package lifecycle of §10.
 
-**Not run since the automatic loop was added:** the loop itself (`EvaluationLoop`, `EVALUATION_INTERVAL_SECONDS`, the `auto-evaluation.*` and `evaluation.*` events, the collapsing of repeated no-change passes), the three unit tests written for it, the demo's waiting steps (`load()` and the collapsed audit in `gnb_demo.py`), the hand-driven run of §9.3 3b, and the rebuilt CSAR. The numbers in §9.5 (38 and 20) are the expected counts, not a measured result.
+**Not run since the automatic loop was added, the CSAR steps were added to the demo, and the scripts were moved into folders:** the loop itself (`EvaluationLoop`, `EVALUATION_INTERVAL_SECONDS`, the `auto-evaluation.*` and `evaluation.*` events, the collapsing of repeated no-change passes), the three unit tests written for it, the whole demo as it is now (steps 00-09: `load()`, the collapsed audit, and the CSAR steps 00, 01 and 09, which reuse a package or instance that is already there), `serve_package` in `lib.sh`, the hand-driven run of §9.3 3b, the renamed `gnb-*` services and the rebuilt CSAR. The numbers in §9.5 (38 and 20) are the expected counts, not a measured result.
 
 Never run: `FULL_STACK=1`, `cleanup.sh --purge`, more than one cell or managed element, package upgrade (§10.5), an instance whose container calls `bootstrap-complete` itself.
 
@@ -603,6 +620,21 @@ Two things have a lifecycle here, and they are separate:
 | The running services (`tx-muting-rapp`, `gnb-o1-adaptor-sim`) | Docker Compose | created, healthy, stopped, removed |
 
 The instance is the platform's record of a deployment. In this sample the container that actually runs is the compose service, started separately (§9.2); `bootstrap-complete` stands in for the container's own call-back.
+
+## 10.0 What the CSAR deployment does here, and what a real one adds
+
+The demo (§9.3, steps 00, 01 and 09) and `scripts/lcm/lcm.sh` run the real platform lifecycle from the CSAR: Onboarding validates the package and keeps its capabilities, rApp Management creates the instance, NFO instantiates a deployment for it, and the lifecycle rules (for example, no deprime while an instance exists) are enforced by the platform. What they do **not** do is start the rApp's container: NFO in this build has no container runtime ("no Helm, Kubernetes or `docker run`", NFO README), and the CSAR carries no deployment artifact. The workload is the compose service `tx-muting-rapp`, which is already running.
+
+In a real deployment the roles are split:
+
+| Step | Who does it |
+|---|---|
+| Build and publish the CSAR | The rApp vendor's build pipeline |
+| Onboard, prime, create and terminate instances | The operator, through the SMO Operator GUI or API (or an automation job making the same calls) |
+| Start the workload from the package | NFO with FOCOM, from a deployment artifact such as a Helm chart under `Artifacts/Deployment/HELM/` on a cluster FOCOM knows |
+| `bootstrap-complete` | The rApp container itself, when it is up |
+
+To make the CSAR start the real container, the package needs that Helm chart and the deployment needs such a cluster (see `smo/deploy`); neither is done in this sample.
 
 ## 10.1 Lifecycle at a glance
 
@@ -624,18 +656,18 @@ stateDiagram-v2
 | Stage | Command | Result |
 |---|---|---|
 | Build | `python3 smo/samples/build_csar.py tx-muting-rapp` | `smo/samples/tx-muting-rapp.csar` |
-| Platform up | `scripts/lcm.sh services` (once) | `onboarding`, `rapp-mgmt`, `nfo`, `focom` healthy |
-| Onboard | `scripts/lcm.sh onboard` | Package `AVAILABLE`, NFO deployment descriptor created |
-| Prime | `scripts/lcm.sh prime` | `PRIMED` |
-| Deploy | `scripts/lcm.sh deploy` | Instance `DEPLOYING`, OAuth client id issued |
-| Bootstrap | `scripts/lcm.sh bootstrap` | Instance `RUNNING` |
-| Operate | `scripts/start.sh`, `run_gnb_demo.sh`, `gnb-cli.sh`, `watch.sh` (§9.3) | See §9 |
-| Terminate | `scripts/lcm.sh terminate` | Instance `UNDEPLOYED`, package usage closed |
-| Deprime | `scripts/lcm.sh deprime` | Package `AVAILABLE` |
-| Delete instance | `scripts/lcm.sh delete` | Instance record gone |
-| Retire package | `scripts/lcm.sh retire` | `DEPRECATED`, then `DELETING` |
+| Platform up | `scripts/stack/start.sh` (`scripts/lcm/lcm.sh services` starts only these four) | `onboarding`, `rapp-mgmt`, `nfo`, `focom` healthy |
+| Onboard | `scripts/lcm/lcm.sh onboard` | Package `AVAILABLE`, NFO deployment descriptor created |
+| Prime | `scripts/lcm/lcm.sh prime` | `PRIMED` |
+| Deploy | `scripts/lcm/lcm.sh deploy` | Instance `DEPLOYING`, OAuth client id issued |
+| Bootstrap | `scripts/lcm/lcm.sh bootstrap` | Instance `RUNNING` |
+| Operate | `scripts/stack/start.sh`, `run_gnb_demo.sh`, `gnb-cli.sh`, `watch.sh` (§9.3) | See §9 |
+| Terminate | `scripts/lcm/lcm.sh terminate` | Instance `UNDEPLOYED`, package usage closed |
+| Deprime | `scripts/lcm/lcm.sh deprime` | Package `AVAILABLE` |
+| Delete instance | `scripts/lcm/lcm.sh delete` | Instance record gone |
+| Retire package | `scripts/lcm/lcm.sh retire` | `DEPRECATED`, then `DELETING` |
 
-`scripts/lcm.sh up` runs onboard, prime, deploy, bootstrap; `scripts/lcm.sh down` runs terminate, deprime, delete; `scripts/lcm.sh status` prints both states. Ids are kept in `/tmp/tx-muting-lcm.json` inside `r1-termination` (`LCM_STATE`). `lcm.sh` copies the sample into the `r1-termination` volume, serves it on `:8899` for Onboarding to fetch, and runs `scripts/lcm.py` there.
+`scripts/lcm/lcm.sh up` runs onboard, prime, deploy, bootstrap; `scripts/lcm/lcm.sh down` runs terminate, deprime, delete; `scripts/lcm/lcm.sh status` prints both states. Ids are kept in `/tmp/tx-muting-lcm.json` inside `r1-termination` (`LCM_STATE`). `lcm.sh` copies the sample into the `r1-termination` volume, serves it on `:8899` for Onboarding to fetch, and runs `scripts/lcm/lcm.py` there.
 
 ## 10.2 Build the package
 
@@ -646,15 +678,15 @@ python3 samples/build_csar.py tx-muting-rapp      # writes samples/tx-muting-rap
 
 It is the same builder, and the same `.csar` location, as the other samples. Entries are sorted and carry a fixed timestamp, so unchanged sources rebuild byte-identically; `tests/test_package.py` fails if the committed `.csar` differs from what the builder produces. Contents: `TOSCA-Metadata/TOSCA.meta`, `Definitions/asd.yaml`, `manifest.yaml`, `capabilities.yaml`, `app/`, `gnb_demo.py`. The builder leaves out tests and `README.md` for every sample, and, for this one (`SAMPLE_EXCLUDED`), `gnb-o1-adaptor-sim/`, `docker-compose.yml`, `scripts/`.
 
-Rebuild after any change to the packaged files, and bump `version` in `manifest.yaml` and `application_version` in `Definitions/asd.yaml` together for a new release. `scripts/lcm.sh` rebuilds before it serves the package.
+Rebuild after any change to the packaged files, and bump `version` in `manifest.yaml` and `application_version` in `Definitions/asd.yaml` together for a new release. `scripts/demo/run_gnb_demo.sh` and `scripts/lcm/lcm.sh` rebuild it before serving it.
 
 ## 10.3 Deploy
 
 ### 10.3.1 Platform and services
 
 ```bash
-scripts/start.sh               # builds and starts tx-muting-rapp, gnb-o1-adaptor-sim and the SMO services they call
-scripts/lcm.sh services        # adds onboarding, rapp-mgmt, nfo, focom for the package lifecycle
+scripts/stack/start.sh               # builds and starts tx-muting-rapp, gnb-o1-adaptor-sim and the SMO services they call,
+                                     # including onboarding, rapp-mgmt, nfo and focom, which the CSAR deployment needs
 ```
 
 Both sample services are hardened like the rest of the stack (no capabilities, read-only filesystem, `/tmp` tmpfs) and answer `GET /ready`; `docker compose ps` shows them healthy.
@@ -662,7 +694,7 @@ Both sample services are hardened like the rest of the stack (no capabilities, r
 ### 10.3.2 Onboard, prime, create the instance
 
 ```bash
-scripts/lcm.sh up
+scripts/lcm/lcm.sh up
 ```
 
 What each step calls (all from inside the compose network):
@@ -678,16 +710,16 @@ Onboarding never rejects synchronously (it answers 202); the outcome is only in 
 
 ## 10.4 Operate
 
-Once the instance is `RUNNING`, operation is the rApp's own API (§6): `POST /start` binds the target cell, opens the data jobs and starts the rApp's own evaluation loop; from then on it decides every `EVALUATION_INTERVAL_SECONDS` without being asked. `GET /decisions` is the audit trail. `scripts/run_gnb_demo.sh` does all of it (§9.3); `scripts/gnb-cli.sh` drives the network side.
+Once the instance is `RUNNING`, operation is the rApp's own API (§6): `POST /start` binds the target cell, opens the data jobs and starts the rApp's own evaluation loop; from then on it decides every `EVALUATION_INTERVAL_SECONDS` without being asked. `GET /decisions` is the audit trail. `scripts/demo/run_gnb_demo.sh` does all of it (§9.3); `scripts/demo/gnb-cli.sh` drives the network side.
 
 | Task | How |
 |---|---|
 | Check health | `docker compose ps`; `GET /ready` on each service; `docker compose logs -f tx-muting-rapp gnb-o1-adaptor-sim` (structured JSON logs, one access line per request) |
-| Watch state changes | `scripts/watch.sh`: the rApp's (`started`, `decision`, `tx-state.changed`, ...) and the simulator's, on one console. Also `GET /events` on each service and the `state change` lines in `docker compose logs -f tx-muting-rapp` |
+| Watch state changes | `scripts/demo/watch.sh`: the rApp's (`started`, `decision`, `tx-state.changed`, ...) and the simulator's, on one console. Also `GET /events` on each service and the `state change` lines in `docker compose logs -f tx-muting-rapp` |
 | Change the policy | Edit `app/thresholds.json` (activation strictly below deactivation) and rebuild: `docker compose ... up -d --build tx-muting-rapp`. Or mount another file and set `TX_MUTING_THRESHOLDS`. A bad policy fails `POST /start`, and every pass, with 422 before anything is written |
 | Pause the automation | `DELETE /state` on `tx-muting-rapp` stops the loop (and forgets the target); `POST /start` resumes it. Or restart the stack with `EVALUATION_INTERVAL_SECONDS=0` to run passes only through `POST /evaluate`. The simulator and its CLI keep working either way |
-| Return to full TX by hand | `scripts/gnb-cli.sh config set txMutingActivation=MUTING_OFF` changes the simulator's configuration; against the platform, write through DME `/actions` |
-| Reset the run | `scripts/cleanup.sh`: ends the rApp's data jobs, clears its state and the simulator's, removes the demo state. Managed element, PM subscriptions, DME actions and alarms stay as audit history |
+| Return to full TX by hand | `scripts/demo/gnb-cli.sh config set txMutingActivation=MUTING_OFF` changes the simulator's configuration; against the platform, write through DME `/actions` |
+| Reset the run | `scripts/stack/cleanup.sh`: ends the rApp's data jobs, clears its state and the simulator's, removes the demo state. Managed element, PM subscriptions, DME actions and alarms stay as audit history |
 | Restart a service | `docker compose ... restart tx-muting-rapp`. State is in memory: run `POST /start` again; the simulator forgets configuration and alarms but keeps nothing the platform needs (re-run `register`) |
 
 ## 10.5 Upgrade
@@ -704,9 +736,9 @@ rApp Management also has an upgrade operation for an instance (`pendingUpgradeIn
 ## 10.6 Retire
 
 ```bash
-scripts/lcm.sh down      # terminate (RUNNING -> UNDEPLOYED), deprime, delete the instance
-scripts/lcm.sh retire    # package AVAILABLE -> DEPRECATED -> DELETING
-scripts/stop.sh          # stop the services; --down removes the containers
+scripts/lcm/lcm.sh down      # terminate (RUNNING -> UNDEPLOYED), deprime, delete the instance
+scripts/lcm/lcm.sh retire    # package AVAILABLE -> DEPRECATED -> DELETING
+scripts/stack/stop.sh          # stop the services; --down removes the containers
 ```
 
 Order matters, and the platform enforces it:
@@ -726,11 +758,11 @@ After the package is `DELETING`, the same CSAR can be onboarded again.
 | Symptom | Cause | Action |
 |---|---|---|
 | `onboarding-status` `FAILED` | Byte-identical package already onboarded, or `TOSCA.meta` / `Entry-Definitions` missing | `lcm.sh retire` the old one (or fix the package), rebuild, onboard again |
-| `lcm.sh` cannot open `lcm.py` or serves an old CSAR | A stale copy in the `r1-termination` volume | `scripts/*.sh` clear the copy as root before copying; re-run the script |
-| `POST /start` 409 "DME type ... is not registered" | The adaptor has not registered, so the PM types do not exist | `scripts/gnb-cli.sh register` (or demo step 00), then `POST /start` |
+| `lcm.sh` cannot open `lcm.py` or serves an old CSAR | A stale copy in the `r1-termination` volume | `scripts/*/*.sh` clear the copy as root before copying; re-run the script |
+| `POST /start` 409 "DME type ... is not registered" | The adaptor has not registered, so the PM types do not exist | `scripts/demo/gnb-cli.sh register` (or demo step 00), then `POST /start` |
 | Automatic or manual pass 502 / `evaluation.error` event | DME or RAN NF OAM unreachable, or R1 Termination refused the call (401 token, 403 role); the message names the call and the status | Check `docker compose ps`, the named service's logs, and that `sme` and `r1-termination` are healthy |
-| `VERIFY_FAILED` in a decision | The network side acknowledged but did not apply (try it: `scripts/gnb-cli.sh fault IGNORE_WRITE`) | The rApp retries once, then rolls a failed mute back to `MUTING_OFF`; the record shows `attempts` and `rollback` |
-| Instance stays `DEPLOYING` | `bootstrap-complete` was never sent | `scripts/lcm.sh bootstrap` |
+| `VERIFY_FAILED` in a decision | The network side acknowledged but did not apply (try it: `scripts/demo/gnb-cli.sh fault IGNORE_WRITE`) | The rApp retries once, then rolls a failed mute back to `MUTING_OFF`; the record shows `attempts` and `rollback` |
+| Instance stays `DEPLOYING` | `bootstrap-complete` was never sent | `scripts/lcm/lcm.sh bootstrap` |
 
 ---
 

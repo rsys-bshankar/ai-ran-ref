@@ -2,11 +2,11 @@
 # Follow state changes as they happen: the rApp's (decisions, TX state observed / changed, start, reset) and the O1
 # adaptor simulator's (config received, PM reported, alarms, faults). Ctrl-C to stop.
 #
-#   scripts/watch.sh            # both, merged on one console
-#   scripts/watch.sh rapp       # the rApp only
-#   scripts/watch.sh adaptor    # the simulator only (same as scripts/gnb-cli.sh watch)
+#   scripts/demo/watch.sh            # both, merged on one console
+#   scripts/demo/watch.sh rapp       # the rApp only
+#   scripts/demo/watch.sh adaptor    # the simulator only (same as scripts/demo/gnb-cli.sh watch)
 set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
 which="${1:-both}"
 case "$which" in rapp|adaptor|both) ;; *) echo "usage: $0 [rapp|adaptor|both]" >&2; exit 1 ;; esac

@@ -398,7 +398,7 @@ def decisions(limit: int = 100):
 @app.get("/events")
 def events(since: int = 0, wait: float = 0.0, limit: int = 200):
     """Every change to this service's state, numbered: started, decision, tx-state.observed / tx-state.changed, reset.
-    With `wait` > 0 the call blocks until an event after `since` arrives (max 30 s): follow it with scripts/watch.sh."""
+    With `wait` > 0 the call blocks until an event after `since` arrives (max 30 s): follow it with scripts/demo/watch.sh."""
     return {"items": _state.events_since(since, min(wait, 30.0), limit), "lastSeq": _state.last_seq}
 
 

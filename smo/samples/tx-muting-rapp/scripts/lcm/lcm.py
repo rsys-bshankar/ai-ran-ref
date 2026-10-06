@@ -3,7 +3,7 @@
 
     python3 lcm.py onboard | prime | deploy | bootstrap | status | terminate | deprime | delete | retire | up | down
 
-Runs inside the compose network (scripts/lcm.sh copies it and serves the CSAR). `up` = onboard, prime, deploy,
+Runs inside the compose network (scripts/lcm/lcm.sh copies it and serves the CSAR). `up` = onboard, prime, deploy,
 bootstrap; `down` = terminate, deprime, delete. Ids are kept in $LCM_STATE (default /tmp/tx-muting-lcm.json).
 """
 

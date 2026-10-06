@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Build and start the sample (rApp + gNB O1 adaptor simulator) with the SMO services it needs.
 #
-#   scripts/start.sh               # the sample's services only
-#   FULL_STACK=1 scripts/start.sh  # every SMO service (GUI included)
+#   scripts/stack/start.sh               # the sample's services only
+#   FULL_STACK=1 scripts/stack/start.sh  # every SMO service (GUI included)
 set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
 command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
 
@@ -24,4 +24,4 @@ echo "waiting for health"
 wait_healthy postgres "${SMO_SERVICES[@]}" "${SAMPLE_SERVICES[@]}"
 copy_demo
 
-echo "ready: scripts/run_gnb_demo.sh (steps 00-06), scripts/gnb-cli.sh (O1 adaptor CLI)"
+echo "ready: scripts/demo/run_gnb_demo.sh (steps 00-06), scripts/demo/gnb-cli.sh (O1 adaptor CLI)"
