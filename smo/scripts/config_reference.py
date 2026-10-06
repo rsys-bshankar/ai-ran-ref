@@ -502,8 +502,8 @@ def collect(root: Path = SMO_ROOT) -> tuple[list[Read], list[str]]:
 class Variable:
     name: str
     defaults: list[str]
-    secret: bool
-    secret_file: bool
+    masked: bool            # the table does not show its default (a credential)
+    masked_file: bool
     modules: list[str]
     files: list[str]
     sites: list[str]
@@ -548,11 +548,11 @@ def build(reads: list[Read], descriptions: dict | None = None) -> list[Variable]
         text = entry.get("description") if isinstance(entry, dict) else entry
         helper_secret = any(r.secret_helper and r.via != "secret-file" for r in group_reads)
         file_secret = any(r.via == "secret-file" for r in group_reads)
-        secret = bool(SECRET_NAME.search(name)) or helper_secret or file_secret
+        masked = bool(SECRET_NAME.search(name)) or helper_secret or file_secret
         if override is not None:
-            secret = bool(override)
+            masked = bool(override)
         variables.append(Variable(
-            name=name, defaults=defaults, secret=secret, secret_file=file_secret and secret, modules=modules,
+            name=name, defaults=defaults, masked=masked, masked_file=file_secret and masked, modules=modules,
             files=sorted({r.path for r in group_reads}), sites=sorted({f"{r.path}:{r.line}" for r in group_reads}),
             group=group, description=text or "TODO"))
     return variables
@@ -574,7 +574,7 @@ def _cell(text: str) -> str:
 
 
 def default_cell(variable: Variable) -> str:
-    if variable.secret:
+    if variable.masked:
         return "*not shown*"                                    # the default of a secret is never written to a document, whatever it is today
     if len(variable.defaults) == 1:
         return f"`{_cell(variable.defaults[0])}`"
@@ -590,9 +590,9 @@ def render_markdown(variables: list[Variable]) -> str:
         title = GROUP_TITLES.get(group, f"`{group}`")
         out += [f"### {title}", "", "| Variable | Default | Secret | Read in | What it does |", "|---|---|---|---|---|"]
         for v in groups[group]:
-            secret = "file" if v.secret_file else "yes" if v.secret else ""
+            marker = "file" if v.masked_file else "yes" if v.masked else ""
             read_in = ", ".join(f"`{f}`" for f in v.files)
-            out.append(f"| `{v.name}` | {default_cell(v)} | {secret} | {read_in} | {_cell(v.description)} |")
+            out.append(f"| `{v.name}` | {default_cell(v)} | {marker} | {read_in} | {_cell(v.description)} |")
         out.append("")
     return "\n".join(out)
 
@@ -600,7 +600,7 @@ def render_markdown(variables: list[Variable]) -> str:
 def render_table(variables: list[Variable]) -> str:
     rows = [("NAME", "DEFAULT", "SECRET", "MODULES", "FILE:LINE")]
     for v in variables:
-        rows.append((v.name, " / ".join(v.defaults), "secret" if v.secret else "", ",".join(v.modules), " ".join(v.sites)))
+        rows.append((v.name, " / ".join(v.defaults), "secret" if v.masked else "", ",".join(v.modules), " ".join(v.sites)))
     widths = [min(max(len(r[i]) for r in rows), 48) for i in range(4)]
     return "\n".join("  ".join(r[i].ljust(widths[i]) for i in range(4)) + "  " + r[4] for r in rows)
 
@@ -609,7 +609,7 @@ def render_json(variables: list[Variable], reads: list[Read]) -> str:
     sites: dict[str, list[dict]] = defaultdict(list)
     for r in reads:
         sites[r.name].append({"module": r.module, "file": r.path, "line": r.line, "default": r.default, "via": r.via})
-    return json.dumps([{"name": v.name, "defaults": v.defaults, "secret": v.secret, "modules": v.modules, "group": v.group,
+    return json.dumps([{"name": v.name, "defaults": v.defaults, "secret": v.masked, "modules": v.modules, "group": v.group,
                         "description": v.description, "reads": sites[v.name]} for v in variables], indent=2) + "\n"
 
 

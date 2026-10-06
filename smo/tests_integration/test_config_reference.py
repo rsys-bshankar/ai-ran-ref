@@ -74,7 +74,7 @@ def test_the_committed_document_is_what_the_generator_writes(walked):
 
 def test_secrets_are_marked(walked):
     reads, _ = walked
-    secret = {v.name for v in cr.build(reads) if v.secret}
+    secret = {v.name for v in cr.build(reads) if v.masked}
     assert {"SMO_DATABASE_PASSWORD", "SMO_DATABASE_PASSWORD_FILE", "SMO_ENROLLMENT_SECRET", "GUI_JWT_SECRET", "GUI_ADMIN_PASSWORD"} <= secret
     assert "R1_RATE_PER_SECOND" not in secret and "IDEMPOTENCY_KEY_TTL_SECONDS" not in secret     # a description may say a name is not one
 
