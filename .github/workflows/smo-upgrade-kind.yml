@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   upgrade:
-    name: From ${{ matrix.from }}: upgrade, then roll back
+    name: "From ${{ matrix.from }}, upgrade then roll back"
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
