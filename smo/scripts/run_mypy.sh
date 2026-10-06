@@ -5,13 +5,13 @@
 # so the list shrinks and nothing is added to it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-MODULES=(onboarding rapp-mgmt mlmr mllf so-smos sme dme r1-termination nfo ran-analytics mdaf sa-smos mock-o1-adaptor focom gui-bff)
-# NOT_YET (findings): ran-nf-oam 68, aimgf 18, intent-service 15, sdk 97
+MODULES=(onboarding rapp-mgmt mlmr mllf so-smos sme dme r1-termination nfo ran-analytics mdaf sa-smos mock-o1-adaptor focom gui-bff aimgf)
+# NOT_YET (findings, under the pinned mypy): ran-nf-oam 68, intent-service 15, sdk 97
 [ "$#" -gt 0 ] && MODULES=("$@")
 status=0
 for m in "${MODULES[@]}"; do
   echo "== $m"
-  (cd "$m" && PYTHONPATH=.:../shared mypy --python-version 3.11 --check-untyped-defs --ignore-missing-imports --disable-error-code import-untyped --warn-unused-ignores --warn-redundant-casts \
+  (cd "$m" && PYTHONPATH=.:../shared python -m mypy --python-version 3.11 --check-untyped-defs --ignore-missing-imports --disable-error-code import-untyped --warn-unused-ignores --warn-redundant-casts \
       --explicit-package-bases app) || status=1
 done
 exit $status
