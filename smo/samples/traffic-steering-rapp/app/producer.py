@@ -191,7 +191,7 @@ def publish_sim(sdk, body: SimPublishRequest) -> dict:
         faults = {hot: "HOTSPOT"} if scenario == "HOTSPOT" else {}
         for h in range(body.hours):
             t = body.start + datetime.timedelta(hours=h)
-            for m in measurements(topology, layers, None, faults, t, extra=lambda c: {
+            for m in measurements(topology, layers, None, faults, t, extra=lambda c, cluster=cluster, scenario=scenario, hot=hot, layers=layers: {
                     "cluster": cluster, "scenario": scenario, "hotCell": hot, "layer": layers[c]}):
                 payload = {"managedElementRef": body.managedElementRef, **m}
                 for job in jobs:

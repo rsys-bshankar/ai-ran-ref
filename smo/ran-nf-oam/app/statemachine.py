@@ -27,7 +27,7 @@ class JobState(StrEnum):
 
 
 class JobEvent(StrEnum):
-    PRECHECK_PASS = "PRECHECK_PASS"     # schema validation + MSAC gate both pass
+    PRECHECK_PASS = "PRECHECK_PASS"     # noqa: S105 — an event name, not a credential; schema validation + MSAC gate both pass
     PRECHECK_FAIL = "PRECHECK_FAIL"
     AGGREGATE_ALL_APPLIED = "AGGREGATE_ALL_APPLIED"
     AGGREGATE_ALL_REJECTED = "AGGREGATE_ALL_REJECTED"

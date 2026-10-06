@@ -354,11 +354,11 @@ def _validate_job_definition_schema(db: Session, dme_type_id: uuid.UUID, definit
     try:
         jsonschema.validate(instance=definition, schema=dme_type.data_production_schema)
     except jsonschema.ValidationError as e:
-        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=e.message)
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=e.message) from e
     except jsonschema.SchemaError as e:
         # The registered dataProductionSchema itself is malformed — not the
         # caller's fault, but there's no meaningful way to validate against it.
-        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"registered dataProductionSchema is invalid: {e.message}")
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"registered dataProductionSchema is invalid: {e.message}") from e
 
 
 def _validate_lifecycle_eligibility(db: Session, dme_type_id: uuid.UUID, lifecycle_stage: str | None) -> None:

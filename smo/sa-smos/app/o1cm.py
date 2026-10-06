@@ -98,7 +98,7 @@ def _cm_targets_from_registration() -> dict[str, list[str]]:
                         for t in cap.get("supportedExpectationTargetInfoList") or []:
                             targets[t["supportedTargetName"]] = t.get("supportedTargetValueRange") or []
                     return targets
-    except Exception:  # noqa: BLE001 — fall back to the defaults
+    except Exception:  # noqa: BLE001, S110 — fall back to the defaults
         pass
     return DEFAULT_CM_TARGETS
 

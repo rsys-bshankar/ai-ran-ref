@@ -196,7 +196,7 @@ def deliver_credentials(inst: RAppInstance, secret: str) -> dict | None:
     except credential_delivery.DeliveryFailed as exc:
         with suppress(httpx.HTTPError):
             R1Client().delete(f"/sme/invoker-registrations/{inst.oauth_client_id}")
-        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"the instance's credentials could not be delivered to its workload: {exc}")
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"the instance's credentials could not be delivered to its workload: {exc}") from exc
 
 
 def onboarding_status(inst: RAppInstance) -> dict:

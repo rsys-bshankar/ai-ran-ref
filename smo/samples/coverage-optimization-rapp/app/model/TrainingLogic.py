@@ -27,7 +27,7 @@ def transitions(records: list[dict]) -> list[tuple[list[float], dict[str, float]
     with a window an hour later."""
     cells = by_cell(records)
     rows = []
-    for cell, series in cells.items():
+    for _cell, series in cells.items():
         for t, p in series:
             own = _reach_step(series, t)
             after = at(series, t + HOUR)

@@ -238,9 +238,9 @@ def receive_dms_notification(nf_deployment_id: uuid.UUID, body: DmsNotification,
         return {"nfDeploymentId": str(nf_deployment_id), "state": "DELETED"}
     try:
         d.state = NFO_FSM.fire(DeploymentState(d.state), DeploymentEvent(body.event))
-    except IllegalTransition:
+    except IllegalTransition as exc:
         raise framework_error(FrameworkError.NFDEPLOYMENT_ILLEGAL_OPERATION,
-                              detail=f"{body.event} for a deployment in state {d.state}")
+                              detail=f"{body.event} for a deployment in state {d.state}") from exc
     if d.state == DeploymentState.ABNORMAL:
         d.abnormal_reason = f"{body.event}: {body.detail}" if body.detail else body.event
         op = _open_terminate(db, nf_deployment_id)
@@ -279,9 +279,9 @@ def heal(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
         raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")
     try:
         d.state = NFO_FSM.fire(DeploymentState(d.state), DeploymentEvent.HEAL)
-    except IllegalTransition:
+    except IllegalTransition as exc:
         raise framework_error(FrameworkError.NFDEPLOYMENT_ILLEGAL_OPERATION,
-                               detail=f"cannot heal a deployment in state {d.state}")
+                               detail=f"cannot heal a deployment in state {d.state}") from exc
     d.abnormal_reason = None
     db.add(LCMOperation(nf_deployment_id=nf_deployment_id, operation_type="HEAL", status="COMPLETED"))
     db.commit()
@@ -301,9 +301,9 @@ def scale(nf_deployment_id: uuid.UUID, request: Request, db: Session = Depends(g
         raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")
     try:
         d.state = NFO_FSM.fire(DeploymentState(d.state), DeploymentEvent.UPDATE)
-    except IllegalTransition:
+    except IllegalTransition as exc:
         raise framework_error(FrameworkError.NFDEPLOYMENT_ILLEGAL_OPERATION,
-                               detail=f"cannot scale a deployment in state {d.state}")
+                               detail=f"cannot scale a deployment in state {d.state}") from exc
     op = LCMOperation(nf_deployment_id=nf_deployment_id, operation_type="SCALE", status="IN_PROGRESS")
     db.add(op)
     # Phase 1 elision, same pattern as Instantiate: real Helm upgrade

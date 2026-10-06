@@ -36,8 +36,8 @@ def _call_sites() -> set[tuple[str, str]]:
             def visit_Call(self, node):
                 func = node.func
                 name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
-                if name in HELPERS and (name != "enqueue" or imports_enqueue):
-                    sites.add((str(path.relative_to(SMO_ROOT)), self.stack[-1] if self.stack else "<module>"))
+                if name in HELPERS and (name != "enqueue" or imports_enqueue):  # noqa: B023 — the visitor runs within the loop iteration that defines it
+                    sites.add((str(path.relative_to(SMO_ROOT)), self.stack[-1] if self.stack else "<module>"))  # noqa: B023
                 self.generic_visit(node)
 
         Visitor().visit(tree)

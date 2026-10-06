@@ -113,7 +113,7 @@ def _fire(inst: RAppInstance, event: InstanceEvent) -> InstanceState:
     try:
         return RAPP_INSTANCE_FSM.fire(InstanceState(inst.state), event, instance=inst)
     except IllegalTransition as exc:
-        raise illegal_transition_error(exc, f"RAppInstance {inst.instance_id}")
+        raise illegal_transition_error(exc, f"RAppInstance {inst.instance_id}") from exc
 
 
 @app.post("/instances", status_code=202)
@@ -281,7 +281,7 @@ def upgrade_instance(instance_id: uuid.UUID, body: UpgradeRequest, db: Session =
     try:
         new = start_upgrade(db, old, body.newPackageId)
     except IllegalTransition as exc:
-        raise illegal_transition_error(exc, f"RAppInstance {instance_id}")
+        raise illegal_transition_error(exc, f"RAppInstance {instance_id}") from exc
     db.commit()
     return {"newInstanceId": str(new.instance_id), "oldInstanceState": old.state,
             "oauthClientId": new.oauth_client_id}
@@ -318,7 +318,7 @@ def resolve_upgrade_outcome(instance_id: uuid.UUID, succeeded: bool, db: Session
     try:
         resolve_upgrade(db, old, new, new_bootstrap_succeeded=succeeded, register_identity=_on_bootstrap)
     except IllegalTransition as exc:
-        raise illegal_transition_error(exc, f"upgrade of RAppInstance {instance_id}")
+        raise illegal_transition_error(exc, f"upgrade of RAppInstance {instance_id}") from exc
     db.commit()
     survivor = new if succeeded else old
     return {"instanceId": str(survivor.instance_id), "state": survivor.state, "packageId": str(survivor.package_id)}
@@ -366,7 +366,7 @@ def rollback_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)
     try:
         started = start_rollback(db, current)
     except IllegalTransition as exc:
-        raise illegal_transition_error(exc, f"RAppInstance {current.instance_id}")
+        raise illegal_transition_error(exc, f"RAppInstance {current.instance_id}") from exc
     if started is None:
         raise framework_error(FrameworkError.ROLLBACK_HISTORY_UNAVAILABLE,
                               detail=f"RAppInstance {current.instance_id} has no upgrade left to roll back")
