@@ -1,4 +1,4 @@
-"""O1 adaptor simulator: consumed configuration, generated data towards a fake RAN NF OAM, the event log, the CLI."""
+"""gNB O1 adaptor simulator: consumed configuration, generated data towards a fake RAN NF OAM, the event log, the CLI."""
 
 import json
 
@@ -6,7 +6,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import cli, main, oam
+from app import gnb_cli as cli, main, oam
 
 NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
 

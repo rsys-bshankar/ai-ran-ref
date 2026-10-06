@@ -1,10 +1,10 @@
-"""CLI on top of the O1 adaptor simulator.
+"""CLI on top of the gNB O1 adaptor simulator.
 
-    python -m app.cli                      interactive shell; asynchronous events print as they happen
-    python -m app.cli pm 18.4 4            one command, then exit
-    python -m app.cli watch                follow the event log until Ctrl-C
+    python -m app.gnb_cli                      interactive shell; asynchronous events print as they happen
+    python -m app.gnb_cli pm 18.4 4            one command, then exit
+    python -m app.gnb_cli watch                follow the event log until Ctrl-C
 
-Inside compose:  docker compose exec o1-adaptor-sim python -m app.cli
+Inside compose:  docker compose exec gnb-o1-adaptor-sim python -m app.gnb_cli
 
 It only calls the simulator's HTTP routes (ADAPTOR_URL, default http://localhost:8000), so it works from any
 container or host that can reach them. `help` lists the commands.
@@ -153,8 +153,8 @@ def show(result) -> None:
 
 
 class Shell(cmd.Cmd):
-    intro = "O1 adaptor simulator CLI. `help` lists commands; asynchronous events print as they arrive."
-    prompt = "o1> "
+    intro = "gNB O1 adaptor simulator CLI. `help` lists commands; asynchronous events print as they arrive."
+    prompt = "gnb> "
 
     def __init__(self, api: Api):
         super().__init__()

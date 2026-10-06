@@ -1,4 +1,4 @@
-# Shared by the sample's helper scripts: paths, the services it needs, the compose wrapper, copying demo.py in.
+# Shared by the sample's helper scripts: paths, the services it needs, the compose wrapper, copying gnb_demo.py in.
 # shellcheck shell=bash
 
 SAMPLE_NAME=tx-muting-rapp
@@ -8,9 +8,9 @@ SMO_DIR="$(cd "$SAMPLE_DIR/../.." && pwd)"
 REPO_DIR="$(cd "$SMO_DIR/.." && pwd)"
 SCRATCH="/srv/scratch/$SAMPLE_NAME"
 
-# The rApp, its O1 adaptor simulator, and what they call. postgres and the one-shot migrate come in as dependencies.
+# The rApp, its gNB O1 adaptor simulator, and what they call. postgres and the one-shot migrate come in as dependencies.
 # FULL_STACK=1 starts every service instead, e.g. to open the GUI beside the sample.
-SAMPLE_SERVICES=(tx-muting-rapp o1-adaptor-sim)
+SAMPLE_SERVICES=(tx-muting-rapp gnb-o1-adaptor-sim)
 SMO_SERVICES=(r1-termination sme dme ran-nf-oam ran-nf-oam-worker)
 # what the package and instance lifecycle (scripts/lcm.sh) adds
 LCM_SERVICES=(onboarding rapp-mgmt nfo focom)
@@ -36,7 +36,7 @@ wait_healthy() {
   done
 }
 
-# copy_demo: put demo.py into the r1-termination volume, where it runs (DEMO_RUNBOOK.md section 1)
+# copy_demo: put gnb_demo.py into the r1-termination volume, where it runs (DEMO_RUNBOOK.md section 1)
 copy_demo() {
   # `docker cp` creates root-owned files, which the service user cannot remove: clear as root, or an older copy stays
   compose exec -T -u 0 r1-termination python3 -c "import shutil; shutil.rmtree('$SCRATCH', ignore_errors=True)"

@@ -1,6 +1,6 @@
-# TX-muting rApp deployment: the rApp service and the O1 adaptor simulator, added to the SMO stack.
+# TX-muting rApp deployment: the rApp service and the gNB O1 adaptor simulator, added to the SMO stack.
 #
-#   docker compose -f ../../docker-compose.yml -f docker-compose.yml up -d --build tx-muting-rapp o1-adaptor-sim
+#   docker compose -f ../../docker-compose.yml -f docker-compose.yml up -d --build tx-muting-rapp gnb-o1-adaptor-sim
 #                                           (scripts/start.sh does this and waits for health)
 #
 # Both are built from the SMO Dockerfile like every other service (MODULE picks the app/ directory). Relative paths
@@ -22,10 +22,10 @@ x-hardening: &hardening
 
 services:
   # The O1 adaptor stand-in: consumes edit-config / get-config from RAN NF OAM, generates PM counters and alarms on
-  # demand. Follow it with `docker compose logs -f o1-adaptor-sim` or its CLI (scripts/cli.sh).
+  # demand. Follow it with `docker compose logs -f gnb-o1-adaptor-sim` or its CLI (scripts/gnb-cli.sh).
   # In-memory state: keep one replica and one worker.
-  o1-adaptor-sim:
-    build: { context: ., args: { MODULE: samples/tx-muting-rapp/o1-adaptor-sim } }
+  gnb-o1-adaptor-sim:
+    build: { context: ., args: { MODULE: samples/tx-muting-rapp/gnb-o1-adaptor-sim } }
     stop_grace_period: 30s
     <<: *hardening
     healthcheck: *ready_probe
@@ -36,7 +36,7 @@ services:
       ADAPTOR_ME: ${ADAPTOR_ME:-tx-muting-me-001}
       ADAPTOR_CELL: ${ADAPTOR_CELL:-101}
       ADAPTOR_VENDOR: ${ADAPTOR_VENDOR:-demo-vendor}
-      ADAPTOR_PUBLIC_URI: http://o1-adaptor-sim:8000/edit-config
+      ADAPTOR_PUBLIC_URI: http://gnb-o1-adaptor-sim:8000/edit-config
 
   # The rApp reaches DME and RAN NF OAM only through R1 Termination, as an rApp: it registers at SME as an API invoker
   # (no enrollment secret, so SME records it as `rapp`), takes a client_credentials token (scope smo-rapp) and sends it
@@ -51,7 +51,7 @@ services:
       sme: { condition: service_healthy }
       dme: { condition: service_healthy }
       ran-nf-oam: { condition: service_healthy }
-      o1-adaptor-sim: { condition: service_healthy }
+      gnb-o1-adaptor-sim: { condition: service_healthy }
     environment:
       SMO_IDENTITY_KIND: rapp
       SMO_MODULE_IDENTITY_STORE: "off"

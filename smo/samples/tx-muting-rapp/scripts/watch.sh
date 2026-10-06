@@ -4,7 +4,7 @@
 #
 #   scripts/watch.sh            # both, merged on one console
 #   scripts/watch.sh rapp       # the rApp only
-#   scripts/watch.sh adaptor    # the simulator only (same as scripts/cli.sh watch)
+#   scripts/watch.sh adaptor    # the simulator only (same as scripts/gnb-cli.sh watch)
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -14,7 +14,7 @@ case "$which" in rapp|adaptor|both) ;; *) echo "usage: $0 [rapp|adaptor|both]" >
 compose exec -T -e "WATCH=$which" r1-termination python3 -u - <<'PY'
 import json, os, threading, httpx
 
-SERVICES = {"rapp": "http://tx-muting-rapp:8000", "adaptor": "http://o1-adaptor-sim:8000"}
+SERVICES = {"rapp": "http://tx-muting-rapp:8000", "adaptor": "http://gnb-o1-adaptor-sim:8000"}
 want = [k for k in SERVICES if os.environ["WATCH"] in (k, "both")]
 out = threading.Lock()
 

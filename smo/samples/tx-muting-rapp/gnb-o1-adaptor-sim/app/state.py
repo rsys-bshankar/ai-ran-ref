@@ -1,4 +1,4 @@
-"""In-memory state of the O1 adaptor simulator: the running configuration, raised alarms, injected faults and the
+"""In-memory state of the gNB O1 adaptor simulator: the running configuration, raised alarms, injected faults and the
 event log that the CLI (and anything else) follows."""
 
 import collections
@@ -7,7 +7,7 @@ import json
 import logging
 import threading
 
-log = logging.getLogger("o1_adaptor_sim")
+log = logging.getLogger("gnb_o1_adaptor_sim")
 
 # Initial configuration of a managed function: the TX-muting leaves, feature enabled and muting off.
 DEFAULT_CONFIG = {"txMutingFeatureEnable": "true", "txPathOffPattern": "HORIZONTAL_PLANE", "txMutingActivation": "MUTING_OFF"}

@@ -1,4 +1,4 @@
-"""O1 adaptor simulator: a stand-in for a vendor's O1 adaptor that RAN NF OAM can register, configure and read, and
+"""gNB O1 adaptor simulator: a stand-in for a vendor's O1 adaptor that RAN NF OAM can register, configure and read, and
 that makes up the data a real network function would send.
 
 South of RAN NF OAM it behaves like an adaptor:
@@ -8,7 +8,7 @@ South of RAN NF OAM it behaves like an adaptor:
     reports, alarms.
 
 Everything it does or receives is an event on one log (GET /events, long poll) so a CLI can print asynchronous
-happenings as they occur. `python -m app.cli` is that CLI; it only calls the /control routes below.
+happenings as they occur. `python -m app.gnb_cli` is that CLI; it only calls the /control routes below.
 """
 
 import datetime
@@ -33,10 +33,10 @@ NETCONF_NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
 ME = os.environ.get("ADAPTOR_ME", "tx-muting-me-001")
 CELL = os.environ.get("ADAPTOR_CELL", "101")
 VENDOR = os.environ.get("ADAPTOR_VENDOR", "demo-vendor")
-PUBLIC_URI = os.environ.get("ADAPTOR_PUBLIC_URI", "http://o1-adaptor-sim:8000/edit-config")
-OPERATOR = "o1-adaptor-sim"
+PUBLIC_URI = os.environ.get("ADAPTOR_PUBLIC_URI", "http://gnb-o1-adaptor-sim:8000/edit-config")
+OPERATOR = "gnb-o1-adaptor-sim"
 
-app = FastAPI(title="O1 adaptor simulator")
+app = FastAPI(title="gNB O1 adaptor simulator")
 install_logging(app)
 install_metrics(app)
 install_health(app)

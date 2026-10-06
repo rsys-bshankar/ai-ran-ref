@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """TX-muting rApp demo: steps 00-06 against a running stack (see README, Run and test).
 
-    python3 demo.py 00        # one step
-    python3 demo.py all       # every step in order
+    python3 gnb_demo.py 00        # one step
+    python3 gnb_demo.py all       # every step in order
 
 The rApp evaluates by itself (every EVALUATION_INTERVAL_SECONDS, 5 s in the compose overlay): a step that changes the
 load reports the counters and then waits for the rApp's own first pass that saw them; nothing triggers the pass.
 
-Run it inside the compose network (from the r1-termination container; scripts/run_demo.sh does that). It calls each
-service by hostname, the way DEMO_RUNBOOK.md does. All network data comes from the O1 adaptor simulator, exactly as
-you can trigger it by hand with its CLI (scripts/cli.sh): the demo only calls the same control routes. Ids are
-kept between steps in $DEMO_STATE (default /tmp/tx-muting-demo.json).
+Run it inside the compose network (from the r1-termination container; scripts/run_gnb_demo.sh does that). It calls each
+service by hostname, the way DEMO_RUNBOOK.md does. All network data comes from the gNB O1 adaptor simulator, exactly as
+you can trigger it by hand with its CLI (scripts/gnb-cli.sh): the demo only calls the same control routes. Ids are
+kept between steps in $GNB_DEMO_STATE (default /tmp/gnb-demo.json).
 """
 
 import json
@@ -20,12 +20,12 @@ import time
 
 import httpx
 
-ME = os.environ.get("DEMO_ME", "tx-muting-me-001")  # must equal ADAPTOR_ME of the simulator
-CELL = os.environ.get("DEMO_CELL", "101")
+ME = os.environ.get("GNB_DEMO_ME", "tx-muting-me-001")  # must equal ADAPTOR_ME of the simulator
+CELL = os.environ.get("GNB_DEMO_CELL", "101")
 MFR = f"NRCellDU={CELL}"
-RAPP = os.environ.get("DEMO_RAPP_URL", "http://tx-muting-rapp:8000")
-ADAPTOR = os.environ.get("DEMO_ADAPTOR_URL", "http://o1-adaptor-sim:8000")
-STATE_FILE = os.environ.get("DEMO_STATE", "/tmp/tx-muting-demo.json")
+RAPP = os.environ.get("GNB_DEMO_RAPP_URL", "http://tx-muting-rapp:8000")
+ADAPTOR = os.environ.get("GNB_DEMO_ADAPTOR_URL", "http://gnb-o1-adaptor-sim:8000")
+STATE_FILE = os.environ.get("GNB_DEMO_STATE", "/tmp/gnb-demo.json")
 TX_LEAVES = ("txMutingFeatureEnable", "txPathOffPattern", "txMutingActivation")
 
 

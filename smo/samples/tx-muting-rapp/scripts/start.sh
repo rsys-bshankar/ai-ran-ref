@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and start the sample (rApp + O1 adaptor simulator) with the SMO services it needs.
+# Build and start the sample (rApp + gNB O1 adaptor simulator) with the SMO services it needs.
 #
 #   scripts/start.sh               # the sample's services only
 #   FULL_STACK=1 scripts/start.sh  # every SMO service (GUI included)
@@ -24,4 +24,4 @@ echo "waiting for health"
 wait_healthy postgres "${SMO_SERVICES[@]}" "${SAMPLE_SERVICES[@]}"
 copy_demo
 
-echo "ready: scripts/run_demo.sh (steps 00-06), scripts/cli.sh (O1 adaptor CLI)"
+echo "ready: scripts/run_gnb_demo.sh (steps 00-06), scripts/gnb-cli.sh (O1 adaptor CLI)"

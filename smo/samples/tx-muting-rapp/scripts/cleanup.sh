@@ -18,8 +18,8 @@ in_stack "
 import os, httpx
 httpx.delete('http://dme:8000/data-jobs', params={'consumer_id': '$SAMPLE_NAME'}, timeout=30).raise_for_status()
 httpx.delete('http://$SAMPLE_NAME:8000/state', timeout=30).raise_for_status()
-httpx.delete('http://o1-adaptor-sim:8000/control/state', timeout=30).raise_for_status()
-state = os.environ.get('DEMO_STATE', '/tmp/tx-muting-demo.json')
+httpx.delete('http://gnb-o1-adaptor-sim:8000/control/state', timeout=30).raise_for_status()
+state = os.environ.get('GNB_DEMO_STATE', '/tmp/gnb-demo.json')
 if os.path.exists(state):
     os.remove(state)
 print('  data jobs ended, rApp and simulator state reset, demo state removed')

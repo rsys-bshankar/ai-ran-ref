@@ -22,5 +22,5 @@ def test_csar_holds_the_package_and_nothing_of_the_tooling():
     import io, zipfile
     names = set(zipfile.ZipFile(io.BytesIO(CSAR.read_bytes())).namelist())
     assert {"TOSCA-Metadata/TOSCA.meta", "Definitions/asd.yaml", "manifest.yaml", "capabilities.yaml", "app/main.py",
-            "app/engine.py", "app/thresholds.json", "demo.py"} <= names
-    assert not [n for n in names if n.startswith(("o1-adaptor-sim", "scripts", "tests")) or n.endswith((".md", ".csar", "docker-compose.yml"))]
+            "app/engine.py", "app/thresholds.json", "gnb_demo.py"} <= names
+    assert not [n for n in names if n.startswith(("gnb-o1-adaptor-sim", "scripts", "tests")) or n.endswith((".md", ".csar", "docker-compose.yml"))]
