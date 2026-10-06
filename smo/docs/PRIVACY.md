@@ -1,0 +1,118 @@
+# Personal data: inventory and erasure of a GUI user
+
+Where this platform can hold or write personal data, how long it keeps it, who can read it, how it leaves, and how a GUI user is erased (`STD-4.1`, `STD-4.3`). Written from the
+models, migrations and code of this repository; where something is not implemented the row says so and names the `OPEN_ITEMS.md` item that would implement it. It is an engineering
+inventory, not legal advice or a data-protection impact assessment: it does not decide the legal basis, the retention a law requires, or what an operator's contract says.
+
+## 1. What kind of data there is
+
+- **Operator staff.** The platform is a management plane. The people it knows are the operators who use the GUI (username, a password hash, a role) and the name or identifier that is written
+  next to what they did (who acknowledged an alarm, who asked for a configuration change, who rejected a dispatch).
+- **Subscribers (end users of the network): none by design.** No model in any module has a column for a subscriber, device or UE identifier (`IMSI`, `SUPI`, `MSISDN`, `IMEI`, a UE id):
+  checked in the models of every module. Performance data is counters per managed element and cell; alarms are per managed object. Two columns have "subscriber" in their name and are
+  not about people: `service_event_subscription.subscriber_id` (SME: the invoker that subscribed to CAPIF events) and `mdaf_report.subscriber_attribution` (a column nothing writes or reads).
+  What the platform **cannot** promise is the content of what a real network sends it. Two places keep that content as opaque text and do not inspect it: `pm_file.content` (RAN NF OAM)
+  and the free text of an alarm (`specific_problem`, additional text). If a deployed RAN puts subscriber-level data in a performance file or an alarm text, it is stored as sent. **Not assessed**
+  against a real RAN (none has been connected); the demo data is synthetic.
+- **IP addresses.** The application tables store none. The GUI's web server writes one per request in its access log (section 3, "Logs").
+
+## 2. Inventory
+
+Roles in "who can read": **admin / operator / viewer** are the GUI roles (`gui-bff/app/rbac.py`; every read under a module prefix is open to `viewer` and above except the rows
+`rbac.py` raises to operator or admin); **rApp** is any valid SME token (reads at R1 are open to every valid token, scoping them per tenant is `SEC-10`); **DB role** is whoever holds a
+database role that can read the schema (each module has its own role, `DB-2.7` done; the `smo` role and the Postgres superuser read all).
+
+Retention "none" means there is no deletion in the code at all.
+
+| # | Item | Table / column or field | Module | Purpose | Retention today | Who can read | How it leaves the system |
+|---|---|---|---|---|---|---|---|
+| 1 | GUI user account | `gui_user`: `username` (primary key), `password_hash` (scrypt, N=2^14 r=8 p=1, 16-byte salt), `role`, `active`, `token_version`, `created_at` | GUI BFF (SQLite on volume `gui_bff_data`, default `GUI_DATABASE_URL`) | Sign-in and role checks | Until an admin deletes the user (section 4) | admin (`GET /api/admin/users`: username, role, active, created; the hash is never returned); the volume's owner | The volume; **not in `scripts/db_backup.sh`** (section 3, "Backups") |
+| 2 | Failed-login counter | `gui_login_failure`: `username` as typed (a real name, an unknown name, or whatever the person typed in the field), `count`, `first_failed_at` | GUI BFF | Account lockout (5 failures in 300 s) | None: a row is cleared by that name's next successful sign-in, and otherwise stays. Rows for names that never sign in accumulate | The volume's owner. No route reads it | The volume |
+| 3 | Revoked session | `gui_revoked_session`: `jti` (random token id), `expires_at`. No username | GUI BFF | A logout ends that token | Until the token would have expired (8 h by default), removed the next time anyone logs out | The volume's owner. Not personal data by itself | The volume |
+| 4 | GUI audit log | `gui_audit_log`: `at`, `username` (the actor, or the name typed on a failed login), `role`, `action` (`LOGIN`, `TOKEN`, `LOGOUT`, `LOGIN_FAILED`, `LOGIN_LOCKED`, `PASSWORD_CHANGED`, `USER_CREATED`, `USER_UPDATED`, `USER_DELETED`, `DENIED`, `PROXY`), `method`, `path` (the proxied path **with its query string**, e.g. `?ack_user_id=<name>`), `status_code`, `detail` (for user administration: the target username and what changed) | GUI BFF | Who did what through the GUI | **None.** Append-only: the ORM refuses to update or delete a row. Retention is `DB-3.6` (open) | admin (`GET /api/admin/audit`, filter by `username` and `action`); the volume's owner | The volume; admin's API read. Not exported (no `export` for this log; `SEC-11.5` covers the platform log below) |
+| 5 | Platform audit chain | `audit_log`: `actor` (the SME invoker id the gateway vouches for), `actor_role`, `action` (HTTP method), `target` (module prefix and path, **no query, no body**), `result`, `correlation_id`, `detail` (`{"onBehalfOf": ...}` for an internal caller that names the rApp it acts for); `audit_head` | R1 Termination writes; `smo_shared/audit.py` | Tamper-evident record of changes through the gateway | None: "rows are not purged; retention is by archiving an export" (`audit.py`). Retention is `DB-3.1` | DB roles that read `public.audit_log`; not through the GUI (merging it into the GUI's view is `SEC-11.6`, open) | `python -m smo_shared.audit export` (JSON lines, RFC 5424 syslog), which the operator runs |
+| 6 | GUI user name inside module records | The GUI pins the signed-in user into the request as `smo-gui:<username>` (`requestedBy`, `rejectedBy`, `operator`) or as the plain username (`ack_user_id`, `clear_user_id`) before it forwards it. Columns: `write_config_job.requested_by`, `rapp_kill.killed_by`, `dme_action_record.requested_by`, `autonomy_dispatch.rejected_by`, `energy_saving_cell.override_by` (the sample rApp), `alarm.ack_user_id`, `alarm.clear_user_id` | RAN NF OAM, DME, Intent Service, the Energy Saving sample | Accountability of an operator action | None. Alarms, jobs and records have no purge (`DB-3.3`, `DB-3.4`; the `safeguard_refusal` purge is by age, below) | Every GUI role through the proxy (viewer and above can read alarms and jobs); every rApp token (reads are open); DB roles | API responses; backups; the outbox if a module puts the field in a notification (not found in a static search, not assessed per payload) |
+| 7 | Free-text person fields | Whatever a caller writes: `ran_nf_oam.o1_adaptor_host_key.pinned_by` (a body field `pinnedBy`), `aimgf.certification_record.decided_by` (the `decided_by` query parameter of `POST /aimgf/models/{id}/advance`), `mdaf.mda_subscription.requested_by`, `mdaf.mda_request.requested_by`, `safeguard_refusal.requested_by`, `dme` and `mlmr` `owner`, `mlmr` `author` (an `owner` or `author` is whatever the registering caller names: a person or a system) | RAN NF OAM, AIMgF, MDAF, DME, MLMR | Attribution | None | As row 6 | As row 6 |
+| 8 | MSAC identity | `msac_identity` (TS 28.319 `Identity`: `identity_name`, `identity_type`, `credential_hash`, a role list; a name can be a person's) | RAN NF OAM | Access control of configuration writes | Until deleted through the API (as far as the routes go: not exercised for this inventory) | Identity names: every reader; the credential is a hash and never returned | As row 6 |
+| 9 | Notification outbox | `notification_outbox`: `destination` (a caller-supplied URL, which can contain a name or a token), `payload` (JSON), `last_error` | every module through `smo_shared/outbox.py` | At-least-once delivery of notifications | `SENT` rows: removed after `SMO_OUTBOX_SENT_RETENTION_SECONDS` (default 86400 s). `PENDING` and `DEAD` rows: **never removed** | DB roles | To the registered destination (that is the purpose); backups |
+| 10 | Idempotency record | the stored answer of a command with an `Idempotency-Key` (`smo_shared/idempotency.py`), including the response body, per caller (invoker id) | modules that use `@idempotent` | Replay of a repeated command | `IDEMPOTENCY_KEY_TTL_SECONDS` (default 86400 s), purged when the same key is next used | DB roles | The replayed answer to the same caller |
+| 11 | Configuration history | `cm_snapshot`, `write_config_job`, `write_config_sub_change` (before and after images of what a job changed; the job's `requested_by` is row 6) | RAN NF OAM | Rollback and CM history | Snapshots: `RAN_NF_OAM_CM_SNAPSHOT_RETENTION_DAYS` (default 0, keep) with `POST /config-history/purge`, only when someone calls it. Jobs: none | As row 6 | As row 6 |
+| 12 | Safeguard refusals | `safeguard_refusal` (`invoker_id`, `requested_by`, `code`, `detail`) | RAN NF OAM | Records of an rApp's refused requests | `SAFEGUARD_REFUSAL_RETENTION_DAYS` (default 0, keep); when set, the worker purges daily; `POST /safeguard-refusals/purge` | internal callers only at R1; DB roles | Outbox notifications to safeguard subscribers |
+| 13 | Session token in the browser | Cookie `smo_session` (HS256 JWT: `sub` = username, `ver`, `csrf`, `jti`, `exp`) and `smo_csrf` | GUI BFF, the operator's browser | The session | `GUI_SESSION_TTL_SECONDS` (default 8 h); ended by logout (row 3) | The browser; it is `HttpOnly; Secure; SameSite=Strict` | Sent back to the BFF only |
+| 14 | First-start admin password | file `GUI_INITIAL_PASSWORD_FILE` (mode 0600, volume `gui_bff_data`) when `GUI_ADMIN_PASSWORD` is unset | GUI BFF | Bootstrap | Until the operator deletes it (the log tells them to) | the volume's owner | The volume |
+| 15 | Service logs | JSON on stdout: `timestamp`, `level`, `logger`, `service`, `correlationId`, and for each request the method, the **route template** (never the raw path or query), status and duration (`smo_shared/logconfig.py`); a redaction filter removes credentials. One module log line names a person: RAN NF OAM's warning when a host key is replaced (`pinnedBy`) | every module on the shared image | Operation | The container runtime's log policy (Docker's default driver does not rotate): the operator's | the operator (`docker compose logs`, the log shipper) | The shipper the operator installs (`OBS-6`, not built here) |
+| 16 | GUI web server log | nginx's default access log on stdout of the `gui` container (no `access_log` directive): client IP address, time, the **request line including the path** (for example `DELETE /api/admin/users/<username>`), status, user agent | `gui` (nginx) and the TLS edge `edge-tls` | Operation | The container runtime's log policy | the operator | As row 15 |
+| 17 | Slow-statement log | Postgres `log_min_duration_statement` (default 500 ms): the statement text, and with it any bound parameter the server logs for that statement, so a slow statement can contain a username | Postgres | Slow query diagnosis | Postgres container log policy | the operator | As row 15 |
+| 18 | Database backups | `scripts/db_backup.sh`: one `pg_dump` custom-format file with every Postgres table (rows 5 to 12 above), mode 0600 | operator | Recovery | The operator's: nothing deletes `backups/` | whoever can read the file | Wherever the operator copies it (off-site shipping is `HA-6.2`, not built) |
+
+Not personal data, listed so nobody searches for it: `gui_setting` (session signing key), `gui_smo_credential` and `module_identity` (service credentials, `docs/SECRETS.md`), invoker
+registrations at SME (names of rApps and modules), and `jti` values.
+
+## 3. Findings the inventory turned up
+
+These are facts about the current build; each is either tracked in `OPEN_ITEMS.md` or says what is missing.
+
+- **The GUI audit log is not hash-chained.** `gui_audit_log` is append-only because the ORM refuses an update or delete (`AuditEntry`, a `before_flush` listener); the database itself has no trigger or
+  chain, so someone with write access to the SQLite file, or a statement that bypasses the ORM, can change a row undetected. The tamper-evident chain (`audit_log`, `smo_shared/audit.py`) records
+  gateway changes by invoker id, and a GUI action reaches it as a call by the GUI's own SME invoker, not by the person (the person is in `gui_audit_log` only). Tracked: `STD-4.7`.
+- **The BFF database is not backed up.** `scripts/db_backup.sh` dumps Postgres. GUI users, the GUI audit log and the failed-login counters are in the SQLite file on `gui_bff_data`, which no
+  script copies. Restoring the dump on a new host leaves no GUI users and no GUI audit. Tracked: `DB-6.5`.
+- **Person names are written in two ways that erasure cannot reach.** `smo-gui:<username>` and `ack_user_id` are copied into module tables (row 6), and several attribution fields are free text
+  from the caller (row 7). Two of them are not pinned to the signed-in user: `decided_by` on `advance` (certification and approvals of AI/ML models) and `pinnedBy` of a host key. A
+  signed-in operator can attribute either to any name. Tracked: `STD-4.6`.
+- **A deleted user could come back through an old token.** Before this change a new user created under a deleted name started at `token_version` 0 and so accepted the previous holder's unexpired
+  token. Fixed (section 4): a new user starts at a random version.
+- **Rows for typed names accumulate** (row 2), and a person who types a password into the username field leaves it in `gui_login_failure` and `gui_audit_log.username`. Retention for both is `DB-3.6` and
+  `STD-4.2`; nothing deletes them today.
+- **Reads are broad.** A viewer can read alarms (with `ack_user_id`) and every configuration job (with `requested_by`); an rApp token can read the same. Per-tenant and per-region scoping is `SEC-10`; the logging of personal-data reads is `STD-4.4`.
+
+## 4. Erasure of a GUI user (`STD-4.3`)
+
+### What the procedure does today
+
+An admin calls `DELETE /api/admin/users/{username}` (the GUI: Admin, Users, delete). In one database transaction (`gui-bff/app/main.py`, `delete_user`):
+
+| Removed | How |
+|---|---|
+| The account (`gui_user` row: username, password hash, role) | `DELETE` |
+| The failed-login counter kept under that name (`gui_login_failure`) | `DELETE` in the same transaction (before this change it stayed) |
+| Every session of the user, in a browser or as a script token | There is no session row: a session is a signed token naming the user. With the user row gone, every token naming it is refused (`401 SESSION_REVOKED`) on its next use, whichever instance serves it. A new account under the same name starts at a random `token_version`, so the old tokens stay refused |
+
+Refused: deleting yourself (`409 CANNOT_DELETE_SELF`); deleting the last active admin (`409 LAST_ADMIN`). Deleting a user that does not exist answers 204. The call is itself audited:
+`USER_DELETED`, with the username as `detail`, so the audit log gains one more row that names the person.
+
+Tried once, end to end: `gui-bff/tests/test_main.py::test_erasing_a_gui_user_end_to_end_and_what_it_leaves_behind` creates a user, signs in by cookie and by script token, acknowledges an alarm
+through the proxy, ends a third session, fails two logins, deletes the user through the admin route and asserts: the user row and the failed-login row are gone, both sessions are refused, the
+name cannot sign in, a user re-created under the name does not revive either token, the audit rows naming the user are all still there, the revocation row holds only a token id and an expiry,
+and the ORM refuses to edit an audit row.
+
+### What it does not remove, and why
+
+| Remains | Where | Why | Options |
+|---|---|---|---|
+| Audit rows naming the user | `gui_audit_log.username` and `.detail` (including the `USER_CREATED` / `USER_DELETED` rows and the query string `ack_user_id=<name>` in `path`) | The log is append-only by design, to keep who-did-what trustworthy. The BFF's guard refuses an edit. **This log is not hash-chained** (section 3), so the constraint is policy and the ORM guard, not cryptography | (a) **Keep, with a justification** (security and accountability records, kept for the audit retention period, then deleted): needs retention (`DB-3.6`) and a written period. (b) **Pseudonymise at write time**: write an opaque per-user id (for example a random id stored on `gui_user`) in place of the name, with the mapping in `gui_user`, so deleting the user severs the link and the rows stay as they are. Not built: `STD-4.5`. (c) Rewrite the rows of one user by SQL under change control and add an audit row saying so: possible on this log only because it is not chained, and it breaks the log's append-only claim; not recommended |
+| The same user in the platform `audit_log` | does not apply to the GUI user: the actor there is the GUI's SME invoker id, and the request body and query are never recorded | The chain: each row's hash covers its fields and the previous hash, the rows are numbered by `audit_head`, so an edited row breaks its own hash, a deleted row breaks the numbering and the next link, and a removed tail no longer matches the head (`audit.py`). A row therefore **cannot be edited or removed without `python -m smo_shared.audit verify` failing**, and re-hashing every later row is not detected by the chain alone unless the head was anchored elsewhere | If a person's identifier ever reaches this log (for example in `detail.onBehalfOf`), the only options are the two above: pseudonymise at write time (the actor and `onBehalfOf` hold an opaque id), or keep with justification and archive by export. Rewriting the chain means a new chain and a new anchor, and is a breach of the log's purpose |
+| The user's name in module tables (section 2, rows 6 and 7) | `write_config_job.requested_by`, `rapp_kill.killed_by`, `dme_action_record.requested_by`, `autonomy_dispatch.rejected_by`, `alarm.ack_user_id` / `clear_user_id`, the sample rApp's `override_by`, and the free-text fields | There is no route that erases or rewrites them, and no retention that would remove the rows (`DB-3`) | Pseudonymise at write time (`STD-4.5`), or an operator rewrites the value with SQL as the module's role, for example `UPDATE <module schema>.write_config_job SET requested_by = 'smo-gui:erased' WHERE requested_by = 'smo-gui:<username>'`. These tables are ordinary rows, not a chain, so a rewrite does not break a verification; **no such statement has been tried here and none is tested** |
+| `gui_revoked_session` rows | token id and expiry only | Not personal data by itself; removed after the token's expiry | none needed |
+| Backups and log files | the dump files, container logs, the GUI web server's access log (which names the user in the path of the delete and update calls) | Outside the application | The operator's backup and log retention; erasing from a backup is not supported by `scripts/db_restore.sh` |
+
+### The order for an operator
+
+1. Decide, per the table above, whether the audit rows are kept (with a stated period) or are to be rewritten. Today only "keep" is supported by the product.
+2. Deactivate first if the person must stop signing in immediately and the account is to be examined: `PATCH /api/admin/users/{username}` with `{"active": false}` ends every session at once.
+3. `DELETE /api/admin/users/{username}`.
+4. Search the module tables for the name (`smo-gui:<username>` and the plain username in `alarm`), and rewrite or keep them as decided.
+5. Note that the web server log and any backup still name the person.
+
+## 5. What is planned
+
+| Item | ID |
+|---|---|
+| Retention per item, linked to the purge work | `STD-4.2` with `DB-3.1` to `DB-3.8` (including `DB-3.6`, the GUI audit log with export before delete) |
+| Pseudonymise GUI usernames at write time (audit log and module tables), or a documented, tested SQL procedure per table | `STD-4.5` |
+| Pin `decided_by` and `pinnedBy` to the signed-in user | `STD-4.6` |
+| A tamper-evident GUI audit log (chain it, or write it into the platform chain) and its view | `STD-4.7`, `SEC-11.6` |
+| Access logging for reads of personal data | `STD-4.4` with `SEC-11.2` |
+| Back up and restore the GUI database | `DB-6.5` |
+| No local passwords at all: OIDC, with the user created on first login and no password stored | `SEC-6` (planned for 0.5.0) |
+| Per-tenant and per-region read scoping | `SEC-10` |
