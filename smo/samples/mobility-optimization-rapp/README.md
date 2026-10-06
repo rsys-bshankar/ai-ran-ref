@@ -14,7 +14,7 @@ A Non-RT RIC rApp that classifies handover failures per neighbour relation and t
 | R1 route | `/mobility-optimization-rapp/...` (R1 Termination proxies to this service) |
 | Call flow | [23 Mobility Optimization closed loop](../../docs/call-flows/23-mobility-optimization-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 25](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 20 passed (`tests/test_engine.py`, `tests/test_model.py`) |
+| Unit tests | 46 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
 
 ## What it does
 
@@ -61,7 +61,7 @@ Decision logic is in `app/engine.py` (pure functions) and `app/model/MobilityMod
 | `app/producer.py` | Digital Twin `HO_PERFORMANCE_SIM` producer and sample data |
 | `app/models.py` | Instance, relation and decision tables |
 | `demo.py` | Demo 00-11 script |
-| `tests/` | Engine and model unit tests |
+| `tests/` | Engine, model and route unit tests (routes through the TestClient on SQLite, the SDK replaced by a platform double) |
 | `manifest.yaml`, `capabilities.yaml`, `Definitions/asd.yaml`, `TOSCA-Metadata/` | CSAR package content |
 
 ## Package
@@ -98,7 +98,7 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 
 ```bash
 cd smo/samples/mobility-optimization-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 20 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 46 passed
 ```
 
 The demo runs against a live stack, from inside the compose network (for example the `r1-termination` container). Steps are Demo 00 to 11:

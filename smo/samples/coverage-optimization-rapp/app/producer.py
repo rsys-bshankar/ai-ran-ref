@@ -35,6 +35,7 @@ Here c_ij = L_ij / 10. Injected faults change the bases:
 
 import datetime
 import hashlib
+from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -84,7 +85,7 @@ def propagation(neighbours: dict[str, list[str]], settings: dict[str, tuple[floa
     `settings` ({cell: (digitalTilt, configuredMaxTxPower)}) and injected
     `faults` ({cell: scenario})."""
     faults = faults or {}
-    base = {c: {"W": HEALTHY_SHARE, "O": HEALTHY_SHARE, "P": HEALTHY_SHARE,
+    base: dict[str, dict[str, Any]] = {c: {"W": HEALTHY_SHARE, "O": HEALTHY_SHARE, "P": HEALTHY_SHARE,
                 "L": {j: BASE_OVERLAP for j in neighbours[c]}} for c in neighbours}
     for cell, scenario in faults.items():
         if scenario == "WEAK_COVERAGE":
@@ -117,7 +118,7 @@ def cell_counters(cell: str, t: datetime.datetime, radio: dict, setting: tuple[f
                   total: int | None = None) -> dict:
     """One cell's PM window: report counts from its shares, plus its CM snapshot."""
     n = total if total is not None else int(400 + 1600 * load(t.hour + t.minute / 60))
-    counts = {TOTAL: n}
+    counts: dict[str, float] = {TOTAL: n}
     for counter, key in ((WEAK, "WEAK_COVERAGE"), (OVERSHOOT, "OVERSHOOT"), (POLLUTION, "PILOT_POLLUTION")):
         counts[counter] = max(0, round(n * radio["shares"][key] / 100 * (1 + _jitter(cell + counter, t))))
     for j, ov in radio["overlaps"].items():
@@ -143,7 +144,7 @@ def exploration(cells: list[str], hours: int) -> list[dict[str, tuple[float, flo
     previously stepped cell went back to it."""
     out = []
     for h in range(hours):
-        settings = {c: (BASELINE_TILT, BASELINE_POWER) for c in cells}
+        settings: dict[str, tuple[float, float]] = {c: (BASELINE_TILT, BASELINE_POWER) for c in cells}
         block = h // 3
         if block:
             cell = cells[block % len(cells)]
