@@ -9,7 +9,7 @@
 | Depends on (over R1) | `R1Client` calls R1 Termination (`/bootstrap`) and SME (`/invoker-registrations`, `/oauth2/token`) for its own token; no other module |
 | Called by | Every backend module (imports); the SDK (`sdk/`) and the four sample rApps via `R1Client`. Not imported by `gui-bff` |
 | Database tables | None. Provides `Base`, the engine and sessions that modules' `models.py` use |
-| Unit tests | 213 passed (`tests/`; 40 more are skipped without `SMO_TEST_POSTGRES_URL`) |
+| Unit tests | 292 passed (`tests/`; 62 more are skipped without `SMO_TEST_POSTGRES_URL`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -186,6 +186,10 @@ All instances in a process share one identity and token (`_identity`).
 | `install_metrics(app)` | What every `main.py` calls after `install_logging`: `MetricsMiddleware` plus `GET /metrics` (Prometheus text, not in the OpenAPI spec) |
 | `smo_http_requests_total`, `smo_http_request_duration_seconds` | Labels `method`, `route` (template, or `unmatched`) and `status`; probes and `/metrics` not counted; per process |
 | `smo_fsm_transitions_total`, `smo_fsm_illegal_transitions_total` | Every `StateMachine.fire`: labels `machine` (the state enum's name), `from_state`, `event`, and `to_state` for the taken ones |
+| `smo_refusals_total{module,reason}` | Every 4xx the middleware sees, by `MODULE` and a fixed class from the status (`unauthorized`, `forbidden`, `not_found`, `conflict`, `invalid`, `too_large`, `rate_limited`, `other_4xx`) |
+| `smo_outbox_rows{module,status}`, `smo_outbox_oldest_pending_age_seconds{module}` | The module's own `notification_outbox` rows by PENDING / SENT / DEAD, and the age of the oldest PENDING one (0 when none); registered by `install_metrics`, read at scrape time |
+| `register_query_gauge(name, doc, labels, rows)`, `count_by(session, column, known)` | A gauge family computed from the database at scrape time (`QueryGauge`): cached `SMO_BUSINESS_METRICS_TTL_SECONDS` (15), no series when the process has no database or the query fails, a zero for each `known` state. Used by onboarding (`smo_rapp_packages{state}`), rapp-mgmt (`smo_rapp_instances{state}`) and intent-service (`smo_intents{admin_state}`). Every replica reports the same value: aggregate with `max` |
+| `smo_worker_task_runs_total{module,task,outcome}`, `smo_worker_task_last_success_timestamp_seconds{module,task}` | A worker's tasks that ran (`ok`, `failed`; skipped offers not counted); served on `SMO_WORKER_METRICS_PORT` when set |
 | `smo_db_pool_connections{state}`, `smo_db_pool_capacity` | `in_use` / `idle` / `overflow` of the module's pool, read at scrape time; no "waiting" count (SQLAlchemy does not expose it) |
 
 #### Logging (`logconfig.py`)
@@ -256,6 +260,8 @@ No background tasks.
 | `SMO_DATABASE_URL` | none; required: the process refuses to start without it (under pytest only, an in-memory SQLite) | `db.py` |
 | `SMO_DB_POOL_SIZE`, `SMO_DB_MAX_OVERFLOW`, `SMO_DB_POOL_TIMEOUT_SECONDS`, `SMO_DB_POOL_RECYCLE_SECONDS` | 5, 10, 30, 1800 (recycle 0: never); Postgres only | `db.py`: the per-process connection pool. N replicas x W workers can hold N x W x (size + overflow) connections |
 | `SMO_DB_STATEMENT_TIMEOUT_MS`, `SMO_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | 30000, 300000 (0: off); Postgres only | `db.py`: server-side limits so a stuck query or a leaked transaction cannot hold a connection for ever |
+| `SMO_BUSINESS_METRICS_TTL_SECONDS` | 15 | `metrics.py`: how long the database-backed gauges are cached between scrapes |
+| `SMO_WORKER_METRICS_PORT` | unset (off) | `worker.py`: serve `/metrics` (task counters) on this port |
 | `READY_CHECK_TIMEOUT_SECONDS` | 3 | `health.py`: the longest a readiness check may take |
 | `LOG_LEVEL` | `INFO` | `logconfig.py`: DEBUG, INFO, WARNING, ERROR or CRITICAL |
 | `SMO_HTTP_TIMEOUT_SECONDS`, `R1_UPSTREAM_TIMEOUT_SECONDS`, `R1_INTROSPECT_TIMEOUT_SECONDS` | 30, 60, 5 | `timeouts.py` (the last two are R1 Termination's) |
@@ -314,6 +320,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 | `tests/test_single_runner.py` | A repeat inside the interval does not run, one after it does; tasks are independent; a failed run gives the interval back; six racing replicas run the task once; on real Postgres: two sessions cannot hold one lock and it is free afterwards, a dead holder frees it, and a run longer than the interval is not started again elsewhere | 16 (10 need Postgres) |
 | `tests/test_audit.py` | An empty chain is intact; rows numbered and linked; an edited row, a deleted row, a removed tail and a forged link are each found at the right row; a rolled-back write leaves no gap; the timestamp survives a zone-less round trip; export and syslog; a failed write never raises and is counted; four concurrent writers never fork or gap the chain (SQLite and Postgres) | 13 |
 | `tests/test_outbox.py` | Rollback removes the row and sends nothing; nothing sent before the commit; a commit sends what it enqueued; the SSRF guard drops at enqueue; a crash before the send leaves a pending row a later drain sends; a crash mid-send is retried after the lease; backoff then DEAD; 5xx retried, 4xx not; four concurrent drains never send a row twice; a broken drain never fails the commit; retention; the pending ids do not leak across a rollback (SQLite and Postgres) | 28 |
+| `tests/test_business_metrics.py` | Refusal classes by status and counted per module, an unusable `MODULE` is `unknown`, state gauges by state with zeros and following the database, cached for the TTL, nothing (no error) without a database or on a failing query, the outbox backlog and oldest pending age for this module only, worker task counters through `tick`, the worker metrics port only when set | 11 |
 | `tests/test_metrics.py` | Count by template and status (raw ids never labels), unmatched paths share one series, latency histogram, probes and the scrape not counted, Prometheus text, absent from OpenAPI | 6 |
 | `tests/test_logconfig.py` | One JSON object per line (newlines, quotes and non-ASCII escaped); `service` and `correlationId` on records inside a request; extras become keys; an exception is one field; the access line has method, route template, status and duration but not the raw path or query; unmatched 404, 5xx as ERROR, probes hidden at INFO; nine shapes of seeded secret (bearer, basic, password, URL userinfo, JSON, `key=`) never reach the output, also through printf arguments, extras, exception text and uvicorn or library loggers; `LOG_LEVEL` and an unknown level; idempotent configuration, others' handlers kept | 33 |
 | `tests/test_secretfile.py` | Value from the variable or the file, trailing newline removed and nothing else trimmed, both set is an error, a missing file names the variable and path; the password from a file is put into a password-less URL (percent-encoded), replaces one already there, the whole URL may come from a file | 11 |
