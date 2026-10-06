@@ -133,9 +133,11 @@ def exporter():
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
     memory = InMemorySpanExporter()
-    provider = sdk.TracerProvider()
+    provider = trace.get_tracer_provider()
+    if not isinstance(provider, sdk.TracerProvider):       # one provider per process: a second run in it (mutmut) adds to the first
+        provider = sdk.TracerProvider()
+        trace.set_tracer_provider(provider)
     provider.add_span_processor(SimpleSpanProcessor(memory))
-    trace.set_tracer_provider(provider)
     return memory
 
 
