@@ -59,7 +59,9 @@ def apply_correlation_id(app: FastAPI) -> None:
     passes on the same way.
     """
     from .invoker import apply_invoker_context
+    from .security_headers import apply_security_headers
     apply_invoker_context(app)
+    apply_security_headers(app)
 
     @app.middleware("http")
     async def _correlation_id_middleware(request: Request, call_next):

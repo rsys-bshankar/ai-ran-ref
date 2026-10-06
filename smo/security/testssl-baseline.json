@@ -1,0 +1,7 @@
+{
+ "_comment": "Findings of testssl.sh against the TLS edge that are accepted, as \"<id> <severity>\": \"reason\" (scripts/dast_baseline.py). Anything else of severity LOW or above fails the nightly run.",
+ "HSTS_time medium": "The reference edge sends max-age=86400 (one day) on purpose: a first rollout of HSTS that turns out wrong is recoverable within a day, and CI checks the header. An operator who has settled on HTTPS for the domain raises it (six months or more) in their own edge configuration.",
+ "cert_revocation high": "The scan runs against the development certificate made by scripts/make_dev_certs.sh, which has no CRL or OCSP address. A certificate from an operator's CA has one; revocation is that CA's to provide (docs/SECRETS.md, TLS at the edge).",
+ "DNS_CAArecord low": "The scan targets localhost, which has no DNS CAA record to publish. A deployment's domain should have one; it is a DNS setting outside this stack.",
+ "engine_problem warn": "A limit of the scanner's own OpenSSL build (no GOST engine), not a property of the target."
+}

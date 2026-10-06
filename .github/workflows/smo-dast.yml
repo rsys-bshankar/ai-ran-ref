@@ -1,0 +1,115 @@
+name: SMO DAST
+
+# PR-V-7: dynamic security scans of the running stack, nightly. They are not a merge gate (they take a while and a scanner's rules move under us); a run that finds
+# something new fails, and the nightly failure is the signal. The same jobs run on a pull request that changes this workflow or smo/security/, so a change to them is tried.
+#
+#   ZAP API scan   the gateway's OpenAPI document (docs/openapi/r1-termination.json) against the live gateway: what an unauthenticated caller can reach. Baseline smo/security/zap-baseline.json.
+#   testssl.sh     the TLS edge (https://localhost:8443 and :3443): protocols, ciphers, certificate. Baseline smo/security/testssl-baseline.json.
+#   Nuclei         the default template set, severity low and above, against what is reachable from outside: the TLS edge of the gateway and of the GUI. Baseline smo/security/nuclei-baseline.json.
+#
+# Every tool's report is uploaded as an artifact. smo/security/README.md says how to triage a finding. Not done here (smo/docs/VALIDATION.md, V-7): an
+# authenticated ZAP scan with an SMO token, and a scan of each module on the internal network.
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/smo-dast.yml"
+      - "smo/security/**"
+      - "smo/scripts/dast_baseline.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smo-dast-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # pinned by digest, like every image in the stack; bump them on purpose (the date of the pin is in smo/security/README.md)
+  ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:stable@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef
+  TESTSSL_IMAGE: drwetter/testssl.sh:3.2@sha256:51e487545f506e4e58b3e557d99538dbc2e63eec40680a2f6f6c9eb5ae1296af
+  NUCLEI_IMAGE: projectdiscovery/nuclei:v3.9.0@sha256:66b5f88c9b98ad29c03343dd34e5e85bde0ad10428d72e0171b067efe1ed7811
+
+jobs:
+  dast:
+    name: Scan the stack behind the TLS edge
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Start the stack with the TLS edge
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+          scripts/make_dev_certs.sh
+          docker compose --profile tls up -d --build
+          for i in $(seq 1 60); do
+            curl -fsS --cacert certs/ca.crt https://localhost:8443/health > /dev/null 2>&1 && break
+            sleep 5
+          done
+          curl -fsS --cacert certs/ca.crt https://localhost:8443/bootstrap | grep -q apiEndpoints
+          mkdir -p ../scan-out && chmod 777 ../scan-out
+
+      - name: ZAP API scan of the gateway
+        working-directory: smo
+        run: |
+          mkdir -p ../zap-wrk && cp docs/openapi/r1-termination.json ../zap-wrk/ && chmod -R a+rwX ../zap-wrk
+          set +e
+          # -I: ZAP's own exit status is not the verdict (the baseline comparison below is)
+          docker run --rm --network smo_default -v "$PWD/../zap-wrk:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-api-scan.py -t r1-termination.json -f openapi -O http://r1-termination:8000 -r zap.html -J zap.json -I
+          echo "zap exit $?"
+          set -e
+          cp ../zap-wrk/zap.html ../zap-wrk/zap.json ../scan-out/
+          python3 scripts/dast_baseline.py zap security/zap-baseline.json ../scan-out/zap.json
+
+      - name: testssl.sh against the TLS edge
+        if: ${{ !cancelled() }}   # each scanner reports even when another found something
+        working-directory: smo
+        run: |
+          # the certs directory is mode 0700 (it holds the CA key): the scanner's user gets the CA certificate alone, in a directory it can read
+          cp certs/ca.crt ../scan-out/ca.crt
+          set +e
+          for port in 8443 3443; do
+            docker run --rm --network host -v "$PWD/../scan-out:/out" "$TESTSSL_IMAGE" \
+              --add-ca /out/ca.crt --severity LOW --jsonfile "/out/testssl-$port.json" --warnings off --quiet "localhost:$port" > "../scan-out/testssl-$port.txt" 2>&1
+          done
+          set -e
+          status=0
+          for port in 8443 3443; do
+            echo "== port $port"
+            tail -n 25 "../scan-out/testssl-$port.txt"
+            python3 scripts/dast_baseline.py testssl security/testssl-baseline.json "../scan-out/testssl-$port.json" || status=1
+          done
+          exit $status
+
+      - name: Nuclei, default templates, against the gateway and the GUI
+        if: ${{ !cancelled() }}
+        working-directory: smo
+        run: |
+          set +e
+          # what is reachable from outside: the TLS edge in front of the gateway (:8443) and of the GUI (:3443). Not the containers' own ports: R1's /metrics is for the
+          # scraper on the container network and is answered 404 at the edge (edge/nginx.conf), which this scan then checks.
+          docker run --rm --network host -v "$PWD/../scan-out:/out" "$NUCLEI_IMAGE" \
+            -u https://localhost:8443 -u https://localhost:3443 -severity low,medium,high,critical -jsonl -o /out/nuclei.jsonl -silent
+          set -e
+          [ -e ../scan-out/nuclei.jsonl ] || : > ../scan-out/nuclei.jsonl   # nothing found: no file
+          python3 scripts/dast_baseline.py nuclei security/nuclei-baseline.json ../scan-out/nuclei.jsonl
+
+      - name: The stack's logs, when a step failed
+        if: failure()
+        working-directory: smo
+        run: docker compose --profile tls logs --no-color --tail=40 r1-termination gui edge-tls
+
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dast-reports
+          path: scan-out/
+          retention-days: 30
