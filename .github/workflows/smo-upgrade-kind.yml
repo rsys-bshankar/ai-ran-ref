@@ -1,0 +1,127 @@
+name: SMO upgrade and rollback on kind
+
+# PR-V-10, V-11: a previous release is installed from its own chart and its own images (built from its tag), exercised, then upgraded to this checkout with `helm upgrade`,
+# then rolled back with `helm rollback` so the previous release's code runs on the schema this checkout migrated. Two releases are tried: the previous one and the one before it
+# (the 1.0 criterion "upgrade across two releases"). Checked after each step: every pod ready, the database at the right revision, the data written by the old release still there,
+# the runbook replay (scripts/compose_e2e.py of the release that is running) passes, and the audit chain verifies.
+# The rollback is promised to the release before only (expand and contract: this checkout keeps what the previous release needs). The release before that is upgraded from, not rolled
+# back to: its own migrate step does not know a newer schema ("Can't locate revision"), which is a limit of that release's code, so the rollback step is skipped for it.
+# Nightly, on demand, and on a pull request that changes this workflow or the chart's upgrade path. Not a required check yet. Not yet here: a load running through the upgrade,
+# and a deliberately failing migration (V-11's second half).
+
+on:
+  schedule:
+    - cron: "47 4 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/smo-upgrade-kind.yml"
+      - "smo/deploy/helm/**"
+      - "smo/migrations/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smo-upgrade-kind-${{ github.event.pull_request.number || github.ref }}-${{ github.workflow }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  upgrade:
+    name: "From ${{ matrix.from }}, upgrade${{ matrix.rollback && ' then roll back' || '' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { from: smo-v0.4.0, rollback: true }
+          - { from: smo-v0.3.0, rollback: false }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: cur
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ matrix.from }}
+          path: prev
+
+      - name: Build the images of both
+        run: |
+          pip install --quiet pyyaml
+          build() {   # build <checkout> <tag>
+            (cd "$1/smo" && python scripts/release_images.py matrix | jq -c '.include[]' | while read -r row; do
+              name=$(jq -r .name <<<"$row"); context=$(jq -r .context <<<"$row"); module=$(jq -r .module <<<"$row")
+              if [ -n "$module" ]; then
+                docker build --quiet -t "local/smo-$name:$2" --build-arg "MODULE=$module" "$context" > /dev/null
+              else
+                docker build --quiet -t "local/smo-$name:$2" "$context" > /dev/null
+              fi
+            done)
+          }
+          build prev prev
+          build cur cur
+          docker image ls 'local/smo-*' | head -60
+
+      - name: Create the cluster and load the images
+        run: |
+          kind create cluster --name smo --wait 120s
+          kind load docker-image --name smo $(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
+
+      - name: Install the previous release from its own chart
+        working-directory: prev/smo
+        run: |
+          helm install smo deploy/helm/smo -n smo --create-namespace -f deploy/helm/smo/ci/kind-values.yaml --set image.tag=prev --wait --timeout 12m
+          kubectl -n smo get pods
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+          psql() { kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "$1"; }
+          echo "revision before: $(psql 'SELECT version_num FROM alembic_version')"
+          psql 'SELECT count(*) FROM audit_log' > "$RUNNER_TEMP/audit_before"
+          echo "audit rows written by the previous release: $(cat "$RUNNER_TEMP/audit_before")"
+
+      - name: Upgrade to this checkout
+        working-directory: cur/smo
+        run: |
+          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --set image.tag=cur --wait --timeout 12m
+          helm history smo -n smo
+          for d in $(kubectl -n smo get deploy -o name); do kubectl -n smo rollout status "$d" --timeout=180s; done
+          kubectl -n smo get pods
+          [ "$(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed|Terminating' | wc -l)" = "0" ]
+          head=$(ls migrations/versions | grep -oE '^[0-9]+' | sort | tail -1)
+          at=$(kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "SELECT version_num FROM alembic_version")
+          echo "database at $at, this checkout's head $head"
+          [ "$at" = "$head" ]
+
+      - name: The data of the old release is there, and this release runs the runbook
+        working-directory: cur/smo
+        run: |
+          psql() { kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "$1"; }
+          before=$(cat "$RUNNER_TEMP/audit_before"); after=$(psql 'SELECT count(*) FROM audit_log')
+          echo "audit rows: $before before the upgrade, $after after"
+          [ "$after" -ge "$before" ]
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
+
+      - name: Roll back to the previous release, on the schema this checkout migrated
+        if: ${{ matrix.rollback }}
+        working-directory: prev/smo
+        run: |
+          helm rollback smo 1 -n smo --wait --timeout 12m
+          helm history smo -n smo
+          for d in $(kubectl -n smo get deploy -o name); do kubectl -n smo rollout status "$d" --timeout=180s; done
+          kubectl -n smo get pods
+          [ "$(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed|Terminating' | wc -l)" = "0" ]
+          # the old release's code is back, the schema is the new one (a rollback does not undo a migration: that is the expand and contract rule)
+          kubectl -n smo get deploy r1-termination -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
+          [ "$(kubectl -n smo get deploy r1-termination -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')" = "prev" ]
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
+
+      - name: Pod logs on failure
+        if: ${{ failure() }}
+        run: |
+          kubectl -n smo get pods -o wide || true
+          kubectl -n smo get events --sort-by=.lastTimestamp | tail -60 || true
+          for p in $(kubectl -n smo get pods --no-headers 2>/dev/null | grep -vE 'Running|Completed' | awk '{print $1}'); do echo "== $p"; kubectl -n smo logs "$p" --tail 40 --all-containers 2>&1 || true; done
+          kubectl -n smo logs job/migrate --tail 60 2>&1 || true
