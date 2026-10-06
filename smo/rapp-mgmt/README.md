@@ -10,7 +10,7 @@
 | Called by | Operators and GUI BFF; the rApp container itself (`bootstrap-complete`, `config`, `performance`, `fault`); Intent Service (reads an instance's `autonomyMode` and `regionScope`); SA SMOS (`rollback`, `versions`); the reference rApps (read their own instance) |
 | Database tables | `rapp_instance` (versioned), `rapp_instance_version`, `rapp_fault_report`, `rapp_performance_report` |
 | Idempotency | `POST /instances` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
-| Unit tests | 92 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 123 passed (`tests/`, SQLite, standalone) |
 | Status | Done. No open item in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) names this module; limits in 2.8 |
 | Time-driven behaviour | On request, never on a timer: an overdue upgrade is rolled back the next time either row is touched |
 
@@ -204,6 +204,8 @@ No inbound callbacks and no background tasks.
 
 rApp Management reads one environment variable of its own: `RAPP_CREDENTIAL_DELIVERY` (`none`, the default, or `kubernetes`: write each instance's credentials to a Secret `rapp-<instanceId>-credentials` in its namespace, created with the invoker at create and on rotation, deleted on terminate; it also reads `RAPP_K8S_NAMESPACE`, `RAPP_K8S_TOKEN_FILE`, `RAPP_K8S_CA_FILE` and `KUBERNETES_SERVICE_HOST`/`PORT`, which the Helm chart sets; `smo_shared/credential_delivery.py`). Through `smo_shared`: `SMO_DATABASE_URL` (required, no default), `R1_GATEWAY_URL` (default `http://r1-termination:8000`), and optionally `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET`. In code: `DEPLOYABLE_PACKAGE_STATES = ("AVAILABLE", "PRIMED")`; `upgrade_timeout_seconds` column default 300.
 
+**Metrics (PR-OBS-4).** Besides the shared series, `GET /metrics` has `smo_rapp_instances{state}`: the `rapp_instance` rows by `InstanceState` (every state present; `RUNNING` are the active rApps, `FAULTED` is what `SmoRAppInstancesFaulted` watches), read at scrape time (cached 15 s). A pending upgrade's replacement row counts as an instance of its own while it exists. Aggregate replicas with `max`.
+
 ### 2.7 Error codes
 
 | Code | Status | When |
@@ -250,7 +252,8 @@ cd smo/rapp-mgmt && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Upgrade and rollback through the routes: replacement provisioned, refusal of a non-deployable package, commit releases old, rollback tears replacement down, pending replacement cannot be terminated, lazy timeout (read, list, resolve), version recording, rollback restore, superseded id, repeated rollbacks, rollback after upgrade, no history, failed rollback, non-running, no longer deployable | 18 |
 | `tests/test_upgrade.py` | FSM and credential behaviour: bootstrap success, revocation on terminate, terminate legality, crash and manual recovery | 7 |
 | | Upgrade orchestration: complete replacement, refused packages (409, 404), refused non-running instance before provisioning, commit retires old, commit of an already bootstrapped replacement, commit refused for a crashed replacement, auto rollback, lazy timeout, NFO failure recorded not raised | 11 |
-| | Total | 88 |
+| `tests/test_business_metrics.py` | `smo_rapp_instances` counts instances by state with every `InstanceState` present | 1 |
+| | Total | 89 |
 
 ### 3.3 What is not covered here
 
