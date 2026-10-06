@@ -85,6 +85,9 @@ jobs:
           image="ghcr.io/${repo}/smo-${{ matrix.name }}"
           args=()
           [ -n "${{ matrix.module }}" ] && args+=(--build-arg "MODULE=${{ matrix.module }}")
+          # what GET /version answers (PR-OBS-8.1): the release, the tag's commit (the checkout above is at the tag), the build time
+          args+=(--build-arg "SMO_VERSION=${{ needs.plan.outputs.version }}" --build-arg "SMO_BUILD_SHA=$(git rev-parse HEAD)")
+          args+=(--build-arg "SMO_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)")
           docker buildx build "${args[@]}" --provenance=mode=max --sbom=true \
             --tag "${image}:${{ needs.plan.outputs.version }}" --push \
             --metadata-file "$RUNNER_TEMP/meta.json" "${{ matrix.context }}"

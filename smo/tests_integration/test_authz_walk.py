@@ -4,7 +4,7 @@ No backend service checks a token itself: R1 Termination introspects the bearer 
 and is the one enforcement point (`smo_shared/openapi_security.py`). So the question "is any route open?" has
 two halves, both walked here from the apps' real route tables:
 
-  1. R1 Termination's own explicit routes are exactly its four public ones; everything else falls to the
+  1. R1 Termination's own explicit routes are exactly its public ones; everything else falls to the
      catch-all proxy, which authorises.
   2. For every route of every backend, a request through the gateway with no token, an empty token, a non-bearer
      scheme or an inactive token is refused with 401 and never reaches the backend; with an active token it does.
@@ -25,7 +25,7 @@ from mesh import R1_PREFIX_TO_SERVICE
 
 GOOD_TOKEN = "active-token"
 # /metrics: the gateway's own series, for the scraper on the container network (PR-OBS-2.3); the edge does not forward it
-PUBLIC_AT_THE_GATEWAY = {"/health", "/live", "/ready", "/bootstrap", "/metrics"}
+PUBLIC_AT_THE_GATEWAY = {"/health", "/live", "/ready", "/version", "/bootstrap", "/metrics"}
 WALKED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}   # what the gateway's catch-all proxies
 VALID = f"Bearer {GOOD_TOKEN}"
 BAD_AUTHORIZATIONS = [None, "", "Bearer", "Bearer ", "Bearer not-the-token", "Basic YWRtaW46YWRtaW4=", GOOD_TOKEN, VALID]   # a bare token has no scheme: refused

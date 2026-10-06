@@ -185,6 +185,7 @@ jobs:
         env:
           # No TLS terminator in front of the GUI in CI.
           GUI_COOKIE_SECURE: "false"
+          SMO_BUILD_SHA: ${{ github.sha }}    # GET /version answers it (PR-OBS-8.1)
         run: docker compose up -d --build
 
       # PR-OPS-1.5: the one-shot migrate service created the schema (the stack no longer mounts 001_init.sql into

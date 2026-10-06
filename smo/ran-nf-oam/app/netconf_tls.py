@@ -46,6 +46,7 @@ def tls_material_for(ref: str | None) -> tuple[str, str, str]:
         names = {part: f"NETCONF_TLS_{part}" for part in ("CERT_FILE", "KEY_FILE", "CA_FILE")}
     else:
         names = {part: _cred_var(ref, part) for part in ("CERT_FILE", "KEY_FILE", "CA_FILE")}
+    # config-ref: NETCONF_TLS_CERT_FILE, NETCONF_TLS_KEY_FILE, NETCONF_TLS_CA_FILE, NETCONF_CRED_<REF>_CERT_FILE, NETCONF_CRED_<REF>_KEY_FILE, NETCONF_CRED_<REF>_CA_FILE
     files = {part: os.environ.get(var) or "" for part, var in names.items()}
     missing = [var for part, var in names.items() if not files[part]]
     if missing:
