@@ -72,10 +72,15 @@ def test_get_dataset_creates_a_job_and_404s_an_unknown_dataset():
 
 
 def test_store_model_registers_once_then_adds_artifact_versions():
-    models = []
+    models: list[dict] = []
+
+    def register(json, **kw):
+        models.append({"modelId": "m-1", **json})
+        return FakeResponse(201, {"modelId": "m-1"})
+
     r1 = RoutedR1({
         ("get", "/mlmr/models"): lambda params: FakeResponse(200, {"items": models}),
-        ("post", "/mlmr/models"): lambda json, **kw: models.append({"modelId": "m-1", **json}) or FakeResponse(201, {"modelId": "m-1"}),
+        ("post", "/mlmr/models"): register,
         ("post", "/mlmr/models/m-1/artifact"): FakeResponse(201, {"modelId": "m-1", "artifactVersion": 1}),
     })
     client = ModelsClient(r1)
